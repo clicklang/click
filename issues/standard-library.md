@@ -11,8 +11,9 @@ must not lose its trust listing or its checked use.
 
 ## Motivation
 
-Click's standard library today is `stdlib/prelude.click`, one 1,661-line
-file loaded implicitly into every sidecar. Nobody designed it as a library.
+Click's library was `stdlib/prelude.click`, one 1,661-line file loaded
+implicitly into every sidecar. Step 1 below split it into `library/`
+modules without changing any declaration. Nobody designed it as a library.
 It grew one declaration at a time, as each proof needed something, and it
 mixes four kinds of declaration that have different meanings and different
 trust:
@@ -81,6 +82,83 @@ The standard library should be a designed, documented API:
 
 Today none of these hold.
 
+## Accepted design, 2026-10-14
+
+These decisions were agreed with the user. Implement them; internal APIs
+and file boundaries within a layer are implementation details.
+
+### Name and location
+
+The library is "the Click library". Its source lives in `library/`, one
+module per file, replacing `stdlib/prelude.click`. "Prelude" no longer names
+the whole library. "Standard library" is avoided in Click documentation,
+because a sidecar sits beside C, C++ or Rust code whose own standard library
+uses that name.
+
+### Imports
+
+A library module is imported by a `::` path rooted at `click`, mapped onto
+`library/`:
+
+```click
+import click::bytes;                   // library/bytes.click
+import click::c::string;               // library/c/string.click
+import "../rbtree-model/model.click";  // a project file: a quoted path
+```
+
+The root is `click`, not `std`, so a library path cannot be confused with
+C++'s or Rust's `std` in the code being verified. Project files keep quoted
+relative paths, which already exist and are unchanged. A library module
+follows the [specification-imports](specification-imports.md) rules: it is
+loaded once, its names are available unqualified, conflicts are rejected,
+and importing it does not run its proofs. Selective imports and qualified
+names (`click::list::append`) remain deferred to that issue.
+
+### What is implicit
+
+- `Nat` and `List<T>`, with their functions and theorems, are available
+  without an import.
+- Verifier primitives are part of the language and are always available.
+  These are the abstract resources `mutex_guard`, `mutex_live`,
+  `mutex_use`, `publisher`, `subscriber`, `authority` and `allocation`, plus
+  `__click_constant_p_unknown`.
+- Every other specification module (`bytes`, `cstr`, `integer`,
+  `permutation` and so on) requires an explicit `import click::...;`.
+
+### Language library models come with the code
+
+Library contracts for C, C++ and Rust attach to what the verified code
+uses, not to sidecar imports. Including `<string.h>` brings the `memcpy`,
+`memcmp`, `memset` and `strlen` contracts; `<stdlib.h>` brings the
+allocator family. Using `std::span` brings its C++ catalog contracts, and
+using a Rust core slice method brings its contract. The contracts are
+written under `library/c/`, `library/cpp/` and `library/rust/`, with module
+paths such as `click::c::string` for documentation and explicit reference.
+A model's own specification dependencies (for example, `strlen` on
+`cstr_readable`) are imported by its model file, not by the sidecar.
+
+### Naming
+
+Names stay prefixed (`list_append`, `int32_less_equal_transitive`) while
+every imported name is unqualified. Choose the naming scheme together with
+qualified names, so that each declaration is renamed at most once.
+
+### Delivery order
+
+Each step is a separate PR that leaves every example verifying:
+
+1. Done: split `stdlib/prelude.click` into `library/` modules, all still
+   loaded implicitly in the original declaration order. No meaning changes.
+2. Resolve `import click::...;` to library modules.
+3. Make the non-implicit specification modules explicit. A script adds the
+   import lines to existing sidecars and fixtures.
+4. Attach the C library models to their headers, and move the C++ catalog
+   and Rust core contracts under the same convention.
+5. Document the primitives in the language reference, and describe the
+   library per module in the reference.
+6. Apply the consistency rules below: generic `count` and `permutation`,
+   `size_t` sizes for `allocation`, and the width-lemma families.
+
 ## Design
 
 ### Layers
@@ -100,9 +178,9 @@ Today none of these hold.
 - **Specification library.** These are the checked types, pure functions,
   predicates and theorems. Split them into modules (for example `nat`,
   `list`, `integer`, `bytes`, `cstr`, `permutation`) using the module
-  mechanism of [specification-imports.md](specification-imports.md). That
-  issue already owns the split mechanism. This issue owns what goes into each
-  module and the consistency rules.
+  mechanism of [specification-imports.md](specification-imports.md). This
+  issue owns the split, the `click::` resolution, and what goes into each
+  module.
 
 ### Consistency rules
 
@@ -114,9 +192,10 @@ Today none of these hold.
   `int32` restriction is documented as a kernel limit.
 - Size and index parameters of library models use the C types the real
   functions use (`size_t`), including `allocation`.
-- Write the naming scheme down in `stdlib/README.md` and apply it to every
-  existing declaration. Rename, rather than alias, unless a public example
-  depends on the old name.
+- Write the naming scheme down in `library/README.md` and apply it to every
+  existing declaration, once qualified names exist (see Naming above).
+  Rename, rather than alias, unless a public example depends on the old
+  name.
 
 ### Sequencing with Integer-default specification arithmetic
 
@@ -144,14 +223,16 @@ the families it makes unnecessary and complete only the ones that remain.
 
 ## Acceptance criteria
 
-- The library reference and `stdlib/README.md` describe the three layers.
+- The library reference and `library/README.md` describe the three layers.
   Every declaration is in exactly one layer, and primitives are documented
   in the language reference.
 - C library and C++ catalog models follow one documented convention and
   are listed in [trust](../docs/concepts/trust.md).
-- The specification library is split into modules once
-  [specification-imports.md](specification-imports.md) delivers that
-  mechanism. A sidecar's imports show which modules it uses.
+- The library is split into `library/` modules. `Nat`, `List` and the
+  primitives are implicit; every other specification module is imported with
+  `import click::...;`, so a sidecar's imports show which modules it uses.
+- C, C++ and Rust library contracts arrive with the header or module the
+  verified code uses.
 - The checked list of width-lemma families has no gaps, and the decision on
   each family follows the Integer-default arithmetic decision described
   above.

@@ -18,8 +18,8 @@ profile. Layout comes from the struct declaration under that target, so
 four padding bytes, `target` at offset 8, and size 16. Nothing in a proof
 names an offset.
 
-The only copy primitive is `memcpy` as declared in the embedded standard
-library (`stdlib/prelude.click`):
+The only copy primitive is `memcpy` as declared in the embedded Click
+library (`library/c/string.click`):
 
 ```text
 extern uint8* memcpy(uint8 destination[], const uint8 source[], uint64 bytes) {

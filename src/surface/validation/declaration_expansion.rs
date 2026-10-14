@@ -123,14 +123,14 @@ fn standard_library() -> Result<&'static ClickFile, ClickError> {
     }
     #[cfg(test)]
     STANDARD_LIBRARY_PARSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let file = load_standard_library(CLICK_STANDARD_LIBRARY)?;
+    let file = load_standard_library(CLICK_LIBRARY_MODULES)?;
     Ok(STANDARD_LIBRARY.get_or_init(|| file))
 }
 
-fn load_standard_library(source: &str) -> Result<ClickFile, ClickError> {
-    let file = expand_declared_resource_clauses(parser::parse_file_items_for_module(
-        source,
-        "stdlib/prelude.click",
+fn load_standard_library(modules: &[(&str, &str)]) -> Result<ClickFile, ClickError> {
+    let mut file = parser::parse_file_items_for_module(
+        "",
+        "library",
         0,
         &[],
         &BTreeSet::new(),
@@ -138,7 +138,29 @@ fn load_standard_library(source: &str) -> Result<ClickFile, ClickError> {
         &[],
         &[],
         Default::default(),
-    )?)?;
+    )?;
+    for (identity, source) in modules {
+        let functions = file
+            .click_function_definitions()
+            .iter()
+            .map(|function| function.name().to_string())
+            .collect();
+        let callees = file.function_blocks().iter().collect::<Vec<_>>();
+        let resources = file.resource_definitions().iter().collect::<Vec<_>>();
+        let module = parser::parse_file_items_for_module(
+            source,
+            identity,
+            0,
+            file.algebraic_type_definitions(),
+            &BTreeSet::new(),
+            &functions,
+            &callees,
+            &resources,
+            Default::default(),
+        )?;
+        append_library_module(&mut file, module);
+    }
+    let file = expand_declared_resource_clauses(file)?;
     if !file.verifying_sources().is_empty()
         || file
             .function_blocks()
@@ -150,6 +172,32 @@ fn load_standard_library(source: &str) -> Result<ClickFile, ClickError> {
         ));
     }
     Ok(file)
+}
+
+/// Appends one library module's declarations after the earlier modules', so
+/// the library keeps one declaration order across its files.
+fn append_library_module(file: &mut ClickFile, module: ClickFile) {
+    std::sync::Arc::make_mut(&mut file.c_function_names).extend(
+        module
+            .c_function_names
+            .iter()
+            .map(|(spelling, name)| (spelling.clone(), name.clone())),
+    );
+    file.imports.extend(module.imports);
+    file.verifying_sources.extend(module.verifying_sources);
+    file.algebraic_type_definitions
+        .extend(module.algebraic_type_definitions);
+    file.predicate_definitions
+        .extend(module.predicate_definitions);
+    file.click_function_definitions
+        .extend(module.click_function_definitions);
+    file.resource_definitions
+        .extend(module.resource_definitions);
+    file.theorem_definitions.extend(module.theorem_definitions);
+    file.contract_definitions
+        .extend(module.contract_definitions);
+    file.function_blocks.extend(module.function_blocks);
+    file.tactic_definitions.extend(module.tactic_definitions);
 }
 
 pub(in crate::surface) fn combined_algebraic_type_definitions(

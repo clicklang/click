@@ -300,22 +300,24 @@ pub(super) fn parse_file_items_for_module(
 fn standard_library_pure_function_names() -> &'static BTreeSet<String> {
     static NAMES: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
     NAMES.get_or_init(|| {
-        let Ok(parser) = Parser::new(super::CLICK_STANDARD_LIBRARY) else {
-            return BTreeSet::new();
-        };
-        let tokens = parser.tokens;
         let mut names = BTreeSet::new();
-        let mut depth = 0usize;
-        for (index, token) in tokens.iter().enumerate() {
-            match token {
-                Token::LBrace => depth += 1,
-                Token::RBrace => depth = depth.saturating_sub(1),
-                Token::Ident(word) if depth == 0 && word == "function" => {
-                    if let Some(Token::Ident(name)) = tokens.get(index + 1) {
-                        names.insert(name.clone());
+        for (_, source) in super::CLICK_LIBRARY_MODULES {
+            let Ok(parser) = Parser::new(source) else {
+                continue;
+            };
+            let tokens = parser.tokens;
+            let mut depth = 0usize;
+            for (index, token) in tokens.iter().enumerate() {
+                match token {
+                    Token::LBrace => depth += 1,
+                    Token::RBrace => depth = depth.saturating_sub(1),
+                    Token::Ident(word) if depth == 0 && word == "function" => {
+                        if let Some(Token::Ident(name)) = tokens.get(index + 1) {
+                            names.insert(name.clone());
+                        }
                     }
+                    _ => {}
                 }
-                _ => {}
             }
         }
         names

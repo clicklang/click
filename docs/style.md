@@ -36,7 +36,7 @@ Normative examples must be backed by an mdtest, an example project, or a checked
 source include. Immediately precede each normative `click` or `c` fence with a
 `verified-example` comment naming that fixture. The standard-library reference
 is the one exception: its exact declaration blocks are synchronized directly
-with `stdlib/prelude.click`, and every symbol has a checked use in the library
+with the `library/` modules, and every symbol has a checked use in the library
 mdtest. The tactic fixture catalog maps every selectable tactic form to the
 source text that exercises it. Use a negative fixture for a normative failure
 diagnostic.

@@ -202,19 +202,23 @@ fn a_budget_exhausted_during_the_prelude_parse_is_not_cached() {
 }
 
 #[test]
-fn standard_library_syntax_errors_name_the_prelude_file_and_line() {
+fn library_syntax_errors_name_the_module_file_and_line() {
     for source in ["\n\n/* an unclosed `quoted` comment", "\n\nfunction 42"] {
-        let error = load_standard_library(source).expect_err("invalid prelude must fail");
+        let modules = [
+            ("library/nat.click", CLICK_LIBRARY_MODULES[1].1),
+            ("library/broken.click", source),
+        ];
+        let error = load_standard_library(&modules).expect_err("an invalid module must fail");
         assert_eq!(error.kind(), ClickErrorKind::Syntax);
         assert!(
-            error.message().contains("stdlib/prelude.click:3"),
+            error.message().contains("library/broken.click:3"),
             "{}",
             error.message()
         );
         let error = error.with_context("while checking module `example.click`");
         assert!(
-            error.message().contains("stdlib/prelude.click:3"),
-            "module context must preserve the prelude location: {}",
+            error.message().contains("library/broken.click:3"),
+            "module context must preserve the library location: {}",
             error.message()
         );
     }
@@ -222,7 +226,7 @@ fn standard_library_syntax_errors_name_the_prelude_file_and_line() {
 
 #[test]
 fn standard_library_cache_preserves_all_declarations() {
-    let fresh = load_standard_library(CLICK_STANDARD_LIBRARY).unwrap();
+    let fresh = load_standard_library(CLICK_LIBRARY_MODULES).unwrap();
     assert_eq!(standard_library().unwrap(), &fresh);
     // Accessors return independently owned categories, never a mutable view
     // of the process-wide syntax or a clone of unrelated categories.

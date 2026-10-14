@@ -1,7 +1,7 @@
 # Every standard-library symbol
 
 This fixture and the companion regressions named below give every public
-declaration in `stdlib/prelude.click` a checked use. The documentation
+declaration in the `library/` modules a checked use. The documentation
 inventory separately checks that the source registry and library reference
 remain complete.
 

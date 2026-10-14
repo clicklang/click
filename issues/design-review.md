@@ -88,7 +88,7 @@ Decision: open.
 Today: `+` in a specification is the C operation and is partial
 (`docs/reference/language/index.md`, "an int32 fold's `+` is partial in
 specifications"). Proofs bridge with `to_integer`, width-specific lemmas
-(`int64_less_equal_transitive` and about 150 more in `stdlib/prelude.click`)
+(`int64_less_equal_transitive` and about 110 more in `library/`)
 and hand-written `arithmetic_certificate` blocks: about 270 lines of
 `examples/bounded-pool/bounded_pool.click` show counters do not overflow.
 ACSL, Dafny and Verus specs use mathematical integers by default.

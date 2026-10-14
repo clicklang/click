@@ -171,7 +171,7 @@ The feature playbook is the detailed checklist.
 
 Prefer this order:
 
-1. An ordinary Click definition in `stdlib/prelude.click`.
+1. An ordinary Click definition in a `library/` module.
 2. Deterministic proof support for a general pattern.
 3. A new tactic if users need explicit control.
 4. New syntax only when existing syntax cannot express the concept clearly.

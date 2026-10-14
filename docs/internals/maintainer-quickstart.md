@@ -97,4 +97,4 @@ the postcondition follows on every execution path.
   proof orchestration.
 - `src/kernel/`: C semantic terms, propositions, assumptions, symbolic
   execution, and theorem-producing axioms.
-- `stdlib/prelude.click`: ordinary Click standard-library definitions.
+- `library/`: the Click library modules, ordinary Click definitions.

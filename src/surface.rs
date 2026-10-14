@@ -432,7 +432,42 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "write",
 ];
 
-const CLICK_STANDARD_LIBRARY: &str = include_str!("../stdlib/prelude.click");
+/// The Click library modules loaded implicitly with every sidecar, as
+/// `(identity, source)` pairs in declaration order. Each module is parsed
+/// with the declarations of the modules before it.
+const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
+    (
+        "library/primitives.click",
+        include_str!("../library/primitives.click"),
+    ),
+    ("library/nat.click", include_str!("../library/nat.click")),
+    ("library/list.click", include_str!("../library/list.click")),
+    (
+        "library/machine_integer.click",
+        include_str!("../library/machine_integer.click"),
+    ),
+    (
+        "library/permutation.click",
+        include_str!("../library/permutation.click"),
+    ),
+    (
+        "library/bytes.click",
+        include_str!("../library/bytes.click"),
+    ),
+    ("library/cstr.click", include_str!("../library/cstr.click")),
+    (
+        "library/c/builtins.click",
+        include_str!("../library/c/builtins.click"),
+    ),
+    (
+        "library/c/string.click",
+        include_str!("../library/c/string.click"),
+    ),
+    (
+        "library/integer.click",
+        include_str!("../library/integer.click"),
+    ),
+];
 
 /// Emits one non-overlapping verifier phase on every exit path, including an
 /// early `?`; see [`instrumentation::VerificationPhase`].
