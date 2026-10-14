@@ -2864,8 +2864,7 @@ pub(in crate::surface::proof) use match_cases::ExecutionMatchPlan;
 mod execution_entry;
 mod execution_joins;
 mod execution_statements;
-#[cfg(test)]
-pub(crate) use execution_statements::without_implicit_auto;
+pub use execution_statements::without_implicit_auto;
 mod fact_index;
 mod fixed_state_steps;
 mod outcomes_and_focus;

@@ -1912,13 +1912,17 @@ fn audit_selected_claim_rewrite(
         limits.verification.within(deadline)?,
         "original proof-unit verification",
     )?;
-    let expanded_cost = cold_verify(
-        &expanded,
-        source,
-        &first.claim,
-        limits.verification.within(deadline)?,
-        "expanded proof-unit verification",
-    )?;
+    // The whole claim's expansion has nothing smart left: checked with the
+    // implicit `auto` off, it is shown self-contained (`issues/simplify-step.md`).
+    let expanded_cost = click::surface::without_implicit_auto(|| {
+        cold_verify(
+            &expanded,
+            source,
+            &first.claim,
+            limits.verification.within(deadline)?,
+            "expanded proof-unit verification",
+        )
+    })?;
     if let Some(regression) =
         performance_regression(original_cost, expanded_cost, limits.performance_slack)
     {
