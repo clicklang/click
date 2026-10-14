@@ -155,14 +155,24 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
             selected_context,
         )
     };
+    let previous_effect_count = execution.core.effect_facts.len();
     let successor = apply(prerequisite_policy, context)?;
     let mut completed = successor.execution;
-    let facts = requirement_pure_facts
-        .with_statement_facts_retaining_prefix(
-            successor.pure_facts.into_vec(),
-            &completed.core.publication_case_prefix(),
-        )
-        .with_checked_statement_read_facts(&successor.read_facts);
+    let mut facts = requirement_pure_facts.with_statement_facts_retaining_prefix(
+        successor.pure_facts.into_vec(),
+        &completed.core.publication_case_prefix(),
+    );
+    // The checked core appends the selected statement's certified evidence.
+    // Publish its typed read metadata as well as its proposition; walk only
+    // this step's suffix, rather than earlier effects or ambient proof facts.
+    let effect_delta = completed
+        .core
+        .effect_facts
+        .len()
+        .saturating_sub(previous_effect_count);
+    for fact in completed.core.effect_facts.iter().rev().take(effect_delta) {
+        facts.retain_checked_read_fact(fact);
+    }
     // This is checked semantic state, shared by both source and Proof drivers.
     // A statement with several outcomes cannot attach one branch's facts to
     // every candidate; loop-return producers likewise keep their own bases.

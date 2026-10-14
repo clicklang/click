@@ -1579,16 +1579,10 @@ fn merge_facts_with_changes(
                     .position(|existing| existing.proposition() == fact.proposition())
             })
             .flatten();
-        if let Some(index) = existing_index
-            && &facts[index] != fact
-        {
-            share_append &= index >= before;
-            *facts.get_mut(index) = fact.clone();
-            changed.push(index);
-        }
-        // A redundant defining equation may still carry a new checked
-        // producer binding. Keep the original packet rather than dropping
-        // its typed read evidence along with the proposition's redundancy.
+        // A redundant proposition can still carry new checked producer
+        // evidence. In particular, a load variable's defining equation is
+        // intrinsically true, but its typed pointer binding must survive
+        // composition into an assignment or call's fact stream.
         if existing_index.is_none()
             && fact.is_certified()
             && matches!(
@@ -1600,10 +1594,13 @@ fn merge_facts_with_changes(
             )
         {
             facts.push(fact.clone());
-            if facts.len() != before + 1 {
-                share_append = false;
-                changed.extend(before..facts.len());
-            }
+        }
+        if let Some(index) = existing_index
+            && &facts[index] != fact
+        {
+            share_append &= index >= before;
+            *facts.get_mut(index) = fact.clone();
+            changed.push(index);
         }
         if facts.len() == before + 1 {
             share_append &= &facts[before] == fact;

@@ -88,10 +88,11 @@ The final-value comparison also distinguishes the actual 8 from the false
 claim 7. This is a concrete model assertion, not rejection of a submitted
 Rust proof or a universal functional-correctness theorem.
 
-Explicit exclusive-child identities and recovery here are model-only. Native
-Rust regressions establish updated-value transport and parent reuse through
-the current memory/owned-call representation, but the production loan ledger
-has no corresponding exclusive-reborrow API. The field model also
+The model's local exclusive-child operations remain independent. Native Rust
+regressions establish updated-value transport and parent reuse, and production
+synchronous borrowed-memory calls now track an exact child receipt, nested
+dependency and one-time return. That call-scoped protocol does not yet assign
+authority identities or end frontiers to local mutable references. The field model also
 conservatively suspends *all* parent access for an exclusive child and admits
 only one child at a time; that is stricter than Rust's field-sensitive rules.
 It must not become the acceptance rule for a Rust frontend unchanged.

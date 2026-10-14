@@ -313,6 +313,21 @@ Pthread imports and the modeled create/join calls are separate from native
 pthread runtime validation. Heap protocols and composite or escaping borrows
 remain outside this checkpoint.
 
+## Synchronous borrowed ownership
+
+Ordinary synchronous calls with borrowed owned-memory requirements also carry
+an exclusive call receipt in the production ledger. The existing resource
+planner reserves each footprint and leaves disjoint caller authority usable;
+the receipt records fresh call identity, participants and selected ownership
+supports. Nested borrowed-memory calls pin their containing exclusive call
+until checked return. Return consumes the exact receipt once, and evidence
+must show the closed receipt in the terminal successor before canonical
+caller-root restoration. A receipt grants no additional memory or allocation
+authority; reads/writes and updated contents use the existing resource and
+checked call-result rules. Move/consume and suspended worker protocols are
+separate. See the [Rust production assessment](https://github.com/clicklang/click/blob/master/design/rust-borrow-authority-assessment.md)
+for tests and the remaining local-reference lifetime boundary.
+
 ## Model-only extensions
 
 `src/kernel/tests/loan_model_tests.rs` is an executable model with a
@@ -322,7 +337,7 @@ reborrows, a returned field loan, a mutex handle with an invariant-owned
 payload and one guard, and a thread-local cell confined to its context.
 These are checks of the abstraction boundaries for later threading and Rust
 work, not verified mutex or atomic C operations: scheduling, atomics, Rust's
-alias rules, and exclusive production reborrows remain outside this checkpoint.
+alias rules, and exclusive local-reference reborrows remain outside this checkpoint.
 
 The [Rust resource correspondence](https://github.com/clicklang/click/blob/master/design/rust-resource-correspondence.md)
 pairs the `rust_correspondence_` model traces with Rust compiler/runtime

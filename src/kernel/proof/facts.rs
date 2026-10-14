@@ -684,6 +684,19 @@ impl ProofFacts {
         self.with_fact(fact)
     }
 
+    /// Retain producer evidence for a read whose defining proposition was
+    /// already published by the checked statement. Plain propositions and
+    /// evidence outside this branch cannot introduce a typed read bridge.
+    pub(crate) fn retain_checked_read_fact(&mut self, fact: &ExecutionPureFact) {
+        if fact.is_certified()
+            && fact.generated_load_binding().is_some()
+            && self.assumptions.contains_assumed_exact(fact.proposition())
+        {
+            self.assumptions = self.assumptions.clone().assume_execution_pure_fact(fact);
+            fact.retain_pointer_read_definition(&self.assumptions);
+        }
+    }
+
     pub(in crate::kernel) fn with_fact(&self, fact: Proposition) -> Self {
         if self.top_level_exact.contains(&fact) {
             return self.clone();
@@ -1224,27 +1237,6 @@ impl ProofFacts {
             introduced: Arc::new(introduced),
         }));
         successor
-    }
-
-    /// Preserve the selected statement's certified typed-read bindings beside
-    /// its plain facts. Only the explicit producer delta is inspected; no
-    /// ambient facts or earlier execution history are traversed.
-    pub(crate) fn with_checked_statement_read_facts(mut self, facts: &ExecutionFacts) -> Self {
-        for fact in facts {
-            crate::instrumentation::record_deterministic_work(1);
-            if fact.is_certified()
-                && matches!(
-                    fact.generated_load_binding(),
-                    Some(GeneratedLoadBinding::Exact {
-                        typed_pointer_value: Some(_),
-                        ..
-                    })
-                )
-            {
-                self.assumptions = self.assumptions.assume_execution_pure_fact(fact);
-            }
-        }
-        self
     }
 
     /// Availability accepted by explicit check, answered from persistent
