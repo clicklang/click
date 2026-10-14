@@ -104,7 +104,7 @@ retire copies of the original reference.
 
 The native `set_seven` fixture checks this certificate against actual exported
 MIR, checks its import identity and rejects an ending before the child store.
-Eleven bounded unit regressions cover alias copies, storage markers, replacement,
+Fourteen bounded unit regressions cover alias copies, storage markers, replacement,
 parent reassignment, capture, unsupported paths, call continuations and invalid
 points. A deterministic 16/64/256/1024 alias-chain regression bounds work to the
 selected input, up to indexing factors. The native fixture also binds its child
@@ -121,6 +121,27 @@ produce a mutable reborrow. A scalar read used to choose another address is
 refused as alias transport rather than binding that new address to the original
 footprint. A second 16/64/256/1024 regression checks access indexing and lookup.
 
+Locked Rust preparation now carries MIR point, expression-node and reference
+identities into typed loads and stores. Lowering indexes only the current
+statement's immutable expression nodes, in the same order as the source checker;
+it does not use structural expression keys or search other functions.
+`CheckedScalarReferenceEnd::bind_executed_accesses` joins its indexed accesses
+with completed kernel producer observations from the selected execution. It
+checks import identity, function, point, node, reference local and access kind,
+then retains the actual pointer and execution alongside the original borrow.
+
+Stores retain source provenance in their existing checked store certificate,
+after memory checks succeed. Completed reads retain a private receipt even when
+a cached scalar returns without minting a new load variable. Read receipts match
+their exact memory snapshot, pointer and type; rewritten facts discard that
+provenance. These private consequences are not path selectors. Source-bearing
+producer records survive composition as a selected delta, without deduplicating
+two operations that happen to have the same semantic memory proposition.
+Source metadata remains outside statement/fact comparison and grants no resource
+right. Regressions check actual read/write producers, rejection of a different
+lock identity, absence of a store observation on a failed write, and distinct
+cached reads in one statement.
+
 This read-only certificate proves absence of future selected-reference uses in
 that subset. It does not grant memory authority, end a production loan or
 change ordinary import/verification acceptance. An unsupported ending query
@@ -129,9 +150,10 @@ does not itself reject the Rust program.
 ## Remaining local-reference work
 
 A call-scoped child identity does not close local-reference lifetime handling.
-The frontend still must carry these checked access identities through C0
-lowering, bind them to actual memory authority, and connect checked borrow-end
-frontiers to kernel recovery. The ending certificate
+The verifier still must bind these executed accesses to live local-child
+authority, validate the exact execution frontier and invocation, and connect
+checked borrow-end frontiers to kernel recovery. An access observation is not
+evidence that the ending frontier has executed. The ending certificate
 alone is insufficient: recovery must also match the source identity, reference
 access, borrowed footprint and exact program frontier. Neither last-use guesses nor `StorageDead`
 alone may authorize early recovery, and a live pointer alias must not revive

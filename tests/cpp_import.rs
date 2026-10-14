@@ -6105,6 +6105,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
                     value_type: CType::Int32,
                     volatile: false,
                     pointee_constant: false,
+                    ..
                 } if pointer == "&value"
                     && matches!(
                         left.as_ref(),

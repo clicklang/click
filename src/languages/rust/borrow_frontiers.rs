@@ -28,9 +28,30 @@ pub struct CheckedScalarReferenceAccess<'a> {
     borrow: MirPoint,
     point: MirPoint,
     occurrence: usize,
+    source_node: usize,
     place: &'a E,
     reference: &'a str,
     kind: ScalarReferenceAccessKind,
+}
+
+/// A source binding joined with a completed kernel memory observation.
+/// This retains the execution that produced it and grants no memory authority.
+#[derive(Debug)]
+pub struct CheckedExecutedScalarReferenceAccess<'a, 'e> {
+    access: &'a CheckedScalarReferenceAccess<'a>,
+    event: crate::kernel::ExecutedReferenceAccess<'e>,
+    execution: &'e crate::kernel::SymbolicCExecution,
+}
+impl CheckedExecutedScalarReferenceAccess<'_, '_> {
+    pub fn source_access(&self) -> &CheckedScalarReferenceAccess<'_> {
+        self.access
+    }
+    pub fn pointer(&self) -> &crate::kernel::Pointer {
+        self.event.pointer()
+    }
+    pub fn execution(&self) -> &crate::kernel::SymbolicCExecution {
+        self.execution
+    }
 }
 
 impl CheckedScalarReferenceAccess<'_> {
@@ -79,6 +100,7 @@ pub struct CheckedScalarReferenceEnd<'a> {
     borrow: MirPoint,
     end: MirPoint,
     accesses: BTreeMap<MirPoint, Vec<CheckedScalarReferenceAccess<'a>>>,
+    access_index: BTreeMap<(MirPoint, usize), usize>,
 }
 
 impl CheckedScalarReferenceEnd<'_> {
@@ -99,6 +121,79 @@ impl CheckedScalarReferenceEnd<'_> {
         crate::instrumentation::record_deterministic_work(1);
         self.accesses.get(&point).map(Vec::as_slice).unwrap_or(&[])
     }
+    /// Bind only producer observations with the same locked source, exact
+    /// operation and reference origin. A submitted name or address is not
+    /// sufficient. Each lookup uses the selected certificate's index.
+    pub fn bind_executed_accesses<'a, 'e>(
+        &'a self,
+        execution: &'e crate::kernel::SymbolicCExecution,
+    ) -> Vec<CheckedExecutedScalarReferenceAccess<'a, 'e>> {
+        execution
+            .executed_reference_accesses()
+            .filter_map(|event| {
+                crate::instrumentation::record_deterministic_work(1);
+                let source = event.source();
+                if source.import_identity.as_ref() != self.import_identity
+                    || source.function.as_ref() != self.function.name
+                {
+                    return None;
+                }
+                let point = MirPoint {
+                    block: source.block,
+                    statement: source.statement,
+                };
+                let index = *self.access_index.get(&(point, source.node))?;
+                let access = &self.accesses.get(&point)?[index];
+                let kind = match source.kind {
+                    crate::kernel::ReferenceAccessKind::Read => ScalarReferenceAccessKind::Read,
+                    crate::kernel::ReferenceAccessKind::Write => ScalarReferenceAccessKind::Write,
+                };
+                (access.kind == kind && source.reference_local.as_ref() == access.reference)
+                    .then_some(CheckedExecutedScalarReferenceAccess {
+                        access,
+                        event,
+                        execution,
+                    })
+            })
+            .collect()
+    }
+}
+
+// Both the checker and lowering number immutable expression nodes in this
+// order. Keys are node addresses, never structural expressions or proof state.
+pub(super) fn mir_expression_nodes(statement: &S) -> BTreeMap<usize, usize> {
+    fn visit(expr: &E, nodes: &mut BTreeMap<usize, usize>) {
+        crate::instrumentation::record_deterministic_work(1);
+        nodes.insert(expr as *const E as usize, nodes.len());
+        let children: Vec<&E> = match expr {
+            E::Borrow { place, .. } => vec![place],
+            E::Deref { reference, .. } => vec![reference],
+            E::Field { base, .. } => vec![base],
+            E::Index { slice, index } => vec![slice, index],
+            E::IntegerFrom { value, .. }
+            | E::Not { value }
+            | E::BitwiseNot { value, .. }
+            | E::Cast { value, .. }
+            | E::Repeat { value, .. } => vec![value],
+            E::SliceLength { slice } | E::ArrayToSlice { array: slice, .. } => vec![slice],
+            E::Binary { left, right, .. } => vec![left, right],
+            E::Call { arguments, .. }
+            | E::Array {
+                elements: arguments,
+                ..
+            } => arguments.iter().collect(),
+            _ => vec![],
+        };
+        for child in children {
+            visit(child, nodes);
+        }
+    }
+    let mut nodes = BTreeMap::new();
+    if let S::Assign { target, value } = statement {
+        visit(value, &mut nodes);
+        visit(target, &mut nodes);
+    }
+    nodes
 }
 
 fn direct_alias_source(expr: &E) -> Option<&str> {
@@ -122,6 +217,7 @@ struct AccessCollector<'a, 'b> {
     point: MirPoint,
     types: &'b BTreeMap<&'a str, &'a Type>,
     aliases: &'b BTreeSet<&'a str>,
+    nodes: &'b BTreeMap<usize, usize>,
     accesses: Vec<CheckedScalarReferenceAccess<'a>>,
 }
 
@@ -166,6 +262,7 @@ impl<'a> AccessCollector<'a, '_> {
                             borrow: self.borrow,
                             point: self.point,
                             occurrence: self.accesses.len(),
+                            source_node: self.nodes[&(expr as *const E as usize)],
                             place: expr,
                             reference: name,
                             kind,
@@ -436,6 +533,7 @@ pub(super) fn certify_scalar_reference_end<'a>(
     }
     let mut aliases = BTreeSet::from([name.as_str()]);
     let mut accesses = BTreeMap::new();
+    let mut access_index = BTreeMap::new();
     for (offset, statement) in block.statements[borrow.statement + 1..end.statement]
         .iter()
         .enumerate()
@@ -444,6 +542,7 @@ pub(super) fn certify_scalar_reference_end<'a>(
             block: borrow.block,
             statement: borrow.statement + 1 + offset,
         };
+        let nodes = mir_expression_nodes(statement);
         let mut collector = AccessCollector {
             function,
             import_identity,
@@ -451,6 +550,7 @@ pub(super) fn certify_scalar_reference_end<'a>(
             point,
             types: &types,
             aliases: &aliases,
+            nodes: &nodes,
             accesses: vec![],
         };
         if let S::Assign { target, value } = statement {
@@ -458,6 +558,9 @@ pub(super) fn certify_scalar_reference_end<'a>(
             collector.expression(target, Some(ScalarReferenceAccessKind::Write))?;
         }
         if !collector.accesses.is_empty() {
+            for (index, access) in collector.accesses.iter().enumerate() {
+                access_index.insert((point, access.source_node), index);
+            }
             accesses.insert(point, collector.accesses);
         }
         transfer(statement, &types, &mut aliases, false)?;
@@ -518,6 +621,7 @@ pub(super) fn certify_scalar_reference_end<'a>(
         borrow,
         end,
         accesses,
+        access_index,
     })
 }
 
@@ -724,7 +828,7 @@ mod tests {
             });
             samples.push((size, work));
             assert!(
-                work <= size * 7 + 48,
+                work <= size * 9 + 64,
                 "alias chain revisited prefixes: {samples:?}"
             );
         }
@@ -908,7 +1012,7 @@ mod tests {
             });
             samples.push(work);
             assert!(
-                work <= size * 9 + 48,
+                work <= size * 14 + 64,
                 "access indexing revisited prefixes: {samples:?}"
             );
         }
@@ -955,5 +1059,148 @@ mod tests {
             },
         );
         assert_eq!(refusal(&f, 3), FrontierRefusal::UnsupportedFlow);
+    }
+
+    fn export(f: Function) -> super::super::schema::RustExport {
+        super::super::schema::RustExport {
+            schema: super::super::schema::SCHEMA,
+            compiler_commit: "test".into(),
+            target: super::super::schema::TARGET.into(),
+            edition: "2021".into(),
+            overflow_checks: true,
+            panic: "abort".into(),
+            mir_opt_level: 0,
+            logical_source: "borrow.rs".into(),
+            records: vec![],
+            functions: vec![f],
+        }
+    }
+
+    fn execute_export(
+        export: &super::super::schema::RustExport,
+        identity: &str,
+        owned: bool,
+    ) -> crate::kernel::SymbolicCExecution {
+        use crate::kernel::*;
+        let (functions, _) =
+            super::super::lowering::lower_with_identity(export, Some(identity)).unwrap();
+        let pointer = Pointer {
+            block: "executed-child".into(),
+            offset: crate::kernel::PointerOffsetTerm::Constant(0),
+        };
+        let memory = CMemory::new()
+            .with_block(pointer.block.clone(), if owned { 4 } else { 0 })
+            .store(pointer.clone(), int32(4));
+        let state = CState::new()
+            .with_memory(memory)
+            .with_local(
+                "parent",
+                CValue::typed_pointer(pointer.clone(), CType::Int32Pointer),
+            )
+            .with_local(
+                "other",
+                CValue::typed_pointer(pointer.clone(), CType::Int32Pointer),
+            );
+        let state = if owned {
+            state.with_resource_context(ResourceContext::new().unchecked_with_fact(
+                CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                    pointer,
+                    0.into(),
+                    1.into(),
+                    4,
+                )),
+            ))
+        } else {
+            state
+        };
+        prove_symbolic_c_execution_paths(
+            state,
+            functions[0].to_kernel_function().body().clone(),
+            PureFactContext::new(),
+        )
+    }
+
+    #[test]
+    fn scalar_reference_execution_binds_real_read_and_write_producers() {
+        let mut f = function();
+        block_mut(&mut f).statements[1] = assign(deref("child"), deref("child"));
+        let export = export(f);
+        let certificate =
+            certify_scalar_reference_end(&export.functions[0], "locked", point(0), point(2))
+                .unwrap();
+        let execution = execute_export(&export, "locked", true);
+        assert!(execution.limit().is_none());
+        assert_eq!(execution.paths().len(), 1);
+        let bindings = certificate.bind_executed_accesses(&execution);
+        assert_eq!(bindings.len(), 2, "{execution:?}");
+        let mut kinds: Vec<_> = bindings
+            .iter()
+            .map(|binding| binding.source_access().kind())
+            .collect();
+        kinds.sort_by_key(|kind| matches!(kind, ScalarReferenceAccessKind::Write));
+        assert_eq!(
+            kinds,
+            vec![
+                ScalarReferenceAccessKind::Read,
+                ScalarReferenceAccessKind::Write
+            ]
+        );
+        for binding in bindings {
+            assert_eq!(
+                binding.pointer(),
+                &crate::kernel::Pointer {
+                    block: "executed-child".into(),
+                    offset: crate::kernel::PointerOffsetTerm::Constant(0)
+                }
+            );
+            assert!(std::ptr::eq(binding.execution(), &execution));
+            assert_eq!(binding.source_access().borrow_point(), point(0));
+        }
+        // Same source names and pointer do not bind a different locked import.
+        let other = execute_export(&export, "other-lock", true);
+        assert!(certificate.bind_executed_accesses(&other).is_empty());
+    }
+
+    #[test]
+    fn scalar_reference_execution_does_not_create_a_store_observation_on_failed_write() {
+        let export = export(function());
+        let certificate =
+            certify_scalar_reference_end(&export.functions[0], "locked", point(0), point(2))
+                .unwrap();
+        let execution = execute_export(&export, "locked", false);
+        assert!(execution.limit().is_none());
+        assert_eq!(execution.paths().len(), 1);
+        assert!(
+            certificate.bind_executed_accesses(&execution).is_empty(),
+            "{execution:?}"
+        );
+    }
+
+    #[test]
+    fn scalar_reference_execution_keeps_two_cached_reads_in_one_statement_distinct() {
+        let mut f = function();
+        block_mut(&mut f).statements[1] = assign(
+            deref("child"),
+            E::Binary {
+                operator: "add".into(),
+                left_type: Type::I32,
+                right_type: Type::I32,
+                left: Box::new(deref("child")),
+                right: Box::new(deref("child")),
+            },
+        );
+        let export = export(f);
+        let certificate =
+            certify_scalar_reference_end(&export.functions[0], "locked", point(0), point(2))
+                .unwrap();
+        let execution = execute_export(&export, "locked", true);
+        let bindings = certificate.bind_executed_accesses(&execution);
+        assert_eq!(bindings.len(), 3, "{execution:?}");
+        let mut occurrences: Vec<_> = bindings
+            .iter()
+            .map(|binding| binding.source_access().occurrence())
+            .collect();
+        occurrences.sort();
+        assert_eq!(occurrences, vec![0, 1, 2]);
     }
 }

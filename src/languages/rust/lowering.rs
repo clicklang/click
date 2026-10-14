@@ -113,6 +113,12 @@ fn integer_from(value: CExpression, source: &Type, target: &Type) -> Result<CExp
     Ok(c_cast(value, scalar_type(target)?.to_kernel_type()))
 }
 pub(crate) fn lower(export: &RustExport) -> Result<LoweredRust, String> {
+    lower_with_identity(export, None)
+}
+pub(crate) fn lower_with_identity(
+    export: &RustExport,
+    identity: Option<&str>,
+) -> Result<LoweredRust, String> {
     let mut layouts = BTreeMap::new();
     let mut fields = BTreeMap::new();
     for record in &export.records {
@@ -168,6 +174,7 @@ pub(crate) fn lower(export: &RustExport) -> Result<LoweredRust, String> {
         }
         functions.push(lower_function(
             export,
+            identity,
             f,
             &fields,
             &layouts,
@@ -179,6 +186,7 @@ pub(crate) fn lower(export: &RustExport) -> Result<LoweredRust, String> {
 }
 fn lower_function(
     export: &RustExport,
+    identity: Option<&str>,
     f: &Function,
     fields: &BTreeMap<(&str, &str), (u32, CType)>,
     layouts: &BTreeMap<String, C0StructLayout>,
@@ -352,6 +360,9 @@ fn lower_function(
         function: &f.name,
         fields,
         next_load: 0,
+        import_identity: identity.map(std::sync::Arc::from),
+        mir_point: None,
+        mir_nodes: BTreeMap::new(),
         next_temporary: 0,
         locals,
         return_type,
@@ -410,6 +421,9 @@ struct Context<'a> {
     function: &'a str,
     fields: &'a BTreeMap<(&'a str, &'a str), (u32, CType)>,
     next_load: u32,
+    import_identity: Option<std::sync::Arc<str>>,
+    mir_point: Option<super::borrow_frontiers::MirPoint>,
+    mir_nodes: BTreeMap<usize, usize>,
     next_temporary: u32,
     locals: BTreeSet<String>,
     return_type: C0Type,
@@ -418,6 +432,45 @@ struct Context<'a> {
     functions: &'a BTreeMap<&'a str, &'a Function>,
 }
 impl Context<'_> {
+    fn reference_source(
+        &self,
+        expr: &E,
+        kind: ReferenceAccessKind,
+    ) -> Option<ReferenceAccessSourceId> {
+        let point = self.mir_point?;
+        let import_identity = self.import_identity.clone()?;
+        let E::Deref { reference, .. } = expr else {
+            return None;
+        };
+        let E::Local { name } = reference.as_ref() else {
+            return None;
+        };
+        let node = *self.mir_nodes.get(&(expr as *const E as usize))?;
+        Some(ReferenceAccessSourceId {
+            import_identity,
+            function: self.function.into(),
+            block: point.block,
+            statement: point.statement,
+            node,
+            reference_local: name.as_str().into(),
+            kind,
+        })
+    }
+    fn source_store(
+        &self,
+        target: &E,
+        pointer: CExpression,
+        value: CExpression,
+        value_type: CType,
+    ) -> CStatement {
+        let mut statement = c_typed_store(pointer, value, value_type);
+        if let CStatement::TypedStore { source, .. } = &mut statement
+            && let Some(id) = self.reference_source(target, ReferenceAccessKind::Write)
+        {
+            *source = CStatementStoreSource::new(id);
+        }
+        statement
+    }
     fn body(&mut self, body: &[S]) -> Result<CStatement, String> {
         let mut result = c_skip();
         for s in body {
@@ -829,6 +882,7 @@ impl Context<'_> {
                         function: self.function.into(),
                     },
                     occurrence,
+                    reference_access: None,
                 }),
             )
         };
@@ -1098,6 +1152,7 @@ impl Context<'_> {
                                 function: self.function.into(),
                             },
                             occurrence,
+                            reference_access: None,
                         }),
                     ),
                 ))
@@ -1555,6 +1610,9 @@ impl Context<'_> {
                             function: self.function.into(),
                         },
                         occurrence,
+                        reference_access: self
+                            .reference_source(e, ReferenceAccessKind::Read)
+                            .map(std::sync::Arc::new),
                     }),
                 ))
             }

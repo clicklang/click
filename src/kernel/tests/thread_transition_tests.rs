@@ -519,6 +519,7 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
         value_type,
         volatile: false,
         pointee_constant: false,
+        source: Default::default(),
     };
     for hostile in [
         external_store(
@@ -533,6 +534,7 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
             value_type: CType::UInt64,
             volatile: false,
             pointee_constant: false,
+            source: Default::default(),
         },
     ] {
         let paths = execute_c_statement_paths(

@@ -943,12 +943,14 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(statement: &CStatement, s:
             value_type,
             volatile,
             pointee_constant,
+            source,
         } => CStatement::TypedStore {
             pointer: s.c_expression(pointer),
             value: s.c_expression(value),
             value_type: *value_type,
             volatile: *volatile,
             pointee_constant: *pointee_constant,
+            source: source.clone(),
         },
         CStatement::CopyAggregate {
             target,

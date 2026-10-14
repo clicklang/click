@@ -245,8 +245,12 @@ behind new language coverage:
   MIR point, distinguishes replacement definitions, and refuses shared writes
   or value-dependent addresses as pointer identity. Native evidence binds the
   original child store; access-index construction and lookup also have bounded
-  deterministic scaling checks. These identities still need to travel through
-  C0 lowering and bind actual memory permission.
+  deterministic scaling checks. Locked preparation now carries operation
+  identities through typed loads/stores into completed kernel observations,
+  including cached scalar reads. The indexed source certificate binds the
+  observed pointer to its borrow origin and rejects another import identity;
+  failed writes create no store observation. These observations still need to
+  bind live local-child permission and the actual ending frontier/invocation.
   Local reference access binding and kernel recovery at checked frontiers
   remain open, so this does not close
   the entire borrow-authority requirement.

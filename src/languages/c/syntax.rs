@@ -5416,6 +5416,7 @@ impl C0Expression {
                                 function: std::sync::Arc::from(source.id().function_name()),
                             },
                             occurrence: source.id().occurrence(),
+                            reference_access: None,
                         }
                     })
                 }),
