@@ -92,12 +92,18 @@ retired.
 ### Native type names in heads; Click type names in specifications
 
 Positions that restate a declaration (the head of a verified, `extern`, or
-`contract` declaration) use the target language's types, exactly as the source
-spells them: `int`, `size_t`, `unsigned long`, typedef names such as
-`json_bool`, `const char*`, `int&`, `&mut [u8]`. Click checks the head against
-the real declaration, including the distinctions C keeps: `long` is not
+`contract` declaration) use the target language's types, as the source writes
+them: `int`, `size_t`, `unsigned long`, typedef names such as `json_bool`,
+`const char*`, `int&`, `&mut [u8]`. Click checks that the head has exactly
+the declaration's types, including the distinctions C keeps: `long` is not
 `long long`, and `int64_t` is `long` in user space but `long long` on the
 kernel target. A mismatch is reported against the source declaration.
+
+Decided 2026-10-14: the check is exact type identity, not spelling. Writing
+the head the way the source spells it is a style convention
+(`docs/style.md`); enforcing spelling would need the C frontend to keep each
+declaration's text through typedefs and macros, and catches no type error
+that exact identity misses.
 
 Specification positions keep Click's names, the same in every target
 language: `forall (i: int32)`, `function f(x: int32)`, `theorem` parameters,
@@ -106,9 +112,9 @@ shared, so a library theorem or model means the same in a C, C++ or Rust
 sidecar.
 
 Sidecars already accept C's standard spellings (`docs/reference/language/c.md`,
-"Supported types"), so for C this is a convention plus the exact head check,
-not a new type mapping. Today's example sidecars write `int32` in heads about
-700 times and `int` 16 times.
+"Supported types"), and Click's C dialect accepts `int32`, `uint64` and the
+other Click names as C type names, which most corpus C sources use. A head
+that writes `int32` for such a source already writes the source's spelling.
 
 ## Current state
 
@@ -117,8 +123,9 @@ not a new type mapping. Today's example sidecars write `int32` in heads about
   handles are its named `owns` and `consumes` clauses, selected by
   `step(Read)` or `step(Read, { cell: first })`. The parameter-list form and
   the `step(Name())` and `step(Name(instance))` applications are refused with
-  their replacements. Heads still use Click type names, and are not yet
-  checked against the source declaration's exact types.
+  their replacements. A head must have exactly the C types of its
+  declaration, `long` apart from `long long`. Typedef names other than the
+  standard ones (`json_bool`, `pid_t`) are not yet accepted in heads.
 - **C++.** Verified functions only, written in a C-shaped, mangled form:
   `void Restore_constructor(struct Restore* this, int32* slot)`,
   `void FeeFrac_operator_add_assign(struct FeeFrac* this, const struct FeeFrac& other)`.
@@ -129,10 +136,9 @@ not a new type mapping. Today's example sidecars write `int32` in heads about
 ## Work, in delivery order
 
 1. **Unify C.** Done: handle clauses in `contract` bodies are its proof
-   parameters, `step(Name, { handle: value })` binds them, and the retired
-   forms are refused and migrated. Remaining: retire Click type names in
-   heads, add the exact head-against-source type check, and migrate the
-   corpus and docs.
+   parameters, `step(Name, { handle: value })` binds them, the retired forms
+   are refused and migrated, and a head must have exactly its declaration's
+   C types. Remaining: accept a source's own typedef names in heads.
 2. **Native C++ heads.** Qualified member functions with implicit `this`,
    constructors and destructors by their C++ names, operators by `operator`
    names, `const` methods, and template instances spelled as C++ spells them.

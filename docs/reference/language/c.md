@@ -270,7 +270,11 @@ through two calls to a pointer-taking helper without resetting the state.
   them compare after only a warning in GCC and Clang and so compare in Click
   (`mdtests/long_and_long_long_pointers_compare_after_a_warning.md`), and
   declarations, function pointer types, and library prototypes that differ only
-  in rank conflict. A Click `int64` or `uint64` in a sidecar specifies either.
+  in rank conflict. A function head restates its C declaration and keeps the
+  rank, so a `long long` function's head writes `long long`
+  (`mdtests/a_function_head_keeps_the_c_long_long_rank.md`); in a head,
+  `int64` and `uint64` are `long` and `unsigned long`. A Click `int64` or
+  `uint64` in a specification position specifies either.
   See `mdtests/long_and_long_long_values_convert_implicitly.md` and
   `mdtests/a_long_pointer_does_not_initialize_a_long_long_pointer.md`.
 - C `_Bool` and the modeled `stdbool.h` spelling `bool`; both use one-byte
