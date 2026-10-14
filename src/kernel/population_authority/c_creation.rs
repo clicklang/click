@@ -243,6 +243,40 @@ pub(in crate::kernel) enum CreationRefusal {
     OpaqueImportConflict,
 }
 
+impl std::fmt::Display for CreationRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::NotCreationEnvironment => {
+                "this transition is not in a checked creation scope for the population"
+            }
+            Self::MembersAlreadyExisted => {
+                "members of the population already existed before it was created"
+            }
+            Self::AlreadyEstablished => {
+                "the population was already established at this anchor and cannot be established again"
+            }
+            Self::MissingAuthority => "the population's authority is not held here",
+            Self::MissingMembers => "fewer members of the population are held than the transition moves",
+            Self::InvalidMember => "the resource is not a member of a population",
+            Self::InvalidQuantity => "a member quantity must be between 1 and INT_MAX",
+            Self::PopulationCountOverflow => "the population count would exceed int32",
+            Self::OutstandingMembers => {
+                "members of the population are still outstanding, so its authority cannot be retired"
+            }
+            Self::OutstandingAuthority => {
+                "an authority registered at this anchor is still outstanding"
+            }
+            Self::OutstandingOwnership => {
+                "population control, members or an anchor would be discarded at scope exit"
+            }
+            Self::UnknownTotal => "the population's total is not known here",
+            Self::OpaqueImportConflict => {
+                "an imported opaque population conflicts with one already held"
+            }
+        })
+    }
+}
+
 impl From<Refusal> for CreationRefusal {
     fn from(value: Refusal) -> Self {
         match value {
@@ -799,7 +833,7 @@ impl CreationEvents {
                     Some((selected.clone(), Arc::new(definition.clone()))),
                     OpaqueMemberInputs::Quantity(wildcard_member),
                 )
-                .map_err(|refusal| format!("control import refused: {refusal:?}"))?;
+                .map_err(|refusal| format!("control import refused: {refusal}"))?;
         }
         Ok(events)
     }

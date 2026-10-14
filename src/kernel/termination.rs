@@ -5830,7 +5830,7 @@ mod local_descent_tests {
         let rules = [rule("caller", &["callee"], 0), rule("callee", &[], 0)];
         let forged = heights(&[("caller", 0), ("callee", 1)]);
         let error = check(&rules, &[], &forged, &[]).expect_err("an inverted plan must not check");
-        assert!(error.message.contains("above its caller"), "{error:?}");
+        assert!(error.message.contains("above its caller"), "{error}");
     }
 
     /// Flattening two functions onto one height hides nothing: the call
@@ -5854,7 +5854,7 @@ mod local_descent_tests {
         let rules = [rule("only", &[], 0)];
         let error =
             check(&rules, &[], &BTreeMap::new(), &[]).expect_err("every node needs a height");
-        assert!(error.message.contains("assigns no height"), "{error:?}");
+        assert!(error.message.contains("assigns no height"), "{error}");
     }
 
     #[test]
@@ -6528,7 +6528,7 @@ mod local_descent_tests {
         let heights = c_termination_height_plan(&rules, &[]);
         let error = check(&rules, std::slice::from_ref(&plan), &heights, &[])
             .expect_err("a call that passes the measure unchanged does not descend");
-        assert!(error.message.contains("must pass"), "{error:?}");
+        assert!(error.message.contains("must pass"), "{error}");
     }
 
     /// `realloc` is modeled by execution itself, so it is no node of the call
@@ -6570,7 +6570,7 @@ mod local_descent_tests {
             .expect_err("loop 1 is planned but was never certified");
         assert!(
             error.message.contains("no verified loop rule"),
-            "loop 1 exists and must be reported as uncertified, got {error:?}"
+            "loop 1 exists and must be reported as uncertified, got {error}"
         );
     }
 
@@ -6705,7 +6705,7 @@ mod local_descent_tests {
             error
                 .message
                 .contains("recurses through a tactic application"),
-            "{error:?}"
+            "{error}"
         );
     }
 
@@ -6743,7 +6743,7 @@ mod local_descent_tests {
             .expect_err("an undeclared measure must not check");
         assert!(
             error.message.contains("carries no declared measure"),
-            "{error:?}"
+            "{error}"
         );
     }
 
@@ -6766,7 +6766,7 @@ mod local_descent_tests {
         .expect_err("a two-function cycle must not check");
         assert!(
             error.message.contains("recursive component with"),
-            "{error:?}"
+            "{error}"
         );
     }
 
@@ -6797,7 +6797,7 @@ mod local_descent_tests {
         ];
         let error = check(&rules, &plans, &heights, &[])
             .expect_err("a member that does not name its peer leaves an edge unranked");
-        assert!(error.message.contains("recursion peer"), "{error:?}");
+        assert!(error.message.contains("recursion peer"), "{error}");
     }
 
     /// A helper with an inline body and a verified rule is called through
@@ -6946,7 +6946,7 @@ mod local_descent_tests {
             error
                 .message
                 .contains("certified without `drain`'s recursion anchor"),
-            "{error:?}"
+            "{error}"
         );
     }
 
@@ -6966,7 +6966,7 @@ mod local_descent_tests {
             error
                 .message
                 .contains("certified without `drain`'s recursion anchor"),
-            "{error:?}"
+            "{error}"
         );
     }
 
@@ -6981,7 +6981,7 @@ mod local_descent_tests {
             error
                 .message
                 .contains("certified without `drain`'s recursion anchor"),
-            "{error:?}"
+            "{error}"
         );
     }
 
@@ -7002,7 +7002,7 @@ mod local_descent_tests {
             error
                 .message
                 .contains("termination parameter index is invalid"),
-            "{error:?}"
+            "{error}"
         );
     }
 }

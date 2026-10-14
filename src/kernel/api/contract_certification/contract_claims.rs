@@ -894,10 +894,9 @@ fn prepare_function_claim_path(
         ) {
             Ok(Ok(resources)) => resources,
             Ok(Err(error)) => {
-                return Err(format!(
-                    "the required resource context cannot be evaluated: {error:?}"
-                )
-                .into());
+                return Err(
+                    format!("the required resource context cannot be evaluated: {error}").into(),
+                );
             }
             Err(limit) => {
                 return Err(format!(
@@ -962,7 +961,7 @@ fn prepare_function_claim_path(
                     )
                     .map_err(|error| {
                         format!(
-                            "the checked returned resources cannot be composed into the deferred body outcome: {error:?}"
+                            "the checked returned resources cannot be composed into the deferred body outcome: {error}"
                         )
                     })?;
                 let mut state = state.clone();
@@ -1001,7 +1000,7 @@ fn prepare_function_claim_path(
             Ok(Ok(outcome)) => Some(outcome),
             Ok(Err(error)) => {
                 return Err(format!(
-                    "the deferred conditional contract exit cannot be resolved: {error:?}"
+                    "the deferred conditional contract exit cannot be resolved: {error}"
                 )
                 .into());
             }
@@ -1151,7 +1150,7 @@ fn prepare_function_claim_path(
                 &mut budget,
             ) {
                 Ok(Ok(())) => {}
-                Ok(Err(error)) => return Err(format!("{error:?}").into()),
+                Ok(Err(error)) => return Err(format!("{error}").into()),
                 Err(limit) => return Err(limit.describe().to_string().into()),
             }
         }
@@ -1163,7 +1162,7 @@ fn prepare_function_claim_path(
             &mut budget,
         ) {
             Ok(Ok(())) => {}
-            Ok(Err(error)) => return Err(format!("{error:?}").into()),
+            Ok(Err(error)) => return Err(format!("{error}").into()),
             Err(limit) => return Err(limit.describe().to_string().into()),
         }
     }

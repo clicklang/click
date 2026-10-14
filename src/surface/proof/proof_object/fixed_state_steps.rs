@@ -1862,7 +1862,7 @@ impl<'a> Proof<'a> {
         let proposition =
             crate::kernel::substitute_integer_variable_in_pure_proposition(&body, var, &value)
                 .map_err(|error| {
-                    self.step_error(format!("could not apply Integer witness: {error:?}"))
+                    self.step_error(format!("could not apply Integer witness: {error}"))
                 })?;
         let surface_goal = match self.surface_goal() {
             Some(ClickProposition::Exists {

@@ -2572,7 +2572,7 @@ impl<'a> Proof<'a> {
         ))
         .map_err(|error| {
             self.step_error(format!(
-                "`loop` produced an invalid expanded clause: {error:?}"
+                "`loop` produced an invalid expanded clause: {error}"
             ))
         })?
         .steps()[0]

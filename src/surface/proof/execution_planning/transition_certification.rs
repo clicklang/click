@@ -1478,7 +1478,7 @@ mod condition_transition_tests {
             error
                 .message()
                 .contains("missing condition prerequisite: `viewable(p[0..1])`"),
-            "{error:?}"
+            "{error}"
         );
     }
 

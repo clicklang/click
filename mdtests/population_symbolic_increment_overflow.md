@@ -24,5 +24,5 @@ void increment(int32* o, int32 n) {
 ```
 
 ```expect
-fail: PopulationCountOverflow
+fail: the population count would exceed int32
 ```

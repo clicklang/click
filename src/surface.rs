@@ -4382,10 +4382,8 @@ impl ProofCertificate {
     pub(crate) fn from_steps(steps: Vec<ProofStep>) -> Result<Self, ClickError> {
         validate_certificate_steps(&steps, &mut Vec::new()).map_err(|error| {
             ClickError::new(format!(
-                "proof provenance produced a {:?} certificate step at {:?}, \
-                 which no explicit proof can spell",
-                error.tactic_class(),
-                error.path(),
+                "proof provenance produced {error} as a certificate step, which no explicit \
+                 proof can spell"
             ))
         })?;
         let certificate = Self {
@@ -5001,6 +4999,12 @@ impl ProofStep {
                 scope: BTreeMap::new(),
             }),
         }
+    }
+}
+
+impl std::fmt::Display for CertificateError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message())
     }
 }
 
@@ -8461,6 +8465,12 @@ fn concise_error_segments(reason: &str) -> Vec<&str> {
     }
     segments.push(reason[start..].trim());
     segments
+}
+
+impl std::fmt::Display for ClickError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.message())
+    }
 }
 
 impl ClickError {

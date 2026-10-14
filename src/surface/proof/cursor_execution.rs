@@ -291,7 +291,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
             .try_compose_with_facts(exported_resources.facts().iter().cloned(), &exported_assumptions)
             .map_err(|error| {
                 ClickError::new(format!(
-                    "`{claim_label}` tactic {tactic_index}: invalid `branch ensuring` resource interface: {error:?}"
+                    "`{claim_label}` tactic {tactic_index}: invalid `branch ensuring` resource interface: {error}"
                 ))
             })?;
     abstract_state = abstract_state.with_resource_context(exported_resources);
