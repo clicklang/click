@@ -175,6 +175,11 @@ Each step is its own pull request.
      - A side with no node of its own is compared by interval.
      - A contradictory graph, meaning a dead path, answers that an overflow
        is absent.
+     - A question whose load is spelled as the load itself is also asked
+       in canonical form, where the load is its load variable, as the
+       facts name it. This settles every path-fact consistency check the
+       general decision still made: 96 over the mdtests and 24 over the
+       examples.
      - Propagation and path walks are bounded (`EDGE_LIMIT`), and the
        general decision reads the context's graph first when it is built.
        Deciding more there changed four refusals' messages. Three are now

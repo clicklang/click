@@ -5150,14 +5150,25 @@ impl PureFactContext {
                 .map(|(condition, value)| (condition, *value))
                 .collect()
         });
+        // A load in the question may be spelled as the load itself where
+        // the facts name it by its load variable: its canonical form, equal
+        // by definition, is asked too.
+        let canonical = || {
+            let canonical = crate::kernel::eval::canonical_condition(condition);
+            (&canonical != condition).then_some(canonical)
+        };
         if extra.is_empty() {
-            return graph.decide(condition);
+            return graph
+                .decide(condition)
+                .or_else(|| canonical().and_then(|canonical| graph.decide(&canonical)));
         }
         let mut graph = graph.clone();
         for (fact, value) in extra {
             graph.assume_condition(fact, *value);
         }
-        graph.decide(condition)
+        graph
+            .decide(condition)
+            .or_else(|| canonical().and_then(|canonical| graph.decide(&canonical)))
     }
 
     pub(crate) fn proves_exact(&self, proposition: &Proposition) -> bool {

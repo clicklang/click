@@ -760,3 +760,32 @@ fn a_bound_on_a_shared_value_costs_the_same_beside_any_number_of_dependents() {
         "work on a shared value should not grow with its dependents: {samples:?}"
     );
 }
+
+/// A fact names a load by its load variable, the load's canonical form; a
+/// question may spell the load itself. The context's graph is asked the
+/// canonical question too, so `0 <= v` answers `0 <= load` for the load `v`
+/// names.
+#[test]
+fn a_load_spelled_as_itself_reads_facts_about_its_load_variable() {
+    let pointer = crate::kernel::Pointer {
+        block: "difference-graph-cell".into(),
+        offset: crate::kernel::PointerOffsetTerm::Constant(0),
+    };
+    let memory = crate::kernel::CMemory::new().with_block("difference-graph-cell", 4);
+    let load = Bitvector32Term::MemoryLoad(
+        crate::kernel::intern_c_memory(memory),
+        Box::new(pointer),
+        crate::kernel::LoadKind::Bits32,
+    );
+    let named = crate::kernel::eval::canonical_term(&load);
+    assert_ne!(named, load, "the load takes a load variable");
+    let context = PureFactContext::new().assume_condition(le(&constant(0), &named), true);
+    assert_eq!(
+        context.difference_decision(&le(&constant(0), &load), &[]),
+        Some(true)
+    );
+    assert_eq!(
+        context.difference_decision(&lt(&load, &constant(0)), &[]),
+        Some(false)
+    );
+}
