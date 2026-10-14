@@ -1,7 +1,7 @@
 # Unchanged zlib Adler-32 adapter trial
 
 The unchanged zlib 1.3.1 computation imports and proves its empty-input result
-and its checksums for every length 1 through 5551 against the shared mathematical
+and its checksums for every length 1 through 22208 against the shared mathematical
 specification for the canonical seed 1 and a nonnull buffer. The nonempty proofs
 also preserve every input byte. **The arbitrary-length checksum postcondition
 and C/Rust result equality remain unproved.** This is the C
@@ -94,8 +94,7 @@ The bounds A <= 3826 and B <= 57390 establish that the native additions do not
 wrap. The final reduction and shift/OR packing satisfy the shared specification.
 `byte.click` supplies the same checked promotion theorem to both C proofs.
 
-**The original 5552-byte batches remain unproved.** The offline short-loop
-regression checks all helper bodies together,
+The offline short-loop regression checks all helper bodies together,
 rechecks an expansion, and rejects missing byte authority, false component
 invariants, and false checksum results. These larger checks run in nightly.
 
@@ -161,6 +160,51 @@ read authority, and a view one byte too short. It runs in nightly to preserve
 the gate budget. `repeated.click.import.json` and its lock reuse the unchanged
 prepared source and headers; compiler extraction is unnecessary. The
 arbitrary-length C claim and C/Rust result equality remain unproved.
+
+The locked [NMAX sidecar](batch.click) now proves the shared checksum,
+termination, and preservation of every input byte for exactly 5552 bytes,
+canonical seed 1, and nonnull input. It follows the original outer batch loop
+and all 347 iterations of its do-while DO16 loop through a ranked invariant,
+with exact component sums and weighted sums at the actual cursor. The proof
+transports the loop-entry view after each sixteen-byte advance, closes both
+counter outcomes, and retains the component equations through the original
+modulo reductions and packing. [Batch helpers](batch-helpers.click) check the
+native capacity, prefix, lane, and reduction bridges. Historical native cast
+bounds use the selected snapshot's counter.
+
+The offline NMAX regression checks all helper bodies, complete certificate
+expansion, false results and component invariants, and missing or shortened
+read authority. It runs in nightly; the sidecar's import manifest and lock reuse
+the unchanged prepared source and headers. The stream sidecar below extends
+this proof across multiple batches and their remaining tails.
+
+[Seeded batch helpers](seeded-batch.click) now check the native addition pair
+for any canonical batch-entry components, retain the seed terms in both raw
+component equations, and establish addition bounds through 5552 bytes. They
+check both original reductions and connect the local batch result to the
+shared specification for an arbitrary previously processed prefix. The offline
+seeded-helper regression verifies every dependency, expands every seeded and
+stream-helper claim, and rejects false component and concatenation results.
+Raw-seed helpers also compose the unreduced DO16 tail sums with the scalar tail.
+
+The locked [stream sidecar](stream.click) applies these lemmas to the original
+C for lengths 5552–22208, canonical seed 1, and nonnull input. It proves the
+shared checksum, termination, and preservation of every input byte across
+one to four NMAX batches, the remaining DO16 blocks, and a zero to fifteen-byte
+scalar tail. The batch loop carries canonical component observations at the
+processed global prefix. Its inner loop preserves a view covering both the
+remaining batch bytes and the future suffix. Tail loops retain the caller's
+complete read authority and use local seeded component equations plus a global
+cursor bound. The scalar loop starts with unreduced components; residue
+composition connects its result to the full input before the zero guard's
+unsigned decrement wraps.
+
+The offline stream regression checks every helper body, complete certificate
+expansion, false checksum, cursor and raw-seed invariants, and missing or
+shortened read authority. It runs in nightly. Its manifest and lock reuse the
+unchanged prepared input; the C and headers remain byte-for-byte pinned.
+The arbitrary-length C proof, noncanonical seeds, and C/Rust result equality
+remain future work.
 
 | Original file | SHA-256 |
 | --- | --- |

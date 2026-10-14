@@ -1152,7 +1152,15 @@ impl<'a> Proof<'a> {
             .goal()
             .cloned()
             .ok_or_else(|| self.step_error("completed application has no kernel goal"))?;
-        let lowered = self.lower_surface_proposition(&proposition, "retained application")?;
+        let mut lowered = self.lower_surface_proposition(&proposition, "retained application")?;
+        if !crate::kernel::proof::propositions_are_alpha_equal(&lowered, &kernel) {
+            // A bare spelling can still name a fact from an enclosing,
+            // earlier state. This goal belongs to the current fixed-state
+            // frontier; validate its actual source meaning before refusing
+            // the stale recorded spelling. The exact judgment check remains.
+            lowered =
+                self.lower_surface_proposition_direct(&proposition, "retained application")?;
+        }
         if !crate::kernel::proof::propositions_are_alpha_equal(&lowered, &kernel) {
             return Err(
                 self.step_error("retained application source does not match its checked goal")

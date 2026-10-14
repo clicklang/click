@@ -1,6 +1,39 @@
 use super::*;
 
 #[test]
+fn historical_wide_view_bound_reads_the_marked_counter() {
+    let c = "unsigned long f(const unsigned char *p, unsigned n) { n = n - 1; return 0; }";
+    for extent in [16, 32] {
+        let proof = format!(
+            r#"
+            verifying "snapshot.c";
+            uint64 f(const uint8* p, uint32 n) {{
+                requires n == 2u32;
+                views p[0u64..{extent}u64];
+                ensures result == 0u64;
+            }} by {{
+                mark before;
+                step();
+                have at(before, 16u64 * (uint64)n) == 32u64 by simp();
+                have at(before, viewable(p[0u64..16u64 * (uint64)n])) by simp();
+                execute(); simp();
+            }}
+        "#
+        );
+        let result = verify_c0_sources(&proof, &[("snapshot.c", c)]);
+        if extent == 16 {
+            assert!(result.is_err(), "the saved counter needs 32 bytes, not 16");
+        } else {
+            result.unwrap();
+            let expanded =
+                expand_c0_claim_source(&proof, &[("snapshot.c", c)], "f", CProofClaim::Ensure(0))
+                    .unwrap();
+            verify_c0_sources(&expanded, &[("snapshot.c", c)]).unwrap();
+        }
+    }
+}
+
+#[test]
 // Read-only C locals have actual storage and can initialize from a checked helper result.
 fn readonly_scalar_initialization_preserves_address_and_expands() {
     let source = "int32 seven() { return 7; } int32 probe() { const int32 x = seven(); const int32* p = &x; return *p; }";
@@ -2661,4 +2694,105 @@ fn have_sorry_admits_one_fact_while_the_rest_checks() {
         "unexpected admission label: {}",
         admissions[0].label
     );
+}
+
+#[test]
+fn nested_loop_retains_inferred_unchanged_counter_invariants() {
+    let c = r#"uint64 nested(uint64 total) {
+ uint64 remaining = total;
+ while (remaining >= 16UL) {
+  remaining -= 16UL;
+  uint32 n = 2U;
+  while (n > 0U) { n -= 1U; }
+ }
+ return remaining;
+}
+"#;
+    let proof = r#"import click::integer;
+import click::machine_integer;
+verifying "nested.c";
+uint64 nested(uint64 total) {
+ requires total <= 64u64;
+ ensures result < 16u64;
+} by {
+ execute_until(loop(0));
+ loop {
+  decreases to_integer(remaining);
+  invariant remaining <= total;
+  invariant total <= 64u64;
+  initialize by simp();
+  preserve by {
+   have 16u64 <= remaining by simp();
+   apply(uint64_less_equal_to_integer(16u64, remaining));
+   apply(uint64_subtract_to_integer(remaining, 16u64));
+   mark before_subtract;
+   step(); execute_until(loop(1));
+   loop {
+    decreases to_integer(n);
+    invariant n <= 2u32;
+    invariant remaining <= total - 16u64;
+    invariant 16u64 <= total;
+    invariant total <= 64u64;
+    initialize by {
+     have remaining <= total - 16u64 by arithmetic() using {
+      at(before_subtract, remaining) <= total;
+      16u64 <= at(before_subtract, remaining); total <= 64u64;
+      remaining == at(before_subtract, remaining) - 16u64;
+     };
+     have 16u64 <= total by arithmetic() using { 16u64 <= at(before_subtract, remaining); at(before_subtract, remaining) <= total; };
+     simp();
+    }
+    preserve by {
+     have remaining <= total - 16u64 by assumption();
+     have 1u32 <= n by arithmetic() using { n > 0u32; n <= 2u32; };
+     apply(uint32_subtract_to_integer(n, 1u32));
+     apply(uint32_less_equal_to_integer(n, 2u32));
+     mark before_inner;
+     step();
+     have to_integer(n) == at(before_inner, to_integer(n)) - 1 by simp() using {
+      n == at(before_inner, n) - 1u32;
+      at(before_inner, to_integer(n - 1u32)) == at(before_inner, to_integer(n)) - 1;
+     };
+     have to_integer(n) <= 2 by arithmetic() using {
+      to_integer(n) == at(before_inner, to_integer(n)) - 1;
+      at(before_inner, to_integer(n)) <= 2;
+     };
+     apply(uint32_to_integer_less_equal_implies_less_equal(n, 2u32));
+     apply(uint32_to_integer_bounds(n));
+     have to_integer(n) < at(before_inner, to_integer(n)) by arithmetic() using {
+      to_integer(n) == at(before_inner, to_integer(n)) - 1;
+     };
+     close_invariants by assumption();
+    }
+   }
+   have remaining <= total by arithmetic() using { remaining <= total - 16u64; 16u64 <= total; total <= 64u64; };
+   have to_integer(remaining) == at(before_subtract, to_integer(remaining)) - 16 by simp() using {
+    remaining == at(before_subtract, remaining) - 16u64;
+    at(before_subtract, to_integer(remaining - 16u64)) == at(before_subtract, to_integer(remaining)) - 16;
+   };
+   apply(uint64_to_integer_bounds(remaining));
+   have to_integer(remaining) < at(before_subtract, to_integer(remaining)) by arithmetic() using {
+    to_integer(remaining) == at(before_subtract, to_integer(remaining)) - 16;
+   };
+   simp();
+  }
+ }
+ execute(); simp();
+}
+"#;
+    verify_c0_sources(proof, &[("nested.c", c)]).unwrap();
+    let expanded =
+        expand_c0_claim_source(proof, &[("nested.c", c)], "nested", CProofClaim::Ensure(0))
+            .unwrap();
+    verify_c0_sources(&expanded, &[("nested.c", c)]).unwrap();
+    for invalid in [
+        proof.replace(
+            "invariant remaining <= total - 16u64;",
+            "invariant remaining <= total - 17u64;",
+        ),
+        proof.replace("ensures result < 16u64;", "ensures result < 15u64;"),
+    ] {
+        assert_ne!(proof, invalid);
+        assert!(verify_c0_sources(&invalid, &[("nested.c", c)]).is_err());
+    }
 }
