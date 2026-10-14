@@ -5660,6 +5660,83 @@ fn describe_c_update_operator(operator: CUpdateOperator) -> &'static str {
     }
 }
 
+fn describe_untyped_array_field_read(
+    base: &ContractExpression,
+    index: &ContractExpression,
+) -> Option<String> {
+    // A registered library accessor already carries its element type and
+    // is the source spelling used in both certificates and diagnostics.
+    if describe_model_accessor(base).is_some() {
+        return None;
+    }
+    let ContractExpression::Field {
+        base,
+        lowered:
+            CExpression::TypedLoad {
+                pointer,
+                value_type,
+                volatile,
+                pointee_constant,
+                source,
+            },
+        ..
+    } = base
+    else {
+        return None;
+    };
+    let ContractExpression::CFragment(CExpression::Variable(name)) = base.as_ref() else {
+        return None;
+    };
+    // A generated call argument can carry only a scalar pointer type. Its
+    // captured field still knows the array type, but the printed field name
+    // cannot recover that layout when the certificate is parsed again.
+    if REFERENCE_CARRIERS.with(|scopes| {
+        scopes
+            .borrow()
+            .iter()
+            .rev()
+            .any(|scope| matches!(scope.carriers.get(name), Some(PointeeShape::Struct { .. })))
+    }) {
+        return None;
+    }
+    let element_type = match value_type {
+        CType::Int8Array(_) => CType::Int8,
+        CType::UInt8Array(_) => CType::UInt8,
+        CType::Int16Array(_) => CType::Int16,
+        CType::UInt16Array(_) => CType::UInt16,
+        CType::Int32Array(_) => CType::Int32,
+        CType::UInt32Array(_) => CType::UInt32,
+        CType::Int64Array(_) => CType::Int64,
+        CType::UInt64Array(_) => CType::UInt64,
+        CType::Int128Array(_) => CType::Int128,
+        CType::UInt128Array(_) => CType::UInt128,
+        _ => return None,
+    };
+    let index = crate::surface::lowering::contract_expression_as_c_fragment(index)?;
+    let pointer = CExpression::Add(
+        Box::new(CExpression::Cast {
+            expression: pointer.clone(),
+            target_type: CType::UInt8Pointer,
+            integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+            pointee_struct: None,
+            pointee_volatile: *volatile,
+            pointee_constant: *pointee_constant,
+            explicit_qualification: true,
+        }),
+        Box::new(CExpression::Multiply(
+            Box::new(index),
+            Box::new(CExpression::Value(int32(element_type.byte_width()))),
+        )),
+    );
+    Some(describe_c_expression(&CExpression::TypedLoad {
+        pointer: Box::new(pointer),
+        value_type: element_type,
+        volatile: *volatile,
+        pointee_constant: *pointee_constant,
+        source: source.clone(),
+    }))
+}
+
 pub(super) fn describe_contract_expression(expression: &ContractExpression) -> String {
     if matches!(expression, ContractExpression::Add(_, _)) {
         return describe_add_contract_expression(expression);
@@ -5861,6 +5938,11 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                 describe_contract_expression(base),
                 describe_contract_expression(index)
             )
+        }
+        ContractExpression::Index(base, index)
+            if let Some(read) = describe_untyped_array_field_read(base, index) =>
+        {
+            read
         }
         ContractExpression::Index(base, index) => {
             let (base, index) = (

@@ -1532,6 +1532,59 @@ mod tests {
     use super::*;
 
     #[test]
+    fn array_field_read_through_an_erased_pointer_keeps_its_element_type() {
+        let read = ContractExpression::Index(
+            Box::new(ContractExpression::Field {
+                base: Box::new(ContractExpression::CFragment(CExpression::Variable(
+                    "p".into(),
+                ))),
+                field: "items".into(),
+                lowered: CExpression::TypedLoad {
+                    pointer: Box::new(CExpression::PointerOffsetBytes {
+                        pointer: Box::new(CExpression::Variable("p".into())),
+                        bytes: 4,
+                    }),
+                    value_type: CType::UInt32Array(3),
+                    volatile: false,
+                    pointee_constant: false,
+                    source: Default::default(),
+                },
+                offset_bytes: 4,
+            }),
+            Box::new(ContractExpression::CFragment(CExpression::Variable(
+                "index".into(),
+            ))),
+        );
+        let goal = ClickProposition::Comparison {
+            left: ContractExpression::CFragment(CExpression::Variable("result".into())),
+            operator: ComparisonOperator::Equal,
+            right: read,
+        };
+        let printed = source_click_proposition(&goal);
+        let sidecar = format!(
+            r#"
+            verifying "read.c";
+            uint32 read(uint32* p, int32 index) {{
+                requires 0 <= index;
+                requires index < 3;
+                requires index == 1;
+                views p[0..4];
+                ensures {printed};
+            }} by {{ execute(); rewrite(index == 1); simp(); }}
+        "#
+        );
+        let sources = [(
+            "read.c",
+            "uint32 read(uint32* p, int32 index) { return p[index + 1]; }",
+        )];
+        verify_c0_sources(&sidecar, &sources)
+            .expect("the printed read must preserve its offset, width and unsigned type");
+        let false_claim = sidecar.replace("ensures result ==", "ensures result + 1u32 ==");
+        assert!(verify_c0_sources(&false_claim, &sources).is_err());
+        assert!(verify_c0_sources(&sidecar.replace("views p[0..4];", ""), &sources).is_err());
+    }
+
+    #[test]
     fn marked_conjunction_uses_parseable_click_connectives() {
         let equality = |name: &str| ClickProposition::Comparison {
             left: ContractExpression::CFragment(CExpression::Variable(name.to_string())),
