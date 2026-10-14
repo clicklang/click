@@ -625,11 +625,10 @@ fn check_fixed_state_fact_transport_using_facts_inner(
                 },
             );
             if framed {
-                // The quantified frame reads the whole proof context.
-                crate::instrumentation::record_hidden_prerequisite(
-                    crate::instrumentation::HiddenPrerequisiteRoute::TacticSearch,
-                    "transport quantified frame",
-                );
+                // The frame's reads consult the proof context only through
+                // the kernel's checked load equality, a bounded walk over
+                // recorded history that looks up separation and order facts:
+                // the fast path's kind of decision, not a search.
                 return Ok(CheckedFixedStateFactTransport { source, target });
             }
             let read_refusal =

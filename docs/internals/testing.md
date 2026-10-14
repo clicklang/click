@@ -867,12 +867,14 @@ open
 ([`issues/difference-logic.md`](https://github.com/clicklang/click/blob/master/issues/difference-logic.md)),
 by evaluation site. The `TacticSearch` route counts a premise a simple tactic
 proved by searching the proof context after its exact lookup missed, by
-tactic site: resource `fold`, `unfold` and `observe`, `transport ... using`
-at an execution or fixed-state frontier, a `branch` arm's condition
+tactic site: resource `fold`, `unfold` and `observe`, a `branch` arm's condition
 obligation, an outcome `if` or `cases` condition the kernel's condition
 decision leaves open, a `have` of a separation away from the frontier, and a
 resource, separation or loadable-memory obligation checked outside a step's
-fast path.
+fast path. A simple tactic may consult the proof context through the kernel's
+indexed, bounded decisions, as a step's fast path does: the condition
+decision and the checked load equality over recorded memory history. Those
+are not searches and are not counted; only a `PropositionSearch` is.
 
 ## Quarantine
 
