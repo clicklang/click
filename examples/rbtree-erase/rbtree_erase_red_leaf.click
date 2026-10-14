@@ -102,7 +102,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                     let hole = fold(rb_at(0), { model: RbTree::Empty });
                     let remaining = fold(ctx_at(0, root), {
                         model: Context::Left(pid, gp, pc, sibling_model, above_model)
-                    }, { sibling: sibling, up: above });
+                    }, { up: above });
                     simp();
                 },
                 Context::Right(pid, gp, pc, sibling_model, above_model) => {
@@ -130,7 +130,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                             let hole = fold(rb_at(0), { model: RbTree::Empty });
                             let remaining = fold(ctx_at(0, root), {
                                 model: Context::Right(pid, gp, pc, sibling_model, above_model)
-                            }, { sibling: sibling, up: above });
+                            }, { up: above });
                             simp();
                         },
                         RbTree::Node(sid, sp, sc, sl, sr) => {
@@ -142,7 +142,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                             let hole = fold(rb_at(0), { model: RbTree::Empty });
                             let remaining = fold(ctx_at(0, root), {
                                 model: Context::Right(pid, gp, pc, sibling_model, above_model)
-                            }, { sibling: sibling, up: above });
+                            }, { up: above });
                             simp();
                         },
                     }

@@ -148,7 +148,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                     let replacement = fold(rb_at(sid), { model: RbTree::Node(sid, parent, color, RbTree::Node(lid, sid, lc, ll, lr), RbTree::Empty) },
                                         { left: moved_left, right: empty_right });
                                     let remaining = fold(ctx_at(sid, root), { model: Context::Left(pid, gp, pc, sibling_model, above_model) },
-                                        { sibling: sibling, up: above });
+                                        { up: above });
                                     have replacement.model == rb_successor_splice(sid, parent, color, left_model, right_model) by auto;
                                     have replacement.model == rb_erase_immediate_leaf_model(old(tree.model)) by {
                                         rewrite(old(tree.model) == RbTree::Node(identity, parent, color, left_model, right_model));
@@ -194,7 +194,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                             let replacement = fold(rb_at(sid), { model: RbTree::Node(sid, parent, color, RbTree::Node(lid, sid, lc, ll, lr), RbTree::Empty) },
                                                 { left: moved_left, right: empty_right });
                                             let remaining = fold(ctx_at(sid, root), { model: Context::Right(pid, gp, pc, sibling_model, above_model) },
-                                                { sibling: sibling, up: above });
+                                                { up: above });
                                             have replacement.model == rb_successor_splice(sid, parent, color, left_model, right_model) by auto;
                                             have replacement.model == rb_erase_immediate_leaf_model(old(tree.model)) by {
                                                 rewrite(old(tree.model) == RbTree::Node(identity, parent, color, left_model, right_model));
@@ -225,7 +225,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                             let replacement = fold(rb_at(sid), { model: RbTree::Node(sid, parent, color, RbTree::Node(lid, sid, lc, ll, lr), RbTree::Empty) },
                                                 { left: moved_left, right: empty_right });
                                             let remaining = fold(ctx_at(sid, root), { model: Context::Right(pid, gp, pc, sibling_model, above_model) },
-                                                { sibling: sibling, up: above });
+                                                { up: above });
                                             have replacement.model == rb_successor_splice(sid, parent, color, left_model, right_model) by auto;
                                             have replacement.model == rb_erase_immediate_leaf_model(old(tree.model)) by {
                                                 rewrite(old(tree.model) == RbTree::Node(identity, parent, color, left_model, right_model));

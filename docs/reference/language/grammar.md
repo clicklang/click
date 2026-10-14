@@ -202,7 +202,10 @@ Click and need no parentheses. See
 
 The algebraic-datatype slice supports generic, specification-only
 sum-of-products declarations as first-class Click types. A
-constructor is fully type-applied at its use site. Pure functions, predicates,
+constructor of a generic datatype may leave out its type arguments where its
+arguments or its position fix them (see
+[Constructor type arguments](#constructor-type-arguments)); every later check,
+and the kernel, sees the fully applied constructor. Pure functions, predicates,
 and theorems may receive arbitrary algebraic values, pure functions may return
 them, and an exhaustive `match` may inspect an unknown variant and return a
 common C or algebraic type. Algebraic-valued `if` expressions are not supported;
@@ -260,6 +263,50 @@ ensures match Maybe<int32>::Some(value) {
     Maybe::None => fallback,
     Maybe::Some(inner) => inner,
 } == value;
+```
+
+### Constructor type arguments
+
+`List::Cons(x, List::Nil)` with `x: int32` means
+`List<int32>::Cons(x, List<int32>::Nil)`. Before any checking, a constructor
+that leaves out its type arguments takes them from one of two places:
+
+- Its own arguments, by their declared types: a declaration parameter, the
+  binder of a `match` arm or of a proof `match` or `induct` arm (typed from
+  its scrutinee), a quantifier binder, a typed `let`, a resource field,
+  another constructor whose type is known, or a pure-function call's result.
+- The type its position expects: a pure function's result type, the
+  parameter of the function, predicate or theorem it is passed to (once the
+  call's other arguments fix that parameter's type arguments), the field of
+  an enclosing constructor, the other side of `==` or `!=`, or a `let` with a
+  written type. A `match`, `let` or `old(...)` passes the expected type on to
+  its result.
+
+Nothing else is consulted, and no type is guessed: a bare integer literal
+fixes nothing, and names a proof introduces by `intro`, `obtain`, a proof
+`let` or a step are not read; one that reuses a declaration parameter's name
+is read as that parameter, and a type that does not fit is then refused by
+the ordinary type check. When neither place fixes the arguments the
+constructor is refused with the written form to use, as in
+`mdtests/constructor_type_arguments_that_nothing_fixes_are_refused.md`,
+`mdtests/a_proof_constructor_whose_type_nothing_fixes_is_refused.md` and
+`mdtests/a_generic_call_on_constructors_nothing_types_is_refused.md`. In
+`unfold(list_append(List<int32>::Nil, List<int32>::Nil))` both arguments must
+be written: neither the call nor its arguments fix `T`. The written form is
+accepted everywhere.
+
+<!-- verified-example: mdtests/constructor_type_arguments_are_inferred.md -->
+```click
+function singleton(x: int32) -> List<int32> {
+    List::Cons(x, List::Nil)
+}
+
+theorem append_nothing(xs: List<int32>) {
+    ensures list_append(List::Nil, xs) == xs by {
+        unfold(list_append(List::Nil, xs));
+        normalize();
+    }
+}
 ```
 
 Constructor equality is structural and checked against the resolved datatype

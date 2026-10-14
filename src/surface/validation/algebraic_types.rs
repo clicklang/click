@@ -1733,6 +1733,16 @@ fn validate_algebraic_expression_node(
                         algebraic_type.name
                     ))
                 })?;
+            if algebraic_type.arguments.is_empty() && !definition.type_parameters().is_empty() {
+                return Err(ClickError::new(format!(
+                    "{} in {context}",
+                    super::unapplied_constructor_message(
+                        definition.name(),
+                        variant,
+                        definition.type_parameters()
+                    )
+                )));
+            }
             if algebraic_type.arguments.len() != definition.type_parameters().len() {
                 return Err(ClickError::new(format!(
                     "algebraic datatype `{}` expects {} type argument(s), got {} in {context}",

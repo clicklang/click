@@ -563,6 +563,17 @@ impl<'a> Proof<'a> {
                     .collect::<Result<Arc<[(String, Variable)]>, ClickError>>()
             })
             .transpose()?;
+        let selected_children = match (&binding.default_child_bindings, selected_children) {
+            (Some(defaults), Some(explicit)) if !unfold => Some(self.fold_children_with_defaults(
+                before,
+                instance,
+                definition,
+                context.function.composite_resource_definitions(),
+                explicit,
+                defaults,
+            )?),
+            (_, selected_children) => selected_children,
+        };
         let rewrite = crate::kernel::rewrite_resource_instance_selecting_children(
             before,
             instance,
@@ -770,6 +781,54 @@ impl<'a> Proof<'a> {
             added_facts: added.clone(),
             checked_facts: added,
         })
+    }
+
+    /// A fold's explicit child map, completed by name: each child the
+    /// selected arm owns that the map left out is the in-scope resource of
+    /// the same name, which must be owned in folded form here. Candidates
+    /// for slots the arm does not own are dropped. The kernel receives the
+    /// completed map and checks it exactly as a written one.
+    fn fold_children_with_defaults(
+        &self,
+        before: &CState,
+        instance: &crate::kernel::ResourceInstance,
+        definition: &crate::kernel::CCompositeResourceDefinition,
+        definitions: &[crate::kernel::CCompositeResourceDefinition],
+        explicit: Arc<[(String, Variable)]>,
+        defaults: &[(String, String, Variable)],
+    ) -> Result<Arc<[(String, Variable)]>, ClickError> {
+        let Some(owned) = crate::kernel::selected_instance_child_names(
+            before,
+            instance,
+            definition,
+            definitions,
+            self.facts().assumptions(),
+        ) else {
+            // No arm is decided: leave the map as written, so the kernel
+            // reports what it needs to select one.
+            return Ok(explicit);
+        };
+        let mut completed = explicit.to_vec();
+        for slot in owned {
+            if completed.iter().any(|(bound, _)| *bound == slot) {
+                continue;
+            }
+            let Some((_, name, identity)) = defaults.iter().find(|(bound, _, _)| *bound == slot)
+            else {
+                continue;
+            };
+            let identity = before
+                .owned_resource_instance(*identity)
+                .ok_or_else(|| {
+                    self.step_error(format!(
+                        "fold of `{}` must supply its named child `{slot}` in its child map: `{{ {slot}: name }}`; the in-scope `{name}` is not owned in folded form here",
+                        instance.name()
+                    ))
+                })?
+                .identity();
+            completed.push((slot, identity));
+        }
+        Ok(completed.into())
     }
 
     /// The proof locals after `let { field: name, ... } = unfold(instance)`

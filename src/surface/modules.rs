@@ -101,6 +101,11 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
                 )
             })
             .collect::<Vec<_>>();
+        let imported_resources = imported_ids
+            .iter()
+            .filter_map(|imported| locals.get(imported))
+            .flat_map(|file| file.resource_definitions().iter())
+            .collect::<Vec<_>>();
         // The entry module is parsed with the frontend's library contracts
         // after its own text, so its positions are unchanged.
         let entry_source;
@@ -118,6 +123,7 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             &imported_tactic_names,
             &imported_function_names,
             &imported_callees,
+            &imported_resources,
             layouts.clone(),
         )?;
         if local.imports().len() != module.imports().len() {

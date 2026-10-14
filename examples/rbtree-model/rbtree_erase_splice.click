@@ -214,7 +214,7 @@ theorem rb_min_context_nonempty_left(node: struct rb_node*, parent: struct rb_no
 theorem rb_minimum_list(tree: RbTree, successor: struct rb_node*, color: Color, child: RbTree) {
     requires rb_minimum(tree) == RbMinimum::Found(successor, color, child);
 
-    ensures rb_min_list(tree) == List<struct rb_node*>::Cons(successor, List<struct rb_node*>::Nil) by {
+    ensures rb_min_list(tree) == List::Cons(successor, List::Nil) by {
         induct(tree) as ih {
             RbTree::Empty => {
                 have rb_minimum(RbTree::Empty) != RbMinimum::Found(successor, color, child) by auto;

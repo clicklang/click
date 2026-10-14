@@ -169,7 +169,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                 model: RbTree::Node(cid, parent, Color::Black, cl, cr)
                             }, { left: child_left, right: child_right });
                             let remaining = fold(ctx_at(cid, root), { model: Context::Left(pid, gp, pc, sibling_model, above_model) },
-                                { sibling: sibling, up: above });
+                                { up: above });
                             have replacement.model == rb_erase_one_child_model(old(tree.model)) by {
                                 rewrite(old(tree.model) == RbTree::Node(id, parent, color, left, right));
                                 unfold(rb_right(RbTree::Node(id, parent, color, left, right)));
@@ -216,7 +216,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                         model: RbTree::Node(cid, parent, Color::Black, cl, cr)
                                     }, { left: child_left, right: child_right });
                                     let remaining = fold(ctx_at(cid, root), { model: Context::Right(pid, gp, pc, sibling_model, above_model) },
-                                        { sibling: sibling, up: above });
+                                        { up: above });
                                     have replacement.model == rb_erase_one_child_model(old(tree.model)) by {
                                         rewrite(old(tree.model) == RbTree::Node(id, parent, color, left, right));
                                         unfold(rb_right(RbTree::Node(id, parent, color, left, right)));
@@ -242,7 +242,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                         model: RbTree::Node(cid, parent, Color::Black, cl, cr)
                                     }, { left: child_left, right: child_right });
                                     let remaining = fold(ctx_at(cid, root), { model: Context::Right(pid, gp, pc, sibling_model, above_model) },
-                                        { sibling: sibling, up: above });
+                                        { up: above });
                                     have replacement.model == rb_erase_one_child_model(old(tree.model)) by {
                                         rewrite(old(tree.model) == RbTree::Node(id, parent, color, left, right));
                                         unfold(rb_right(RbTree::Node(id, parent, color, left, right)));

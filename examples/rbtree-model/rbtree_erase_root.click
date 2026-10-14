@@ -113,7 +113,7 @@ theorem rb_erase_root_child_inorder(tree: RbTree) {
                         unfold(rb_left(RbTree::Node(node, parent, color, RbTree::Empty, right)));
                         unfold(rb_right(RbTree::Node(node, parent, color, RbTree::Empty, right)));
                         unfold(rb_inorder(RbTree::Empty));
-                        unfold(list_append(List<struct rb_node*>::Nil, rb_inorder(right)));
+                        unfold(list_append(List::Nil, rb_inorder(right)));
                         normalize();
                     }
                     rb_right(RbTree::Node(node, parent, color, left, right)) == RbTree::Empty => {
@@ -123,7 +123,7 @@ theorem rb_erase_root_child_inorder(tree: RbTree) {
                         unfold(rb_right(RbTree::Node(node, parent, color, left, RbTree::Empty)));
                         unfold(rb_inorder(RbTree::Empty));
                         apply(list_append_right_identity(rb_inorder(left)));
-                        rewrite(list_append(rb_inorder(left), List<struct rb_node*>::Nil) ==
+                        rewrite(list_append(rb_inorder(left), List::Nil) ==
                             rb_inorder(left));
                         apply(rb_erase_root_child_no_right(node, parent, color, left));
                         rewrite(rb_erase_root_child(RbTree::Node(node, parent, color, left, RbTree::Empty))

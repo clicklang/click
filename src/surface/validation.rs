@@ -6,6 +6,7 @@ use crate::surface::proof::{
 };
 
 mod algebraic_types;
+mod constructor_inference;
 mod declaration_expansion;
 mod definition_validation;
 mod expression_analysis;
@@ -14,6 +15,7 @@ use algebraic_types::*;
 pub(in crate::surface) use algebraic_types::{
     resource_match_arm_scopes, resource_unmatched_body_scope,
 };
+pub(in crate::surface) use constructor_inference::unapplied_constructor_message;
 pub(super) use declaration_expansion::*;
 pub(super) use definition_validation::*;
 pub(super) use expression_analysis::*;

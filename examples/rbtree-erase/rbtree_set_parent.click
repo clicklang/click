@@ -18,12 +18,12 @@ void rb_set_parent(struct rb_node* rb, struct rb_node* p) {
             match color {
                 Color::Red => {
                     execute();
-                    let after = fold(rb_at(rb), { model: RbTree::Node(node, p, color, lm, rm) }, { left: left, right: right });
+                    let after = fold(rb_at(rb), { model: RbTree::Node(node, p, color, lm, rm) });
                     simp();
                 },
                 Color::Black => {
                     execute();
-                    let after = fold(rb_at(rb), { model: RbTree::Node(node, p, color, lm, rm) }, { left: left, right: right });
+                    let after = fold(rb_at(rb), { model: RbTree::Node(node, p, color, lm, rm) });
                     simp();
                 },
             }
