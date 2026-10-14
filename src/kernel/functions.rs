@@ -921,7 +921,9 @@ fn recover_candidate_stable_view_resources(
     let Some(plan) = &transfer.stable_view_plan else {
         if let Some((head, piece)) = transfer.produced_borrowing_pieces.first() {
             return Err(CRuntimeError::FunctionContract(format!(
-                "produced borrowing composite {head:?} packages a view {piece:?} that no viewed input of this call backs"
+                "produced borrowing composite `{}` packages a view `{}` that no viewed input of this call backs",
+                head.diagnostic_summary(),
+                piece.diagnostic_summary()
             )));
         }
         return Ok((
@@ -1017,7 +1019,9 @@ fn recover_candidate_stable_view_resources(
         match (backing_loans.len(), entering) {
             (0, _) => {
                 return Err(CRuntimeError::FunctionContract(format!(
-                    "produced borrowing composite {head:?} packages a view {piece:?} that no viewed input of this call backs"
+                    "produced borrowing composite `{}` packages a view `{}` that no viewed input of this call backs",
+                    head.diagnostic_summary(),
+                    piece.diagnostic_summary()
                 )));
             }
             (1, Some(binding)) => {
@@ -1037,7 +1041,9 @@ fn recover_candidate_stable_view_resources(
             }
             _ => {
                 return Err(CRuntimeError::FunctionContract(format!(
-                    "produced borrowing composite {head:?} packages a view {piece:?} that more than one viewed input of this call could back; the borrow cannot be elided"
+                    "produced borrowing composite `{}` packages a view `{}` that more than one viewed input of this call could back; the borrow cannot be elided",
+                    head.diagnostic_summary(),
+                    piece.diagnostic_summary()
                 )));
             }
         }
@@ -1211,7 +1217,8 @@ fn recover_candidate_stable_view_resources(
             .find(|occurrence| recovered_resources.loan_dependency(*occurrence).is_none())
         else {
             return Err(CRuntimeError::FunctionContract(format!(
-                "produced borrowing composite {head:?} has no occurrence to carry its borrow"
+                "produced borrowing composite `{}` has no occurrence to carry its borrow",
+                head.diagnostic_summary()
             )));
         };
         recovered_resources = recovered_resources.with_loan_dependency(occurrence, binding.clone());
@@ -4987,11 +4994,7 @@ pub(crate) fn apply_verified_tactic_rule(
         CExecutionContext::apply_verified_rules(environment),
         &mut budget,
     )
-    .map_err(|limit| {
-        Refused(format!(
-            "applying tactic `{name}` exhausted its budget: {limit:?}"
-        ))
-    })?;
+    .map_err(|limit| Refused(format!("applying tactic `{name}` stopped at {limit}")))?;
     let [path] = paths.as_slice() else {
         return Err(Refused(format!(
             "applying tactic `{name}` produced {} outcomes; an application has exactly one",
@@ -5007,7 +5010,8 @@ pub(crate) fn apply_verified_tactic_rule(
         }
         CFunctionOutcome::UndefinedBehavior(behavior) => {
             return Err(Refused(format!(
-                "tactic `{name}` could not be applied: {behavior:?}"
+                "tactic `{name}` could not be applied: undefined behavior: {}",
+                behavior.description()
             )));
         }
         CFunctionOutcome::Throw { .. } | CFunctionOutcome::VerificationDiverges => {
@@ -21202,7 +21206,8 @@ fn evaluate_contract_return_resources(
             .copied()
         else {
             return Ok(Err(CRuntimeError::FunctionContract(format!(
-                "ensured resource support was not preserved after call: {support:?}"
+                "ensured resource support `{}` was not preserved after call",
+                support.diagnostic_summary()
             ))));
         };
         *rank += 1;
@@ -21249,7 +21254,8 @@ fn evaluate_contract_return_resources(
             .copied()
         else {
             return Ok(Err(CRuntimeError::FunctionContract(format!(
-                "ensured resource support was not preserved after call: {support:?}"
+                "ensured resource support `{}` was not preserved after call",
+                support.diagnostic_summary()
             ))));
         };
         return_resources = return_resources
@@ -22740,7 +22746,11 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     if !authorities.is_empty() {
         body = body
             .try_compose_into_valid_context_delaying_normalization(authorities, assumptions)
-            .map_err(|_| "instance body repeats an authority")?;
+            .map_err(|error| {
+                ResourceRewriteRefusal::OwnedMessage(format!(
+                    "instance body repeats an authority: {error}"
+                ))
+            })?;
     }
     // Only the immediate declared memory justifies child-argument loads, not
     // the ambient frame or a child that has not been constructed. On fold,
@@ -22962,7 +22972,11 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         next.resources = next
             .resources
             .try_compose_into_valid_context_delaying_normalization([folded.clone()], assumptions)
-            .map_err(|_| "fold would duplicate instance ownership")?;
+            .map_err(|error| {
+                ResourceRewriteRefusal::OwnedMessage(format!(
+                    "fold would duplicate instance ownership: {error}"
+                ))
+            })?;
     }
     // Body propositions retain their source bindings, including exact facts
     // about model pointers. Only memory/child placement uses the early alias

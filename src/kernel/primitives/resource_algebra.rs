@@ -9483,6 +9483,18 @@ impl CResource {
 }
 
 impl CResourceFact {
+    /// The fact's access and resource name in a diagnostic, as `owns
+    /// pair(...)` or `views memory`.
+    pub(crate) fn diagnostic_summary(&self) -> String {
+        let access = if self.is_own() { "owns" } else { "views" };
+        match self.resource() {
+            CResource::Composite { .. } | CResource::Token { .. } | CResource::Instance(_) => {
+                format!("{access} {}(...)", self.resource().diagnostic_name())
+            }
+            resource => format!("{access} {}", resource.diagnostic_name()),
+        }
+    }
+
     fn has_valid_exclusive_access(&self) -> bool {
         !matches!(
             self.resource(),

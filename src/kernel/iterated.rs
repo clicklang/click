@@ -394,7 +394,9 @@ pub(crate) fn apply_iterated_step(
             let resources = replace_iterated(state.resources().clone(), current, next)?;
             let resources = resources
                 .try_compose_with_facts([CResourceFact::own_memory(element.clone())], assumptions)
-                .map_err(|_| "the element overlaps memory this context already owns".to_string())?;
+                .map_err(|error| {
+                    format!("the element overlaps memory this context already owns: {error}")
+                })?;
             Ok(state.clone().with_resource_context(resources))
         }
         IteratedStep::Give { element } => {
@@ -497,8 +499,8 @@ pub(crate) fn apply_iterated_step(
                     })?;
                     let resources = resources
                         .try_compose_with_facts([CResourceFact::own_memory(covering)], assumptions)
-                        .map_err(|_| {
-                            "the elements overlap memory this context already owns".to_string()
+                        .map_err(|error| {
+                            format!("the elements overlap memory this context already owns: {error}")
                         })?;
                     Ok(state.clone().with_resource_context(resources))
                 }
