@@ -1,5 +1,6 @@
 import "short-prefix.click";
 import "byte.click";
+import click::integer;
 
 // One mathematical scalar recurrence, reused for each unchanged DO16 lane.
 theorem zlib_component_step(bytes: uint8[], n: int32) {

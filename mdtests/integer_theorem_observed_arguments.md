@@ -9,6 +9,8 @@ int32 unchanged(int32 x) { return x; }
 ```
 
 ```click
+import click::integer;
+
 theorem integer_reflexive(z: Integer) {
     ensures z == z by simp;
 }

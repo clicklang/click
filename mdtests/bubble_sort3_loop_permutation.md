@@ -26,6 +26,8 @@ int32 bubble_sort3_loop_permutation(int32 p[3]) {
 ```
 
 ```click
+import click::permutation;
+
 verifying "bubble_sort3_loop_permutation.c";
 
 int32 bubble_sort3_loop_permutation(int32 p[3]) {

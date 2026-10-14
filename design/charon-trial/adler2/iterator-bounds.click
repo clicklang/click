@@ -1,4 +1,5 @@
 import "bounds.click";
+import click::integer;
 
 // The vector index is a logical observation of existing remaining-byte state.
 // No runtime counter is added, and no loop invariant is assumed established.

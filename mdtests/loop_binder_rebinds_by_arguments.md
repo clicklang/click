@@ -23,6 +23,8 @@ void bump_n(struct cell* p, int32 n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "loop_binder_rebinds_by_arguments.c";
 
 resource counter(p: struct cell*) {

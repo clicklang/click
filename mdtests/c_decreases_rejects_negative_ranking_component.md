@@ -16,6 +16,8 @@ int32 drift(int32 n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "c_decreases_rejects_negative_ranking_component.c";
 
 int32 drift(int32 n) {

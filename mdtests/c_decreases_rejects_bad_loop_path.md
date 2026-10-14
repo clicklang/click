@@ -12,6 +12,8 @@ int32 sometimes_stuck(int32 n, int32 choose) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "c_decreases_rejects_bad_loop_path.c";
 
 int32 sometimes_stuck(int32 n, int32 choose) {

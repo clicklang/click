@@ -28,6 +28,8 @@ void arena_write(struct region* region, int32 value, int32 k) {
 ```
 
 ```click
+import click::machine_integer;
+
 resource arena_state(arena: struct arena*) {
     field capacity: int32;
     owns arena->data;

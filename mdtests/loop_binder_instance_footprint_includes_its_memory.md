@@ -29,6 +29,8 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
 ```
 
 ```click
+import click::machine_integer;
+
 resource window(occupied: int32*, capacity: int32, start: int32, end: int32) {
     field next: int32;
     owns occupied[0..capacity];

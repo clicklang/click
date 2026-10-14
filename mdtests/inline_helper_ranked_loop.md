@@ -30,6 +30,8 @@ int32 run(int32 n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "inline_helper_ranked_loop.c";
 
 int32 drain_to_zero(int32 value) {

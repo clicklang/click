@@ -1,3 +1,5 @@
+import click::integer;
+
 theorem zlib_byte_u64(value: uint8) {
  ensures to_integer(value) <= 255 by {
   have 0 <= (int32)value by { simp(); }

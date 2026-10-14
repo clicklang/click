@@ -21,6 +21,9 @@ void consume_population(struct owner* owner, int32 amount) {
 ```
 
 ```click
+import click::integer;
+import click::machine_integer;
+
 theorem subtract_from_sum(total: int32, left: int32, right: int32, amount: int32) {
     requires 0 <= left;
     requires 0 <= amount;

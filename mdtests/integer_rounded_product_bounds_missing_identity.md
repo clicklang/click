@@ -1,6 +1,8 @@
 # Rounding requires all stated reconstruction and correction premises
 
 ```click
+import click::integer;
+
 theorem incomplete(n: Integer, d: Integer, q: Integer, r: Integer, value: Integer) {
     requires 0 < d;
     requires 1 - d <= r;

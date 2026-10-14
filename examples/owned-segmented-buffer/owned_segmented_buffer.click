@@ -1,3 +1,5 @@
+import click::machine_integer;
+
 theorem int32_equality_transitive(first: int32, second: int32, third: int32) {
     requires first == second;
     requires second == third;

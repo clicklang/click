@@ -8,6 +8,8 @@ unsigned int reduce_lane(unsigned int value) { return value % 65521u; }
 ```
 
 ```click
+import click::integer;
+
 verifying "test.c";
 theorem byte_lane(value: uint32) {
     requires value <= 255u32;

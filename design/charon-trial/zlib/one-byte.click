@@ -1,3 +1,5 @@
+import click::integer;
+
 target "x86_64-linux-userspace";
 verifying "adler32.c";
 import "../../adler32-spec.click";

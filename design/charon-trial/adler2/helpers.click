@@ -1,3 +1,5 @@
+import click::integer;
+
 verifying "src/lib.rs";
 
 theorem adler_helper_byte_observation(value: uint8) {

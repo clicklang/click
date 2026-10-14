@@ -24,6 +24,8 @@ int32 spin(struct cell *node, int32 n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "loop_body_proof_match.c";
 
 spec enum Maybe { None, Some(int32) }

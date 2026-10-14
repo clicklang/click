@@ -1,3 +1,6 @@
+import click::integer;
+import click::machine_integer;
+
 // Original compute bounds for every small-batch length and canonical seeds.
 // Length is at most 22207 bytes; both initial fields are below MOD = 65521.
 // The stored vector and scalar iterators supply their actual remaining state.

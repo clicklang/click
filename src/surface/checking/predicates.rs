@@ -97,7 +97,12 @@ pub(in crate::surface) fn unfold_predicates_in_proposition_with_active(
             let definition = spec_definitions
                 .predicates
                 .get(source_name)
-                .ok_or_else(|| format!("unknown predicate `{source_name}`"))?;
+                .ok_or_else(|| {
+                    format!(
+                        "unknown predicate `{source_name}`{}",
+                        crate::surface::validation::library_import_hint(source_name)
+                    )
+                })?;
             let definition = instantiate_lowered_predicate_definition(definition, arguments)?;
             let unfolded = instantiate_predicate_definition(
                 &definition,

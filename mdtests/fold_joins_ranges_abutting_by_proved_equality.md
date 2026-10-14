@@ -23,6 +23,8 @@ void join(int32* data, int32 cap) {
 ```
 
 ```click
+import click::machine_integer;
+
 resource suffix(data: int32*, cap: int32) {
     field start: int32;
     owns data[start..cap];

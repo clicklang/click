@@ -26,6 +26,8 @@ int32 bubble_sort3_loop(int32 p[3]) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "bubble_sort3_loop.c";
 
 predicate sorted(p: int32[], n: int32) {

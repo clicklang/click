@@ -33,6 +33,8 @@ int odd(int n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "c_decreases_pure_expression_mutual_recursion_even.c";
 verifying "c_decreases_pure_expression_mutual_recursion_odd.c";
 

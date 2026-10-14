@@ -1433,7 +1433,8 @@ int32 drain(int32 n) {
     }
     return n;
 }"#;
-    let click_source = r#"verifying "drain.c";
+    let click_source = r#"import click::machine_integer;
+verifying "drain.c";
 
 extern int32 poll() {
     ensures result >= 0;

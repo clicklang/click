@@ -30,6 +30,8 @@ void fill(struct buffer* b, int32 from, int32 to) {
 ```
 
 ```click
+import click::machine_integer;
+
 resource filled_prefix(b: struct buffer*) {
     field prefix: int32;
     owns b->p;

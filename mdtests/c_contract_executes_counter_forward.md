@@ -5,6 +5,8 @@ int32 invoke(int32 (*callback)()) { return callback(); }
 ```
 
 ```click
+import click::machine_integer;
+
 resource Counter() { field revision: int32; field tag: int32; }
 theorem lift(callback: int32 (*)()) executes callback() {
     requires Exact(callback);

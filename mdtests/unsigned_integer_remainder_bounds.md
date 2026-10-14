@@ -4,6 +4,8 @@ A nonzero divisor bounds the unsigned remainder over the full u32 domain.
 Strict order transfers to exact Integer observations without a signed cast.
 
 ```click
+import click::integer;
+
 theorem native_reduction(value: uint32, divisor: uint32) {
     requires divisor != 0u32;
     ensures value % divisor < divisor by apply(uint32_remainder_less_than_divisor(value, divisor));

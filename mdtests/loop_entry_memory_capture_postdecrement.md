@@ -10,6 +10,9 @@ unsigned long post(const unsigned char *p, unsigned long n) { while (n--) {} ret
 ```
 
 ```click
+import click::integer;
+import click::machine_integer;
+
 target "x86_64-linux-userspace";
 verifying "post.c";
 uint64 post(const uint8* p, uint64 n) {

@@ -7,6 +7,9 @@ pair below applies one theorem to the goal written both ways; the first
 spelling of every pair matches the theorem's own, the second is mirrored.
 
 ```click
+import click::integer;
+import click::machine_integer;
+
 theorem observed_range(value: uint32) {
     ensures 0 <= to_integer(value) by apply(uint32_to_integer_bounds(value));
     ensures to_integer(value) >= 0 by apply(uint32_to_integer_bounds(value));

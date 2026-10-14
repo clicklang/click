@@ -14,6 +14,8 @@ int32 drain(int32 n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "arithmetic_conjunction_provenance.c";
 
 int32 drain(int32 n) {

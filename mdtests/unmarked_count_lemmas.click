@@ -1,3 +1,6 @@
+import click::integer;
+import click::machine_integer;
+
 function unmarked(v: int32[], lo: int32, hi: int32) -> Integer {
     (lo..hi).fold(0, |acc, k| { acc + to_integer(if v[k] == 0 { 1 } else { 0 }) })
 }

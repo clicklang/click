@@ -38,6 +38,8 @@ int32 probe_contract(struct job *j) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "probe_contract.c";
 
 resource task(j: struct job*) {

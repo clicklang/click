@@ -6,6 +6,8 @@ This proves the wide-path input envelope for any bounded fee when
 `0 <= at_size <= size`. It does not yet verify the upstream caller's fast path.
 
 ```click
+import click::integer;
+
 theorem checked_integer_multiply_order_nonnegative(a: Integer, b: Integer, factor: Integer) {
     requires a <= b;
     requires 0 <= factor;

@@ -32,6 +32,9 @@ int32 run(int32 n) {
 ```
 
 ```click
+import click::integer;
+import click::machine_integer;
+
 verifying "inline_helper_expression_measure_recursion.c";
 
 function level(n: int32) -> Integer {

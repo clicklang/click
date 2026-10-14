@@ -19,6 +19,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
     // A failure before the first declaration belongs to none of them.
     crate::surface::clear_ambient_proof_source();
     validate_algebraic_type_declarations(file)?;
+    reject_unimported_library_citations(file)?;
     let predicate_definitions = combined_predicate_definitions(file)?;
     let click_function_definitions = combined_click_function_definitions(file)?;
     let resource_definitions = combined_resource_definitions(file)?;

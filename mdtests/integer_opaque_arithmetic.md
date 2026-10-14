@@ -1,6 +1,8 @@
 # Affine reasoning about complete nonlinear Integer values
 
 ```click
+import click::integer;
+
 theorem reconstruction_bound(n: Integer, q: Integer, d: Integer, r: Integer) {
     requires n == q * d + r;
     requires 0 <= r;

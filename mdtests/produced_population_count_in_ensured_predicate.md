@@ -27,6 +27,8 @@ void produce_population_pipeline(struct owner* owner, int32 amount) {
 ```
 
 ```click
+import click::machine_integer;
+
 authorized resource slot(owner: struct owner*) {
 }
 

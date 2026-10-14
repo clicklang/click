@@ -21,6 +21,9 @@ int32 sum(int32 a[], int32 n) {
 ```
 
 ```click
+import click::integer;
+import click::machine_integer;
+
 verifying "integer_sum_range_fold.c";
 
 int32 sum(int32 a[], int32 n) {

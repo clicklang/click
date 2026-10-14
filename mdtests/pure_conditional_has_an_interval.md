@@ -6,6 +6,8 @@ of the arms' intervals bounds it. Both int32 bounds close by `simp`. The
 `int32_less_equal_to_integer` law; the conversion itself is unchanged.
 
 ```click
+import click::integer;
+
 theorem indicator_is_nonnegative(x: int32) {
     ensures 0 <= if x == 0 { 1 } else { 0 } by {
         simp();

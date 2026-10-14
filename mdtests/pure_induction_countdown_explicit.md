@@ -6,6 +6,8 @@ conditions, and recursive evaluation is exposed by one-layer function
 `unfold` operations.
 
 ```click
+import click::machine_integer;
+
 function countdown_explicit(n: int32) -> int32
     decreases n
 {

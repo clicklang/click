@@ -20,6 +20,8 @@ int32 drain_to_zero(int32 n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "close_invariants_ranks_a_reassigned_parameter.c";
 
 int32 drain_to_zero(int32 n) {

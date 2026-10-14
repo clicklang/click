@@ -26,6 +26,8 @@ void parent_detach(struct parent* p) {
 ```
 
 ```click
+import click::machine_integer;
+
 spec enum ParentLink {
     Empty,
     Linked(struct child*),

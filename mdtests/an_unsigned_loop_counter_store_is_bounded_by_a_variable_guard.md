@@ -26,6 +26,8 @@ void clear(int32* values, uint32 n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "an_unsigned_loop_counter_store_is_bounded_by_a_variable_guard.c";
 
 void clear(int32* values, uint32 n) {

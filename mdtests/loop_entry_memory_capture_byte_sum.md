@@ -18,6 +18,8 @@ int walk(const unsigned char *p, int n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "walk.c";
 theorem byte_as_int32(value: uint8) {
  ensures 0 <= (int32)value by { simp(); }

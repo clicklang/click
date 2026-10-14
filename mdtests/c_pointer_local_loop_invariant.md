@@ -23,6 +23,8 @@ int32 last_element(int32 arr[], int32 n, int32 cap) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "c_pointer_local_loop_invariant.c";
 
 int32 last_element(int32 arr[], int32 n, int32 cap) {

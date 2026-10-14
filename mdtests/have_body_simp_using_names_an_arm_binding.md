@@ -48,6 +48,8 @@ unsigned long spin(struct node *p, int n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "simp_using_binding.c";
 
 spec enum Color { Red, Black }

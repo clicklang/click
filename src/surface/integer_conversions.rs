@@ -56,7 +56,7 @@ mod tests {
 
     #[test]
     fn int32_remainder_bridge_requires_definedness_and_expands() {
-        let source = "theorem remainder(a: int32, b: int32) { requires defined(a % b); requires to_integer(b) != 0; ensures to_integer(a % b) == truncating_remainder(to_integer(a), to_integer(b)) by { apply(int32_remainder_to_integer(a, b)) using { defined(a % b); to_integer(b) != 0; } } }";
+        let source = "import click::integer; theorem remainder(a: int32, b: int32) { requires defined(a % b); requires to_integer(b) != 0; ensures to_integer(a % b) == truncating_remainder(to_integer(a), to_integer(b)) by { apply(int32_remainder_to_integer(a, b)) using { defined(a % b); to_integer(b) != 0; } } }";
         verify_c0_sources(source, &[]).unwrap();
         let expanded = expand_c0_claim_source_by_label(source, &[], "remainder.ensures_0").unwrap();
         verify_c0_sources(&expanded, &[]).unwrap();
@@ -65,7 +65,7 @@ mod tests {
         }
         for (a, b) in [("0", "0"), ("-2147483648", "-1")] {
             let invalid = format!(
-                "theorem invalid() {{ ensures to_integer({a} % {b}) == 0 by {{ apply(int32_remainder_to_integer({a}, {b})); }} }}"
+                "import click::integer; theorem invalid() {{ ensures to_integer({a} % {b}) == 0 by {{ apply(int32_remainder_to_integer({a}, {b})); }} }}"
             );
             assert!(verify_c0_sources(&invalid, &[]).is_err());
         }
@@ -75,7 +75,7 @@ mod tests {
 
     #[test]
     fn uint32_product_bound_guard_expands_and_rejects_wrapped_or_signed_bounds() {
-        let source = "theorem bounded(a: uint32, b: uint32) { requires to_integer(a) * to_integer(b) <= 4294967295; ensures b == 0u32 or a <= 4294967295u32 / b by { apply(uint32_multiply_guard_by_integer_bound(a, b)) using { to_integer(a) * to_integer(b) <= 4294967295; } } }";
+        let source = "import click::integer; theorem bounded(a: uint32, b: uint32) { requires to_integer(a) * to_integer(b) <= 4294967295; ensures b == 0u32 or a <= 4294967295u32 / b by { apply(uint32_multiply_guard_by_integer_bound(a, b)) using { to_integer(a) * to_integer(b) <= 4294967295; } } }";
         verify_c0_sources(source, &[]).unwrap();
         let expanded = expand_c0_claim_source_by_label(source, &[], "bounded.ensures_0").unwrap();
         verify_c0_sources(&expanded, &[]).unwrap();
@@ -146,7 +146,7 @@ mod tests {
             ("uint64", "0", "18446744073709551615"),
         ] {
             let source = format!(
-                "theorem round_trip(z: Integer) {{ requires z >= {lower}; requires z <= {upper}; ensures to_integer(to_{target}(z)) == z by {{ apply(integer_to_{target}_round_trip(z)); }} }}"
+                "import click::integer; theorem round_trip(z: Integer) {{ requires z >= {lower}; requires z <= {upper}; ensures to_integer(to_{target}(z)) == z by {{ apply(integer_to_{target}_round_trip(z)); }} }}"
             );
             verify_c0_sources(&source, &[]).unwrap_or_else(|e| panic!("{}\n{source}", e.message()));
             let expanded =
@@ -258,7 +258,7 @@ mod tests {
 
     #[test]
     fn integer_bounds_establish_c_add_definedness_without_circular_assumptions() {
-        let source = "theorem safety(a: int32, b: int32) { requires to_integer(a) + to_integer(b) >= -2147483648; requires to_integer(a) + to_integer(b) <= 2147483647; ensures defined(a + b) by { apply(int32_add_defined_by_integer_bounds(a, b)); } }";
+        let source = "import click::integer; theorem safety(a: int32, b: int32) { requires to_integer(a) + to_integer(b) >= -2147483648; requires to_integer(a) + to_integer(b) <= 2147483647; ensures defined(a + b) by { apply(int32_add_defined_by_integer_bounds(a, b)); } }";
         verify_c0_sources(source, &[]).unwrap();
         let expanded = expand_c0_claim_source_by_label(source, &[], "safety.ensures_0").unwrap();
         verify_c0_sources(&expanded, &[]).unwrap();
@@ -278,7 +278,7 @@ mod tests {
             ("int32_subtract_to_integer", "-"),
         ] {
             let source = format!(
-                "theorem bridge(a: int32, b: int32) {{ requires defined(a {operator} b); ensures to_integer(a {operator} b) == to_integer(a) {operator} to_integer(b) by {{ apply({name}(a, b)); }} }}"
+                "import click::integer; theorem bridge(a: int32, b: int32) {{ requires defined(a {operator} b); ensures to_integer(a {operator} b) == to_integer(a) {operator} to_integer(b) by {{ apply({name}(a, b)); }} }}"
             );
             verify_c0_sources(&source, &[]).unwrap_or_else(|e| panic!("{}\n{source}", e.message()));
             let expanded =
@@ -291,7 +291,7 @@ mod tests {
 
     #[test]
     fn uint32_small_remainder_expands_and_requires_strict_unsigned_evidence() {
-        let source = "theorem lane(value: uint32, divisor: uint32) { requires value < divisor; ensures value % divisor == value by { apply(uint32_less_than_divisor_implies_remainder_is_value(value, divisor)); } }";
+        let source = "import click::integer; theorem lane(value: uint32, divisor: uint32) { requires value < divisor; ensures value % divisor == value by { apply(uint32_less_than_divisor_implies_remainder_is_value(value, divisor)); } }";
         verify_c0_sources(source, &[]).unwrap();
         let expanded = expand_c0_claim_source_by_label(source, &[], "lane.ensures_0").unwrap();
         verify_c0_sources(&expanded, &[]).unwrap();
@@ -314,7 +314,7 @@ mod tests {
 
     #[test]
     fn uint32_remainder_bound_expands_and_requires_a_nonzero_divisor() {
-        let source = "theorem bridge(value: uint32, divisor: uint32) { requires divisor != 0u32; ensures to_integer(value % divisor) < to_integer(divisor) by { apply(uint32_remainder_less_than_divisor(value, divisor)); apply(uint32_less_than_to_integer(value % divisor, divisor)); } }";
+        let source = "import click::integer; theorem bridge(value: uint32, divisor: uint32) { requires divisor != 0u32; ensures to_integer(value % divisor) < to_integer(divisor) by { apply(uint32_remainder_less_than_divisor(value, divisor)); apply(uint32_less_than_to_integer(value % divisor, divisor)); } }";
         verify_c0_sources(source, &[]).unwrap();
         let expanded = expand_c0_claim_source_by_label(source, &[], "bridge.ensures_0").unwrap();
         verify_c0_sources(&expanded, &[]).unwrap();
@@ -331,9 +331,9 @@ mod tests {
     #[test]
     fn uint32_integer_bounds_do_not_distribute_wrapping_or_define_zero_division() {
         for invalid in [
-            "theorem wrong(value: uint32) { ensures to_integer(value) <= 2147483647 by { apply(uint32_to_integer_bounds(value)); } }",
-            "theorem wrong(value: uint32) { ensures to_integer(value + 1u32) == to_integer(value) + 1 by { apply(uint32_to_integer_bounds(value + 1u32)); } }",
-            "theorem wrong(value: uint32) { ensures 0 <= to_integer(value / 0u32) by { apply(uint32_to_integer_bounds(value / 0u32)); } }",
+            "import click::integer; theorem wrong(value: uint32) { ensures to_integer(value) <= 2147483647 by { apply(uint32_to_integer_bounds(value)); } }",
+            "import click::integer; theorem wrong(value: uint32) { ensures to_integer(value + 1u32) == to_integer(value) + 1 by { apply(uint32_to_integer_bounds(value + 1u32)); } }",
+            "import click::integer; theorem wrong(value: uint32) { ensures 0 <= to_integer(value / 0u32) by { apply(uint32_to_integer_bounds(value / 0u32)); } }",
         ] {
             assert!(verify_c0_sources(invalid, &[]).is_err(), "{invalid}");
         }
@@ -359,7 +359,7 @@ mod tests {
             ),
         ] {
             let source = format!(
-                "theorem bridge(left: uint32, right: uint32) {{ requires {premise}; ensures {conclusion} by {{ apply({name}(left, right)); }} }}"
+                "import click::integer; theorem bridge(left: uint32, right: uint32) {{ requires {premise}; ensures {conclusion} by {{ apply({name}(left, right)); }} }}"
             );
             verify_c0_sources(&source, &[]).unwrap();
             let expanded =
@@ -380,7 +380,7 @@ mod tests {
 
     #[test]
     fn integer_order_observation_requires_the_c_guard_and_rechecks_expansion() {
-        let source = "theorem bridge(left: int32, right: int32) { requires left <= right; ensures to_integer(left) <= to_integer(right) by { apply(int32_less_equal_to_integer(left, right)); } }";
+        let source = "import click::integer; theorem bridge(left: int32, right: int32) { requires left <= right; ensures to_integer(left) <= to_integer(right) by { apply(int32_less_equal_to_integer(left, right)); } }";
         verify_c0_sources(source, &[]).unwrap();
         let expanded = expand_c0_claim_source_by_label(source, &[], "bridge.ensures_0").unwrap();
         verify_c0_sources(&expanded, &[]).unwrap();
@@ -896,7 +896,7 @@ mod tests {
 
     #[test]
     fn uint32_subtract_bridge_rechecks_guards_and_expansion() {
-        let source = "theorem exact(left: uint32, right: uint32) { requires right <= left; ensures to_integer(left - right) == to_integer(left) - to_integer(right) by { apply(uint32_subtract_to_integer(left, right)) using { right <= left; } } }";
+        let source = "import click::integer; theorem exact(left: uint32, right: uint32) { requires right <= left; ensures to_integer(left - right) == to_integer(left) - to_integer(right) by { apply(uint32_subtract_to_integer(left, right)) using { right <= left; } } }";
         verify_c0_sources(source, &[]).unwrap();
         let expanded = expand_c0_claim_source_by_label(source, &[], "exact.ensures_0").unwrap();
         verify_c0_sources(&expanded, &[]).unwrap();
@@ -920,18 +920,18 @@ mod tests {
             (u32::MAX, 0x8000_0000, 0x7fff_ffff),
         ] {
             let concrete = format!(
-                "theorem boundary() {{ ensures to_integer({left}u32 - {right}u32) == {difference} by {{ apply(uint32_subtract_to_integer({left}u32, {right}u32)); simp(); }} }}"
+                "import click::integer; theorem boundary() {{ ensures to_integer({left}u32 - {right}u32) == {difference} by {{ apply(uint32_subtract_to_integer({left}u32, {right}u32)); simp(); }} }}"
             );
             verify_c0_sources(&concrete, &[]).unwrap();
         }
-        let underflow = "theorem wrapping() { ensures to_integer(0u32 - 1u32) == -1 by { apply(uint32_subtract_to_integer(0u32, 1u32)); } }";
+        let underflow = "import click::integer; theorem wrapping() { ensures to_integer(0u32 - 1u32) == -1 by { apply(uint32_subtract_to_integer(0u32, 1u32)); } }";
         assert!(verify_c0_sources(underflow, &[]).is_err());
     }
 
     #[test]
     fn uint32_subtract_bridge_verifies_executed_c_difference() {
         let c = "unsigned int difference(unsigned int left, unsigned int right) { return left - right; }";
-        let source = "verifying \"difference.c\"; uint32 difference(uint32 left, uint32 right) { requires right <= left; ensures to_integer(result) == to_integer(left) - to_integer(right); } by { execute(); apply(uint32_subtract_to_integer(left, right)) using { right <= left; } simp(); }";
+        let source = "import click::integer; verifying \"difference.c\"; uint32 difference(uint32 left, uint32 right) { requires right <= left; ensures to_integer(result) == to_integer(left) - to_integer(right); } by { execute(); apply(uint32_subtract_to_integer(left, right)) using { right <= left; } simp(); }";
         verify_c0_sources(source, &[("difference.c", c)]).unwrap();
         let expanded =
             expand_c0_claim_source_by_label(source, &[("difference.c", c)], "difference.contract")
@@ -1003,7 +1003,7 @@ mod tests {
             ),
         ] {
             let source = format!(
-                "theorem bridge(left: uint64, right: uint64) {{ requires {guard}; ensures {goal} by {{ apply({name}(left, right)); }} }}"
+                "import click::integer; theorem bridge(left: uint64, right: uint64) {{ requires {guard}; ensures {goal} by {{ apply({name}(left, right)); }} }}"
             );
             verify_c0_sources(&source, &[]).unwrap_or_else(|e| panic!("{name}: {}", e.message()));
             let expanded =
@@ -1040,7 +1040,7 @@ mod tests {
                 "uint32 op(uint32 left, uint32 right) {{ return left {op} right; }} uint32 caller(uint32 left, uint32 right) {{ return op(left, right); }}"
             );
             let source = format!(
-                "verifying \"op.c\"; uint32 op(uint32 left, uint32 right) {{ requires {guard}; ensures {goal}; }} by {{ apply({name}(left, right)); execute(); simp(); }} uint32 caller(uint32 left, uint32 right) {{ requires {guard}; ensures {goal}; }} by {{ execute(); simp(); }}"
+                "import click::integer; verifying \"op.c\"; uint32 op(uint32 left, uint32 right) {{ requires {guard}; ensures {goal}; }} by {{ apply({name}(left, right)); execute(); simp(); }} uint32 caller(uint32 left, uint32 right) {{ requires {guard}; ensures {goal}; }} by {{ execute(); simp(); }}"
             );
             verify_c0_sources(&source, &[("op.c", &c)])
                 .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
@@ -1070,7 +1070,7 @@ mod tests {
             ("uint64_remainder_to_integer", "%", "truncating_remainder"),
         ] {
             let source = format!(
-                "theorem exact(left: uint64, right: uint64) {{ requires right != 0u64; requires to_integer(right) != 0; ensures to_integer(left {op} right) == {mathematical}(to_integer(left), to_integer(right)) by {{ apply({name}(left, right)); }} }}"
+                "import click::integer; theorem exact(left: uint64, right: uint64) {{ requires right != 0u64; requires to_integer(right) != 0; ensures to_integer(left {op} right) == {mathematical}(to_integer(left), to_integer(right)) by {{ apply({name}(left, right)); }} }}"
             );
             verify_c0_sources(&source, &[]).unwrap();
             for missing in [
@@ -1125,7 +1125,7 @@ mod tests {
                 "to_integer(result)",
             );
             let source = format!(
-                "verifying \"op.c\"; uint64 op(uint64 left, uint64 right) {{ requires {guard}; ensures {result_goal}; }} by {{ apply({name}(left, right)); execute(); simp(); }} uint64 caller(uint64 left, uint64 right) {{ requires {guard}; ensures {result_goal}; }} by {{ execute(); simp(); }}"
+                "import click::integer; verifying \"op.c\"; uint64 op(uint64 left, uint64 right) {{ requires {guard}; ensures {result_goal}; }} by {{ apply({name}(left, right)); execute(); simp(); }} uint64 caller(uint64 left, uint64 right) {{ requires {guard}; ensures {result_goal}; }} by {{ execute(); simp(); }}"
             );
             verify_c0_sources(&source, &[("op.c", &c)])
                 .unwrap_or_else(|e| panic!("{name}: {}", e.message()));
@@ -1183,7 +1183,7 @@ mod tests {
             ),
         ] {
             let source = format!(
-                "theorem bridge(left: {ty}, right: {ty}) {{ requires {guard}; ensures {goal} by {{ apply({name}(left, right)); }} }}"
+                "import click::integer; theorem bridge(left: {ty}, right: {ty}) {{ requires {guard}; ensures {goal} by {{ apply({name}(left, right)); }} }}"
             );
             verify_c0_sources(&source, &[]).unwrap();
             let expanded =
@@ -1255,7 +1255,7 @@ mod tests {
             ("int64_subtract_to_integer", "-"),
         ] {
             let source = format!(
-                "theorem exact(left: int64, right: int64) {{ requires defined(left {op} right); ensures to_integer(left {op} right) == to_integer(left) {op} to_integer(right) by {{ apply({name}(left, right)); }} }}"
+                "import click::integer; theorem exact(left: int64, right: int64) {{ requires defined(left {op} right); ensures to_integer(left {op} right) == to_integer(left) {op} to_integer(right) by {{ apply({name}(left, right)); }} }}"
             );
             verify_c0_sources(&source, &[]).unwrap();
             let expanded =
@@ -1358,7 +1358,7 @@ mod tests {
 
     #[test]
     fn integer_multiply_add_rechecks_application_and_expansion() {
-        let source = "theorem distribute(a: Integer, b: Integer, c: Integer) { ensures (a + b) * c == a * c + b * c by { apply(integer_multiply_add(a, b, c)); } }";
+        let source = "import click::integer; theorem distribute(a: Integer, b: Integer, c: Integer) { ensures (a + b) * c == a * c + b * c by { apply(integer_multiply_add(a, b, c)); } }";
         verify_c0_sources(source, &[]).unwrap();
         let expanded =
             expand_c0_claim_source_by_label(source, &[], "distribute.ensures_0").unwrap();
@@ -1437,7 +1437,7 @@ mod tests {
                 .map(|r| format!("requires {r}; "))
                 .collect::<String>();
             let source = format!(
-                "theorem law(n: Integer, d: Integer) {{ {requires}ensures {goal} by {{ apply({name}(n, d)); }} }}"
+                "import click::integer; theorem law(n: Integer, d: Integer) {{ {requires}ensures {goal} by {{ apply({name}(n, d)); }} }}"
             );
             verify_c0_sources(&source, &[]).unwrap();
             let expanded = expand_c0_claim_source_by_label(&source, &[], "law.ensures_0").unwrap();
@@ -1503,7 +1503,7 @@ mod tests {
             let expanded = expand_c0_claim_source_by_label(source, &[], label).unwrap();
             verify_c0_sources(&expanded, &[]).unwrap();
         }
-        let guarded = "theorem use_order(a: Integer, b: Integer, c: Integer) { requires a <= b; requires 0 <= c; ensures a * c <= b * c by { apply(integer_multiply_order_nonnegative(a,b,c)); } }";
+        let guarded = "import click::integer; theorem use_order(a: Integer, b: Integer, c: Integer) { requires a <= b; requires 0 <= c; ensures a * c <= b * c by { apply(integer_multiply_order_nonnegative(a,b,c)); } }";
         verify_c0_sources(guarded, &[]).unwrap();
         for bad in [
             guarded.replace("requires a <= b;", ""),
@@ -1573,7 +1573,7 @@ mod tests {
             let expanded = expand_c0_claim_source_by_label(source, &[], label).unwrap();
             verify_c0_sources(&expanded, &[]).unwrap();
         }
-        let guarded = "theorem lower(x: int64, d: Integer) { requires defined(x + 1i64); requires d != 0; requires 1 <= d; requires -100 * d <= to_integer(x) + 1; ensures -100 <= truncating_quotient(to_integer(x + 1i64), d) by { apply(int64_add_to_integer(x, 1i64)); have -100 * d <= to_integer(x + 1i64) by { rewrite(to_integer(x + 1i64) == to_integer(x) + 1); assumption(); } apply(integer_positive_divisor_quotient_lower(to_integer(x + 1i64), d, -100)); } }";
+        let guarded = "import click::integer; theorem lower(x: int64, d: Integer) { requires defined(x + 1i64); requires d != 0; requires 1 <= d; requires -100 * d <= to_integer(x) + 1; ensures -100 <= truncating_quotient(to_integer(x + 1i64), d) by { apply(int64_add_to_integer(x, 1i64)); have -100 * d <= to_integer(x + 1i64) by { rewrite(to_integer(x + 1i64) == to_integer(x) + 1); assumption(); } apply(integer_positive_divisor_quotient_lower(to_integer(x + 1i64), d, -100)); } }";
         verify_c0_sources(guarded, &[]).unwrap();
         for bad in [
             guarded.replace("requires defined(x + 1i64);", ""),
@@ -1720,7 +1720,7 @@ mod tests {
         ] {
             let premises = [bound, scaled, "n == q * d + r", sign];
             let source = format!(
-                "theorem correction(n: Integer, d: Integer, q: Integer, r: Integer, bound: Integer) {{ {} ensures {goal} by {{ apply(integer_{which}_correction_bound(n, d, q, r, bound)); }} }}",
+                "import click::integer; theorem correction(n: Integer, d: Integer, q: Integer, r: Integer, bound: Integer) {{ {} ensures {goal} by {{ apply(integer_{which}_correction_bound(n, d, q, r, bound)); }} }}",
                 premises
                     .iter()
                     .map(|p| format!("requires {p}; "))

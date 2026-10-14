@@ -1,3 +1,6 @@
+import click::integer;
+import click::machine_integer;
+
 verifying "bitcoin-src/src/util/feefrac.h";
 static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
     requires round_down == 0;

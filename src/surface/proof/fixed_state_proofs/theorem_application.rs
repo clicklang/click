@@ -257,9 +257,13 @@ pub(in crate::surface::proof) fn lower_theorem_application_requirements_with_ass
     spec_definitions: SpecDefinitions<'_>,
     unfolded_predicates: &[String],
 ) -> Result<Vec<Proposition>, String> {
-    let theorem = theorem_environment
-        .get(&application.name)
-        .ok_or_else(|| format!("unknown theorem `{}`", application.name))?;
+    let theorem = theorem_environment.get(&application.name).ok_or_else(|| {
+        format!(
+            "unknown theorem `{}`{}",
+            application.name,
+            crate::surface::validation::library_import_hint(&application.name)
+        )
+    })?;
     let theorem = instantiate_generic_theorem_application_definition(
         theorem,
         application,

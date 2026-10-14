@@ -1,3 +1,5 @@
+import click::integer;
+
 // Checked bridge from the original four-byte recombination to the common spec.
 // Assemble after design/adler32-spec.click. No computation summary is assumed.
 

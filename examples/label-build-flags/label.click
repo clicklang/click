@@ -1,3 +1,6 @@
+import click::integer;
+import click::machine_integer;
+
 verifying "label_fit.c";
 verifying "label_copy.c";
 

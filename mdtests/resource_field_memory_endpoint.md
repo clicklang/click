@@ -31,6 +31,8 @@ void claim(int32* data, int32 capacity, int32 start) {
 ```
 
 ```click
+import click::machine_integer;
+
 resource suffix_after_prefix(buffer: struct buffer*) {
     field start: int32;
     owns buffer->data;

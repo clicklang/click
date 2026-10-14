@@ -1,3 +1,5 @@
+import click::integer;
+
 // Native vector transitions against the common specification at an arbitrary prefix.
 // Assemble after the common specification and lane-state.click.
 // The scalar B representative accounts for the deferred chunk contribution.

@@ -1,3 +1,6 @@
+import click::integer;
+import click::machine_integer;
+
 verifying "sum.rs";
 function prefix(bytes: *const u8, end: usize) -> Integer {
     (0..end).fold(0, |acc, k| {

@@ -33,6 +33,8 @@ int32 uses_exit_disjunction(int32 a, int32 *p) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "loop_conjunctive_guard_exit_join.c";
 
 int32 uses_exit_disjunction(int32 a, int32* p) {
