@@ -507,6 +507,12 @@ fn check_fixed_state_fact_transport_using_facts_inner(
                 )
             },
         ) {
+            // The chain may cite any ambient condition fact, not only the
+            // transport's premises.
+            crate::instrumentation::record_hidden_prerequisite(
+                crate::instrumentation::HiddenPrerequisiteRoute::TacticSearch,
+                "transport load-variable chain",
+            );
             return Ok(CheckedFixedStateFactTransport { source, target });
         }
         // A fact about a checked range-fold application crosses a step that
@@ -625,6 +631,11 @@ fn check_fixed_state_fact_transport_using_facts_inner(
                 },
             );
             if framed {
+                // The quantified frame reads the whole proof context.
+                crate::instrumentation::record_hidden_prerequisite(
+                    crate::instrumentation::HiddenPrerequisiteRoute::TacticSearch,
+                    "transport quantified frame",
+                );
                 return Ok(CheckedFixedStateFactTransport { source, target });
             }
             let read_refusal =

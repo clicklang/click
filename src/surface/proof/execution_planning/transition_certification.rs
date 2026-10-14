@@ -272,10 +272,11 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
                 path_facts.push(proposition);
             }
             for obligation in path.obligations() {
-                if !successor_facts
-                    .assumptions()
-                    .proves(obligation.proposition())
-                {
+                if !crate::surface::planning::proposition_search::proves_by_tactic_search(
+                    successor_facts.assumptions(),
+                    obligation.proposition(),
+                    "branch condition obligation",
+                ) {
                     return Err(missing_condition_prerequisite_error(
                         context_label,
                         obligation,
@@ -988,7 +989,16 @@ fn certified_transitions_from_execution(
                                     | Proposition::CMemoryLoadable { .. }
                             ) && prerequisite_assumptions
                                 .derive_atomic_proposition(proposition)
-                                .is_some())
+                                .is_some()
+                                && {
+                                    // Reached only after every exact check
+                                    // above missed: a search over the context.
+                                    crate::instrumentation::record_hidden_prerequisite(
+                                        crate::instrumentation::HiddenPrerequisiteRoute::TacticSearch,
+                                        "step resource atomic derivation",
+                                    );
+                                    true
+                                })
                         {
                             None
                         } else if let Some(derivation) = matches!(

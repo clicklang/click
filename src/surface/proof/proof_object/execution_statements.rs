@@ -1550,10 +1550,7 @@ impl<'a> Proof<'a> {
                     let written = crate::surface::printing::source_click_proposition(proposition);
                     let lowered = self.lower_surface_goal(proposition, "`requires` entry")?;
                     let Some(slot) = open.iter().position(|requirement| {
-                        crate::surface::proof::smart_closures::lowered_states_requirement(
-                            &lowered,
-                            requirement,
-                        )
+                        self.written_states_requirement(&lowered, requirement)
                     }) else {
                         let open_now = if open.is_empty() {
                             "it leaves none open".to_string()
@@ -1664,6 +1661,7 @@ impl<'a> Proof<'a> {
                 return Ok(None);
             };
             let surface = spelling.surface.clone();
+            current.debug_assert_spelling_relowers(requirement, &surface);
             let checkpoint = current.checkpoint();
             let Ok(have) = current.begin_have(surface.clone()) else {
                 return Ok(None);
@@ -1683,6 +1681,28 @@ impl<'a> Proof<'a> {
             });
         }
         Ok(Some((current, entries)))
+    }
+
+    /// Every requirement's Surface spelling must lower back to that
+    /// requirement, so that the expanded `requires` entry matches it.
+    fn debug_assert_spelling_relowers(
+        &self,
+        requirement: &UnresolvedRequirement,
+        surface: &ClickProposition,
+    ) {
+        if !cfg!(debug_assertions) {
+            return;
+        }
+        let lowered = self.lower_surface_goal(surface, "requirement spelling");
+        debug_assert!(
+            lowered
+                .as_ref()
+                .is_ok_and(|lowered| self.written_states_requirement(lowered, requirement)),
+            "the spelling `{}` of requirement {:?} lowers to {:?}",
+            crate::surface::printing::source_click_proposition(surface),
+            requirement.proposition,
+            lowered.map_err(|error| error.to_string())
+        );
     }
 
     /// This Proof advanced by `stepped`'s checked step, recorded as one

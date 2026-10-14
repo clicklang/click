@@ -843,10 +843,10 @@ skips the comparison.
 
 A simple tactic must close each requirement by an exact or indexed check
 ([`issues/simplify-step.md`](https://github.com/clicklang/click/blob/master/issues/simplify-step.md)).
-A `step()` no longer searches; where statement checking under the contextual
-or explicit policies still derives a prerequisite by a search whose result
-the proof does not retain, it counts the derivation by route and top rule
-(`instrumentation::HiddenPrerequisiteRoute`). Both pins are empty. The fixture harnesses take
+Where statement checking under the contextual or explicit policies still
+derives a prerequisite by a search whose result the proof does not retain, it
+counts the derivation by route and top rule
+(`instrumentation::HiddenPrerequisiteRoute`). The fixture harnesses take
 that census after an unfiltered run and compare it with
 `HIDDEN_PREREQUISITE_BASELINE` in `tests/mdtests.rs` and `tests/examples.rs`,
 exactly as the artifact reuse ratchet does: a count that rose must not land,
@@ -860,7 +860,13 @@ which records the claim and step of each hidden derivation. The
 condition the general decision settled after the difference graph left it
 open
 ([`issues/difference-logic.md`](https://github.com/clicklang/click/blob/master/issues/difference-logic.md)),
-by evaluation site.
+by evaluation site. The `TacticSearch` route counts a premise a simple tactic
+proved by searching the proof context after its exact lookup missed, by
+tactic site: resource `fold`, `unfold` and `observe`, `transport ... using`
+at an execution or fixed-state frontier, a `branch` arm's condition
+obligation, an outcome `if` or `cases` condition, a `have` of a separation
+away from the frontier, and a step's resource, separation or loadable-memory
+obligation.
 
 ## Quarantine
 
