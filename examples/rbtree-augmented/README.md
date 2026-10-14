@@ -184,7 +184,11 @@ no insertion or erasure body changes. `sized_callback_table` packages the proved
 interfaces with stable views of the three fields. The concrete client constructs
 that package from the execution theorems and lends it to the generic copy
 dispatcher. The indirect call preserves both `rb_at` models and the source cache
-while copying its value into the target cache. Propagation dispatch now uses the
-same package and returns the whole repaired sized tree, preserving its root and erased shape and establishing recursive
-count validity through the previously checked arbitrary ancestor loop. Rotation
-dispatch and connection to insertion and erasure remain to be checked.
+while copying its value into the target cache. Propagation dispatch uses the same
+package and returns the whole repaired sized tree, preserving its root and
+erased shape and establishing recursive count validity through the previously
+checked arbitrary ancestor loop. Rotation dispatch accepts a left or right dirty
+subtree model, selects the corresponding proved callback interface inside the
+borrowed table scope, and returns a recursively valid sized subtree. Both named
+rotation interfaces preserve the structural shape and establish the repaired
+root count. Connection to insertion and erasure remains to be checked.
