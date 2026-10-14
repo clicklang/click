@@ -1,11 +1,11 @@
 # Unchanged zlib Adler-32 adapter trial
 
-The unchanged zlib 1.3.1 computation imports and proves its empty-input result
-and its checksums for every length 1 through 22208 against the shared mathematical
-specification for the canonical seed 1 and a nonnull buffer. The nonempty proofs
-also preserve every input byte. **The arbitrary-length checksum postcondition
-and C/Rust result equality remain unproved.** This is the C
-adapter baseline for the shared [checksum specification](../../adler32-spec.click).
+The unchanged zlib 1.3.1 computation now proves its shared Adler-32 checksum,
+termination, and preservation of every input byte for every length zero through
+2,147,483,647, canonical seed 1, and a nonnull buffer. This matches the Rust
+trial's supported length range. **General canonical packed seeds, incremental
+C processing, and C/Rust result equality remain unproved.** The C adapter uses
+the shared [checksum specification](../../adler32-spec.click).
 
 `adler32.c`, `zutil.h`, `zlib.h`, and `zconf.h` are byte-for-byte upstream files
 from revision `51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf` of
@@ -32,6 +32,7 @@ target/debug/click verify design/charon-trial/zlib/one-byte.click
 target/debug/click verify design/charon-trial/zlib/reset.click
 target/debug/click verify design/charon-trial/zlib/short-memory.click
 target/debug/click verify design/charon-trial/zlib/sixteen.click
+target/debug/click verify design/charon-trial/zlib/full-stream.click
 ```
 
 To reproduce preparation on a machine with the compiler and include paths in
@@ -203,8 +204,33 @@ The offline stream regression checks every helper body, complete certificate
 expansion, false checksum, cursor and raw-seed invariants, and missing or
 shortened read authority. It runs in nightly. Its manifest and lock reuse the
 unchanged prepared input; the C and headers remain byte-for-byte pinned.
-The arbitrary-length C proof, noncanonical seeds, and C/Rust result equality
-remain future work.
+The full-stream sidecar below extends this proof to the shared signed length
+limit and covers every original return path.
+
+The locked [full-stream sidecar](full-stream.click) proves the complete
+canonical-seed, nonnull-input contract for lengths 0–2147483647. Its case proof
+follows the original one-byte fast return, the short loop (including empty
+input), and the full stream. No C body or header changed. Zero guards retain
+their original unsigned wrapping effects; no processed counter was added.
+
+[Full-stream helpers](full-stream-helpers.click) reuse Rust's checked full-range
+count and byte-pointer observations. Global prefixes and future suffixes carry
+the full signed ceiling, while each NMAX batch keeps its original arithmetic
+bounds. A signed prefix plus a chunk must fit its actual total, not merely have
+individually bounded operands. The helpers establish this before narrowing
+native counts, associating pointers, or applying checksum concatenation.
+
+The offline full-stream regression checks all dependency bodies, all eight
+postconditions across the four original return paths, complete certificate
+expansion, and negative checksum, cursor, raw-seed, authority, and length-ceiling
+cases. A separate nightly regression expands and checks every new helper claim
+and rejects invalid cast, pointer-sum, read-bound, and endpoint claims. The
+import manifest and lock reuse the unchanged prepared source and headers.
+
+The next increment is matched canonical packed seeds and incremental C
+processing, followed by C/Rust result equality and the shared demonstration.
+The explicit signed specification limit remains; this proof makes no claim for
+larger native lengths.
 
 | Original file | SHA-256 |
 | --- | --- |
