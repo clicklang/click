@@ -71,6 +71,7 @@ mod storage_tests;
 mod uint64_tests;
 pub(in crate::kernel) use inputs::InputKey;
 pub(crate) use inputs::{ReadEqualityCheckpoint, ReadEqualityDelta};
+mod pointer_facts;
 mod terms;
 pub(in crate::kernel) use terms::{Int32AtomClass, Int32MergeToken};
 

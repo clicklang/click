@@ -10559,11 +10559,6 @@ pub struct PureFactContext {
     /// A context built in bulk from a fact list defers the keys until the
     /// index is first asked for (see `StatedPropositionIndex`).
     pub(super) stated_proposition_index: super::assumptions::StatedPropositionIndex,
-    /// Nominal function-contract witnesses keyed by the exact pointer value.
-    /// This keeps indirect-call lookup proportional to contracts explicitly
-    /// known for that pointer, never to project-wide declarations.
-    pub(super) function_contract_facts:
-        std::sync::Arc<BTreeMap<Pointer, BTreeMap<String, Proposition>>>,
     /// Exact equalities between two applications of one algebraic
     /// constructor, indexed by each field equality they entail. Both levels
     /// are persistent so adding one proof fact changes logarithmically many

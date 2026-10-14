@@ -1978,7 +1978,7 @@ fn execute_c_indirect_call_paths(
                         let contracts = target_assumptions
                             .function_contract_facts_for(pointer.pointer())
                             .filter_map(|(name, _)| {
-                                execution_context.environment.get_function_contract(name)
+                                execution_context.environment.get_function_contract(&name)
                             })
                             .filter(|contract| contract.function_pointer_type() == function_type)
                             .collect::<Vec<_>>();

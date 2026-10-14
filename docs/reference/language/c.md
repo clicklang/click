@@ -1657,8 +1657,8 @@ Separate calls still have separate symbolic results.
 If exactly one interface applies, it uses the ordinary resource transition and
 owned footprint. When several resource interfaces apply, write
 `step(Buffered)` to choose the named contract for the function-pointer call at
-the current frontier. The contract must be known for that exact pointer and
-signature, and its requirements must hold; an invalid choice never falls back
+the current frontier. The contract must be known for that pointer or a checked equal pointer, with
+the same call signature, and its requirements must hold; an invalid choice never falls back
 to another contract. The choice applies to this step only and is retained in
 the checked proof and its expansion. It cannot select a contract for a plain
 direct function call, or advance a non-call statement.

@@ -175,3 +175,14 @@ copy callback updates its two metadata cells while preserving independently
 owned `rb_at` trees. Its execution theorem and expansion audit check the
 returned structural ownership and models. This is a callback frame contract;
 writable callback-table integration with insertion and erasure remains pending.
+
+`rbtree_size_callbacks.click` connects the writable copy interface to the
+concrete generated callback table. Its C translation unit combines the unchanged
+compute, copy, rotation, and propagation bodies from the existing size examples;
+no insertion or erasure body changes. `sized_callback_table` packages the proved
+`PropagateTree`, `CopySizedStructure`, `RotateTreeLeft`, and `RotateTreeRight`
+interfaces with stable views of the three fields. The concrete client constructs
+that package from the execution theorems and lends it to the generic copy
+dispatcher. The indirect call preserves both `rb_at` models and the source cache
+while copying its value into the target cache. Rotation and propagation dispatch,
+then connection to insertion and erasure, remain to be checked.

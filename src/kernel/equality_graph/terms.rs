@@ -15,6 +15,39 @@ use std::sync::Arc;
 
 mod congruence;
 
+#[cfg(test)]
+thread_local! {
+    static POINTER_FACT_MERGE_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(super) fn take_pointer_fact_merge_visits() -> usize {
+    POINTER_FACT_MERGE_VISITS.with(|visits| visits.replace(0))
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(in crate::kernel::equality_graph) enum PointerFactKey {
+    Predicate(u64),
+    PredicateShape(String, usize, usize, crate::kernel::CType),
+    FunctionContracts,
+}
+
+/// The type-erased source handle breaks the recursive Send/Sync type path
+/// through checked fact metadata and memory construction. It retains the
+/// original immutable allocation; its address is a safe shallow source key.
+pub(super) trait PointerFactSource: Send + Sync {
+    fn proposition(&self) -> &crate::kernel::Proposition;
+}
+
+impl PointerFactSource for crate::kernel::ExecutionPureFact {
+    fn proposition(&self) -> &crate::kernel::Proposition {
+        self.proposition()
+    }
+}
+
+pub(super) type PointerFactBucket =
+    PersistentMap<String, PersistentMap<usize, Arc<dyn PointerFactSource>>>;
+
 /// These tags keep signed division and wider integer operations distinct.
 /// Congruence does not establish C/Rust arithmetic definedness.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -209,6 +242,9 @@ impl Clone for RootLookupCache {
 
 #[derive(Clone, Default)]
 pub(super) struct TermClasses {
+    /// Source propositions follow address classes. Only the moved class is
+    /// visited on union; queries select one key and never enumerate aliases.
+    pointer_facts: PersistentMap<u64, PersistentMap<PointerFactKey, PointerFactBucket>>,
     // Retain the exact schema allocation used by each key, even when the
     // interned token uses an independently allocated equal schema. Keys are
     // allocation identity and a shallow nominal node, never a model tree.
@@ -349,6 +385,92 @@ impl std::hash::Hash for Int32MergeToken {
 }
 
 impl TermClasses {
+    pub(super) fn clear_pointer_facts(&mut self) {
+        self.pointer_facts = PersistentMap::default();
+    }
+    pub(super) fn pointer_facts(&self, address: u64, key: &PointerFactKey) -> PointerFactBucket {
+        crate::instrumentation::record_deterministic_work(1);
+        self.pointer_facts
+            .get(&self.root(address))
+            .and_then(|facts| facts.get(key))
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    pub(super) fn adjust_pointer_fact(
+        &mut self,
+        address: u64,
+        key: PointerFactKey,
+        source: &Arc<crate::kernel::ExecutionPureFact>,
+        insert: bool,
+    ) {
+        crate::instrumentation::record_deterministic_work(1);
+        let root = self.root(address);
+        let mut keys = self.pointer_facts.get(&root).cloned().unwrap_or_default();
+        let mut groups = keys.get(&key).cloned().unwrap_or_default();
+        let group = match (&key, source.proposition()) {
+            (
+                PointerFactKey::FunctionContracts,
+                crate::kernel::Proposition::Predicate { name, .. },
+            ) => crate::kernel::CFunctionContract::surface_name_from_predicate(name)
+                .expect("contract predicate")
+                .to_string(),
+            _ => String::new(),
+        };
+        let bucket = groups.get(&group).cloned().unwrap_or_default();
+        // The retained Arc prevents allocation-identity reuse. Payload keys
+        // stay shallow even when a proposition contains a large C state.
+        let identity = Arc::as_ptr(source) as usize;
+        if insert && !bucket.contains_key(&identity) {
+            // Payloads participate in union weighting, so a large class of
+            // witnesses cannot be moved repeatedly by fresh singleton terms.
+            self.weights.insert(root, self.weight(root) + 1);
+        }
+        let bucket = if insert {
+            bucket.with_inserted(identity, source.clone() as Arc<dyn PointerFactSource>)
+        } else {
+            bucket.without_key(&identity)
+        };
+        if bucket.is_empty() {
+            groups.remove(&group);
+        } else {
+            groups.insert(group, bucket);
+        }
+        if groups.is_empty() {
+            keys.remove(&key);
+        } else {
+            keys.insert(key, groups);
+        }
+        if keys.is_empty() {
+            self.pointer_facts.remove(&root);
+        } else {
+            self.pointer_facts.insert(root, keys);
+        }
+    }
+
+    fn merge_pointer_facts(&mut self, moved: u64, kept: u64) {
+        let Some(moved_facts) = self.pointer_facts.get(&moved).cloned() else {
+            return;
+        };
+        let mut kept_facts = self.pointer_facts.get(&kept).cloned().unwrap_or_default();
+        for (key, groups) in moved_facts.iter() {
+            let mut kept_groups = kept_facts.get(key).cloned().unwrap_or_default();
+            for (group, sources) in groups.iter() {
+                let mut bucket = kept_groups.get(group).cloned().unwrap_or_default();
+                for (identity, source) in sources.iter() {
+                    crate::instrumentation::record_deterministic_work(1);
+                    #[cfg(test)]
+                    POINTER_FACT_MERGE_VISITS.with(|visits| visits.set(visits.get() + 1));
+                    bucket.insert(*identity, source.clone());
+                }
+                kept_groups.insert(group.clone(), bucket);
+            }
+            kept_facts.insert(key.clone(), kept_groups);
+        }
+        self.pointer_facts.remove(&moved);
+        self.pointer_facts.insert(kept, kept_facts);
+    }
+
     /// The identity of this graph's merges: two graphs with equal tokens
     /// give every opaque atom the same [`Int32AtomClass`]. Registration
     /// alone never changes a class, so only a merge changes the token.
@@ -1417,6 +1539,7 @@ impl TermClasses {
                 self.addresses_by_offset.insert(kept, kept_addresses);
             }
             self.merge_storage_addresses(moved, kept);
+            self.merge_pointer_facts(moved, kept);
             self.merge_additive_addresses(moved, kept);
             self.merge_additive_offsets(moved, kept);
             self.merge_alignment_witnesses(moved, kept);

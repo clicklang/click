@@ -2908,6 +2908,9 @@ impl PureFactContext {
         for (condition, value) in self.congruence_conditions.iter() {
             classes.add_condition(condition, *value);
         }
+        for source in self.execution_fact_projection.values() {
+            classes.adjust_pointer_predicate(source, true);
+        }
         self.equality_graph = classes;
     }
 
@@ -3666,6 +3669,7 @@ impl PureFactContext {
         let propositions = self.prop_facts.clone();
         for proposition in propositions.iter() {
             self.adjust_algebraic_graph_equality(proposition, true);
+            self.adjust_pointer_predicate_fact(proposition, true);
         }
     }
 
@@ -4220,6 +4224,7 @@ impl PureFactContext {
 
     fn clear_proposition_facts_with_graph_rebuild(&mut self, rebuild_graph: bool) {
         self.prop_facts = imbl::OrdSet::new();
+        self.equality_graph.clear_pointer_predicates();
         self.execution_fact_projection = self
             .execution_fact_projection
             .iter()
@@ -4228,7 +4233,6 @@ impl PureFactContext {
             .collect();
         self.rebuild_atomic_connection_facts();
         self.rebuild_stated_proposition_index();
-        self.function_contract_facts = std::sync::Arc::new(BTreeMap::new());
         self.disjunction_facts = crate::persistent::PersistentSet::default();
         self.algebraic_constructor_field_equalities = crate::persistent::PersistentMap::default();
         self.algebraic_constructor_conflicts = crate::persistent::PersistentMap::default();
@@ -4283,64 +4287,27 @@ impl PureFactContext {
         self.rebuild_algebraic_constructor_field_equalities();
         self.rebuild_memory_loadable_facts();
         self.rebuild_memory_separation_facts();
-        self.rebuild_function_contract_facts();
         self.recompute_content_fingerprint();
         self.rebuild_algebraic_graph_equalities();
     }
 
-    fn proposition_function_contract(proposition: &Proposition) -> Option<(Pointer, String)> {
-        let Proposition::Predicate { name, arguments } = proposition else {
-            return None;
-        };
-        let contract_name = CFunctionContract::surface_name_from_predicate(name)?;
-        let [Term::CState(_), Term::CValue(CValue::Pointer(pointer))] = arguments.as_slice() else {
-            return None;
-        };
-        Some((pointer.pointer().clone(), contract_name.to_string()))
-    }
-
-    fn adjust_function_contract_fact(&mut self, proposition: &Proposition, insert: bool) {
-        let Some((pointer, name)) = Self::proposition_function_contract(proposition) else {
-            return;
-        };
-        let index = std::sync::Arc::make_mut(&mut self.function_contract_facts);
-        if insert {
-            index
-                .entry(pointer)
-                .or_default()
-                .insert(name, proposition.clone());
+    fn adjust_pointer_predicate_fact(&mut self, proposition: &Proposition, insert: bool) {
+        if !matches!(proposition, Proposition::Predicate { .. }) {
             return;
         }
-        let remove_pointer = if let Some(contracts) = index.get_mut(&pointer) {
-            contracts.remove(&name);
-            contracts.is_empty()
-        } else {
-            false
-        };
-        if remove_pointer {
-            index.remove(&pointer);
-        }
-    }
-
-    #[cfg(test)]
-    fn rebuild_function_contract_facts(&mut self) {
-        self.function_contract_facts = std::sync::Arc::new(BTreeMap::new());
-        let facts = self.prop_facts.iter().cloned().collect::<Vec<_>>();
-        for proposition in facts {
-            self.adjust_function_contract_fact(&proposition, true);
+        if let Some(source) = self
+            .execution_fact_projection
+            .get(&ContextFactKey::Proposition(proposition.clone()))
+        {
+            self.equality_graph.adjust_pointer_predicate(source, insert);
         }
     }
 
     pub(crate) fn function_contract_facts_for(
         &self,
         pointer: &Pointer,
-    ) -> impl Iterator<Item = (&String, &Proposition)> {
-        crate::instrumentation::record_deterministic_work(1);
-        self.function_contract_facts
-            .get(pointer)
-            .into_iter()
-            .flat_map(|contracts| contracts.iter())
-            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+    ) -> impl Iterator<Item = (String, Proposition)> {
+        self.equality_graph.pointer_function_contracts(pointer)
     }
 
     fn proposition_memory_separation(
@@ -4996,13 +4963,14 @@ impl PureFactContext {
             self.adjust_memory_loadable_fact(&proposition, true);
             self.adjust_memory_separation_fact(&proposition, true);
             self.adjust_nonmemory_separation_fact(&proposition, true);
-            self.adjust_function_contract_fact(&proposition, true);
+            self.adjust_pointer_predicate_fact(&proposition, true);
             self.content_fingerprint ^= Self::fingerprint(2, &proposition);
         }
     }
 
     pub(super) fn remove_proposition_fact(&mut self, proposition: &Proposition) {
         if self.prop_facts.remove(proposition).is_some() {
+            self.adjust_pointer_predicate_fact(proposition, false);
             self.execution_fact_projection
                 .remove(&ContextFactKey::Proposition(proposition.clone()));
             self.adjust_atomic_connection_fact(proposition, false);
@@ -5018,7 +4986,6 @@ impl PureFactContext {
             self.adjust_memory_loadable_fact(proposition, false);
             self.adjust_memory_separation_fact(proposition, false);
             self.adjust_nonmemory_separation_fact(proposition, false);
-            self.adjust_function_contract_fact(proposition, false);
             self.content_fingerprint ^= Self::fingerprint(2, proposition);
         }
     }
@@ -5091,10 +5058,6 @@ impl PureFactContext {
             && self
                 .stated_proposition_index
                 .shares_storage_with(&other.stated_proposition_index)
-            && std::sync::Arc::ptr_eq(
-                &self.function_contract_facts,
-                &other.function_contract_facts,
-            )
             && self
                 .algebraic_constructor_field_equalities
                 .shares_root_with(&other.algebraic_constructor_field_equalities)
@@ -5350,6 +5313,9 @@ impl PureFactContext {
         match proposition {
             Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => {
                 self.equality_graph.are_algebraic_equal(a, b)
+            }
+            Proposition::Predicate { .. } => {
+                self.equality_graph.knows_pointer_predicate(proposition)
             }
             Proposition::ConditionIs(condition, value) => {
                 self.equality_graph.knows_condition(condition, *value)

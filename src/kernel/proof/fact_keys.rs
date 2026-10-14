@@ -534,6 +534,33 @@ pub(crate) struct QuantifiedEquivalenceKey(AlphaPropositionKey);
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) struct PropositionIdentityKey(AlphaPropositionKey);
 
+/// Candidate selector for pointer congruence. Pointer values are holes, but
+/// their types and positions, other arguments, and memory epochs remain in
+/// the selector. It is a shallow fingerprint, never evidence: the consumer checks every
+/// non-pointer argument exactly and every typed pointer through the graph.
+pub(in crate::kernel) fn pointer_predicate_selector(proposition: &Proposition) -> Option<u64> {
+    let Proposition::Predicate { name, arguments } = proposition else {
+        return None;
+    };
+    let arguments = arguments
+        .iter()
+        .map(|argument| match argument {
+            Term::CValue(CValue::Pointer(pointer)) => Term::CValue(CValue::typed_pointer(
+                crate::kernel::Pointer::null(),
+                pointer.c_type(),
+            )),
+            other => other.clone(),
+        })
+        .collect();
+    let key = proposition_identity_key(&Proposition::Predicate {
+        name: name.clone(),
+        arguments,
+    })?;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    key.hash(&mut hasher);
+    Some(hasher.finish())
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaPropositionKey {
     EqualBitvector(AlphaBitvectorKey, AlphaBitvectorKey),

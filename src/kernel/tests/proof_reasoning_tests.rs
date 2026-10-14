@@ -11853,3 +11853,231 @@ fn lazy_finite_forall_certificates_require_exact_complete_instance_tables() {
     false_instance[0].conclusion = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
     check(false_instance);
 }
+
+#[test]
+fn pointer_predicate_matching_preserves_types_arguments_snapshots_and_scope() {
+    fn fact(name: &str, state: CState, pointers: &[Pointer], ty: CType, tag: u32) -> Proposition {
+        let mut arguments = vec![Term::CState(Box::new(state)), Term::CValue(int32(tag))];
+        arguments.extend(
+            pointers
+                .iter()
+                .map(|pointer| Term::CValue(CValue::typed_pointer(pointer.clone(), ty))),
+        );
+        Proposition::Predicate {
+            name: name.into(),
+            arguments,
+        }
+    }
+    let [a, b, c, d] = [120_001, 120_002, 120_003, 120_004].map(|v| Pointer::symbolic(Variable(v)));
+    let ty = CType::Int32Pointer;
+    let state = CState::new();
+    let source = fact("Selected", state.clone(), &[a.clone(), c.clone()], ty, 7);
+    let goal = fact("Selected", state.clone(), &[b.clone(), d.clone()], ty, 7);
+    let ab = Proposition::ConditionIs(
+        ConditionTerm::PointerEqual(Box::new(a.clone()), Box::new(b.clone())),
+        true,
+    );
+    let cd = Proposition::ConditionIs(
+        ConditionTerm::PointerEqual(Box::new(c.clone()), Box::new(d.clone())),
+        true,
+    );
+    let base = PureFactContext::new().assume_proposition(source.clone());
+    let first = base.clone().assume_proposition(ab.clone());
+    assert!(
+        !first.contains_known(&goal),
+        "every pointer argument needs equality"
+    );
+    let joined = first.assume_proposition(cd.clone());
+    assert!(joined.contains_known(&goal));
+    assert!(!joined.contains_assumed_exact(&goal));
+    assert!(!base.contains_known(&goal));
+    assert!(!joined.without_exact_fact(&ab).contains_known(&goal));
+    assert!(!joined.without_exact_fact(&cd).contains_known(&goal));
+    assert!(!joined.without_exact_fact(&source).contains_known(&goal));
+    let before = PureFactContext::new()
+        .assume_proposition(ab)
+        .assume_proposition(cd)
+        .assume_proposition(source);
+    assert!(
+        before.contains_known(&goal),
+        "equalities may precede witnesses"
+    );
+    for wrong in [
+        fact("Other", state.clone(), &[b.clone(), d.clone()], ty, 7),
+        fact("Selected", state.clone(), &[b.clone(), d.clone()], ty, 8),
+        fact(
+            "Selected",
+            state.clone(),
+            &[b.clone(), d.clone()],
+            CType::UInt32Pointer,
+            7,
+        ),
+        fact(
+            "Selected",
+            state.clone().with_local("different", int32(1)),
+            &[b.clone(), d.clone()],
+            ty,
+            7,
+        ),
+        fact(
+            "Selected",
+            state.with_memory(CMemory::new().with_block("new-epoch", 4)),
+            &[b, d],
+            ty,
+            7,
+        ),
+    ] {
+        assert!(!joined.contains_known(&wrong));
+    }
+    let mut cleared = joined.clone();
+    cleared.clear_proposition_facts();
+    assert!(!cleared.contains_known(&goal));
+    assert!(
+        joined.contains_known(&goal),
+        "clearing a clone must not clear its parent"
+    );
+}
+
+#[test]
+fn predicate_and_callback_lookup_share_late_pointer_class_merges() {
+    let a = Pointer::symbolic_function(Variable(121_001));
+    let b = Pointer::symbolic_function(Variable(121_002));
+    let fact = |pointer: Pointer, state: CState| Proposition::Predicate {
+        name: CFunctionContract::predicate_name_for("Invoke"),
+        arguments: vec![
+            Term::CState(Box::new(state)),
+            Term::CValue(CValue::typed_pointer(
+                pointer,
+                CType::FunctionPointer(CallbackSignature::from_encoded(121_000)),
+            )),
+        ],
+    };
+    let source = fact(a.clone(), CState::new());
+    let sibling_source = fact(a.clone(), CState::new().with_local("tag", int32(1)));
+    let goal = fact(b.clone(), CState::new());
+    let alias = Proposition::ConditionIs(
+        ConditionTerm::PointerEqual(Box::new(a), Box::new(b.clone())),
+        true,
+    );
+    let base = PureFactContext::new()
+        .assume_proposition(source.clone())
+        .assume_proposition(sibling_source.clone());
+    assert_eq!(base.function_contract_facts_for(&b).count(), 0);
+    let joined = base.clone().assume_proposition(alias.clone());
+    assert!(joined.contains_known(&goal));
+    assert_eq!(
+        joined
+            .function_contract_facts_for(&b)
+            .map(|(name, _)| name)
+            .collect::<Vec<_>>(),
+        vec!["Invoke"]
+    );
+    let one_removed = joined.without_exact_fact(&source);
+    assert!(
+        !one_removed.contains_known(&goal),
+        "a different state is not a predicate witness"
+    );
+    assert_eq!(
+        one_removed.function_contract_facts_for(&b).count(),
+        1,
+        "the other checked contract witness remains"
+    );
+    assert_eq!(
+        one_removed
+            .without_exact_fact(&sibling_source)
+            .function_contract_facts_for(&b)
+            .count(),
+        0
+    );
+    assert_eq!(
+        joined
+            .without_exact_fact(&alias)
+            .function_contract_facts_for(&b)
+            .count(),
+        0
+    );
+    assert!(!base.contains_known(&goal));
+}
+
+#[test]
+fn equality_aware_pointer_fact_queries_ignore_unrelated_facts_and_old_snapshots() {
+    let target = Pointer::symbolic_function(Variable(122_000));
+    let alias = Pointer::symbolic_function(Variable(122_001));
+    let fact = |pointer: Pointer, state: CState| Proposition::Predicate {
+        name: CFunctionContract::predicate_name_for("Selected"),
+        arguments: vec![
+            Term::CState(Box::new(state)),
+            Term::CValue(CValue::typed_pointer(
+                pointer,
+                CType::FunctionPointer(CallbackSignature::from_encoded(122_000)),
+            )),
+        ],
+    };
+    let goal = fact(alias.clone(), CState::new());
+    let mut samples = Vec::new();
+    for size in [16, 64, 256] {
+        let mut context =
+            PureFactContext::new().assume_proposition(fact(target.clone(), CState::new()));
+        for index in 0..size {
+            context = context.assume_proposition(fact(
+                Pointer::symbolic_function(Variable(123_000 + index)),
+                CState::new(),
+            ));
+            // Same predicate and pointer, but different memory epochs must
+            // not turn a selected query into a scan of snapshot history.
+            context = context.assume_proposition(fact(
+                target.clone(),
+                CState::new().with_memory(CMemory::new().with_block(format!("epoch-{index}"), 4)),
+            ));
+        }
+        context = context.assume_condition(
+            ConditionTerm::PointerEqual(Box::new(target.clone()), Box::new(alias.clone())),
+            true,
+        );
+        assert!(context.contains_known(&goal)); // warm selected registration
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..16 {
+                assert!(context.contains_known(&goal));
+                assert_eq!(context.function_contract_facts_for(&alias).count(), 1);
+            }
+        });
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[1] == pair[0]),
+        "selected pointer predicate work grew with unrelated facts: {samples:?}"
+    );
+}
+
+#[test]
+fn pointer_fact_payloads_are_not_revisited_when_fresh_aliases_join_a_large_class() {
+    use crate::kernel::equality_graph::EqualityGraph;
+    for size in [16, 64, 256] {
+        let target = Pointer::symbolic(Variable(124_000));
+        let mut context = PureFactContext::new();
+        for index in 0..size {
+            context = context.assume_proposition(Proposition::Predicate {
+                name: format!("Witness{index}"),
+                arguments: vec![Term::CValue(CValue::typed_pointer(
+                    target.clone(),
+                    CType::Int32Pointer,
+                ))],
+            });
+        }
+        EqualityGraph::take_pointer_fact_merge_visits();
+        for index in 0..size {
+            context = context.assume_condition(
+                ConditionTerm::PointerEqual(
+                    Box::new(target.clone()),
+                    Box::new(Pointer::symbolic(Variable(125_000 + index))),
+                ),
+                true,
+            );
+        }
+        assert_eq!(
+            EqualityGraph::take_pointer_fact_merge_visits(),
+            0,
+            "fresh aliases must not move any of the {size} existing witnesses"
+        );
+    }
+}
