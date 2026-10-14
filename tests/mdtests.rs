@@ -279,20 +279,6 @@ const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] 
     (
         (
             HiddenPrerequisiteRoute::TacticSearch,
-            "outcome if condition",
-        ),
-        6,
-    ),
-    (
-        (
-            HiddenPrerequisiteRoute::TacticSearch,
-            "step resource atomic derivation",
-        ),
-        1,
-    ),
-    (
-        (
-            HiddenPrerequisiteRoute::TacticSearch,
             "transport load-variable chain",
         ),
         17,

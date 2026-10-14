@@ -995,7 +995,11 @@ fn certified_transitions_from_execution(
                                 && !(matches!(prerequisite_policy, StatementPrerequisitePolicy::Fast)
                                     && obligation.call_requirement_site().is_some()
                                     && rejected_contract_call))
-                            || (matches!(
+                            // Under `Fast` a step never searches the
+                            // context: the probe records the obligation and
+                            // the implicit `auto` proves it.
+                            || (!matches!(prerequisite_policy, StatementPrerequisitePolicy::Fast)
+                                && matches!(
                                 proposition,
                                 Proposition::CResourceContains { .. }
                                     | Proposition::CResourceSeparate { .. }
