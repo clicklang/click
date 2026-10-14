@@ -412,7 +412,7 @@ fn merge_path_aligned_certificates_with_match_policy(
                     crate::instrumentation::record_deterministic_work(arm.tactics.len());
                     ProofCertificate::from_proof_tactics(&arm.tactics).map_err(|error| {
                         ClickError::new(format!(
-                            "`{claim_label}` merged an invalid path-aligned certificate: {error:?}"
+                            "`{claim_label}` merged an invalid path-aligned certificate: {error}"
                         ))
                     })?
                 } else {
@@ -598,7 +598,7 @@ pub(in crate::surface::proof) fn certificate_leaf_for_case_path(
     )?;
     let certificate = ProofCertificate::from_proof_tactics(&selected).map_err(|error| {
         ClickError::new(format!(
-            "`{claim_label}` selected a non-surface certificate leaf: {error:?}"
+            "`{claim_label}` selected a non-surface certificate leaf: {error}"
         ))
     })?;
     let offsets = (offsets.len() == case_path.len()).then_some(offsets);

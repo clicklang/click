@@ -265,7 +265,9 @@ fn authority_creating_helper_cannot_outlive_caller_scalar_storage() {
     let error = verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
         .expect_err("the live population authority prevents retiring its backing scalar");
     assert!(
-        error.message().contains("OutstandingAuthority"),
+        error
+            .message()
+            .contains("an authority registered at this anchor is still outstanding"),
         "{error:?}"
     );
 }

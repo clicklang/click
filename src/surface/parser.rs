@@ -1481,16 +1481,30 @@ impl Parser {
         &mut self,
         type_parameters: &[String],
     ) -> Result<AlgebraicFieldType, ClickError> {
-        let name = self
+        let rust_type = if self
             .peek_ident()
-            .ok_or_else(|| self.error("expected algebraic variant field type"))?
-            .to_string();
-        if type_parameters.iter().any(|parameter| parameter == &name) {
+            .is_some_and(|name| type_parameters.iter().any(|parameter| parameter == name))
+        {
+            None
+        } else {
+            self.parse_rust_click_type()?
+        };
+        let name = match &rust_type {
+            Some(_) => String::new(),
+            None => self
+                .peek_ident()
+                .ok_or_else(|| self.error("expected algebraic variant field type"))?
+                .to_string(),
+        };
+        if rust_type.is_none() && type_parameters.iter().any(|parameter| parameter == &name) {
             self.position += 1;
             return Ok(AlgebraicFieldType::Parameter(name));
         }
-        if is_c_type_keyword(&name) {
-            let parsed = self.parse_type()?;
+        if rust_type.is_some() || is_c_type_keyword(&name) {
+            let parsed = match rust_type {
+                Some(parsed) => parsed,
+                None => self.parse_type()?,
+            };
             if !algebraic_field_c_type_supported(parsed.c_type) {
                 return Err(self.error(
                     "algebraic datatype fields must be C scalar, data-pointer, or algebraic values",
@@ -4014,6 +4028,9 @@ impl Parser {
     }
 
     fn parse_click_type(&mut self) -> Result<(ClickType, Option<ParsedType>), ClickError> {
+        if let Some(parsed) = self.parse_rust_click_type()? {
+            return Ok((ClickType::C(parsed.c_type), Some(parsed)));
+        }
         let Some(name) = self.peek_ident() else {
             return Err(self.error("expected Click type"));
         };
@@ -11307,7 +11324,17 @@ impl Parser {
                 CExpression::Value(self.character_constant_value(value)?),
             )),
             Some(Token::LParen) => {
+                let start = self.position;
                 let expression = self.parse_contract_expression()?;
+                if self.continues_as_rust_bool_value() {
+                    // Rust's `(x > 3)` is a `bool` value: the proposition's
+                    // truth value, as in a `-> bool` body.
+                    self.position = start;
+                    let proposition = self.parse_proposition()?;
+                    self.expect(Token::RParen)?;
+                    return proposition_bool_value(proposition)
+                        .map_err(|message| self.error(message));
+                }
                 if self.peek() == Some(&Token::DotDot) {
                     self.position += 1;
                     let end = self.parse_contract_expression()?;
@@ -11449,6 +11476,24 @@ impl Parser {
         }
         let proposition = self.parse_proposition()?;
         proposition_bool_value(proposition).map_err(|message| self.error(message))
+    }
+
+    /// In a Rust sidecar, whether a parenthesized value continues as a
+    /// comparison or connective, which Rust reads as a `bool` value.
+    fn continues_as_rust_bool_value(&self) -> bool {
+        self.verifies_rust()
+            && match self.peek() {
+                Some(
+                    Token::EqualEqual
+                    | Token::BangEqual
+                    | Token::LessThan
+                    | Token::LessEqual
+                    | Token::GreaterThan
+                    | Token::GreaterEqual,
+                ) => true,
+                Some(Token::Ident(word)) => matches!(word.as_str(), "and" | "or" | "implies"),
+                _ => false,
+            }
     }
 
     /// Whether the token after a value ends the proposition it stands in.

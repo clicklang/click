@@ -121,7 +121,7 @@ Specification and proof:
 - [Difference logic: the fast path for arithmetic requirements and conditions](difference-logic.md)
 - [Launch design review: open critiques, each to be fixed or ruled wontfix](design-review.md) (depends on smt-auto.md and simplify-step.md)
 
-## P2: after launch (12)
+## P2: after launch (13)
 
 Worth doing, not worth blocking the rbtree claim on. Promote one to P1 when
 it turns out to block that claim: if P1 work exposes one of the tooling
@@ -148,3 +148,4 @@ Proof language and tooling:
 - [Extend modules and imports beyond the delivered rbtree slice](specification-imports.md)
 - [Reduce repeated work in deeply nested `Integer` quantifiers](deep-quantifier-scaling.md)
 - [Complete general-purpose algebraic data type support](algebraic-data-types.md)
+- [One contract declaration syntax, native in C, C++ and Rust](contract-declaration-syntax.md)

@@ -41,5 +41,5 @@ void run(int32* o, int32 k) {
 ```
 
 ```expect
-fail: population call transfer refused: MissingMembers
+fail: population call transfer refused: fewer members of the population are held than the transition moves
 ```

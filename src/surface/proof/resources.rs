@@ -119,7 +119,7 @@ fn unique_borrowed_resource_dependency(
             .ok_or_else(|| "selected viewed resource has no active loan holder".to_string())?;
         ledger
             .validate_view_binding(binding.clone(), holder)
-            .map_err(|error| format!("selected viewed resource loan is not live: {error:?}"))?;
+            .map_err(|error| format!("selected viewed resource loan is not live: {error}"))?;
     }
     Ok(selected)
 }
@@ -163,7 +163,7 @@ fn project_children_into_ledger(
             .project(holder, binding.loan, &binding.viewed, &evidence, child)
             .map_err(|refusal| {
                 ClickError::new(format!(
-                    "{context_label} cannot project a child of the viewed composite: {refusal:?}"
+                    "{context_label} cannot project a child of the viewed composite: {refusal}"
                 ))
             })?;
     }
@@ -292,7 +292,7 @@ fn dynamic_body_fact_dependency(
             ledger
                 .validate_view_binding(checked.clone(), holder)
                 .map_err(|error| {
-                    format!("current viewed-memory dependency is not live: {error:?}")
+                    format!("current viewed-memory dependency is not live: {error}")
                 })?;
             if selected
                 .as_ref()
@@ -4169,7 +4169,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 };
                 let (ledger, hold) = ledger.hold(binding, holder).map_err(|refusal| {
                     ClickError::new(format!(
-                        "`{claim_label}` path {path_index}: `fold({})` cannot hold the loan behind its viewed body: {refusal:?}",
+                        "`{claim_label}` path {path_index}: `fold({})` cannot hold the loan behind its viewed body: {refusal}",
                         describe_resource_clause(resource)
                     ))
                 })?;

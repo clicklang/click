@@ -533,6 +533,56 @@ impl Parser {
         })
     }
 
+    /// The type of a Click binder in a Rust sidecar, spelled as Rust does:
+    /// a scalar (`u8`, `i32`, `usize`, `bool`, ...) or a raw pointer to one,
+    /// `*const T` or `*mut T`. A pure function, predicate or theorem takes
+    /// values: a fn's slice `bytes` passes the pointer to its first element,
+    /// so a function over its bytes takes `bytes: *const u8` and a `usize`
+    /// length. `None`, with nothing consumed, for anything else, which the
+    /// shared spellings read.
+    #[inline(never)]
+    pub(super) fn parse_rust_click_type(&mut self) -> Result<Option<ParsedType>, ClickError> {
+        if !self.verifies_rust() {
+            return Ok(None);
+        }
+        if self.peek() == Some(&Token::Amp) {
+            return Err(self.error(
+                "a pure function, predicate or theorem takes values, not references; write a pointer `*const T` or `*mut T`, and pass a slice as its pointer and a `usize` length",
+            ));
+        }
+        let scalar = |c_type, pointee_constant| ParsedType {
+            c_type,
+            struct_name: None,
+            struct_pointer: false,
+            constant: false,
+            pointee_constant,
+            reference: false,
+        };
+        if self.peek() == Some(&Token::Star) {
+            let mutable = match self.peek_next() {
+                Some(Token::Ident(word)) if word == "const" => false,
+                Some(Token::Ident(word)) if word == "mut" => true,
+                _ => return Err(self.error("a Rust pointer type is `*const T` or `*mut T`")),
+            };
+            self.position += 2;
+            let spelling = self.expect_ident("pointee type")?;
+            let Some(c_type) = rust_scalar_type(&spelling)
+                .filter(|pointee| *pointee != C0Type::Bool)
+                .and_then(C0Type::pointer_type)
+            else {
+                return Err(self.error(format!(
+                    "a pointer to `{spelling}` is not a Click binder type; a Rust sidecar's binder may point at an integer or float scalar"
+                )));
+            };
+            return Ok(Some(scalar(c_type, !mutable)));
+        }
+        let Some(c_type) = self.peek_ident().and_then(rust_scalar_type) else {
+            return Ok(None);
+        };
+        self.position += 1;
+        Ok(Some(scalar(c_type, false)))
+    }
+
     /// `expr as T` in a Rust sidecar is the scalar cast `(T)expr`. It binds
     /// tighter than a binary operator and looser than a unary one, as in
     /// Rust. `as` followed by anything but a scalar type is left for the
@@ -551,6 +601,10 @@ impl Parser {
         {
             self.position += 1;
             let target = self.expect_ident("type")?;
+            if target == "bool" {
+                return Err(self
+                    .error("Rust does not cast to `bool`; compare with zero instead, `(x != 0)`"));
+            }
             let target_type = rust_scalar_type(&target)
                 .expect("checked above")
                 .to_kernel_type();

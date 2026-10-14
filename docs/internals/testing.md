@@ -855,7 +855,12 @@ shard (`MDTEST_PARTITION`, `EXAMPLE_PARTITION`) sees part of the corpus, so it
 fails only when its own count exceeds a whole-corpus pin; an unpartitioned
 run, such as a local `scripts/check.sh`, checks both directions. Library tests read
 the same events per step through `collect_planning_statement_transitions`,
-which records the claim and step of each hidden derivation.
+which records the claim and step of each hidden derivation. The
+`KernelCondition` route counts the kernel's own condition evaluation: a
+condition the general decision settled after the difference graph left it
+open
+([`issues/difference-logic.md`](https://github.com/clicklang/click/blob/master/issues/difference-logic.md)),
+by evaluation site.
 
 ## Quarantine
 

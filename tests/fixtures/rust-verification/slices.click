@@ -17,21 +17,21 @@ fn write(bytes: &mut [u8], index: usize, value: u8) {
 } by { execute(); simp(); }
 
 fn first(bytes: &[u8]) -> u8 {
-    requires bytes.len() == 4u64;
+    requires bytes.len() == 4;
     views bytes[0..4];
     ensures result == bytes[0];
 } by { execute(); simp(); }
 
 fn increment_first(bytes: &mut [u8]) {
-    requires bytes.len() == 4u64;
+    requires bytes.len() == 4;
     requires bytes[0] < 255;
     owns bytes[0..4];
     ensures bytes[0] == old(bytes[0]) + 1;
 } by { execute(); simp(); }
 
 fn empty(bytes: &[u8]) -> bool {
-    ensures result == (if bytes.len() == 0u64 { 1 } else { 0 });
+    ensures result == (bytes.len() == 0);
 } by {
-    if bytes.len() == 0u64 { execute(); simp(); }
+    if bytes.len() == 0 { execute(); simp(); }
     else { execute(); simp(); }
 }

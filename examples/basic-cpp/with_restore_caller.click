@@ -27,8 +27,8 @@ void Restore_destructor(struct Restore* this) {
 
 int32 with_restore(bool early, int32& value) {
     owns value;
-    ensures early != 0 implies result == 7;
-    ensures early == 0 implies result == 9;
+    ensures early implies result == 7;
+    ensures not early implies result == 9;
     ensures value == old(value);
 } by {
     execute();
@@ -38,8 +38,8 @@ int32 with_restore(bool early, int32& value) {
 int32 call_with_restore(bool early, int32& value) {
     requires value == 41;
     owns value;
-    ensures early != 0 implies result == 7;
-    ensures early == 0 implies result == 9;
+    ensures early implies result == 7;
+    ensures not early implies result == 9;
     ensures value == 41;
 } by {
     execute();

@@ -657,7 +657,7 @@ pub(super) fn transfer_population_call_facts<'a>(
                     .transfer_call_anchor(from_events, to_events, &base.block)
                     .map_err(|refusal| {
                         CRuntimeError::FunctionContract(format!(
-                            "allocation companion transfer refused: {refusal:?}"
+                            "allocation companion transfer refused: {refusal}"
                         ))
                     })?;
             }
@@ -715,7 +715,7 @@ pub(super) fn transfer_population_call_facts<'a>(
                     .transfer_call_fact(from_events, to_events, description, true)
                     .map_err(|refusal| {
                         CRuntimeError::FunctionContract(format!(
-                            "population call control transfer refused: {refusal:?}"
+                            "population call control transfer refused: {refusal}"
                         ))
                     })?;
             }
@@ -742,7 +742,7 @@ pub(super) fn transfer_population_call_facts<'a>(
                         .transfer_call_anchor(from_events, to_events, &base.block)
                         .map_err(|refusal| {
                             CRuntimeError::FunctionContract(format!(
-                                "population call allocation transfer refused: {refusal:?}"
+                                "population call allocation transfer refused: {refusal}"
                             ))
                         })?;
                 }
@@ -765,7 +765,7 @@ pub(super) fn transfer_population_call_facts<'a>(
                     )
                     .map_err(|refusal| {
                         CRuntimeError::FunctionContract(format!(
-                            "named population call transfer refused: {refusal:?}"
+                            "named population call transfer refused: {refusal}"
                         ))
                     })?;
             }
@@ -807,7 +807,7 @@ pub(super) fn transfer_population_call_facts<'a>(
             )
             .map_err(|refusal| {
                 CRuntimeError::FunctionContract(format!(
-                    "population call transfer refused: {refusal:?}; declared {} of {}",
+                    "population call transfer refused: {refusal}; declared {} of {}",
                     quantity
                         .as_const()
                         .map_or_else(|| "quantity".into(), |quantity| quantity.to_string()),
@@ -5002,7 +5002,7 @@ pub(crate) fn apply_verified_tactic_rule(
         CFunctionOutcome::Return { state, .. } => state.clone(),
         CFunctionOutcome::RuntimeError(error) => {
             return Err(Refused(format!(
-                "tactic `{name}` could not be applied: {error:?}"
+                "tactic `{name}` could not be applied: {error}"
             )));
         }
         CFunctionOutcome::UndefinedBehavior(behavior) => {
@@ -6214,7 +6214,7 @@ fn execute_verified_function_applications_with_suspension(
                         }
                         Err(refusal) => {
                             return Ok(vec![resource_call_failure(&format!(
-                                "named helper creation refused: {refusal:?}"
+                                "named helper creation refused: {refusal}"
                             ))]);
                         }
                     }
@@ -6373,7 +6373,7 @@ fn execute_verified_function_applications_with_suspension(
                 Ok(exchange) => exchange,
                 Err(refusal) => {
                     paths.push(resource_call_failure(&format!(
-                        "final release member transition refused: {refusal:?}"
+                        "final release member transition refused: {refusal}"
                     )));
                     continue;
                 }
@@ -6422,7 +6422,7 @@ fn execute_verified_function_applications_with_suspension(
                 Ok(exchange) => exchange,
                 Err(refusal) => {
                     paths.push(resource_call_failure(&format!(
-                        "final release authority retirement refused: {refusal:?}"
+                        "final release authority retirement refused: {refusal}"
                     )));
                     continue;
                 }
@@ -6451,7 +6451,7 @@ fn execute_verified_function_applications_with_suspension(
                     Ok((next, _)) => next,
                     Err(refusal) => {
                         paths.push(resource_call_failure(&format!(
-                            "final release authority retirement refused: {refusal:?}"
+                            "final release authority retirement refused: {refusal}"
                         )));
                         continue 'arguments;
                     }
@@ -6487,7 +6487,7 @@ fn execute_verified_function_applications_with_suspension(
                     }
                     Err(refusal) => {
                         paths.push(resource_call_failure(&format!(
-                            "named helper consumption refused: {refusal:?}"
+                            "named helper consumption refused: {refusal}"
                         )));
                         continue 'arguments;
                     }
@@ -6657,7 +6657,7 @@ fn execute_verified_function_applications_with_suspension(
                     Ok(exchange) => exchange,
                     Err(refusal) => {
                         paths.push(resource_call_failure(&format!(
-                            "population helper member transition refused: {refusal:?}"
+                            "population helper member transition refused: {refusal}"
                         )));
                         continue 'arguments;
                     }
@@ -7178,7 +7178,7 @@ fn execute_verified_function_applications_with_suspension(
                     }
                     if let Some(refusal) = refused {
                         paths.push(resource_call_failure(&format!(
-                            "locked helper did not return its population authority: {refusal:?}"
+                            "locked helper did not return its population authority: {refusal}"
                         )));
                         continue;
                     }
@@ -7211,7 +7211,7 @@ fn execute_verified_function_applications_with_suspension(
                 }
                 Err(refusal) => {
                     paths.push(resource_call_failure(&format!(
-                        "population helper retained ownership: {refusal:?}"
+                        "population helper retained ownership: {refusal}"
                     )));
                     continue;
                 }
@@ -7799,7 +7799,7 @@ fn prepare_verified_function_call<'a>(
             budget,
         )? {
             Ok(populations) => populations,
-            Err(error) => return Ok(Err(resource_call_failure(&format!("{error:?}")))),
+            Err(error) => return Ok(Err(resource_call_failure(&format!("{error}")))),
         };
         for description in &populations {
             let (Some(caller_events), Some(callee_events), Some(entry_events)) = (
@@ -7855,7 +7855,7 @@ fn prepare_verified_function_call<'a>(
                 }
                 Err(refusal) => {
                     return Ok(Err(resource_call_failure(&format!(
-                        "locked helper population cannot enter the caller's proof: {refusal:?}"
+                        "locked helper population cannot enter the caller's proof: {refusal}"
                     ))));
                 }
             }
@@ -7879,7 +7879,7 @@ fn prepare_verified_function_call<'a>(
         Err(CRuntimeError::FunctionContract(message)) => {
             return Ok(Err(resource_call_failure(&message)));
         }
-        Err(error) => return Ok(Err(resource_call_failure(&format!("{error:?}")))),
+        Err(error) => return Ok(Err(resource_call_failure(&format!("{error}")))),
     };
     if !suspend_worker {
         let lent = match locked_helper_population(
@@ -7890,7 +7890,7 @@ fn prepare_verified_function_call<'a>(
             budget,
         )? {
             Ok(lent) => lent,
-            Err(error) => return Ok(Err(resource_call_failure(&format!("{error:?}")))),
+            Err(error) => return Ok(Err(resource_call_failure(&format!("{error}")))),
         };
         for description in &lent {
             let lent = entry_state
@@ -11779,7 +11779,7 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
                     Ok((_, checked)) => checked,
                     Err(error) => {
                         return Ok(Err(format!(
-                            "could not evaluate resource transition: {error:?}"
+                            "could not evaluate resource transition: {error}"
                         )));
                     }
                 };
@@ -11889,7 +11889,7 @@ pub(crate) fn establish_resource_derived_loop_frames(
         Ok(assumptions) => assumptions,
         Err(error) => {
             return Ok(Err(format!(
-                "could not evaluate resource quantities: {error:?}"
+                "could not evaluate resource quantities: {error}"
             )));
         }
     };
@@ -32701,7 +32701,7 @@ mod stable_view_call_tests {
         let error = plan_composite_lend(&liveness).expect_err("a liveness fact is refused");
         assert!(
             matches!(&error, CRuntimeError::FunctionContract(message) if message.contains("allocation-liveness")),
-            "{error:?}"
+            "{error}"
         );
         let segment = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
         let counted = composite_reader_with_definition(
@@ -32879,7 +32879,7 @@ mod stable_view_call_tests {
         let (_, transfer) = plan_adapter_lend(&function);
         let error = transfer.expect_err("an owner that covers half the frontier is not backing");
         let CRuntimeError::LoanRefusal(diagnostic) = &error else {
-            panic!("{error:?}");
+            panic!("{error}");
         };
         assert_eq!(
             diagnostic.category(),
@@ -32912,7 +32912,7 @@ mod stable_view_call_tests {
         let (_, transfer) = plan_adapter_lend(&function);
         let error = transfer.expect_err("an unestablished body fact is refused");
         let CRuntimeError::LoanRefusal(diagnostic) = &error else {
-            panic!("{error:?}");
+            panic!("{error}");
         };
         assert_eq!(
             diagnostic.category(),
@@ -34004,7 +34004,7 @@ mod stable_view_call_tests {
             .expect_err("fact equality against an owner is not provenance");
         assert!(
             matches!(&error, CRuntimeError::UnbackedReturnedView { .. }),
-            "unexpected refusal: {error:?}"
+            "unexpected refusal: {error}"
         );
     }
 
@@ -34098,7 +34098,7 @@ mod stable_view_call_tests {
         ));
         assert!(
             matches!(&error, CRuntimeError::UnbackedReturnedView { view } if **view == carried),
-            "unexpected refusal: {error:?}"
+            "unexpected refusal: {error}"
         );
     }
 

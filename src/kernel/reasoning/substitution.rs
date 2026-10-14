@@ -3172,7 +3172,7 @@ fn substitute_bitvector_variable_in_integer(
 ) -> IntegerTerm {
     match substitute_bitvector_variable_in_integer_checked(term, from, to) {
         Ok(result) => result,
-        Err(error) => panic!("integer substitution refused: {error:?}"),
+        Err(error) => panic!("integer substitution refused: {error}"),
     }
 }
 
@@ -3297,6 +3297,21 @@ pub(crate) enum IntegerPureSubstitutionError {
     UnsupportedSort,
     FreshVariableExhausted,
     WorkLimitExceeded,
+}
+
+impl std::fmt::Display for IntegerPureSubstitutionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::UnsupportedCarrier => {
+                "the proposition mentions a value the substitution cannot carry"
+            }
+            Self::UnsupportedSort => {
+                "the substituted value has a sort the substitution does not support"
+            }
+            Self::FreshVariableExhausted => "the substitution ran out of fresh variable names",
+            Self::WorkLimitExceeded => "the substitution exceeded its work limit",
+        })
+    }
 }
 
 /// Checked singleton substitution for the pure proposition fragment. One
@@ -4350,7 +4365,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_spec_expression(
         crate::kernel::proof::term_rewrite::TermRewrite::for_bits_checked(&source, to);
     rewrite
         .spec_expression(expression)
-        .unwrap_or_else(|error| panic!("spec expression substitution refused: {error:?}"))
+        .unwrap_or_else(|error| panic!("spec expression substitution refused: {error}"))
 }
 
 pub(in crate::kernel) fn substitute_bitvector_variable_in_spec_proposition(
@@ -4363,7 +4378,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_spec_proposition(
         crate::kernel::proof::term_rewrite::TermRewrite::for_bits_checked(&source, to);
     rewrite
         .spec_proposition(proposition)
-        .unwrap_or_else(|error| panic!("spec proposition substitution refused: {error:?}"))
+        .unwrap_or_else(|error| panic!("spec proposition substitution refused: {error}"))
 }
 
 fn substitute_bitvector_variable_in_spec_integer(
@@ -4376,7 +4391,7 @@ fn substitute_bitvector_variable_in_spec_integer(
         crate::kernel::proof::term_rewrite::TermRewrite::for_bits_checked(&source, to);
     rewrite
         .spec_integer_expression(expression)
-        .unwrap_or_else(|error| panic!("spec Integer substitution refused: {error:?}"))
+        .unwrap_or_else(|error| panic!("spec Integer substitution refused: {error}"))
 }
 
 #[cfg(test)]

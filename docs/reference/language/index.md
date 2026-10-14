@@ -2631,6 +2631,17 @@ theorem three_is_in_range() {
   between the spellings (`mdtests/bool_negation_and_disequality_agree.md`).
   The range `b == true or b == false` is a disjunction, proved like any other
   with a case split such as `if b { ... } else { ... }`.
+- **A C or C++ `bool` is tested against zero.** A C or C++ `bool`
+  parameter, load or conversion compared with `true` is the test `b != 0`
+  that `if (b)` makes, and with `false` is `b == 0`. So
+  `ensures early implies result == 7;` meets the branch the code took
+  without a comparison with zero
+  (`mdtests/a_c_bool_parameter_is_a_claim.md`).
+- **Rust.** A Rust sidecar spells the type `bool` as Rust does, and a
+  parenthesized comparison there is a `bool` value, `result == (x > 3)`
+  ([Rust](../rust.md#signatures-in-rust-syntax)). In a C or C++ sidecar
+  that operand is refused
+  (`mdtests/a_parenthesized_comparison_is_a_value_only_in_rust.md`).
 
 ## Propositions
 

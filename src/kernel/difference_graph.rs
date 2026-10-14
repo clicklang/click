@@ -14,7 +14,8 @@
 //! is the component the edge joins, not the graph. A query compares stored
 //! intervals and, between two nodes, reads the shortest path inside the
 //! source's component. Every answer follows from the inserted facts by
-//! difference logic; a contradictory graph answers nothing.
+//! difference logic; a contradictory graph answers only that an overflow is
+//! absent, which holds vacuously on a dead path.
 //!
 //! See `issues/difference-logic.md`.
 
@@ -66,6 +67,16 @@ pub(crate) struct DifferenceGraph {
     in_edges: PersistentMap<NodeId, PersistentMap<NodeId, i128>>,
     /// `base -> node -> link`: links waiting on `base`'s interval.
     pending: PersistentMap<NodeId, PersistentMap<NodeId, PendingLink>>,
+    /// `node -> {c}`: `node != c`. An interval end landing on an excluded
+    /// value steps past it, so `x != INT_MIN` beside `INT_MIN <= x` is
+    /// `INT_MIN + 1 <= x`.
+    excluded: PersistentMap<NodeId, crate::persistent::PersistentSet<i128>>,
+    /// `node -> (x, t)` for each `t = x ^ MIN` whose sign case is still
+    /// open, under both `x` and `t`: `t` is `x + MIN` when `x >= 0` and
+    /// `x - MIN` when `x < 0`, so the sign of either decides the link.
+    flips: PersistentMap<NodeId, (NodeId, NodeId)>,
+    /// Overflow conditions recorded false (`OverflowKey`).
+    no_overflow: crate::persistent::PersistentSet<OverflowKey>,
     contradictory: bool,
     next: NodeId,
 }
@@ -83,6 +94,7 @@ impl DifferenceGraph {
     }
 
     /// Whether the inserted facts contradict each other.
+    #[cfg(test)]
     pub(crate) fn is_contradictory(&self) -> bool {
         self.contradictory
     }
@@ -111,6 +123,31 @@ impl DifferenceGraph {
     /// Records a true or false condition fact. A fact difference logic does
     /// not express is ignored.
     pub(crate) fn assume_condition(&mut self, condition: &ConditionTerm, value: bool) {
+        if value
+            && let ConditionTerm::Bitvector32Equal(a, b) | ConditionTerm::Bitvector64Equal(a, b) =
+                condition
+            && self.alias_equality(condition, a, b)
+        {
+            return;
+        }
+        if let Some((operation, domain, a, b, commutative)) = overflow_parts(condition) {
+            if !value {
+                let a = self.affine(domain, a);
+                let b = self.affine(domain, b);
+                charge();
+                self.no_overflow =
+                    self.no_overflow
+                        .with_value(overflow_key(operation, a, b, commutative));
+            }
+            return;
+        }
+        if !value
+            && let ConditionTerm::Bitvector32Equal(a, b) | ConditionTerm::Bitvector64Equal(a, b) =
+                condition
+        {
+            self.exclude(condition, a, b);
+            return;
+        }
         for (domain, lower, upper, strict) in condition_orders(condition, value) {
             if self.contradictory {
                 return;
@@ -120,6 +157,90 @@ impl DifferenceGraph {
             // lower - upper <= -strict
             self.constrain(upper, lower, -i128::from(strict));
         }
+    }
+
+    /// Records `a != b` when one side is a constant and the other a node
+    /// plus an offset: the node excludes one value, and its interval steps
+    /// off that value if it is an end.
+    fn exclude(&mut self, condition: &ConditionTerm, a: &Bitvector32Term, b: &Bitvector32Term) {
+        let domains: &[Domain] = if matches!(condition, ConditionTerm::Bitvector32Equal(..)) {
+            &[Domain::Int32]
+        } else {
+            &[Domain::Int64, Domain::UInt64]
+        };
+        for domain in domains {
+            let (term, value) = match (constant(*domain, a), constant(*domain, b)) {
+                (None, Some(value)) => (a, value),
+                (Some(value), None) => (b, value),
+                _ => continue,
+            };
+            let (Some(node), offset) = self.affine(*domain, term) else {
+                continue;
+            };
+            charge();
+            let excluded = self.excluded.get(&node).cloned().unwrap_or_default();
+            self.excluded
+                .insert(node, excluded.with_value(value - offset));
+            self.tighten(node, None, None);
+        }
+    }
+
+    /// Whether `node != value` was recorded.
+    fn excludes(&self, node: NodeId, value: i128) -> bool {
+        self.excluded
+            .get(&node)
+            .is_some_and(|excluded| excluded.contains(&value))
+    }
+
+    /// Records a true equality between a term the graph has no node for and
+    /// another value by naming that value's node for the new term, instead
+    /// of joining two nodes by a pair of edges. Every term equated to one
+    /// value is then that value's node, so a value with many names stays one
+    /// node and its component does not grow with them. Declines (returns
+    /// `false`) when neither side is such a term, or when the new term is a
+    /// sum or conversion whose own link it would lose.
+    fn alias_equality(
+        &mut self,
+        condition: &ConditionTerm,
+        a: &Bitvector32Term,
+        b: &Bitvector32Term,
+    ) -> bool {
+        let domains: &[Domain] = if matches!(condition, ConditionTerm::Bitvector32Equal(..)) {
+            &[Domain::Int32]
+        } else {
+            &[Domain::Int64, Domain::UInt64]
+        };
+        let fresh = |graph: &Self, term: &Bitvector32Term| {
+            domains.iter().all(|domain| {
+                constant(*domain, term).is_none()
+                    && link_parts(*domain, term).is_none()
+                    && !graph.nodes.contains_key(&(*domain, term.clone()))
+            })
+        };
+        let (new, existing) = if fresh(self, a) {
+            (a, b)
+        } else if fresh(self, b) {
+            (b, a)
+        } else {
+            return false;
+        };
+        let targets = domains
+            .iter()
+            .map(|domain| (*domain, self.affine(*domain, existing)))
+            .collect::<Vec<_>>();
+        if targets
+            .iter()
+            .any(|(_, (node, offset))| node.is_none() || *offset != 0)
+        {
+            // A constant, or an offset from a node: the ordinary edges say it.
+            return false;
+        }
+        for (domain, (node, _)) in targets {
+            charge();
+            self.nodes
+                .insert((domain, new.clone()), node.expect("checked above"));
+        }
+        true
     }
 
     /// `to - from <= weight`.
@@ -183,8 +304,19 @@ impl DifferenceGraph {
             }
             charge();
             let (old_low, old_high) = self.interval(node);
-            let new_low = low.map_or(old_low, |low| low.max(old_low));
-            let new_high = high.map_or(old_high, |high| high.min(old_high));
+            let mut new_low = low.map_or(old_low, |low| low.max(old_low));
+            let mut new_high = high.map_or(old_high, |high| high.min(old_high));
+            if let Some(excluded) = self.excluded.get(&node) {
+                // Each step passes one recorded disequality.
+                while new_low <= new_high && excluded.contains(&new_low) {
+                    charge();
+                    new_low += 1;
+                }
+                while new_low <= new_high && excluded.contains(&new_high) {
+                    charge();
+                    new_high -= 1;
+                }
+            }
             if (new_low, new_high) == (old_low, old_high) {
                 continue;
             }
@@ -208,6 +340,41 @@ impl DifferenceGraph {
                 }
             }
             self.resolve_pending(node);
+            self.resolve_flip(node);
+        }
+    }
+
+    /// Settles the sign case of the `x ^ MIN` pair `node` belongs to, if
+    /// either side's interval now decides it: a known sign of `x` links `t`
+    /// to `x`, and a known sign of `t` bounds `x`, whose tightening links
+    /// them in turn.
+    fn resolve_flip(&mut self, node: NodeId) {
+        let Some((base, flipped)) = self.flips.get(&node).copied() else {
+            return;
+        };
+        charge();
+        let min = self.domain(flipped).range().0;
+        let (base_low, base_high) = self.interval(base);
+        let offset = if base_low >= 0 {
+            Some(min)
+        } else if base_high < 0 {
+            Some(-min)
+        } else {
+            None
+        };
+        if let Some(offset) = offset {
+            self.flips.remove(&base);
+            self.flips.remove(&flipped);
+            // flipped = base + offset
+            self.constrain((Some(base), 0), (Some(flipped), 0), offset);
+            self.constrain((Some(flipped), 0), (Some(base), 0), -offset);
+            return;
+        }
+        let (low, high) = self.interval(flipped);
+        if high < 0 {
+            self.tighten(base, Some(0), None);
+        } else if low >= 0 {
+            self.tighten(base, None, Some(-1));
         }
     }
 
@@ -222,13 +389,7 @@ impl DifferenceGraph {
         let mut linked = Vec::new();
         for (node, link) in waiting.iter() {
             charge();
-            let (min, max) = link.domain.range();
-            let fits = if link.nonnegative {
-                low >= 0 && high <= max
-            } else {
-                low + link.offset >= min && high + link.offset <= max
-            };
-            if fits {
+            if link_fits((low, high), link.offset, link.domain, link.nonnegative) {
                 remaining = remaining.without_key(node);
                 linked.push((*node, link.offset));
             }
@@ -279,6 +440,21 @@ impl DifferenceGraph {
         self.next += 1;
         self.nodes.insert((domain, term.clone()), node);
         self.domains.insert(node, domain);
+        if let Some(base) = sign_flip_base(domain, term) {
+            match self.affine(domain, base) {
+                (None, value) => {
+                    let value = flip_sign(domain, value);
+                    self.tighten(node, Some(value), Some(value));
+                }
+                (Some(base), 0) => {
+                    self.flips.insert(base, (base, node));
+                    self.flips.insert(node, (base, node));
+                    self.resolve_flip(node);
+                }
+                // An offset base keeps the term opaque.
+                (Some(_), _) => {}
+            }
+        }
         if let Some((base_domain, base, offset, nonnegative)) = link_parts(domain, term) {
             let base = self.affine(base_domain, base);
             match base {
@@ -310,11 +486,32 @@ impl DifferenceGraph {
         node
     }
 
+    /// `term` as a node and offset. A link its base's interval already
+    /// justifies names the base directly rather than a new node, so the
+    /// values `x + 1`, `x + 2`, ... share `x`'s node instead of each
+    /// hanging an edge pair off it that every bound on `x` must walk.
     fn affine(&mut self, domain: Domain, term: &Bitvector32Term) -> Affine {
-        match constant(domain, term) {
-            Some(value) => (None, value),
-            None => (Some(self.node(domain, term)), 0),
+        if let Some(value) = constant(domain, term) {
+            return (None, value);
         }
+        if let Some(node) = self.nodes.get(&(domain, term.clone())) {
+            return (Some(*node), 0);
+        }
+        if let Some((base_domain, base, offset, nonnegative)) = link_parts(domain, term) {
+            let base = self.affine(base_domain, base);
+            if base.0.is_some()
+                && link_fits(self.affine_interval(base), offset, domain, nonnegative)
+            {
+                return (base.0, base.1 + offset);
+            }
+        }
+        if let Some(base) = sign_flip_base(domain, term) {
+            let base = self.affine(domain, base);
+            if let Some(flipped) = self.known_flip(domain, base) {
+                return flipped;
+            }
+        }
+        (Some(self.node(domain, term)), 0)
     }
 
     /// `term` as known nodes and constants, without adding to the graph.
@@ -327,16 +524,31 @@ impl DifferenceGraph {
         if let Some(node) = self.nodes.get(&(domain, term.clone())) {
             return Some((Some(*node), 0));
         }
+        if let Some(base) = sign_flip_base(domain, term) {
+            return self.known_flip(domain, self.resolve(domain, base)?);
+        }
         let (base_domain, base, offset, nonnegative) = link_parts(domain, term)?;
         let base = self.resolve(base_domain, base)?;
-        let (low, high) = self.affine_interval(base);
-        let (min, max) = domain.range();
-        let fits = if nonnegative {
-            low >= 0 && high <= max
-        } else {
-            low + offset >= min && high + offset <= max
-        };
-        fits.then_some((base.0, base.1 + offset))
+        link_fits(self.affine_interval(base), offset, domain, nonnegative)
+            .then_some((base.0, base.1 + offset))
+    }
+
+    /// `x ^ MIN` for `x` at `base`, when `x`'s sign is known.
+    fn known_flip(&self, domain: Domain, base: Affine) -> Option<Affine> {
+        let min = domain.range().0;
+        match base {
+            (None, value) => Some((None, flip_sign(domain, value))),
+            (Some(_), _) => {
+                let (low, high) = self.affine_interval(base);
+                if low >= 0 {
+                    Some((base.0, base.1 + min))
+                } else if high < 0 {
+                    Some((base.0, base.1 - min))
+                } else {
+                    None
+                }
+            }
+        }
     }
 
     /// The least known upper bound on `to - from`, from intervals and from
@@ -360,11 +572,25 @@ impl DifferenceGraph {
     /// contradictory.
     pub(crate) fn decide(&self, condition: &ConditionTerm) -> Option<bool> {
         use ConditionTerm as C;
-        if self.contradictory {
-            return None;
-        }
         if let C::Constant(value) = condition {
             return Some(*value);
+        }
+        if self.contradictory {
+            // No model satisfies the facts, so the path is dead and every
+            // answer holds. Only the absence of overflow is given, the one
+            // overflow answer this graph ever gives (see `decide_overflow`).
+            return matches!(
+                condition,
+                C::Bitvector32SignedAddOverflows(..)
+                    | C::Bitvector32SignedSubtractOverflows(..)
+                    | C::Bitvector32SignedMultiplyOverflows(..)
+                    | C::Bitvector32SignedDivideOverflows(..)
+                    | C::Bitvector64SignedAddOverflows(..)
+                    | C::Bitvector64SignedSubtractOverflows(..)
+                    | C::Bitvector64SignedMultiplyOverflows(..)
+                    | C::Bitvector64SignedDivideOverflows(..)
+            )
+            .then_some(false);
         }
         let overflow = match condition {
             C::Bitvector32SignedAddOverflows(a, b) => Some((Domain::Int32, a, b, Operation::Add)),
@@ -383,8 +609,45 @@ impl DifferenceGraph {
             }
             _ => None,
         };
+        if let Some((operation, domain, a, b, commutative)) = overflow_parts(condition)
+            && let (Some(a), Some(b)) = (self.resolve(domain, a), self.resolve(domain, b))
+            && self
+                .no_overflow
+                .contains(&overflow_key(operation, a, b, commutative))
+        {
+            return Some(false);
+        }
         if let Some((domain, a, b, operation)) = overflow {
             return self.decide_overflow(domain, a, b, operation);
+        }
+        if let C::Bitvector32SignedShiftLeftOverflows(a, count) = condition {
+            // As the general decision reads it: a shift by a constant count
+            // does not overflow a value in `[0, INT_MAX >> count]`.
+            let count = constant(Domain::Int32, count)?;
+            if !(0..32).contains(&count) {
+                return None;
+            }
+            let (low, high) = self.term_interval(Domain::Int32, a);
+            return (low >= 0 && high <= i128::from(i32::MAX >> count)).then_some(false);
+        }
+        if let C::Bitvector32SignedDivideOverflows(a, b)
+        | C::Bitvector64SignedDivideOverflows(a, b) = condition
+        {
+            // `a / b` overflows exactly when `a` is the domain's least value
+            // and `b` is `-1`; as above, only the absence is answered.
+            let domain = if matches!(condition, C::Bitvector32SignedDivideOverflows(..)) {
+                Domain::Int32
+            } else {
+                Domain::Int64
+            };
+            let (a_low, _) = self.term_interval(domain, a);
+            let (b_low, b_high) = self.term_interval(domain, b);
+            let excludes_minus_one = matches!(
+                self.resolve(domain, b),
+                Some((Some(node), offset)) if self.excludes(node, -1 - offset)
+            );
+            return (a_low > domain.range().0 || b_low > -1 || b_high < -1 || excludes_minus_one)
+                .then_some(false);
         }
         if let C::Bitvector32Equal(a, b) | C::Bitvector64Equal(a, b) = condition {
             let domains: &[Domain] = if matches!(condition, C::Bitvector32Equal(..)) {
@@ -393,16 +656,32 @@ impl DifferenceGraph {
                 &[Domain::Int64, Domain::UInt64]
             };
             for domain in domains {
-                let (Some(a), Some(b)) = (self.resolve(*domain, a), self.resolve(*domain, b))
-                else {
-                    continue;
-                };
-                let ab = self.difference_bound(a, b);
-                let ba = self.difference_bound(b, a);
-                if ab <= 0 && ba <= 0 {
+                if let (Some(a), Some(b)) = (self.resolve(*domain, a), self.resolve(*domain, b)) {
+                    match (a, b) {
+                        ((Some(node), offset), (None, value))
+                        | ((None, value), (Some(node), offset))
+                            if self.excludes(node, value - offset) =>
+                        {
+                            return Some(false);
+                        }
+                        _ => {}
+                    }
+                    let ab = self.difference_bound(a, b);
+                    let ba = self.difference_bound(b, a);
+                    if ab <= 0 && ba <= 0 {
+                        return Some(true);
+                    }
+                    if ab < 0 || ba < 0 {
+                        return Some(false);
+                    }
+                }
+                // A side the graph has no node for is compared by interval.
+                let (a_low, a_high) = self.term_interval(*domain, a);
+                let (b_low, b_high) = self.term_interval(*domain, b);
+                if a_low == a_high && (a_low, a_high) == (b_low, b_high) {
                     return Some(true);
                 }
-                if ab < 0 || ba < 0 {
+                if a_high < b_low || b_high < a_low {
                     return Some(false);
                 }
             }
@@ -411,17 +690,122 @@ impl DifferenceGraph {
         let [(domain, ref lower, ref upper, strict)] = condition_orders(condition, true)[..] else {
             return None;
         };
-        let lower = self.resolve(domain, lower)?;
-        let upper = self.resolve(domain, upper)?;
         // lower < upper (or <=) holds when lower - upper <= -strict, and
         // fails when upper - lower <= -(not strict).
-        if self.difference_bound(upper, lower) <= -i128::from(strict) {
+        let (holds, fails) = match (self.resolve(domain, lower), self.resolve(domain, upper)) {
+            (Some(lower), Some(upper)) => (
+                self.difference_bound(upper, lower),
+                self.difference_bound(lower, upper),
+            ),
+            // A side the graph has no node for is compared by interval.
+            _ => {
+                let (lower_low, lower_high) = self.term_interval(domain, lower);
+                let (upper_low, upper_high) = self.term_interval(domain, upper);
+                (lower_high - upper_low, upper_high - lower_low)
+            }
+        };
+        if holds <= -i128::from(strict) {
             return Some(true);
         }
-        if self.difference_bound(lower, upper) <= -i128::from(!strict) {
+        if fails <= -i128::from(!strict) {
             return Some(false);
         }
         None
+    }
+
+    /// An interval holding `term`'s value in `domain`: a resolved term's
+    /// stored bounds, narrowed for a sum or difference by the exact interval
+    /// of its operands' mathematical result when that stays in `domain` (so
+    /// the bitvector operation does not wrap). Anything else ranges over
+    /// `domain`. Work is the term's size, plus the difference reads of
+    /// `difference_interval`.
+    fn term_interval(&self, domain: Domain, term: &Bitvector32Term) -> (i128, i128) {
+        // A compound term a fact mentioned has a node of its own, whose
+        // interval holds only what facts about the term said; its operands'
+        // intervals may say more, so both are read.
+        let (node_low, node_high) = self
+            .resolve(domain, term)
+            .map_or_else(|| domain.range(), |affine| self.affine_interval(affine));
+        let (low, high) = self.structural_interval(domain, term);
+        (node_low.max(low), node_high.min(high))
+    }
+
+    /// `term_interval` from `term`'s operands alone.
+    fn structural_interval(&self, domain: Domain, term: &Bitvector32Term) -> (i128, i128) {
+        use Bitvector32Term as T;
+        charge();
+        let (low, high) = match (domain, term) {
+            (Domain::Int32, T::Add(a, b))
+            | (Domain::Int64, T::Int64Add(a, b))
+            | (Domain::UInt64, T::UInt64Add(a, b)) => {
+                let (a_low, a_high) = self.term_interval(domain, a);
+                let (b_low, b_high) = self.term_interval(domain, b);
+                (a_low + b_low, a_high + b_high)
+            }
+            (Domain::Int32, T::Subtract(a, b))
+            | (Domain::Int64, T::Int64Subtract(a, b))
+            | (Domain::UInt64, T::UInt64Subtract(a, b)) => self.difference_interval(domain, a, b),
+            (Domain::Int32, T::Multiply(a, b)) | (Domain::Int64, T::Int64Multiply(a, b)) => {
+                let (a_low, a_high) = self.term_interval(domain, a);
+                let (b_low, b_high) = self.term_interval(domain, b);
+                let products = [
+                    a_low * b_low,
+                    a_low * b_high,
+                    a_high * b_low,
+                    a_high * b_high,
+                ];
+                let low = products.iter().min().copied().unwrap_or(i128::MIN);
+                let high = products.iter().max().copied().unwrap_or(i128::MAX);
+                (low, high)
+            }
+            // C's truncating remainder by a constant other than 0 and -1:
+            // its sign is the dividend's, and its magnitude is below the
+            // divisor's and at most the dividend's.
+            (Domain::Int32, T::Remainder(a, b))
+                if constant(domain, b).is_some_and(|k| k != 0 && k != -1) =>
+            {
+                let k = constant(domain, b).expect("checked above");
+                let (a_low, a_high) = self.term_interval(domain, a);
+                let bound = k.abs() - 1;
+                if a_low == a_high {
+                    (a_low % k, a_low % k)
+                } else if a_low >= 0 {
+                    (0, a_high.min(bound))
+                } else if a_high <= 0 {
+                    (a_low.max(-bound), 0)
+                } else {
+                    (-bound, bound)
+                }
+            }
+            (Domain::Int64, T::Int64From32(inner)) => self.term_interval(Domain::Int32, inner),
+            _ => return domain.range(),
+        };
+        let (min, max) = domain.range();
+        if low >= min && high <= max {
+            (low, high)
+        } else {
+            (min, max)
+        }
+    }
+
+    /// The mathematical interval of `a - b` in `domain`: the operands'
+    /// intervals, narrowed by the graph's bound on their difference when
+    /// both resolve to nodes.
+    fn difference_interval(
+        &self,
+        domain: Domain,
+        a: &Bitvector32Term,
+        b: &Bitvector32Term,
+    ) -> (i128, i128) {
+        let (a_low, a_high) = self.term_interval(domain, a);
+        let (b_low, b_high) = self.term_interval(domain, b);
+        let mut high = a_high - b_low;
+        let mut low = a_low - b_high;
+        if let (Some(a), Some(b)) = (self.resolve(domain, a), self.resolve(domain, b)) {
+            high = high.min(self.difference_bound(b, a));
+            low = low.max(-self.difference_bound(a, b));
+        }
+        (low, high)
     }
 
     /// Whether `a op b` leaves `domain`, from the operands' intervals and,
@@ -434,24 +818,11 @@ impl DifferenceGraph {
         b: &Bitvector32Term,
         operation: Operation,
     ) -> Option<bool> {
-        let a = self.resolve(domain, a);
-        let b = self.resolve(domain, b);
-        let interval = |affine: Option<Affine>| {
-            affine.map_or_else(|| domain.range(), |affine| self.affine_interval(affine))
-        };
-        let (a_low, a_high) = interval(a);
-        let (b_low, b_high) = interval(b);
+        let (a_low, a_high) = self.term_interval(domain, a);
+        let (b_low, b_high) = self.term_interval(domain, b);
         let (low, high) = match operation {
             Operation::Add => (a_low + b_low, a_high + b_high),
-            Operation::Subtract => {
-                let mut high = a_high - b_low;
-                let mut low = a_low - b_high;
-                if let (Some(a), Some(b)) = (a, b) {
-                    high = high.min(self.difference_bound(b, a));
-                    low = low.max(-self.difference_bound(a, b));
-                }
-                (low, high)
-            }
+            Operation::Subtract => self.difference_interval(domain, a, b),
             Operation::Multiply => {
                 let products = [
                     a_low * b_low,
@@ -463,14 +834,98 @@ impl DifferenceGraph {
             }
         };
         let (min, max) = domain.range();
-        if low >= min && high <= max {
-            Some(false)
-        } else if low > max || high < min {
-            Some(true)
-        } else {
-            None
+        // Only the absence of overflow is answered. Proof terms that are
+        // not C (an arithmetic certificate's intermediate sums) are lowered
+        // through the C evaluator and read an undecided overflow as a value;
+        // see `issues/difference-logic.md`.
+        (low >= min && high <= max).then_some(false)
+    }
+}
+
+/// A fact context's graph: extended as the context assumes condition
+/// facts, cleared when it withdraws one (a graph cannot drop an edge), and
+/// rebuilt from the context's facts by the next query that finds it
+/// cleared. Clones share it, as proof branches share the context.
+#[derive(Clone)]
+pub(crate) struct ContextDifferenceGraph(std::sync::Arc<std::sync::OnceLock<DifferenceGraph>>);
+
+impl Default for ContextDifferenceGraph {
+    fn default() -> Self {
+        Self(std::sync::Arc::new(std::sync::OnceLock::from(
+            DifferenceGraph::new(),
+        )))
+    }
+}
+
+impl std::fmt::Debug for ContextDifferenceGraph {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("ContextDifferenceGraph")
+    }
+}
+
+impl ContextDifferenceGraph {
+    /// Follows the context assuming `condition` with `value`; a cleared
+    /// graph stays cleared until its rebuild.
+    pub(crate) fn assume(&mut self, condition: &ConditionTerm, value: bool) {
+        if !expresses(condition) {
+            return;
+        }
+        if let Some(graph) = self.0.get() {
+            let mut graph = graph.clone();
+            graph.assume_condition(condition, value);
+            self.0 = std::sync::Arc::new(std::sync::OnceLock::from(graph));
         }
     }
+
+    /// Follows the context withdrawing `condition`.
+    pub(crate) fn withdraw(&mut self, condition: &ConditionTerm) {
+        if expresses(condition) {
+            self.0 = std::sync::Arc::new(std::sync::OnceLock::new());
+        }
+    }
+
+    /// Restarts from no facts, for a context about to re-assume all of its
+    /// facts.
+    pub(crate) fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    /// The graph of the context's `facts`, rebuilt from them when cleared.
+    pub(crate) fn graph<'a>(
+        &self,
+        facts: impl FnOnce() -> Vec<(&'a ConditionTerm, bool)>,
+    ) -> &DifferenceGraph {
+        self.0.get_or_init(|| {
+            let mut graph = DifferenceGraph::new();
+            for (condition, value) in facts() {
+                graph.assume_condition(condition, value);
+            }
+            graph
+        })
+    }
+}
+
+/// Whether difference logic reads anything from a fact about `condition`.
+fn expresses(condition: &ConditionTerm) -> bool {
+    use ConditionTerm as C;
+    overflow_parts(condition).is_some()
+        || matches!(
+            condition,
+            C::Bitvector32SignedLessThan(..)
+                | C::Bitvector32SignedLessEqual(..)
+                | C::Bitvector32SignedGreaterThan(..)
+                | C::Bitvector32SignedGreaterEqual(..)
+                | C::Bitvector32Equal(..)
+                | C::Bitvector64SignedLessThan(..)
+                | C::Bitvector64SignedLessEqual(..)
+                | C::Bitvector64SignedGreaterThan(..)
+                | C::Bitvector64SignedGreaterEqual(..)
+                | C::Bitvector64UnsignedLessThan(..)
+                | C::Bitvector64UnsignedLessEqual(..)
+                | C::Bitvector64UnsignedGreaterThan(..)
+                | C::Bitvector64UnsignedGreaterEqual(..)
+                | C::Bitvector64Equal(..)
+        )
 }
 
 #[derive(Clone, Copy)]
@@ -478,6 +933,76 @@ enum Operation {
     Add,
     Subtract,
     Multiply,
+}
+
+/// The parts of an overflow condition: its operation, the operands'
+/// domain, the operands, and whether the operation is commutative.
+fn overflow_parts(
+    condition: &ConditionTerm,
+) -> Option<(u8, Domain, &Bitvector32Term, &Bitvector32Term, bool)> {
+    use ConditionTerm as C;
+    Some(match condition {
+        C::Bitvector32SignedAddOverflows(a, b) => (0, Domain::Int32, a, b, true),
+        C::Bitvector32SignedSubtractOverflows(a, b) => (1, Domain::Int32, a, b, false),
+        C::Bitvector32SignedMultiplyOverflows(a, b) => (2, Domain::Int32, a, b, true),
+        C::Bitvector32SignedDivideOverflows(a, b) => (3, Domain::Int32, a, b, false),
+        C::Bitvector32SignedShiftLeftOverflows(a, b) => (4, Domain::Int32, a, b, false),
+        C::Bitvector64SignedAddOverflows(a, b) => (5, Domain::Int64, a, b, true),
+        C::Bitvector64SignedSubtractOverflows(a, b) => (6, Domain::Int64, a, b, false),
+        C::Bitvector64SignedMultiplyOverflows(a, b) => (7, Domain::Int64, a, b, true),
+        C::Bitvector64SignedDivideOverflows(a, b) => (8, Domain::Int64, a, b, false),
+        _ => return None,
+    })
+}
+
+/// A recorded overflow condition: its operation and its operands' values
+/// in the graph, a commutative operation's in one order, so another name
+/// for an operand, or the operands swapped, finds it.
+type OverflowKey = (u8, Affine, Affine);
+
+fn overflow_key(operation: u8, a: Affine, b: Affine, commutative: bool) -> OverflowKey {
+    if commutative && b < a {
+        (operation, b, a)
+    } else {
+        (operation, a, b)
+    }
+}
+
+/// Whether a value in `(low, high)` plus `offset` stays in `domain` (and,
+/// for a conversion that keeps only non-negative values, is non-negative).
+fn link_fits((low, high): (i128, i128), offset: i128, domain: Domain, nonnegative: bool) -> bool {
+    let (min, max) = domain.range();
+    if nonnegative {
+        low >= 0 && high <= max
+    } else {
+        low + offset >= min && high + offset <= max
+    }
+}
+
+/// When `term` is `x ^ MIN` in a signed `domain`, the spelling of an
+/// unsigned order as a signed one: `x`.
+fn sign_flip_base(domain: Domain, term: &Bitvector32Term) -> Option<&Bitvector32Term> {
+    use Bitvector32Term as T;
+    let (a, b) = match (domain, term) {
+        (Domain::Int32, T::BitwiseXor(a, b)) | (Domain::Int64, T::Int64BitwiseXor(a, b)) => {
+            (a.as_ref(), b.as_ref())
+        }
+        _ => return None,
+    };
+    let min = Some(domain.range().0);
+    if constant(domain, a) == min {
+        Some(b)
+    } else if constant(domain, b) == min {
+        Some(a)
+    } else {
+        None
+    }
+}
+
+/// `value ^ MIN` in a signed `domain`.
+fn flip_sign(domain: Domain, value: i128) -> i128 {
+    let min = domain.range().0;
+    if value >= 0 { value + min } else { value - min }
 }
 
 /// `term`'s value in `domain` when it is a constant there.

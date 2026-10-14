@@ -255,7 +255,7 @@ mod certificate_tests {
             .expect_err("deep snapshot annotation must stop structurally");
         assert!(
             error.message().contains("structural depth bound"),
-            "{error:?}"
+            "{error}"
         );
     }
 
@@ -349,9 +349,9 @@ mod certificate_tests {
             error
                 .message()
                 .contains("0 exact and 0 compatible recorded snapshots"),
-            "{error:?}"
+            "{error}"
         );
-        assert!(!error.message().contains("CMemory"), "{error:?}");
+        assert!(!error.message().contains("CMemory"), "{error}");
     }
 
     #[test]

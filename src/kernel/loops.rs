@@ -2651,10 +2651,16 @@ pub(super) fn condition_is_decided(
     assumptions
         .exact_condition_value(condition)
         .or_else(|| PureFactContext::decide_intrinsically(condition))
+        .or_else(|| assumptions.difference_decision(condition, &[]))
         .or_else(|| {
             (!assumptions.should_defer_non_exact_condition_reasoning())
                 .then(|| assumptions.decide(condition))
                 .flatten()
+                .inspect(|_| {
+                    crate::kernel::reasoning::path_facts::record_general_condition_decision(
+                        "loop condition",
+                    )
+                })
         })
 }
 
@@ -7835,7 +7841,7 @@ fn rebind_loop_binder_instances(
                 }
                 Err(error) => {
                     return Ok(Err(format!(
-                        "loop binder `{binder}` could not be evaluated here: {error:?}"
+                        "loop binder `{binder}` could not be evaluated here: {error}"
                     )));
                 }
             };
@@ -9511,7 +9517,7 @@ fn validate_loop_havoc_stable_loans(
     for range in ranges {
         if let Err(error) = ledger.permits_memory_access_with_assumptions(range, assumptions) {
             return Err(format!(
-                "loop memory havoc overlaps an active stable-view loan: {error:?}"
+                "loop memory havoc overlaps an active stable-view loan: {error}"
             ));
         }
     }

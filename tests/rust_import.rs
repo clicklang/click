@@ -2031,7 +2031,7 @@ fn rust_moves_drop_effect_and_return_capture_verify() {
             "ensures *self.slot == 7;",
         ),
         sidecar.replace(
-            "ensures result == (if early != 0 { 7 } else { 9 });",
+            "ensures result == (if early { 7 } else { 9 });",
             "ensures result == old(*value);",
         ),
         sidecar[sidecar.find("fn restore").unwrap()..]

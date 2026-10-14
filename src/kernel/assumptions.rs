@@ -3496,6 +3496,7 @@ impl PureFactContext {
         self.snapshot_condition_variables = std::sync::Arc::new(std::sync::OnceLock::new());
         self.open_condition_facts = crate::persistent::PersistentMap::default();
         self.order_condition_facts = crate::persistent::PersistentMap::default();
+        self.difference_graph.reset();
         self.pointer_alignment_facts = crate::persistent::PersistentMap::default();
         self.pointer_block_aliases = crate::persistent::PersistentMap::default();
         self.pointer_block_aliases_by_offset = crate::persistent::PersistentMap::default();
@@ -3636,6 +3637,11 @@ impl PureFactContext {
         value: bool,
         insert: bool,
     ) {
+        if insert {
+            self.difference_graph.assume(condition, value);
+        } else {
+            self.difference_graph.withdraw(condition);
+        }
         if condition_as_order_fact(condition, value).is_some() {
             self.order_condition_facts = if insert {
                 self.order_condition_facts
@@ -5089,6 +5095,30 @@ impl PureFactContext {
     pub(super) fn should_keep_spec_loads_symbolic(&self) -> bool {
         self.reasoning_policy
             .contains(ReasoningPolicy::KEEP_SPEC_LOADS_SYMBOLIC)
+    }
+
+    /// What difference logic over this context's condition facts decides
+    /// about `condition` (`issues/difference-logic.md`), with `extra` facts
+    /// assumed on top: a path's facts not yet in the context.
+    pub(crate) fn difference_decision(
+        &self,
+        condition: &ConditionTerm,
+        extra: &[(ConditionTerm, bool)],
+    ) -> Option<bool> {
+        let graph = self.difference_graph.graph(|| {
+            self.condition_facts
+                .iter()
+                .map(|(condition, value)| (condition, *value))
+                .collect()
+        });
+        if extra.is_empty() {
+            return graph.decide(condition);
+        }
+        let mut graph = graph.clone();
+        for (fact, value) in extra {
+            graph.assume_condition(fact, *value);
+        }
+        graph.decide(condition)
     }
 
     pub(crate) fn proves_exact(&self, proposition: &Proposition) -> bool {
