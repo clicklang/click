@@ -2560,6 +2560,7 @@ pub(crate) fn c_qualified_typed_store(
         value_type,
         pointee_constant,
         volatile,
+        source: Default::default(),
     }
 }
 

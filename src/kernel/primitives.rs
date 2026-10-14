@@ -2950,6 +2950,8 @@ pub enum CStatement {
         volatile: bool,
         /// The destination pointer cell's declared pointee qualification.
         pointee_constant: bool,
+        /// Source provenance only; checked memory authority is still required.
+        source: super::CStatementStoreSource,
     },
     /// Evaluate a compound-assignment or increment target as one lvalue,
     /// read it, apply the operator with the operand, and write the result back.
@@ -10725,6 +10727,7 @@ pub struct ExecutionPureFact {
     /// state, since the producer's snapshot and pointer are the authority.
     pub(super) generated_load_binding: Option<Box<GeneratedLoadBinding>>,
     pub(super) generated_load_source_events: GeneratedLoadSourceEvents,
+    pub(super) reference_read: super::source_access::ReferenceReadSource,
 }
 
 /// Source events are execution provenance, not part of the proposition's
@@ -10800,6 +10803,7 @@ pub(crate) enum GeneratedLoadBinding {
 pub(crate) struct LoadSourceId {
     pub(crate) owner: LoadSourceOwnerId,
     pub(crate) occurrence: u32,
+    pub(crate) reference_access: Option<Arc<super::ReferenceAccessSourceId>>,
 }
 
 /// Stable owner identity for source load occurrences.  The source unit and
@@ -10867,6 +10871,7 @@ pub(super) struct CertifiedMemoryStore {
     pub(super) pointer: Pointer,
     pub(super) value: CValue,
     pub(super) authorized_range: Option<CMemoryRange>,
+    pub(super) source: super::CStatementStoreSource,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

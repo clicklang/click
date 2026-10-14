@@ -11875,6 +11875,7 @@ fn generated_load_source_event_fixture(
                 function: std::sync::Arc::from("load"),
             },
             occurrence,
+            reference_access: None,
         },
         crate::kernel::GeneratedLoadBinding::Exact {
             variable: Variable(variable.into()),
@@ -11962,6 +11963,7 @@ fn generated_load_source_event_rejects_ambiguous_binding_input() {
             function: std::sync::Arc::from("load"),
         },
         occurrence: 1,
+        reference_access: None,
     };
     assert!(
         crate::kernel::GeneratedLoadSourceEvent::new(

@@ -1745,6 +1745,7 @@ mod condition_transition_tests {
                     function: std::sync::Arc::from("bad"),
                 },
                 occurrence: 0,
+                reference_access: None,
             }),
         });
         let mut next_opaque_call = 0;
@@ -1788,6 +1789,7 @@ mod condition_transition_tests {
                     function: std::sync::Arc::from("f"),
                 },
                 occurrence,
+                reference_access: None,
             })
         };
         let first = CExpression::TypedLoad {

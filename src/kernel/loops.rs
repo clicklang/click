@@ -1507,6 +1507,7 @@ fn modeled_pthread_handle_store(
         value_type: CType::UInt64,
         volatile: false,
         pointee_constant: false,
+        source: Default::default(),
     };
     let paths = super::eval::execute_c_statement_paths(
         state,

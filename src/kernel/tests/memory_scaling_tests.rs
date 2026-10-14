@@ -456,6 +456,7 @@ fn one_heap_store_is_logarithmic_in_unrelated_allocations() {
             value_type: CType::UInt32,
             volatile: false,
             pointee_constant: false,
+            source: Default::default(),
         };
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
             execute_c_statement_paths(

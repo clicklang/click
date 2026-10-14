@@ -226,6 +226,8 @@ pub(super) fn lower(
         ))
     };
     for &block in &flow.order {
+        cx.mir_point = None;
+        cx.mir_nodes.clear();
         let terminal = match &mir.blocks[block].terminator {
             T::Goto { .. } => c_skip(),
             T::If { condition, .. } => accesses(&[condition], &live),
@@ -383,7 +385,16 @@ pub(super) fn lower(
             }
         };
         let mut statements = c_skip();
-        for s in &mir.blocks[block].statements {
+        for (statement_index, s) in mir.blocks[block].statements.iter().enumerate() {
+            cx.mir_point = Some(super::super::borrow_frontiers::MirPoint {
+                block,
+                statement: statement_index,
+            });
+            cx.mir_nodes = if cx.import_identity.is_some() {
+                super::super::borrow_frontiers::mir_expression_nodes(s)
+            } else {
+                BTreeMap::new()
+            };
             let statement = match s {
                 S::SliceSplit {
                     slice,
@@ -489,9 +500,10 @@ pub(super) fn lower(
                             value = c_variable(name);
                         }
                         let (target_checks, address) = cx.prepared_address(target)?;
+                        let value_type = cx.place_type(target)?;
                         c_seq(
                             c_seq(checks, target_checks),
-                            c_typed_store(address, value, cx.place_type(target)?),
+                            cx.source_store(target, address, value, value_type),
                         )
                     }
                 }
@@ -1036,6 +1048,9 @@ mod tests {
                 function: "scale",
                 fields: &fields,
                 next_load: 0,
+                import_identity: None,
+                mir_point: None,
+                mir_nodes: BTreeMap::new(),
                 next_temporary: 0,
                 locals: BTreeSet::new(),
                 return_type: C0Type::Void,
