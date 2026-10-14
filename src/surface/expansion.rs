@@ -2257,6 +2257,16 @@ fn find_function(tokens: &[SourceToken], name: &str) -> Result<FunctionSource, C
         {
             continue;
         }
+        // `theorem t() executes f(...) { ... }` names the function it
+        // executes; its block is the theorem's. A C++ head spells the
+        // function as a declarator, `Rec::f(`, so such a theorem can be the
+        // only literal `f(` in the source.
+        if index
+            .checked_sub(1)
+            .is_some_and(|before| tokens[before].text == "executes")
+        {
+            continue;
+        }
         let parameters_close = matching_delimiter(tokens, index + 1, "(", ")")?;
         let mut body_open = after_rust_return_type(tokens, parameters_close + 1);
         if tokens.get(body_open).map(|token| token.text.as_str()) == Some("throws") {

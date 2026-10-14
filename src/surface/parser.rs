@@ -599,9 +599,6 @@ struct Parser {
     /// declaration, so it keeps the C type exactly, `long` apart from
     /// `long long`; a specification type elsewhere names a representation.
     exact_long_rank: bool,
-    /// Set while an `extern` head is parsed. Its C++ receiver is still
-    /// written as an explicit `this` parameter.
-    external_head: bool,
     /// The slice parameters of the Rust signature being parsed. Each is one
     /// name in the sidecar and a pointer with a `name_len` length underneath.
     rust_slice_params: BTreeSet<String>,
@@ -994,7 +991,6 @@ impl Parser {
             plain_char: None,
             int64_t_rank: LongRank::Long,
             exact_long_rank: false,
-            external_head: false,
             rust_slice_params: BTreeSet::new(),
             rust_impl_type: None,
             rust_impl_method_suffix: None,
@@ -2913,10 +2909,8 @@ impl Parser {
             return_struct_name,
         } = {
             let previous = std::mem::replace(&mut self.exact_long_rank, true);
-            let previous_external = std::mem::replace(&mut self.external_head, external);
             let signature = self.parse_function_signature();
             self.exact_long_rank = previous;
-            self.external_head = previous_external;
             signature?
         };
         if let Some(struct_name) = return_struct_name {
@@ -3702,13 +3696,12 @@ impl Parser {
         let mut parsed_parameters = self.parse_parameters()?;
         self.expect(Token::RParen)?;
         // A named contract describes a function type, whose receiver is an
-        // ordinary parameter, and an `extern` head still writes its receiver;
-        // a verified function's own head leaves `this` implicit.
-        // A member of a class template instance, whose mangled name (`__`)
-        // a head does not yet spell natively, keeps its explicit receiver.
+        // ordinary parameter; a verified or `extern` head leaves `this`
+        // implicit. A member of a class template instance, whose mangled
+        // name (`__`) a head does not yet spell natively, keeps its explicit
+        // receiver.
         if self.verifies_cpp()
             && !self.in_contract_definition
-            && !self.external_head
             && !name.contains("__")
             && parsed_parameters
                 .parameters

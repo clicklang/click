@@ -1622,7 +1622,10 @@ contract:
   catalog itself is never written into a sidecar by expansion.
 - A call to a standard function with no catalog contract is refused, naming
   the function. A sidecar may state its own `extern` contract instead, which is
-  an assumption like any other external contract.
+  an assumption like any other external contract. Its head is the C++
+  declaration, as a verified function's is: `extern int* ministd::identity(int* p)`,
+  or, for a member, `extern int ministd::Box::get() const` with `this`
+  implicit (`tests/cpp_import.rs`, `axiomatic_*`).
 - A standard function must be `noexcept`; throwing contracts are not modeled.
   One returning a record by value constructs it in the caller's destination.
 

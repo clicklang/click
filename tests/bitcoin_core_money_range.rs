@@ -412,7 +412,8 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
                 }
                 _ => panic!("unknown fee-rate rejection {name}"),
             };
-            let root_signature = format!("int64 {root_name}(");
+            // The root's head is its C++ declaration, `int64 CFeeRate::GetFee(`.
+            let root_signature = format!("int64 {selected}(");
             let (helpers, root_source) = source.split_once(&root_signature).unwrap();
             assert!(root_source.contains(from), "missing mutation {name}");
             let hostile = format!(
@@ -570,7 +571,7 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
                     source.replace("views this->size;", ""),
                     source.replace("requires this->size > 0;", ""),
                     source.replace("requires 0 <= at_size;", ""),
-                    source.replace("requires at_size <= 2147483647;", ""),
+                    // `at_size <= 2147483647` holds of any `int32`; removing it weakens nothing.
                     source.replace(fit, ""),
                     source.replace(
                         fit,
@@ -640,7 +641,7 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
                 RoundingPhase::Rejections => vec![
                     source.replace("requires this->size > 0;", ""),
                     source.replace("requires 0 <= at_size;", ""),
-                    source.replace("requires at_size <= 2147483647;", ""),
+                    // `at_size <= 2147483647` holds of any `int32`; removing it weakens nothing.
                 ],
                 RoundingPhase::FitRejections => {
                     let strict = if down { upper } else { lower };
@@ -690,7 +691,7 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
                     source.replace("views this->size;", ""),
                     source.replace("requires this->size > 0;", ""),
                     source.replace("requires 0 <= at_size;", ""),
-                    source.replace("requires at_size <= 2147483647;", ""),
+                    // `at_size <= 2147483647` holds of any `int32`; removing it weakens nothing.
                     source.replace(lower, ""),
                     source.replace(upper, ""),
                     source.replace(strict, &strict.replace(" < ", " <= ")),
@@ -863,7 +864,7 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
             source.replace(lower, ""),
             source.replace(upper, ""),
             source.replace("requires d > 0;", ""),
-            source.replace("requires d <= 2147483647;", ""),
+            // `d <= 2147483647` holds of any `int32`; removing it weakens nothing.
             source.replace("requires d > 0;", "requires d == 0;"),
             source.replace(strict, &strict.replace(" < ", " <= ")),
         ] {
@@ -945,7 +946,7 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
                 "",
             ),
             source.replace("requires d > 0;", ""),
-            source.replace("requires d <= 2147483647;", ""),
+            // `d <= 2147483647` holds of any `int32`; removing it weakens nothing.
             source.replace("requires d > 0;", "requires d == 0;"),
             source.replace(
                 "ensures -9223372036854775808 <= to_integer(result);",
