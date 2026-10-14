@@ -150,7 +150,7 @@ Proposed fix: [design/proof-reuse.md](../design/proof-reuse.md):
 - R4: automatic opening and closing of resources.
 - R5: one script for several arms.
 
-Decision: open.
+Decision: fix (maintainer, 2026-10-14), starting with R2.
 
 ### P6. Loop proofs restate facts
 
@@ -162,7 +162,7 @@ re-`have`d after steps (`examples/rbtree-erase/rbtree_erase_black_spine.click`).
 Proposed fix: facts about values a step cannot change carry across steps
 automatically; the back edge closes implicitly.
 
-Decision: open.
+Decision: fix (maintainer, 2026-10-14), after smt-auto stage 1.
 
 ## W. Proof workflow and tooling
 
@@ -258,21 +258,6 @@ Decision: in progress.
 
 ## L. Surface language
 
-### L1. Too many words, several with more than one meaning
-
-Today: the word index has about 200 words
-(`docs/reference/language/grammar.md`). `fold` is a tactic, a range method
-and resource construction; `unfold` opens a function call, switches a
-predicate's transparency branch-wide, consumes a resource layer, and mints or
-burns a counted member; `count` is a keyword and a prelude function;
-`function` starts both a pure function and a C contract; `as` has four uses.
-
-Proposed fix: one meaning per word, e.g. `reveal` for predicates and
-`mint`/`burn` for counted members; move certificate step names out of the
-general word index.
-
-Decision: open; the maintainer will revisit it after L2–L7.
-
 ### L4. Rust and C++ specs still read like C
 
 Today: a Rust sidecar's pure function takes `bytes: const uint8*, end:
@@ -293,7 +278,7 @@ frames restated after `produces`.
 
 Proposed fix: `owns *s` for whole structs; infer frames for produced cells.
 
-Decision: open.
+Decision: fix (maintainer, 2026-10-14).
 
 ### L6. Fold syntax is heavy and generics are fully applied
 
