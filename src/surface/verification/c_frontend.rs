@@ -906,6 +906,36 @@ pub(super) fn parse_c_source_unit(
     Ok(unit)
 }
 
+/// A qualified scalar name denotes its storage read in the selected snapshot,
+/// including `old` and recorded snapshots, rather than one fixed input value.
+fn qualified_scalar_read(
+    address: CValue,
+    value_type: CType,
+    pointee_constant: bool,
+    pointee_volatile: bool,
+) -> CExpression {
+    let read = CExpression::TypedLoad {
+        pointer: Box::new(CExpression::Value(address)),
+        value_type,
+        volatile: false,
+        pointee_constant,
+        source: Default::default(),
+    };
+    if value_type.is_object_pointer() && pointee_volatile {
+        CExpression::Cast {
+            expression: Box::new(read),
+            target_type: value_type,
+            integer_mode: crate::kernel::CIntegerCastMode::Standard,
+            pointee_struct: None,
+            pointee_volatile: true,
+            pointee_constant,
+            explicit_qualification: false,
+        }
+    } else {
+        read
+    }
+}
+
 /// The globals and function statics of one translation unit a contract may
 /// name: `name`, or `function::name` for a static.
 pub(super) fn unit_qualified_objects(
@@ -915,26 +945,15 @@ pub(super) fn unit_qualified_objects(
     for (name, global) in &unit.globals {
         if let Some(pointer_type) = global.c_type().pointer_type() {
             let pointer = CMemory::global_pointer(global.kernel_name());
-            let value_type = global.c_type().to_kernel_type();
-            let mut value = if value_type.is_object_pointer() {
-                crate::kernel::stable_symbolic_pointer_cell_value(&pointer, value_type)
-            } else {
-                CValue::typed_pointer(pointer.clone(), pointer_type.to_kernel_type())
-            };
-            value = value
+            let address = CValue::typed_pointer(pointer, pointer_type.to_kernel_type())
                 .with_pointer_pointee_constant(global.is_constant())
-                .with_pointer_pointee_volatile(global.pointee_is_volatile());
-            let expression = if value_type.is_object_pointer() {
-                CExpression::Value(value)
-            } else {
-                CExpression::TypedLoad {
-                    pointer: Box::new(CExpression::Value(value)),
-                    value_type,
-                    volatile: false,
-                    pointee_constant: false,
-                    source: Default::default(),
-                }
-            };
+                .with_pointer_pointee_volatile(global.is_volatile());
+            let expression = qualified_scalar_read(
+                address,
+                global.c_type().to_kernel_type(),
+                global.pointee_is_constant(),
+                global.pointee_is_volatile(),
+            );
             objects.insert(
                 name.clone(),
                 parser::QualifiedCObject {
@@ -1032,26 +1051,15 @@ pub(super) fn unit_qualified_objects(
         for local in function.static_locals().values() {
             if let Some(pointer_type) = local.c_type().pointer_type() {
                 let pointer = CMemory::static_pointer(function.name(), local.kernel_name());
-                let value_type = local.c_type().to_kernel_type();
-                let mut value = if value_type.is_object_pointer() {
-                    crate::kernel::stable_symbolic_pointer_cell_value(&pointer, value_type)
-                } else {
-                    CValue::typed_pointer(pointer.clone(), pointer_type.to_kernel_type())
-                };
-                value = value
+                let address = CValue::typed_pointer(pointer, pointer_type.to_kernel_type())
                     .with_pointer_pointee_constant(local.is_constant())
-                    .with_pointer_pointee_volatile(local.pointee_is_volatile());
-                let expression = if value_type.is_object_pointer() {
-                    CExpression::Value(value)
-                } else {
-                    CExpression::TypedLoad {
-                        pointer: Box::new(CExpression::Value(value)),
-                        value_type,
-                        volatile: false,
-                        pointee_constant: false,
-                        source: Default::default(),
-                    }
-                };
+                    .with_pointer_pointee_volatile(local.is_volatile());
+                let expression = qualified_scalar_read(
+                    address,
+                    local.c_type().to_kernel_type(),
+                    local.pointee_is_constant(),
+                    local.pointee_is_volatile(),
+                );
                 objects.insert(
                     format!("{}::{}", function.name(), local.name()),
                     parser::QualifiedCObject {
