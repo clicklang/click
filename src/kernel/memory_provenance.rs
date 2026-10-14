@@ -2048,6 +2048,41 @@ pub(in crate::kernel) fn typed_range_disjoint_from_pointer_evidence(
     if range.base.blocks_proven_distinct(pointer) {
         return Some(RangeDisjointFromPointerEvidence::DistinctBlocks);
     }
+    // The checked borrowed descriptor and backing owner are indexed by the
+    // two selected addresses. Retain their complete extents, just as the
+    // single-store frame does, before considering ambient separation facts.
+    if let Some((resources, range_member, access_member)) = assumptions
+        .borrow_partition_separated_members(
+            range.base(),
+            pointer,
+            |member| {
+                crate::kernel::assumptions::memory_range_shallowly_contained_with_facts(
+                    range,
+                    member,
+                    assumptions,
+                )
+            },
+            |member| {
+                AccessInRangeEvidence::for_access(pointer, bytes, member, assumptions).is_some()
+            },
+        )
+        && !assumptions.memory_ranges_overlap_after_base_equality(range_member, access_member)
+    {
+        let membership =
+            AccessInRangeEvidence::for_access(pointer, bytes, access_member, assumptions)?;
+        crate::kernel::record_implicit_reasoning_provenance(
+            assumptions,
+            &Proposition::CResourceComposition(resources.clone()),
+        );
+        return Some(RangeDisjointFromPointerEvidence::BorrowPartition(Box::new(
+            BorrowPartitionRangeEvidence {
+                resources: resources.clone(),
+                range_member: range_member.clone(),
+                access_member: access_member.clone(),
+                membership,
+            },
+        )));
+    }
     if let Some(fact) = assumptions.prop_facts.iter().find(|fact| {
         exact_separation_fact_covers_range_and_pointer(fact, range, pointer, assumptions)
     }) {
