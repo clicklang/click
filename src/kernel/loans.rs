@@ -1,11 +1,15 @@
-//! Stable shared-loan authority for resource views.
+//! Shared-loan authority for views and synchronous borrowed-memory call receipts.
 //!
 //! A [`LoanLedger`] is immutable. Every update returns opaque checked
 //! evidence tied to the exact predecessor state identity. The ledger deliberately
-//! contains no C call-stack policy: ordinary calls, named contracts, and
-//! future language frontends must all use the same transitions.
+//! exposes the same participant and dependency transitions to ordinary calls,
+//! named contracts and language frontends; memory authority stays in the
+//! resource partition.
 
+mod exclusive_calls;
 pub(crate) mod mutex_calls;
+
+use exclusive_calls::{ExclusiveCallBinding, ExclusiveCallId, ExclusiveCallRecord};
 
 use super::functions::CCheckedResourceFact;
 use super::primitives::{
@@ -870,6 +874,8 @@ struct LoanShareRecord {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct LoanLedgerData {
     arena: u64,
+    exclusive_calls: PersistentMap<ExclusiveCallId, ExclusiveCallRecord>,
+    exclusive_holders: PersistentMap<LoanParticipantId, ExclusiveCallId>,
     next_scope: u64,
     next_loan: u64,
     next_share: u64,
@@ -1406,6 +1412,11 @@ impl LoanRefusal {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum LoanTransitionEvidence {
+    OpenExclusiveCall(ExclusiveCallBinding),
+    ReturnExclusiveCall {
+        binding: ExclusiveCallBinding,
+        holder: LoanParticipantId,
+    },
     Lend {
         lender: LoanParticipantId,
         borrower: LoanParticipantId,
@@ -1741,6 +1752,7 @@ pub(crate) struct StableViewTransferPlan {
     pub(crate) caller_resources_after_requirements: ResourceContext,
     pub(crate) callee_resources: ResourceContext,
     pub(crate) transferred_ownership: Vec<CCheckedResourceFact>,
+    exclusive_call: Option<ExclusiveCallBinding>,
     /// Caller spellings for transferred ownership when the selected owned
     /// entry is exactly equivalent to the callee requirement. A covering
     /// owner that is strictly larger is intentionally left as `None`: the
@@ -1835,6 +1847,8 @@ impl StableViewRecovery {
         self.transitions
             .last()
             .map(|transition| match &transition.evidence {
+                LoanTransitionEvidence::OpenExclusiveCall(_)
+                | LoanTransitionEvidence::ReturnExclusiveCall { .. } => LoanRefusalSubject::none(),
                 LoanTransitionEvidence::Lend {
                     scope,
                     loan,
@@ -2351,6 +2365,9 @@ impl CheckedLoanCallEvidence {
             crate::instrumentation::record_deterministic_work(1);
             recovery_successor = recovery_successor.apply(transition)?;
         }
+        if let Some(binding) = &self.entry.exclusive_call {
+            recovery_successor.validate_returned_exclusive_call(binding)?;
+        }
         if recovery_successor != self.recovery_terminal_ledger {
             return Err(LoanRefusal::InvalidEvidence);
         }
@@ -2757,6 +2774,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         }
     };
     let mut reserved_ownership_supports = Vec::new();
+    let mut exclusive_supports = Vec::new();
     let mut canonical_transferred_ownership = Vec::new();
     let mut planned_ledger = ledger.clone();
     let mut entry_transitions = Vec::new();
@@ -2896,6 +2914,14 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                     .copied()
                     .map(|support| (requirement.fact.clone(), support)),
             );
+            if requirement.role == CResourceTransferRole::Borrow {
+                exclusive_supports.extend(
+                    supports
+                        .iter()
+                        .copied()
+                        .map(|support| (requirement.fact.clone(), support)),
+                );
+            }
             canonical_transferred_ownership.push(None);
             transferred_ownership.push(requirement.clone());
             residual = remaining.clone();
@@ -2977,6 +3003,11 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             .map_err(|error| composition_conflict(error, &requirement.fact))?;
         if let Some(range) = requirement.fact.memory_own_range() {
             memory_effects.push(range.clone());
+        }
+        if requirement.role == CResourceTransferRole::Borrow
+            && requirement.fact.memory_own_range().is_some()
+        {
+            exclusive_supports.push((requirement.fact.clone(), occurrence));
         }
         reserved_ownership_supports.push((requirement.fact.clone(), occurrence));
         canonical_transferred_ownership.push(canonical_caller_fact);
@@ -3602,7 +3633,17 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
     planned_views.sort_by_key(|(index, _)| *index);
     stable_views.extend(planned_views.into_iter().map(|(_, view)| view));
 
+    let exclusive_call = if exclusive_supports.is_empty() || split_reborrowed_views {
+        None
+    } else {
+        let (binding, transition) =
+            planned_ledger.open_exclusive_call(caller, callee, exclusive_supports)?;
+        planned_ledger = planned_ledger.apply(&transition)?;
+        entry_transitions.push(transition);
+        Some(binding)
+    };
     Ok(StableViewTransferPlan {
+        exclusive_call,
         caller_resources_after_requirements: residual,
         callee_resources,
         transferred_ownership,
@@ -3894,6 +3935,7 @@ impl StableViewTransferPlan {
                 })
                 .map_err(|error| composition_conflict(error, fact))
         };
+        self.validate_exclusive_reservation()?;
         let parent_ledger = self.parent_ledger;
         let stable_views = self.stable_views.clone();
         let loan_roots = self.loan_roots.clone();
@@ -4119,6 +4161,11 @@ impl StableViewTransferPlan {
         // root without a whole-ledger quiescence scan; a surviving (escaping)
         // loan or a released hold keeps the terminal ledger, since the call
         // changed authority.
+        if let Some(binding) = &self.exclusive_call {
+            let transition = ledger.return_exclusive_call(binding, self.caller)?;
+            ledger = ledger.apply(&transition)?;
+            transitions.push(transition);
+        }
         let terminal_ledger = ledger.clone();
         ledger = if keep_terminal { ledger } else { parent_ledger };
         let hold_base_ledger = ledger.clone();
@@ -4154,10 +4201,34 @@ impl StableViewTransferPlan {
         })
     }
 
+    fn validate_exclusive_reservation(&self) -> Result<(), LoanRefusal> {
+        let recorded = self.ledger.storage.data.exclusive_holders.get(&self.callee);
+        match &self.exclusive_call {
+            None if recorded.is_none() => Ok(()),
+            Some(binding) => {
+                self.ledger.validate_exclusive_call(binding, self.callee)?;
+                let reserved: BTreeSet<_> = self.reserved_ownership_supports.iter().collect();
+                for reservation in binding.supports.iter() {
+                    crate::instrumentation::record_deterministic_work(1);
+                    if !reserved.contains(reservation)
+                        || !self
+                            .callee_resources
+                            .satisfies_fact(&reservation.0, &PureFactContext::new())
+                    {
+                        return Err(LoanRefusal::InvalidEvidence);
+                    }
+                }
+                Ok(())
+            }
+            _ => Err(LoanRefusal::InvalidEvidence),
+        }
+    }
+
     pub(crate) fn recheck_entry(
         &self,
         predecessor: &LoanLedger,
     ) -> Result<LoanLedger, LoanRefusal> {
+        self.validate_exclusive_reservation()?;
         let mut current = predecessor.clone();
         for transition in &self.entry_transitions {
             crate::instrumentation::record_deterministic_work(1);
@@ -4209,6 +4280,8 @@ impl LoanLedger {
                 state: LoanLedgerStateId::fresh(),
                 data: LoanLedgerData {
                     arena,
+                    exclusive_calls: PersistentMap::default(),
+                    exclusive_holders: PersistentMap::default(),
                     next_scope: 0,
                     next_loan: 0,
                     next_share: 0,
@@ -4239,6 +4312,9 @@ impl LoanLedger {
 
     pub(crate) fn is_pristine(&self) -> bool {
         let data = &self.storage.data;
+        if !data.exclusive_calls.is_empty() || !data.exclusive_holders.is_empty() {
+            return false;
+        }
         data.next_scope == 0
             && data.next_loan == 0
             && data.next_share == 0
@@ -5798,6 +5874,12 @@ impl LoanLedger {
         crate::instrumentation::record_deterministic_work(1);
         let mut data = self.storage.data.clone();
         match evidence {
+            LoanTransitionEvidence::OpenExclusiveCall(binding) => {
+                self.apply_exclusive_open(&mut data, binding)?
+            }
+            LoanTransitionEvidence::ReturnExclusiveCall { binding, holder } => {
+                self.apply_exclusive_return(&mut data, binding, *holder)?
+            }
             LoanTransitionEvidence::Lend {
                 lender,
                 borrower,
@@ -6724,6 +6806,9 @@ impl LoanLedger {
 
     #[cfg(test)]
     fn invariant_holds(&self) -> bool {
+        if !self.exclusive_calls_invariant() {
+            return false;
+        }
         let data = &self.storage.data;
         let mut expected_unindexed = BTreeMap::new();
         for (loan_id, loan) in data.loans.iter() {
@@ -10017,7 +10102,7 @@ mod tests {
         }
     }
 
-    fn checked(fact: CResourceFact) -> CCheckedResourceFact {
+    pub(super) fn checked(fact: CResourceFact) -> CCheckedResourceFact {
         CCheckedResourceFact {
             fact,
             role: CResourceTransferRole::Borrow,
@@ -10028,7 +10113,7 @@ mod tests {
         }
     }
 
-    fn memory(start: u32, end: u32, own: bool) -> CResourceFact {
+    pub(super) fn memory(start: u32, end: u32, own: bool) -> CResourceFact {
         let range = crate::kernel::CMemoryRange::new(
             crate::kernel::Pointer {
                 block: "buffer".into(),

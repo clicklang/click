@@ -2160,9 +2160,11 @@ fn rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop(
     let start = witness.find("fn set_seven(").unwrap();
     let end = start + witness[start..].find("\n}").unwrap() + "\n}".len();
     let helper = &witness[start..end];
-    let source = format!("{helper}\npub fn update(value: &mut i32) {{ set_seven(value); }}");
+    let source = format!(
+        "{helper}\npub fn update(value: &mut i32) {{ set_seven(value); }}\npub fn nested(value: &mut i32, neighbor: &mut i32) {{ update(value); *neighbor = 9; }}"
+    );
     let p = Project::new(&source);
-    let proof = "verifying \"borrow.rs\";\nfn set_seven(value: &mut i32) { owns *value; ensures *value == 8; } by { execute(); simp(); }\nfn update(value: &mut i32) { owns *value; ensures *value == 8; } by { execute(); simp(); }\n";
+    let proof = "verifying \"borrow.rs\";\nfn set_seven(value: &mut i32) { owns *value; ensures *value == 8; } by { execute(); simp(); }\nfn update(value: &mut i32) { owns *value; ensures *value == 8; } by { execute(); simp(); }\nfn nested(value: &mut i32, neighbor: &mut i32) { owns *value; owns *neighbor; ensures *value == 8; ensures *neighbor == 9; } by { execute(); simp(); }\n";
     fs::write(p.root.join("borrow.click"), proof).unwrap();
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
@@ -2175,6 +2177,7 @@ fn rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop(
             "fn update(value: &mut i32) { views *value;",
             1,
         ),
+        proof.replace("owns *neighbor;", "views *neighbor;"),
     ] {
         assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
     }
@@ -2183,6 +2186,7 @@ fn rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop(
         &["expand", "--claim", "set_seven.contract", "--in-place"],
     );
     assert_cli(&p, &["expand", "--claim", "update.contract", "--in-place"]);
+    assert_cli(&p, &["expand", "--claim", "nested.contract", "--in-place"]);
     assert_cli(&p, &["verify"]);
     assert_eq!(
         fs::read_to_string(p.root.join("borrow.rs")).unwrap(),
