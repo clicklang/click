@@ -274,8 +274,8 @@ mod tests {
     #[test]
     fn integer_machine_operation_laws_require_definedness() {
         for (name, operator) in [
-            ("int32_add_to_integer", "+"),
-            ("int32_subtract_to_integer", "-"),
+            ("click::integer::int32_add_to_integer", "+"),
+            ("click::integer::int32_subtract_to_integer", "-"),
         ] {
             let source = format!(
                 "import click::integer; theorem bridge(a: int32, b: int32) {{ requires defined(a {operator} b); ensures to_integer(a {operator} b) == to_integer(a) {operator} to_integer(b) by {{ apply({name}(a, b)); }} }}"
@@ -343,17 +343,17 @@ mod tests {
     fn uint32_integer_order_bridges_recheck_expansion_and_require_evidence() {
         for (name, premise, conclusion) in [
             (
-                "uint32_less_equal_to_integer",
+                "click::integer::uint32_less_equal_to_integer",
                 "left <= right",
                 "to_integer(left) <= to_integer(right)",
             ),
             (
-                "uint32_to_integer_less_equal_implies_less_equal",
+                "click::integer::uint32_to_integer_less_equal_implies_less_equal",
                 "to_integer(left) <= to_integer(right)",
                 "left <= right",
             ),
             (
-                "uint32_to_integer_equal_implies_equal",
+                "click::integer::uint32_to_integer_equal_implies_equal",
                 "to_integer(left) == to_integer(right)",
                 "left == right",
             ),
@@ -957,47 +957,47 @@ mod tests {
     fn uint64_integer_bridges_recheck_guards_full_width_and_expansion() {
         for (name, guard, goal) in [
             (
-                "uint64_add_to_integer",
+                "click::integer::uint64_add_to_integer",
                 "to_integer(left) + to_integer(right) <= 18446744073709551615",
                 "to_integer(left + right) == to_integer(left) + to_integer(right)",
             ),
             (
-                "uint64_multiply_to_integer",
+                "click::integer::uint64_multiply_to_integer",
                 "to_integer(left) * to_integer(right) <= 18446744073709551615",
                 "to_integer(left * right) == to_integer(left) * to_integer(right)",
             ),
             (
-                "uint64_subtract_to_integer",
+                "click::integer::uint64_subtract_to_integer",
                 "to_integer(right) <= to_integer(left)",
                 "to_integer(left - right) == to_integer(left) - to_integer(right)",
             ),
             (
-                "uint64_divide_to_integer",
+                "click::integer::uint64_divide_to_integer",
                 "right != 0u64; requires to_integer(right) != 0",
                 "to_integer(left / right) == truncating_quotient(to_integer(left), to_integer(right))",
             ),
             (
-                "uint64_remainder_to_integer",
+                "click::integer::uint64_remainder_to_integer",
                 "right != 0u64; requires to_integer(right) != 0",
                 "to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right))",
             ),
             (
-                "uint64_less_equal_to_integer",
+                "click::integer::uint64_less_equal_to_integer",
                 "left <= right",
                 "to_integer(left) <= to_integer(right)",
             ),
             (
-                "uint64_to_integer_less_equal_implies_less_equal",
+                "click::integer::uint64_to_integer_less_equal_implies_less_equal",
                 "to_integer(left) <= to_integer(right)",
                 "left <= right",
             ),
             (
-                "uint64_less_than_to_integer",
+                "click::integer::uint64_less_than_to_integer",
                 "left < right",
                 "to_integer(left) < to_integer(right)",
             ),
             (
-                "uint64_to_integer_less_than_implies_less_than",
+                "click::integer::uint64_to_integer_less_than_implies_less_than",
                 "to_integer(left) < to_integer(right)",
                 "left < right",
             ),
@@ -1029,8 +1029,16 @@ mod tests {
     #[test]
     fn uint32_division_bridges_verify_actual_operations_calls_and_expansion() {
         for (name, op, mathematical) in [
-            ("uint32_divide_to_integer", "/", "truncating_quotient"),
-            ("uint32_remainder_to_integer", "%", "truncating_remainder"),
+            (
+                "click::integer::uint32_divide_to_integer",
+                "/",
+                "truncating_quotient",
+            ),
+            (
+                "click::integer::uint32_remainder_to_integer",
+                "%",
+                "truncating_remainder",
+            ),
         ] {
             let guard = "right != 0u32; requires to_integer(right) != 0";
             let goal = format!(
@@ -1066,8 +1074,16 @@ mod tests {
     #[test]
     fn uint64_division_bridges_require_both_evaluation_domains() {
         for (name, op, mathematical) in [
-            ("uint64_divide_to_integer", "/", "truncating_quotient"),
-            ("uint64_remainder_to_integer", "%", "truncating_remainder"),
+            (
+                "click::integer::uint64_divide_to_integer",
+                "/",
+                "truncating_quotient",
+            ),
+            (
+                "click::integer::uint64_remainder_to_integer",
+                "%",
+                "truncating_remainder",
+            ),
         ] {
             let source = format!(
                 "import click::integer; theorem exact(left: uint64, right: uint64) {{ requires right != 0u64; requires to_integer(right) != 0; ensures to_integer(left {op} right) == {mathematical}(to_integer(left), to_integer(right)) by {{ apply({name}(left, right)); }} }}"
@@ -1087,31 +1103,31 @@ mod tests {
     fn uint64_integer_bridges_verify_actual_c_operations_and_modular_calls() {
         for (name, guard, goal, op) in [
             (
-                "uint64_add_to_integer",
+                "click::integer::uint64_add_to_integer",
                 "to_integer(left) + to_integer(right) <= 18446744073709551615",
                 "to_integer(left + right) == to_integer(left) + to_integer(right)",
                 "+",
             ),
             (
-                "uint64_multiply_to_integer",
+                "click::integer::uint64_multiply_to_integer",
                 "to_integer(left) * to_integer(right) <= 18446744073709551615",
                 "to_integer(left * right) == to_integer(left) * to_integer(right)",
                 "*",
             ),
             (
-                "uint64_subtract_to_integer",
+                "click::integer::uint64_subtract_to_integer",
                 "to_integer(right) <= to_integer(left)",
                 "to_integer(left - right) == to_integer(left) - to_integer(right)",
                 "-",
             ),
             (
-                "uint64_divide_to_integer",
+                "click::integer::uint64_divide_to_integer",
                 "right != 0u64; requires to_integer(right) != 0",
                 "to_integer(left / right) == truncating_quotient(to_integer(left), to_integer(right))",
                 "/",
             ),
             (
-                "uint64_remainder_to_integer",
+                "click::integer::uint64_remainder_to_integer",
                 "right != 0u64; requires to_integer(right) != 0",
                 "to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right))",
                 "%",
@@ -1146,37 +1162,37 @@ mod tests {
     fn signed_integer_order_bridges_recheck_source_guards_and_expansion() {
         for (name, ty, guard, goal) in [
             (
-                "int32_to_integer_less_equal_implies_less_equal",
+                "click::integer::int32_to_integer_less_equal_implies_less_equal",
                 "int32",
                 "to_integer(left) <= to_integer(right)",
                 "left <= right",
             ),
             (
-                "int64_less_equal_to_integer",
+                "click::integer::int64_less_equal_to_integer",
                 "int64",
                 "left <= right",
                 "to_integer(left) <= to_integer(right)",
             ),
             (
-                "int64_less_than_to_integer",
+                "click::integer::int64_less_than_to_integer",
                 "int64",
                 "left < right",
                 "to_integer(left) < to_integer(right)",
             ),
             (
-                "int64_greater_equal_to_integer",
+                "click::integer::int64_greater_equal_to_integer",
                 "int64",
                 "left >= right",
                 "to_integer(left) >= to_integer(right)",
             ),
             (
-                "int64_to_integer_less_equal_implies_less_equal",
+                "click::integer::int64_to_integer_less_equal_implies_less_equal",
                 "int64",
                 "to_integer(left) <= to_integer(right)",
                 "left <= right",
             ),
             (
-                "int64_to_integer_equal_implies_equal",
+                "click::integer::int64_to_integer_equal_implies_equal",
                 "int64",
                 "to_integer(left) == to_integer(right)",
                 "left == right",
@@ -1251,8 +1267,8 @@ mod tests {
     #[test]
     fn int64_integer_operation_applications_recheck_guards_and_expansion() {
         for (name, op) in [
-            ("int64_add_to_integer", "+"),
-            ("int64_subtract_to_integer", "-"),
+            ("click::integer::int64_add_to_integer", "+"),
+            ("click::integer::int64_subtract_to_integer", "-"),
         ] {
             let source = format!(
                 "import click::integer; theorem exact(left: int64, right: int64) {{ requires defined(left {op} right); ensures to_integer(left {op} right) == to_integer(left) {op} to_integer(right) by {{ apply({name}(left, right)); }} }}"
@@ -1273,8 +1289,8 @@ mod tests {
     #[ignore = "nightly: 1.7s in the parallel gate"]
     fn int64_integer_operation_applications_scale_with_steps_and_unused_bounds() {
         for (name, op) in [
-            ("int64_add_to_integer", "+"),
-            ("int64_subtract_to_integer", "-"),
+            ("click::integer::int64_add_to_integer", "+"),
+            ("click::integer::int64_subtract_to_integer", "-"),
         ] {
             let guard = format!("defined(x {op} y)");
             let goal = format!("to_integer(x {op} y) == to_integer(x) {op} to_integer(y)");
@@ -1407,27 +1423,27 @@ mod tests {
     fn integer_truncation_applications_recheck_guards_claims_and_expansion() {
         for (name, requirements, goal) in [
             (
-                "integer_truncation_identity",
+                "click::integer::integer_truncation_identity",
                 &["d != 0"][..],
                 "n == truncating_quotient(n, d) * d + truncating_remainder(n, d)",
             ),
             (
-                "integer_positive_divisor_remainder_lower",
+                "click::integer::integer_positive_divisor_remainder_lower",
                 &["d != 0", "0 < d"][..],
                 "1 - d <= truncating_remainder(n, d)",
             ),
             (
-                "integer_positive_divisor_remainder_upper",
+                "click::integer::integer_positive_divisor_remainder_upper",
                 &["d != 0", "0 < d"][..],
                 "truncating_remainder(n, d) <= d - 1",
             ),
             (
-                "integer_nonnegative_dividend_remainder",
+                "click::integer::integer_nonnegative_dividend_remainder",
                 &["d != 0", "0 <= n"][..],
                 "0 <= truncating_remainder(n, d)",
             ),
             (
-                "integer_nonpositive_dividend_remainder",
+                "click::integer::integer_nonpositive_dividend_remainder",
                 &["d != 0", "n <= 0"][..],
                 "truncating_remainder(n, d) <= 0",
             ),

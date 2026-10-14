@@ -327,7 +327,10 @@ fn certification_checks_only_the_cited_library_theorem() {
         verify_c0_sources(click_source, &[("remainder.c", c_source)])
             .unwrap_or_else(|error| panic!("C proof failed: {}", error.message()));
     });
-    assert_eq!(proved, ["int32_subtract_equal_sum_right_cancels"]);
+    assert_eq!(
+        proved,
+        ["click::machine_integer::int32_subtract_equal_sum_right_cancels"]
+    );
 }
 
 #[test]

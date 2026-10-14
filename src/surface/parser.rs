@@ -166,6 +166,16 @@ pub(in crate::surface) struct ProgramLayouts {
     pub(in crate::surface) library_modules: BTreeSet<&'static str>,
 }
 
+/// The qualified identity of the Click library theorem `name`: `name`
+/// itself when it is already qualified or names no library theorem. Built-in
+/// tactics name library theorems through this.
+pub(in crate::surface) fn library_theorem_identity(name: &str) -> String {
+    library_paths::library_theorem_identities()
+        .get(name)
+        .cloned()
+        .unwrap_or_else(|| name.to_string())
+}
+
 pub(super) fn parse_with_layouts_and_aggregate_objects(
     source: &str,
     layouts: ProgramLayouts,
@@ -586,6 +596,9 @@ struct Parser {
     recursion_peers_by_function: BTreeMap<String, Vec<String>>,
     /// Click library modules the program's C declarations bring.
     implied_library_modules: BTreeSet<&'static str>,
+    /// The theorems the file declares, which a citation by bare name names
+    /// before any library theorem of that name. Empty in a library module.
+    local_theorems: BTreeSet<String>,
     source_aliases: BTreeMap<String, String>,
     qualified_objects: Option<BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>>,
     /// Set while a `tactic` declaration's signature is parsed: the name
@@ -997,6 +1010,16 @@ impl Parser {
         let (tokens, positions) = rewrite_model_accessors(tokens, positions, &struct_layouts);
         let (tokens, positions, path_library_modules) =
             library_paths::resolve_library_paths(tokens, positions)?;
+        // A cited theorem the file does not declare is a library theorem,
+        // named by its qualified identity. A library module cites every
+        // library theorem that way, its own included.
+        let library_module =
+            container.is_some_and(|container| container.filename.starts_with("library/"));
+        let local_theorems = if library_module {
+            BTreeSet::new()
+        } else {
+            library_paths::top_level_theorem_names(&tokens)
+        };
         // Source clauses may follow declarations. Choose the spelling for the
         // whole file so moving the clause cannot bypass a Rust syntax check.
         let language =
@@ -1047,6 +1070,7 @@ impl Parser {
             c_object_names_by_function: BTreeMap::new(),
             recursion_peers_by_function: BTreeMap::new(),
             implied_library_modules: path_library_modules,
+            local_theorems,
             current_c_parameter_types: BTreeMap::new(),
             current_parameter_struct_casts: BTreeMap::new(),
             aggregate_objects_by_function,
@@ -8041,6 +8065,14 @@ impl Parser {
 
     fn parse_theorem_application(&mut self) -> Result<TheoremApplication, ClickError> {
         let (name, arguments) = self.parse_call_arguments("theorem name")?;
+        let name = if self.local_theorems.contains(&name) {
+            name
+        } else {
+            library_paths::library_theorem_identities()
+                .get(&name)
+                .cloned()
+                .unwrap_or(name)
+        };
         Ok(TheoremApplication { name, arguments })
     }
 

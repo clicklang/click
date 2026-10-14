@@ -21,5 +21,5 @@ int32 probe(int32 a, int32 b, int32 c) {
 ```
 
 ```expect
-fail: required exact fact for theorem `int32_add_to_integer` is unavailable
+fail: required exact fact for theorem `click::integer::int32_add_to_integer` is unavailable
 ```

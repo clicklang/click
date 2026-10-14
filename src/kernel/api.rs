@@ -9021,35 +9021,36 @@ pub fn prove_uint64_integer_bridge(
 ) -> Option<Theorem> {
     if matches!(
         name,
-        "uint64_less_equal_to_integer" | "uint64_to_integer_less_equal_implies_less_equal"
+        "click::integer::uint64_less_equal_to_integer"
+            | "click::integer::uint64_to_integer_less_equal_implies_less_equal"
     ) {
         return Some(prove_machine_integer_order_bridge(
             MachineIntegerType::UInt64,
             left,
             right,
-            name == "uint64_to_integer_less_equal_implies_less_equal",
+            name == "click::integer::uint64_to_integer_less_equal_implies_less_equal",
         ));
     }
     // The unsigned observation is injective: equal observations are the
     // same 64-bit pattern.
-    if name == "uint64_to_integer_equal_implies_equal" {
+    if name == "click::integer::uint64_to_integer_equal_implies_equal" {
         return Some(prove_integer_equality_bridge(
             MachineIntegerType::UInt64,
             left,
             right,
         ));
     }
-    if name == "uint64_pack_uint16_to_integer" {
+    if name == "click::integer::uint64_pack_uint16_to_integer" {
         return prove_unsigned_pack_u16_to_integer(MachineIntegerType::UInt64, left, right);
     }
     if matches!(
         name,
-        "uint64_unpack_uint16_low" | "uint64_unpack_uint16_high"
+        "click::integer::uint64_unpack_uint16_low" | "click::integer::uint64_unpack_uint16_high"
     ) {
         return Some(prove_uint64_unpack_uint16_word(
             left,
             right,
-            name == "uint64_unpack_uint16_high",
+            name == "click::integer::uint64_unpack_uint16_high",
         ));
     }
     let observe = |value| {
@@ -9062,21 +9063,23 @@ pub fn prove_uint64_integer_bridge(
     // injective and monotone over every 64-bit pattern.
     if matches!(
         name,
-        "uint64_less_than_to_integer" | "uint64_to_integer_less_than_implies_less_than"
+        "click::integer::uint64_less_than_to_integer"
+            | "click::integer::uint64_to_integer_less_than_implies_less_than"
     ) {
         let native = Proposition::ConditionIs(ConditionTerm::uint64_less_than(left, right), true);
         let integer =
             Proposition::ConditionIs(ConditionTerm::IntegerLessThan(a.into(), b.into()), true);
-        let (premise, conclusion) = if name == "uint64_to_integer_less_than_implies_less_than" {
-            (integer, native)
-        } else {
-            (native, integer)
-        };
+        let (premise, conclusion) =
+            if name == "click::integer::uint64_to_integer_less_than_implies_less_than" {
+                (integer, native)
+            } else {
+                (native, integer)
+            };
         return Some(implication([premise], conclusion));
     }
     // Unsigned total order: strict less and greater-or-equal are
     // complementary evaluations of the same two 64-bit patterns.
-    if name == "uint64_less_than_implies_not_greater_equal" {
+    if name == "click::integer::uint64_less_than_implies_not_greater_equal" {
         return Some(implication(
             [Proposition::ConditionIs(
                 ConditionTerm::uint64_less_than(left.clone(), right.clone()),
@@ -9090,7 +9093,7 @@ pub fn prove_uint64_integer_bridge(
     }
     let maximum = IntegerTerm::constant(num_bigint::BigInt::from(u64::MAX));
     let (machine, exact, guard) = match name {
-        "uint64_add_to_integer" => {
+        "click::integer::uint64_add_to_integer" => {
             let exact = IntegerTerm::Add(a.into(), b.into());
             let guard = Proposition::ConditionIs(
                 ConditionTerm::IntegerLessEqual(exact.clone().into(), maximum.into()),
@@ -9102,7 +9105,7 @@ pub fn prove_uint64_integer_bridge(
                 guard,
             )
         }
-        "uint64_multiply_to_integer" => {
+        "click::integer::uint64_multiply_to_integer" => {
             let exact = IntegerTerm::Multiply(a.into(), b.into());
             let guard = Proposition::ConditionIs(
                 ConditionTerm::IntegerLessEqual(exact.clone().into(), maximum.into()),
@@ -9114,7 +9117,7 @@ pub fn prove_uint64_integer_bridge(
                 guard,
             )
         }
-        "uint64_subtract_to_integer" => {
+        "click::integer::uint64_subtract_to_integer" => {
             let guard = Proposition::ConditionIs(
                 ConditionTerm::IntegerLessEqual(b.clone().into(), a.clone().into()),
                 true,
@@ -9125,7 +9128,8 @@ pub fn prove_uint64_integer_bridge(
                 guard,
             )
         }
-        "uint64_divide_to_integer" | "uint64_remainder_to_integer" => {
+        "click::integer::uint64_divide_to_integer"
+        | "click::integer::uint64_remainder_to_integer" => {
             let native_nonzero = Proposition::ConditionIs(
                 ConditionTerm::uint64_equal(right.clone(), Bitvector32Term::UInt64Constant(0)),
                 false,
@@ -9134,7 +9138,7 @@ pub fn prove_uint64_integer_bridge(
                 ConditionTerm::integer_not_equal(b.clone(), IntegerTerm::constant_i64(0)),
                 true,
             );
-            let (machine, exact) = if name == "uint64_divide_to_integer" {
+            let (machine, exact) = if name == "click::integer::uint64_divide_to_integer" {
                 (
                     Bitvector32Term::UInt64Divide(left.into(), right.into()),
                     IntegerTerm::TruncatingQuotient(a.into(), b.into()),
@@ -9758,6 +9762,9 @@ pub fn prove_uint32_le_implies_reversed_ge(
 
 /// Whether `name` is one of the 64-bit order transitivity theorems.
 pub fn is_wide_order_transitivity_name(name: &str) -> bool {
+    let Some(name) = name.strip_prefix("click::machine_integer::") else {
+        return false;
+    };
     matches!(
         name.split_once('_'),
         Some((
@@ -9770,8 +9777,8 @@ pub fn is_wide_order_transitivity_name(name: &str) -> bool {
     )
 }
 
-/// Transitivity of 64-bit order, by the name of its standard theorem:
-/// `{uint64,int64}_{less_than_less_equal,less_equal_less_than,less_than,less_equal}_transitive`. The first premise orders
+/// Transitivity of 64-bit order, by the qualified name of its standard
+/// theorem, `click::machine_integer::{uint64,int64}_{less_than_less_equal,less_equal_less_than,less_than,less_equal}_transitive`. The first premise orders
 /// `first` and `middle`, the second `middle` and `last`, and the conclusion
 /// is strict when either premise is.
 pub fn prove_wide_order_transitive(
@@ -9780,6 +9787,7 @@ pub fn prove_wide_order_transitive(
     middle: Bitvector32Term,
     last: Bitvector32Term,
 ) -> Option<Theorem> {
+    let name = name.strip_prefix("click::machine_integer::")?;
     let (unsigned, shape) = match name.split_once('_')? {
         ("uint64", shape) => (true, shape),
         ("int64", shape) => (false, shape),

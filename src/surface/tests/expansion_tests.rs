@@ -8882,13 +8882,16 @@ fn execution_bare_apply_selects_and_retains_its_step_through_proof() {
     assert!(matches!(
         expanded.first(),
         Some(ProofTactic::ApplyTheoremUsing { application, premises })
-            if application.name == "int32_less_than_implies_less_equal" && premises.len() == 1
+            if application.name == "click::machine_integer::int32_less_than_implies_less_equal" && premises.len() == 1
     ));
     let retained_source = verified[0]
         .expanded_proof_source()
         .expect("the checked execution apply should have canonical source");
     assert!(
-        retained_source.contains("apply(int32_less_than_implies_less_equal(value, upper)) using {")
+        retained_source.contains(
+            "apply(click::machine_integer::int32_less_than_implies_less_equal(value, upper)) using {"
+        ),
+        "the canonical source cites the library theorem by its qualified identity: {retained_source}"
     );
     let expanded = expand_c0_claim_source(
         click_source,
@@ -9698,7 +9701,7 @@ fn linear_open_retains_a_direct_bare_theorem_application() {
                     [
                         ProofTactic::ApplyTheoremUsing { application, premises },
                         ProofTactic::Step,
-                    ] if application.name == "int32_less_than_implies_less_equal" && premises.len() == 1
+                    ] if application.name == "click::machine_integer::int32_less_than_implies_less_equal" && premises.len() == 1
                 )
         ),
         "{tactics:#?}"
@@ -10347,11 +10350,11 @@ fn branch_arms_retain_bare_theorem_applications_on_proof() {
                 if matches!(
                     branch.then_tactics.as_slice(),
                     [ProofTactic::Step, ProofTactic::ApplyTheoremUsing { application, premises }]
-                        if application.name == "int32_less_than_implies_less_equal" && premises.len() == 1
+                        if application.name == "click::machine_integer::int32_less_than_implies_less_equal" && premises.len() == 1
                 ) && matches!(
                     branch.else_tactics.as_slice(),
                     [ProofTactic::Step, ProofTactic::ApplyTheoremUsing { application, premises }]
-                        if application.name == "int32_less_than_implies_less_equal" && premises.len() == 1
+                        if application.name == "click::machine_integer::int32_less_than_implies_less_equal" && premises.len() == 1
                 )
         ),
         "{tactics:#?}"
@@ -10422,7 +10425,7 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
                 )
                 && matches!(branch.then_tactics.as_slice(), [ProofTactic::Step])
                 && matches!(branch.else_tactics.as_slice(), [ProofTactic::Step])
-                && application.name == "int32_less_than_implies_less_equal"
+                && application.name == "click::machine_integer::int32_less_than_implies_less_equal"
                 && premises.len() == 1
         ),
         "{tactics:#?}"
@@ -10581,7 +10584,7 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
                     [
                         ProofTactic::ApplyTheoremUsing { application, premises },
                         ProofTactic::Assumption,
-                    ] if application.name == "int32_positive_is_nonnegative"
+                    ] if application.name == "click::machine_integer::int32_positive_is_nonnegative"
                             && premises.len() == 1
                 )
         ),
@@ -12258,7 +12261,7 @@ fn assert_bound_universal_fixture_has_no_outcome_fallbacks(filename: &str, funct
         path.display()
     );
     assert!(
-        expanded.contains("int32_less_than_increment_implies_less_equal"),
+        expanded.contains("click::machine_integer::int32_less_than_increment_implies_less_equal"),
         "expanded proof from `{}` omitted the split's explicit bound theorem",
         path.display()
     );
