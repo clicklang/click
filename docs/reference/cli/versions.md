@@ -18,14 +18,15 @@ Replace the following:
 
 - `VERSION`: a release version such as `0.1.0`. A leading `v` is removed, so
   `v0.1.0` names the same version. After that, a version is a nonempty run of
-  ASCII letters, digits, `.`, `-`, and `+` that doesn't begin or end with `.`
-  and doesn't contain `..`. Any other value fails with
+  ASCII letters, digits, `.`, `-`, and `+` that doesn't begin with `-` or `.`,
+  end with `.`, or contain `..`. Any other value fails with
   `invalid Click version`.
 
-These subcommands have no options other than `--unset` and no `--help`
-option; `click install --help`, for example, reads `--help` as a version. Use
-`click --help` for the command list. A wrong argument count prints the
-version-manager usage above and exits with status 1.
+Each subcommand accepts `--help` or `-h` as its sole argument to print the
+version-manager usage above and exit successfully without reading or changing
+version selections or downloading a release. `click use` also accepts
+`--unset`. Use `click --help` for the command list. A wrong argument count
+prints the version-manager usage above and exits with status 1.
 
 ## Install layout
 
