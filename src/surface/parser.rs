@@ -106,6 +106,7 @@ pub(super) fn parse_for_target(
     let mut parser =
         Parser::new(source).map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
     parser.plain_char = Some(target.plain_char());
+    parser.int64_t_rank = target.int64_t_rank();
     parser.parse_file()
 }
 
@@ -151,6 +152,9 @@ pub(in crate::surface) struct ProgramLayouts {
     /// The signedness the program's C target gives plain `char`. `None` for
     /// a program with no C target, where spelling plain `char` is refused.
     pub(in crate::surface) plain_char: Option<syntax::PlainChar>,
+    /// The rank the program's C target gives `int64_t` and `uint64_t`;
+    /// `None` reads them as `long`.
+    pub(in crate::surface) int64_t_rank: Option<LongRank>,
 }
 
 pub(super) fn parse_with_layouts_and_aggregate_objects(
@@ -581,6 +585,13 @@ struct Parser {
     /// The signedness the selected C target gives plain `char`, or `None`
     /// where no C target applies; plain `char` is then refused.
     plain_char: Option<syntax::PlainChar>,
+    /// The rank a function head's `int64_t` and `uint64_t` have on the
+    /// target. Only heads keep a rank: see `exact_long_rank`.
+    int64_t_rank: LongRank,
+    /// Set while a function head is parsed. A head restates a C
+    /// declaration, so it keeps the C type exactly, `long` apart from
+    /// `long long`; a specification type elsewhere names a representation.
+    exact_long_rank: bool,
     /// The slice parameters of the Rust signature being parsed. Each is one
     /// name in the sidecar and a pointer with a `name_len` length underneath.
     rust_slice_params: BTreeSet<String>,
@@ -926,6 +937,7 @@ impl Parser {
         parser.qualified_objects = Some(layouts.qualified_objects);
         parser.local_struct_pointers_by_function = layouts.local_struct_pointers;
         parser.plain_char = layouts.plain_char;
+        parser.int64_t_rank = layouts.int64_t_rank.unwrap_or(LongRank::Long);
         Ok(parser)
     }
 
@@ -967,6 +979,8 @@ impl Parser {
             hidden_child_fields: BTreeMap::new(),
             language,
             plain_char: None,
+            int64_t_rank: LongRank::Long,
+            exact_long_rank: false,
             rust_slice_params: BTreeSet::new(),
             rust_impl_type: None,
             rust_impl_method_suffix: None,
@@ -2836,7 +2850,12 @@ impl Parser {
             struct_array_params,
             mut reference_params,
             return_struct_name,
-        } = self.parse_function_signature()?;
+        } = {
+            let previous = std::mem::replace(&mut self.exact_long_rank, true);
+            let signature = self.parse_function_signature();
+            self.exact_long_rank = previous;
+            signature?
+        };
         if let Some(struct_name) = return_struct_name {
             struct_params.insert("result".to_string(), struct_name);
         }
@@ -3873,8 +3892,20 @@ impl Parser {
         )
         .map_err(|message| self.error(message))?;
         // A specification type names a representation: a sidecar's `long
-        // long` is `int64`, which matches a C `long` or `long long` alike.
-        let integer = integer.map(|(c_type, count)| (c_type.erase_long_rank(), count));
+        // long` is `int64`, which matches a C `long` or `long long` alike. A
+        // function head restates a C declaration and keeps its rank.
+        let integer = integer.map(|(c_type, count)| {
+            if self.exact_long_rank {
+                (c_type, count)
+            } else {
+                (c_type.erase_long_rank(), count)
+            }
+        });
+        let typedef_rank = if self.exact_long_rank {
+            self.int64_t_rank
+        } else {
+            LongRank::Long
+        };
         let scalar_type = if let Some((c_type, count)) = integer {
             self.position += count - 1;
             c_type
@@ -3888,8 +3919,10 @@ impl Parser {
                 "uint8" | "uint8_t" => C0Type::UInt8,
                 "uint16" | "uint16_t" => C0Type::UInt16,
                 "uint32" | "uint32_t" => C0Type::UInt32,
-                "int64" | "int64_t" | "ssize_t" => C0Type::Int64(LongRank::Long),
-                "uint64" | "size_t" | "uint64_t" => C0Type::UInt64(LongRank::Long),
+                "int64" | "ssize_t" => C0Type::Int64(LongRank::Long),
+                "int64_t" => C0Type::Int64(typedef_rank),
+                "uint64" | "size_t" => C0Type::UInt64(LongRank::Long),
+                "uint64_t" => C0Type::UInt64(typedef_rank),
                 "int128" => C0Type::Int128,
                 "uint128" => C0Type::UInt128,
                 "float" => C0Type::Float32,

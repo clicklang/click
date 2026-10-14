@@ -31,7 +31,7 @@ int promote(uint16 value) {
 int signed_promote(int16 value) {
     ensures result == value;
 } by { execute(); simp(); }
-uint64 preserve_wide(uint64 value) {
+unsigned long long int preserve_wide(unsigned long long int value) {
     ensures result == value;
 } by { execute(); simp(); }
 int widths() {

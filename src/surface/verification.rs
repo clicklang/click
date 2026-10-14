@@ -6963,16 +6963,14 @@ pub(in crate::surface) fn check_signature(
     parsed_function: &syntax::C0Function,
     source_path: &str,
 ) -> Result<(), ClickError> {
-    // A Click `int64`/`uint64` specifies a C `long` or `long long` alike:
-    // the two share a representation, and the C declarations themselves
-    // keep the C compatibility rules between ranks.
-    if signature.return_type().erase_long_rank() != parsed_function.return_type().erase_long_rank()
-    {
+    // A head restates the C declaration, so its types are the declaration's
+    // exact C types: `long` and `long long` are distinct, as in C.
+    if signature.return_type() != parsed_function.return_type() {
         return Err(ClickError::new(format!(
-            "signature mismatch for `{}` in `{source_path}`: .click return type is {:?}, C return type is {:?}",
+            "signature mismatch for `{}` in `{source_path}`: .click return type is `{}`, C return type is `{}`",
             signature.name(),
-            signature.return_type(),
-            parsed_function.return_type()
+            signature.return_type().ranked_diagnostic_name(),
+            parsed_function.return_type().ranked_diagnostic_name()
         ))
         .with_kind(ClickErrorKind::Type));
     }
@@ -7010,17 +7008,12 @@ pub(in crate::surface) fn check_signature(
         .zip(parsed_function.parameters())
         .enumerate()
     {
-        if expected.c_type().erase_long_rank() != actual.c_type().erase_long_rank()
+        if expected.c_type() != actual.c_type()
             || expected.pointee_is_constant() != actual.pointee_is_constant()
             || expected.is_reference() != actual.is_reference()
             || expected.name() != actual.name()
             || expected.struct_name() != actual.struct_name()
-            || expected
-                .function_pointer_signature()
-                .map(syntax::C0FunctionPointerSignature::erase_long_rank)
-                != actual
-                    .function_pointer_signature()
-                    .map(syntax::C0FunctionPointerSignature::erase_long_rank)
+            || expected.function_pointer_signature() != actual.function_pointer_signature()
         {
             return Err(ClickError::new(format!(
                 "signature mismatch for `{}` parameter {} in `{source_path}`: .click has {} {}, C has {} {}",
@@ -7067,8 +7060,8 @@ pub(in crate::surface) fn describe_parameter_type(
         Some(name) if reference => format!("struct {name}&"),
         Some(name) => format!("struct {name}*"),
         None => match c_type.pointee_type().filter(|_| reference) {
-            Some(referent) => format!("{}&", referent.diagnostic_name()),
-            None => c_type.diagnostic_name(),
+            Some(referent) => format!("{}&", referent.ranked_diagnostic_name()),
+            None => c_type.ranked_diagnostic_name(),
         },
     };
     if pointee_constant {
