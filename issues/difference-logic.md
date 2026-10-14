@@ -193,19 +193,54 @@ Each step is its own pull request.
        (`(x - y) - 1`, `(0 - x) + 1`). After these changes the census is 48
        conditions and 7 path-fact decisions over the mdtests, and 21 over
        the examples.
+     - An offset comparison of `int32` elements is an index comparison.
+     - Zero extension (`u32 as i64`, `Int64FromUInt32`, `UInt64FromInt32`)
+       links to its operand when that is non-negative, and lands in
+       `[0, 2^32)` otherwise. Unsigned division by a positive divisor is
+       bounded by interval.
+     - Pointer equality facts form classes with known-unequal classes inside
+       the graph (`p == null`, `q != null`, so `p != q`). Two pointers of one
+       block are equal exactly when their offsets are, so the offset question
+       the kernel asks for `p == q` is answered from them. `EqualityGraph`
+       has no disequalities, which is why this lives here.
+     - The fast path also asks the context's keyed pointer disequality rule
+       (`decide_pointer_disequality`: null-ness by offset, separation by
+       anchor pair), which searches nothing. The `path facts` site asks the
+       merged context's fast path before the general decision, so a
+       comparison's assumed two-owner composition is read there.
+     - After these, the census over the whole mdtests is 32 conditions and
+       no `path facts` decisions, measured on master `d7501d30f` with
+       `branching_graph_dfs` masked. That mdtest fails on master
+       (`bugs/branching-graph-dfs-step-premise-not-retained.md`).
    - *Left:*
-     - pointer questions (about 25 conditions and the 7 path-fact
-       decisions). An offset comparison of `int32` elements is now an index
-       comparison. The rest relate pointers through `null` or aliasing
-       (`p == null`, `q != null`, so `p != q`), which is equality reasoning
-       for `EqualityGraph`, not difference logic;
-     - division overflow excluded only by a disjunction (5);
+     - tag bits in pointer words (the rbtree parent/colour word, `& 1`,
+       `& 7`, `== (uint64)node`, alignment), which is bit-level reasoning on
+       addresses, not difference logic;
+     - two typed views of one byte (a `signed char` fact deciding an
+       `unsigned char` load);
+     - pointer arithmetic staying inside an object from a non-empty fact;
+     - division overflow excluded only by a disjunction;
      - certain overflows, which the graph does not answer.
 4. **Remove the general decision from simple checking.** A condition the fast
    path leaves undecided keeps both branches, and an arithmetic requirement it
    leaves open goes to implicit `auto`, as
    [simplify-step.md](simplify-step.md) decides. Rerun the corpus, migrate the
    proofs that change, and close the loop bug.
+   - *Assessed* on master `fefd3ac92`, by dropping every general decision at
+     the kernel's condition sites (`decide_with_facts`, path fact, path
+     facts, loop condition): 20 of about 4,006 mdtests and 5 of 54 examples
+     failed. Every failure was a refusal, and no test expecting a refusal
+     passed. Conversions and pointer equality (above) have since cleared
+     8 of the 20 mdtests and 3 of the 5 examples. The rest are listed under
+     *Left* above. The `step` refusals among them ("got 2 feasible condition
+     paths") are expected under this phase, which keeps both branches.
+   - *The loop bug is not in these sites.* With every kernel-site general
+     decision dropped, `scripts/step-scaling-hunt.py loops` charges the same
+     4,598 / 15,260 / 59,046 / 132,782 units at N = 4 / 8 / 16 / 24. 93% of
+     that time is the smart `loop` clause's own search, which calls
+     `PureFactContext::decide` directly. Closing the bug means changing what
+     that search asks, or having it read the difference graph, in addition
+     to this phase.
 
 ## Acceptance criteria
 

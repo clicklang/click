@@ -19,7 +19,7 @@
 //!
 //! See `issues/difference-logic.md`.
 
-use crate::kernel::{Bitvector32Term, ConditionTerm};
+use crate::kernel::{Bitvector32Term, ConditionTerm, Pointer, PointerOffsetTerm};
 use crate::persistent::PersistentMap;
 
 /// The integer domain a node's value ranges over.
@@ -79,6 +79,11 @@ pub(crate) struct DifferenceGraph {
     /// (`EDGE_LIMIT`): a neighbour's stored interval may miss it, so reads
     /// pull from these nodes.
     truncated: crate::persistent::PersistentSet<NodeId>,
+    /// Pointer equality facts: a union-find over the pointer terms they
+    /// name (`pointer_ids`, `pointer_parent`, `pointer_size`), with each
+    /// class root's known-unequal pointers, so `p == null` and `q != null`
+    /// give `p != q`.
+    pointers: PointerClasses,
     /// Overflow conditions recorded false (`OverflowKey`).
     no_overflow: crate::persistent::PersistentSet<OverflowKey>,
     contradictory: bool,
@@ -164,6 +169,12 @@ impl DifferenceGraph {
     /// Records a true or false condition fact. A fact difference logic does
     /// not express is ignored.
     pub(crate) fn assume_condition(&mut self, condition: &ConditionTerm, value: bool) {
+        if let ConditionTerm::PointerEqual(a, b) = condition {
+            if !self.pointers.assume(a, b, value) {
+                self.contradictory = true;
+            }
+            return;
+        }
         if let Some(equality) = offset_equality(condition) {
             self.assume_condition(&equality, value);
             return;
@@ -643,6 +654,14 @@ impl DifferenceGraph {
         {
             return Some(answer);
         }
+        if let C::PointerEqual(a, b) = condition {
+            return self.pointers.decide(a, b);
+        }
+        if let C::PointerOffsetEqual(a, b) = condition
+            && let Some(answer) = self.pointers.decide_offsets(a, b)
+        {
+            return Some(answer);
+        }
         if let Some(equality) = offset_equality(condition) {
             return self.decide(&equality);
         }
@@ -856,6 +875,28 @@ impl DifferenceGraph {
                 }
             }
             (Domain::Int64, T::Int64From32(inner)) => self.term_interval(Domain::Int32, inner),
+            // Unsigned division by a divisor known to be positive.
+            (Domain::UInt64, T::UInt64Divide(a, b)) => {
+                let (a_low, a_high) = self.term_interval(domain, a);
+                let (b_low, b_high) = self.term_interval(domain, b);
+                if b_low < 1 {
+                    return domain.range();
+                }
+                (a_low / b_high, a_high / b_low)
+            }
+            // Zero extension: a non-negative `int32` keeps its value, a
+            // negative one gains 2^32, and an operand of unknown sign lands
+            // in `[0, 2^32)`.
+            (Domain::Int64, T::Int64FromUInt32(inner)) => {
+                let (low, high) = self.term_interval(Domain::Int32, inner);
+                if low >= 0 {
+                    (low, high)
+                } else if high < 0 {
+                    (low + (1 << 32), high + (1 << 32))
+                } else {
+                    (0, (1 << 32) - 1)
+                }
+            }
             _ => return domain.range(),
         };
         let (min, max) = domain.range();
@@ -991,7 +1032,8 @@ impl ContextDifferenceGraph {
 /// Whether difference logic reads anything from a fact about `condition`.
 fn expresses(condition: &ConditionTerm) -> bool {
     use ConditionTerm as C;
-    overflow_parts(condition).is_some()
+    matches!(condition, C::PointerEqual(..))
+        || overflow_parts(condition).is_some()
         || offset_equality(condition).is_some()
         || matches!(
             condition,
@@ -1146,6 +1188,144 @@ fn offset_mismatch(
     }
 }
 
+/// Equality and disequality between pointer terms, as a union-find with
+/// union by size (so a find walks at most a logarithmic chain) and, per
+/// class root, the pointers known unequal to the class. A union merges the
+/// smaller class's disequalities into the larger's.
+#[derive(Clone, Debug, Default)]
+struct PointerClasses {
+    ids: PersistentMap<Pointer, NodeId>,
+    terms: PersistentMap<NodeId, Pointer>,
+    /// The ids of the pointers with each offset, for an offset question.
+    by_offset: PersistentMap<PointerOffsetTerm, crate::persistent::PersistentSet<NodeId>>,
+    parent: PersistentMap<NodeId, NodeId>,
+    size: PersistentMap<NodeId, usize>,
+    unequal: PersistentMap<NodeId, crate::persistent::PersistentSet<NodeId>>,
+    next: NodeId,
+}
+
+impl PointerClasses {
+    fn id(&mut self, pointer: &Pointer) -> NodeId {
+        if let Some(id) = self.ids.get(pointer) {
+            return *id;
+        }
+        charge();
+        let id = self.next;
+        self.next += 1;
+        self.ids.insert(pointer.clone(), id);
+        self.terms.insert(id, pointer.clone());
+        let mut same_offset = self
+            .by_offset
+            .get(&pointer.offset)
+            .cloned()
+            .unwrap_or_default();
+        same_offset = same_offset.with_value(id);
+        self.by_offset.insert(pointer.offset.clone(), same_offset);
+        id
+    }
+
+    fn find(&self, mut id: NodeId) -> NodeId {
+        while let Some(parent) = self.parent.get(&id) {
+            charge();
+            id = *parent;
+        }
+        id
+    }
+
+    /// Whether two class roots are known unequal, from the smaller of their
+    /// disequality sets. Past `EDGE_LIMIT` entries it answers no, which
+    /// only answers less.
+    fn roots_unequal(&self, a: NodeId, b: NodeId) -> bool {
+        let empty = crate::persistent::PersistentSet::default();
+        let (a_set, b_set) = (
+            self.unequal.get(&a).unwrap_or(&empty),
+            self.unequal.get(&b).unwrap_or(&empty),
+        );
+        let (set, other) = if a_set.len() <= b_set.len() {
+            (a_set, b)
+        } else {
+            (b_set, a)
+        };
+        set.iter().take(EDGE_LIMIT).any(|id| {
+            charge();
+            self.find(*id) == other
+        })
+    }
+
+    /// Records `a == b` (`value`) or `a != b`; false when that contradicts
+    /// what is recorded.
+    fn assume(&mut self, a: &Pointer, b: &Pointer, value: bool) -> bool {
+        let (a, b) = (self.id(a), self.id(b));
+        let (root_a, root_b) = (self.find(a), self.find(b));
+        if !value {
+            if root_a == root_b {
+                return false;
+            }
+            for (root, other) in [(root_a, b), (root_b, a)] {
+                let set = self.unequal.get(&root).cloned().unwrap_or_default();
+                self.unequal.insert(root, set.with_value(other));
+            }
+            return true;
+        }
+        if root_a == root_b {
+            return true;
+        }
+        if self.roots_unequal(root_a, root_b) {
+            return false;
+        }
+        let size = |root| self.size.get(&root).copied().unwrap_or(1);
+        let (small, large) = if size(root_a) <= size(root_b) {
+            (root_a, root_b)
+        } else {
+            (root_b, root_a)
+        };
+        let merged = size(small) + size(large);
+        self.parent.insert(small, large);
+        self.size.insert(large, merged);
+        if let Some(moved) = self.unequal.get(&small).cloned() {
+            let mut set = self.unequal.get(&large).cloned().unwrap_or_default();
+            for id in moved.iter() {
+                charge();
+                set = set.with_value(*id);
+            }
+            self.unequal.insert(large, set);
+            self.unequal.remove(&small);
+        }
+        true
+    }
+
+    fn decide(&self, a: &Pointer, b: &Pointer) -> Option<bool> {
+        let (a, b) = (self.ids.get(a)?, self.ids.get(b)?);
+        let (root_a, root_b) = (self.find(*a), self.find(*b));
+        if root_a == root_b {
+            Some(true)
+        } else {
+            self.roots_unequal(root_a, root_b).then_some(false)
+        }
+    }
+
+    /// `a == b` for two offsets of one block, read from recorded pointers
+    /// in a common block with those offsets: such pointers are equal
+    /// exactly when their offsets are.
+    fn decide_offsets(&self, a: &PointerOffsetTerm, b: &PointerOffsetTerm) -> Option<bool> {
+        let (with_a, with_b) = (self.by_offset.get(a)?, self.by_offset.get(b)?);
+        let pairs = with_a
+            .iter()
+            .flat_map(|left| with_b.iter().map(move |right| (left, right)));
+        for (left, right) in pairs.take(EDGE_LIMIT) {
+            charge();
+            let (left, right) = (self.terms.get(left)?, self.terms.get(right)?);
+            if left.block != right.block {
+                continue;
+            }
+            if let Some(answer) = self.decide(left, right) {
+                return Some(answer);
+            }
+        }
+        None
+    }
+}
+
 /// `term`'s value in `domain` when it is a constant there.
 fn constant(domain: Domain, term: &Bitvector32Term) -> Option<i128> {
     use Bitvector32Term as T;
@@ -1186,6 +1366,10 @@ fn link_parts(
         // Reinterpreting as unsigned keeps a non-negative value.
         (Domain::UInt64, T::UInt64From32(inner)) => Some((Domain::Int32, inner, 0, true)),
         (Domain::UInt64, T::UInt64FromInt64(inner)) => Some((Domain::Int64, inner, 0, true)),
+        // Zero extension of an `int32` bit pattern keeps a non-negative
+        // value; so does sign extension read as unsigned.
+        (Domain::Int64, T::Int64FromUInt32(inner))
+        | (Domain::UInt64, T::UInt64FromInt32(inner)) => Some((Domain::Int32, inner, 0, true)),
         _ => None,
     }
 }

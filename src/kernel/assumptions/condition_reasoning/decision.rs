@@ -577,7 +577,10 @@ impl PureFactContext {
     /// search: null-ness is indexed by the offset term a null test named,
     /// and separation by the pair of anchor offsets. Neither ever answers
     /// `Some(true)`; two pointers may be equal for reasons no index holds.
-    fn decide_pointer_disequality(&self, condition: &ConditionTerm) -> Option<bool> {
+    pub(in crate::kernel) fn decide_pointer_disequality(
+        &self,
+        condition: &ConditionTerm,
+    ) -> Option<bool> {
         match condition {
             ConditionTerm::PointerEqual(left, right) => self
                 .pointers_distinct_by_nullness(left, right)

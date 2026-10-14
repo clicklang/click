@@ -1786,18 +1786,21 @@ pub(in crate::kernel) fn decide_with_facts(
             })
         })
         .or_else(|| {
-            facts
-                .fact_iter()
-                .fold(
-                    if assumptions.should_defer_non_exact_condition_reasoning() {
-                        PureFactContext::new()
-                    } else {
-                        assumptions.clone()
-                    },
-                    |assumptions, fact| assumptions.assume_proposition(fact.proposition().clone()),
-                )
-                .decide(condition)
-                .inspect(|_| record_general_condition_decision("path facts"))
+            let merged = facts.fact_iter().fold(
+                if assumptions.should_defer_non_exact_condition_reasoning() {
+                    PureFactContext::new()
+                } else {
+                    assumptions.clone()
+                },
+                |assumptions, fact| assumptions.assume_proposition(fact.proposition().clone()),
+            );
+            // The path facts' own fast answers first: a composition a
+            // comparison assumed is read by the keyed pointer rules.
+            merged.difference_decision(condition, &[]).or_else(|| {
+                merged
+                    .decide(condition)
+                    .inspect(|_| record_general_condition_decision("path facts"))
+            })
         })
 }
 

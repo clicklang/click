@@ -265,9 +265,8 @@ const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] 
             HiddenPrerequisiteRoute::KernelCondition,
             "decide_with_facts",
         ),
-        47,
+        36,
     ),
-    ((HiddenPrerequisiteRoute::KernelCondition, "path facts"), 7),
     // `issues/simplify-step.md` step 5 drives these to zero.
     (
         (HiddenPrerequisiteRoute::TacticSearch, "fold body fact"),
