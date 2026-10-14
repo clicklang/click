@@ -1295,7 +1295,7 @@ fn validate_resource_definition<'a>(
             predicate_definitions,
             click_function_definitions,
             &mut Vec::new(),
-            &mut Vec::new(),
+            &mut ResourceFunctionReadEffects::default(),
             &mut reads,
             definition.name(),
         )?;
@@ -1619,7 +1619,7 @@ fn validate_resource_fact_memory_read_authority(
 ) -> Result<(), ClickError> {
     let mut reads = Vec::new();
     let mut visited_predicates = Vec::new();
-    let mut visited_functions = Vec::new();
+    let mut visited_functions = ResourceFunctionReadEffects::default();
     collect_resource_fact_reads_from_proposition(
         fact,
         predicate_definitions,
@@ -1857,12 +1857,23 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
     }
 }
 
+/// Memoized source-body effects, separate from instantiated caller arguments.
+/// A read-free body need not be substituted or traversed again at each call.
+#[derive(Default)]
+struct ResourceFunctionReadEffects {
+    #[cfg(test)]
+    body_inspections: usize,
+    active: Vec<String>,
+    read_free: BTreeSet<String>,
+    reads_memory: BTreeSet<String>,
+}
+
 fn collect_resource_fact_reads_from_proposition(
     proposition: &ClickProposition,
     predicate_definitions: &BTreeMap<&str, &PredicateDefinition>,
     click_function_definitions: &BTreeMap<&str, &ClickFunctionDefinition>,
     visited_predicates: &mut Vec<String>,
-    visited_functions: &mut Vec<String>,
+    visited_functions: &mut ResourceFunctionReadEffects,
     reads: &mut Vec<ResourceFactRead>,
     resource_name: &str,
 ) -> Result<(), ClickError> {
@@ -2224,7 +2235,7 @@ fn collect_resource_fact_reads_from_contract_segment(
     predicate_definitions: &BTreeMap<&str, &PredicateDefinition>,
     click_function_definitions: &BTreeMap<&str, &ClickFunctionDefinition>,
     visited_predicates: &mut Vec<String>,
-    visited_functions: &mut Vec<String>,
+    visited_functions: &mut ResourceFunctionReadEffects,
     reads: &mut Vec<ResourceFactRead>,
     resource_name: &str,
 ) -> Result<(), ClickError> {
@@ -2247,7 +2258,7 @@ fn collect_resource_fact_reads_from_resource_subject(
     predicate_definitions: &BTreeMap<&str, &PredicateDefinition>,
     click_function_definitions: &BTreeMap<&str, &ClickFunctionDefinition>,
     visited_predicates: &mut Vec<String>,
-    visited_functions: &mut Vec<String>,
+    visited_functions: &mut ResourceFunctionReadEffects,
     reads: &mut Vec<ResourceFactRead>,
     resource_name: &str,
 ) -> Result<(), ClickError> {
@@ -2283,7 +2294,7 @@ fn collect_resource_fact_reads_from_contract_expression(
     predicate_definitions: &BTreeMap<&str, &PredicateDefinition>,
     click_function_definitions: &BTreeMap<&str, &ClickFunctionDefinition>,
     visited_predicates: &mut Vec<String>,
-    visited_functions: &mut Vec<String>,
+    visited_functions: &mut ResourceFunctionReadEffects,
     reads: &mut Vec<ResourceFactRead>,
     resource_name: &str,
 ) -> Result<(), ClickError> {
@@ -2620,12 +2631,45 @@ fn collect_resource_fact_reads_from_contract_expression(
             let Some(definition) = click_function_definitions.get(name.as_str()) else {
                 return Ok(());
             };
-            if visited_functions.contains(name) {
+            if visited_functions.read_free.contains(name) {
+                return Ok(());
+            }
+            if visited_functions.active.contains(name) {
                 return Err(ClickError::new(format!(
                     "resource `{resource_name}` fact cannot use recursive function `{name}`"
                 )));
             }
-            visited_functions.push(name.clone());
+            visited_functions.active.push(name.clone());
+            if !visited_functions.reads_memory.contains(name) {
+                #[cfg(test)]
+                {
+                    visited_functions.body_inspections += 1;
+                }
+                // Inspect the written body with its formal parameters before
+                // substitution. Caller argument reads were collected above.
+                // This prevents f(f(x)) from being mistaken for recursion and
+                // avoids duplicating a read-free argument inside every body.
+                let mut body_reads = Vec::new();
+                let result = collect_resource_fact_reads_from_contract_expression(
+                    definition.body(),
+                    predicate_definitions,
+                    click_function_definitions,
+                    visited_predicates,
+                    visited_functions,
+                    &mut body_reads,
+                    resource_name,
+                );
+                if let Err(error) = result {
+                    visited_functions.active.pop();
+                    return Err(error);
+                }
+                if body_reads.is_empty() {
+                    visited_functions.read_free.insert(name.clone());
+                    visited_functions.active.pop();
+                    return Ok(());
+                }
+                visited_functions.reads_memory.insert(name.clone());
+            }
             let substitutions = definition
                 .parameters()
                 .iter()
@@ -2648,7 +2692,7 @@ fn collect_resource_fact_reads_from_contract_expression(
                 reads,
                 resource_name,
             );
-            visited_functions.pop();
+            visited_functions.active.pop();
             result
         }
     }
@@ -3379,5 +3423,48 @@ int32 f(int32 x) {
         )
         .unwrap();
         validate_click_definitions(&file).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod resource_function_composition_tests {
+    use super::*;
+
+    #[test]
+    fn nested_read_free_getters_inspect_the_definition_once() {
+        let file =
+            parser::parse_file_items("function identity(value: int32) -> int32 { value }").unwrap();
+        let definitions = file
+            .click_function_definitions()
+            .iter()
+            .map(|definition| (definition.name(), definition))
+            .collect::<BTreeMap<_, _>>();
+        for depth in [16, 64, 256] {
+            let mut expression = ContractExpression::CFragment(CExpression::Value(int32(0)));
+            for _ in 0..depth {
+                expression = ContractExpression::Call {
+                    name: "identity".into(),
+                    arguments: vec![expression],
+                };
+            }
+            let mut effects = ResourceFunctionReadEffects::default();
+            let mut reads = Vec::new();
+            collect_resource_fact_reads_from_contract_expression(
+                &expression,
+                &BTreeMap::new(),
+                &definitions,
+                &mut Vec::new(),
+                &mut effects,
+                &mut reads,
+                "nested",
+            )
+            .unwrap();
+            assert!(reads.is_empty());
+            assert_eq!(
+                effects.body_inspections, 1,
+                "depth {depth} must inspect only the one definition"
+            );
+            assert!(effects.active.is_empty());
+        }
     }
 }

@@ -57,3 +57,21 @@ void sized_copy_from_generated_table(struct rb_node* old, struct rb_node* new) {
     });
     execute(); simp();
 }
+
+void sized_propagate_from_table(struct rb_node* rb, struct rb_node* stop,
+                                const struct rb_augment_callbacks* augment) {
+    views sized_callback_table(augment);
+    consumes walk: sized_walk_at(rb, stop);
+    produces whole: sized_result_at(stop);
+    requires sized_walk_pending(walk.model) == 1 or rb == stop;
+    requires rb_subtree_size(sized_shape(sized_walk_tree(walk.model))) <= 2147483647;
+    ensures sized_result_root(whole.model) == sized_walk_root(old(walk.model));
+    ensures sized_shape(sized_result_tree(whole.model)) == sized_shape(sized_walk_tree(old(walk.model)));
+    ensures sized_counts_valid(sized_result_tree(whole.model)) == 1;
+} by {
+    open(sized_callback_table(augment)) {
+        step(); step();
+        let { whole: whole } = step(PropagateTree, { walk: walk });
+        execute(); simp();
+    }
+}

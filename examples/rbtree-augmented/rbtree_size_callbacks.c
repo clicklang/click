@@ -92,3 +92,10 @@ void sized_copy_from_generated_table(struct rb_node *old, struct rb_node *new)
 {
     sized_copy_from_table(old, new, &sized);
 }
+
+/* Dispatch the unchanged ancestor-propagation callback. */
+void sized_propagate_from_table(struct rb_node *rb, struct rb_node *stop,
+                               const struct rb_augment_callbacks *augment)
+{
+    augment->propagate(rb, stop);
+}
