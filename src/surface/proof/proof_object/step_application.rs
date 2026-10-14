@@ -590,6 +590,12 @@ impl<'a> Proof<'a> {
         step: ProofStep,
         origin: Option<ProofStepOrigin>,
     ) -> Result<Self, ClickError> {
+        let read_checkpoint = crate::surface::proof_trace::enabled_for(self.claim_label())
+            .then(|| {
+                self.focused_branch()
+                    .map(|branch| branch.state.facts.assumptions().read_equality_checkpoint())
+            })
+            .flatten();
         if let Some(execution) = self.execution() {
             execution
                 .core
@@ -620,7 +626,7 @@ impl<'a> Proof<'a> {
             && crate::surface::proof_trace::enabled_for(self.claim_label())
             && !Arc::ptr_eq(&self.node, &next.node)
         {
-            self.record_checked_trace_step(next, tactic, call_source, 8);
+            self.record_checked_trace_step(next, tactic, call_source, 8, read_checkpoint.as_ref());
         }
         result
     }
@@ -668,6 +674,7 @@ impl<'a> Proof<'a> {
         tactic: &str,
         call_source: Option<crate::surface::proof_trace::TraceCallSource>,
         fact_limit: usize,
+        read_checkpoint: Option<&crate::kernel::ReadEqualityCheckpoint>,
     ) {
         let location = self
             .site()
@@ -685,9 +692,27 @@ impl<'a> Proof<'a> {
             facts: Vec::new(),
             more_facts: 0,
             frontier: None,
+            load: None,
+            read_equalities: Vec::new(),
+            read_context_changed: false,
             resources: Vec::new(),
             more_resources: 0,
         };
+        if let Some(checkpoint) = read_checkpoint
+            && let Some(branch) = next.focused_branch().or_else(|| self.focused_branch())
+        {
+            let admitted = branch
+                .state
+                .facts
+                .assumptions()
+                .read_equalities_since(checkpoint);
+            detail.read_context_changed = admitted.context_changed;
+            detail.read_equalities = admitted
+                .equalities
+                .into_iter()
+                .map(|kernel| next.checked_trace_fact(kernel))
+                .collect();
+        }
         let added = self
             .focused_branch()
             .zip(next.focused_branch())
@@ -731,6 +756,28 @@ impl<'a> Proof<'a> {
                         format!("C frontier: {before_position} -> {after_position}")
                     }),
                 );
+            }
+            // Inspect only this accepted step's new evidence, never its history.
+            // The statement theorem retains the actual read state after entry
+            // initialization and resource preparation, which the frontier alone
+            // need not represent.
+            if let (Some(old), Some(new)) = (
+                before.core.execution_evidence.get(0),
+                after.core.execution_evidence.get(0),
+            ) {
+                for event in new.recent(new.len().saturating_sub(old.len())) {
+                    let crate::kernel::proof::CheckedExecutionEvent::Statement(theorem) = event
+                    else {
+                        continue;
+                    };
+                    let mut conclusion = theorem.proposition();
+                    while let Proposition::Implies(_, body) = conclusion {
+                        conclusion = body;
+                    }
+                    detail.load =
+                        trace_function_pointer_load(conclusion, self.facts().assumptions());
+                    break;
+                }
             }
             let before = before.core.reached_state().resources();
             let after = after.core.reached_state().resources();
@@ -3598,4 +3645,55 @@ fn describe_special_arithmetic_check_error(
 /// does. A goal that was already available before the step stays open.
 fn close_goal_from_added_fact(state: KernelProofHandle) -> KernelProofHandle {
     state.closed_if_goal_was_added().unwrap_or(state)
+}
+
+/// Recover one load's presentation from its accepted statement theorem.
+/// Address evaluation is confined to the selected expression and supplies no
+/// facts to checking. The produced value is read directly from the outcome.
+fn trace_function_pointer_load(
+    conclusion: &Proposition,
+    assumptions: &crate::kernel::PureFactContext,
+) -> Option<crate::surface::proof_trace::TraceLoad> {
+    let (Proposition::CStatementExecutes {
+        state,
+        statement,
+        outcome,
+    }
+    | Proposition::CStatementVerifies {
+        state,
+        statement,
+        outcome,
+    }) = conclusion
+    else {
+        return None;
+    };
+    let CStatement::Assign {
+        name,
+        expression:
+            CExpression::TypedLoad {
+                pointer,
+                value_type: CType::FunctionPointer(_),
+                ..
+            },
+    } = statement.as_ref()
+    else {
+        return None;
+    };
+    let CStatementOutcome::Normal(after) = outcome else {
+        return None;
+    };
+    let value = after.scalar_local_value(name)?;
+    let (address, _) = crate::kernel::c_evaluate_spec_expression_at_state(
+        state,
+        &crate::kernel::SpecExpression::CExpression(pointer.as_ref().clone()),
+        None,
+        assumptions,
+    )
+    .ok()?;
+    Some(crate::surface::proof_trace::TraceLoad {
+        target: name.clone(),
+        value,
+        address,
+        memory: crate::kernel::intern_c_memory_ref(state.memory()),
+    })
 }

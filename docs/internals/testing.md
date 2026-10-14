@@ -869,9 +869,10 @@ by evaluation site. The `TacticSearch` route counts a premise a simple tactic
 proved by searching the proof context after its exact lookup missed, by
 tactic site: resource `fold`, `unfold` and `observe`, `transport ... using`
 at an execution or fixed-state frontier, a `branch` arm's condition
-obligation, an outcome `if` or `cases` condition, a `have` of a separation
-away from the frontier, and a step's resource, separation or loadable-memory
-obligation.
+obligation, an outcome `if` or `cases` condition the kernel's condition
+decision leaves open, a `have` of a separation away from the frontier, and a
+resource, separation or loadable-memory obligation checked outside a step's
+fast path.
 
 ## Quarantine
 

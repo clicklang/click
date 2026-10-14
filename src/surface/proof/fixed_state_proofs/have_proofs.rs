@@ -410,6 +410,29 @@ pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel_with_al
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &std::collections::BTreeSet<String>,
 ) -> Result<CValue, String> {
+    evaluate_fixed_state_expression_through_kernel_with_algebraic_and_integer_values(
+        expression,
+        assumptions,
+        contract_environment,
+        algebraic_values,
+        &crate::persistent::PersistentMap::default(),
+        fixed_state,
+        spec_definitions,
+        opaque_click_functions,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel_with_algebraic_and_integer_values(
+    expression: &ContractExpression,
+    assumptions: &PureFactContext,
+    contract_environment: ContractEnvironment<'_>,
+    algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
+    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    fixed_state: FixedStateFrame<'_>,
+    spec_definitions: SpecDefinitions<'_>,
+    opaque_click_functions: &std::collections::BTreeSet<String>,
+) -> Result<CValue, String> {
     let mut click_function_calls = BTreeSet::new();
     crate::surface::validation::collect_click_function_calls(expression, &mut click_function_calls);
     let symbolic_load_assumptions =
@@ -421,13 +444,14 @@ pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel_with_al
         fixed_state.state,
         fixed_state.result,
     );
-    let spec = crate::surface::lowering::elaborate_fixed_state_expression_with_algebraic_values(
+    let spec = crate::surface::lowering::elaborate_fixed_state_expression_with_algebraic_and_integer_values(
         expression,
         states.element_types,
         &states.entry_state,
         states.entry_values,
         states.current_values,
         algebraic_values,
+        integer_values,
         fixed_state.result,
         fixed_state.recorded_snapshots,
         spec_definitions,

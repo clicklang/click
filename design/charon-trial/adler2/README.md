@@ -624,9 +624,12 @@ cargo nextest run --test rust_import --run-ignored only \
 
 ## Remaining proof work
 
-Prove the unchanged C implementation and derive C/Rust equality
-under matched input and seed conditions. See the
-[checksum assessment](../../rust-checksum-assessment.md).
+The unchanged C implementation now satisfies the shared specification through
+the same signed length limit and canonical seed range. The
+[correspondence demonstration](../checksum-correspondence.md) derives native
+result equality under matched entry bytes and state, and records the checked
+incremental and reset cases. Experimental Rust architecture work remains in
+the [rust-support roadmap](../../../issues/rust-support.md).
 
 Full original-computation smart audits exhaust the standard ten-minute run bound
 before completing a site, although ordinary verification succeeds. This is an
@@ -830,3 +833,16 @@ cargo nextest run --profile nightly --test rust_import \
 The whole-body bounds and termination proof includes both A and B correctness
 for the full-batch prefix. Complete checksum and incremental processing postconditions
 remain separate roadmap work.
+
+## C/Rust result correspondence
+
+[correspondence.click](correspondence.click) derives equality of the native
+return words from the independently checked shared-specification postconditions,
+matched canonical state, length and entry bytes. Its uint32-to-uint64 observation
+lemma preserves the Rust word in the LP64 C return type. Specification
+extensionality allows distinct buffers; the reset lemma connects the C null
+reset to the checked Rust new/default fields and getter. The
+[scoped demonstration](../checksum-correspondence.md) gives the producer proof
+chain, incremental and saved-state instantiations, exact caller obligations
+and reproducible fixture commands. It composes separately checked programs
+and does not verify an FFI boundary.

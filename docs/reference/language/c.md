@@ -1322,6 +1322,10 @@ Function-static pointers, named as `unit::function::slot`, behave likewise.
 <!-- verified-example: mdtests/qualified_pointer_global_store_keeps_old_snapshot.md -->
 Global writes therefore participate in ordinary contract certification and are
 visible to later calls in the same verified execution.
+A summarized call write may span adjacent owned fields: its complete footprint
+must be covered by the union of the caller's owned ranges. It need not fit one
+individual field clause. Views do not contribute to this write footprint.
+<!-- verified-example: mdtests/whole_object_call_effect_combines_global_fields.md -->
 
 A file-scope `static int32 counter = 0;` is a separate object in each source
 file that defines it. The owning source file's functions can name it in

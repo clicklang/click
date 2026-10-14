@@ -326,6 +326,16 @@ carried by `transport` from the cell's reflexive equality at a recorded point
   search used to find, which `auto` proves alone but not inside the body
   fact.
 
+**5c, outcome `if` and the step's atomic derivation (in progress).** Every
+outcome `if` condition the census counted was `not (v == c)` with `v` decided
+by the path; a simple tactic's premise is now first offered to the kernel's
+condition decision, the same one a step's fast path makes, so none is
+searched. A step under `Fast` no longer derives a resource-contains,
+separation or loadable-memory obligation from the context; the probe records
+it and the implicit `auto` proves it, so
+`mdtests/an_unsigned_index_that_wraps_below_zero_is_refused.md` is now refused
+at the read's bounds rather than at the pointer arithmetic after them.
+
 ## Acceptance criteria
 
 - No simple tactic performs a search over the proof context; its cost is

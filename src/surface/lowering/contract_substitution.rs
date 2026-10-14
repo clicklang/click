@@ -975,8 +975,27 @@ pub(in crate::surface) fn rewrite_click_proposition_by_surface_equality(
     proposition: &ClickProposition,
     equality: &ClickProposition,
 ) -> Option<ClickProposition> {
+    rewrite_surface_equality_candidate(proposition, equality, false)
+}
+
+// A current native value can differ from its historical reading even when
+// both use the same variable spelling. Offer this bounded alternative when
+// the ordinary candidate does not present the checked kernel rewrite.
+pub(in crate::surface) fn rewrite_surface_equality_preserving_snapshots(
+    proposition: &ClickProposition,
+    equality: &ClickProposition,
+) -> Option<ClickProposition> {
+    rewrite_surface_equality_candidate(proposition, equality, true)
+}
+
+fn rewrite_surface_equality_candidate(
+    proposition: &ClickProposition,
+    equality: &ClickProposition,
+    preserve_snapshots: bool,
+) -> Option<ClickProposition> {
     let (left, right) = surface_equality_expression_sides(equality)?;
-    let (rewritten, changed) = rewrite_click_proposition_expression(proposition, &left, &right);
+    let (rewritten, changed) =
+        rewrite_click_proposition_expression(proposition, &left, &right, preserve_snapshots);
     changed.then_some(rewritten)
 }
 
@@ -1026,11 +1045,14 @@ fn rewrite_click_proposition_expression(
     proposition: &ClickProposition,
     source: &ContractExpression,
     target: &ContractExpression,
+    preserve_snapshots: bool,
 ) -> (ClickProposition, bool) {
-    let expression =
-        |value: &ContractExpression| rewrite_contract_expression_exact(value, source, target);
-    let rewrite_proposition =
-        |value: &ClickProposition| rewrite_click_proposition_expression(value, source, target);
+    let expression = |value: &ContractExpression| {
+        rewrite_contract_expression_exact(value, source, target, preserve_snapshots)
+    };
+    let rewrite_proposition = |value: &ClickProposition| {
+        rewrite_click_proposition_expression(value, source, target, preserve_snapshots)
+    };
     match proposition {
         ClickProposition::Comparison {
             left,
@@ -1062,16 +1084,20 @@ fn rewrite_click_proposition_expression(
             )
         }
         ClickProposition::Separate { left, right } => {
-            let (left, left_changed) = rewrite_resource_subject_exact(left, source, target);
-            let (right, right_changed) = rewrite_resource_subject_exact(right, source, target);
+            let (left, left_changed) =
+                rewrite_resource_subject_exact(left, source, target, preserve_snapshots);
+            let (right, right_changed) =
+                rewrite_resource_subject_exact(right, source, target, preserve_snapshots);
             (
                 ClickProposition::Separate { left, right },
                 left_changed || right_changed,
             )
         }
         ClickProposition::Contains { parent, child } => {
-            let (parent, parent_changed) = rewrite_resource_subject_exact(parent, source, target);
-            let (child, child_changed) = rewrite_resource_subject_exact(child, source, target);
+            let (parent, parent_changed) =
+                rewrite_resource_subject_exact(parent, source, target, preserve_snapshots);
+            let (child, child_changed) =
+                rewrite_resource_subject_exact(child, source, target, preserve_snapshots);
             (
                 ClickProposition::Contains { parent, child },
                 parent_changed || child_changed,
@@ -1238,6 +1264,7 @@ fn rewrite_resource_subject_exact(
     subject: &ResourceSubject,
     source: &ContractExpression,
     target: &ContractExpression,
+    preserve_snapshots: bool,
 ) -> (ResourceSubject, bool) {
     match subject {
         ResourceSubject::Memory(segment) => (ResourceSubject::Memory(segment.clone()), false),
@@ -1251,8 +1278,12 @@ fn rewrite_resource_subject_exact(
             let arguments = arguments
                 .iter()
                 .map(|argument| {
-                    let (argument, argument_changed) =
-                        rewrite_contract_expression_exact(argument, source, target);
+                    let (argument, argument_changed) = rewrite_contract_expression_exact(
+                        argument,
+                        source,
+                        target,
+                        preserve_snapshots,
+                    );
                     changed |= argument_changed;
                     argument
                 })
@@ -1274,6 +1305,7 @@ fn rewrite_resource_clause_exact(
     resource: &ResourceClause,
     source: &ContractExpression,
     target: &ContractExpression,
+    preserve_snapshots: bool,
 ) -> (ResourceClause, bool) {
     match resource {
         ResourceClause::Conditional {
@@ -1281,9 +1313,9 @@ fn rewrite_resource_clause_exact(
             resource,
         } => {
             let (condition, condition_changed) =
-                rewrite_click_proposition_expression(condition, source, target);
+                rewrite_click_proposition_expression(condition, source, target, preserve_snapshots);
             let (resource, resource_changed) =
-                rewrite_resource_clause_exact(resource, source, target);
+                rewrite_resource_clause_exact(resource, source, target, preserve_snapshots);
             (
                 ResourceClause::Conditional {
                     condition,
@@ -1293,7 +1325,8 @@ fn rewrite_resource_clause_exact(
             )
         }
         ResourceClause::Named { binding, resource } => {
-            let (resource, changed) = rewrite_resource_clause_exact(resource, source, target);
+            let (resource, changed) =
+                rewrite_resource_clause_exact(resource, source, target, preserve_snapshots);
             (
                 ResourceClause::Named {
                     binding: binding.clone(),
@@ -1314,9 +1347,9 @@ fn rewrite_resource_clause_exact(
         ),
         ResourceClause::Quantified { quantity, resource } => {
             let (quantity, quantity_changed) =
-                rewrite_contract_expression_exact(quantity, source, target);
+                rewrite_contract_expression_exact(quantity, source, target, preserve_snapshots);
             let (resource, resource_changed) =
-                rewrite_resource_clause_exact(resource, source, target);
+                rewrite_resource_clause_exact(resource, source, target, preserve_snapshots);
             (
                 ResourceClause::Quantified {
                     quantity,
@@ -1339,8 +1372,12 @@ fn rewrite_resource_clause_exact(
             let arguments = arguments
                 .iter()
                 .map(|argument| {
-                    let (argument, argument_changed) =
-                        rewrite_contract_expression_exact(argument, source, target);
+                    let (argument, argument_changed) = rewrite_contract_expression_exact(
+                        argument,
+                        source,
+                        target,
+                        preserve_snapshots,
+                    );
                     changed |= argument_changed;
                     argument
                 })
@@ -1351,8 +1388,12 @@ fn rewrite_resource_clause_exact(
                     resource_type_arguments: resource_type_arguments
                         .iter()
                         .map(|resource| {
-                            let (resource, resource_changed) =
-                                rewrite_resource_clause_exact(resource, source, target);
+                            let (resource, resource_changed) = rewrite_resource_clause_exact(
+                                resource,
+                                source,
+                                target,
+                                preserve_snapshots,
+                            );
                             changed |= resource_changed;
                             resource
                         })
@@ -1374,12 +1415,14 @@ fn rewrite_contract_expression_exact(
     expression: &ContractExpression,
     source: &ContractExpression,
     target: &ContractExpression,
+    preserve_snapshots: bool,
 ) -> (ContractExpression, bool) {
     if expression == source {
         return (target.clone(), true);
     }
-    let unary =
-        |value: &ContractExpression| rewrite_contract_expression_exact(value, source, target);
+    let unary = |value: &ContractExpression| {
+        rewrite_contract_expression_exact(value, source, target, preserve_snapshots)
+    };
     let binary = |left: &ContractExpression, right: &ContractExpression| {
         let (left, left_changed) = unary(left);
         let (right, right_changed) = unary(right);
@@ -1576,25 +1619,66 @@ fn rewrite_contract_expression_exact(
             )
         }
         ContractExpression::ResourceCount(resource) => {
-            let (resource, changed) = rewrite_resource_clause_exact(resource, source, target);
+            let (resource, changed) =
+                rewrite_resource_clause_exact(resource, source, target, preserve_snapshots);
             (
                 ContractExpression::ResourceCount(Box::new(resource)),
                 changed,
             )
         }
+        // Historical reads are absolute. An equality about the current
+        // variable cannot rewrite the same spelling inside another snapshot.
+        // Same-snapshot operands may still rewrite within a compound read.
         ContractExpression::Old(value) => {
-            let (value, changed) = unary(value);
+            if !preserve_snapshots {
+                let (value, changed) = unary(value);
+                return (ContractExpression::Old(Box::new(value)), changed);
+            }
+            let (ContractExpression::Old(source), ContractExpression::Old(target)) =
+                (source, target)
+            else {
+                return (expression.clone(), false);
+            };
+            let (value, changed) =
+                rewrite_contract_expression_exact(value, source, target, preserve_snapshots);
             (ContractExpression::Old(Box::new(value)), changed)
         }
         ContractExpression::At {
             selector,
-            expression,
+            expression: value,
         } => {
-            let (expression, changed) = unary(expression);
+            if !preserve_snapshots {
+                let (value, changed) = unary(value);
+                return (
+                    ContractExpression::At {
+                        selector: selector.clone(),
+                        expression: Box::new(value),
+                    },
+                    changed,
+                );
+            }
+            let (
+                ContractExpression::At {
+                    selector: source_selector,
+                    expression: source,
+                },
+                ContractExpression::At {
+                    selector: target_selector,
+                    expression: target,
+                },
+            ) = (source, target)
+            else {
+                return (expression.clone(), false);
+            };
+            if selector != source_selector || selector != target_selector {
+                return (expression.clone(), false);
+            }
+            let (value, changed) =
+                rewrite_contract_expression_exact(value, source, target, preserve_snapshots);
             (
                 ContractExpression::At {
                     selector: selector.clone(),
-                    expression: Box::new(expression),
+                    expression: Box::new(value),
                 },
                 changed,
             )
@@ -1649,7 +1733,7 @@ fn rewrite_contract_expression_exact(
             else_branch,
         } => {
             let (condition, condition_changed) =
-                rewrite_click_proposition_expression(condition, source, target);
+                rewrite_click_proposition_expression(condition, source, target, preserve_snapshots);
             let (then_branch, then_changed) = unary(then_branch);
             let (else_branch, else_changed) = unary(else_branch);
             (
@@ -4004,6 +4088,52 @@ mod tests {
     use super::*;
 
     #[test]
+    fn expression_rewrite_respects_absolute_snapshot_boundaries() {
+        let x = ContractExpression::CFragment(CExpression::Variable("x".into()));
+        let y = ContractExpression::CFragment(CExpression::Variable("y".into()));
+        let old = |value| ContractExpression::Old(Box::new(value));
+        let at = |label: &str, value| ContractExpression::At {
+            selector: SnapshotSelector::Mark(label.into()),
+            expression: Box::new(value),
+        };
+        let pair = |left, right| ContractExpression::Add(Box::new(left), Box::new(right));
+        for historical in [old(x.clone()), at("entry", x.clone())] {
+            assert_eq!(
+                rewrite_contract_expression_exact(
+                    &pair(x.clone(), historical.clone()),
+                    &x,
+                    &y,
+                    true
+                ),
+                (pair(y.clone(), historical), true),
+            );
+        }
+        assert_eq!(
+            rewrite_contract_expression_exact(
+                &old(pair(x.clone(), x.clone())),
+                &old(x.clone()),
+                &old(y.clone()),
+                true
+            ),
+            (old(pair(y.clone(), y.clone())), true),
+        );
+        assert_eq!(
+            rewrite_contract_expression_exact(
+                &at("entry", pair(x.clone(), x.clone())),
+                &at("entry", x.clone()),
+                &at("entry", y.clone()),
+                true
+            ),
+            (at("entry", pair(y.clone(), y.clone())), true),
+        );
+        let historical = at("other", pair(x.clone(), x.clone()));
+        assert_eq!(
+            rewrite_contract_expression_exact(&historical, &at("entry", x), &at("entry", y), true),
+            (historical, false),
+        );
+    }
+
+    #[test]
     fn multidimensional_array_rewrite_updates_its_lowered_base() {
         let source_base = ContractExpression::CFragment(CExpression::Variable("old".into()));
         let target_base = ContractExpression::CFragment(CExpression::Variable("new".into()));
@@ -4020,7 +4150,7 @@ mod tests {
             ),
         };
         let (rewritten, changed) =
-            rewrite_contract_expression_exact(&expression, &source_base, &target_base);
+            rewrite_contract_expression_exact(&expression, &source_base, &target_base, false);
         assert!(changed);
         let ContractExpression::ArrayIndex { lowered, .. } = rewritten else {
             panic!("array rewrite must retain its presentation node");
@@ -4054,7 +4184,7 @@ mod tests {
             arguments: vec![],
         };
         let (rewritten, changed) =
-            rewrite_contract_expression_exact(&expression, &source_base, &target);
+            rewrite_contract_expression_exact(&expression, &source_base, &target, false);
         assert!(!changed);
         assert_eq!(rewritten, expression);
     }

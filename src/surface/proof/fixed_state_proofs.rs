@@ -28,6 +28,7 @@ pub(super) use have_proofs::{
 pub(in crate::surface) use have_proofs::{
     FixedStateLoweringOptions, evaluate_c_fragment_through_kernel,
     evaluate_fixed_state_array_ref_through_kernel, evaluate_fixed_state_expression_through_kernel,
+    evaluate_fixed_state_expression_through_kernel_with_algebraic_and_integer_values,
     evaluate_fixed_state_expression_through_kernel_with_algebraic_values,
     evaluate_resource_argument_through_kernel, evaluate_resource_fragment_through_kernel,
     lower_fixed_state_proposition_through_kernel,

@@ -2527,12 +2527,22 @@ impl<'a> Proof<'a> {
                 )
             })?;
         let surface_goal = self.surface_goal().and_then(|surface_goal| {
-            let candidate =
-                rewrite_click_proposition_by_surface_equality(surface_goal, surface_equality)?;
-            self.lower_surface_proposition_direct(&candidate, "rewritten Surface goal")
-                .ok()
-                .filter(|lowered| rewritten.try_present_as(lowered))
-                .map(|_| candidate)
+            let checked_candidate = |candidate: ClickProposition| {
+                self.lower_surface_proposition_direct(&candidate, "rewritten Surface goal")
+                    .ok()
+                    .filter(|lowered| rewritten.try_present_as(lowered))
+                    .map(|_| candidate)
+            };
+            let mut checked_candidate = checked_candidate;
+            rewrite_click_proposition_by_surface_equality(surface_goal, surface_equality)
+                .and_then(&mut checked_candidate)
+                .or_else(|| {
+                    crate::surface::lowering::rewrite_surface_equality_preserving_snapshots(
+                        surface_goal,
+                        surface_equality,
+                    )
+                    .and_then(checked_candidate)
+                })
         });
         let presentation = self.refinement_presentation(surface_goal, None);
         let (obligation, facts) =

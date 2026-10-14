@@ -129,8 +129,36 @@ pub(super) struct TraceStep {
     pub facts: Vec<TraceFact>,
     pub more_facts: usize,
     pub frontier: Option<String>,
+    pub load: Option<TraceLoad>,
+    pub read_equalities: Vec<TraceFact>,
+    pub read_context_changed: bool,
     pub resources: Vec<TraceResourceChange>,
     pub more_resources: usize,
+}
+
+/// Values observed at one accepted load statement. The retained theorem's
+/// entry state supplies the snapshot; the outcome supplies the produced value.
+pub(super) struct TraceLoad {
+    pub target: String,
+    pub value: crate::kernel::CValue,
+    pub address: crate::kernel::CValue,
+    pub memory: SharedCMemory,
+}
+
+impl TraceLoad {
+    fn append(&self, output: &mut String, labels: &mut SnapshotLabels, indent: &str) {
+        let snapshot = labels.snapshot_name(self.memory.memory());
+        let identity = |value: &crate::kernel::CValue, labels: &mut SnapshotLabels| match value {
+            crate::kernel::CValue::Pointer(pointer) => labels.pointer_value_name(pointer.pointer()),
+            _ => render::render_c_value_labeled(value, labels),
+        };
+        let value = identity(&self.value, labels);
+        let address = identity(&self.address, labels);
+        output.push_str(&format!(
+            "\n{indent}produces {} = {value}\n{indent}read: at({snapshot}, load_function_pointer({address}))",
+            trace_text(&self.target, 240),
+        ));
+    }
 }
 
 pub(super) struct TraceResourceChange {
@@ -286,6 +314,14 @@ impl ChildArgumentTrace {
 }
 
 pub(super) fn pointer_definition(pointer: &Pointer) -> Option<Bitvector32Term> {
+    // Function-pointer cells use a load variable as their address
+    // identity. It has the same registered read provenance as scalar cells.
+    if let crate::kernel::PointerBlock::FunctionSymbolic(variable) = &pointer.block
+        && pointer.offset == crate::kernel::PointerOffsetTerm::Constant(0)
+        && let Some(definition) = crate::kernel::registered_load_term_for_variable(variable)
+    {
+        return Some(definition);
+    }
     crate::kernel::logical_pointer_read_term(pointer).or_else(|| {
         let read = pointer.as_loaded_value()?;
         (read.displacement == crate::kernel::PointerOffsetTerm::Constant(0)).then(|| {
@@ -1057,6 +1093,20 @@ fn append_path(
             if let Some(frontier) = &step.frontier {
                 detail.push_str(&format!("\n{detail_indent}{}", trace_text(frontier, 240)));
             }
+            if let Some(load) = &step.load {
+                load.append(&mut detail, labels, &detail_indent);
+            }
+            if step.read_context_changed {
+                detail.push_str(&format!(
+                    "\n{detail_indent}egraph read-equality context changed"
+                ));
+            }
+            append_read_equalities(&mut detail, &step.read_equalities, labels, &detail_indent);
+            if step.load.is_some() && step.read_equalities.is_empty() {
+                detail.push_str(&format!(
+                    "\n{detail_indent}no checked read equalities admitted by this step"
+                ));
+            }
             for resource in &step.resources {
                 let change = match (resource.before, resource.after) {
                     (0, 1) => format!("resource gained: {}", resource.description),
@@ -1159,6 +1209,21 @@ fn source_same(position: &SourcePosition, target: &SourcePosition) -> bool {
     (position.line, position.column) == (target.line, target.column)
 }
 
+fn append_read_equalities(
+    output: &mut String,
+    equalities: &[TraceFact],
+    labels: &mut SnapshotLabels,
+    indent: &str,
+) {
+    let _typed = crate::surface::proof_diagnostics::render::TypedNotationScope::enter();
+    for equality in equalities {
+        output.push_str(&format!(
+            "\n{indent}admitted read equality: {}",
+            render::render_proposition_labeled(&equality.kernel, labels)
+        ));
+    }
+}
+
 fn append_added_facts(
     output: &mut String,
     facts: &[TraceFact],
@@ -1201,6 +1266,37 @@ fn trace_text(text: &str, max_bytes: usize) -> String {
 mod tests {
     use super::*;
     use crate::kernel::{Bitvector32Term, CMemory, Pointer, PointerBlock, PointerOffsetTerm};
+
+    #[test]
+    fn admitted_read_equalities_share_the_fact_printer_and_read_labels() {
+        let address = Pointer::symbolic(crate::kernel::Variable(303_000));
+        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let read = Pointer::loaded_value(&memory, &address);
+        let target = Pointer::function("callback");
+        let fact = TraceFact {
+            kernel: Proposition::ConditionIs(ConditionTerm::pointer_equal(read, target), true),
+        };
+        let mut labels = SnapshotLabels::default();
+        let mut ordinary = String::new();
+        append_added_facts(
+            &mut ordinary,
+            &[TraceFact {
+                kernel: fact.kernel.clone(),
+            }],
+            &mut labels,
+            "  ",
+        );
+        let mut admitted = String::new();
+        append_read_equalities(&mut admitted, &[fact], &mut labels, "  ");
+        assert_eq!(
+            admitted,
+            ordinary.replace("adds:", "admitted read equality:")
+        );
+        let mut report = format!("{ordinary}{admitted}");
+        append_legend(&mut report, &mut labels);
+        assert!(report.contains("pointer read at snapshot#1"), "{report}");
+        assert!(report.contains("function `callback`"), "{report}");
+    }
 
     #[test]
     fn legend_preserves_long_trace_and_line_boundaries() {
@@ -1433,6 +1529,9 @@ mod tests {
                     ],
                     more_facts: 0,
                     frontier: None,
+                    load: None,
+                    read_equalities: Vec::new(),
+                    read_context_changed: false,
                     resources: Vec::new(),
                     more_resources: 0,
                 },
@@ -1492,6 +1591,9 @@ mod tests {
                 facts: Vec::new(),
                 more_facts: 0,
                 frontier: None,
+                load: None,
+                read_equalities: Vec::new(),
+                read_context_changed: false,
                 resources: Vec::new(),
                 more_resources: 0,
             };
@@ -1581,6 +1683,9 @@ mod tests {
                 facts: Vec::new(),
                 more_facts: 0,
                 frontier: None,
+                load: None,
+                read_equalities: Vec::new(),
+                read_context_changed: false,
                 resources: Vec::new(),
                 more_resources: 0,
             };
@@ -1688,6 +1793,9 @@ mod tests {
                     facts: vec![TraceFact { kernel: fact }],
                     more_facts: 0,
                     frontier: None,
+                    load: None,
+                    read_equalities: Vec::new(),
+                    read_context_changed: false,
                     resources: Vec::new(),
                     more_resources: 0,
                 },
@@ -1701,6 +1809,9 @@ mod tests {
                     facts: Vec::new(),
                     more_facts: 0,
                     frontier: None,
+                    load: None,
+                    read_equalities: Vec::new(),
+                    read_context_changed: false,
                     resources: Vec::new(),
                     more_resources: 0,
                 },
@@ -1765,6 +1876,9 @@ mod tests {
                 facts: Vec::new(),
                 more_facts: 0,
                 frontier: None,
+                load: None,
+                read_equalities: Vec::new(),
+                read_context_changed: false,
                 resources: Vec::new(),
                 more_resources: 0,
             };
