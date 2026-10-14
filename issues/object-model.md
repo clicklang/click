@@ -187,6 +187,14 @@ this repair separate from new equality or origin semantics; select checked
 producer/frame evidence through an index and retain coverage and withdrawal
 controls. The investigation is recorded in the existing retained-resource bug.
 
+The next repair selects a queried pointer read's endpoint through a bounded,
+complete-cell certificate and keeps its numeric union local to memory lookup.
+A walk stopped at an unproved write retains an opaque read; a cached old value
+is not evidence for crossing that write. The selected frame also exposed a
+constant-prefix mismatch in signed-order certificate checking, now covered by
+positive and withdrawal/reversed-bound controls. This is a shared lookup/checking
+repair, not an object-representation change or a new C++ admission boundary.
+
 ## Recovery and delivery sequence
 
 ### 1. Preserve and classify before repairing more examples
