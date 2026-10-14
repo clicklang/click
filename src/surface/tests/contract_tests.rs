@@ -2708,7 +2708,9 @@ fn nested_loop_retains_inferred_unchanged_counter_invariants() {
  return remaining;
 }
 "#;
-    let proof = r#"verifying "nested.c";
+    let proof = r#"import click::integer;
+import click::machine_integer;
+verifying "nested.c";
 uint64 nested(uint64 total) {
  requires total <= 64u64;
  ensures result < 16u64;

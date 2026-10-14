@@ -14767,7 +14767,7 @@ fn loop_entry_wide_extent_guard_retains_its_own_source_and_scales() {
             .clone()
             .with_local("len", CValue::UInt64(remaining.clone()));
         for index in 0..size {
-            state = state.with_local(&format!("unused_{index}"), int32(index));
+            state = state.with_local(format!("unused_{index}"), int32(index));
         }
         let facts = vec![goal.clone()];
         let root = Proof::for_fixed_state_frontier(
@@ -14831,7 +14831,7 @@ fn completed_goal_retention_validates_current_source_after_stale_recording() {
             .clone()
             .with_local("len", CValue::UInt64(current_len.clone()));
         for index in 0..size {
-            state = state.with_local(&format!("unused_{index}"), int32(index));
+            state = state.with_local(format!("unused_{index}"), int32(index));
         }
         let facts = vec![old_goal.clone(), current_goal.clone()];
         let root = Proof::for_fixed_state_surface_goal(
