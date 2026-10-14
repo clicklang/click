@@ -50,7 +50,7 @@ Click already offers three relevant interfaces:
 | Existing interface | Use here |
 | --- | --- |
 | `step()` | Execute a recognized create or join at the C frontier. |
-| `let r = step(callee(...), { });` | Name the scalar result of a call, including one inside a C condition. |
+| `let { result: r } = step(callee(...), { });` | Name the scalar result of a call, including one inside a C condition. |
 | `branch then { ... } else { ... }` | Prove both feasible C arms and check their continuation interface. |
 
 Named callback contracts and `step(Contract)` currently select a contract for
@@ -124,7 +124,7 @@ initialization loop using ordinary loop syntax. At the first create condition,
 its proposed proof fragment is:
 
 ```click
-let rc = step(pthread_create(&first, NULL, fill_range, &first_job), { });
+let { result: rc } = step(pthread_create(&first, NULL, fill_range, &first_job), { });
 branch then {
     // The C condition is rc != 0: creation failed.
     step(); // return 0; all four cells still belong to the parent.

@@ -7,7 +7,7 @@ instance stands at those arguments — here the `chain(n)` the call produced as
 `d`, bound in the loop as `c` — and the structural measure `decreases c;` ranks
 the loop by it from the first iteration.
 
-The call is `let d = step(touch(n), { c: c });`: the transport names which of
+The call is `let { d: d } = step(touch(n), { c: c });`: the transport names which of
 the caller's instances the callee's `consumes` takes, and `d` names what its
 `produces` gives back. Nothing in the loop header mentions `d`; the loop finds
 the instance at `chain(n)` the way `close_invariants()` finds it at every back
@@ -69,7 +69,7 @@ void caller(int32 n) {
     requires c.model != Chain::Nil;
     ensures 1 == 1;
 } by {
-    let d = step(touch(n), { c: c });
+    let { d: d } = step(touch(n), { c: c });
     loop {
         owns c: chain(n);
         decreases c;

@@ -1323,7 +1323,7 @@ fn step_head_spelling(step: &ProofTactic) -> String {
     match step {
         ProofTactic::Step => "step()".to_string(),
         ProofTactic::StepContract(name) => format!("step({name})"),
-        ProofTactic::StepBind(name) => format!("let {name} = step()"),
+        ProofTactic::StepBind(name) => format!("let {{ result: {name} }} = step()"),
         ProofTactic::StepCall(transport) => transport.to_string(),
         _ => unreachable!("a step proof wraps a `step` form"),
     }

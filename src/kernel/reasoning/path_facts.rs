@@ -1162,22 +1162,64 @@ fn bare_condition_is_decided(assumptions: &PureFactContext, proposition: &Propos
         && assumptions.decide(condition) == Some(*value)
 }
 
-/// Whether a required verification condition is already discharged by one of
-/// the routes the kernel retains: the exact fact index, the frozen condition
-/// checker on a proposition that is already one bare condition, or the
-/// retained atomic memory/resource checkers.
-///
-/// This is the complete suppression rule for a required obligation. A
-/// proposition with logical structure is never discharged here; it is emitted
-/// for an ordinary Surface tactic to prove.
+/// Retain logical input evidence from the incoming checked context only.
+/// Unlike call checking, retention must not redo memory/ownership derivation.
+/// Machine and pointer equality use indexed evidence or intrinsic decisions;
+/// the broader checker can enter memory resolution even for scalar terms.
+pub(in crate::kernel) fn call_input_fact_is_already_known(
+    assumptions: &PureFactContext,
+    proposition: &Proposition,
+) -> bool {
+    let available = |side: &Proposition| {
+        assumptions.states_required_goal(side)
+            || assumptions.proves_exact(side)
+            || assumptions.contains_known(side)
+            || matches!(side, Proposition::ConditionIs(condition, value)
+                if PureFactContext::decide_intrinsically(condition) == Some(*value)
+                    || !matches!(condition,
+                        ConditionTerm::Bitvector32Equal(..)
+                        | ConditionTerm::Bitvector64Equal(..)
+                        | ConditionTerm::PointerEqual(..)
+                        | ConditionTerm::PointerOffsetEqual(..))
+                        && bare_condition_is_decided(assumptions, side))
+    };
+    crate::kernel::primitives::first_unavailable_connective_side(proposition, &available).is_none()
+}
+
+/// Discharge a required obligation using indexed facts, frozen atomic
+/// checkers, and the same goal-local AND/OR rule as `assumption()`. This does
+/// not unfold definitions, eliminate implications, or instantiate binders.
 pub(in crate::kernel) fn required_obligation_is_exactly_discharged(
     assumptions: &PureFactContext,
     proposition: &Proposition,
 ) -> bool {
-    assumptions.states_required_goal(proposition)
-        || assumptions.proves_exact(proposition)
-        || bare_condition_is_decided(assumptions, proposition)
-        || assumptions.proves_atomic_memory_or_resource(proposition)
+    let directly_available = |side: &Proposition| {
+        assumptions.states_required_goal(side)
+            || assumptions.proves_exact(side)
+            || bare_condition_is_decided(assumptions, side)
+            || assumptions.proves_atomic_memory_or_resource(side)
+            || assumptions.contains_known(side)
+    };
+    // Preserve the existing direct route, including alpha-equivalent held
+    // propositions and its shared lazy index. Walk connective structure only
+    // when that route leaves the whole goal unresolved.
+    if directly_available(proposition) {
+        return true;
+    }
+    if !matches!(proposition, Proposition::And(..) | Proposition::Or(..)) {
+        return false;
+    }
+    crate::kernel::primitives::first_unavailable_connective_side(proposition, &|side| {
+        if matches!(side, Proposition::Or(..)) {
+            // A held disjunction can shortcut the walk. Otherwise check its
+            // leaves, without running builtin solving or alpha key creation
+            // over every subtree of a long goal.
+            return assumptions.disjunction_fact_propositions().next().is_some()
+                && assumptions.contains_proposition_fact(side);
+        }
+        directly_available(side)
+    })
+    .is_none()
 }
 
 /// Emits one required verification condition, carrying the head chain the

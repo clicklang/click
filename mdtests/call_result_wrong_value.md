@@ -1,6 +1,6 @@
 # A named call result cannot be claimed equal to the wrong value
 
-`let r = step(classify(x), { });` names the call's scalar result, and the
+`let { result: r } = step(classify(x), { });` names the call's scalar result, and the
 callee's guarantee constrains that name and nothing else. A `have` that
 claims the named result equals a different value fails at the claim: the
 result rewrites to what the callee guaranteed, and the remaining equation is
@@ -52,7 +52,7 @@ int has_class(int x) {
     ensures classified(x) != 0 implies result == 1;
     ensures classified(x) == 0 implies result == 0;
 } by {
-    let r = step(classify(x), { });
+    let { result: r } = step(classify(x), { });
     have r == classified(x) + 1 by {
         rewrite(r == classified(x));
         normalize();

@@ -94,11 +94,19 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             .iter()
             .filter_map(|imported| locals.get(imported))
             .flat_map(|file| {
-                file.function_blocks().iter().chain(
-                    file.tactic_definitions()
-                        .iter()
-                        .map(TacticDefinition::function_block),
-                )
+                file.function_blocks()
+                    .iter()
+                    .chain(
+                        file.tactic_definitions()
+                            .iter()
+                            .map(TacticDefinition::function_block),
+                    )
+                    .map(parser::ImportedCallee::Function)
+                    .chain(
+                        file.contract_definitions()
+                            .iter()
+                            .map(parser::ImportedCallee::Contract),
+                    )
             })
             .collect::<Vec<_>>();
         let imported_resources = imported_ids

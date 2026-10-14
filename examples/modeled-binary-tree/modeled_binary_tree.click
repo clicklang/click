@@ -453,7 +453,7 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
                 rewrite(node == root);
                 normalize() using { not(root == target); }
             }
-            let found_left = step(tree_contains(root->left, target), { t: l });
+            let { result: found_left } = step(tree_contains(root->left, target), { t: l });
             branch then {
                 step();
                 have heap_member(left_model, target) by {
@@ -468,7 +468,13 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
                 let t = fold(tree_at(root), { model: old(t.model) }, { left: l, right: r });
                 simp();
             } else {}
-            let found_right = step(tree_contains(root->right, target), { t: r });
+            have heap_member(left_model, target) == 0 by {
+                simp() using {
+                    found_left == 0;
+                    found_left == heap_member(left_model, target);
+                }
+            }
+            let { result: found_right } = step(tree_contains(root->right, target), { t: r });
             step();
             let t = fold(tree_at(root), { model: old(t.model) }, { left: l, right: r });
             have result == heap_member(old(t.model), target) by {

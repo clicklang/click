@@ -568,6 +568,7 @@ pub(crate) struct CheckedResourceRewrite {
     pub(crate) after_facts: ProofFacts,
     definition: CCompositeResourceDefinition,
     consumption_contract: Option<Arc<CheckedFunctionEntry>>,
+    return_context: Option<Arc<CheckedReturnContext>>,
     instance: Option<crate::kernel::ResourceInstance>,
     selected_children: Option<Arc<[(String, Variable)]>>,
     load_equalities: Vec<crate::kernel::CheckedLoadEquality>,
@@ -1263,6 +1264,73 @@ fn authority_control_evaluation_condition_proven(
     })
 }
 
+/// Exact comparison retained at a failed named-resource rewrite. Diagnostic
+/// data only: carrying it grants no fact or resource authority.
+#[derive(Clone, Debug)]
+pub(crate) struct RejectedResourceRewriteFact {
+    pub(crate) rejected: Proposition,
+    pub(crate) allowed: Arc<[Proposition]>,
+}
+
+#[derive(Debug)]
+pub(crate) struct ResourceRewriteCheckError {
+    pub(crate) message: String,
+    pub(crate) rejected_fact: Option<Arc<RejectedResourceRewriteFact>>,
+}
+
+impl From<String> for ResourceRewriteCheckError {
+    fn from(message: String) -> Self {
+        Self {
+            message,
+            rejected_fact: None,
+        }
+    }
+}
+
+impl From<&str> for ResourceRewriteCheckError {
+    fn from(message: &str) -> Self {
+        message.to_owned().into()
+    }
+}
+
+/// A checked body's identical readability range at a snapshot differing only
+/// by caches of unchanged reads. This transports neither values nor ownership,
+/// and admits no different address, extent, or wide/narrow representation.
+fn cached_body_loadability(
+    fact: &Proposition,
+    body_memory: &CMemory,
+    allowed: &std::collections::BTreeSet<Proposition>,
+    comparisons: &mut HashMap<((u32, u32), (u32, u32)), bool>,
+) -> bool {
+    let Proposition::CMemoryLoadable {
+        memory,
+        base,
+        bytes,
+        wide,
+    } = fact
+    else {
+        return false;
+    };
+    let key = (
+        crate::kernel::intern_c_memory_ref(memory).arena_id(),
+        crate::kernel::intern_c_memory_ref(body_memory).arena_id(),
+    );
+    if !*comparisons.entry(key).or_insert_with(|| {
+        crate::kernel::api::contract_certification::memories_match_up_to_cached_reads(
+            memory,
+            body_memory,
+        )
+    }) {
+        return false;
+    }
+    allowed.contains(&Proposition::CMemoryLoadable {
+        memory: body_memory.clone(),
+        base: base.clone(),
+        bytes: bytes.clone(),
+        wide: *wide,
+    })
+}
+
 impl CheckedResourceRewrite {
     pub(crate) fn before_state(&self) -> &CState {
         &self.before_state
@@ -1595,6 +1663,7 @@ impl CheckedResourceRewrite {
             after_facts: after_facts.clone(),
             definition: definition.clone(),
             consumption_contract: None,
+            return_context: None,
             instance: None,
             selected_children: None,
             load_equalities: crate::kernel::CheckedLoadEqualityCapture::start_with_call_events(
@@ -1788,6 +1857,7 @@ impl CheckedResourceRewrite {
             after_facts: after_facts.clone(),
             definition: definition.clone(),
             consumption_contract: None,
+            return_context: None,
             instance: None,
             selected_children: None,
             load_equalities: crate::kernel::CheckedLoadEqualityCapture::start_with_call_events(
@@ -1808,6 +1878,60 @@ impl CheckedResourceRewrite {
         after_facts: &ProofFacts,
         call_events: &CheckedCallEvents,
         selected_children: Option<Arc<[(String, Variable)]>>,
+    ) -> Result<Self, String> {
+        Self::check_with_children_diagnostic(
+            function,
+            before_state,
+            before_facts,
+            selected,
+            after_state,
+            after_facts,
+            call_events,
+            selected_children,
+        )
+        .map_err(|error| error.message)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_with_children_diagnostic(
+        function: &CFunction,
+        before_state: &CState,
+        before_facts: &ProofFacts,
+        selected: &CResourceFact,
+        after_state: &CState,
+        after_facts: &ProofFacts,
+        call_events: &CheckedCallEvents,
+        selected_children: Option<Arc<[(String, Variable)]>>,
+    ) -> Result<Self, ResourceRewriteCheckError> {
+        let mut rejected_fact = None;
+        Self::check_with_children_recording(
+            function,
+            before_state,
+            before_facts,
+            selected,
+            after_state,
+            after_facts,
+            call_events,
+            selected_children,
+            &mut rejected_fact,
+        )
+        .map_err(|message| ResourceRewriteCheckError {
+            message,
+            rejected_fact,
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_with_children_recording(
+        function: &CFunction,
+        before_state: &CState,
+        before_facts: &ProofFacts,
+        selected: &CResourceFact,
+        after_state: &CState,
+        after_facts: &ProofFacts,
+        call_events: &CheckedCallEvents,
+        selected_children: Option<Arc<[(String, Variable)]>>,
+        rejected_fact: &mut Option<Arc<RejectedResourceRewriteFact>>,
     ) -> Result<Self, String> {
         // A family that reaches no population keeps its ordinary definition
         // law; only population-reaching bodies take the checks below.
@@ -2144,6 +2268,7 @@ impl CheckedResourceRewrite {
                     after_facts: after_facts.clone(),
                     definition: definition.clone(),
                     consumption_contract: None,
+                    return_context: None,
                     instance: None,
                     selected_children: None,
                     load_equalities:
@@ -2287,11 +2412,22 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             // A visible return projection may repeat a fact already checked
             // at its frozen snapshot. Accept it only when the input context
             // independently proves that exact memory/resource proposition.
-            if introduced.iter().any(|fact| {
-                !allowed.contains(fact)
+            let mut cached_comparisons = HashMap::new();
+            if let Some(fact) = introduced.iter().find(|fact| {
+                !allowed.contains(*fact)
+                    && !cached_body_loadability(
+                        fact,
+                        before_state.memory(),
+                        &allowed,
+                        &mut cached_comparisons,
+                    )
                     && !(matches!(fact, Proposition::CMemoryReadDefined { .. })
                         && assumptions.proves_atomic_memory_or_resource(fact))
             }) {
+                *rejected_fact = Some(Arc::new(RejectedResourceRewriteFact {
+                    rejected: fact.clone(),
+                    allowed: allowed.into_iter().collect(),
+                }));
                 return Err("instance rewrite introduced an unchecked fact".to_string());
             }
             return Ok(Self {
@@ -2301,6 +2437,7 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
                 after_facts: after_facts.clone(),
                 definition: definition.clone(),
                 consumption_contract: None,
+                return_context: None,
                 instance: Some(instance.clone()),
                 selected_children,
                 load_equalities: load_equality_capture.finish(),
@@ -2527,6 +2664,7 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             after_facts: after_facts.clone(),
             definition,
             consumption_contract: None,
+            return_context: None,
             instance: None,
             selected_children: None,
             load_equalities,
@@ -7135,6 +7273,115 @@ fn trace_completion(
     )
 }
 
+/// Imports one kernel-published return context for both propositions and folds.
+fn retain_return_context(
+    function: &CFunction,
+    executed_under: &mut PureFactContext,
+    return_origin: Option<&CStatementOutcome>,
+    context: &Arc<CheckedReturnContext>,
+    return_context: &mut Option<Arc<CheckedReturnContext>>,
+) -> Result<(), &'static str> {
+    if return_origin != Some(&context.origin) {
+        return Err("return proof belongs to a different execution path");
+    }
+    if let Some(previous) = return_context.as_ref() {
+        if !Arc::ptr_eq(previous, context) {
+            return Err("return proofs have different publication contexts");
+        }
+    } else {
+        // Import this path's kernel-produced effects and resource
+        // observations once, before consuming any logical proof.
+        for fact in context
+            .facts
+            .facts_not_assumed_by(executed_under)
+            .into_iter()
+            .chain(
+                context
+                    .facts
+                    .producer_facts()
+                    .filter(|fact| fact.is_certified() && fact.generated_load_binding().is_some()),
+            )
+        {
+            *executed_under = retain_completed_path_fact(std::mem::take(executed_under), fact);
+        }
+        let CFunctionOutcome::Return {
+            state: published, ..
+        } = &context.published
+        else {
+            return Err("return proof has no published return");
+        };
+        for fact in published
+            .resources()
+            .observable_facts_assuming_valid(executed_under)
+        {
+            *executed_under = std::mem::take(executed_under).assume_proposition(fact);
+        }
+        // Relations describe the definition's footprint, not an
+        // unchecked assertion about the current invariant value.
+        let definitions: BTreeMap<_, _> = function
+            .composite_resource_definitions()
+            .iter()
+            .map(|definition| (definition.name(), std::slice::from_ref(definition)))
+            .collect();
+        for held in published.resources().facts() {
+            let CResource::Composite { name, .. } = held.resource() else {
+                continue;
+            };
+            let Some(definition) = definitions.get(name.as_str()) else {
+                continue;
+            };
+            if !(held.is_view() || held.has_proven_positive_quantity(executed_under)) {
+                continue;
+            }
+            let authority = CResourceFact::own(held.resource().clone());
+            // Immutable argument facts of an ordinary held resource
+            // survive a return. Instantiate with no memory, resources,
+            // or ambient read premises so this cannot import a mutable
+            // invariant from an unchecked current snapshot.
+            if !definition[0].is_authorized()
+                && let Some(facts) =
+                    crate::kernel::functions::evaluate_composite_resource_fact_propositions(
+                        &authority,
+                        definition,
+                        &CMemory::new(),
+                        &ResourceContext::new(),
+                        &PureFactContext::new().require_owned_expression_loads(),
+                    )
+            {
+                for fact in facts {
+                    *executed_under = std::mem::take(executed_under).assume_proposition(fact);
+                }
+            }
+            if let Some(facts) =
+                crate::kernel::functions::evaluate_composite_resource_relation_propositions(
+                    &authority,
+                    definition,
+                    published.memory(),
+                    executed_under,
+                )
+            {
+                for fact in facts {
+                    *executed_under = std::mem::take(executed_under).assume_proposition(fact);
+                }
+            }
+            if let Some(facts) =
+                crate::kernel::functions::evaluate_composite_resource_loadable_propositions(
+                    held,
+                    definition,
+                    published.memory(),
+                    executed_under,
+                )
+            {
+                for fact in facts {
+                    *executed_under = std::mem::take(executed_under).assume_proposition(fact);
+                }
+            }
+        }
+        *return_context = Some(context.clone());
+    }
+    Ok(())
+}
+
 /// As [`trace_completion`], where `entry_facts` are the facts the checked
 /// entry was checked under. A return proof's facts that the entry already
 /// held are the proof's assumptions, not path facts, so only the facts it
@@ -7163,9 +7410,19 @@ fn trace_completion_from_entry(
     }
     let mut completed: Option<(CStatementOutcome, PureFactContext)> = None;
     let mut return_origin = None;
-    let mut return_context: Option<&Arc<CheckedReturnContext>> = None;
+    let mut return_context: Option<Arc<CheckedReturnContext>> = None;
     let mut proposition_base: Option<&ProofFacts> = None;
     let mut fallthrough = None;
+    // Only the last checked statement can be the function's implicit return.
+    // Earlier normal statements may still have resource exchanges before a
+    // source tail. One reverse pass keeps this decision linear in the trace.
+    let last_statement = checked_void_fallthrough
+        .then(|| {
+            events
+                .iter()
+                .rposition(|event| matches!(event, CheckedExecutionEvent::Statement(_)))
+        })
+        .flatten();
     let mut interface_execution_facts: crate::kernel::ExecutionFacts = Vec::new().into();
     for (index, event) in events.iter().enumerate() {
         match event {
@@ -7186,13 +7443,16 @@ fn trace_completion_from_entry(
                                 crate::kernel::api::proof_evidence_assumptions(theorem, assumptions)
                             }
                         };
-                        fallthrough = Some((
-                            CStatementOutcome::Return {
-                                value: CValue::Void,
-                                state: state.clone(),
-                            },
-                            context,
-                        ));
+                        let returning = CStatementOutcome::Return {
+                            value: CValue::Void,
+                            state: state.clone(),
+                        };
+                        if last_statement == Some(index) {
+                            return_origin = Some(outcome.clone());
+                            completed = Some((returning, context));
+                        } else {
+                            fallthrough = Some((returning, context));
+                        }
                     }
                     CStatementOutcome::Break(_)
                     | CStatementOutcome::Continue(_)
@@ -7275,85 +7535,13 @@ fn trace_completion_from_entry(
                 else {
                     return Err("return proof requires a returning path");
                 };
-                if return_origin.as_ref() != Some(&retained.context.origin) {
-                    return Err("return proof belongs to a different execution path");
-                }
-                if let Some(previous) = return_context {
-                    if !Arc::ptr_eq(previous, &retained.context) {
-                        return Err("return proofs have different publication contexts");
-                    }
-                } else {
-                    // Import this path's kernel-produced effects and resource
-                    // observations once, before consuming any logical proof.
-                    for fact in retained
-                        .context
-                        .facts
-                        .facts_not_assumed_by(executed_under)
-                        .into_iter()
-                        .chain(retained.context.facts.producer_facts().filter(|fact| {
-                            fact.is_certified() && fact.generated_load_binding().is_some()
-                        }))
-                    {
-                        *executed_under =
-                            retain_completed_path_fact(std::mem::take(executed_under), fact);
-                    }
-                    let CFunctionOutcome::Return {
-                        state: published, ..
-                    } = &retained.context.published
-                    else {
-                        return Err("return proof has no published return");
-                    };
-                    for fact in published
-                        .resources()
-                        .observable_facts_assuming_valid(executed_under)
-                    {
-                        *executed_under = std::mem::take(executed_under).assume_proposition(fact);
-                    }
-                    // Relations describe the definition's footprint, not an
-                    // unchecked assertion about the current invariant value.
-                    let definitions: BTreeMap<_, _> = function
-                        .composite_resource_definitions()
-                        .iter()
-                        .map(|definition| (definition.name(), std::slice::from_ref(definition)))
-                        .collect();
-                    for held in published.resources().facts() {
-                        let CResource::Composite { name, .. } = held.resource() else {
-                            continue;
-                        };
-                        let Some(definition) = definitions.get(name.as_str()) else {
-                            continue;
-                        };
-                        if !(held.is_view() || held.has_proven_positive_quantity(executed_under)) {
-                            continue;
-                        }
-                        let authority = CResourceFact::own(held.resource().clone());
-                        // Immutable argument facts of an ordinary held resource
-                        // survive a return. Instantiate with no memory, resources,
-                        // or ambient read premises so this cannot import a mutable
-                        // invariant from an unchecked current snapshot.
-                        if !definition[0].is_authorized()
-                            && let Some(facts) = crate::kernel::functions::evaluate_composite_resource_fact_propositions(
-                                &authority, definition, &CMemory::new(), &ResourceContext::new(),
-                                &PureFactContext::new().require_owned_expression_loads()) {
-                            for fact in facts {
-                                *executed_under = std::mem::take(executed_under).assume_proposition(fact);
-                            }
-                        }
-                        if let Some(facts) = crate::kernel::functions::evaluate_composite_resource_relation_propositions(
-                            &authority, definition, published.memory(), executed_under) {
-                            for fact in facts {
-                                *executed_under = std::mem::take(executed_under).assume_proposition(fact);
-                            }
-                        }
-                        if let Some(facts) = crate::kernel::functions::evaluate_composite_resource_loadable_propositions(
-                            held, definition, published.memory(), executed_under) {
-                            for fact in facts {
-                                *executed_under = std::mem::take(executed_under).assume_proposition(fact);
-                            }
-                        }
-                    }
-                    return_context = Some(&retained.context);
-                }
+                retain_return_context(
+                    function,
+                    executed_under,
+                    return_origin.as_ref(),
+                    &retained.context,
+                    &mut return_context,
+                )?;
                 let proof = &retained.proof;
                 let delta = match proposition_base {
                     Some(base) => retained
@@ -7411,6 +7599,15 @@ fn trace_completion_from_entry(
                     let CStatementOutcome::Return { state, .. } = outcome else {
                         return Err("resource rewriting requires a returned state");
                     };
+                    if let Some(context) = &rewrite.return_context {
+                        retain_return_context(
+                            function,
+                            executed_under,
+                            return_origin.as_ref(),
+                            context,
+                            &mut return_context,
+                        )?;
+                    }
                     if **state != rewrite.before_state {
                         return Err("post-return resource rewrite has a different input state");
                     }
@@ -7486,6 +7683,38 @@ fn trace_completion_from_entry(
                             return Err(
                                 "return fold does not match this path's checked resource exchange",
                             );
+                        }
+                        // Import only the selected body's rechecked facts, including
+                        // its identical readability at the caller's cached snapshot.
+                        // Do not import an arbitrary post-rewrite fact context.
+                        let allowed = checked
+                            .semantic_facts
+                            .iter()
+                            .cloned()
+                            .chain(
+                                checked
+                                    .body_clauses
+                                    .iter()
+                                    .map(|clause| clause.proposition.clone()),
+                            )
+                            .collect::<std::collections::BTreeSet<_>>();
+                        let mut cached_comparisons = HashMap::new();
+                        for fact in rewrite
+                            .after_facts
+                            .introduced_since(&rewrite.before_facts)
+                            .ok_or("return fold facts have a different lineage")?
+                        {
+                            if !allowed.contains(&fact)
+                                && cached_body_loadability(
+                                    &fact,
+                                    state.memory(),
+                                    &allowed,
+                                    &mut cached_comparisons,
+                                )
+                            {
+                                *executed_under =
+                                    std::mem::take(executed_under).assume_proposition(fact);
+                            }
                         }
                         for fact in checked.semantic_facts {
                             *executed_under =
@@ -7981,7 +8210,17 @@ impl ExecutionProofCore {
             });
         }
         match outcome {
-            CStatementOutcome::Normal(next_state) => self.evidence_state = Some(*next_state),
+            CStatementOutcome::Normal(next_state) => {
+                self.evidence_state = Some(*next_state);
+                // A checked final normal statement also completes a void
+                // function. Keep the recorder consistent with the completion
+                // checker, so post-return folds can retain their certificates.
+                self.evidence_completed = function.return_type() == crate::kernel::CType::Void
+                    && source_after.is_none()
+                    && self.frontier.region == ExecutionRegionKind::Function
+                    && !self.frontier.in_loop_body
+                    && self.frontier.continuations.is_empty();
+            }
             CStatementOutcome::Throw { state, .. }
                 if self
                     .frontier
@@ -9916,6 +10155,7 @@ impl ExecutionProofCore {
             after_facts,
             None,
         )
+        .map_err(|error| error.message)
     }
 
     /// Publish one authority establish or retirement only with the opaque
@@ -10035,11 +10275,13 @@ impl ExecutionProofCore {
         after_state: &CState,
         after_facts: &ProofFacts,
         selected_children: Option<Arc<[(String, Variable)]>>,
-    ) -> Result<(), String> {
+    ) -> Result<(), ResourceRewriteCheckError> {
         if self.evidence_completed {
-            return Err("a resource rewrite was recorded after the trace completed".to_string());
+            return Err("a resource rewrite was recorded after the trace completed"
+                .to_string()
+                .into());
         }
-        let mut rewrite = CheckedResourceRewrite::check_with_children(
+        let mut rewrite = CheckedResourceRewrite::check_with_children_diagnostic(
             function,
             self.reached_state(),
             before_facts,
@@ -10088,6 +10330,7 @@ impl ExecutionProofCore {
             false,
             None,
         )
+        .map_err(|error| error.message)
     }
 
     pub(crate) fn record_return_proposition(
@@ -10116,10 +10359,10 @@ impl ExecutionProofCore {
         Ok(())
     }
 
-    fn flush_return_propositions(&mut self, path_index: usize) -> Result<(), String> {
-        let Some(pending) = self.return_pending_propositions.get(&path_index).cloned() else {
-            return Ok(());
-        };
+    fn return_context_for_path(
+        &mut self,
+        path_index: usize,
+    ) -> Result<Arc<CheckedReturnContext>, String> {
         let context = if let Some(context) = self.return_proof_contexts.get(&path_index) {
             context.clone()
         } else {
@@ -10157,6 +10400,14 @@ impl ExecutionProofCore {
                 .with_inserted(path_index, context.clone());
             context
         };
+        Ok(context)
+    }
+
+    fn flush_return_propositions(&mut self, path_index: usize) -> Result<(), String> {
+        let Some(pending) = self.return_pending_propositions.get(&path_index).cloned() else {
+            return Ok(());
+        };
+        let context = self.return_context_for_path(path_index)?;
         let mut trace = self
             .return_resource_rewrites
             .get(&path_index)
@@ -10184,13 +10435,17 @@ impl ExecutionProofCore {
         after_facts: &ProofFacts,
         unfold: bool,
         selected_children: Option<Arc<[(String, Variable)]>>,
-    ) -> Result<(), String> {
+    ) -> Result<(), ResourceRewriteCheckError> {
         self.flush_return_propositions(path_index)?;
         if !self.evidence_completed {
-            return Err("return resource rewrite requires completed execution".to_string());
+            return Err("return resource rewrite requires completed execution"
+                .to_string()
+                .into());
         }
         let CResource::Instance(instance) = selected.resource() else {
-            return Err("return rewrite requires a named instance".to_string());
+            return Err("return rewrite requires a named instance"
+                .to_string()
+                .into());
         };
         let definition = function
             .composite_resource_definition(instance.name())
@@ -10209,12 +10464,21 @@ impl ExecutionProofCore {
                     break rewrite.after_state;
                 }
                 Some(CheckedExecutionEvent::Statement(theorem)) => {
-                    let Proposition::CStatementVerifies {
-                        outcome: CStatementOutcome::Return { state, .. },
-                        ..
-                    } = checked_evidence_conclusion(&theorem)
+                    let Proposition::CStatementVerifies { outcome, .. } =
+                        checked_evidence_conclusion(&theorem)
                     else {
-                        return Err("return resource rewrite requires a returning path".to_string());
+                        return Err("return resource rewrite requires a returning path".into());
+                    };
+                    let state = match outcome {
+                        CStatementOutcome::Return { state, .. } => state,
+                        CStatementOutcome::Normal(state)
+                            if function.return_type() == crate::kernel::CType::Void
+                                && self.evidence_source.is_none()
+                                && self.frontier.region == ExecutionRegionKind::Function =>
+                        {
+                            state
+                        }
+                        _ => return Err("return resource rewrite requires a returning path".into()),
                     };
                     break *state.clone();
                 }
@@ -10226,7 +10490,9 @@ impl ExecutionProofCore {
                     | CheckedExecutionEvent::ReturnProposition(_),
                 ) => {}
                 _ => {
-                    return Err("return resource rewrite has no completing theorem".to_string());
+                    return Err("return resource rewrite has no completing theorem"
+                        .to_string()
+                        .into());
                 }
             }
         };
@@ -10243,7 +10509,7 @@ impl ExecutionProofCore {
         )
         .map_err(|refusal| refusal.describe())?
         .state;
-        let rewrite = CheckedResourceRewrite::check_with_children(
+        let mut rewrite = CheckedResourceRewrite::check_with_children_diagnostic(
             function,
             &before_state,
             before_facts,
@@ -10253,6 +10519,9 @@ impl ExecutionProofCore {
             &self.checked_call_events,
             selected_children,
         )?;
+        if self.frontier.execution().is_some() {
+            rewrite.return_context = Some(self.return_context_for_path(path_index)?);
+        }
         let mut trace = self
             .return_resource_rewrites
             .get(&path_index)
@@ -10294,12 +10563,21 @@ impl ExecutionProofCore {
                     break rewrite.after_state;
                 }
                 Some(CheckedExecutionEvent::Statement(theorem)) => {
-                    let Proposition::CStatementVerifies {
-                        outcome: CStatementOutcome::Return { state, .. },
-                        ..
-                    } = checked_evidence_conclusion(&theorem)
+                    let Proposition::CStatementVerifies { outcome, .. } =
+                        checked_evidence_conclusion(&theorem)
                     else {
-                        return Err("return resource rewrite requires a returning path".to_string());
+                        return Err("return resource rewrite requires a returning path".into());
+                    };
+                    let state = match outcome {
+                        CStatementOutcome::Return { state, .. } => state,
+                        CStatementOutcome::Normal(state)
+                            if function.return_type() == crate::kernel::CType::Void
+                                && self.evidence_source.is_none()
+                                && self.frontier.region == ExecutionRegionKind::Function =>
+                        {
+                            state
+                        }
+                        _ => return Err("return resource rewrite requires a returning path".into()),
                     };
                     break *state.clone();
                 }
@@ -10345,7 +10623,7 @@ impl ExecutionProofCore {
         let retained_after_state = before_state
             .clone()
             .with_resource_context(after_state.resources().clone());
-        let rewrite = CheckedResourceRewrite::check_with_children(
+        let mut rewrite = CheckedResourceRewrite::check_with_children(
             function,
             &before_state,
             before_facts,
@@ -10355,6 +10633,9 @@ impl ExecutionProofCore {
             &self.checked_call_events,
             None,
         )?;
+        if self.frontier.execution().is_some() {
+            rewrite.return_context = Some(self.return_context_for_path(path_index)?);
+        }
         let mut trace = self
             .return_resource_rewrites
             .get(&path_index)
@@ -11754,6 +12035,205 @@ mod tests {
         }
     }
 
+    #[test]
+    fn cached_body_loadability_preserves_exact_range_and_snapshot_barriers() {
+        let before = CMemory::new();
+        let at = |block: &str| Pointer {
+            block: block.into(),
+            offset: crate::kernel::PointerOffsetTerm::Constant(0),
+        };
+        let cached = before.clone().with_seeded_cells(
+            at("cache"),
+            4,
+            crate::kernel::CType::Int32,
+            0,
+            8,
+            crate::kernel::intern_c_memory_ref(&before),
+        );
+        let view = |memory, pointer, width, wide| Proposition::CMemoryLoadable {
+            memory,
+            base: pointer,
+            bytes: Bitvector32Term::Constant(width),
+            wide,
+        };
+        let allowed = [view(before.clone(), at("body"), 8, false)]
+            .into_iter()
+            .collect();
+        let check = |fact| cached_body_loadability(&fact, &before, &allowed, &mut HashMap::new());
+        assert!(check(view(cached.clone(), at("body"), 8, false)));
+        assert!(!check(view(cached.clone(), at("body"), 12, false)));
+        assert!(!check(view(cached.clone(), at("other"), 8, false)));
+        assert!(!check(view(cached.clone(), at("body"), 8, true)));
+        assert!(!check(view(
+            cached.clone().store(at("body"), int32(7)),
+            at("body"),
+            8,
+            false
+        )));
+        let havoc =
+            cached.with_call_memory_havoc(Variable(901_020), &[], &PureFactContext::new(), None);
+        assert!(!check(view(havoc, at("body"), 8, false)));
+        assert!(!check(Proposition::CMemoryCanStore {
+            memory: before.clone(),
+            pointer: at("body"),
+            byte_width: 8
+        }));
+    }
+
+    #[test]
+    fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
+        for size in [16u32, 32, 64, 128] {
+            let before = (0..2048).fold(CMemory::new(), |memory, index| {
+                memory.store(
+                    Pointer {
+                        block: "ambient".into(),
+                        offset: crate::kernel::PointerOffsetTerm::Constant(i64::from(index) * 4),
+                    },
+                    int32(index),
+                )
+            });
+            let cached = (0..size).fold(before.clone(), |memory, index| {
+                let source = crate::kernel::intern_c_memory_ref(&memory);
+                memory.with_seeded_cells(
+                    Pointer {
+                        block: format!("cache-{index}").into(),
+                        offset: crate::kernel::PointerOffsetTerm::Constant(0),
+                    },
+                    4,
+                    crate::kernel::CType::Int32,
+                    0,
+                    2,
+                    source,
+                )
+            });
+            let view = |memory, index| Proposition::CMemoryLoadable {
+                memory,
+                base: Pointer {
+                    block: "body".into(),
+                    offset: crate::kernel::PointerOffsetTerm::Constant(i64::from(index) * 4),
+                },
+                bytes: Bitvector32Term::Constant(4),
+                wide: false,
+            };
+            let allowed = (0..size).map(|index| view(before.clone(), index)).collect();
+            let goals = (0..size)
+                .map(|index| view(cached.clone(), index))
+                .collect::<Vec<_>>();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let mut comparisons = HashMap::new();
+                for fact in &goals {
+                    assert!(cached_body_loadability(
+                        fact,
+                        &before,
+                        &allowed,
+                        &mut comparisons
+                    ));
+                }
+                assert_eq!(comparisons.len(), 1);
+            });
+            assert!(work <= 32 * size as usize + 64, "size={size}, work={work}");
+        }
+    }
+
+    #[test]
+    fn instance_rewrite_refusal_retains_rejected_and_allowed_facts() {
+        use crate::kernel::{
+            CComparisonOperator, ResourceFieldSchema, ResourceFieldType, ResourceInstance,
+            SpecExpression,
+        };
+        let schema = ResourceFieldSchema::new(vec![(
+            "value".into(),
+            ResourceFieldType::C(crate::kernel::CType::Int32),
+        )])
+        .unwrap();
+        let instance = ResourceInstance::new(
+            Variable(901_001),
+            "cell".into(),
+            vec![].into(),
+            schema.clone(),
+            vec![int32(7).into()].into(),
+        )
+        .unwrap();
+        let definition = CCompositeResourceDefinition::new(
+            "cell",
+            vec![],
+            None,
+            false,
+            vec![],
+            vec![SpecProposition::Comparison {
+                left: SpecExpression::Value(int32(7)),
+                operator: CComparisonOperator::Equal,
+                right: SpecExpression::Value(int32(7)),
+            }],
+        )
+        .with_instance_schema(Some(schema));
+        let selected = CResourceFact::own(CResource::Instance(instance.clone()));
+        let before = CState::new()
+            .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
+        let facts = ProofFacts::default();
+        let function = c_function(
+            crate::kernel::CType::Int32,
+            "refusal",
+            vec![],
+            CStatement::Return(CExpression::Value(int32(0))),
+        )
+        .with_composite_resource_definitions(vec![definition.clone()]);
+        let (after, allowed) = crate::kernel::rewrite_resource_instance(
+            &before,
+            &instance,
+            &definition,
+            facts.assumptions(),
+            true,
+        )
+        .unwrap();
+        let supported = allowed
+            .iter()
+            .cloned()
+            .fold(facts.clone(), |facts, fact| facts.with_fact(fact));
+        assert!(
+            CheckedResourceRewrite::check_with_children_diagnostic(
+                &function,
+                &before,
+                &facts,
+                &selected,
+                &after,
+                &supported,
+                &CheckedCallEvents::default(),
+                None
+            )
+            .is_ok()
+        );
+        let rejected = Proposition::Predicate {
+            name: "unsupported_fact".into(),
+            arguments: vec![],
+        };
+        let unsupported = supported.with_fact(rejected.clone());
+        let error = CheckedResourceRewrite::check_with_children_diagnostic(
+            &function,
+            &before,
+            &facts,
+            &selected,
+            &after,
+            &unsupported,
+            &CheckedCallEvents::default(),
+            None,
+        )
+        .err()
+        .expect("unsupported facts must still be rejected");
+        assert_eq!(
+            error.message,
+            "instance rewrite introduced an unchecked fact"
+        );
+        let retained = error
+            .rejected_fact
+            .expect("the comparison must survive the refusal");
+        assert_eq!(retained.rejected, rejected);
+        assert!(!retained.allowed.is_empty());
+        for fact in allowed {
+            assert!(retained.allowed.contains(&fact));
+        }
+    }
+
     fn returned_proposition_trace(
         state: &CState,
         facts: &ProofFacts,
@@ -11899,6 +12379,20 @@ mod tests {
                 trace_completion(&function, &events, empty.assumptions(), false).err(),
                 Some("return proof assumes an unjustified path fact")
             );
+            let mut refused = None;
+            assert_eq!(
+                trace_completion_from_entry(
+                    &function,
+                    &events,
+                    empty.assumptions(),
+                    false,
+                    None,
+                    &mut refused,
+                )
+                .err(),
+                Some("return proof assumes an unjustified path fact"),
+            );
+            assert_eq!(refused.as_ref(), Some(&fact));
         }
         let (function, mut events) = returned_proposition_trace(&state, &sibling);
         let mut other_state = state.clone();
@@ -16811,6 +17305,51 @@ mod checked_callee_dependency_tests {
                 );
             }
             previous = Some(work);
+        }
+    }
+    #[test]
+    fn normal_evidence_completes_only_exhausted_void_function_source() {
+        use crate::kernel::{CType, c_function};
+        for (return_type, tail, region, completes) in [
+            (CType::Void, false, ExecutionRegionKind::Function, true),
+            (CType::Void, true, ExecutionRegionKind::Function, false),
+            (CType::Int32, false, ExecutionRegionKind::Function, false),
+            (CType::Void, false, ExecutionRegionKind::LoopBody, false),
+            (CType::Void, false, ExecutionRegionKind::BranchArm, false),
+        ] {
+            let statement = CStatement::Skip;
+            let body = if tail {
+                CStatement::Seq(
+                    Arc::new(statement.clone()),
+                    Arc::new(CStatement::Return(CExpression::Value(CValue::Void))),
+                )
+            } else {
+                statement.clone()
+            };
+            let function = c_function(return_type, "test", vec![], body);
+            let mut core = ExecutionProofCore::at_entry(
+                CState::new(),
+                ExecutionFrontier {
+                    region,
+                    ..ExecutionFrontier::default()
+                },
+            );
+            let before = core.running_state(&function, &[]).unwrap().into_owned();
+            let theorem = Theorem::new(Proposition::CStatementVerifies {
+                state: Box::new(before.clone()),
+                statement: Box::new(statement),
+                outcome: CStatementOutcome::Normal(Box::new(before)),
+            });
+            core.record_statement_transition(
+                &function,
+                &[],
+                theorem,
+                PureFactContext::new(),
+                &ExecutionFacts::new(),
+                &[],
+            )
+            .unwrap();
+            assert_eq!(core.evidence_completed, completes);
         }
     }
 }

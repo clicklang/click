@@ -40,8 +40,8 @@ pub(crate) use execution::{
     CheckedCallOutcomeSplit, CheckedExecutionEvent, CheckedProofCasePartition, EvidenceRefusal,
     ExceptionalContinuation, ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind,
     FrontierPosition, LoopControlExit, OutcomeEvidenceFork, ProofExecutionContinuation,
-    ProofExecutionState, checked_branch_fact_is_available, old_reference_state,
-    take_unestablished_interface_goal,
+    ProofExecutionState, RejectedResourceRewriteFact, ResourceRewriteCheckError,
+    checked_branch_fact_is_available, old_reference_state, take_unestablished_interface_goal,
 };
 #[allow(unused_imports)]
 pub(crate) use fact_keys::propositions_are_alpha_equal;

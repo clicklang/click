@@ -205,7 +205,7 @@ struct node* rotate_clobber(struct node* node) {
     ensures 0 <= result->augmented;
     ensures result->augmented <= 1000;
 } by {
-    let rotated = step(rotate_left(node, &clobber), { l: a, r: b });
+    let { rotated: rotated } = step(rotate_left(node, &clobber), { l: a, r: b });
     execute();
     simp();
 }
@@ -232,7 +232,7 @@ struct node* rotate_reset(struct node* node) {
     ensures 0 <= result->augmented;
     ensures result->augmented <= 1000;
 } by {
-    let rotated = step(rotate_left(node, &reset), { l: a, r: b });
+    let { rotated: rotated } = step(rotate_left(node, &reset), { l: a, r: b });
     execute();
     simp();
 }

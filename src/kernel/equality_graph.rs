@@ -5,12 +5,12 @@
 //! a separate proof or run proof search. Only established equalities may be
 //! added. Branches clone persistent state so local assumptions do not leak.
 //!
-//! The current supported fragment is pointers, affine byte offsets, and
-//! registered same-snapshot pointer loads, plus whole-offset equality, int32
-//! addition, unsigned division/remainder, bitwise XOR and same-snapshot int32
-//! load congruence, and uint64 equality with congruence over 64-bit
-//! add/subtract/multiply/divide/remainder/and/or/xor and same-snapshot 64-bit
-//! loads.
+//! The supported fragment includes typed algebraic model equality and
+//! constructor/pure-call congruence, pointers, affine byte offsets, registered
+//! same-snapshot pointer loads, whole-offset equality, int32 addition,
+//! unsigned division/remainder, bitwise XOR and same-snapshot int32 loads,
+//! plus uint64 equality with congruence over 64-bit arithmetic, bitwise
+//! operations and same-snapshot 64-bit loads.
 //! Pointer and offset queries are typed separately; the offset fragment only
 //! supports stated equalities, offset addition and int32 scaling congruence. Pointer spelling
 //! helpers serve legacy consumers and are not the general equality interface.
@@ -52,6 +52,8 @@
 
 use super::prelude::*;
 
+#[cfg(test)]
+mod algebraic_tests;
 #[cfg(test)]
 mod fact_congruence_tests;
 mod inputs;
@@ -1143,6 +1145,17 @@ impl EqualityGraph {
         merges
     }
 
+    /// A contradiction maintained as typed scalar classes merge, including
+    /// congruence through model getters. No term registration or fact scan.
+    pub(in crate::kernel) fn has_scalar_constant_conflict(&self) -> bool {
+        crate::instrumentation::record_deterministic_work(1);
+        self.state
+            .lock()
+            .expect("equality graph")
+            .terms
+            .has_scalar_constant_conflict()
+    }
+
     /// Whether term classes have established any nontrivial equivalence.
     /// Callers can avoid interning unrelated query terms in an empty graph.
     pub(in crate::kernel) fn has_term_equivalences(&self) -> bool {
@@ -1299,6 +1312,36 @@ impl EqualityGraph {
         state.terms.are_equal(left, right)
     }
 
+    pub(in crate::kernel) fn are_algebraic_equal(
+        &self,
+        left: &AlgebraicTerm,
+        right: &AlgebraicTerm,
+    ) -> bool {
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_expression_operands(&mut state, [], [left, right]);
+        let equal = state.terms.are_algebraic_equal(left, right);
+        state.close(Vec::new());
+        equal
+    }
+
+    pub(in crate::kernel) fn add_algebraic_equality(
+        &mut self,
+        left: &AlgebraicTerm,
+        right: &AlgebraicTerm,
+    ) -> bool {
+        if !left.is_well_formed() || !right.is_well_formed() {
+            return false;
+        }
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_expression_operands(&mut state, [], [left, right]);
+        let changed = state.terms.add_algebraic_equality(left, right);
+        state.close(Vec::new());
+        if changed {
+            state.remember_input(inputs::Input::Algebraic(left.clone(), right.clone()));
+        }
+        changed
+    }
+
     /// Query int32 equality, addition and registered same-snapshot load congruence.
     /// A false answer is unknown. Other scalar operations remain opaque.
     /// The nodes of this graph's merged `int32` classes, with the merge
@@ -1385,36 +1428,77 @@ impl EqualityGraph {
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) {
-        let mut pending = vec![left, right];
+        self.register_expression_operands(state, [left, right], []);
+    }
+
+    fn register_expression_operands<'a>(
+        &self,
+        state: &mut EqualityGraphState,
+        machine: impl IntoIterator<Item = &'a Bitvector32Term>,
+        algebraic: impl IntoIterator<Item = &'a AlgebraicTerm>,
+    ) {
+        enum Work<'a> {
+            Machine(&'a Bitvector32Term),
+            Algebraic(&'a AlgebraicTerm),
+            Value(&'a CValue),
+            Argument(&'a PureFunctionArgument),
+        }
+        let mut pending: Vec<_> = machine.into_iter().map(Work::Machine).collect();
+        pending.extend(algebraic.into_iter().map(Work::Algebraic));
         let mut pointers = Vec::new();
-        while let Some(term) = pending.pop() {
+        while let Some(work) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
-            if let Bitvector32Term::ClickFunctionApplication { arguments, .. } = term {
-                for argument in arguments {
-                    match argument {
-                        PureFunctionArgument::Value(value)
-                        | PureFunctionArgument::ArrayRef { pointer: value, .. } => match value {
-                            CValue::Pointer(pointer) => pointers.push(pointer.pointer().clone()),
-                            CValue::Int32(t) | CValue::UInt32(t) | CValue::UInt64(t) => {
-                                pending.push(t)
+            match work {
+                Work::Algebraic(term) => match &term.node {
+                    AlgebraicTermNode::Constructor { fields, .. } => {
+                        for field in fields {
+                            match field {
+                                AlgebraicValue::C(value) => pending.push(Work::Value(value)),
+                                AlgebraicValue::Algebraic(term) => {
+                                    pending.push(Work::Algebraic(term))
+                                }
+                                AlgebraicValue::Integer(_) => {}
                             }
-                            _ => {}
-                        },
-                        _ => {}
+                        }
+                    }
+                    AlgebraicTermNode::PureFunctionApplication { arguments, .. } => {
+                        pending.extend(arguments.iter().map(Work::Argument));
+                    }
+                    // Binder-bearing match bodies remain opaque.
+                    _ => {}
+                },
+                Work::Argument(argument) => match argument {
+                    PureFunctionArgument::Value(value)
+                    | PureFunctionArgument::ArrayRef { pointer: value, .. } => {
+                        pending.push(Work::Value(value))
+                    }
+                    PureFunctionArgument::Algebraic(term) => pending.push(Work::Algebraic(term)),
+                    PureFunctionArgument::Integer(_) => {}
+                },
+                Work::Value(value) => match value {
+                    CValue::Pointer(pointer) => pointers.push(pointer.pointer().clone()),
+                    CValue::Int32(t) | CValue::UInt32(t) | CValue::UInt64(t) => {
+                        pending.push(Work::Machine(t))
+                    }
+                    _ => {}
+                },
+                Work::Machine(term) => {
+                    if let Bitvector32Term::ClickFunctionApplication { arguments, .. } = term {
+                        pending.extend(arguments.iter().map(Work::Argument));
+                    } else if let Bitvector32Term::Add(a, b)
+                    | Bitvector32Term::UnsignedDivide(a, b)
+                    | Bitvector32Term::UnsignedRemainder(a, b)
+                    | Bitvector32Term::BitwiseXor(a, b) = term
+                    {
+                        pending.extend([Work::Machine(a), Work::Machine(b)]);
+                    } else if let Some((_, a, b)) = terms::uint64_binary(term) {
+                        pending.extend([Work::Machine(a), Work::Machine(b)]);
+                    } else if let Some((_, pointer)) = terms::uint64_read(term) {
+                        pointers.push(pointer);
+                    } else if let Bitvector32Term::PointerAddress(pointer) = term {
+                        pointers.push(pointer.as_ref().clone());
                     }
                 }
-            } else if let Bitvector32Term::Add(a, b)
-            | Bitvector32Term::UnsignedDivide(a, b)
-            | Bitvector32Term::UnsignedRemainder(a, b)
-            | Bitvector32Term::BitwiseXor(a, b) = term
-            {
-                pending.extend([a.as_ref(), b.as_ref()]);
-            } else if let Some((_, a, b)) = terms::uint64_binary(term) {
-                pending.extend([a, b]);
-            } else if let Some((_, pointer)) = terms::uint64_read(term) {
-                pointers.push(pointer);
-            } else if let Bitvector32Term::PointerAddress(pointer) = term {
-                pointers.push(pointer.as_ref().clone());
             }
         }
         if pointers.is_empty() {
@@ -1495,6 +1579,9 @@ impl EqualityGraph {
 
     fn prepare_condition(&self, state: &mut EqualityGraphState, condition: &ConditionTerm) {
         match condition {
+            ConditionTerm::AlgebraicEqual(a, b) => {
+                self.register_expression_operands(state, [], [a.as_ref(), b.as_ref()]);
+            }
             ConditionTerm::PointerEqual(a, b) => {
                 self.register_logical_read_values(state, [a.as_ref(), b.as_ref()]);
                 state.register_blocks([a.block.clone(), b.block.clone()]);
@@ -1524,6 +1611,7 @@ impl EqualityGraph {
                     | ConditionTerm::Bitvector64Equal(..)
                     | ConditionTerm::PointerEqual(..)
                     | ConditionTerm::PointerOffsetEqual(..)
+                    | ConditionTerm::AlgebraicEqual(..)
             )
         {
             return false;
@@ -1547,6 +1635,7 @@ impl EqualityGraph {
         // nodes. A miss must not register an unrelated condition application.
         if value {
             match condition {
+                ConditionTerm::AlgebraicEqual(a, b) => return self.are_algebraic_equal(a, b),
                 ConditionTerm::Bitvector32Equal(a, b) => return self.are_int32_equal(a, b),
                 ConditionTerm::Bitvector64Equal(a, b) => return self.are_uint64_equal(a, b),
                 ConditionTerm::PointerEqual(a, b) => return self.are_equal(a, b),

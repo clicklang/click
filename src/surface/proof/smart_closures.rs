@@ -9043,6 +9043,11 @@ fn source_backed_call_requirement_surface(
                 return None;
             }
         }
+        ProofStep::StepCall(transport) if transport.is_named_contract() => {
+            if callee != site.callee && !named_interface_alias {
+                return None;
+            }
+        }
         ProofStep::StepCall(_) => {
             // StepCall is the concrete-call operation: both the C symbol and
             // the selected interface must be the carrier's concrete callee.
@@ -9065,6 +9070,7 @@ fn source_backed_call_requirement_surface(
     }
     let expected_interface = match step {
         ProofStep::StepContract(application) => application.name.as_str(),
+        ProofStep::StepCall(transport) if transport.is_named_contract() => transport.callee(),
         ProofStep::Step | ProofStep::StepCall(_) => site.interface.as_ref(),
         _ => return None,
     };
@@ -9073,6 +9079,7 @@ fn source_backed_call_requirement_surface(
     }
 
     let use_named_interface = matches!(step, ProofStep::StepContract(_))
+        || matches!(step, ProofStep::StepCall(transport) if transport.is_named_contract())
         || site.interface.as_ref() != site.callee.as_str()
         || ordinary_source.is_none();
 

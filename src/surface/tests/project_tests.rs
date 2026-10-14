@@ -2075,7 +2075,7 @@ fn step_result_binding_names_checked_values_and_survives_overwrite() {
     let proof = r#"verifying "read.c";
 int32 f(const uint8* p) {views p[0..1]; ensures result==0;} by {
     execute_until(read(0));
-    let value = step();
+    let { result: value } = step();
     mark loaded;
     have 0<=(int32)value and 255>=(int32)value by {simp();}
     have value==load_uint8(p) by {simp();}
@@ -2090,10 +2090,13 @@ int32 f(const uint8* p) {views p[0..1]; ensures result==0;} by {
         proof.replace("views p[0..1];", ""),
         proof.replace("255>=(int32)value", "256==(int32)value"),
         proof.replace("value==at(loaded, x)", "value==x"),
-        proof.replace("let value = step();", "let x = step();"),
         proof.replace(
-            "let value = step();",
-            "let value = step(); let value = step();",
+            "let { result: value } = step();",
+            "let { result: x } = step();",
+        ),
+        proof.replace(
+            "let { result: value } = step();",
+            "let { result: value } = step(); let { result: value } = step();",
         ),
         proof.replace(
             "execute_until(read(0));",
@@ -2115,7 +2118,7 @@ fn step_result_binding_work_scales_with_assigned_values() {
         );
         for index in 0..count {
             source.push_str(&format!("x={index};"));
-            proof.push_str(&format!("let value_{index} = step();"));
+            proof.push_str(&format!("let {{ result: value_{index} }} = step();"));
         }
         source.push_str("return x;}");
         proof.push_str("have value_0==0 by {simp();} step(); simp();}");

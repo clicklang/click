@@ -144,6 +144,10 @@ refined by an explicit theorem instead. See
 for the list and for the pairing a contract with resource handles
 needs.
 
+A named contract's resource proof parameters use the C parameter types declared
+in its C declaration, including their struct field layouts. Reading a pointer field to
+index a resource still needs a `views` or `owns` clause for that field.
+
 In an `executes` theorem, the executed function's parameters are available in
 the guarantee's proof block with their declared struct types. Field paths,
 including nested fields, use those layouts in `have` propositions and other
@@ -186,3 +190,12 @@ the state at function exit, so it starts with `execute();` to reach it.
 
 Omitting the proof clause currently uses the default prover, `auto`, but writing
 the proof explicitly is clearer in examples.
+
+A call retains an input proposition for the continuation only when the
+incoming checked facts independently prove it. Call-local assumptions of
+pending prerequisites cannot supply that evidence. The retained proposition
+keeps the pre-call read snapshots and model values, so it cannot describe a
+cell's new value after a write. This also retains definedness of a checked
+resource-count sum; see
+`mdtests/simp_defined_count_after_a_zero_summand.md` and the rejected stale-read
+case `mdtests/call_checked_input_facts_keep_prestate.md`.

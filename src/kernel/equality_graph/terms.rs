@@ -80,6 +80,12 @@ pub(super) fn uint64_read(
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Node {
     Apply(u64, u64),
+    TypeName(bool, String, usize),
+    TypeC(crate::kernel::CType),
+    TypeInteger,
+    AlgebraicVariable(crate::kernel::SharedPureApplication, Variable),
+    AlgebraicConstructor(crate::kernel::SharedPureApplication, String, usize),
+    AlgebraicFunction(crate::kernel::SharedPureApplication, String, usize),
     Function(crate::kernel::SharedPureApplication, bool, usize),
     ArgumentTag(congruence::ArgumentTag),
     OpaqueArgument(crate::kernel::SharedPureApplication),
@@ -203,6 +209,16 @@ impl Clone for RootLookupCache {
 
 #[derive(Clone, Default)]
 pub(super) struct TermClasses {
+    // Retain the exact schema allocation used by each key, even when the
+    // interned token uses an independently allocated equal schema. Keys are
+    // allocation identity and a shallow nominal node, never a model tree.
+    algebraic_types: PersistentMap<
+        (usize, u64),
+        (
+            Arc<[crate::kernel::AlgebraicVariantType]>,
+            crate::kernel::SharedPureApplication,
+        ),
+    >,
     condition_kinds: PersistentSet<(congruence::ConditionKind, bool)>,
     // Truth is an annotation of a condition class, not a union between all
     // true facts. Unrelated order facts must not create value equivalences.
@@ -277,6 +293,10 @@ pub(super) struct TermClasses {
     root_cache: RootLookupCache,
     weights: PersistentMap<u64, usize>,
     int32_constants: PersistentMap<u64, i32>,
+    uint64_constants: PersistentMap<u64, u64>,
+    // Monotonic within one checked context; forks copy it and weakening
+    // rebuilds the graph from retained support. Queries read one flag.
+    scalar_constant_conflict: bool,
     applications: PersistentMap<u64, Application>,
     uses: PersistentMap<u64, PersistentSet<u64>>,
     signatures: PersistentMap<Application, u64>,
@@ -806,6 +826,10 @@ impl TermClasses {
         self.root(id)
     }
 
+    pub(super) fn has_scalar_constant_conflict(&self) -> bool {
+        self.scalar_constant_conflict
+    }
+
     pub(super) fn has_equivalences(&self) -> bool {
         !self.parents.is_empty()
     }
@@ -969,6 +993,17 @@ impl TermClasses {
             Node::Int32(value) => {
                 if let Some(value) = value.value().as_const() {
                     self.int32_constants.insert(id, value as i32);
+                }
+                None
+            }
+            Node::UInt64(value) => {
+                let literal = match value.value() {
+                    crate::kernel::Bitvector32Term::UInt64Constant(value) => Some(*value),
+                    crate::kernel::Bitvector32Term::Int64Constant(value) => Some(*value as u64),
+                    _ => None,
+                };
+                if let Some(value) = literal {
+                    self.uint64_constants.insert(id, value);
                 }
                 None
             }
@@ -1383,6 +1418,23 @@ impl TermClasses {
             self.weights.insert(kept, weight);
             let moved_uses = self.uses.get(&moved).cloned().unwrap_or_default();
             let mut kept_uses = self.uses.get(&kept).cloned().unwrap_or_default();
+            // Equality and congruence have already justified this union.
+            // Distinct literal values in either width make the context empty;
+            // retaining one folding representative must not erase that fact.
+            if let (Some(left), Some(right)) = (
+                self.int32_constants.get(&kept),
+                self.int32_constants.get(&moved),
+            ) {
+                self.scalar_constant_conflict |= left != right;
+            }
+            if let Some(value) = self.uint64_constants.get(&moved).copied() {
+                if let Some(previous) = self.uint64_constants.get(&kept) {
+                    self.scalar_constant_conflict |= *previous != value;
+                } else {
+                    self.uint64_constants.insert(kept, value);
+                }
+                self.uint64_constants.remove(&moved);
+            }
             // A class learns a literal only once. Its existing applications
             // then need constant evaluation as well as the moved applications.
             if !self.int32_constants.contains_key(&kept)

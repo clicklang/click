@@ -1150,14 +1150,14 @@ fn recursive_child_fixture() -> (ResourceInstance, CCompositeResourceDefinition,
                         name: "left".into(),
                         resource: "cell".into(),
                         binding: Variable(90),
-                        arguments: vec![c_variable("lp")],
+                        arguments: vec![SpecExpression::CExpression(c_variable("lp"))],
                         field_bindings: vec![CResourceChildField::Constructor(1)],
                     },
                     CResourceChildSpec {
                         name: "right".into(),
                         resource: "cell".into(),
                         binding: Variable(91),
-                        arguments: vec![c_variable("rp")],
+                        arguments: vec![SpecExpression::CExpression(c_variable("rp"))],
                         field_bindings: vec![CResourceChildField::Constructor(3)],
                     },
                 ],
@@ -1179,13 +1179,13 @@ fn stored_child_arguments_require_owned_memory() {
         unreachable!()
     };
     segment.end = c_int32_literal(2); // one LP64 pointer
-    arm.children[0].arguments = vec![CExpression::TypedLoad {
+    arm.children[0].arguments = vec![SpecExpression::CExpression(CExpression::TypedLoad {
         pointer: Box::new(c_variable("p")),
         value_type: CType::Int32Pointer,
         volatile: false,
         pointee_constant: false,
         source: Default::default(),
-    }];
+    })];
     let children = vec![
         ("left".into(), Variable(501)),
         ("right".into(), Variable(502)),
@@ -1245,13 +1245,13 @@ fn stored_child_arguments_require_owned_memory() {
     );
     let mut concrete_definition = definition.clone();
     concrete_definition.matched.as_mut().unwrap().arms[1].children[0].arguments =
-        vec![CExpression::TypedLoad {
+        vec![SpecExpression::CExpression(CExpression::TypedLoad {
             pointer: Box::new(c_pointer_value(concrete.clone())),
             value_type: CType::Int32Pointer,
             volatile: false,
             pointee_constant: false,
             source: Default::default(),
-        }];
+        })];
     // A materialized C block is not authority to read a link outside the
     // resource body, even though ordinary C execution can access that block.
     assert!(rewrite(&concrete_state, &concrete_definition, &assumptions, true).is_err());

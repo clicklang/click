@@ -87,8 +87,8 @@ uint64 label_copy(char* dst, const char* src) {
         extract(at(function.entry, ((uint8*)src)[len] == 0u8));
         simp();
     }
-    let length = step(strlen(src), {});
-    let taken = step(label_fit(length), {});
+    let { result: length } = step(strlen(src), {});
+    let { result: taken } = step(label_fit(length), {});
     have viewable(((uint8*)src)[0u64..length + 1u64]) by {
         transport(at(statement(2).entry, viewable(((uint8*)src)[0u64..length + 1u64])),
                   viewable(((uint8*)src)[0u64..length + 1u64])) using {
