@@ -2651,10 +2651,16 @@ pub(super) fn condition_is_decided(
     assumptions
         .exact_condition_value(condition)
         .or_else(|| PureFactContext::decide_intrinsically(condition))
+        .or_else(|| assumptions.difference_decision(condition, &[]))
         .or_else(|| {
             (!assumptions.should_defer_non_exact_condition_reasoning())
                 .then(|| assumptions.decide(condition))
                 .flatten()
+                .inspect(|_| {
+                    crate::kernel::reasoning::path_facts::record_general_condition_decision(
+                        "loop condition",
+                    )
+                })
         })
 }
 

@@ -4,9 +4,10 @@
 that reaches the recursive call, so the call's precondition is refused.
 
 The refusal lists the facts the check consulted. The call is checked over
-the proof context, which holds the contract's requirements and the branch's
-`n <= 0` refutation; the refusal used to report "0 ambient condition facts"
-because it listed only the statement's own new facts.
+the proof context, which holds the contract's requirements; `1 <= n` already
+decides the branch's `n <= 0`, so the branch adds no fact. The refusal used to
+report "0 ambient condition facts" because it listed only the statement's own
+new facts.
 
 ```c filename=recursive_call_precondition_refuses_a_decremented_lower_bound.c
 int32 count(int32 n) {
@@ -32,5 +33,5 @@ int32 count(int32 n) {
 ```
 
 ```expect
-fail: condition-certificate premise search did not derive `1 <= n - 1` from 4 ambient condition facts: [1 <= n, n > 0, n <= 100
+fail: condition-certificate premise search did not derive `1 <= n - 1` from 3 ambient condition facts: [1 <= n, n <= 100
 ```

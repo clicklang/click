@@ -972,9 +972,15 @@ fn add_condition_path_fact_with_visibility(
     if let Some(known) = PureFactContext::decide_intrinsically(&condition) {
         return (known == value).then_some(());
     }
-    if !assumptions.should_defer_non_exact_condition_reasoning()
-        && let Some(known) = assumptions.decide(&condition)
-    {
+    let known = assumptions
+        .difference_decision(&condition, &[])
+        .or_else(|| {
+            (!assumptions.should_defer_non_exact_condition_reasoning())
+                .then(|| assumptions.decide(&condition))
+                .flatten()
+                .inspect(|_| record_general_condition_decision("path fact"))
+        });
+    if let Some(known) = known {
         if known == value && !certified_after_effect {
             return Some(());
         }
@@ -1712,9 +1718,20 @@ pub(in crate::kernel) fn decide_with_facts(
         })
         .or_else(|| PureFactContext::decide_intrinsically(condition))
         .or_else(|| {
+            let extra = facts
+                .fact_iter()
+                .filter_map(|fact| match fact.proposition() {
+                    Proposition::ConditionIs(condition, value) => Some((condition.clone(), *value)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assumptions.difference_decision(condition, &extra)
+        })
+        .or_else(|| {
             (!assumptions.should_defer_non_exact_condition_reasoning())
                 .then(|| assumptions.decide(condition))
                 .flatten()
+                .inspect(|_| record_general_condition_decision("decide_with_facts"))
         })
         .or_else(|| {
             facts.fact_iter().find_map(|fact| match fact.proposition() {
@@ -1738,7 +1755,17 @@ pub(in crate::kernel) fn decide_with_facts(
                     |assumptions, fact| assumptions.assume_proposition(fact.proposition().clone()),
                 )
                 .decide(condition)
+                .inspect(|_| record_general_condition_decision("path facts"))
         })
+}
+
+/// Counts a condition the general decision settled after the difference
+/// graph left it open (`HiddenPrerequisiteRoute::KernelCondition`).
+pub(in crate::kernel) fn record_general_condition_decision(site: &'static str) {
+    crate::instrumentation::record_hidden_prerequisite(
+        crate::instrumentation::HiddenPrerequisiteRoute::KernelCondition,
+        site,
+    );
 }
 
 #[cfg(test)]
