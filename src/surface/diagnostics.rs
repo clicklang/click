@@ -1288,6 +1288,82 @@ pub(super) fn describe_refuted_proof_obligation(
     }
 }
 
+/// Where in `statement` its undefined behavior `kind` arises, as the line
+/// "\n  operation: `a + b`" that precedes the C statement line, or nothing
+/// when no single operation can be named.
+pub(in crate::surface) fn describe_undefined_behavior_site(
+    state: &CState,
+    statement: &CStatement,
+    assumptions: &crate::kernel::PureFactContext,
+    kind: &crate::kernel::CUndefinedBehavior,
+) -> String {
+    describe_located_undefined_behavior(crate::kernel::locate_undefined_behavior(
+        state,
+        statement,
+        assumptions,
+        kind,
+    ))
+}
+
+/// [`describe_undefined_behavior_site`] for a branch or loop condition.
+pub(in crate::surface) fn describe_undefined_behavior_condition_site(
+    state: &CState,
+    condition: &CExpression,
+    assumptions: &crate::kernel::PureFactContext,
+    kind: &crate::kernel::CUndefinedBehavior,
+) -> String {
+    describe_located_undefined_behavior(crate::kernel::locate_undefined_behavior_in_condition(
+        state,
+        condition,
+        assumptions,
+        kind,
+    ))
+}
+
+fn describe_located_undefined_behavior(
+    site: Option<crate::kernel::CUndefinedBehaviorSite>,
+) -> String {
+    let (prefix, expression) = match site {
+        Some(crate::kernel::CUndefinedBehaviorSite::Expression(expression)) => ("", expression),
+        Some(crate::kernel::CUndefinedBehaviorSite::Store(pointer)) => {
+            ("the store through ", pointer)
+        }
+        None => return String::new(),
+    };
+    let spelling = describe_c_expression(&expression);
+    // A read the printer can only spell as a kernel load (an aggregate field
+    // at a byte offset) is not something the reader wrote; the C statement
+    // line already names the source.
+    if spelling.contains("load_") || spelling.contains("byte_offset(") {
+        return String::new();
+    }
+    format!(
+        "\n  operation: {prefix}`{}`",
+        without_enclosing_parentheses(&spelling)
+    )
+}
+
+/// `spelling` without one pair of parentheses around the whole of it:
+/// `(a + b)` is `a + b`, while `(a) + (b)` is unchanged.
+fn without_enclosing_parentheses(spelling: &str) -> &str {
+    let Some(inner) = spelling
+        .strip_prefix('(')
+        .and_then(|rest| rest.strip_suffix(')'))
+    else {
+        return spelling;
+    };
+    let mut depth = 0usize;
+    for character in inner.chars() {
+        match character {
+            '(' => depth += 1,
+            ')' if depth == 0 => return spelling,
+            ')' => depth -= 1,
+            _ => {}
+        }
+    }
+    inner
+}
+
 pub(super) fn describe_function_outcome(
     outcome: &CFunctionOutcome,
     parameter_binding: ParameterBinding<'_>,

@@ -291,8 +291,15 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
                     theorem: path.theorem().clone(),
                 }),
                 CConditionOutcome::UndefinedBehavior(kind) => Err(ClickError::new(format!(
-                    "{context_label} could not evaluate the C condition because it has undefined behavior: {}",
-                    kind.description()
+                    "{context_label} could not evaluate the C condition because it has undefined behavior: {}{}{}",
+                    kind.description(),
+                    crate::surface::diagnostics::describe_undefined_behavior_site(
+                        state,
+                        branch_statement,
+                        pure_facts.assumptions(),
+                        kind,
+                    ),
+                    crate::surface::diagnostics::describe_c_statement_site()
                 ))),
                 CConditionOutcome::RuntimeError(error) => Err(proof_condition_runtime_error(
                     context_label,
@@ -440,8 +447,14 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                     outcome: CConditionOutcome::UndefinedBehavior(kind),
                     ..
                 } => Err(ClickError::new(format!(
-                    "{context_label} produced undefined behavior while evaluating the condition: {}{}",
+                    "{context_label} produced undefined behavior while evaluating the condition: {}{}{}",
                     kind.description(),
+                    crate::surface::diagnostics::describe_undefined_behavior_condition_site(
+                        state,
+                        condition,
+                        &assumptions,
+                        kind,
+                    ),
                     crate::surface::diagnostics::describe_c_statement_site()
                 ))),
                 Proposition::CConditionEvaluates {
