@@ -789,3 +789,46 @@ fn a_load_spelled_as_itself_reads_facts_about_its_load_variable() {
         Some(false)
     );
 }
+
+/// Pointer offsets of `int32` elements compare as their indices: equal
+/// widths compare values, a constant byte offset compares the value with
+/// its element count, and a byte offset no whole number of elements
+/// reaches is never equal.
+#[test]
+fn pointer_offsets_of_int32_elements_compare_as_indices() {
+    use crate::kernel::PointerOffsetTerm as O;
+    let (i, j) = (variable(0), variable(1));
+    let scaled = |value: &Bitvector32Term| O::Int32Scaled {
+        value: Box::new(value.clone()),
+        byte_width: 4,
+    };
+    let offsets_equal = |a: O, b: O| ConditionTerm::PointerOffsetEqual(Box::new(a), Box::new(b));
+    let ordered = graph(&[(lt(&i, &j), true)]);
+    assert_eq!(
+        ordered.decide(&offsets_equal(scaled(&i), scaled(&j))),
+        Some(false)
+    );
+    let pinned = graph(&[(ConditionTerm::equal(i.clone(), constant(3)), true)]);
+    assert_eq!(
+        pinned.decide(&offsets_equal(scaled(&i), O::Constant(12))),
+        Some(true)
+    );
+    assert_eq!(
+        pinned.decide(&offsets_equal(O::Constant(16), scaled(&i))),
+        Some(false)
+    );
+    assert_eq!(
+        graph(&[]).decide(&offsets_equal(scaled(&i), O::Constant(6))),
+        Some(false)
+    );
+    assert_eq!(
+        graph(&[]).decide(&offsets_equal(scaled(&i), scaled(&j))),
+        None
+    );
+    // A recorded offset equality is an index equality.
+    let recorded = graph(&[
+        (offsets_equal(scaled(&i), scaled(&j)), true),
+        (le(&j, &constant(5)), true),
+    ]);
+    assert_eq!(recorded.decide(&le(&i, &constant(5))), Some(true));
+}
