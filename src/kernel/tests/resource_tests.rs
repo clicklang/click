@@ -896,6 +896,37 @@ fn owned_fragment_reservation_checks_aliases_gaps_and_linear_consumption() {
 }
 
 #[test]
+fn owned_fragment_reservation_keeps_wide_suppliers_on_native_coverage() {
+    let base = Pointer::symbolic(Variable(862_019));
+    let owner = CResourceFact::own_memory(CMemoryRange::new_wide(
+        base.clone(),
+        Bitvector32Term::UInt64Constant(0),
+        Bitvector32Term::UInt64Constant(16),
+        1,
+    ));
+    let required = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        base,
+        0u32.into(),
+        4u32.into(),
+        1,
+    ));
+    let facts = PureFactContext::new();
+    let resources = ResourceContext::new().unchecked_with_fact(owner);
+    resources.synchronize_memory_equalities(&facts);
+    assert!(
+        resources
+            .clone()
+            .reserve_owned_memory_fragments(&required, &facts)
+            .is_none()
+    );
+    assert!(
+        resources
+            .directly_supporting_owned_entry(&required, &facts)
+            .is_some()
+    );
+}
+
+#[test]
 fn owned_fragment_reservation_joins_mixed_width_fields_at_symbolic_bases() {
     let facts = PureFactContext::new();
     for base in [

@@ -3087,6 +3087,11 @@ impl ResourceContext {
                 let Some(available) = candidate.memory_own_range() else {
                     continue;
                 };
+                // Symbolic 64-bit suppliers retain their native direct-coverage
+                // route; byte regrouping here handles constant 32-bit bounds.
+                if available.int32_bounds().is_none() {
+                    continue;
+                }
                 let Some(base) = entries.address(entry) else {
                     continue;
                 };
