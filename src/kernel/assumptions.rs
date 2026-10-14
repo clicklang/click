@@ -5234,13 +5234,16 @@ impl PureFactContext {
         // A pointer comparison the graph leaves open may still be decided
         // unequal by the keyed null-ness and separation indexes
         // (`decide_pointer_disequality`), which search nothing.
-        let pointer_disequality = || {
-            matches!(
-                condition,
-                ConditionTerm::PointerEqual(..) | ConditionTerm::PointerOffsetEqual(..)
-            )
-            .then(|| self.decide_pointer_disequality(condition))
-            .flatten()
+        let pointer_disequality = || match condition {
+            ConditionTerm::PointerEqual(..) | ConditionTerm::PointerOffsetEqual(..) => {
+                self.decide_pointer_disequality(condition)
+            }
+            // `left != INT_MIN or right != -1` kept whole as a fact: two
+            // keyed lookups (`divide_overflow_excluded_by_disjunction`).
+            ConditionTerm::Bitvector32SignedDivideOverflows(left, right) => self
+                .divide_overflow_excluded_by_disjunction(left, right)
+                .then_some(false),
+            _ => None,
         };
         if extra.is_empty() {
             return graph

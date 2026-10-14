@@ -963,3 +963,129 @@ fn pointer_equalities_and_disequalities_compose() {
     assert!(contradictory.is_contradictory());
     assert_eq!(graph(&[]).decide(&equal(&p, &q)), None);
 }
+
+/// A cast between narrow integer types keeps its operand modulo the
+/// destination's width. With the operand in its source type's range, a
+/// known cast value leaves one preimage: `(int8) v == -56` and
+/// `0 <= v <= 255` give `v == 200`. Every answer is checked against every
+/// operand value the facts allow.
+#[test]
+fn a_narrow_cast_with_a_known_value_names_its_operand() {
+    use crate::kernel::MachineIntegerType as M;
+    let v = variable(0);
+    let range = |kind| match kind {
+        M::Int8 => (-128i64, 127i64),
+        M::UInt8 => (0, 255),
+        _ => unreachable!(),
+    };
+    let cast_value = |value: i64, destination| {
+        let (low, high) = range(destination);
+        (value - low).rem_euclid(high - low + 1) + low
+    };
+    let mut decided = 0;
+    for (source, destination) in [(M::UInt8, M::Int8), (M::Int8, M::UInt8), (M::Int8, M::Int8)] {
+        let (low, high) = range(source);
+        let cast = Bitvector32Term::MachineIntegerCast {
+            value: Box::new(v.clone()),
+            source,
+            destination,
+        };
+        for actual in [low, low + 1, -1, 0, 1, 100, high - 1, high] {
+            if actual < low || actual > high {
+                continue;
+            }
+            let known = cast_value(actual, destination);
+            let graph = graph(&[
+                (le(&constant(low as i32), &v), true),
+                (le(&v, &constant(high as i32)), true),
+                (
+                    ConditionTerm::equal(cast.clone(), constant(known as i32)),
+                    true,
+                ),
+            ]);
+            let models = (low..=high)
+                .filter(|value| cast_value(*value, destination) == known)
+                .collect::<Vec<_>>();
+            for x in [low, -56, 0, actual, 200, high] {
+                let Some(answer) =
+                    graph.decide(&ConditionTerm::equal(v.clone(), constant(x as i32)))
+                else {
+                    continue;
+                };
+                decided += 1;
+                assert!(
+                    models.iter().all(|model| (*model == x) == answer),
+                    "{source:?} -> {destination:?}: cast == {known} decided v == {x} {answer}"
+                );
+            }
+        }
+    }
+    assert!(decided > 0);
+    let unsigned = graph(&[
+        (le(&constant(0), &v), true),
+        (le(&v, &constant(255)), true),
+        (
+            ConditionTerm::equal(
+                Bitvector32Term::MachineIntegerCast {
+                    value: Box::new(v.clone()),
+                    source: M::UInt8,
+                    destination: M::Int8,
+                },
+                constant(-56),
+            ),
+            true,
+        ),
+    ]);
+    assert_eq!(
+        unsigned.decide(&ConditionTerm::equal(v.clone(), constant(200))),
+        Some(true)
+    );
+    // Without the operand's range, the cast says nothing about it.
+    let unbounded = graph(&[(
+        ConditionTerm::equal(
+            Bitvector32Term::MachineIntegerCast {
+                value: Box::new(v.clone()),
+                source: M::UInt8,
+                destination: M::Int8,
+            },
+            constant(-56),
+        ),
+        true,
+    )]);
+    assert_eq!(
+        unbounded.decide(&ConditionTerm::equal(v.clone(), constant(200))),
+        None
+    );
+}
+
+/// An unsigned difference `a - b` with `b <= a` does not wrap, so it is at
+/// most `a`, and below `a` when `b` is positive: the bound a non-empty
+/// suffix `p + (n - k)` of `n` elements checks.
+#[test]
+fn an_unsigned_difference_that_cannot_wrap_is_at_most_its_minuend() {
+    use Bitvector32Term as T;
+    let (a, b) = (variable(0), variable(1));
+    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let difference = T::UInt64Subtract(boxed(&a), boxed(&b));
+    let at_most = ConditionTerm::Bitvector64UnsignedLessEqual(boxed(&difference), boxed(&a));
+    let below = ConditionTerm::Bitvector64UnsignedLessThan(boxed(&difference), boxed(&a));
+    let ordered = graph(&[(
+        ConditionTerm::Bitvector64UnsignedLessEqual(boxed(&b), boxed(&a)),
+        true,
+    )]);
+    assert_eq!(ordered.decide(&at_most), Some(true));
+    assert_eq!(ordered.decide(&below), None);
+    let positive = graph(&[
+        (
+            ConditionTerm::Bitvector64UnsignedLessEqual(boxed(&b), boxed(&a)),
+            true,
+        ),
+        (
+            ConditionTerm::Bitvector64UnsignedLessEqual(Box::new(T::UInt64Constant(1)), boxed(&b)),
+            true,
+        ),
+    ]);
+    assert_eq!(positive.decide(&below), Some(true));
+    // `b` may exceed `a`, and then the difference wraps past `a`.
+    assert_eq!(graph(&[]).decide(&at_most), None);
+}

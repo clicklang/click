@@ -498,7 +498,7 @@ impl PureFactContext {
     /// either arm order, as `requires` and `have` record it (each arm a
     /// disequality, the disjunction kept whole as a proposition fact). Two
     /// keyed lookups in the proposition-fact set; no case split and no scan.
-    fn divide_overflow_excluded_by_disjunction(
+    pub(in crate::kernel) fn divide_overflow_excluded_by_disjunction(
         &self,
         left: &Bitvector32Term,
         right: &Bitvector32Term,

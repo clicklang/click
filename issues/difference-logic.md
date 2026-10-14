@@ -216,11 +216,14 @@ Each step is its own pull request.
      - tag bits in pointer words (the rbtree parent/colour word, `& 1`,
        `& 7`, `== (uint64)node`, alignment), which is bit-level reasoning on
        addresses, not difference logic;
-     - two typed views of one byte (a `signed char` fact deciding an
-       `unsigned char` load);
-     - pointer arithmetic staying inside an object from a non-empty fact;
-     - division overflow excluded only by a disjunction;
      - certain overflows, which the graph does not answer.
+   - *Landed after the assessment:* a narrow integer cast (`int8`,
+     `uint8`, `int16`, `uint16`, `int32` as `int32` values) links to its
+     operand once their intervals leave one multiple of the modulus between
+     them, so `(int8) v == -56` with `0 <= v <= 255` gives `v == 200`. An
+     unsigned `a - b` with `b <= a` is at most `a`, which bounds a non-empty
+     suffix. The fast path asks the keyed disjunction rule for division
+     overflow (`divide_overflow_excluded_by_disjunction`).
 4. **Remove the general decision from simple checking.** A condition the fast
    path leaves undecided keeps both branches, and an arithmetic requirement it
    leaves open goes to implicit `auto`, as

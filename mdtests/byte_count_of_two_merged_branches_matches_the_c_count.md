@@ -24,6 +24,7 @@ int32 count_byte2(uint8 p[], uint8 x) {
 ```
 
 ```click
+import click::bytes;
 verifying "byte_count_of_two_merged_branches_matches_the_c_count.c";
 import click::bytes;
 
