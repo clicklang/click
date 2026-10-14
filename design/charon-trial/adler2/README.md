@@ -734,6 +734,10 @@ arithmetic guard, and ranks all loops by their actual stored remaining state.
 Both final fields remain below 65,521. No assumed checksum summary or generated
 processed counter supplies these guarantees.
 
+After rewriting the newly entered inner chunk's remaining count to its full
+size, its trivial definedness bound closes by normalization; the prefix's
+nontrivial definedness evidence remains explicitly cited.
+
 Each full-batch vector step also proves that all four constructor lanes equal
 exact mathematical byte observations at absolute positions in the original
 input. The positions come from the stored outer and inner remaining counts.
