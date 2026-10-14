@@ -147,7 +147,7 @@ PR [#937](https://github.com/clicklang/click/pull/937) merged the entry-read fol
 repair; final pushed head `2ad128f94` is an ancestor of fetched upstream master.
 This is an independent upstream delivery, separate from native-entry activation.
 
-The [conditional-record reduction](../bugs/native-composite-output-requires-decided-body-guard.md)
+The [conditional-record reduction](../mdtests/conditional_allocated_record_output.md)
 now has a preserved archive-based repair at `132cb424b` on
 `codex/object-model-failure-reduction`. The original allocated-linked-list and
 heap-object projects and the reduced producer/caller pass. Three kernel controls
@@ -434,12 +434,16 @@ fresh, expanded, rewritten and retained checking. Wrong-cell controls reject.
 The reduced C indexed-cell contracts use the existing viewed range; no unmerged
 object-model activation is included.
 
-The [conditional-output reduction](../bugs/native-composite-output-requires-decided-body-guard.md)
+The [conditional-output reduction](../mdtests/conditional_allocated_record_output.md)
 attributes the allocated-list/heap-object error group to a native composite
 formation check demanding a decided guard on a verified conditional output.
 The small producer/caller passes baseline proof modes and fails on `e3d84a785`.
 A setter-shadowing experiment did not fix the original list and was discarded.
-The introducing commit and the sound conditional-admission repair remain open.
+The defect never reached master; the reduction is now a master regression
+fixture, so any object-model activation must keep this producer/caller passing.
+Checkpoint `132cb424b` repairs only conditional heads without native promises;
+a guarded native promise with an undecided guard still needs admission under
+its guard before activation.
 
 ## Backing-range fold reduction after the read-index safeguard
 
