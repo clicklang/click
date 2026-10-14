@@ -150,8 +150,8 @@ size or speed.
 
 Prototype (2026-10-14, master `93bc0b8`): both general contracts verify, but
 only in a form that works around a verifier bug, so nothing has landed yet.
-Work stopped at
-[bugs/post-return-apply-blocks-return-instance-fold.md](../bugs/post-return-apply-blocks-return-instance-fold.md).
+Work stopped at a return-certification bug: a theorem applied after return
+blocked a later fold of the outcome resource. That bug is now fixed.
 
 The general `__rb_erase_augmented` consumes `rb_at(node)` and
 `ctx_at(node, root)`. It requires a nonempty node with `is_rb`, `ctx_rb` at the

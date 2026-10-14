@@ -2202,6 +2202,11 @@ pub(super) fn finish_ordered_proof<'a>(
                     // A failed whole-contract transition must not be retried
                     // once per returned member in an expanded simp proof.
                     let mut assumption_transition_attempted = false;
+                    // The facts before each post-return tactic, by source
+                    // tactic: a refused return fold names the tactic that
+                    // introduced the fact it could not justify. Each entry
+                    // shares the persistent fact store.
+                    let mut post_return_facts = Vec::new();
                     for (post_execution_index, deferred) in
                         selected_post_execution_tactics.into_iter().enumerate()
                     {
@@ -2238,6 +2243,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         let tactic_index = &deferred.tactic_index;
                         let source_index = &deferred.source_index;
                         let post_tactic = &deferred.tactic;
+                        post_return_facts.push((*source_index, path_requirements.clone()));
                         if path_capture.is_some_and(|capture| {
                             capture.tactic_index == *tactic_index
                                 && capture.source_index == *source_index
@@ -4855,10 +4861,20 @@ pub(super) fn finish_ordered_proof<'a>(
                                 &assumptions_from_propositions(&base_certification_facts),
                                 path_index,
                             )
-                            .map_err(|message| {
-                                ClickError::new(format!(
-                                    "could not certify return instance fold: {message}"
-                                ))
+                            .map_err(|refusal| {
+                                let message = format!(
+                                    "could not certify return instance fold: {}",
+                                    refusal.reason
+                                );
+                                match (refusal.unjustified_fact, outcome_proof.as_ref()) {
+                                    (Some(fact), Some(proof)) => unjustified_return_fact_error(
+                                        proof,
+                                        &post_return_facts,
+                                        &fact,
+                                        &message,
+                                    ),
+                                    _ => ClickError::new(message),
+                                }
                             })?;
                         returned_core
                             .collect_return_resource_rewrites(core, path_index)
@@ -5821,4 +5837,40 @@ fn contract_entry_view(
         .resources()
         .synchronize_memory_equalities(&facts.context());
     (facts, origins)
+}
+
+/// The refusal of a return fold whose proof assumed `fact` without the path
+/// justifying it. It names the fact as written and is placed at the
+/// post-return tactic that introduced it, the first whose successor holds
+/// it, with the path's checked proof state for `--trace-proof`. A fact the
+/// path already held when execution returned keeps the final tactic's site.
+fn unjustified_return_fact_error(
+    proof: &Proof<'_>,
+    facts_before_tactic: &[(usize, ProofFacts)],
+    fact: &Proposition,
+    message: &str,
+) -> ClickError {
+    let introduced_at = facts_before_tactic
+        .iter()
+        .enumerate()
+        .find(|(index, (_, before))| {
+            !before.contains(fact)
+                && facts_before_tactic
+                    .get(index + 1)
+                    .map_or(proof.facts(), |(_, after)| after)
+                    .contains(fact)
+        })
+        .map(|(_, (source_index, _))| *source_index)
+        .filter(|source_index| *source_index != usize::MAX);
+    let (names, values) = proof.diagnostic_naming_tables();
+    let spelled = crate::surface::diagnostics::describe_pure_fact_spelled(
+        fact,
+        ParameterBinding::new(&names, &values),
+    );
+    match introduced_at {
+        Some(source_index) => proof
+            .at_source_tactic(source_index)
+            .step_error(format!("{message} `{spelled}`, introduced by this tactic")),
+        None => proof.step_error(format!("{message} `{spelled}`")),
+    }
 }

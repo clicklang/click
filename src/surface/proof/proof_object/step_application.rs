@@ -837,6 +837,69 @@ impl<'a> Proof<'a> {
                 }
             };
         }
+        if let ProofStep::ApplyTheoremUsing { application, .. } = &step
+            && matches!(
+                self.focused_obligation(),
+                Some(Obligation::FunctionOutcome(_))
+            )
+        {
+            let application = application.clone();
+            return self.apply_theorem_at_returned_outcome(step, &application);
+        }
+        self.apply_step_without_outcome_wrapping(step)
+    }
+
+    /// Checks a theorem application at a returned function outcome.
+    ///
+    /// Steps after a C return are checked against that return, and a later
+    /// return fold accepts only facts the returning path justifies: the
+    /// path's own facts and each checked return proposition (a `have` closed
+    /// at the outcome, recorded with the facts it was proved under). An
+    /// application's conclusion is such a checked fact, so it is recorded the
+    /// same way: each spelled conclusion `C` is first proved as
+    /// `have C by { <this application> }` from the facts before the
+    /// application. That `have` is the ordinary checked scope, and return
+    /// certification checks its completion as it checks a written one: the
+    /// facts it was proved under must be justified on the returning path.
+    /// This therefore grants nothing a written proof could not. The
+    /// application is then checked once more as an ordinary step, publishing
+    /// any applied fact no conclusion spells; such a fact has no return
+    /// proposition and a later fold relying on it is still refused. A
+    /// conclusion whose `have` does not close is left to that ordinary step.
+    /// The proof node is the one written application, so an expansion writes
+    /// the `apply` alone.
+    fn apply_theorem_at_returned_outcome(
+        &self,
+        step: ProofStep,
+        application: &TheoremApplication,
+    ) -> Result<Self, ClickError> {
+        let body = ProofCertificate::from_validated_steps(vec![step.clone()]);
+        let mut current = self.clone();
+        for conclusion in self.theorem_application_surface_conclusions(application) {
+            check_verification_deadline()?;
+            if current
+                .lower_surface_proposition(&conclusion, "`apply` conclusion")
+                .is_ok_and(|lowered| current.facts().contains(&lowered))
+            {
+                continue;
+            }
+            match current.apply_have_step(&conclusion, &body) {
+                Ok(next) => current = next,
+                Err(error) if crate::instrumentation::deadline_exceeded() => return Err(error),
+                Err(_) => {}
+            }
+        }
+        let applied = current.apply_step_without_outcome_wrapping(step.clone())?;
+        let branch = applied.focused_branch_id();
+        Ok(Self {
+            site: self.site.clone(),
+            context: self.context.clone(),
+            state: applied.state,
+            node: ProofNode::step_child(&self.node, branch, Arc::new(step)),
+        })
+    }
+
+    fn apply_step_without_outcome_wrapping(&self, step: ProofStep) -> Result<Self, ClickError> {
         // An unsigned order is the signed order of sign-flipped operands,
         // which the arithmetic certificates treat as opaque atoms. A goal
         // one uint32 lemma away from a listed premise is closed by that
