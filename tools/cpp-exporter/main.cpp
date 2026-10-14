@@ -1917,17 +1917,23 @@ private:
                   record_type->getDecl()->getDefinition());
     const bool record_object =
         record != nullptr && !local->getType().hasQualifiers();
+    // A function-pointer local holds `&f` or another pointer's value; calls
+    // through it are lowered as calls through a parameter are.
+    const bool function_pointer_local =
+        function_pointer_prototype(local->getType()) != nullptr &&
+        !local->getType().hasQualifiers();
     if (record_object && context_.getLangOpts().CXXExceptions &&
         exception_behavior_ == "normal_only" && !record->hasTrivialDestructor()) {
       fail(local->getLocation(),
            "exception-enabled normal-only C++ local objects require trivial destruction");
       return std::nullopt;
     }
-    if (!scalar_int && !mutable_pointer && !record_object && !int_reference) {
+    if (!scalar_int && !mutable_pointer && !record_object && !int_reference &&
+        !function_pointer_local) {
       fail(local->getLocation(),
            "the supported automatic C++ local must resolve to "
            "signed/unsigned "
-           "32/64/128-bit integer or unsigned char, an initialized native object pointer, a native element lvalue reference, or one simple record object");
+           "32/64/128-bit integer or unsigned char, an initialized native object pointer, a native element lvalue reference, a function pointer, or one simple record object");
       return std::nullopt;
     }
     if (!local->hasInit() && !mutable_int) {

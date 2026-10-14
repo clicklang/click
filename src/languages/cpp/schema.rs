@@ -2293,6 +2293,9 @@ impl CppFunction {
                     CppType::LvalueReference { pointee } => {
                         require_native_pointer_element(pointee, true, "automatic reference local")?;
                     }
+                    CppType::FunctionPointer { .. } => {
+                        require_function_pointer(&local.value_type, "function-pointer local")?;
+                    }
                     CppType::Record {
                         declaration_id,
                         name,
@@ -3125,6 +3128,23 @@ impl CppInitializer {
                 }
                 validate_call(callee, arguments, span, places, records, logical_source)
             }
+            // A function-pointer local holds `&f` or another pointer's value.
+            (Self::Value { value }, CppType::FunctionPointer { .. }) => {
+                if !matches!(
+                    value,
+                    CppExpression::FunctionAddress { .. } | CppExpression::Load { .. }
+                ) {
+                    return Err(
+                        "a C++ function-pointer local is initialized by `&f` or another pointer"
+                            .into(),
+                    );
+                }
+                value.validate(places, records, logical_source)?;
+                if !same_function_pointer_type(local_type, value.value_type()) {
+                    return Err("C++ function-pointer initializer changed the pointer type".into());
+                }
+                Ok(())
+            }
             (Self::Value { value }, CppType::Pointer { .. }) => {
                 value.validate(places, records, logical_source)?;
                 require_native_object_pointer(local_type, "automatic pointer initializer")?;
@@ -3691,11 +3711,15 @@ impl CppExpression {
                 span.validate(logical_source)?;
                 let place_type = validate_place_reference(place, places, logical_source)?;
                 match place_type {
-                    CppType::FunctionPointer { .. } => Err(
-                        "a C++ function-pointer variable is only called; reading its value is \
-                         outside the supported profile"
-                            .into(),
-                    ),
+                    // A pointer's value is read only to pass it on, as a call
+                    // argument of the same function-pointer type.
+                    CppType::FunctionPointer { .. } => {
+                        if same_function_pointer_type(place_type, value_type) {
+                            Ok(())
+                        } else {
+                            Err("C++ function-pointer load changed the pointer type".into())
+                        }
+                    }
                     CppType::LvalueReference { pointee } => {
                         if require_native_pointer_element(pointee, true, "loaded reference pointee")
                             .is_ok()
@@ -4280,6 +4304,11 @@ fn validate_reachable_calls(
     })?;
     visiting.push(declaration_id.to_string());
     let places = FunctionPlaces::new(function)?;
+    let mut addresses = Vec::new();
+    collect_local_function_addresses(&function.body, &mut addresses);
+    for address in addresses {
+        validate_function_address(address, functions, records, visiting, visited)?;
+    }
     let mut calls = Vec::new();
     collect_calls(&function.body, &mut calls);
     let mut depth = 1usize;
@@ -4568,6 +4597,40 @@ enum CollectedCall<'a> {
         object: &'a CppPlaceReference,
         callee: &'a CppFunctionReference,
     },
+}
+
+/// The `&f` values that initialize function-pointer locals.
+fn collect_local_function_addresses<'a>(
+    statements: &'a [CppStatement],
+    addresses: &mut Vec<&'a CppExpression>,
+) {
+    for statement in statements {
+        match statement {
+            CppStatement::Declare {
+                initializer:
+                    CppInitializer::Value {
+                        value: value @ CppExpression::FunctionAddress { .. },
+                    },
+                ..
+            } => addresses.push(value),
+            CppStatement::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                collect_local_function_addresses(then_branch, addresses);
+                collect_local_function_addresses(else_branch, addresses);
+            }
+            CppStatement::Scope { body, .. } => collect_local_function_addresses(body, addresses),
+            CppStatement::TryCatchInt32 {
+                try_body, handler, ..
+            } => {
+                collect_local_function_addresses(try_body, addresses);
+                collect_local_function_addresses(handler, addresses);
+            }
+            _ => {}
+        }
+    }
 }
 
 fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCall<'a>>) {
@@ -5027,6 +5090,22 @@ fn validate_argument_types(
                 },
                 CppType::FunctionPointer { .. },
             ) => same_function_pointer_type(value.value_type(), parameter_type),
+            // A function-pointer parameter or local passed on as it is.
+            (
+                CppCallArgument::Value {
+                    value:
+                        CppExpression::Load {
+                            place, value_type, ..
+                        },
+                },
+                CppType::FunctionPointer { .. },
+            ) => {
+                place.projections.is_empty()
+                    && caller
+                        .place_type(&place.declaration_id)
+                        .is_some_and(|root| same_function_pointer_type(root, parameter_type))
+                    && same_function_pointer_type(value_type, parameter_type)
+            }
             _ => false,
         };
         if !compatible {
