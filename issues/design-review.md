@@ -289,10 +289,10 @@ Proposed fix: serialize proof objects and write a small independent checker
 that re-checks them.
 
 Decision: fix, after performance and completeness (maintainer,
-2026-10-14). Click's priorities are, in order: performance at the scale of
-large real-world projects, completeness on such projects, and then
-soundness infrastructure such as this item. The first two are measured in
-practice, on real code, rather than in theory.
+2026-10-14). Proving the kernel sound as a whole is not a current priority:
+it would slow the priorities, which are performance at the scale of large
+real-world projects and then completeness, both measured in practice. A
+false acceptance, once found, is still fixed first, as a bug.
 
 ### M2. No written semantics or soundness argument
 
@@ -304,10 +304,10 @@ Proposed fix: a paper-level operational semantics and a model of views and
 loans, with fold/unfold and loan recovery argued sound against it.
 
 Decision: fix, after performance and completeness (maintainer,
-2026-10-14). Click's priorities are, in order: performance at the scale of
-large real-world projects, completeness on such projects, and then
-soundness infrastructure such as this item. The first two are measured in
-practice, on real code, rather than in theory.
+2026-10-14). Proving the kernel sound as a whole is not a current priority:
+it would slow the priorities, which are performance at the scale of large
+real-world projects and then completeness, both measured in practice. A
+false acceptance, once found, is still fixed first, as a bug.
 
 ### M3. Several read-permission notions and no fractions
 

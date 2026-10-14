@@ -9,12 +9,12 @@ rests on Click's own kernel, on the code that turns source claims into kernel
 obligations, on its model of C and of the target, and on the contracts you
 declare for code that Click does not verify. Smart proof search is not trusted.
 
-The trusted base is this large by choice, for now. Click's priorities are, in
-order: performance at the scale of large real-world projects, completeness on
-such projects, and then soundness infrastructure that would shrink this list,
-such as an independent proof checker and a written semantics. The first two are
-measured in practice, on real code, rather than in theory. Known false
-acceptances are still bugs and are tracked in `bugs/`.
+The trusted base is this large by choice, for now. A false acceptance, once
+found, is fixed first: it is a bug, tracked in `bugs/`. Proving the kernel
+sound as a whole is separate work, such as an independent proof checker and a
+written semantics, and it is not a current priority. Click's priorities are
+performance at the scale of large real-world projects, then completeness on
+such projects, both measured in practice on real code rather than in theory.
 
 ## Summary
 
