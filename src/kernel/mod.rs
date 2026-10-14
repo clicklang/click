@@ -159,7 +159,6 @@ pub(crate) use functions::measure_resource_clause_attempts;
 pub(crate) use functions::modified_by_value_aggregate_parameter_with_current_ensure_in_source;
 pub(crate) use functions::publish_instance_arms;
 pub(crate) use functions::select_resource_model_arm;
-pub(crate) use functions::stable_symbolic_pointer_cell_value;
 pub(crate) use functions::symbolic_call_result;
 pub(crate) use functions::unreturned_allocation_at_function_exit;
 pub(crate) use functions::unreturned_allocation_with_checked_returned_resources;

@@ -159,7 +159,8 @@ use proof::*;
 pub(crate) use pure_fact_list::PureFactList;
 use source_registry::*;
 #[cfg(test)]
-use validation::combined_theorem_definitions;
+#[cfg(test)]
+use validation::proof_theorem_definitions;
 use validation::{
     combined_click_function_definitions, combined_external_function_blocks,
     combined_predicate_definitions, combined_resource_definitions, contains_at_expression,
@@ -7193,6 +7194,10 @@ pub(in crate::surface) struct UnresolvedRequirement {
     /// (`0 == 1`, which holds only where that path is unreachable), the
     /// asserted condition: what a proof at the step's pre-state shows.
     pub(in crate::surface) assertion_condition: Option<crate::kernel::CExpression>,
+    /// The Surface spelling the tactic that owes this requirement gave it
+    /// where it created it, such as a `fold` body fact with the resource's
+    /// arguments substituted. Proofs state the requirement this way.
+    pub(in crate::surface) surface: Option<ClickProposition>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -9166,6 +9171,27 @@ impl ClickError {
             introductions: obligation.introductions().cloned().unwrap_or_default(),
             call_site: obligation.call_requirement_site().cloned(),
             assertion_condition: None,
+            surface: None,
+        }));
+        self
+    }
+
+    /// Records a simple tactic's requirement that no execution obligation
+    /// carries: the lowered `proposition`, its Surface spelling, and what
+    /// owes it.
+    pub(in crate::surface) fn with_spelled_requirement(
+        mut self,
+        proposition: Proposition,
+        surface: ClickProposition,
+        context: String,
+    ) -> Self {
+        self.unresolved_requirement = Some(std::sync::Arc::new(UnresolvedRequirement {
+            proposition,
+            context: Some(context),
+            introductions: Default::default(),
+            call_site: None,
+            assertion_condition: None,
+            surface: Some(surface),
         }));
         self
     }

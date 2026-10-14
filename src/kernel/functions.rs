@@ -17235,27 +17235,6 @@ fn symbolic_pointer_placeholder(value: &CValue, storage: &Pointer) -> bool {
         && !matches!(value.pointer().offset, PointerOffsetTerm::Constant(_))
 }
 
-fn symbolic_pointer_cell_load(memory: &CMemory, pointer: &Pointer, value_type: CType) -> CValue {
-    let load = Bitvector32Term::MemoryLoad(
-        crate::kernel::intern_c_memory(memory.clone()),
-        Box::new(pointer.clone()),
-        LoadKind::Bits32,
-    );
-    let (variable, _) = crate::kernel::eval::load_variable_for_term(&load)
-        .expect("symbolic pointer cells must be backed by memory loads");
-    CValue::typed_pointer(Pointer::symbolic(variable), value_type)
-}
-
-/// Returns the stable symbolic value of a pointer object whose storage is not
-/// available in the current function's C state. Contract-only references to
-/// an external pointer use the same canonical load identity as ordinary entry
-/// initialization, so resource transfer follows the current pointer value.
-pub(crate) fn stable_symbolic_pointer_cell_value(pointer: &Pointer, value_type: CType) -> CValue {
-    let memory = CMemory::new()
-        .with_block_without_derivation(pointer.block.clone(), value_type.byte_width());
-    symbolic_pointer_cell_load(&memory, pointer, value_type)
-}
-
 /// Returns the stable symbolic value for a typed static-storage cell. The
 /// backing memory contains only the storage block, so resource lowering and
 /// ordinary function entry derive the same load identity even when the

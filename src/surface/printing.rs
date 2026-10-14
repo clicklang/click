@@ -1318,14 +1318,20 @@ fn signed_comparison_name(comparison: SignedInt32Comparison) -> &'static str {
     }
 }
 
-/// The spelling of a `step` form without its terminating `;`.
+/// The spelling of a `step` or `fold` form without its terminating `;`.
 fn step_head_spelling(step: &ProofTactic) -> String {
     match step {
         ProofTactic::Step => "step()".to_string(),
         ProofTactic::StepContract(name) => format!("step({name})"),
         ProofTactic::StepBind(name) => format!("let {{ result: {name} }} = step()"),
         ProofTactic::StepCall(transport) => transport.to_string(),
-        _ => unreachable!("a step proof wraps a `step` form"),
+        // A `fold` prints as it does alone, without its `;`.
+        ProofTactic::FoldResource(_) => {
+            let mut written = String::new();
+            write_tactic(&mut written, step, 0);
+            written.trim_end().trim_end_matches(';').to_string()
+        }
+        _ => unreachable!("a step proof wraps a `step` or `fold` form"),
     }
 }
 

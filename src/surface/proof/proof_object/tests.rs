@@ -4116,7 +4116,7 @@ fn execution_apply_uses_only_named_evidence_and_forks_persistently() {
     let click_function_environment =
         ClickFunctionEnvironment::new(click_file.click_function_definitions());
     let theorem_definitions =
-        combined_theorem_definitions(&click_file).expect("standard theorem prelude should load");
+        proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function = syntax::parse_function("int32 identity(int32 x) { return x; }")
         .expect("test C function should parse");
@@ -4948,7 +4948,7 @@ fn nested_have_accepts_trailing_assumption_after_closure() {
     let click_function_environment =
         ClickFunctionEnvironment::new(click_file.click_function_definitions());
     let theorem_definitions =
-        combined_theorem_definitions(&click_file).expect("standard theorem prelude should load");
+        proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function = syntax::parse_function("int32 identity(int32 x) { return x; }")
         .expect("test C function should parse");
@@ -5086,7 +5086,7 @@ fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
     let click_function_environment =
         ClickFunctionEnvironment::new(click_file.click_function_definitions());
     let theorem_definitions =
-        combined_theorem_definitions(&click_file).expect("standard theorem prelude should load");
+        proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function = syntax::parse_function(
         "int32 choose(int32 left, int32 right, int32 choose_left) { if (choose_left != 0) { return left; } else { return right; } }",
@@ -5396,7 +5396,7 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
     let click_function_environment =
         ClickFunctionEnvironment::new(click_file.click_function_definitions());
     let theorem_definitions =
-        combined_theorem_definitions(&click_file).expect("standard theorem prelude should load");
+        proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function = syntax::parse_function("int32 identity(int32 x) { return x; }")
         .expect("test C function should parse");
@@ -5666,7 +5666,7 @@ fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_definitions =
-        combined_theorem_definitions(&click_file).expect("standard theorem prelude should load");
+        proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function = syntax::parse_function("int32 bounded(int32 upper) { return upper; }")
         .expect("test C function should parse");
@@ -5759,7 +5759,7 @@ fn fixed_state_transport_can_follow_another_checked_step() {
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_definitions =
-        combined_theorem_definitions(&click_file).expect("standard theorem prelude should load");
+        proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function =
         syntax::parse_function("void noop() {}").expect("test C function should parse");
@@ -5870,7 +5870,7 @@ fn pure_signed_order_simp_builds_its_theorem_path_with_logarithmic_local_updates
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_definitions =
-        combined_theorem_definitions(&click_file).expect("standard order theorems should load");
+        proof_theorem_definitions(&click_file).expect("standard order theorems should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let memory = CMemory::new();
     let terms = [
@@ -6012,7 +6012,7 @@ fn pure_equality_refinement_simp_applies_one_rewrite_with_logarithmic_local_upda
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_definitions =
-        combined_theorem_definitions(&click_file).expect("standard theorem prelude should load");
+        proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let memory = CMemory::new();
     let value = Bitvector32Term::Variable(Variable(8_174_000));
@@ -6101,7 +6101,7 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_definitions =
-        combined_theorem_definitions(&click_file).expect("standard theorem prelude should load");
+        proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let memory = CMemory::new();
     let selected_term = Bitvector32Term::Variable(Variable(8_174_050));
@@ -6207,7 +6207,7 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_definitions =
-        combined_theorem_definitions(&click_file).expect("standard theorem prelude should load");
+        proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let memory = CMemory::new();
     let left = Bitvector32Term::Variable(Variable(8_174_060));
@@ -6324,7 +6324,7 @@ fn fixed_state_predecessor_simp_builds_checked_scope_with_logarithmic_local_upda
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_definitions =
-        combined_theorem_definitions(&click_file).expect("standard theorem prelude should load");
+        proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function =
         syntax::parse_function("void noop() {}").expect("test C function should parse");
@@ -6425,7 +6425,7 @@ fn fixed_state_equality_simp_builds_its_recorded_path_with_logarithmic_local_upd
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_definitions =
-        combined_theorem_definitions(&click_file).expect("standard theorem prelude should load");
+        proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function =
         syntax::parse_function("void noop() {}").expect("test C function should parse");
@@ -6517,7 +6517,7 @@ fn fixed_state_arithmetic_rewrite_paths_ignore_unrelated_facts() {
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_definitions =
-        combined_theorem_definitions(&click_file).expect("standard theorem prelude should load");
+        proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function =
         syntax::parse_function("void noop() {}").expect("test C function should parse");
@@ -6611,7 +6611,7 @@ fn fixed_state_order_simp_builds_its_theorem_path_with_logarithmic_local_updates
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_definitions =
-        combined_theorem_definitions(&click_file).expect("standard order theorems should load");
+        proof_theorem_definitions(&click_file).expect("standard order theorems should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function =
         syntax::parse_function("void noop() {}").expect("test C function should parse");
@@ -6718,8 +6718,8 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
-    let theorem_definitions = combined_theorem_definitions(&click_file)
-        .expect("the standard increment theorem should load");
+    let theorem_definitions =
+        proof_theorem_definitions(&click_file).expect("the standard increment theorem should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function =
         syntax::parse_function("void noop() {}").expect("test C function should parse");
@@ -7132,8 +7132,8 @@ fn branch_exported_premise_uses_one_selected_anchor_with_logarithmic_work() {
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
-    let theorem_definitions = combined_theorem_definitions(&click_file)
-        .expect("the standard increment theorem should load");
+    let theorem_definitions =
+        proof_theorem_definitions(&click_file).expect("the standard increment theorem should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function = syntax::parse_function("int32 noop(int32 x) { return x; }")
         .expect("test C function should parse");
@@ -7236,8 +7236,8 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
-    let theorem_definitions = combined_theorem_definitions(&click_file)
-        .expect("the standard increment theorem should load");
+    let theorem_definitions =
+        proof_theorem_definitions(&click_file).expect("the standard increment theorem should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function =
         syntax::parse_function("void noop() {}").expect("test C function should parse");
@@ -7545,8 +7545,8 @@ fn le_and_not_lt_equality_simp_retains_one_indexed_theorem_application() {
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
-    let theorem_definitions = combined_theorem_definitions(&click_file)
-        .expect("the standard equality theorem should load");
+    let theorem_definitions =
+        proof_theorem_definitions(&click_file).expect("the standard equality theorem should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function =
         syntax::parse_function("void noop() {}").expect("test C function should parse");
@@ -7738,8 +7738,8 @@ fn ge_and_not_gt_equality_simp_retains_one_indexed_theorem_application() {
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
-    let theorem_definitions = combined_theorem_definitions(&click_file)
-        .expect("the standard equality theorem should load");
+    let theorem_definitions =
+        proof_theorem_definitions(&click_file).expect("the standard equality theorem should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function =
         syntax::parse_function("void noop() {}").expect("test C function should parse");
@@ -7841,7 +7841,7 @@ fn le_and_neq_strict_simp_retains_one_indexed_theorem_application() {
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
-    let theorem_definitions = combined_theorem_definitions(&click_file)
+    let theorem_definitions = proof_theorem_definitions(&click_file)
         .expect("the standard strict-order theorem should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function =
@@ -7941,7 +7941,7 @@ fn symbolic_arithmetic_definedness_retains_two_indexed_theorem_premises() {
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
-    let theorem_definitions = combined_theorem_definitions(&click_file)
+    let theorem_definitions = proof_theorem_definitions(&click_file)
         .expect("the standard symbolic-add theorem should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function =
@@ -8123,8 +8123,8 @@ fn selected_disjunction_simp_retains_checked_cases_and_scales() {
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
-    let theorem_definitions = combined_theorem_definitions(&click_file)
-        .expect("the standard theorem prelude should load");
+    let theorem_definitions =
+        proof_theorem_definitions(&click_file).expect("the standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function =
         syntax::parse_function("void noop() {}").expect("test C function should parse");
@@ -8236,8 +8236,8 @@ fn surface_structural_simp_retains_recursive_child_proofs_and_scales() {
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
-    let theorem_definitions = combined_theorem_definitions(&click_file)
-        .expect("the standard theorem prelude should load");
+    let theorem_definitions =
+        proof_theorem_definitions(&click_file).expect("the standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function =
         syntax::parse_function("void noop() {}").expect("test C function should parse");
@@ -8440,7 +8440,7 @@ fn predecessor_simps_retain_indexed_named_rule_premises() {
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
-    let theorem_definitions = combined_theorem_definitions(&click_file)
+    let theorem_definitions = proof_theorem_definitions(&click_file)
         .expect("the standard predecessor theorems should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function =
@@ -8704,7 +8704,7 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_definitions =
-        combined_theorem_definitions(&click_file).expect("standard theorem prelude should load");
+        proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let memory = CMemory::new();
     let left = CValue::Int32(Bitvector32Term::Variable(Variable(8_200_000)));
@@ -8832,7 +8832,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_definitions =
-        combined_theorem_definitions(&click_file).expect("standard theorem prelude should load");
+        proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let memory = CMemory::new();
     let left = CValue::Int32(Bitvector32Term::Variable(Variable(8_210_000)));

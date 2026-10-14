@@ -115,3 +115,38 @@ for withdrawal instead of recomputing them after late producer frame edges.
 The multi-size lookup regression and a dedicated late-edge withdrawal test both
 pass on this follow-up. The 39/52 example-stage verdict above is for the initial
 candidate; no additional full stage is claimed for the withdrawal-only change.
+
+## Follow-on backing-range discovery reduction
+
+On preserved recovery checkpoint `bcb416098`, the original loop above reaches
+its post-store fold but still rejects `owns h->data[0..n]`. A focused trace
+records the held backing range at the descriptor's initial pointer read and
+shows the backing write before the failed fold. The normal diagnostic prints
+the held and requested ranges identically; that spelling does not establish
+that their internal snapshot reads are identical.
+
+A temporary, bounded investigation probe at incremental memory consumption
+reports **zero indexed candidates**. Checking the three held memory facts with
+the unchanged `resource_fact_entails` comparator reports false for the descriptor
+view and local counter owner, and **true for the backing owner**. Its bounds and
+stride match the request (`0..n`, four bytes); its pointer-read variable differs.
+The cheap `pointers_known_equal` query reports false for the backing pair,
+although ordinary resource coverage accepts it. This isolates candidate
+discovery as insufficient for a relation already accepted by coverage; it does
+not justify admitting a new equality or typed-place rule.
+
+The probe inspects only this reduced context and is removed from production.
+Do not turn that diagnostic scan into a lookup fallback. A repair must select
+suppliers through indexed, checked producer/frame evidence, retain the final
+coverage check, and include authority-withdrawal and partial-pointer-write
+rejection controls plus deterministic scaling beside unrelated holdings.
+
+Replacing the backing write with a write through an independently owned `aux`
+pointer retains the same miss: zero candidates, but accepted backing coverage.
+The symptom therefore does not require modifying the backing buffer itself.
+
+After removing the probe and rebuilding the unchanged recovery checkpoint,
+the original loop still fails at that fold. The counter-only loop and the
+non-loop descriptor unfold/fold round trip both pass fresh checking, expansion,
+verification of the rewritten proof and retained-session rechecking. These
+controls bound the reduction; they are not a repaired original loop.

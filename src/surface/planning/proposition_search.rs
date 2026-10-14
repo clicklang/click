@@ -1007,14 +1007,11 @@ impl PropositionSearch for PureFactContext {
         proposition: &Proposition,
         for_simp: bool,
     ) -> Option<PropositionDerivationRule> {
-        let instances = self.finite_forall_instantiations(proposition);
-        if instances.is_empty() {
-            return None;
-        }
+        let mut instances = self.finite_forall_instantiations(proposition).peekable();
+        instances.peek()?;
         instances
-            .iter()
             .map(|instance| {
-                self.derive_proposition_using(instance, for_simp)
+                self.derive_proposition_using(&instance, for_simp)
                     .map(|proof| *proof)
             })
             .collect::<Option<Vec<_>>>()

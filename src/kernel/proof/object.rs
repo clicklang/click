@@ -1120,7 +1120,8 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let (goal, facts) = self
             .focused_proposition()
             .ok_or(PropositionCloseError::NotProposition)?;
-        let Some(instances) = crate::kernel::finite_forall_goal_instances(goal.proposition())
+        let Some(instances) =
+            crate::kernel::finite_forall_goal_instances(goal.proposition(), false)
         else {
             return Err(PropositionCloseError::ExpectedFiniteUniversal);
         };

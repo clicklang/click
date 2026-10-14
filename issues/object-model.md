@@ -180,6 +180,13 @@ still needs its later pointer-field range fold repaired; arena still reaches a
 control-budget failure. None of these archive-dependent candidates activates
 or completes the object model on upstream master.
 
+A focused follow-on reduction on `bcb416098` identifies the later backing-range
+fold as another candidate-discovery miss: the memory index selects zero facts,
+while the unchanged coverage comparator accepts the held backing owner. Keep
+this repair separate from new equality or origin semantics; select checked
+producer/frame evidence through an index and retain coverage and withdrawal
+controls. The investigation is recorded in the existing retained-resource bug.
+
 ## Recovery and delivery sequence
 
 ### 1. Preserve and classify before repairing more examples
