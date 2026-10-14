@@ -76,6 +76,12 @@ authority. Named struct pointers and library model accessors retain their
 ordinary spelling. The Rust
 assignment-operator audit checks this through an erased local array pointer.
 
+For equality of a 32-bit or 64-bit machine integer with a literal, `simp` and
+`auto` stop searching when current facts already decide the opposite truth
+value. An inconsistent context remains eligible for contradiction closure.
+The reference-call scaling regression compares valid results with false
+literal results over four sizes; refusal does not spell every old call fact.
+
 Smart tactics are deliberately incomplete heuristics. A prompt failure means
 that this search did not find a proof within its budget, not that Click's
 engine is broken. Split a broad tactic into smaller operations or write the
