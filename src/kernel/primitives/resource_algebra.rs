@@ -3045,7 +3045,7 @@ impl ResourceContext {
         fact.is_view().then_some(fact)
     }
 
-    /// Reserve a concrete owned footprint from its live byte fragments. Each
+    /// Reserve a constant-length owned footprint from its live byte fragments. Each
     /// step checks and consumes the actual indexed occurrence; a view, gap,
     /// stale occurrence, or unsupported coordinate proves no ownership. The
     /// returned provenance retains every supplier rather than inventing a
@@ -3060,31 +3060,45 @@ impl ResourceContext {
             return None;
         }
         let range = required.memory_own_range()?;
-        let (mut cursor, end) = concrete_memory_range_bounds(range)?;
+        range.int32_bounds()?;
+        let end = range
+            .signed_constant_end()?
+            .checked_sub(range.signed_constant_start()?)?
+            .checked_mul(i64::from(range.element_width()))?;
+        if end <= 0 {
+            return None;
+        }
+        let start = range.start_pointer();
+        let mut cursor = 0i64;
         let mut supports = Vec::new();
         while cursor < end {
             let pointer = Pointer {
-                block: range.base().block.clone(),
-                offset: PointerOffsetTerm::Constant(cursor),
+                block: start.block.clone(),
+                offset: PointerOffsetTerm::add(
+                    start.offset.clone(),
+                    PointerOffsetTerm::Constant(cursor),
+                ),
             };
-            let entries = self.owned_fragment_candidates(&pointer, assumptions)?;
+            let mut entries = self.write_access_entries(&pointer, 1, assumptions)?;
             let mut selected = None;
-            for entry in entries {
+            while let Some(entry) = entries.next() {
                 crate::instrumentation::record_deterministic_work(1);
                 let candidate = self.fact(entry);
                 let Some(available) = candidate.memory_own_range() else {
                     continue;
                 };
-                let Some(base) = assumptions
-                    .equality_graph
-                    .pointer_in_block(&pointer, &available.base().block)
+                let Some(base) = entries.address(entry) else {
+                    continue;
+                };
+                let point =
+                    CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), 1u32.into(), 1);
+                let byte_available = byte_normalized_memory_range(available);
+                let Some(at) =
+                    exact_constant_base_delta(&byte_available, &point, Some(assumptions))
                 else {
                     continue;
                 };
-                let Some(at) = base.offset.as_const() else {
-                    continue;
-                };
-                let Some((_, available_end)) = concrete_memory_range_bounds(available) else {
+                let Some(available_end) = byte_available.signed_constant_end() else {
                     continue;
                 };
                 let Some(bytes) = available_end

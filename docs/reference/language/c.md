@@ -2204,6 +2204,16 @@ place already names its storage. A range belongs on a pointer or an array;
 a scalar field such as `owner->len` takes none. A range on a struct pointer
 counts structs: `owns p[0..n]` is `n` whole structs.
 
+A call can assemble whole-object ownership from adjacent owned fields, including
+byte fields, when their combined footprint covers every byte of the object.
+A scalar field clause covers its ABI slot up to the next field or the end of
+the struct, so a final byte field includes its following tail padding.
+Viewed fields cannot complete an owned footprint; explicit byte fragments
+must cover the complete object, including padding.
+
+<!-- verified-example: mdtests/whole_struct_reassembles_from_byte_fields.md -->
+<!-- verified-example: mdtests/whole_struct_reassembles_from_padded_byte_field.md -->
+
 No runtime length is inferred for a pointer field. Use an explicit range,
 such as `views owner->data[0..owner->len]`, for pointed-to elements, and
 `views owner->data` for the pointer slot itself. These rules also apply to

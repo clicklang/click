@@ -896,61 +896,145 @@ fn owned_fragment_reservation_checks_aliases_gaps_and_linear_consumption() {
 }
 
 #[test]
+fn owned_fragment_reservation_joins_mixed_width_fields_at_symbolic_bases() {
+    let facts = PureFactContext::new();
+    for base in [
+        Pointer::symbolic(Variable(862_020)),
+        Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Variable(Variable(862_021)),
+        },
+    ] {
+        let memory = |start: u32, end: u32, width| {
+            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                base.clone(),
+                start.into(),
+                end.into(),
+                width,
+            ))
+        };
+        let fields = [
+            memory(0, 1, 4),
+            memory(4, 5, 1),
+            memory(5, 6, 1),
+            memory(6, 7, 1),
+            memory(7, 8, 1),
+        ];
+        let whole = memory(0, 2, 4);
+        let context = |fields: Vec<CResourceFact>| {
+            let resources = ResourceContext::new().unchecked_with_facts(fields);
+            resources.synchronize_memory_equalities(&facts);
+            resources
+        };
+        let resources = context(fields.to_vec());
+        let (remaining, supports) = resources
+            .clone()
+            .reserve_owned_memory_fragments(&whole, &facts)
+            .unwrap();
+        assert_eq!(supports.len(), fields.len());
+        for support in supports {
+            assert!(resources.owned_fact_for_occurrence(support).is_some());
+            assert!(remaining.owned_fact_for_occurrence(support).is_none());
+        }
+        assert!(
+            remaining
+                .reserve_owned_memory_fragments(&whole, &facts)
+                .is_none()
+        );
+        assert!(
+            resources
+                .reserve_owned_memory_fragments(&memory(0, 3, 4), &facts)
+                .is_none()
+        );
+        for missing in 0..fields.len() {
+            let mut incomplete = fields.to_vec();
+            incomplete.remove(missing);
+            assert!(
+                context(incomplete)
+                    .reserve_owned_memory_fragments(&whole, &facts)
+                    .is_none()
+            );
+        }
+        let mut viewed = fields.to_vec();
+        viewed[4] = CResourceFact::view_memory(fields[4].memory_own_range().unwrap().clone());
+        assert!(
+            context(viewed)
+                .reserve_owned_memory_fragments(&whole, &facts)
+                .is_none()
+        );
+        // Five explicitly owned bytes omit the three padding bytes.
+        assert!(
+            context(fields[..2].to_vec())
+                .reserve_owned_memory_fragments(&whole, &facts)
+                .is_none()
+        );
+    }
+}
+
+#[test]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn owned_fragment_reservation_scales_with_fragments_not_ambient_memory() {
-    let base = Pointer::symbolic(Variable(862_010));
-    let fact = |start: u32, end: u32| {
-        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
-            base.clone(),
-            start.into(),
-            end.into(),
-            1,
-        ))
-    };
-    let measure = |fragments: u32, ambient: u32| {
-        let mut resources = ResourceContext::new();
-        for i in 0..fragments {
-            resources = resources.unchecked_with_fact(fact(i * 4, i * 4 + 4));
-        }
-        for i in 0..ambient {
-            resources = resources.unchecked_with_fact(fact(8192 + i * 8, 8196 + i * 8));
-        }
-        let facts = PureFactContext::new();
-        resources.synchronize_memory_equalities(&facts);
-        let required = fact(0, fragments * 4);
-        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
-            crate::instrumentation::measure_deterministic_work(|| {
-                assert!(
-                    resources
-                        .directly_supporting_owned_entry(&required, &facts)
-                        .is_none()
-                );
-                let (_, supports) = resources
-                    .reserve_owned_memory_fragments(&required, &facts)
-                    .unwrap();
-                assert_eq!(supports.len(), fragments as usize);
-            })
-        });
-        (work, map_work)
-    };
-    let ambient = [16, 64, 256, 1024].map(|n| measure(4, n));
-    assert!(
-        ambient[3].0 <= ambient[0].0 * 2 + 32,
-        "reservation scanned unrelated memory: {ambient:?}"
-    );
-    assert!(
-        ambient[3].1 <= ambient[0].1 * 4 + 256,
-        "reservation index scanned unrelated memory: {ambient:?}"
-    );
-    let fragments = [8, 32, 128].map(|n| measure(n, 0));
-    assert!(
-        fragments[2].0 <= fragments[0].0 * 20 + 128,
-        "reservation is superlinear: {fragments:?}"
-    );
-    assert!(
-        fragments[2].1 <= fragments[0].1 * 40 + 1024,
-        "reservation index is superlinear: {fragments:?}"
-    );
+    for base in [
+        Pointer::symbolic(Variable(862_010)),
+        Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(862_011)), 4),
+        },
+    ] {
+        let fact = |start: u32, end: u32| {
+            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                base.clone(),
+                start.into(),
+                end.into(),
+                1,
+            ))
+        };
+        let measure = |fragments: u32, ambient: u32| {
+            let mut resources = ResourceContext::new();
+            for i in 0..fragments {
+                resources = resources.unchecked_with_fact(fact(i * 4, i * 4 + 4));
+            }
+            for i in 0..ambient {
+                resources = resources.unchecked_with_fact(fact(8192 + i * 8, 8196 + i * 8));
+            }
+            let facts = PureFactContext::new();
+            resources.synchronize_memory_equalities(&facts);
+            let required = fact(0, fragments * 4);
+            let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    assert!(
+                        resources
+                            .directly_supporting_owned_entry(&required, &facts)
+                            .is_none()
+                    );
+                    let (_, supports) = resources
+                        .reserve_owned_memory_fragments(&required, &facts)
+                        .unwrap();
+                    assert_eq!(supports.len(), fragments as usize);
+                })
+            });
+            (work, map_work)
+        };
+        let ambient = [16, 64, 256, 1024].map(|n| measure(4, n));
+        assert!(
+            ambient[3].0 <= ambient[0].0 * 2 + 32,
+            "reservation scanned unrelated memory: {ambient:?}"
+        );
+        assert!(
+            ambient[3].1 <= ambient[0].1 * 4 + 256,
+            "reservation index scanned unrelated memory: {ambient:?}"
+        );
+        let fragments = [8, 32, 128].map(|n| measure(n, 0));
+        assert!(
+            fragments[2].0 <= fragments[0].0 * 20 + 128,
+            "reservation is superlinear: {fragments:?}"
+        );
+        assert!(
+            fragments[2].1 <= fragments[0].1 * 40 + 1024,
+            "reservation index is superlinear: {fragments:?}"
+        );
+        eprintln!("fragment reservation at {base:?}: ambient {ambient:?}; fragments {fragments:?}");
+    }
 }
 
 #[test]
