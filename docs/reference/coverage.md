@@ -156,7 +156,7 @@ supplies its own declarations; it never verifies a platform library.
 | --- | --- | --- | --- |
 | Strings | Partial: ASCII literals, byte-buffer predicates; no wide strings; `mdtests/string_literals.md` | Not supported | Not supported: no `String` or `str` |
 | Standard library calls | Partial: `memcpy`, `memcmp`, `memset`, `strlen`, and the allocator family; no stdio; `mdtests/c_builtin_string_and_stdlib_headers.md` | Partial: a catalog for `std::span<int>` and `std::as_writable_bytes`; other calls refused; `tests/bitcoin_core_money_range.rs::axiomatic_span_pop_back_verifies_against_catalog_contracts` | Partial: slice `len`, `split_at`, `iter`, `chunks_exact`, core `From`, `mem::drop`; `examples/rust-chunks-exact/` |
-| Your own `extern` contracts | Supported: reported as external assumptions; `mdtests/external_function_contract_call.md` | Not supported: documented for uncatalogued standard functions, but no fixture verifies one | Not supported |
+| Your own `extern` contracts | Supported: reported as external assumptions; `mdtests/external_function_contract_call.md` | Not supported: documented for uncatalogued standard functions, but no fixture verifies one | Partial: scalar `safe fn` items of an `unsafe extern "C"` block; no other crates; `tests/rust_import/extern_functions.rs::charon_extern_block_calls_meet_their_extern_contract` |
 
 ## Concurrency
 

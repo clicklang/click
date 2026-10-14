@@ -160,6 +160,10 @@ pub struct C0Function {
     inline_body: bool,
     /// Calls used as expression observers must have contracts with views only.
     requires_read_only_contract: bool,
+    /// The declaration names its parameters only by position, as a Rust
+    /// `extern` block item does in Charon's output; the sidecar head names
+    /// them ([`Self::named_by_head`]).
+    positional_parameters: bool,
     parameters: Vec<C0Parameter>,
     body: C0Statement,
     /// Compiler-created carriers for statement-form callback calls. Keeping
@@ -3191,6 +3195,35 @@ impl C0Function {
         self
     }
 
+    /// A declaration whose parameters are known only by position.
+    pub(crate) fn with_positional_parameters(mut self) -> Self {
+        self.positional_parameters = true;
+        self
+    }
+
+    pub(crate) fn has_positional_parameters(&self) -> bool {
+        self.positional_parameters
+    }
+
+    /// This declaration with its positional parameters named as a sidecar
+    /// head names them, or `None` when its parameters have their own names
+    /// or the head has a different arity. Types stay the declaration's, so
+    /// the head is still checked against them.
+    pub(crate) fn named_by_head<'n>(
+        &self,
+        names: impl ExactSizeIterator<Item = &'n str>,
+    ) -> Option<Self> {
+        if !self.positional_parameters || names.len() != self.parameters.len() {
+            return None;
+        }
+        let mut named = self.clone();
+        for (parameter, name) in named.parameters.iter_mut().zip(names) {
+            parameter.name = name.to_string();
+        }
+        named.positional_parameters = false;
+        Some(named)
+    }
+
     pub(crate) fn requires_read_only_contract(&self) -> bool {
         self.requires_read_only_contract
     }
@@ -3219,6 +3252,7 @@ impl C0Function {
             name,
             inline_body: false,
             requires_read_only_contract: false,
+            positional_parameters: false,
             program_entry_state: None,
             prelowered_kernel_function: None,
             parameters,
@@ -9506,6 +9540,7 @@ impl Parser {
             name: header.name,
             inline_body,
             requires_read_only_contract: false,
+            positional_parameters: false,
             program_entry_state: None,
             prelowered_kernel_function: None,
             parameters: header.parameters,

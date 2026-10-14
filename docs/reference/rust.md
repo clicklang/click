@@ -398,6 +398,21 @@ refuses unsafe or foreign function pointers, pointers of non-scalar
 parameters, closures and `dyn Fn`
 ([`design/charon-trial/function-pointers`](https://github.com/clicklang/click/blob/master/design/charon-trial/function-pointers/callback.click)).
 
+### `extern` block functions
+
+A `safe fn` declared in an `unsafe extern "C" { ... }` block has no body in
+the crate, and a call to it needs no `unsafe`. The sidecar states the
+contract Click trusts for it, as a C `extern` declaration does:
+`extern fn extern_functions::clamp_reading(raw: i32) -> i32 { requires raw
+>= 0; ensures 0 <= result and result <= 100; }`. A caller must establish the `requires` and may use only the `ensures`.
+`extern fn` takes no proof, and a verified `fn` for such a declaration is
+refused. Charon keeps no parameter names for a foreign item, so the head
+names them; its types must be the declaration's. Parameters and the result
+are scalars, or `()` for the result. An `unsafe fn` item and other ABIs are
+refused, as their calls need `unsafe`. Functions of other crates are not
+imported
+([`design/charon-trial/extern-functions`](https://github.com/clicklang/click/blob/master/design/charon-trial/extern-functions/ffi.click)).
+
 ## Supported semantics
 
 The scalar slice supports `i32`, `u8`, `u16`, `u32`, target-sized `usize`, booleans, unit returns, initialized scalar

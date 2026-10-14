@@ -5293,6 +5293,44 @@ fn record_never_address_taken_locals(
     }
 }
 
+/// A prepared declaration whose parameters the import knows only by
+/// position, a Rust `extern` block item, named by its sidecar `extern fn`
+/// head. Its types stay the declaration's, which the head is checked against.
+fn named_by_extern_head(
+    file: &ClickFile,
+    function: &syntax::C0Function,
+) -> Result<syntax::C0Function, ClickError> {
+    if !function.has_positional_parameters() {
+        return Ok(function.clone());
+    }
+    let Some(block) = file
+        .function_blocks()
+        .iter()
+        .find(|block| block.signature().name() == function.source_name())
+    else {
+        return Ok(function.clone());
+    };
+    if !block.is_external() {
+        return Err(ClickError::new(format!(
+            "`{}` is declared in an `extern` block and has no body to verify; state its contract with `extern fn`",
+            block.signature().name()
+        ))
+        .with_kind(ClickErrorKind::Type)
+        .at_declaration(block.signature().name()));
+    }
+    // A head of another arity keeps the declaration's positions, and the
+    // signature check reports the difference.
+    Ok(function
+        .named_by_head(
+            block
+                .signature()
+                .parameters()
+                .iter()
+                .map(|parameter| parameter.name()),
+        )
+        .unwrap_or_else(|| function.clone()))
+}
+
 pub(in crate::surface) fn parse_verified_sources_context(
     file: &ClickFile,
     c_sources: &CSourceContext<'_>,
@@ -5358,16 +5396,19 @@ pub(in crate::surface) fn parse_verified_sources_context_with_entry(
                 import.language()
             )));
         }
-        return Ok(execution
+        return execution
             .functions
             .iter()
             .map(|function| {
-                (
+                Ok((
                     function.name().to_string(),
-                    (import.logical_source().to_string(), function.clone()),
-                )
+                    (
+                        import.logical_source().to_string(),
+                        named_by_extern_head(file, function)?,
+                    ),
+                ))
             })
-            .collect());
+            .collect();
     }
 
     let external_functions = file

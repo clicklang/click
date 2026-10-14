@@ -926,6 +926,7 @@ mod tests {
             return_type: Type::Unit,
             parameters: vec![],
             body: vec![],
+            external: false,
             span: span.clone(),
             mir: Some(MirBody {
                 locals: vec![Place {
@@ -971,6 +972,7 @@ mod tests {
                         value: Some(E::Integer { value: 0 }),
                     }],
                     mir: None,
+                    external: false,
                     span: span.clone(),
                 });
             }

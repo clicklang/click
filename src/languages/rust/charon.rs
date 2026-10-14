@@ -273,6 +273,50 @@ fn qualified_record_name(name: &a::Name, krate: &str) -> Result<String, String> 
     Ok(super::names::qualified_name(segments))
 }
 impl Adapter<'_> {
+    /// A function declared in an `extern` block: its name, its scalar
+    /// parameters by position, since Charon keeps no names for a foreign
+    /// item, and no body. A sidecar's `extern fn` names the parameters.
+    fn external_function(&self, name: &str, f: &a::FunDecl) -> Result<out::Function, String> {
+        let scalar = |ty: &Type| {
+            matches!(
+                ty,
+                Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Usize | Type::Bool
+            )
+        };
+        let return_type = self.ty(&f.signature.output)?;
+        if !scalar(&return_type) && return_type != Type::Unit {
+            return Err(unsupported(
+                "extern function result other than a scalar or ()",
+            ));
+        }
+        let parameters = f
+            .signature
+            .inputs
+            .iter()
+            .enumerate()
+            .map(|(index, ty)| {
+                let value_type = self.ty(ty)?;
+                if !scalar(&value_type) {
+                    return Err(unsupported("extern function parameter other than a scalar"));
+                }
+                Ok(out::Place {
+                    name: format!("__rust_arg_{index}"),
+                    value_type,
+                    span: span(f.item_meta.span),
+                })
+            })
+            .collect::<Result<_, String>>()?;
+        Ok(out::Function {
+            name: name.to_string(),
+            return_type,
+            parameters,
+            body: vec![],
+            mir: None,
+            external: true,
+            span: span(f.item_meta.span),
+        })
+    }
+
     fn qualified_function_name(&self, name: &a::Name) -> Result<String, String> {
         let Some(a::PathElem::Ident(root, d)) = name.name.first() else {
             return Err(unsupported("qualified function root"));
@@ -1511,8 +1555,15 @@ pub(super) fn decode_crate(
         if !adapter.crate_mode && matches!(adapter.ty(&f.signature.output)?, Type::Record { .. }) {
             return Err("Rust reference/aggregate returns are not supported".into());
         }
+        // A `safe fn` in an `unsafe extern "C"` block is a declaration
+        // without a body, whose calls a sidecar `extern fn` contract states.
+        let abi = if matches!(f.body, a::Body::Extern(_)) {
+            a::Abi::C
+        } else {
+            a::Abi::Rust
+        };
         if f.signature.is_unsafe
-            || f.signature.abi != a::Abi::Rust
+            || f.signature.abi != abi
             || f.signature.is_variadic
             || !f.generics.types.is_empty()
             || !f.generics.const_generics.is_empty()
@@ -1566,6 +1617,10 @@ pub(super) fn decode_crate(
             return Err(unsupported("colliding proof function names"));
         }
         let f = &krate.fun_decls[*id];
+        if let a::Body::Extern(_) = &f.body {
+            functions.push(adapter.external_function(name, f)?);
+            continue;
+        }
         let a::Body::Unstructured(body) = &f.body else {
             return Err(unsupported("missing or non-CFG source body"));
         };
@@ -1751,6 +1806,7 @@ pub(super) fn decode_crate(
             parameters,
             body: vec![],
             mir: Some(out::MirBody { locals, blocks }),
+            external: false,
             span: span(f.item_meta.span),
         });
     }
