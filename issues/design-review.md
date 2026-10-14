@@ -298,10 +298,10 @@ Done: `consumes X; produces X;` for one fixed `X` is refused with the
 `owns X;` spelling, and the corpus is migrated. `owns *s` and `views *s`
 cover a whole struct, and the examples' complete per-field lists use them.
 A cell a contract only views needs no frame; `examples/ring-buffer` dropped
-its restated ones. Two gaps in using `*s` beside per-field ownership are
-filed as bugs (`bugs/whole-struct-ownership-does-not-reassemble-from-a-byte-field.md`,
-`bugs/a-whole-global-struct-does-not-cover-its-object.md`); a struct whose
-size is not a multiple of four bytes has no `*s` form.
+its restated ones. Named global struct objects use their complete ABI extent, just like `*s`.
+Reassembly from byte fields remains filed as
+`bugs/whole-struct-ownership-does-not-reassemble-from-a-byte-field.md`; a struct
+whose size is not a multiple of four bytes has no whole-object form.
 
 Open question for the maintainer: a frame for an owned cell can come only
 from the body. A function's write footprint is exactly the memory its

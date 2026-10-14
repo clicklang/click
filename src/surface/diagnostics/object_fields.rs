@@ -28,7 +28,7 @@ struct ObjectField {
 
 /// The source name and scalar fields of each struct-typed global, by the
 /// kernel block that holds it.
-type ObjectFields = std::collections::HashMap<String, (String, Vec<ObjectField>)>;
+type ObjectFields = std::collections::HashMap<String, (String, u32, Vec<ObjectField>)>;
 
 thread_local! {
     static AMBIENT_OBJECT_FIELDS: std::cell::RefCell<Option<std::rc::Rc<ObjectFields>>> =
@@ -46,7 +46,14 @@ pub(crate) fn enter_ambient_object_fields(function: &syntax::C0Function) {
         };
         let mut fields = Vec::new();
         collect_struct_fields(function, aggregate.layout(), "", 0, &mut fields, 0);
-        objects.insert(block, (aggregate.name().to_string(), fields));
+        objects.insert(
+            block,
+            (
+                aggregate.name().to_string(),
+                aggregate.layout().size_bytes(),
+                fields,
+            ),
+        );
     }
     AMBIENT_OBJECT_FIELDS.with(|slot| *slot.borrow_mut() = Some(std::rc::Rc::new(objects)));
 }
@@ -165,7 +172,7 @@ fn collect_union_fields(
 pub(super) fn object_field_spelling(block: &str, offset: u32, width: u32) -> Option<String> {
     AMBIENT_OBJECT_FIELDS.with(|slot| {
         let slot = slot.borrow();
-        let (name, fields) = slot.as_ref()?.get(block)?;
+        let (name, _, fields) = slot.as_ref()?.get(block)?;
         let mut matching = fields
             .iter()
             .filter(|field| field.offset == offset && field.width == width);
@@ -174,5 +181,24 @@ pub(super) fn object_field_spelling(block: &str, offset: u32, width: u32) -> Opt
             .next()
             .is_none()
             .then(|| format!("{name}.{}", field.path))
+    })
+}
+
+/// The declared object's name when a range covers exactly its complete ABI storage.
+pub(super) fn object_range_spelling(range: &CMemoryRange) -> Option<String> {
+    let PointerBlock::Concrete(block) = &range.base().block else {
+        return None;
+    };
+    let PointerOffsetTerm::Constant(offset) = &range.base().offset else {
+        return None;
+    };
+    let offset = u64::try_from(*offset).ok()?;
+    let width = u64::from(range.element_width());
+    let start = offset.checked_add(u64::from(range.constant_start()?).checked_mul(width)?)?;
+    let end = offset.checked_add(u64::from(range.constant_end()?).checked_mul(width)?)?;
+    AMBIENT_OBJECT_FIELDS.with(|slot| {
+        let slot = slot.borrow();
+        let (name, size, _) = slot.as_ref()?.get(block)?;
+        (start == 0 && end == u64::from(*size)).then(|| name.clone())
     })
 }

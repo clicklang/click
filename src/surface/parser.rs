@@ -9620,6 +9620,37 @@ impl Parser {
             };
             return Ok(vec![self.object_segment(base, struct_name)?]);
         }
+        // A declared struct object owns all of its storage, with the same
+        // word-based extent as `*p` for a pointer to that struct. Retain its
+        // imported ABI so input cells use the actual field types.
+        if postfixes == 0
+            && self.peek() != Some(&Token::LBracket)
+            && let ContractExpression::CFragment(CExpression::Variable(name)) = &surface_base
+        {
+            let object = if !self.current_c_parameter_types.contains_key(name)
+                && !self.current_struct_array_params.contains(name)
+                && let Some(struct_name) = self.current_aggregate_objects.get(name)
+            {
+                Some((struct_name, CExpression::AddressOf(Box::new(base.clone()))))
+            } else {
+                self.qualified_object(name)
+                    .filter(|object| object.address.is_none() && object.array_shape.is_none())
+                    .and_then(|object| {
+                        Some((object.struct_name.as_ref()?, object.expression.clone()))
+                    })
+            };
+            if let Some((struct_name, address)) = object {
+                let mut segment = self.object_segment(address, struct_name.clone())?;
+                segment.surface = ContractSegmentSurface::ObjectPlace {
+                    name: name.clone(),
+                    layout: std::sync::Arc::new(StructRangeLayout {
+                        name: struct_name.clone(),
+                        layout: self.struct_layouts[struct_name].clone(),
+                    }),
+                };
+                return Ok(vec![segment]);
+            }
+        }
         // A place written alone is its own storage: one element at its
         // address.
         if self.peek() != Some(&Token::LBracket) {
@@ -12924,10 +12955,14 @@ fn object_alignment_fact(
     let (ResourceClause::OwnMemory(segment) | ResourceClause::ViewMemory(segment)) = clause else {
         return None;
     };
-    let ContractSegmentSurface::Object(struct_name) = &segment.surface else {
-        return None;
+    let alignment = match &segment.surface {
+        ContractSegmentSurface::Object(struct_name) => {
+            struct_layouts.get(struct_name)?.alignment_bytes()
+        }
+        ContractSegmentSurface::ObjectPlace { layout, .. } => layout.layout.alignment_bytes(),
+        _ => return None,
     };
-    let alignment = u64::from(struct_layouts.get(struct_name)?.alignment_bytes());
+    let alignment = u64::from(alignment);
     (alignment >= 2).then(|| aligned_proposition(segment.base.clone(), alignment))
 }
 

@@ -17775,3 +17775,48 @@ fn without_first_step_obligation_proofs(expanded: &str) -> String {
     let close = close.expect("the proofs close their block");
     format!("{}step();{}", &expanded[..start], &expanded[close + 1..])
 }
+
+#[test]
+#[ignore = "nightly: checks whole global object ownership through expansion and retained verification"]
+fn whole_global_objects_keep_their_extent_and_field_types() {
+    let (source, sources) =
+        mdtest_sources("mdtests/whole_global_struct_covers_addressed_object.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    for source in [
+        source.clone(),
+        source
+            .replace(
+                "verifying \"whole_global.c\";",
+                "verifying \"whole_global.c\" as unit;",
+            )
+            .replace("owns state;", "owns unit::state;"),
+    ] {
+        verify_c0_sources(&source, &sources).unwrap();
+        let expanded =
+            expand_c0_claim_source(&source, &sources, "set_global", CProofClaim::Grouped).unwrap();
+        verify_c0_sources(&expanded, &sources).unwrap();
+        let position = expansion::position_at_offset(
+            &expanded,
+            expanded.find("ensures result == 18u64").unwrap(),
+        );
+        let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+        session
+            .verify_at(&expanded, position.line, position.column)
+            .unwrap();
+    }
+    let missing = source.replace("owns state;", "");
+    let error = verify_c0_sources(&missing, &sources).unwrap_err();
+    assert!(
+        error
+            .message()
+            .contains("missing resource fact `owns state`"),
+        "{error:?}"
+    );
+    for insufficient in ["views state;", "owns state.left;"] {
+        assert!(verify_c0_sources(&source.replace("owns state;", insufficient), &sources).is_err());
+    }
+}
+

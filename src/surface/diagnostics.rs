@@ -2182,6 +2182,9 @@ pub(super) fn describe_memory_range(
     if let Some(place) = describe_struct_place_range(range, parameter_binding) {
         return place;
     }
+    if let Some(place) = object_fields::object_range_spelling(range) {
+        return place;
+    }
     // Elements behind a pointer field are spelled from the field:
     // `a->data[0..n]`.
     for (parameter, argument) in parameter_binding
@@ -4916,6 +4919,7 @@ pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
             }
             None => describe_field_place(&base, name),
         },
+        ContractSegmentSurface::ObjectPlace { name, .. } => name.clone(),
         // The object at a named object's address is that object.
         ContractSegmentSurface::Object(_)
             if base.strip_prefix('&').is_some_and(is_place_spelling) =>
