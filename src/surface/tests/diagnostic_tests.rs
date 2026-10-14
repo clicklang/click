@@ -3055,3 +3055,61 @@ fn pending_call_obligations_use_shared_goal_printer_and_snapshot_legend() {
     assert!(rendered.contains("pending_read_cell"), "{rendered}");
     assert!(!rendered.contains("CMemory {"), "{rendered}");
 }
+
+#[test]
+fn function_pointer_load_trace_shows_produced_value_and_read_snapshot() {
+    use crate::surface::proof_trace::with_proof_trace;
+    let c = r#"
+struct callbacks { void (*call)(int *p); };
+static void target(int *p) { }
+static const struct callbacks table = { .call = target };
+void concrete(int *p) {
+    const struct callbacks *cb = &table;
+    cb->call(p);
+}
+void symbolic(int *p, const struct callbacks *cb) { cb->call(p); }
+"#;
+    for (name, contract) in [
+        (
+            "concrete",
+            r#"
+void concrete(int32* p) { ensures true; } by {
+    step(); step(); step(); step();
+    have false by { assumption(); }
+}
+"#,
+        ),
+        (
+            "symbolic",
+            r#"
+void symbolic(int32* p, const struct callbacks* cb) {
+    views cb->call;
+} by {
+    step(); step();
+    have false by { assumption(); }
+}
+"#,
+        ),
+    ] {
+        let source = format!("verifying \"callbacks.c\";\n{contract}");
+        with_proof_trace(name, || {
+            let error = verify_c0_sources(&source, &[("callbacks.c", c)]).unwrap_err();
+            let trace = error
+                .trace_context_report()
+                .unwrap_or_else(|| panic!("{}", error.concise_report()));
+            assert!(trace.contains("produces __click_call_result"), "{trace}");
+            assert!(trace.contains("read: at(snapshot#"), "{trace}");
+            assert!(trace.contains("load_function_pointer(value#"), "{trace}");
+            assert!(trace.contains("label definitions"), "{trace}");
+            if name == "concrete" {
+                assert!(
+                    trace.contains("function `target#inline:callbacks.c`"),
+                    "{trace}"
+                );
+                assert!(trace.contains("table#file-static:callbacks.c"), "{trace}");
+            } else {
+                assert!(trace.contains("pointer read at"), "{trace}");
+            }
+        });
+    }
+}
