@@ -146,6 +146,11 @@ new moving suffix at its loop entry. Its prefix equations and native bounds
 place each original `adler += *buf++` read inside that held range. Read
 matching retains the native index when an equivalent int32 spelling is also
 known; pointer equalities and pure viewability facts grant no new resources.
+Native-index retention also follows a symbolic loop cursor through checked
+same-block offset equalities, including constant byte lanes. The
+[focused do-while regression](../../../mdtests/symbolic_loop_cursor_wide_offset.md)
+checks the caller-view read; kernel regressions check rejected accesses and
+bounded lookup across increasing alias counts.
 The scalar component bound is 1415761, including the coefficient in the
 weighted-sum invariant. Selected-premise reduction still uses the unchanged
 64-premise source-spelling limit and kernel checks.

@@ -1957,6 +1957,72 @@ mod tests {
     use super::*;
 
     #[test]
+    fn wide_read_aligns_external_buffer_from_symbolic_cursor() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(989_100)), 1),
+        };
+        let narrow = base.offset_by_elements(Bitvector32Term::Variable(Variable(989_101)), 1);
+        let index = Bitvector32Term::Variable(Variable(989_102));
+        let wide = base.offset_by_typed_elements(index.clone(), 1, true, true);
+        let query = Pointer::symbolic(Variable(989_103));
+        let aliases = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::pointer_equal(query.clone(), narrow.clone()),
+                true,
+            )
+            .assume_condition(ConditionTerm::pointer_equal(narrow, wide.clone()), true);
+        let facts = aliases.clone().assume_condition(
+            ConditionTerm::uint64_less_than(index.clone(), Bitvector32Term::UInt64Constant(5552)),
+            true,
+        );
+        let facts = facts.assume_condition(
+            ConditionTerm::uint64_less_than(
+                Bitvector32Term::uint64_add(index.clone(), Bitvector32Term::UInt64Constant(1)),
+                Bitvector32Term::UInt64Constant(5552),
+            ),
+            true,
+        );
+        let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
+            CMemoryRange::new_wide(
+                base.clone(),
+                Bitvector32Term::UInt64Constant(0),
+                Bitvector32Term::UInt64Constant(5552),
+                1,
+            ),
+        ));
+        resources.synchronize_memory_equalities(&facts);
+        let mut candidates = resources
+            .read_access_entries(&query, 1, &facts)
+            .expect("buffer supplier remains indexed");
+        assert!(
+            candidates.index.graph.are_equal(&query, &wide),
+            "cursor equality remains checked"
+        );
+        assert_eq!(
+            candidates
+                .index
+                .graph
+                .pointer_at_base_with_wide_index(&query, &base),
+            Some(wide),
+            "alignment keeps native index"
+        );
+        let entry = candidates.next().expect("buffer candidate");
+        assert!(candidates.address(entry).is_some(), "candidate address");
+        assert!(resources.permits_memory_read(&query, 1, &facts));
+        assert!(resources.permits_memory_read(&query.offset_by_bytes(1), 1, &facts));
+        assert!(!resources.permits_memory_read(&query, 2, &facts));
+        assert!(!ResourceContext::new().permits_memory_read(&query, 1, &facts));
+        let boundary = aliases.assume_condition(
+            ConditionTerm::uint64_equal(index, Bitvector32Term::UInt64Constant(5552)),
+            true,
+        );
+        assert!(!resources.permits_memory_read(&query, 1, &boundary));
+        assert!(!resources.permits_memory_read(&query.offset_by_bytes(1), 1, &boundary));
+    }
+
+    #[test]
     fn wide_read_keeps_native_index_beside_a_narrow_alias() {
         let mut samples = Vec::new();
         for count in [16_u64, 64, 256, 1024] {
