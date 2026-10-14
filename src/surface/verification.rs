@@ -1078,6 +1078,26 @@ pub(in crate::surface) fn proof_unit_erased_click_file(
     file
 }
 
+/// Whether `rewritten` differs from `baseline` outside the proof of
+/// `target`. Expansion also adds the `import click::...;` lines its written
+/// citations need; a library import only lets a proof cite that module's
+/// theorems, which proof checking always has, so an added one is no change.
+fn changed_outside_proof_unit(
+    baseline: &ClickFile,
+    rewritten: ClickFile,
+    target: &VerificationTarget,
+) -> bool {
+    let mut rewritten = proof_unit_erased_click_file(rewritten, target);
+    if baseline
+        .library_imports
+        .iter()
+        .all(|module| rewritten.library_imports.contains(module))
+    {
+        rewritten.library_imports = baseline.library_imports.clone();
+    }
+    rewritten != proof_unit_erased_click_file(baseline.clone(), target)
+}
+
 pub fn verify_c0_sources(
     click_source: &str,
     c_sources: &[(&str, &str)],
@@ -1840,9 +1860,7 @@ impl C0VerificationSession {
                     "rewritten source location resolves to a proof unit absent from the baseline",
                 ));
             }
-            if proof_unit_erased_click_file(rewritten_file.clone(), &target)
-                != proof_unit_erased_click_file(self.baseline_file.clone(), &target)
-            {
+            if changed_outside_proof_unit(&self.baseline_file, rewritten_file.clone(), &target) {
                 return Err(ClickError::new(
                     "rewritten sidecar changed source outside the selected proof unit",
                 ));
@@ -1918,10 +1936,7 @@ impl C0VerificationSession {
                 ));
             }
             let rewritten_file = parse_c0_click_file_context(click_source, &sources)?;
-            let baseline_interface =
-                proof_unit_erased_click_file(self.baseline_file.clone(), &target);
-            let rewritten_interface = proof_unit_erased_click_file(rewritten_file, &target);
-            if rewritten_interface != baseline_interface {
+            if changed_outside_proof_unit(&self.baseline_file, rewritten_file, &target) {
                 return Err(ClickError::new(
                     "rewritten sidecar changed source outside the selected proof unit",
                 ));
@@ -1990,9 +2005,7 @@ impl C0VerificationSession {
             ));
         }
         let rewritten_file = parse_c0_click_file_context(click_source, &sources)?;
-        let baseline_interface = proof_unit_erased_click_file(self.baseline_file.clone(), &target);
-        let rewritten_interface = proof_unit_erased_click_file(rewritten_file, &target);
-        if rewritten_interface != baseline_interface {
+        if changed_outside_proof_unit(&self.baseline_file, rewritten_file, &target) {
             return Err(ClickError::new(
                 "rewritten sidecar changed source outside the selected proof unit",
             ));
@@ -5280,6 +5293,44 @@ fn record_never_address_taken_locals(
     }
 }
 
+/// A prepared declaration whose parameters the import knows only by
+/// position, a Rust `extern` block item, named by its sidecar `extern fn`
+/// head. Its types stay the declaration's, which the head is checked against.
+fn named_by_extern_head(
+    file: &ClickFile,
+    function: &syntax::C0Function,
+) -> Result<syntax::C0Function, ClickError> {
+    if !function.has_positional_parameters() {
+        return Ok(function.clone());
+    }
+    let Some(block) = file
+        .function_blocks()
+        .iter()
+        .find(|block| block.signature().name() == function.source_name())
+    else {
+        return Ok(function.clone());
+    };
+    if !block.is_external() {
+        return Err(ClickError::new(format!(
+            "`{}` is declared in an `extern` block and has no body to verify; state its contract with `extern fn`",
+            block.signature().name()
+        ))
+        .with_kind(ClickErrorKind::Type)
+        .at_declaration(block.signature().name()));
+    }
+    // A head of another arity keeps the declaration's positions, and the
+    // signature check reports the difference.
+    Ok(function
+        .named_by_head(
+            block
+                .signature()
+                .parameters()
+                .iter()
+                .map(|parameter| parameter.name()),
+        )
+        .unwrap_or_else(|| function.clone()))
+}
+
 pub(in crate::surface) fn parse_verified_sources_context(
     file: &ClickFile,
     c_sources: &CSourceContext<'_>,
@@ -5345,16 +5396,19 @@ pub(in crate::surface) fn parse_verified_sources_context_with_entry(
                 import.language()
             )));
         }
-        return Ok(execution
+        return execution
             .functions
             .iter()
             .map(|function| {
-                (
+                Ok((
                     function.name().to_string(),
-                    (import.logical_source().to_string(), function.clone()),
-                )
+                    (
+                        import.logical_source().to_string(),
+                        named_by_extern_head(file, function)?,
+                    ),
+                ))
             })
-            .collect());
+            .collect();
     }
 
     let external_functions = file

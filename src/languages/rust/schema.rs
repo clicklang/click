@@ -101,6 +101,10 @@ pub struct Function {
     pub parameters: Vec<Place>,
     pub body: Vec<Statement>,
     pub mir: Option<MirBody>,
+    /// A `safe fn` declared in an `unsafe extern` block, with no body: its
+    /// calls are checked against the sidecar's `extern fn` contract.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub external: bool,
     pub span: Span,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]

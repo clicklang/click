@@ -453,8 +453,13 @@ to a pointer, passed for such a parameter is a `function_address` value: the
 importer exports `f` and checks that it is a `noexcept` free or static member
 function of exactly the pointer's type, and the caller's proof shows that `f`
 meets the required contract, from `f`'s own contract or an `executes` theorem.
-Reading a pointer's value, storing it, or forwarding it is refused
-(`tests/cpp_import.rs`, `*function_pointer*`).
+A function-pointer local, `int (*g)(int) noexcept = f;` or `= &twice;`, is
+initialized once with `&f` or another pointer of the same type, and calls go
+through it as through a parameter. A parameter or local passed on as it is to
+a function-pointer parameter of the same type is a `load` argument, so a
+function that forwards a pointer requires the contract its callee requires.
+Reassigning a pointer, storing one in memory, and any other read of its value
+are refused (`tests/cpp_import.rs`, `*function_pointer*`).
 
 A direct free-function return call accepts one nested call argument, including
 chains such as `return echo(echo(echo(value)));`. Other arguments must be stable
