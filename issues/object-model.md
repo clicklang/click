@@ -169,6 +169,17 @@ pass. It remains dependent on archived native-entry machinery. Rechecking all
 exactly the three targeted projects are restored, with no new failing project.
 This is not a full green gate.
 
+The next preserved checkpoint, `bd6659d9a`, records an attributed loop escape
+repair and the [retained-resource candidate lookup repair](../bugs/retained-resource-lookup-omits-framed-pointer-carriers.md).
+All 31 selected kernel controls and both C++ member-domain rejection fixtures
+pass; eight of nine selected unfold fixtures pass, with the remaining failure
+confirmed on the prior checkpoint. The full normal example stage improves to
+39/52 passing, with no new failing projects. Concurrency-fork-join is restored
+by the escape-only checkpoint and passes all four proof modes. The reduced loop
+still needs its later pointer-field range fold repaired; arena still reaches a
+control-budget failure. None of these archive-dependent candidates activates
+or completes the object model on upstream master.
+
 ## Recovery and delivery sequence
 
 ### 1. Preserve and classify before repairing more examples
