@@ -1,6 +1,37 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: checks two post-return unfolds through expansion and retained verification"]
+fn call_produced_instances_unfold_after_return_in_all_proof_modes() {
+    for fixture in [
+        "mdtests/return_unfold_call_instance.md",
+        "mdtests/return_unfold_call_instance_with_local.md",
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        verify_c0_sources(&source, &sources).unwrap();
+        let expanded =
+            expand_c0_claim_source(&source, &sources, "pick", CProofClaim::Grouped).unwrap();
+        verify_c0_sources(&expanded, &sources).unwrap();
+        let position =
+            expansion::position_at_offset(&expanded, expanded.find("ensures o.model").unwrap());
+        let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+        session
+            .verify_at(&expanded, position.line, position.column)
+            .unwrap();
+        drop(session);
+        let false_frame = source.replace(
+            "ensures o.model == 0;",
+            "ensures o.model == 0; ensures r->top == old(r->top);",
+        );
+        assert!(verify_c0_sources(&false_frame, &sources).is_err());
+    }
+}
+
+#[test]
 fn execution_theorem_expansion_preserves_imported_tactic_interfaces() {
     let helper = include_str!("../../../mdtests/execution_theorem_imported_tactic_helpers.click");
     let fixture = crate::cli::parse_mdtest(
@@ -615,7 +646,8 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
             return length;
         }
     "#;
-    let click_source = r#"
+    let click_source = r#"import click::cstr;
+
         verifying "source_identity.c";
 
         uint64 read_terminator(uint8 haystack[], uint64 known_len) {
@@ -12887,7 +12919,8 @@ fn outcome_simp_instantiates_an_unfolded_byte_predicate_on_the_checked_proof() {
             return 0;
         }
     "#;
-    let click_source = r#"
+    let click_source = r#"import click::bytes;
+
         verifying "byte_prefix.c";
 
         int32 byte_prefix(uint8 p[], int32 n) {

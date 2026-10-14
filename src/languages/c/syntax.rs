@@ -7851,6 +7851,21 @@ const LIBRARY_PROTOTYPES: &[(&str, &str, LibraryType, &[LibraryType])] = {
     ]
 };
 
+/// The Click library module whose contract a C declaration of `header`
+/// brings: `click::c::string` for the `<string.h>` functions Click
+/// specifies. The allocator family is part of the kernel's allocation model
+/// and brings no module.
+pub(crate) fn library_contract_module(header: &C0FunctionHeader) -> Option<&'static str> {
+    let (name, ..) = library_function_prototype(header)?;
+    library_contract_module_named(name)
+}
+
+/// The Click library module whose contract a call to the library function
+/// `name` uses; see [`library_contract_module`].
+pub(crate) fn library_contract_module_named(name: &str) -> Option<&'static str> {
+    matches!(name, "memcpy" | "memcmp" | "memset" | "strlen").then_some("library/c/string.click")
+}
+
 /// The library function Click specifies that `header` declares with
 /// external linkage, by its C name or its linked symbol: the function's
 /// name, its standard prototype, and whether the declared type is

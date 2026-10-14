@@ -159,8 +159,14 @@ Each step is a separate PR that leaves every example verifying:
    checking keeps every library theorem and theorem names stay reserved;
    imports gate the declarations and theorem citations a file writes, and
    `click expand` adds the import a written-out theorem citation needs.
-4. Attach the C library models to their headers, and move the C++ catalog
-   and Rust core contracts under the same convention.
+4. Done: attach the C library models to the code. `click::c::string` comes
+   with a C declaration of, or call to, one of its functions, whether from
+   `<string.h>` or the program's own prototype, since a C call binds to the
+   library by name. The C++ catalog and Rust core contracts are already
+   generated per use, for the element types a call instantiates, so they
+   stay generated rather than becoming `library/cpp/` and `library/rust/`
+   files; a templated library file needs a generic mechanism Click does not
+   have yet.
 5. Document the primitives in the language reference, and describe the
    library per module in the reference.
 6. Apply the consistency rules below: generic `count` and `permutation`,

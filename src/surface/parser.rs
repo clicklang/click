@@ -160,6 +160,9 @@ pub(in crate::surface) struct ProgramLayouts {
     /// sidecar's spelling where its `verifying` path does not: a C++ import
     /// may verify a `.h` header.
     pub(in crate::surface) language: Option<SourceLanguage>,
+    /// The Click library modules the program's C declarations bring, such
+    /// as `click::c::string` for a declared `memcpy`.
+    pub(in crate::surface) library_modules: BTreeSet<&'static str>,
 }
 
 pub(super) fn parse_with_layouts_and_aggregate_objects(
@@ -580,6 +583,8 @@ struct ProofLetParserRestore {
 struct Parser {
     c_object_names_by_function: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
     recursion_peers_by_function: BTreeMap<String, Vec<String>>,
+    /// Click library modules the program's C declarations bring.
+    implied_library_modules: BTreeSet<&'static str>,
     source_aliases: BTreeMap<String, String>,
     qualified_objects: Option<BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>>,
     /// Set while a `tactic` declaration's signature is parsed: the name
@@ -965,6 +970,7 @@ impl Parser {
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
         parser.c_object_names_by_function = layouts.c_object_names;
         parser.recursion_peers_by_function = layouts.recursion_peers;
+        parser.implied_library_modules = layouts.library_modules;
         parser.qualified_objects = Some(layouts.qualified_objects);
         parser.local_struct_pointers_by_function = layouts.local_struct_pointers;
         parser.plain_char = layouts.plain_char;
@@ -1035,6 +1041,7 @@ impl Parser {
             current_void_pointer_params: BTreeSet::new(),
             c_object_names_by_function: BTreeMap::new(),
             recursion_peers_by_function: BTreeMap::new(),
+            implied_library_modules: BTreeSet::new(),
             current_c_parameter_types: BTreeMap::new(),
             current_parameter_struct_casts: BTreeMap::new(),
             aggregate_objects_by_function,
@@ -1169,7 +1176,11 @@ impl Parser {
         let mut contract_definitions = Vec::new();
         let mut function_blocks = Vec::new();
         let mut tactic_definitions = Vec::new();
-        let mut library_imports = Vec::new();
+        let mut library_imports = self
+            .implied_library_modules
+            .iter()
+            .map(|identity| (*identity).to_string())
+            .collect::<Vec<_>>();
 
         while self.peek().is_some() {
             if self.peek_ident() == Some("import")

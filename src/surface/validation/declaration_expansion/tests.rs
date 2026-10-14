@@ -234,13 +234,15 @@ fn standard_library_cache_preserves_all_declarations() {
     let mut functions = combined_external_function_blocks(&empty).unwrap();
     assert!(!functions.is_empty());
     functions.clear();
+    // An empty file sees only the implicit modules' declarations.
+    let implicit = &file_library(&empty).unwrap().file;
     assert_eq!(
         combined_external_function_blocks(&empty).unwrap(),
-        fresh.function_blocks()
+        implicit.function_blocks()
     );
     assert_eq!(
         combined_algebraic_type_definitions(&empty).unwrap(),
-        fresh.algebraic_type_definitions
+        implicit.algebraic_type_definitions
     );
 }
 
