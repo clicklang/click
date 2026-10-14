@@ -23,6 +23,8 @@ real precondition of the shape, not bookkeeping: a range of `1 << 30` `int32`
 elements has a byte extent of `1 << 32`, which wraps to `0`.
 
 ```click
+import click::integer;
+
 function unmarked(v: int32[], lo: int32, hi: int32) -> Integer {
     (lo..hi).fold(0, |acc, k| { acc + to_integer(if v[k] == 0 { 1 } else { 0 }) })
 }

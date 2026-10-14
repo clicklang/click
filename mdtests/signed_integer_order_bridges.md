@@ -5,6 +5,8 @@ Integer range can therefore bound a native narrowed result without inferring
 an ambient machine range. The int64 equality bridge preserves the whole width.
 
 ```click
+import click::integer;
+
 theorem reflect32(left: int32, right: int32) {
     requires to_integer(left) <= to_integer(right);
     ensures left <= right by apply(int32_to_integer_less_equal_implies_less_equal(left, right));

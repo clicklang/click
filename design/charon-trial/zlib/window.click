@@ -1,4 +1,6 @@
 import "block.click";
+import click::integer;
+import click::machine_integer;
 
 // Mathematical observations of the original remaining count within one batch.
 theorem zlib_remaining_step(total: uint64, remaining: uint64, amount: uint64) {

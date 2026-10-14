@@ -17,6 +17,8 @@ int32 probe_fill(int32 p[], int32 lo, int32 hi, int32 v) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "probe_fill.c";
 
 int32 probe_fill(int32 p[], int32 lo, int32 hi, int32 v) {

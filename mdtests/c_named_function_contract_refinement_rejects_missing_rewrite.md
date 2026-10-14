@@ -21,6 +21,8 @@ void rewritten_decrease_caller(int32* cell) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "rewritten_decrease_step.c";
 
 contract void Decrease(int32* cell) {

@@ -1,3 +1,5 @@
+import click::integer;
+
 theorem adler_small_quotient_bounds(n: Integer, d: Integer) {
  requires 0 <= n;
  requires n <= 22207;

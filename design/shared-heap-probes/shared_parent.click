@@ -1,3 +1,5 @@
+import click::machine_integer;
+
 spec enum ParentLink {
     Empty,
     Linked(struct child*),

@@ -17,6 +17,8 @@ int32 drain(int32 box[4]) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "loop_decreases_pure_expression_must_decrease.c";
 
 function head(a: int32[]) -> int32 {

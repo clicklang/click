@@ -1,21 +1,28 @@
 # The Click library
 
-The Click library is one Click module per file in this directory. Every
-module is currently loaded implicitly with every sidecar and C-free theorem
-file, in this order:
+The Click library is one Click module per file in this directory, listed
+here in library order. A file sees the implicit modules, the modules it
+imports with `import click::...;`, and the modules those import:
 
-| Module | Contents |
-| --- | --- |
-| `primitives.click` | Verifier primitives: the abstract resources the kernel interprets (`mutex_guard`, `mutex_live`, `mutex_use`, `publisher`, `subscriber`, `authority`, `allocation`) |
-| `nat.click` | `Nat`, `to_nat`, `nat_add` and their laws |
-| `list.click` | `List<T>`, `list_append`, `list_contains`, `list_length` and their laws |
-| `machine_integer.click` | Order, increment and definedness lemmas over native integer widths |
-| `permutation.click` | `count` and `permutation` over `int32[]` |
-| `bytes.click` | Byte-range predicates over `uint8[]` |
-| `cstr.click` | C-string predicates and theorems |
-| `c/builtins.click` | `__click_constant_p_unknown`, the value of `__builtin_constant_p` |
-| `c/string.click` | `memcpy`, `memcmp`, `memset` and `strlen` contracts |
-| `integer.click` | `to_integer` bridges for native arithmetic, and `Integer` division laws |
+| Module | Seen | Contents |
+| --- | --- | --- |
+| `primitives.click` | implicit | Verifier primitives: the abstract resources the kernel interprets (`mutex_guard`, `mutex_live`, `mutex_use`, `publisher`, `subscriber`, `authority`, `allocation`) |
+| `nat.click` | implicit | `Nat`, `to_nat`, `nat_add` and their laws |
+| `list.click` | implicit | `List<T>`, `list_append`, `list_contains`, `list_length` and their laws |
+| `machine_integer.click` | `import click::machine_integer;` | Order, increment and definedness lemmas over native integer widths |
+| `permutation.click` | `import click::permutation;` | `count` and `permutation` over `int32[]` |
+| `bytes.click` | with `c/string` | Byte-range predicates over `uint8[]` |
+| `cstr.click` | with `c/string` | C-string predicates and theorems |
+| `c/builtins.click` | implicit | `__click_constant_p_unknown`, the value of `__builtin_constant_p` |
+| `c/string.click` | implicit | `memcpy`, `memcmp`, `memset` and `strlen` contracts |
+| `integer.click` | `import click::integer;` | `to_integer` bridges for native arithmetic, and `Integer` division laws |
+
+The implicit set is `IMPLICIT_LIBRARY_MODULES` in
+`src/surface/validation/declaration_expansion.rs`. A module lists the earlier
+modules its declarations use with its own `import click::...;` lines.
+Built-in tactics apply library theorems whatever a file imports, so theorem
+names stay reserved; imports gate the declarations a file names. A library
+module's own proofs are checked against the whole library.
 
 Each module is parsed with the declarations of the modules before it, and
 its diagnostics name its own file and line. Types, pure functions, and
@@ -25,8 +32,7 @@ trusted axioms. The `extern` contracts are assumptions, listed in
 
 A module is named by a `click::` path that mirrors its file:
 `import click::cstr;` is `cstr.click` and `import click::c::string;` is
-`c/string.click`. While every module is implicit, an import only checks that
-its module exists. Which modules stay implicit is recorded in
+`c/string.click`. The remaining design steps are recorded in
 [`issues/standard-library.md`](../issues/standard-library.md).
 
 The library is checked on its own, like any dependency: `verify_standard_library`

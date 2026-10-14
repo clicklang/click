@@ -22,6 +22,8 @@ int ack(int m, int n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "c_decreases_lexicographic_recursion.c";
 
 int32 ack(int32 m, int32 n) {

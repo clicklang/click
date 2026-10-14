@@ -16,6 +16,8 @@ unsigned int gcd(unsigned int a, unsigned int b) {
 ```
 
 ```click
+import click::integer;
+
 verifying "c_decreases_unsigned_parameter_recursion.c";
 
 uint32 gcd(uint32 a, uint32 b) {

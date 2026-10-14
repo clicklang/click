@@ -5,6 +5,8 @@ rule uses shared Integer operands, including nonlinear expressions, and does
 not infer ambient machine ranges.
 
 ```click
+import click::integer;
+
 theorem positive_divisor_guards(d: int32) {
     requires d > 0;
     ensures to_integer(d) != 0 by {

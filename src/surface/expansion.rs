@@ -2162,7 +2162,40 @@ fn splice_source(
             spliced.push_str(&source[span.end..]);
         }
     }
-    spliced
+    with_cited_library_imports(spliced, replacement)
+}
+
+/// `source` with an `import click::...;` line for each Click library module
+/// whose theorem `replacement` cites but `source` does not yet see. A
+/// tactic's expansion writes out the library theorems the tactic applied,
+/// and the expanded sidecar must still name their modules.
+fn with_cited_library_imports(source: String, replacement: &str) -> String {
+    let cited = replacement
+        .split(|character: char| !(character.is_alphanumeric() || character == '_'))
+        .filter(|word| !word.is_empty());
+    let imported = source
+        .match_indices("import click::")
+        .filter_map(|(start, prefix)| {
+            let path = &source[start + prefix.len()..];
+            let path = &path[..path.find(';')?];
+            Some(format!("library/{}.click", path.trim().replace("::", "/")))
+        })
+        .collect::<Vec<_>>();
+    let missing = validation::library_modules_to_import(&imported, cited);
+    if missing.is_empty() {
+        return source;
+    }
+    let mut expanded = missing
+        .iter()
+        .map(|identity| {
+            format!(
+                "import {};\n",
+                crate::surface::library_module_path(identity)
+            )
+        })
+        .collect::<String>();
+    expanded.push_str(&source);
+    expanded
 }
 
 /// Every block whose proof the expansion tools address: the C function

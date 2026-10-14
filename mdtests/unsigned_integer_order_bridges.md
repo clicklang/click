@@ -5,6 +5,8 @@ u32::MAX. The observation range follows from native unsigned order; it does
 not distribute observations over wrapping addition.
 
 ```click
+import click::integer;
+
 theorem preserve(left: uint32, right: uint32) {
     requires left <= right;
     ensures to_integer(left) <= to_integer(right) by {

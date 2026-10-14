@@ -1681,7 +1681,8 @@ fn arithmetic_certificate_families_require_explicit_domain_bridges() {
 
 #[test]
 fn integer_certificate_can_follow_a_checked_int32_to_integer_bridge() {
-    let source = r#"
+    let source = r#"import click::integer;
+
         theorem bridge_then_integer_arithmetic(x: int32) {
             requires 0 <= x;
             ensures 0 <= to_integer(x) + 1 by {
@@ -1708,7 +1709,7 @@ fn integer_certificate_can_follow_a_checked_int32_to_integer_bridge() {
     );
     assert!(expanded.contains("arithmetic_certificate {"), "{expanded}");
     let rechecked = format!(
-        "theorem bridge_then_integer_arithmetic(x: int32) {{\n            requires 0 <= x;\n            ensures 0 <= to_integer(x) + 1 {expanded}\n        }}"
+        "import click::integer;\ntheorem bridge_then_integer_arithmetic(x: int32) {{\n            requires 0 <= x;\n            ensures 0 <= to_integer(x) + 1 {expanded}\n        }}"
     );
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_click_theorems(&rechecked)
@@ -4368,7 +4369,8 @@ fn a_diverges_function_never_yields_termination_evidence() {
                 return n;
             }
         "#;
-    let click_source = r#"
+    let click_source = r#"import click::machine_integer;
+
             verifying "drain_then_wait.c";
 
             int32 drain_then_wait(int32 n, int32 x) diverges {

@@ -18,6 +18,8 @@ int32 region_read(struct region* region, int32 index) {
 ```
 
 ```click
+import click::machine_integer;
+
 resource live_region(region: struct region*) {
     owns *region;
     owns region->data[region->start..region->end];

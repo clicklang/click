@@ -705,7 +705,8 @@ fn explicit_swap_loop_fixture(include_transports: bool) -> (&'static str, String
     "#;
     let transport = if include_transports { transport } else { "" };
     let click = format!(
-        r#"
+        r#"import click::machine_integer;
+
         verifying "swap.c";
         int32 swap(int32 p[3]) {{
             requires p[0] <= p[2]; requires p[1] <= p[2];
@@ -1591,7 +1592,8 @@ fn frontier_local_loop_checks_an_optional_decreases_measure() {
                 return n;
             }
         "#;
-    let click_source = r#"
+    let click_source = r#"import click::machine_integer;
+
             verifying "drain.c";
 
             int32 drain(int32 n) {
@@ -1903,7 +1905,8 @@ fn frontier_local_loop_at_function_entry_keeps_initialization_capture_separate()
                 return n;
             }
         "#;
-    let click_source = r#"
+    let click_source = r#"import click::machine_integer;
+
             verifying "drain.c";
 
             int32 drain(int32 n) {

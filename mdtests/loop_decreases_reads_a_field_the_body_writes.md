@@ -20,6 +20,8 @@ int32 drain(struct box* box) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "loop_decreases_reads_a_field_the_body_writes.c";
 
 int32 drain(struct box* box) {

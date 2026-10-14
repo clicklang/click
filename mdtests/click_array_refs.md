@@ -27,6 +27,8 @@ int32 identity_two_arrays(int32 p[1], int32 q[1]) {
 ```
 
 ```click
+import click::permutation;
+
 verifying "old_count_after_write.c";
 verifying "keep_first_change_second.c";
 verifying "identity_two_arrays.c";

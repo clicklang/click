@@ -6830,6 +6830,9 @@ struct TheoremEnvironment {
     /// verification pays for the library theorems it looks up, not for the
     /// whole library.
     standard_library: &'static [TheoremDefinition],
+    /// The name index of the library selection `standard_library` is a
+    /// prefix of.
+    standard_library_index: &'static BTreeMap<String, usize>,
     /// Theorems declared after `standard_library`; a later declaration of a
     /// name shadows an earlier one.
     definitions: BTreeMap<String, TheoremDefinition>,
@@ -6839,28 +6842,47 @@ struct TheoremEnvironment {
 
 impl TheoremEnvironment {
     fn new<'a>(definitions: impl IntoIterator<Item = &'a TheoremDefinition>) -> Self {
-        Self::with_standard_library_prefix(&[], definitions)
+        static NO_LIBRARY: BTreeMap<String, usize> = BTreeMap::new();
+        Self::with_library_prefix(&[], &NO_LIBRARY, definitions)
     }
 
-    /// The whole standard library followed by `definitions`.
+    /// The whole Click library followed by `definitions`. Built-in tactics
+    /// apply library theorems by name whatever a file imports.
     fn with_standard_library<'a>(
         definitions: impl IntoIterator<Item = &'a TheoremDefinition>,
     ) -> Result<Self, ClickError> {
-        Ok(Self::with_standard_library_prefix(
-            standard_library_theorem_definitions()?,
+        let library = validation::full_library()?;
+        Ok(Self::with_library_prefix(
+            library.theorem_definitions(),
+            library.theorem_index(),
             definitions,
         ))
     }
 
-    /// `standard_library` must be a prefix of
-    /// [`standard_library_theorem_definitions`]: lookups find a library
-    /// theorem through that slice's process-wide name index.
-    fn with_standard_library_prefix<'a>(
+    /// The theorems of the whole Click library before position `end`,
+    /// followed by `definitions`.
+    fn with_full_library_prefix<'a>(
+        end: usize,
+        definitions: impl IntoIterator<Item = &'a TheoremDefinition>,
+    ) -> Result<Self, ClickError> {
+        let library = validation::full_library()?;
+        Ok(Self::with_library_prefix(
+            &library.theorem_definitions()[..end],
+            library.theorem_index(),
+            definitions,
+        ))
+    }
+
+    /// `standard_library` must be a prefix of the library selection that
+    /// `standard_library_index` indexes.
+    fn with_library_prefix<'a>(
         standard_library: &'static [TheoremDefinition],
+        standard_library_index: &'static BTreeMap<String, usize>,
         definitions: impl IntoIterator<Item = &'a TheoremDefinition>,
     ) -> Self {
         Self {
             standard_library,
+            standard_library_index,
             definitions: definitions
                 .into_iter()
                 .map(|definition| {
@@ -6877,7 +6899,9 @@ impl TheoremEnvironment {
 
     fn get(&self, name: &str) -> Option<&TheoremDefinition> {
         self.definitions.get(name).or_else(|| {
-            standard_library_theorem_index(name).and_then(|index| self.standard_library.get(index))
+            self.standard_library_index
+                .get(name)
+                .and_then(|index| self.standard_library.get(*index))
         })
     }
 

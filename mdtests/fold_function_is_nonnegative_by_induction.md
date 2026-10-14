@@ -13,6 +13,8 @@ the step case closes with the induction hypothesis and one bound on the cell
 the last iteration adds.
 
 ```click
+import click::integer;
+
 function marks(lo: int32, hi: int32) -> Integer {
     (lo..hi).fold(0, |acc, k| { acc + to_integer(if k == 0 { 1 } else { 0 }) })
 }

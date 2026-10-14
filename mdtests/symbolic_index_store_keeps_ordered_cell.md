@@ -17,6 +17,8 @@ int32 set_then_read_end(int32* data, int32 index, int32 len, int32 cap) {
 ```
 
 ```click
+import click::machine_integer;
+
 predicate terminated_at(data: int32[], length: int32) {
     data[length] == 0
 }

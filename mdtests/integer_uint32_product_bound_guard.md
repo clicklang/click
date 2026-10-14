@@ -1,6 +1,8 @@
 # Mathematical product bounds establish the original checked multiplication guard
 
 ```click
+import click::integer;
+
 theorem product_bound_guard(left: uint32, right: uint32) {
     requires to_integer(left) * to_integer(right) <= 4294967295;
     ensures right == 0u32 or left <= 4294967295u32 / right by {

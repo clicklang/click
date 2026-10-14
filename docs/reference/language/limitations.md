@@ -215,7 +215,7 @@ with sign extension, matching GCC, Clang, and MSVC. Shift counts outside
 `0..32`, negative signed left shifts, and unrepresentable signed left-shift
 results are undefined behavior.
 
-The prelude has initial byte-slice and C-string predicates over `uint8[]`, but
+The Click library has initial byte-slice and C-string predicates over `uint8[]`, but
 there is still no first-class Click string value and no full libc string model.
 
 ## Aliasing is default

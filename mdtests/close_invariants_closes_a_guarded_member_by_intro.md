@@ -34,6 +34,8 @@ int32 count_run(int32 n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "close_invariants_closes_a_guarded_member_by_intro.c";
 
 int32 count_run(int32 n) {

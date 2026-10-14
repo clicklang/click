@@ -29,6 +29,8 @@ int32 count_down(int32 n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "count_down.c";
 
 int32 count_down(int32 n) {

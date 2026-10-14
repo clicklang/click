@@ -1,3 +1,6 @@
+import click::integer;
+import click::machine_integer;
+
 // Checked positions in the aligned remainder after any number of full batches.
 // Assemble after general-partition.click and the mathematical integer library.
 

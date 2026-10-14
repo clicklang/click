@@ -4,6 +4,8 @@ The hypothesis keeps every requirement at its smaller argument. Its guarded
 addition uses those premises during lowering and expanded proof reverification.
 
 ```click
+import click::machine_integer;
+
 function guarded_countdown(n: int32) -> int32
     decreases n
 {

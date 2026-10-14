@@ -1,3 +1,6 @@
+import click::integer;
+import click::machine_integer;
+
 // Whole-body checksum correctness, bounds and termination for unchanged Adler32::compute.
 // Canonical seeds and every input length through the signed observation limit.
 // The harness checks the helper bodies and assembles their arithmetic libraries.

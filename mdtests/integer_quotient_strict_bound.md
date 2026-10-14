@@ -4,6 +4,8 @@ Truncation toward zero needs a negative lower bound or a positive upper bound.
 The bounds remain symbolic and have no native-width assumptions.
 
 ```click
+import click::integer;
+
 theorem checked_strict_lower(n: Integer, d: Integer, bound: Integer) {
     requires d != 0;
     requires 1 <= d;

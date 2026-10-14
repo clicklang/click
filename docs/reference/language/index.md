@@ -264,7 +264,8 @@ Integer comparisons. A counting measure is naturally a mathematical `Integer`:
 an int32 fold's `+` is partial in specifications, so its bounds are unprovable
 at a symbolic length. `<` on the nonnegative Integers is well founded for the
 same reason `<` on the nonnegative int32s is, so nothing about the argument
-changes — only the carrier the two obligations are stated in. The prelude's
+changes — only the carrier the two obligations are stated in. The
+`click::integer` library module's
 `int32_less_equal_to_integer` and `int32_subtract_to_integer` carry the int32
 the C counts into the Integer the measure names. See
 `mdtests/c_decreases_integer_measure_recursion.md`.
@@ -272,8 +273,8 @@ the C counts into the Integer the measure names. See
 A bare parameter of another numeric type is an expression measure as well:
 only an `int32` parameter has the body analysis `decreases n` names, so
 `decreases b` on a `uint32` parameter is ranked by the descent obligations
-above. Euclid's `gcd(b, a % b)` discharges `a % b < b` with the prelude's
-`uint32_remainder_less_than_divisor`
+above. Euclid's `gcd(b, a % b)` discharges `a % b < b` with
+`click::integer`'s `uint32_remainder_less_than_divisor`
 (`mdtests/c_decreases_unsigned_parameter_recursion.md`, and the negative
 `mdtests/c_decreases_unsigned_parameter_recursion_must_descend.md`).
 
@@ -3151,7 +3152,7 @@ Click function or predicate parameter declared as `uint8[]` is rejected.
 The same typed array-ref model is used by loop-invariant spec lowering, so a
 pure helper over `uint8[]` can appear in an invariant or inside `old(...)`.
 
-The prelude provides byte-slice helpers over `uint8[]`: `byte_count`,
+The Click library provides byte-slice helpers over `uint8[]`: `byte_count`,
 `bytes_equal`, `bytes_equal_range`, `bytes_all_equal`, `bytes_contains`, and
 `bytes_all_not_equal`. It also provides C-string predicates:
 `cstr_prefix`, `cstr_len`, `cstr`, and `cstr_bounded`, whose lengths and bounds

@@ -281,7 +281,8 @@ fn proved_theorems_during(verify: impl FnOnce()) -> Vec<String> {
 fn verification_does_not_reprove_the_standard_library() {
     let proved = proved_theorems_during(|| {
         let result = verify_click_theorems(
-            r#"
+            r#"import click::machine_integer;
+
             theorem uses_library(value: int32) {
                 requires 0 < value;
                 ensures 0 <= value by {
@@ -302,7 +303,8 @@ fn verification_does_not_reprove_the_standard_library() {
 #[test]
 fn certification_checks_only_the_cited_library_theorem() {
     let c_source = "int32 remainder(int32 value, int32 amount) { return value - amount; }";
-    let click_source = r#"
+    let click_source = r#"import click::machine_integer;
+
         verifying "remainder.c";
         int32 remainder(int32 value, int32 amount) {
             requires defined(1 + amount) and value == 1 + amount;

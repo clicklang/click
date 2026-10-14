@@ -21,6 +21,8 @@ smaller endpoint like every other precondition, and the narrowing step needs the
 count itself pinned to `0..=1073741823`, which the two `have`s state.
 
 ```click
+import click::integer;
+
 function unmarked(v: int32[], lo: int32, hi: int32) -> Integer {
     (lo..hi).fold(0, |acc, k| { acc + to_integer(if v[k] == 0 { 1 } else { 0 }) })
 }

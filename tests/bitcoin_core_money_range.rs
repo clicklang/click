@@ -292,7 +292,8 @@ fn check_upstream_cpp_rounding_phase(
         // Derive the wide observer guards from the real narrow divisor
         // precondition. Execution must advance to the still-unproved narrow
         // correction; no wide guard is assumed in the contract.
-        let guard_proof = r#"verifying "bitcoin-src/src/util/feefrac.h";
+        let guard_proof = r#"import click::integer;
+verifying "bitcoin-src/src/util/feefrac.h";
 int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
     requires d > 0;
     ensures 0 == 0;
@@ -3122,7 +3123,8 @@ fn axiomatic_span_pop_back_verifies_against_catalog_contracts() {
         .name
         .clone();
     let source = format!(
-        r#"verifying "span-probe.cpp";
+        r#"import click::integer;
+verifying "span-probe.cpp";
 theorem uint64_predecessor_below(n: uint64) {{
     requires 1u64 <= n;
     ensures n - 1u64 <= n by {{
@@ -3328,7 +3330,8 @@ fn check_generic_span_cases(cases: Vec<GenericSpanCase>) {
 #[ignore = "nightly: 4.8s in the parallel gate"]
 fn axiomatic_span_subviews_and_byte_size_verify_for_other_elements() {
     let window = format!(
-        r#"theorem uint64_window_bounds(n: uint64) {{
+        r#"import click::integer;
+theorem uint64_window_bounds(n: uint64) {{
     requires 3u64 <= n;
     ensures 2u64 <= n - 1u64 by {{
         apply(uint64_less_equal_to_integer(3u64, n));
@@ -3965,7 +3968,8 @@ fn axiomatic_span_pop_back_write_needs_backing_ownership() {
         .name
         .clone();
     let source = format!(
-        r#"verifying "span-probe.cpp";
+        r#"import click::integer;
+verifying "span-probe.cpp";
 theorem uint64_predecessor_below(n: uint64) {{
     requires 1u64 <= n;
     ensures n - 1u64 <= n by {{

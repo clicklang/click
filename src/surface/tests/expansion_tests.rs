@@ -8735,7 +8735,8 @@ fn execution_bare_apply_selects_and_retains_its_step_through_proof() {
                 return value;
             }
         "#;
-    let click_source = r#"
+    let click_source = r#"import click::machine_integer;
+
             verifying "keep.c";
 
             int32 keep(int32 value, int32 upper) {
@@ -9538,7 +9539,8 @@ fn linear_open_retains_a_direct_bare_theorem_application() {
             return lower;
         }
     "#;
-    let click_source = r#"
+    let click_source = r#"import click::machine_integer;
+
         resource ordered(lower: int32, upper: int32) {
             fact lower < upper;
         }
@@ -10185,7 +10187,8 @@ fn branch_arms_retain_bare_theorem_applications_on_proof() {
             return choice;
         }
     "#;
-    let click_source = r#"
+    let click_source = r#"import click::machine_integer;
+
         verifying "retain_order.c";
 
         int32 retain_order(int32 lower, int32 upper, int32 flag) {
@@ -10252,7 +10255,8 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
             return choice;
         }
     "#;
-    let click_source = r#"
+    let click_source = r#"import click::machine_integer;
+
         verifying "choose_bound.c";
 
         int32 choose_bound(int32 lower, int32 upper, int32 flag) {
@@ -10391,7 +10395,8 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
             return selected;
         }
     "#;
-    let click_source = r#"
+    let click_source = r#"import click::machine_integer;
+
         verifying "select_positive.c";
 
         int32 select_positive(int32 flag) {
@@ -14704,7 +14709,8 @@ int32 span_length(struct span* span) {
 }
 "#;
 
-const OPEN_SCOPE_RETURN_CLICK: &str = r#"
+const OPEN_SCOPE_RETURN_CLICK: &str = r#"import click::machine_integer;
+
 resource span_bounds(span: struct span*) {
     owns *span;
 }

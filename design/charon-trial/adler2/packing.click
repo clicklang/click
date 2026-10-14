@@ -1,3 +1,5 @@
+import click::integer;
+
 // The original checksum method packs two u16 fields into a u32.
 theorem adler_u16_observation(value: uint16) {
  ensures to_integer((uint32)value) == to_integer(value) by {

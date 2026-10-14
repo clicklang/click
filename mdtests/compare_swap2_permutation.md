@@ -16,6 +16,8 @@ int32 compare_swap2_permutation(int32 p[2]) {
 ```
 
 ```click
+import click::permutation;
+
 verifying "compare_swap2_permutation.c";
 
 int32 compare_swap2_permutation(int32 p[2]) {

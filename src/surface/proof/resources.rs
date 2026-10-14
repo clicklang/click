@@ -5099,7 +5099,8 @@ mod v11_resource_dependency_tests {
 
     #[test]
     fn authority_body_read_projection_retires_only_its_owned_observations() {
-        let source = r#"
+        let source = r#"import click::machine_integer;
+
 authorized resource child_ref(obj: struct child*) {}
 resource child_control(obj: struct child*) {
     owns allocation(obj, sizeof(struct child));

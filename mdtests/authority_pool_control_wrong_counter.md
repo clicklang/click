@@ -9,6 +9,8 @@ void checkout(struct pool* pool, struct payload* p) {
 ```
 
 ```click
+import click::machine_integer;
+
 authorized resource slot(pool: struct pool*) {}
 authorized resource item(pool: struct pool*, p: struct payload*) { owns *p; }
 resource control(pool: struct pool*) {

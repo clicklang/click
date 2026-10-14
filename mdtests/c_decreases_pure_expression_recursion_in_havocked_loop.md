@@ -26,6 +26,8 @@ int32 walk(int32 n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "c_decreases_pure_expression_recursion_in_havocked_loop.c";
 
 function level(n: int32) -> int32 {

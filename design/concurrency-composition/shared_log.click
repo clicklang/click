@@ -1,3 +1,6 @@
+import click::integer;
+import click::machine_integer;
+
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 

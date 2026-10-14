@@ -19,6 +19,8 @@ int32 phase_count(int32 n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "c_decreases_lexicographic_loop.c";
 
 int32 phase_count(int32 n) {

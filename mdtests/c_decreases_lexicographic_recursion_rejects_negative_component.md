@@ -17,6 +17,8 @@ int32 walk(int32 m, int32 n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "c_decreases_lexicographic_recursion_negative.c";
 
 int32 walk(int32 m, int32 n) {

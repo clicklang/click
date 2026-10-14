@@ -28,6 +28,8 @@ void arena_write(struct region* region, int32 index, int32 value) {
 }
 ```
 ```click
+import click::machine_integer;
+
 resource arena_initialized_storage(
     data: int32*,
     occupied: int32*,

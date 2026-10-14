@@ -19,6 +19,8 @@ int32 walk(int32 s, int32 n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "loop_invariant_conversion_side_condition_false_at_entry_is_refused.c";
 
 int32 walk(int32 s, int32 n) {

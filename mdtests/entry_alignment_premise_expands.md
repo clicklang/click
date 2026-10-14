@@ -72,6 +72,8 @@ int32 arena_init(struct arena* arena, int32 capacity) {
 ```
 
 ```click
+import click::machine_integer;
+
 resource arena_initialized_storage(
     data: int32*,
     occupied: int32*,

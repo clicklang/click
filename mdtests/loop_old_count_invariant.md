@@ -16,6 +16,9 @@ int32 loop_old_count_invariant(int32 p[3]) {
 ```
 
 ```click
+import click::machine_integer;
+import click::permutation;
+
 verifying "loop_old_count_invariant.c";
 
 int32 loop_old_count_invariant(int32 p[3]) {

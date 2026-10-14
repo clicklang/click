@@ -17,6 +17,8 @@ int32 forward(struct pool* pool) { return pool_used(pool); }
 ```
 
 ```click
+import click::machine_integer;
+
 authorized resource slot(pool: struct pool*) {}
 resource control(pool: struct pool*) {
     owns *pool;

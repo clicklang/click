@@ -10,6 +10,8 @@ as `b <= c` does.
 `simp_refuses_a_broken_64_bit_order_chain.md` breaks the chain.
 
 ```click
+import click::machine_integer;
+
 theorem two_links(a: uint64, b: uint64, c: uint64) {
     requires a < b;
     requires b <= c;
