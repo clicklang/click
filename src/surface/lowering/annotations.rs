@@ -1668,6 +1668,37 @@ pub(in crate::surface) fn elaborate_fixed_state_expression_with_algebraic_values
     opaque_click_functions: BTreeSet<String>,
     pointer_element_widths: BTreeMap<String, u32>,
 ) -> Result<SpecExpression, String> {
+    elaborate_fixed_state_expression_with_algebraic_and_integer_values(
+        expression,
+        array_element_types,
+        entry_state,
+        entry_values,
+        current_values,
+        algebraic_values,
+        &crate::persistent::PersistentMap::default(),
+        result,
+        snapshots,
+        spec_definitions,
+        opaque_click_functions,
+        pointer_element_widths,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(in crate::surface) fn elaborate_fixed_state_expression_with_algebraic_and_integer_values(
+    expression: &ContractExpression,
+    array_element_types: BTreeMap<String, CType>,
+    entry_state: &CState,
+    entry_values: BTreeMap<String, CValue>,
+    current_values: BTreeMap<String, CValue>,
+    algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
+    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    result: Option<&CValue>,
+    snapshots: &RecordedSnapshots,
+    spec_definitions: SpecDefinitions<'_>,
+    opaque_click_functions: BTreeSet<String>,
+    pointer_element_widths: BTreeMap<String, u32>,
+) -> Result<SpecExpression, String> {
     let (mut lowerer, mut context) = fixed_state_elaboration(
         array_element_types,
         BTreeMap::new(),
@@ -1681,6 +1712,28 @@ pub(in crate::surface) fn elaborate_fixed_state_expression_with_algebraic_values
         pointer_element_widths,
     );
     context.algebraic_values = algebraic_values.into_iter().collect();
+    // Capture only bindings mentioned by this argument. Reserve their Integer
+    // identities before a nested fold or function allocates fresh binders.
+    let names = contract_expression_referenced_names(expression);
+
+    for name in &names {
+        if let Some(value) = integer_values.get(name) {
+            context.integer_values = context
+                .integer_values
+                .with_inserted(name.clone(), value.clone());
+            if let Some(variable) = max_spec_integer_expression_variable(value) {
+                lowerer.next_quantifier_variable = lowerer.next_quantifier_variable.max(
+                    variable
+                        .0
+                        .checked_add(1)
+                        .ok_or("quantifier variable identity exhausted")?,
+                );
+            }
+        }
+    }
+    if !context.integer_values.is_empty() {
+        lowerer.capture_referenced_names = Some(names);
+    }
     lowerer.lower_contract_expression_to_spec(expression, &context)
 }
 

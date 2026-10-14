@@ -17,11 +17,6 @@ impl Parser {
                 "a `fn` signature is the Rust spelling; a C or C++ source's contract is written `type name(type parameter, ...)`",
             ));
         }
-        if self.in_contract_definition {
-            return Err(self.error(
-                "a named contract does not take a `fn` signature yet; write `contract type Name(type parameter, ...)`",
-            ));
-        }
         self.expect_ident_spelling("fn")?;
         let path = self.expect_rust_path("function name")?;
         self.skip_rust_lifetime_parameters()?;
@@ -86,6 +81,23 @@ impl Parser {
                     self.parse_parameter_array_suffix(length, length_type)?
                         .parameter,
                 );
+                if self.peek() != Some(&Token::Comma) {
+                    break;
+                }
+                self.position += 1;
+                continue;
+            }
+            if self.peek_ident() == Some("fn") && self.peek_next() == Some(&Token::LParen) {
+                let (c_type, signature) = self.parse_rust_fn_pointer_type()?;
+                parameters.push(FunctionParameter {
+                    click_type: ClickType::C(c_type),
+                    name: parameter_name,
+                    struct_name: None,
+                    function_pointer_signature: Some(signature),
+                    constant: false,
+                    pointee_constant: false,
+                    reference: false,
+                });
                 if self.peek() != Some(&Token::Comma) {
                     break;
                 }
@@ -497,6 +509,44 @@ impl Parser {
 
     /// A Rust type in a signature: an integer or float type, `bool`, `()`,
     /// or a struct by name.
+    /// A function-pointer type, `fn(i32, u32) -> bool`, of scalar parameters
+    /// and a scalar or unit result.
+    fn parse_rust_fn_pointer_type(
+        &mut self,
+    ) -> Result<(C0Type, syntax::C0FunctionPointerSignature), ClickError> {
+        self.expect_ident_spelling("fn")?;
+        self.expect(Token::LParen)?;
+        let mut parameters = Vec::new();
+        while self.peek() != Some(&Token::RParen) {
+            let parsed = self.parse_rust_type()?;
+            if parsed.c_type == C0Type::Void || parsed.c_type.is_pointer() || parsed.reference {
+                return Err(self.error("a `fn` pointer type takes scalar parameters"));
+            }
+            parameters.push(syntax::C0FunctionPointerParameter::new(
+                parsed.c_type,
+                None,
+                false,
+            ));
+            if self.peek() != Some(&Token::Comma) {
+                break;
+            }
+            self.position += 1;
+        }
+        self.expect(Token::RParen)?;
+        let result = if self.peek() == Some(&Token::Arrow) {
+            self.position += 1;
+            let parsed = self.parse_rust_type()?;
+            if parsed.c_type.is_pointer() || parsed.reference {
+                return Err(self.error("a `fn` pointer type returns a scalar or `()`"));
+            }
+            parsed.c_type
+        } else {
+            C0Type::Void
+        };
+        let signature = syntax::C0FunctionPointerSignature::new(result, None, parameters, false);
+        Ok((signature.pointer_type(), signature))
+    }
+
     pub(super) fn parse_rust_type(&mut self) -> Result<ParsedType, ClickError> {
         let scalar = |c_type| ParsedType {
             c_type,

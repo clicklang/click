@@ -3607,6 +3607,14 @@ id = "library.theorem.uint64_pack_uint16_to_integer"
 path = "reference/library/index.md#uint64_pack_uint16_to_integer"
 
 [[item]]
+id = "library.theorem.uint64_unpack_uint16_low"
+path = "reference/library/index.md#uint64_unpack_uint16_low"
+
+[[item]]
+id = "library.theorem.uint64_unpack_uint16_high"
+path = "reference/library/index.md#uint64_unpack_uint16_high"
+
+[[item]]
 id = "library.theorem.uint64_less_than_implies_not_greater_equal"
 path = "reference/library/index.md#uint64_less_than_implies_not_greater_equal"
 

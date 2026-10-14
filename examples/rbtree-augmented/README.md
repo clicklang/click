@@ -101,6 +101,10 @@ promoted summary is stale and the demoted summary still holds the original
 subtree's total. The callback returns a valid `sized_at` tree, preserves the
 erased shape, and restores the mathematical subtree count. `RotateTreeLeft`
 and `RotateTreeRight` expose these checked callable contracts.
+The nightly fixture `tests/fixtures/proof-expansion/rbtree-return-pointer-lemma.click` retains the
+left rotation's imported `sized_parent_is_shape` applications after the C call,
+including their struct-pointer and recursive-model arguments. Its selected
+closer is also checked after expansion and in a retained project session.
 
 `rbtree_size_propagate.click` checks the unchanged propagation callback for
 its first visited leaf, whose parent is the exclusive stop. Both early break

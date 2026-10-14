@@ -11646,6 +11646,55 @@ fn uint32_unpacking_rules_retain_bounds_and_recover_all_word_bits() {
 }
 
 #[test]
+fn uint64_unpacking_rules_require_bounded_fields_and_preserve_packed_bits() {
+    let mut values = vec![
+        0u64,
+        1,
+        255,
+        256,
+        32767,
+        32768,
+        65520,
+        65521,
+        65535,
+        65536,
+        1u64 << 32,
+        1u64 << 48,
+        u64::MAX,
+    ];
+    values.extend((0..16).map(|bit| 1u64 << bit));
+    for &low in &values {
+        for &high in &values {
+            for name in ["uint64_unpack_uint16_low", "uint64_unpack_uint16_high"] {
+                let theorem = prove_uint64_integer_bridge(
+                    name,
+                    Bitvector32Term::UInt64Constant(low),
+                    Bitvector32Term::UInt64Constant(high),
+                )
+                .unwrap();
+                let Proposition::Implies(low_guard, rest) = theorem.proposition() else {
+                    panic!("low bound missing")
+                };
+                let Proposition::Implies(high_guard, result) = rest.as_ref() else {
+                    panic!("high bound missing")
+                };
+                let facts = PureFactContext::new();
+                assert_eq!(facts.proves_exact(low_guard), low <= 65535);
+                assert_eq!(facts.proves_exact(high_guard), high <= 65535);
+                if low <= 65535 && high <= 65535 {
+                    assert!(facts.proves_exact(result), "{name}: low={low}, high={high}");
+                }
+            }
+        }
+    }
+    // The low field must not leak into the high field, and the high field
+    // must fit before packing; both counterexamples violate an issued guard.
+    let oversized = std::hint::black_box(65536u64);
+    assert_ne!(oversized & 65535, oversized);
+    assert_ne!((oversized << 16 >> 16) & 65535, oversized);
+}
+
+#[test]
 fn call_input_retention_does_not_derive_memory_or_scan_unrelated_facts() {
     let memory = CMemory::new();
     let base = Pointer {

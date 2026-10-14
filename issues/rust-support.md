@@ -76,9 +76,11 @@ A/B specification. Logical byte-index guards are bridged explicitly to native
 The independently locked, unchanged zlib one-byte and short-loop paths prove
 their packed results equal the same specification and preserve every input byte
 for canonical seed 1 and lengths 1–15; its empty path also verifies.
-The unified C sidecar now proves the same signed length range for canonical
-seed 1 and nonnull input, including all original return paths. General
-canonical seed composition and C/Rust result equality remain pending.
+The unified C sidecar now proves the same signed length range for arbitrary
+canonical decoded A/B and nonnull input, including all original return paths.
+The real incremental C client composes all splits under nonnull call-pointer
+contracts. Checked C/Rust result and reset correspondence now connect these
+independent proofs; the scoped demonstration records the precise conditions.
 
 Full original-computation smart audits exhaust the standard ten-minute run
 bound before completing a site, while ordinary verification succeeds. Continue
@@ -174,10 +176,36 @@ remain unchanged. Offline nightly regressions check all dependency bodies,
 complete expansion for the C proof and every new helper claim, and rejection
 of invalid results/invariants/views and a ceiling above the signed limit.
 
-Next prove matched canonical packed seeds and incremental C processing,
-connect the existing reset/null behavior to the Rust constructors, and derive
-C/Rust result equality under matched input and state conditions. Lengths beyond
-the shared signed specification range remain unproved for both implementations.
+The canonical-seed sidecar now proves all original C paths for arbitrary
+canonical decoded A/B (0–65520 each), nonnull input, and the full shared signed
+length range. It checks both one-byte conditional reductions and the short
+path's conditional A reduction, and carries the initial state through every
+batch and tail. The real two-call C client proves the whole checksum and byte
+preservation at every split, including empty pieces, when both call pointers
+are nonnull. Checked packed-field recovery establishes the first result's
+canonical state before the second call. Its single translation unit includes
+the unchanged pinned C; the offline fixture verifies the callee against that
+unit too. Complete expansion and negative result, state, split and authority
+cases cover the C contracts and all new helper claims. Seed-rewrite goal
+presentation and theorem-argument Integer conversions were repaired with
+normal regressions; bounded uint64 unpacking rules now match the LP64 word.
+
+Checked correspondence now derives native C/Rust return-word equality from
+those independently proved postconditions, equal entry bytes and matched
+canonical state. A checked uint32-to-uint64 observation bridge preserves the
+Rust return word; specification extensionality handles distinct input buffers.
+The reset correspondence connects the existing C null/nonunit-length result
+with Rust new/default fields and the checked checksum getter. Normal negatives
+reject missing byte matching, mismatched state and false result/reset claims;
+a nightly fixture checks every specification body and all three expanded
+correspondence claims. The [scoped demonstration](../design/charon-trial/checksum-correspondence.md)
+records precise call conditions, proof dependencies and reproducible locked
+fixture commands. This composes independently checked programs; it does not
+claim a verified FFI boundary. Lengths beyond the shared signed specification
+range remain unproved for both implementations.
+
+Next assess the experimental-support architecture requirements below against
+production evidence, starting with borrow-authority suspension and recovery.
 
 Acceptance:
 
@@ -198,6 +226,13 @@ behind new language coverage:
   to production resource transitions. Compiler borrow rejection alone does not
   establish rejection of forged sidecar authority. Test stale child access,
   forged/duplicate recovery, disjoint field borrowing, and parent reuse.
+  The [production assessment](../design/rust-borrow-authority-assessment.md)
+  distinguishes existing owned-call reservation and checked native value
+  transport from the missing exclusive-child ledger protocol. A native
+  regression now verifies parent reuse after child last use without ending
+  child storage, including helper/caller expansion and authority negatives.
+  The explicit exclusive suspension/recovery requirement remains open; the
+  proposed first production increment uses synchronous owned-call frontiers.
 - **Stable proof observations:** provide source-facing slice, array, and
   iterator observations so contracts need not depend on compiler temporary
   names or storage details. Preserve qualified identities, shadowing, source

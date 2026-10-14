@@ -812,6 +812,76 @@ fn pinned_zlib_null_reset_is_independent_of_seed_and_nonunit_length() {
 }
 
 #[test]
+fn adler_c_rust_correspondence_requires_matched_inputs() {
+    let source = include_str!("../design/charon-trial/adler2/correspondence.click").replace(
+        "import \"../../adler32-spec.click\";",
+        include_str!("../design/adler32-spec.click"),
+    );
+    let verify_unit = |proof: &str, name: &str| {
+        let start = proof.find(&format!("theorem {name}(")).unwrap();
+        let offset = start + proof[start..].find(" by {").unwrap() + " by {".len();
+        let offset = offset + proof[offset..].len() - proof[offset..].trim_start().len();
+        let prefix = &proof[..offset];
+        let line = prefix.bytes().filter(|&byte| byte == b'\n').count() + 1;
+        let column = prefix.rsplit('\n').next().unwrap().len() + 1;
+        verify_sources_at(proof, &ProgramInputs::Bundle(vec![]), line, column)
+    };
+    for name in [
+        "adler_result_widen",
+        "adler_c_rust_results",
+        "adler_c_rust_reset",
+    ] {
+        verify_unit(&source, name).expect("checked correspondence body");
+    }
+    for (correct, incorrect) in [
+        (
+            "requires forall (k: int32) { 0 <= k and k < length implies c_bytes[k] == rust_bytes[k] };",
+            "",
+        ),
+        (
+            "requires to_integer(rust_result) == adler_spec_checksum(rust_bytes, length, initial_a, initial_b);",
+            "requires to_integer(rust_result) == adler_spec_checksum(rust_bytes, length, initial_a + 1, initial_b);",
+        ),
+        (
+            "ensures c_result == (uint64)rust_result by",
+            "ensures c_result == (uint64)rust_result + 1u64 by",
+        ),
+        ("requires rust_a == 1u32;", "requires rust_a == 2u32;"),
+    ] {
+        assert!(source.contains(correct), "mutation target must exist");
+        let invalid = source.replace(correct, incorrect);
+        let name = if correct.contains("rust_a") {
+            "adler_c_rust_reset"
+        } else {
+            "adler_c_rust_results"
+        };
+        assert!(verify_unit(&invalid, name).is_err());
+    }
+}
+
+#[test]
+#[ignore = "nightly: correspondence expansion and every shared-specification body"]
+fn adler_c_rust_correspondence_expands_with_checked_dependencies() {
+    let source = include_str!("../design/charon-trial/adler2/correspondence.click").replace(
+        "import \"../../adler32-spec.click\";",
+        include_str!("../design/adler32-spec.click"),
+    );
+    click::surface::verify_click_theorems(&source)
+        .expect("result correspondence and every shared-specification dependency body");
+    let mut expanded = source.clone();
+    for label in [
+        "adler_result_widen.ensures_0",
+        "adler_c_rust_results.ensures_0",
+        "adler_c_rust_reset.ensures_0",
+    ] {
+        expanded = click::surface::expand_c0_claim_source_by_label(&expanded, &[], label)
+            .expect("checked C/Rust correspondence expansion");
+    }
+    click::surface::verify_click_theorems(&expanded)
+        .expect("expanded correspondence and every shared-specification body");
+}
+
+#[test]
 #[ignore = "nightly: unchanged DO16 checksum proof, checked helpers, and mutations"]
 fn pinned_zlib_sixteen_block_matches_checked_shared_specification_offline() {
     let root = tempfile::tempdir().expect("isolated offline zlib DO16 fixture");
@@ -1803,5 +1873,326 @@ fn pinned_zlib_full_stream_lemmas_have_checked_bodies() {
         let invalid = source.replacen(correct, incorrect, 1);
         assert_ne!(source, invalid);
         assert!(click::surface::verify_click_theorems(&invalid).is_err());
+    }
+}
+
+#[test]
+#[ignore = "nightly: full-range original zlib checksum, all seeds and paths, dependency bodies and complete expansion"]
+fn pinned_zlib_canonical_seed_matches_checked_shared_specification_offline() {
+    let root =
+        tempfile::tempdir().expect("isolated offline zlib canonical-seed signed-range fixture");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/zlib");
+    for name in [
+        "adler32.c",
+        "zutil.h",
+        "zlib.h",
+        "zconf.h",
+        "adler32.i",
+        "canonical.click.import.json",
+        "canonical.click.import.lock.json",
+    ] {
+        fs::copy(fixture.join(name), root.path().join(name)).expect(name);
+    }
+    let imports = load_imports(&root.path().join("canonical.click.import.json"))
+        .expect("offline locked unchanged zlib source");
+    let proof = include_str!("../design/charon-trial/zlib/canonical.click")
+        .replace(
+            "import \"canonical-helpers.click\";",
+            include_str!("../design/charon-trial/zlib/canonical-helpers.click"),
+        )
+        .replace(
+            "import \"full-stream-helpers.click\";",
+            include_str!("../design/charon-trial/zlib/full-stream-helpers.click"),
+        )
+        .replace(
+            "import \"../adler2/bounded-count.click\";",
+            include_str!("../design/charon-trial/adler2/bounded-count.click"),
+        )
+        .replace(
+            "import \"seeded-batch.click\";",
+            include_str!("../design/charon-trial/zlib/seeded-batch.click"),
+        )
+        .replace(
+            "import \"batch-helpers.click\";",
+            include_str!("../design/charon-trial/zlib/batch-helpers.click"),
+        )
+        .replace(
+            "import \"window.click\";",
+            include_str!("../design/charon-trial/zlib/window.click"),
+        )
+        .replace(
+            "import \"block.click\";",
+            include_str!("../design/charon-trial/zlib/block.click"),
+        )
+        .replace(
+            "import \"short-prefix.click\";",
+            include_str!("../design/charon-trial/zlib/short-prefix.click"),
+        )
+        .replace(
+            "import \"byte.click\";",
+            include_str!("../design/charon-trial/zlib/byte.click"),
+        )
+        .replace(
+            "import \"../adler2/count-bridge.click\";",
+            include_str!("../design/charon-trial/adler2/count-bridge.click"),
+        )
+        .replace(
+            "import \"../../adler32-spec.click\";",
+            include_str!("../design/adler32-spec.click"),
+        );
+    let checked = verify_c0_prepared_sources(&proof, &imports).expect(
+        "canonical-seed signed-range checksum, termination, byte preservation, and all helper bodies",
+    );
+    let contracts: Vec<_> = checked
+        .iter()
+        .filter(|claim| claim.function_block.signature().name() == "adler32_z")
+        .collect();
+    assert_eq!(
+        contracts.len(),
+        16,
+        "checksum and byte preservation across four fast reductions, two short reductions, and both batch-tail returns"
+    );
+    for claim in contracts {
+        assert_eq!(
+            claim.import_identity.as_deref(),
+            Some(imports[0].identity())
+        );
+    }
+    let expanded = click::surface::expand_c0_prepared_claim_source_by_label(
+        &proof,
+        &imports,
+        "adler32_z.contract",
+    )
+    .expect("checked complete canonical-seed signed-range certificate expansion");
+    verify_c0_prepared_sources(&expanded, &imports)
+        .expect("expanded canonical-seed signed-range checksum and every helper body");
+    for invalid in [
+        proof.replacen("requires len <= 2147483647u64;", "requires len <= 2147483648u64;", 1),
+        proof.replacen("views buf[0u64..len];", "", 1),
+        proof.replacen("views buf[0u64..len];", "views buf[0u64..len - 1u64];", 1),
+        proof.replacen(
+            "ensures to_integer(result) == adler_spec_checksum(old(buf), old((int32)(uint32)len), to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler))));",
+            "ensures to_integer(result) == adler_spec_checksum(old(buf), old((int32)(uint32)len), to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler)))) + 1;",
+            1,
+        ),
+        proof.replacen(
+            "invariant buf == old(buf) + (old(len) - len);",
+            "invariant buf == old(buf) + (old(len) - len) + 1;",
+            1,
+        ),
+        proof.replacen(
+            "invariant to_integer(adler) == to_integer(at(loop(4).entry, adler)) + adler_byte_sum",
+            "invariant to_integer(adler) == 1 + to_integer(at(loop(4).entry, adler)) + adler_byte_sum",
+            1,
+        ),
+    ] {
+        assert_ne!(proof, invalid);
+        assert!(verify_c0_prepared_sources(&invalid, &imports).is_err());
+    }
+}
+
+#[test]
+#[ignore = "nightly: canonical seed, reduction, unpacking and composition and expansion"]
+fn pinned_zlib_canonical_seed_lemmas_have_checked_bodies() {
+    let source = include_str!("../design/charon-trial/zlib/canonical-helpers.click")
+        .replace(
+            "import \"full-stream-helpers.click\";",
+            include_str!("../design/charon-trial/zlib/full-stream-helpers.click"),
+        )
+        .replace(
+            "import \"../adler2/bounded-count.click\";",
+            include_str!("../design/charon-trial/adler2/bounded-count.click"),
+        )
+        .replace(
+            "import \"seeded-batch.click\";",
+            include_str!("../design/charon-trial/zlib/seeded-batch.click"),
+        )
+        .replace(
+            "import \"batch-helpers.click\";",
+            include_str!("../design/charon-trial/zlib/batch-helpers.click"),
+        )
+        .replace(
+            "import \"window.click\";",
+            include_str!("../design/charon-trial/zlib/window.click"),
+        )
+        .replace(
+            "import \"block.click\";",
+            include_str!("../design/charon-trial/zlib/block.click"),
+        )
+        .replace(
+            "import \"short-prefix.click\";",
+            include_str!("../design/charon-trial/zlib/short-prefix.click"),
+        )
+        .replace(
+            "import \"byte.click\";",
+            include_str!("../design/charon-trial/zlib/byte.click"),
+        )
+        .replace(
+            "import \"../adler2/count-bridge.click\";",
+            include_str!("../design/charon-trial/adler2/count-bridge.click"),
+        )
+        .replace(
+            "import \"../../adler32-spec.click\";",
+            include_str!("../design/adler32-spec.click"),
+        );
+
+    click::surface::verify_click_theorems(&source)
+        .expect("full-range helpers and every dependency body");
+    let mut expanded = source.clone();
+    for label in [
+        "zlib_general_seeded_batch_concat.ensures_0",
+        "zlib_general_seeded_batch_concat.ensures_1",
+        "zlib_general_raw_seeded_batch_concat.ensures_0",
+        "zlib_general_raw_seeded_batch_concat.ensures_1",
+        "zlib_general_components_pack.ensures_0",
+        "zlib_reduce_once_below.ensures_0",
+        "zlib_reduce_once_above.ensures_0",
+        "zlib_seed_bounds.ensures_0",
+        "zlib_one_seeded_components.ensures_0",
+        "zlib_short_count_limit.ensures_0",
+        "zlib_canonical_pack.ensures_0",
+        "zlib_canonical_pack.ensures_1",
+        "zlib_packed_integer_seed.ensures_0",
+        "zlib_checksum_seed.ensures_0",
+    ] {
+        expanded = click::surface::expand_c0_claim_source_by_label(&expanded, &[], label)
+            .expect("checked full-range helper certificate expansion");
+    }
+    click::surface::verify_click_theorems(&expanded)
+        .expect("expanded full-range helpers and dependencies");
+    for (correct, incorrect) in [
+        (
+            "requires value <= 131041u64;",
+            "requires value <= 131042u64;",
+        ),
+        (
+            "to_integer(a % 65521u64) == adler_spec_a(bytes, prefix + length, initial_a) by",
+            "to_integer(a % 65521u64) == adler_spec_a(bytes, prefix + length, initial_a) + 1 by",
+        ),
+        ("requires a <= 65520;", "requires a <= 65536;"),
+        (
+            "to_integer(zlib_seed_a(word)) == a and",
+            "to_integer(zlib_seed_a(word)) == a + 1 and",
+        ),
+    ] {
+        let invalid = source.replacen(correct, incorrect, 1);
+        assert_ne!(source, invalid);
+        assert!(click::surface::verify_click_theorems(&invalid).is_err());
+    }
+}
+
+#[test]
+#[ignore = "nightly: two actual zlib C updates, all callee and helper bodies, complete expansion"]
+fn pinned_zlib_incremental_c_matches_checked_shared_specification_offline() {
+    let root =
+        tempfile::tempdir().expect("isolated offline zlib canonical-seed signed-range fixture");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/zlib");
+    for name in [
+        "adler32.c",
+        "zutil.h",
+        "zlib.h",
+        "zconf.h",
+        "incremental.c",
+        "incremental.i",
+        "incremental.click.import.json",
+        "incremental.click.import.lock.json",
+    ] {
+        fs::copy(fixture.join(name), root.path().join(name)).expect(name);
+    }
+    let imports = load_imports(&root.path().join("incremental.click.import.json"))
+        .expect("offline locked unchanged zlib source");
+    let proof = include_str!("../design/charon-trial/zlib/incremental.click")
+        .replace(
+            "import \"canonical.click\";",
+            include_str!("../design/charon-trial/zlib/canonical.click"),
+        )
+        .replace("verifying \"adler32.c\";", "verifying \"incremental.c\";")
+        .replace(
+            "import \"../adler2/incremental-split.click\";",
+            include_str!("../design/charon-trial/adler2/incremental-split.click"),
+        )
+        .replace(
+            "import \"canonical-helpers.click\";",
+            include_str!("../design/charon-trial/zlib/canonical-helpers.click"),
+        )
+        .replace(
+            "import \"full-stream-helpers.click\";",
+            include_str!("../design/charon-trial/zlib/full-stream-helpers.click"),
+        )
+        .replace(
+            "import \"../adler2/bounded-count.click\";",
+            include_str!("../design/charon-trial/adler2/bounded-count.click"),
+        )
+        .replace(
+            "import \"seeded-batch.click\";",
+            include_str!("../design/charon-trial/zlib/seeded-batch.click"),
+        )
+        .replace(
+            "import \"batch-helpers.click\";",
+            include_str!("../design/charon-trial/zlib/batch-helpers.click"),
+        )
+        .replace(
+            "import \"window.click\";",
+            include_str!("../design/charon-trial/zlib/window.click"),
+        )
+        .replace(
+            "import \"block.click\";",
+            include_str!("../design/charon-trial/zlib/block.click"),
+        )
+        .replace(
+            "import \"short-prefix.click\";",
+            include_str!("../design/charon-trial/zlib/short-prefix.click"),
+        )
+        .replace(
+            "import \"byte.click\";",
+            include_str!("../design/charon-trial/zlib/byte.click"),
+        )
+        .replace(
+            "import \"../adler2/count-bridge.click\";",
+            include_str!("../design/charon-trial/adler2/count-bridge.click"),
+        )
+        .replace(
+            "import \"../../adler32-spec.click\";",
+            include_str!("../design/adler32-spec.click"),
+        );
+    let checked = verify_c0_prepared_sources(&proof, &imports).expect(
+        "canonical-seed signed-range checksum, termination, byte preservation, and all helper bodies",
+    );
+    let contracts: Vec<_> = checked
+        .iter()
+        .filter(|claim| claim.function_block.signature().name() == "click_zlib_incremental")
+        .collect();
+    assert_eq!(
+        contracts.len(),
+        2,
+        "two real C calls establish the whole checksum and preserve all bytes"
+    );
+    for claim in contracts {
+        assert_eq!(
+            claim.import_identity.as_deref(),
+            Some(imports[0].identity())
+        );
+    }
+    let expanded = click::surface::expand_c0_prepared_claim_source_by_label(
+        &proof,
+        &imports,
+        "click_zlib_incremental.contract",
+    )
+    .expect("checked complete canonical-seed signed-range certificate expansion");
+    verify_c0_prepared_sources(&expanded, &imports)
+        .expect("expanded canonical-seed signed-range checksum and every helper body");
+    for invalid in [
+        proof.replacen("requires split <= len;", "requires split <= len + 1u64;", 1),
+        proof.replacen("requires buf + split != 0;", "", 1),
+        proof.replacen("requires buf + split != 0;\n views buf[0u64..len];", "requires buf + split != 0;", 1),
+        proof.replacen("requires buf + split != 0;\n views buf[0u64..len];", "requires buf + split != 0;\n views buf[0u64..len - 1u64];", 1),
+        proof.replacen(
+            "ensures to_integer(result) == adler_spec_checksum(old(buf), old((int32)(uint32)len), to_integer(zlib_seed_a(old(seed))), to_integer(zlib_seed_b(old(seed))));",
+            "ensures to_integer(result) == adler_spec_checksum(old(buf), old((int32)(uint32)len), to_integer(zlib_seed_a(old(seed))), to_integer(zlib_seed_b(old(seed)))) + 1;",
+            1,
+        ),
+    ] {
+        assert_ne!(proof, invalid);
+        assert!(verify_c0_prepared_sources(&invalid, &imports).is_err());
     }
 }

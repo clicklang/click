@@ -32,20 +32,42 @@ pub enum Type {
     // Named Charon-only shared-byte chunk protocol; not general external ADTs.
     ChunkIterator,
     ChunkOption,
-    SharedArrayIterator { element: Box<Type> },
-    SharedArrayOption { element: Box<Type> },
-    SharedScalarSlice { element: Box<Type> },
+    SharedArrayIterator {
+        element: Box<Type>,
+    },
+    SharedArrayOption {
+        element: Box<Type>,
+    },
+    SharedScalarSlice {
+        element: Box<Type>,
+    },
     I32,
     U8,
     U16,
     U32,
     Usize,
-    ByteSlice { mutable: bool },
-    Array { element: Box<Type>, length: u64 },
+    ByteSlice {
+        mutable: bool,
+    },
+    Array {
+        element: Box<Type>,
+        length: u64,
+    },
     Bool,
     Unit,
-    Reference { mutable: bool, pointee: Box<Type> },
-    Record { name: String },
+    Reference {
+        mutable: bool,
+        pointee: Box<Type>,
+    },
+    Record {
+        name: String,
+    },
+    /// A safe Rust-ABI function pointer of scalar parameters and result,
+    /// `fn(i32) -> i32`.
+    FnPointer {
+        parameters: Vec<Type>,
+        result: Box<Type>,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -178,6 +200,11 @@ pub enum Expression {
     Call {
         function: String,
         arguments: Vec<Self>,
+    },
+    /// A function item reified as a function pointer, `twice as fn(i32) -> i32`.
+    FunctionAddress {
+        function: String,
+        value_type: Type,
     },
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -331,6 +358,9 @@ pub enum MirTerminator {
         owned_arguments: Vec<OwnedArgument>,
         destination: String,
         target: usize,
+        /// A call through the function pointer the local `function` holds.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        through_pointer: bool,
     },
     Return,
     Unreachable,
