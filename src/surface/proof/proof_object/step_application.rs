@@ -815,6 +815,13 @@ impl<'a> Proof<'a> {
         if let ProofStep::Have { proposition, proof } = &step {
             return self.apply_have_step(proposition, proof);
         }
+        // A bare `fold` is checked as a bare step is: its fast path, then the
+        // implicit `auto` for each body fact it leaves open.
+        if matches!(step, ProofStep::FoldResource(_))
+            && !super::execution_statements::implicit_auto_disabled()
+        {
+            return self.apply_bare_statement_step(step);
+        }
         if let ProofStep::StepProved { step: inner, proof } = &step {
             return match proof {
                 StepProofCertificate::By(body) => self.apply_step_with_obligation_proofs(

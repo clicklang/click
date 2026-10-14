@@ -1,6 +1,37 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: checks two post-return unfolds through expansion and retained verification"]
+fn call_produced_instances_unfold_after_return_in_all_proof_modes() {
+    for fixture in [
+        "mdtests/return_unfold_call_instance.md",
+        "mdtests/return_unfold_call_instance_with_local.md",
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        verify_c0_sources(&source, &sources).unwrap();
+        let expanded =
+            expand_c0_claim_source(&source, &sources, "pick", CProofClaim::Grouped).unwrap();
+        verify_c0_sources(&expanded, &sources).unwrap();
+        let position =
+            expansion::position_at_offset(&expanded, expanded.find("ensures o.model").unwrap());
+        let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+        session
+            .verify_at(&expanded, position.line, position.column)
+            .unwrap();
+        drop(session);
+        let false_frame = source.replace(
+            "ensures o.model == 0;",
+            "ensures o.model == 0; ensures r->top == old(r->top);",
+        );
+        assert!(verify_c0_sources(&false_frame, &sources).is_err());
+    }
+}
+
+#[test]
 fn execution_theorem_expansion_preserves_imported_tactic_interfaces() {
     let helper = include_str!("../../../mdtests/execution_theorem_imported_tactic_helpers.click");
     let fixture = crate::cli::parse_mdtest(
@@ -17810,6 +17841,50 @@ int32 caller(int32 a, int32 b) {
     );
 }
 
+#[test]
+fn a_bare_fold_expands_its_body_fact_proof_and_needs_it() {
+    let c_source = "void make(int32 x) { }\n";
+    let click_source = r#"
+verifying "make.c";
+resource positive(n: int32) { fact n > 0; }
+void make(int32 x) {
+    requires x >= 1;
+    produces positive(x);
+} by {
+    fold(positive(x));
+    execute();
+    simp();
+}
+"#;
+    let c_sources = [("make.c", c_source)];
+    let expanded = expand_c0_claim_source(click_source, &c_sources, "make", CProofClaim::Grouped)
+        .expect("the bare fold should expand");
+    assert!(
+        expanded.contains("fold(positive(x)) by {"),
+        "the implicit `auto`'s proof of the open body fact should print as the fold's `by`: {expanded}"
+    );
+    crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &c_sources))
+        .expect("the expansion should reverify cold");
+    let start = expanded
+        .find("fold(positive(x)) by {")
+        .expect("the expanded fold");
+    let body_end = expanded[start..]
+        .find("\n    }\n")
+        .map(|offset| start + offset + "\n    }\n".len())
+        .expect("the fold's `by` closes");
+    let mut without_proof = expanded.clone();
+    without_proof.replace_range(start..body_end, "fold(positive(x));\n");
+    let error = crate::surface::proof::without_implicit_auto(|| {
+        verify_c0_sources(&without_proof, &c_sources)
+    })
+    .expect_err("with the implicit `auto` off, the fold refuses its unproved body fact");
+    assert!(
+        error.message().contains("x > 0"),
+        "the refusal should name the body fact: {}",
+        error.message()
+    );
+}
+
 /// `expanded` with its first step's obligation proofs removed:
 /// `step() by { ... }` or `step() { requires ... }` becomes `step();`.
 fn without_first_step_obligation_proofs(expanded: &str) -> String {
@@ -17882,5 +17957,50 @@ fn whole_global_objects_keep_their_extent_and_field_types() {
     );
     for insufficient in ["views state;", "owns state.left;"] {
         assert!(verify_c0_sources(&source.replace("owns state;", insufficient), &sources).is_err());
+    }
+}
+
+/// Qualified pointer slots must select the same memory in fresh, expanded,
+/// and retained proofs, including entry reads after a store.
+#[test]
+#[ignore = "nightly: checks global and static pointer snapshots across proof modes"]
+fn qualified_pointer_slots_keep_selected_memory_in_all_proof_modes() {
+    for (fixture, functions) in [
+        (
+            "mdtests/qualified_pointer_global_store_reads_current_value.md",
+            &["clear_slot"][..],
+        ),
+        (
+            "mdtests/qualified_pointer_global_store_keeps_old_snapshot.md",
+            &["exchange_global", "exchange_static"][..],
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        verify_c0_sources(&source, &sources).unwrap();
+        for function in functions {
+            let expanded =
+                expand_c0_claim_source(&source, &sources, function, CProofClaim::Grouped).unwrap();
+            verify_c0_sources(&expanded, &sources).unwrap();
+            let offset = expanded.find(&format!("{function}(")).unwrap();
+            let claim = offset + expanded[offset..].find("ensures ").unwrap();
+            let position = expansion::position_at_offset(&expanded, claim);
+            let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+            session
+                .verify_at(&expanded, position.line, position.column)
+                .unwrap();
+        }
+        let without_slot = source
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("owns "))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            verify_c0_sources(&without_slot, &sources).is_err(),
+            "a pointer read requires its slot permission"
+        );
     }
 }

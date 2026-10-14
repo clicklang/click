@@ -6641,7 +6641,6 @@ impl Parser {
         hidden_sources.extend(default_child_bindings.iter().cloned());
         self.fill_hidden_fold_fields(&declared, &hidden_sources, &mut fields);
         self.expect(Token::RParen)?;
-        self.expect(Token::Semicolon)?;
         let binding = ResourceInstanceBinding {
             name: name.clone(),
             identity,
@@ -6661,7 +6660,9 @@ impl Parser {
                 resource: Box::new(resource.clone()),
             },
         );
-        Ok(ProofTactic::FoldResource(ResourceClause::Named {
+        // Like any fold, a construction may prove the body facts it leaves
+        // open with `by` or `requires` entries.
+        self.parse_step_proof(ProofTactic::FoldResource(ResourceClause::Named {
             binding: ResourceInstanceBinding {
                 fold_fields: Some(fields),
                 child_bindings: Some(child_bindings.into()),
@@ -7685,7 +7686,7 @@ impl Parser {
                 }
                 let resource = self.parse_owned_resource_target()?;
                 self.expect(Token::RParen)?;
-                ProofTactic::FoldResource(resource)
+                return self.parse_step_proof(ProofTactic::FoldResource(resource));
             }
             "construct" => {
                 self.expect(Token::LParen)?;
@@ -7874,12 +7875,17 @@ impl Parser {
     /// (`issues/simplify-step.md`).
     #[inline(never)]
     fn parse_step_proof(&mut self, step: ProofTactic) -> Result<ProofTactic, ClickError> {
+        let (tactic, call) = if matches!(step, ProofTactic::FoldResource(_)) {
+            ("fold", "fold(...)")
+        } else {
+            ("step", "step()")
+        };
         if self.peek_ident() == Some("by") {
             self.position += 1;
             if self.peek_ident() == Some("auto") && self.peek_next() == Some(&Token::Semicolon) {
-                return Err(self.error(
-                    "`step() by auto` is `step()`: a step's open obligations already go to `auto`",
-                ));
+                return Err(self.error(format!(
+                    "`{call} by auto` is `{call}`: its open obligations already go to `auto`",
+                )));
             }
             let body = self.parse_step_proof_body()?;
             self.skip_redundant_semicolon();
@@ -7895,9 +7901,9 @@ impl Parser {
                 match self.peek_ident() {
                     Some("requires") => self.position += 1,
                     _ => {
-                        return Err(self.error(
-                            "a `step { ... }` block holds only `requires P by ...;` entries",
-                        ));
+                        return Err(self.error(format!(
+                            "a `{tactic}(...) {{ ... }}` block holds only `requires P by ...;` entries",
+                        )));
                     }
                 }
                 let label = if let (Some(Token::Ident(label)), Some(Token::Colon)) =
@@ -7926,9 +7932,9 @@ impl Parser {
             }
             self.expect(Token::RBrace)?;
             if entries.is_empty() {
-                return Err(
-                    self.error("a `step { ... }` block needs at least one `requires` entry")
-                );
+                return Err(self.error(format!(
+                    "a `{tactic}(...) {{ ... }}` block needs at least one `requires` entry"
+                )));
             }
             self.skip_redundant_semicolon();
             return Ok(ProofTactic::StepProved {

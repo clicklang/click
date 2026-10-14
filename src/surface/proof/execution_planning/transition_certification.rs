@@ -82,6 +82,8 @@ fn missing_prerequisite_error(
 pub(in crate::surface) struct OpenObligationProbe {
     /// The open obligations that carry a structured requirement, in order.
     pub(in crate::surface) recorded: Vec<UnresolvedRequirement>,
+    /// The refusal each recorded requirement stood for, in the same order.
+    pub(in crate::surface) refusals: Vec<ClickError>,
 }
 
 thread_local! {
@@ -131,12 +133,23 @@ fn refuse_or_probe(
         let mut probe = probe.borrow_mut();
         let probe = probe.as_mut()?;
         probe.recorded.push(requirement.clone());
+        probe.refusals.push(error.clone());
         Some(())
     });
     match recorded {
         Some(()) => Ok(()),
         None => Err(error),
     }
+}
+
+/// Returns `error`, or, while open obligations are being probed, records its
+/// structured requirement and lets the tactic continue past it. A simple
+/// tactic other than `step` refuses a requirement it cannot close exactly
+/// through this, so a probe can collect them all for the implicit `auto`.
+pub(in crate::surface) fn refuse_or_record_open_obligation(
+    error: ClickError,
+) -> Result<(), ClickError> {
+    refuse_or_probe(StatementPrerequisitePolicy::Fast, error)
 }
 
 /// A condition's unmet prerequisite, spelled as a proof would state it over
