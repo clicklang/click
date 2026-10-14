@@ -10853,7 +10853,7 @@ impl ExecutionProofCore {
             &self.checked_call_events,
             None,
         )?;
-        // Publication ends automatic local lifetimes. Replay only this
+        // Publication ends automatic local lifetimes. Apply only this
         // logical resource exchange on the C-body state, retaining the local
         // cells that publication removed from its expression-facing outcome.
         let frame = before_state
@@ -13074,12 +13074,12 @@ mod tests {
             selected,
             rewrite: checked,
         }));
-        let replay = |rewrite| {
+        let check_trace = |rewrite| {
             let mut trace = events.clone();
             trace.push(CheckedExecutionEvent::ResourceRewrite(rewrite));
             trace_completion(&function, &trace, facts.assumptions(), false)
         };
-        assert!(replay(rewrite.clone()).is_ok());
+        assert!(check_trace(rewrite.clone()).is_ok());
         let mut extra = rewrite.clone();
         Arc::make_mut(extra.return_presentation.as_mut().unwrap())
             .rewrite
@@ -13088,7 +13088,7 @@ mod tests {
             true,
         ));
         assert_eq!(
-            replay(extra).err(),
+            check_trace(extra).err(),
             Some("return composite presentation has an unchecked exchange")
         );
         let mut changed = rewrite.clone();
@@ -13096,13 +13096,13 @@ mod tests {
             .rewrite
             .after_state
             .memory = CMemory::new().with_block("other", 4);
-        assert!(replay(changed).is_err());
+        assert!(check_trace(changed).is_err());
         Arc::make_mut(rewrite.return_presentation.as_mut().unwrap()).context =
             returned_proposition_context(
                 &before.with_memory(CMemory::new().with_block("other", 4)),
             );
         assert_eq!(
-            replay(rewrite).err(),
+            check_trace(rewrite).err(),
             Some("return composite presentation belongs to a different execution path")
         );
     }
