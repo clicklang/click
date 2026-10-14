@@ -153,64 +153,91 @@ fn bitvector_terms_may_be_theory_equal(left: &Bitvector32Term, right: &Bitvector
     )
 }
 
-/// The finite instantiation table of a constant-bounded universal goal, in
-/// deterministic range order. `None` when the binder chain has no
-/// guard-derived constant range or the table would exceed the finite
-/// instantiation limit. This mirrors the ranges the kernel's `FiniteForAll`
-/// derivation enumerates, so a surface certificate that writes each in-range
-/// instance can be checked with work proportional to this table.
+/// Lazily instantiate a constant-bounded universal. Each requested instance
+/// costs one unit plus substitution work; a missing proof stops the caller
+/// without lowering the rest of the numeric domain. Two-index smart proofs
+/// request nearest pairs first so wider spans can cite their neighbours.
 pub(crate) fn finite_forall_goal_instances(
     proposition: &Proposition,
-) -> Option<Vec<(Vec<i64>, Proposition)>> {
-    fn collect(
-        body: &Proposition,
-        variables: &[Variable],
-        ranges: &[FiniteForAllRange],
-        values: &mut Vec<i64>,
-        instances: &mut Vec<(Vec<i64>, Proposition)>,
-    ) {
-        if values.len() == variables.len() {
-            let mut instantiated = body.clone();
-            for ((variable, value), range) in variables.iter().zip(values.iter()).zip(ranges) {
-                instantiated = substitute_bitvector_variable_in_proposition(
-                    &instantiated,
-                    *variable,
-                    &range.constant(*value),
-                );
-            }
-            instances.push((values.clone(), instantiated));
-            return;
-        }
-        let range = &ranges[values.len()];
-        for value in range.lower..=range.upper {
-            values.push(value);
-            collect(body, variables, ranges, values, instances);
-            values.pop();
-        }
-    }
-
+    nearest_pairs: bool,
+) -> Option<impl Iterator<Item = (Vec<i64>, Proposition)> + '_> {
     let mut variables = Vec::new();
     let body = collect_forall_chain(proposition, &mut variables);
     if variables.is_empty() {
         return None;
     }
-    // A guard that no integer satisfies names a range with zero members;
-    // `enumerate` then checks zero instances, which is exactly the evidence
-    // a vacuous universal has.
     let ranges =
         crate::kernel::reasoning::finite_forall_ranges_allowing_empty(&variables, body, true)?;
-    // The instances are the quantifier's own finite domain: one unit of
-    // deterministic work each, so a wide domain is charged to the tactic
-    // that asked, never cut by a count.
-    let instance_count = ranges.iter().try_fold(1usize, |count, range| {
-        usize::try_from((range.upper - range.lower + 1).max(0))
-            .ok()
-            .and_then(|width| count.checked_mul(width))
-    })?;
-    crate::instrumentation::record_deterministic_work(instance_count);
-    let mut instances = Vec::with_capacity(instance_count);
-    collect(body, &variables, &ranges, &mut Vec::new(), &mut instances);
-    Some(instances)
+    let empty = ranges.iter().any(|range| range.lower > range.upper);
+    let values: Box<dyn Iterator<Item = Vec<i64>>> = if nearest_pairs && ranges.len() == 2 && !empty
+    {
+        let (a, b) = (i128::from(ranges[0].lower), i128::from(ranges[0].upper));
+        let (c, d) = (i128::from(ranges[1].lower), i128::from(ranges[1].upper));
+        let minimum = 0.max(a - d).max(c - b);
+        let maximum = (a - d).abs().max((b - c).abs());
+        Box::new((minimum..=maximum).flat_map(move |span| {
+            // Each orientation contributes one interval of first indices.
+            // Merge their union to visit (distance, first, second) in order
+            // without walking the gap between disjoint intervals.
+            let mut intervals = [
+                (a.max(c - span), b.min(d - span)),
+                (a.max(c + span), b.min(d + span)),
+            ];
+            intervals.sort_unstable();
+            let [(mut low, mut high), (mut next_low, mut next_high)] = intervals;
+            if low > high {
+                (low, high) = (next_low, next_high);
+                (next_low, next_high) = (1, 0);
+            } else if next_low <= next_high && next_low <= high + 1 {
+                high = high.max(next_high);
+                (next_low, next_high) = (1, 0);
+            }
+            (low..=high)
+                .chain(next_low..=next_high)
+                .flat_map(move |first| {
+                    [first - span, first + span]
+                        .into_iter()
+                        .enumerate()
+                        .filter(move |(orientation, second)| {
+                            c <= *second && *second <= d && (span != 0 || *orientation == 0)
+                        })
+                        .map(move |(_, second)| vec![first as i64, second as i64])
+                })
+        }))
+    } else {
+        let mut current =
+            (!empty).then(|| ranges.iter().map(|range| range.lower).collect::<Vec<_>>());
+        let bounds = ranges.clone();
+        Box::new(std::iter::from_fn(move || {
+            let result = current.as_ref()?.clone();
+            let values = current.as_mut().expect("a live cursor");
+            let mut advanced = false;
+            for index in (0..values.len()).rev() {
+                if values[index] < bounds[index].upper {
+                    values[index] += 1;
+                    advanced = true;
+                    break;
+                }
+                values[index] = bounds[index].lower;
+            }
+            if !advanced {
+                current = None;
+            }
+            Some(result)
+        }))
+    };
+    Some(values.map(move |values| {
+        crate::instrumentation::record_deterministic_work(1);
+        let mut instantiated = body.clone();
+        for ((variable, value), range) in variables.iter().zip(&values).zip(&ranges) {
+            instantiated = substitute_bitvector_variable_in_proposition(
+                &instantiated,
+                *variable,
+                &range.constant(*value),
+            );
+        }
+        (values, instantiated)
+    }))
 }
 
 impl PureFactContext {
@@ -2569,78 +2596,20 @@ impl PureFactContext {
                         .any(|body| self.proposition_proves_condition(body, condition, value))
                     || self
                         .finite_forall_instantiations(proposition)
-                        .iter()
-                        .any(|body| self.proposition_proves_condition(body, condition, value))
+                        .any(|body| self.proposition_proves_condition(&body, condition, value))
             }
             _ => false,
         }
     }
 
-    pub(crate) fn finite_forall_instantiations(
+    pub(crate) fn finite_forall_instantiations<'a>(
         &self,
-        proposition: &Proposition,
-    ) -> Vec<Proposition> {
-        let mut variables = Vec::new();
-        let body = collect_forall_chain(proposition, &mut variables);
-        if variables.is_empty() {
-            return Vec::new();
-        }
-        let Some(ranges) = finite_forall_ranges(&variables, body) else {
-            return Vec::new();
-        };
-        let Some(instantiation_count) = ranges.iter().try_fold(1usize, |count, range| {
-            let width = usize::try_from(range.upper - range.lower + 1).ok()?;
-            count.checked_mul(width)
-        }) else {
-            return Vec::new();
-        };
-        crate::instrumentation::record_deterministic_work(instantiation_count);
-
-        let mut values = Vec::with_capacity(variables.len());
-        let mut instantiations = Vec::with_capacity(instantiation_count);
-        self.collect_finite_forall_condition_instantiations(
-            body,
-            &variables,
-            &ranges,
-            &mut values,
-            &mut instantiations,
-        );
-        instantiations
-    }
-
-    pub(in crate::kernel) fn collect_finite_forall_condition_instantiations(
-        &self,
-        body: &Proposition,
-        variables: &[Variable],
-        ranges: &[FiniteForAllRange],
-        values: &mut Vec<i64>,
-        instantiations: &mut Vec<Proposition>,
-    ) {
-        if values.len() == variables.len() {
-            let mut instantiated = body.clone();
-            for ((variable, value), range) in variables.iter().zip(values.iter()).zip(ranges) {
-                instantiated = substitute_bitvector_variable_in_proposition(
-                    &instantiated,
-                    *variable,
-                    &range.constant(*value),
-                );
-            }
-            instantiations.push(instantiated);
-            return;
-        }
-
-        let range = &ranges[values.len()];
-        for value in range.lower..=range.upper {
-            values.push(value);
-            self.collect_finite_forall_condition_instantiations(
-                body,
-                variables,
-                ranges,
-                values,
-                instantiations,
-            );
-            values.pop();
-        }
+        proposition: &'a Proposition,
+    ) -> impl Iterator<Item = Proposition> + 'a {
+        finite_forall_goal_instances(proposition, false)
+            .into_iter()
+            .flatten()
+            .map(|(_, instance)| instance)
     }
 
     /// The consequents of this context's universal implications, instantiated

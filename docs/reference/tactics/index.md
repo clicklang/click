@@ -280,8 +280,14 @@ expanded proof spells one `have` per non-vacuous instance (typically closed by
 and `enumerate()` checks exactly those instances against the goal's own
 guard-derived ranges. A goal stated as a predicate call is unfolded to the
 body that binds the instances, and the smart `simp` proves nearest pairs
-first so a wider span can cite its neighbours. Click never instantiates by
-search: an in-range instance that is neither vacuous nor spelled fails.
+first so a wider span can cite its neighbours. Instances are lowered lazily: a missing instance stops `enumerate` before
+visiting the rest of the numeric range, and smart `simp` also stops generating
+instances at its first failed proof. The finite-universal planner and its
+retained certificate checker use the same lazy range order and still require
+every in-range instance for success. This keeps refusal of a false frame over
+a large constant range from materializing every element. Click never
+instantiates by search: an in-range instance that is neither vacuous nor
+spelled fails.
 
 Proof-level `if` and `cases` answer different questions. `if P` is an
 excluded-middle split: the else case assumes `not P`, so it cannot eliminate a
