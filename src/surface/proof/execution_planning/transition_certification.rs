@@ -1224,28 +1224,21 @@ fn certified_transitions_from_execution(
                             &transport.target,
                         );
                     }
-                    let matching = execution_facts.iter().enumerate()
-                        .filter_map(|(index, fact)| (fact.proposition() == &transport.source).then_some(index))
-                        .collect::<Vec<_>>();
-                    for index in matching {
-                        let fact = execution_facts.get_mut(index);
-                        if fact.proposition() == &transport.source {
-                            if fact.is_certified() {
-                                // Preserve the certified producer-side fact:
-                                // the execution theorem can name that exact
-                                // intermediate snapshot as a premise. The
-                                // transported copy is the fact exposed at the
-                                // source-statement exit.
-                                transported_execution_facts.push(
-                                    fact.clone().with_proposition(transport.target.clone()),
-                                );
-                            } else {
-                                *fact = fact
-                                    .clone()
-                                    .with_proposition(transport.target.clone());
-                            }
-                        }
-                    }
+                    // Every producer-side fact can be a premise of the
+                    // statement theorem, including an ordinary call bound.
+                    // Keep its exact snapshot alongside the transported
+                    // copy exposed at the source-statement exit. Replacing
+                    // an uncertified source loses the theorem's premise;
+                    // certification controls later publication, not whether
+                    // this statement may still need its original fact.
+                    transported_execution_facts.extend(
+                        execution_facts
+                            .iter()
+                            .filter(|fact| fact.proposition() == &transport.source)
+                            .map(|fact| {
+                                fact.clone().with_proposition(transport.target.clone())
+                            }),
+                    );
                 }
                 for transport in &transported_facts {
                     replace_fact_in_place(
