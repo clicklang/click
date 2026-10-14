@@ -732,3 +732,31 @@ fn an_int64_division_guard_needs_a_nonzero_divisor() {
         Some(false)
     );
 }
+/// A value many others are bounded by (an array length `n` with
+/// `v_i <= n` for 64 to 4,096 values) is a hub: a new bound on it, a
+/// question about it, and a question about one dependent cost the same at
+/// every size. Insertion pushes a bound a bounded distance and a query
+/// pulls one bounded hop, so a dependent still reads its hub's bound.
+#[test]
+fn a_bound_on_a_shared_value_costs_the_same_beside_any_number_of_dependents() {
+    let n = variable(0);
+    let mut samples = Vec::new();
+    for size in [64, 256, 1024, 4096] {
+        let mut graph = DifferenceGraph::new();
+        for index in 0..size {
+            graph.assume_condition(&le(&variable(10 + index), &n), true);
+        }
+        let (_, insert) = graph_work(|| graph.assume_condition(&le(&n, &constant(10)), true));
+        let first = variable(10);
+        let (answer, dependent) = graph_work(|| graph.decide(&le(&first, &constant(10))));
+        assert_eq!(answer, Some(true));
+        let (answer, hub) = graph_work(|| graph.decide(&le(&n, &constant(10))));
+        assert_eq!(answer, Some(true));
+        let (_, joined) = graph_work(|| graph.assume_condition(&lt(&variable(5), &n), true));
+        samples.push((insert, dependent, hub, joined));
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "work on a shared value should not grow with its dependents: {samples:?}"
+    );
+}

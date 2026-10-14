@@ -287,6 +287,17 @@ impl PureFactContext {
         if simp_reasoning_interrupted() {
             return None;
         }
+        // The difference graph is read first: what it decides follows from
+        // these facts, including a fact it showed implied and so was never
+        // added (`issues/difference-logic.md`). Only a graph already built
+        // is read, so a context that withdrew a fact does not rebuild one.
+        if let Some(value) = self
+            .difference_graph
+            .built()
+            .and_then(|graph| graph.decide(condition))
+        {
+            return Some(value);
+        }
         // Resolve the memo identity from an enclosing scope, or establish
         // one when this is the outermost decision. Nested decisions on other
         // fact sets (intrinsic decisions on fresh empty sets) run unmemoized.

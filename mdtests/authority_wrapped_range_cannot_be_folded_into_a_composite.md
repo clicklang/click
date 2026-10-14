@@ -38,5 +38,5 @@ int32 wrapped_fold(int32* p, int32 n) {
 ```
 
 ```expect
-fail: the kernel lowering produced 0 paths
+fail: the kernel lowering produced no path: a memory range is too wide to be a 32-bit byte extent
 ```

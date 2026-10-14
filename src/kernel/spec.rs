@@ -5650,8 +5650,22 @@ fn lower_spec_memory_loadable_at_state_in(
                         } else {
                             guards
                         };
+                        let ordered = Proposition::ConditionIs(
+                            ConditionTerm::signed_less_equal(
+                                range_start.clone(),
+                                range_end.clone(),
+                            ),
+                            true,
+                        );
                         for guard in guards {
-                            add_proof_obligation(&mut obligations, assumptions, guard)?;
+                            // A guard this context refutes prunes the path;
+                            // record which, as the constant case does.
+                            let reversed = guard == ordered;
+                            if add_proof_obligation(&mut obligations, assumptions, guard).is_none()
+                            {
+                                budget.record_dropped_refuted_range_extent(reversed);
+                                return None;
+                            }
                         }
                     }
                 }

@@ -4974,6 +4974,11 @@ pub struct ExecutionBudget {
     /// element count to report, only the reason. Diagnostic only: no
     /// evaluation reads it back.
     pub(super) dropped_relation_range_extent: bool,
+    /// Set when a stated memory range was dropped because this context
+    /// refutes one of its extent guards: `Some(true)` when the refuted guard
+    /// orders its endpoints (the range runs backwards), `Some(false)` when
+    /// it bounds the byte count (the range is too wide). Diagnostic only.
+    pub(super) dropped_refuted_range_extent: Option<bool>,
     /// The byte order of the environment whose statements this budget is
     /// executing, installed from `CExecutionEnvironment` at each statement.
     /// `None` until a statement installs it: an expression evaluated with no
