@@ -213,8 +213,8 @@ pub(crate) trait PropositionSearch {
     fn proves_not(&self, proposition: &Proposition) -> bool;
 }
 
-/// `proves` for a simple tactic's premise: the exact lookup first, then the
-/// search over the proof context, which the hidden prerequisite census counts
+/// `proves` for a simple tactic's premise: the exact lookup and the kernel's
+/// condition decision first, then the search over the proof context, which the hidden prerequisite census counts
 /// under `site` (`issues/simplify-step.md`, step 5) when it is what proves
 /// the premise.
 pub(crate) fn proves_by_tactic_search(
@@ -223,6 +223,21 @@ pub(crate) fn proves_by_tactic_search(
     site: &'static str,
 ) -> bool {
     if context.proves_exact(proposition) {
+        return true;
+    }
+    // A condition, or its negation, is decided by the kernel's condition
+    // evaluation, the same decision a step's fast path makes: the difference
+    // graph, then the general decision the census counts on its own route.
+    let decided = match proposition {
+        Proposition::ConditionIs(condition, value) => context.decide(condition) == Some(*value),
+        Proposition::Not(body) => matches!(
+            body.as_ref(),
+            Proposition::ConditionIs(condition, value)
+                if context.decide(condition) == Some(!*value)
+        ),
+        _ => false,
+    };
+    if decided {
         return true;
     }
     let proved = context.proves(proposition);
