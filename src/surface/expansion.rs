@@ -1991,7 +1991,18 @@ fn scan_source_tokens(source: &str) -> Result<Vec<SourceToken>, ClickError> {
             continue;
         }
         let start = index;
-        if character.is_ascii_alphabetic() || character == '_' {
+        let after_path_separator = tokens.len() >= 2
+            && tokens[tokens.len() - 2..]
+                .iter()
+                .all(|token: &SourceToken| token.text == ":");
+        if character == '{'
+            && after_path_separator
+            && let Some(length) = closure_segment_length(&source[index..])
+        {
+            // A Rust closure's path segment, `caller::{closure#0}`, is one
+            // name, as the surface tokenizer reads it.
+            index += length;
+        } else if character.is_ascii_alphabetic() || character == '_' {
             index += character.len_utf8();
             while index < source.len() {
                 let next = source[index..]
@@ -2066,6 +2077,14 @@ fn scan_source_tokens(source: &str) -> Result<Vec<SourceToken>, ClickError> {
         });
     }
     with_implicit_proof_blocks(tokens)
+}
+
+/// The length of a closure path segment, `{closure#0}`, at the start of
+/// `text`.
+fn closure_segment_length(text: &str) -> Option<usize> {
+    let rest = text.strip_prefix("{closure#")?;
+    let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+    (digits > 0 && rest[digits..].starts_with('}')).then_some("{closure#".len() + digits + 1)
 }
 
 /// A proof written as one tactic, `by T(args);`, is the block

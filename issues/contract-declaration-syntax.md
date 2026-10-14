@@ -147,7 +147,10 @@ that writes `int32` for such a source already writes the source's spelling.
   and a `fn(i32) -> i32` parameter is a callback under it, with a crate
   function item passed for one. `extern fn` states the trusted contract of
   a scalar `safe fn` in an `unsafe extern "C"` block, the head naming its
-  parameters. No functions of other crates, closures or `dyn Fn`. A
+  parameters. A closure that captures nothing can be passed for a `fn`
+  pointer; the sidecar names it as rustc does,
+  `fn closures::caller::{closure#0}(y: i32) -> i32`. No functions of other
+  crates, capturing closures, `impl Fn` or `dyn Fn`. A
   diagnostic's suggested refinement theorem still uses the importer's name
   and C's `&f` spelling.
 
@@ -167,9 +170,11 @@ that writes `int32` for such a source already writes the source's spelling.
    heads, members included, and calls through C++ function-pointer
    parameters under a named contract, and Rust `contract fn` with calls
    through `fn` pointers, Rust `extern fn` for `extern` block items, and
-   C++ function-pointer locals and forwarded pointers. Remaining:
-   `std::function` in C++ (whose call operator throws when empty), and
-   closures (`impl Fn`, `&dyn Fn`) in Rust,
+   C++ function-pointer locals and forwarded pointers, and Rust closures
+   that capture nothing passed for a `fn` pointer, named
+   `caller::{closure#0}`. Remaining: `std::function` in C++ (whose call
+   operator throws when empty), and capturing closures, `impl Fn` and
+   `&dyn Fn` in Rust,
    through the C++ exporter and Charon, with the same refinement check as C
    (`Comparator(&f)`).
 4. **Base-class and trait method interfaces.** A contract on a C++ virtual

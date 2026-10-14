@@ -32,6 +32,15 @@ pub(super) fn tokenize(
             ch if ch.is_whitespace() => {
                 index += 1;
             }
+            // A Rust closure's path segment, `caller::{closure#0}`, is one
+            // name, as rustc spells it.
+            '{' if tokens.last() == Some(&Token::ColonColon)
+                && closure_segment_length(&chars[index..]).is_some() =>
+            {
+                let length = closure_segment_length(&chars[index..]).unwrap();
+                tokens.push(Token::Ident(chars[index..index + length].iter().collect()));
+                index += length;
+            }
             '{' => {
                 tokens.push(Token::LBrace);
                 index += 1;
@@ -486,6 +495,20 @@ fn follows_operand(tokens: &[Token]) -> bool {
                 | Token::RBracket
         )
     )
+}
+
+/// The length of a closure path segment, `{closure#0}`, at the start of
+/// `chars`.
+fn closure_segment_length(chars: &[char]) -> Option<usize> {
+    let prefix = "{closure#".chars().count();
+    if !chars.iter().take(prefix).copied().eq("{closure#".chars()) {
+        return None;
+    }
+    let digits = chars[prefix..]
+        .iter()
+        .take_while(|ch| ch.is_ascii_digit())
+        .count();
+    (digits > 0 && chars.get(prefix + digits) == Some(&'}')).then_some(prefix + digits + 1)
 }
 
 #[cfg(test)]
