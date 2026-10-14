@@ -4,18 +4,18 @@ C pointer parameters may alias by default, and Click follows that model.
 
 If a function takes two pointers:
 
-<!-- verified-example: mdtests/copy3_array_demo.md -->
+<!-- verified-example: mdtests/pointer_params_may_alias_without_separate.md -->
 ```c
-int32 copy_one(int32 dst[], int32 src[]) {
-    dst[0] = src[0];
-    return dst[0];
+int32 clobber_dst(int32* dst, int32* src) {
+    dst[0] = 1;
+    return src[0];
 }
 ```
 
 Click does not assume `dst` and `src` are different. If a proof depends on
 non-overlap, state it:
 
-<!-- verified-example: mdtests/copy3_array_demo.md -->
+<!-- verified-example: mdtests/pointer_params_separate_by_requirement.md -->
 ```click
 requires separate(memory(dst[0..1]), memory(src[0..1]));
 ```
@@ -93,9 +93,9 @@ views src[0..1];
 ```
 
 a write through `dst` preserves `src[0]`, with no `separate(...)` stated.
-Without a `views` clause for `src` — reading it under a bare
-`viewable(src[0..1])` requirement — the contract says nothing about where
-`src` is, and the two may alias again.
+A bare `viewable(src[0..1])` requirement in place of the `views` clause gives
+no read authority at all, so the function cannot read `src[0]`; Click refuses
+the read itself.
 
 Two `views` clauses are not disjoint: lending the same range twice is exactly
 what a shared borrow permits. Two `owns` clauses are disjoint, for the older
@@ -112,7 +112,7 @@ to say it.
 A contract's owned memory is what it may write; everything else it can reach is
 preserved:
 
-<!-- verified-example: mdtests/copy3_array_demo.md -->
+<!-- verified-example: mdtests/copy_n_segment_invariant.md -->
 ```click
 views src[0..n];
 owns dst[0..n];
@@ -146,18 +146,18 @@ must be proved explicitly instead, is the step rule in
 
 You can also state preservation directly:
 
-<!-- verified-example: mdtests/copy3_array_demo.md -->
+<!-- verified-example: mdtests/write_resources_imply_separate.md -->
 ```click
 ensures src[0] == old(src[0]) by auto;
 ```
 
 For larger regions, use quantified or range-shaped facts:
 
-<!-- verified-example: mdtests/copy3_array_demo.md -->
+<!-- verified-example: mdtests/copy_n_segment_invariant.md -->
 ```click
-ensures forall (k: int32) {
+ensures source_unchanged: forall (k: int32) {
     0 <= k and k < n implies src[k] == old(src[k])
-} by auto;
+};
 ```
 
 Frame facts and separation often make these postconditions provable without
@@ -171,7 +171,7 @@ not write is preserved across it.
 
 A loop can narrow that authority the way a callee contract does:
 
-<!-- verified-example: mdtests/local_array_loop_frame.md -->
+<!-- verified-example: mdtests/loop_owns_preserves_symbolic_index.md -->
 ```click
 loop {
     owns p[0..n];

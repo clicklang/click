@@ -23,7 +23,7 @@ This separation applies to memory reads. Existing conditions for partial C
 arithmetic, such as signed overflow and division by zero, remain in force.
 For an array parameter:
 
-<!-- verified-example: mdtests/pointer_range.md -->
+<!-- verified-example: mdtests/array_parameter_first_element_views_one_cell.md -->
 ```c
 int32 first(int32 p[]) {
     return p[0];
@@ -32,7 +32,7 @@ int32 first(int32 p[]) {
 
 the contract needs:
 
-<!-- verified-example: mdtests/pointer_range.md -->
+<!-- verified-example: mdtests/array_parameter_first_element_views_one_cell.md -->
 ```click
 int32 first(int32 p[]) {
     views p[0..1];
@@ -49,16 +49,16 @@ access resource provides.
 It is useful inside predicate-like positions, especially composite resource
 `fact` clauses:
 
-<!-- verified-example: mdtests/pointer_range.md -->
+<!-- verified-example: mdtests/composite_resource_viewable_fact.md -->
 ```click
-fact viewable(data[0..cap]);
+fact viewable(data[0..len]);
 ```
 
 ## Ranges
 
 `viewable` uses half-open ranges:
 
-<!-- verified-example: mdtests/pointer_range.md -->
+<!-- verified-example: mdtests/loop_quantified_memory_invariant.md -->
 ```click
 requires viewable(p[0..n]);
 ```
@@ -149,7 +149,7 @@ theorem cell_of_a_viewed_range(v: int32[], lo: int32, hi: int32, k: int32) {
     views v[lo..hi];
     requires lo <= k;
     requires k < hi;
-    ensures to_integer(v[k]) == to_integer(v[k]) by { simp(); }
+    ensures to_integer(v[k]) == to_integer(v[k]) by simp;
 }
 ```
 
@@ -191,9 +191,9 @@ in [Narrowing a range](#narrowing-a-range).
 
 You can also write shifted ranges:
 
-<!-- verified-example: mdtests/pointer_range.md -->
+<!-- verified-example: mdtests/pointer_base_viewable.md -->
 ```click
-requires viewable((p + 1)[0..n - 1]);
+requires viewable((p + 1)[0..1]);
 ```
 
 ## Index bounds
@@ -201,7 +201,7 @@ requires viewable((p + 1)[0..n - 1]);
 A viewable range is not enough by itself if the index is symbolic. Click also needs
 to know the index is inside the range:
 
-<!-- verified-example: mdtests/pointer_range.md -->
+<!-- verified-example: mdtests/symbolic_index_read_within_a_viewed_range.md -->
 ```click
 requires 0 <= k;
 requires k < n;
@@ -225,7 +225,7 @@ have hi - 1 < hi by { arithmetic() using { 0 < hi; } }
 
 <!-- verified-example: mdtests/have_viewable_single_cell.md -->
 ```click
-have viewable(p[hi - 1..hi - 1 + 1]) by { simp(); }
+have viewable(p[hi - 1..hi - 1 + 1]);
 ```
 
 Narrowing reads both ranges at element granularity. From `viewable(p[a..b])` it
@@ -255,7 +255,7 @@ contract stated:
 
 <!-- verified-example: mdtests/have_viewable_prefix_of_a_range_in_a_c_proof.md -->
 ```click
-have viewable(a[0..k]) by { simp(); }
+have viewable(a[0..k]);
 ```
 
 That matters for induction over an array range, where
@@ -267,9 +267,9 @@ can be applied; see
 
 `old(...)` reads from the function-entry state:
 
-<!-- verified-example: mdtests/pointer_range.md -->
+<!-- verified-example: mdtests/opaque_call_old_entry_state.md -->
 ```click
-ensures p[0] == old(p[0]) by auto;
+ensures result == old(p[0]) by auto;
 ```
 
 This is how postconditions talk about preservation or change. The expression
@@ -280,7 +280,7 @@ viewability and permission requirements still matter.
 
 For struct fields, prefer field resources:
 
-<!-- verified-example: mdtests/pointer_range.md -->
+<!-- verified-example: mdtests/field_resources_view_one_field_and_consume_another.md -->
 ```click
 views obj->ref_count;
 consumes obj->data;
@@ -294,9 +294,9 @@ a `requires node->left != 0` guarding the link. A contract that names a segment
 through a cell it does not hold is refused where it is prepared.
 
 Explicit ranges remain useful when a proof needs a broader footprint than one
-field:
+field, such as the whole object:
 
-<!-- verified-example: mdtests/pointer_range.md -->
+<!-- verified-example: mdtests/field_resources_view_one_field_and_consume_another.md -->
 ```click
-consumes obj[0..3];
+consumes obj[0..1];
 ```

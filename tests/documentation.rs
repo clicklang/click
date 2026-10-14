@@ -607,6 +607,34 @@ fn local_markdown_links_resolve() {
     );
 }
 
+/// `source` without `//` comments and with every run of whitespace collapsed
+/// to one space, so a documented example and its fixture compare regardless of
+/// line breaks and indentation.
+fn normalized_source(source: &str) -> String {
+    source
+        .lines()
+        .map(|line| line.split("//").next().unwrap_or_default())
+        .collect::<Vec<_>>()
+        .join(" ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The statements of a documented example that its fixture must contain: the
+/// text between `;`, `{`, `}`, and line breaks, with `...` marking an elided
+/// gap rather than text, and comments and lone punctuation dropped.
+fn example_statements(example: &str) -> Vec<String> {
+    example
+        .lines()
+        .map(|line| line.split("//").next().unwrap_or_default())
+        .flat_map(|line| line.split([';', '{', '}']))
+        .flat_map(|piece| piece.split("...").flat_map(|piece| piece.split('…')))
+        .map(|piece| piece.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|piece| !piece.is_empty() && !matches!(piece.as_str(), "," | "(" | ")"))
+        .collect()
+}
+
 #[test]
 fn normative_technical_examples_are_backed_by_verification_fixtures() {
     let docs = root().join("docs");
@@ -674,6 +702,28 @@ fn normative_technical_examples_are_backed_by_verification_fixtures() {
                     fixture_source.contains("```click") && fixture_source.contains("```expect"),
                     "{fixture}: documentation fixtures must contain Click source and an expected result"
                 );
+                let fence_end = lines[index + 1..]
+                    .iter()
+                    .position(|line| *line == "```")
+                    .map(|offset| index + 1 + offset)
+                    .expect("technical code fence must close");
+                let fixture_text = normalized_source(&fixture_source);
+                let missing = example_statements(&lines[index + 1..fence_end].join("\n"))
+                    .into_iter()
+                    .filter(|statement| !fixture_text.contains(statement.as_str()))
+                    .collect::<Vec<_>>();
+                if let Some(statement) = missing.first() {
+                    failures.push(format!(
+                        "{}:{}: {fixture} does not contain `{statement}`{}",
+                        page.display(),
+                        index + 1,
+                        if missing.len() > 1 {
+                            format!(" (and {} more statements)", missing.len() - 1)
+                        } else {
+                            String::new()
+                        }
+                    ));
+                }
             } else {
                 let fence_end = lines[index + 1..]
                     .iter()

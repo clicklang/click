@@ -12,7 +12,7 @@ A proposition is a claim that can be true or false.
 
 Contracts are built from propositions:
 
-<!-- verified-example: mdtests/click_proposition_logic.md -->
+<!-- verified-example: mdtests/contract_clause_forms.md -->
 ```click
 requires x >= 0;
 ensures result == x + 1 by auto;
@@ -24,7 +24,7 @@ The expressions `x >= 0` and `result == x + 1` are propositions.
 
 Click lets you write C-like fragments inside specs:
 
-<!-- verified-example: mdtests/click_proposition_logic.md -->
+<!-- verified-example: mdtests/c_fragments_in_contracts.md -->
 ```click
 result == x + 1
 p[k] == old(p[k])
@@ -33,8 +33,7 @@ p[k] == old(p[k])
 But the surrounding logic is Click, not C. Click proposition connectives are
 words:
 
-<!-- verified-example: mdtests/click_proposition_logic.md -->
-```click
+```text
 a and b
 a or b
 not a
@@ -47,7 +46,7 @@ Do not write C logical operators such as `&&`, `||`, or `!` in propositions.
 
 Click supports universal and existential claims:
 
-<!-- verified-example: mdtests/click_proposition_logic.md -->
+<!-- verified-example: mdtests/quantified_and_range_propositions.md -->
 ```click
 forall (k: int32) {
     0 <= k and k < n implies p[k] == old(p[k])
@@ -67,7 +66,7 @@ ranges of memory, range forms are usually easier to prove.
 
 Click has range forms for array-shaped facts:
 
-<!-- verified-example: mdtests/click_proposition_logic.md -->
+<!-- verified-example: mdtests/quantified_and_range_propositions.md -->
 ```click
 (0..n).all(|k| {
     p[k] == 0
@@ -94,7 +93,7 @@ may mix them freely with C expressions:
 
 <!-- verified-example: mdtests/model_identity_pointer_payload.md -->
 ```click
-have p == identity by { simp(); }
+have p == identity;
 ```
 
 Here `identity` is the `struct cell*` payload a proof `match` bound, and `p` is
@@ -167,9 +166,9 @@ execution keeps both paths, and the proof has to handle both — see
 
 `old(expr)` means the value of `expr` in the function-entry state:
 
-<!-- verified-example: mdtests/click_proposition_logic.md -->
+<!-- verified-example: mdtests/opaque_call_old_entry_state.md -->
 ```click
-ensures p[0] == old(p[0]) by auto;
+ensures result == old(p[0]) by auto;
 ```
 
 Old values are central for memory proofs. They let a postcondition compare the

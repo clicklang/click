@@ -47,7 +47,7 @@ this page covers each form's full rules and edge cases.
 
 ## File shape
 
-<!-- verified-example: mdtests/argument_result.md -->
+<!-- verified-example: mdtests/click_file_shape.md -->
 ```click
 verifying "file.c";
 
@@ -118,7 +118,7 @@ a separate postcondition family, and the thrown payload is named `exception`:
 
 <!-- verified-example: mdtests/exceptional_contracts.md -->
 ```click
-int32 parse(int32 x) throws int32 {
+int32 identity(int32 x) throws int32 {
     ensures result == x;
     exceptional ensures exception == 7;
 }
@@ -218,10 +218,9 @@ structural rank:
 
 <!-- verified-example: mdtests/c_decreases_resource_mutating_nullable.md -->
 ```click
-int32 list_destroy(struct node* node) {
-    decreases list(node);
-    consumes list(node);
-    ensures result == 0;
+void list_destroy(struct node* node) {
+    decreases allocated_list(node);
+    consumes allocated_list(node);
 }
 ```
 
@@ -539,9 +538,11 @@ in a `close_invariants by { ... }` body, or declare it as an invariant.
 <!-- verified-example: mdtests/c_decreases_lexicographic_loop.md -->
 ```click
 loop {
-    decreases (outer, inner);
-    invariant outer >= 0;
-    invariant inner >= 0;
+    decreases (i, j);
+    invariant i >= 0;
+    invariant j >= 0;
+    invariant j <= 2;
+    ...
 }
 ```
 A C `if` the body took is as written as the guard is, which is why it is the
@@ -743,7 +744,7 @@ or theorem applications; use an explicit grouped block for those operations.
 Goal-specific pure reasoning can be isolated with `have`, including after the
 function reaches its return frontier:
 
-<!-- verified-example: mdtests/post_execution_have_checks_each_path.md -->
+<!-- verified-example: mdtests/post_execution_have_witness_closes_exists.md -->
 ```click
 execute();
 have exists (k: int32) { k == result } by {
@@ -879,11 +880,10 @@ to a C function:
 
 <!-- verified-example: mdtests/pure_theorem.md -->
 ```click
-theorem increment_preserves_positive(x: int32) {
+theorem preserves_assumption(x: int32) {
     requires x >= 0;
-    requires x < 2147483647;
 
-    ensures x + 1 > 0 by auto;
+    ensures x >= 0 by auto;
 }
 ```
 
@@ -912,7 +912,7 @@ theorem cell_of_a_viewed_range(v: int32[], lo: int32, hi: int32, k: int32) {
     views v[lo..hi];
     requires lo <= k;
     requires k < hi;
-    ensures to_integer(v[k]) == to_integer(v[k]) by { simp(); }
+    ensures to_integer(v[k]) == to_integer(v[k]) by simp;
 }
 ```
 
@@ -1023,7 +1023,7 @@ Inside a case, `step()` uses the case fact to enter the selected C arm.
 When a C `if` is at the execution frontier, use `branch` instead of repeating
 its condition as a logical case split:
 
-<!-- verified-example: mdtests/frontier_branch.md -->
+<!-- verified-example: mdtests/proof_branch_old_state_interface.md -->
 ```click
 branch then {
     step();
@@ -1335,7 +1335,7 @@ Requirements are shared by all guarantees for the function.
 
 Supported structural requirements:
 
-<!-- verified-example: mdtests/pointer_range.md -->
+<!-- verified-example: mdtests/structural_requirement_forms.md -->
 ```click
 requires n >= 0;
 requires viewable(p[0..n]);
@@ -1429,7 +1429,8 @@ int32 write_next(int32 p[], int32 x) {
     owns p[0..1] by auto;
     requires x < 2147483647;
 
-    ensures p[0] == x + 1 by auto;
+    ensures returns_written: result == p[0] by auto;
+    ensures writes_next: p[0] == x + 1 by auto;
 }
 ```
 
@@ -1599,7 +1600,7 @@ mutex custody in more detail.
 
 Composite resources are declared resources with a body:
 
-<!-- verified-example: mdtests/resource_without_body_requires_abstract.md -->
+<!-- verified-example: mdtests/composite_resource_bundles_declared_resource.md -->
 ```click
 abstract resource socket_open(fd: int32);
 
@@ -1989,7 +1990,7 @@ A child names one declared field-bearing resource: the parent's own definition
 or another one. Its arguments and field equations are checked against that
 definition, so a child of another family carries that family's fields:
 
-<!-- verified-example: mdtests/rb_ascending_walk_to_root.md -->
+<!-- verified-example: mdtests/resource_child_of_another_family.md -->
 ```click
 resource ctx_at(node: struct tree_node*) {
     field model: Context;
@@ -2019,7 +2020,7 @@ An arm need not own only cells of the resource's own parameters. The frame
 below is keyed by the focused child and owns the cells of the `parent` the
 constructor carries, including the sibling subtree reached through it:
 
-<!-- verified-example: mdtests/rb_ascending_walk_to_root.md -->
+<!-- verified-example: mdtests/resource_arm_binding_struct_base.md -->
 ```click
 resource ctx_at(child: struct tree_node*) {
     field model: Context;
@@ -2111,7 +2112,7 @@ proposition is one of the body's pure facts:
 <!-- verified-example: mdtests/resource_witness_unfold_fold.md -->
 ```click
 resource packed(node: struct node*) {
-    owns node->word;
+    owns *node;
     let next: struct node* where aligned(next, 8) and node->word == address(next) + (node->word & 1);
 }
 ```
@@ -2177,7 +2178,7 @@ int32 complete(int32 cb) {
 
 Resource facts are written with resource verbs:
 
-<!-- verified-example: mdtests/token_resource_borrow_return.md -->
+<!-- verified-example: mdtests/resource_verbs_owns_views_consumes_produces.md -->
 ```click
 int32 update(int32* p) {
     owns p[0..1];
@@ -2271,7 +2272,7 @@ spelled separately with `*base`. Allocation authority cannot be
 the authority must be returned (possibly inside a composite resource) or
 consumed by an actual `free`.
 
-<!-- verified-example: mdtests/conditional_resource_body.md -->
+<!-- verified-example: mdtests/conditional_resource_branchless_free.md -->
 ```click
 resource owned_item(item: struct item*) {
     if item != 0 {
@@ -2483,7 +2484,7 @@ another live instance. Multiple named outputs use a destructuring pattern:
 
 <!-- verified-example: mdtests/c_call_binder_transport_multiple_produces.md -->
 ```click
-let { left: l, right: r } = step(make_pair(left, right), {});
+let { first: a, second: b } = step(split_cells(left, right), {});
 ```
 
 A produced binder that no output pattern introduces is an error.
@@ -2559,7 +2560,7 @@ tactic divide(p: struct pr*) {
     unfold(x);
     let y = fold(first(p), { tag: 7 });
     let z = fold(second(p), { tag: 0 });
-    have y.tag == 7 by { simp(); }
+    have y.tag == 7;
 }
 ```
 
@@ -2680,7 +2681,7 @@ theorem three_is_in_range() {
 
 Click proposition connectives are words:
 
-<!-- verified-example: mdtests/click_proposition_logic.md -->
+<!-- verified-example: mdtests/proposition_connectives_quantifiers_and_old.md -->
 ```click
 result == x and not (result != x)
 result == x implies result >= 0
@@ -2699,7 +2700,7 @@ refused. See
 
 Range proposition helpers:
 
-<!-- verified-example: mdtests/pure_click_functions.md -->
+<!-- verified-example: mdtests/range_helpers_over_memory.md -->
 ```click
 (lo..hi).all(|k| { p[k] <= x })
 (0..3).any(|k| { p[k] == x })
@@ -2724,7 +2725,7 @@ it retains the value from its declaration when a proof introduces a variable
 with the same name. See [the pure witness example](https://github.com/clicklang/click/blob/master/mdtests/pure_machine_witness.md).
 For a symbolic `.any`, the range item name is the existential binder:
 
-<!-- verified-example: mdtests/exists_and_symbolic_any.md -->
+<!-- verified-example: mdtests/range_helpers_over_memory.md -->
 ```click
 ensures found: (lo..hi).any(|k| { p[k] == result }) by {
     execute();
@@ -2739,7 +2740,7 @@ ensures found: (lo..hi).any(|k| { p[k] == result }) by {
 It is sugar for `at(function.entry, expression)`.
 It is mainly used in postconditions and invariants:
 
-<!-- verified-example: mdtests/write_second_old_keeps_first.md -->
+<!-- verified-example: mdtests/proposition_connectives_quantifiers_and_old.md -->
 ```click
 ensures p[0] == old(p[0]) by auto;
 ensures forall (k: int32) { 0 <= k and k < n implies p[k] == old(p[k]) } by auto;
@@ -2909,9 +2910,9 @@ the parameter's entry value.
 C locals exist only while they are in scope. After function exit, refer to a
 local through a recorded program point:
 
-<!-- verified-example: mdtests/statement_at_snapshots.md -->
+<!-- verified-example: mdtests/c_local_named_result_snapshot.md -->
 ```click
-result == at(statement(1).entry, c(result))
+result == at(statement(2).entry, c(result))
 ```
 
 The AST retains this distinction; `c(result)` is not converted to an ordinary
@@ -2930,8 +2931,7 @@ pointer to a callee local is rejected.
 to a program point. In a proposition position, `at(selector, proposition)`
 evaluates the complete proposition at that visit:
 
-<!-- verified-example: mdtests/statement_at_snapshots.md -->
-```click
+```text
 at(function.entry, x)
 at(loop_label.entry, x)
 at(statement(0).entry, x)
@@ -2943,7 +2943,7 @@ at(statement(0).entry, viewable(p[0..n]))
 An execution proof can give its current frontier state a local name and use
 that bare name as a selector later:
 
-<!-- verified-example: mdtests/proof_mark_current_frontier.md -->
+<!-- verified-example: mdtests/proof_mark_before_write.md -->
 ```click
 mark before_write;
 step();
@@ -3022,7 +3022,7 @@ function eq_as_int(x: int32, y: int32) -> int32 {
 }
 
 function count3(p: int32[], x: int32) -> int32 {
-    let initial: int32 = 0;
+    let initial = 0;
     (0..3).fold(initial, |acc, k| {
         acc + if p[k] == x { 1 } else { 0 }
     })
@@ -3081,10 +3081,12 @@ makes the same theorem available at each immediate recursive field:
 <!-- verified-example: mdtests/algebraic_structural_induction.md -->
 ```click
 induct(xs) as ih {
-    List::Nil => { /* base case */ }
-    List::Cons(head, tail) => {
+    TestList::Nil => {
+        ... // base case
+    }
+    TestList::Cons(head, tail) => {
         apply(ih(tail));
-        /* inductive case */
+        ... // inductive case
     }
 }
 ```
@@ -3104,7 +3106,7 @@ int32 bounded_increment(int32 x) {
     let expected = x + 1;
 
     requires x < max;
-    ensures result == expected by auto;
+    ensures result_value: result == expected by auto;
 }
 ```
 
@@ -3124,7 +3126,7 @@ Proposition clauses may also use witness lets:
 ```click
 let k: int32 where k == x;
 
-ensures result == k by {
+ensures result_matches_witness: result == k by {
     execute();
     witness { k: x };
     simp();
@@ -3170,10 +3172,12 @@ field viewable for symbolic execution.
 
 Use `*obj` for the complete storage of a struct object:
 
-<!-- verified-example: mdtests/composite_resource_owned_buffer_len_cap_data.md -->
+<!-- verified-example: mdtests/owned_symbolic_separation_certificate.md -->
 ```click
-consumes *owner;
-fact separate(memory(*owner), memory(owner->data[0..owner->cap]));
+owns *owner;
+owns data[0..length];
+...
+have separate(memory(*owner), memory(data[0..length])) by assumption();
 ```
 
 `*owner` is layout-aware: it denotes the imported C struct's aligned
@@ -3257,12 +3261,12 @@ the kernel and can be reasoned about by supported fold laws.
 
 Predicates return Click propositions:
 
-<!-- verified-example: mdtests/sorted_predicate.md -->
+<!-- verified-example: mdtests/sort3_sorted.md -->
 ```click
 predicate sorted_range(p: int32[], lo: int32, hi: int32) {
     forall (i: int32) {
         forall (j: int32) {
-            lo <= i and i < j and j < hi implies p[i] <= p[j]
+            0 <= i and 0 <= j and lo <= i and i < j and j < hi implies p[i] <= p[j]
         }
     }
 }
@@ -3274,9 +3278,9 @@ proof asks for it:
 
 <!-- verified-example: mdtests/sorted_predicate.md -->
 ```click
-ensures sorted: sorted_range(p, 0, n) by {
+ensures still_sorted: sorted(p, n) by {
     execute();
-    unfold(sorted_range);
+    unfold(sorted);
     simp();
 }
 ```
@@ -3287,17 +3291,19 @@ loop. Predicate bodies needed by the loop rule can be exposed in its
 
 <!-- verified-example: mdtests/loop_sorted_range_invariant.md -->
 ```click
-by {
-    loop {
-        invariant sorted(p, n);
-        initialize by {
-            unfold(sorted);
-            simp();
-        }
-        preserve by {
-            unfold(sorted);
-            simp();
-        }
+loop as carry_sorted {
+    decreases 3 - i;
+    invariant i >= 0 and i <= 3;
+    invariant sorted(old(p), 3);
+
+    initialize by {
+        unfold(sorted);
+        unfold(sorted_range);
+        ...
+    }
+    preserve by {
+        unfold(sorted);
+        unfold(sorted_range);
     }
 }
 ```

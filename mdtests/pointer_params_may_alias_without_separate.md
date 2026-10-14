@@ -1,17 +1,17 @@
 # pointer parameters may alias without separate
 
 Different pointer parameters are modeled like C pointers: they can refer to
-overlapping memory unless the contract says otherwise. This test intentionally
-omits `separate(memory(dst[0..1]), memory(src[0..1]))`, so Click must reject the claim that a
-write through `dst` preserves `src[0]`.
+overlapping memory unless the contract says otherwise. This contract says
+nothing about `src` beyond a bare `viewable(src[0..1])` requirement, and that
+requirement grants no read authority: Click refuses the read of `src[0]`
+itself, before any question of whether the write through `dst` changed it.
 
-`src` is read under a bare `viewable(...)` requirement and has no resource
-clause of its own, which is what "the contract says otherwise" means here: a
-`views src[0..1]` clause beside the transferred `consumes dst[0..1]` *would*
-say it, because a contract's transferred and borrowed clauses denote disjoint
-memory (`docs/internals/resource-tracker.md`, "The entry partition"). That is
-the companion `a_views_clause_is_separate_from_an_owns_clause.md`; a caller
-that tries to satisfy both clauses with one range is refused at the call
+A `views src[0..1]` clause beside the transferred `consumes dst[0..1]` would
+both grant the read and say the two ranges are disjoint, because a contract's
+transferred and borrowed clauses denote disjoint memory
+(`docs/internals/resource-tracker.md`, "The entry partition"). That is the
+companion `a_views_clause_is_separate_from_an_owns_clause.md`; a caller that
+tries to satisfy both clauses with one range is refused at the call
 (`a_caller_cannot_lend_and_transfer_one_range.md`).
 
 ```c filename=pointer_params_may_alias_without_separate.c
@@ -33,5 +33,5 @@ int32 clobber_dst(int32* dst, int32* src) {
 ```
 
 ```expect
-fail: clobber_dst.source_unchanged
+fail: missing resource fact `views src[0]`
 ```

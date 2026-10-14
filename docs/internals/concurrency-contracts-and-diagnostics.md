@@ -94,7 +94,7 @@ aggregate copies remain rejected.
 Initialization now requires the full mutex storage and its ABI alignment.
 For an external struct parameter, the contract can say:
 
-<!-- verified-example: mdtests/modeled_pthread_empty_mutex.md -->
+<!-- verified-example: mdtests/mutex_live_contract.md -->
 ```click
 owns holder->mu;
 requires aligned(&holder->mu, 8);

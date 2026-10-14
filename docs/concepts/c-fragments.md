@@ -18,7 +18,7 @@ byte buffers, and a subset of structs.
 
 Click specs can contain C-like expressions:
 
-<!-- verified-example: mdtests/c_multiplication.md -->
+<!-- verified-example: mdtests/c_fragments_in_contracts.md -->
 ```click
 ensures result == x + 1 by auto;
 ensures p[k] == old(p[k]) by auto;
@@ -61,7 +61,7 @@ logic underneath.
 
 For example:
 
-<!-- verified-example: mdtests/c_multiplication.md -->
+<!-- verified-example: mdtests/c_fragments_in_contracts.md -->
 ```click
 ensures p[0] == old(p[0]) by auto;
 ```

@@ -5,7 +5,7 @@ execution is safe under the function's requirements.
 
 For scalar code, signed overflow is often the first place this appears.
 
-<!-- verified-example: mdtests/overflow.md -->
+<!-- verified-example: mdtests/increment_requires_no_overflow.md -->
 ```c
 int32 increment(int32 x) {
     return x + 1;
@@ -14,17 +14,17 @@ int32 increment(int32 x) {
 
 This contract is incomplete:
 
-<!-- verified-example: mdtests/overflow.md -->
+<!-- verified-example: mdtests/increment_without_requires.md -->
 ```click
 int32 increment(int32 x) {
-    ensures result == x + 1 by auto;
+    ensures increments: result == x + 1 by auto;
 }
 ```
 
 If `x` is `2147483647`, then `x + 1` overflows signed `int32`, which is C
 undefined behavior. The proof needs:
 
-<!-- verified-example: mdtests/overflow.md -->
+<!-- verified-example: mdtests/increment_requires_no_overflow.md -->
 ```click
 requires x < 2147483647;
 ```
@@ -150,14 +150,18 @@ the answer.
 A requirement can be needed even when the mathematical postcondition looks
 obvious:
 
-<!-- verified-example: mdtests/overflow.md -->
+<!-- verified-example: mdtests/int32_division_excludes_its_overflow_pair_from_bounds_and_disequalities.md -->
 ```click
 requires y != 0;
-ensures result == x / y by auto;
+requires y != -1;
+ensures result == x / y;
 ```
 
-The requirement is not just saying "assume division is meaningful." It rules out
-a bad C execution.
+The requirements are not just saying "assume division is meaningful." Each
+rules out a bad C execution: `y != 0` excludes division by zero, and `y != -1`
+excludes `INT_MIN / -1`, the one `int32` quotient that overflows. `y != 0`
+alone is not enough, as
+`mdtests/int32_division_by_a_nonzero_divisor_may_still_overflow.md` shows.
 
 ## Debugging UB failures
 

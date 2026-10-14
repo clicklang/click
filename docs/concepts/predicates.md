@@ -4,18 +4,18 @@ A predicate gives a name to a proposition.
 
 For example:
 
-<!-- verified-example: mdtests/sorted_predicate.md -->
+<!-- verified-example: mdtests/compare_swap2_sorted_predicate.md -->
 ```click
-predicate sorted_pair(p: int32[]) {
+predicate sorted_pair(p: int32[2]) {
     p[0] <= p[1]
 }
 ```
 
 Then a contract can use:
 
-<!-- verified-example: mdtests/sorted_predicate.md -->
+<!-- verified-example: mdtests/compare_swap2_sorted_predicate.md -->
 ```click
-ensures sorted_pair(p) by {
+ensures sorted: sorted_pair(p) by {
     execute();
     unfold(sorted_pair);
     simp();
@@ -28,7 +28,7 @@ Predicate calls are not unfolded automatically. Click can reuse an exact
 predicate fact, but it does not normally look inside a predicate unless the
 proof says:
 
-<!-- verified-example: mdtests/sorted_predicate.md -->
+<!-- verified-example: mdtests/compare_swap2_sorted_predicate.md -->
 ```click
 unfold(sorted_pair);
 ```
@@ -39,14 +39,14 @@ instead of being expanded everywhere.
 `unfold` takes the predicate's name, not one call, because it is a switch and
 not a step on one fact: from that point to the end of the proof branch the
 predicate is transparent. Every fact that mentions it gains its body, the
-current goal is rewritten, and a later goal such as `have sorted_pair(a, b)`
+current goal is rewritten, and a later goal such as `have sorted_pair(q)`
 is proved against the body.
 
 ## Predicates in requirements
 
 Predicates can package preconditions:
 
-<!-- verified-example: mdtests/sorted_predicate.md -->
+<!-- verified-example: mdtests/predicate_packages_a_precondition.md -->
 ```click
 predicate has_zero(p: int32[], n: int32) {
     (0..n).any(|k| { p[k] == 0 })
