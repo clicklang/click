@@ -141,3 +141,43 @@ fn construction_pins_detect_mutation_of_an_uninterned_snapshot() {
         .insert(pointer, 8);
     assert!(memory.diagnostic_construction().is_none());
 }
+
+/// A loop back edge may add the tombstone of an allocation the head never
+/// held as live, and nothing else: a tombstone for storage the head held
+/// live, or any change to the live set, still differs.
+#[test]
+fn allocation_lifetimes_up_to_ended_admit_only_new_tombstones() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let freed = Pointer::symbolic(Variable(990_901));
+    let live = Pointer::symbolic(Variable(990_902));
+    let size = Bitvector32Term::Constant(8);
+    let mut head = CHeapMemory::default();
+    head.live_allocations.insert(live.clone(), size.clone());
+
+    let mut ended_elsewhere = head.clone();
+    ended_elsewhere
+        .deallocated_allocations
+        .insert(freed.clone(), size.clone());
+    assert!(head.has_same_allocation_lifetimes_up_to_ended(&ended_elsewhere));
+    assert!(!head.have_same_allocation_lifetimes(&ended_elsewhere));
+    // The relation is not symmetric: a back edge cannot drop a tombstone
+    // the head recorded.
+    assert!(!ended_elsewhere.has_same_allocation_lifetimes_up_to_ended(&head));
+
+    let mut ended_live = head.clone();
+    ended_live.live_allocations.remove(&live);
+    ended_live
+        .deallocated_allocations
+        .insert(live.clone(), size.clone());
+    assert!(!head.has_same_allocation_lifetimes_up_to_ended(&ended_live));
+
+    let mut tombstone_for_live = head.clone();
+    tombstone_for_live
+        .deallocated_allocations
+        .insert(live.clone(), size.clone());
+    assert!(!head.has_same_allocation_lifetimes_up_to_ended(&tombstone_for_live));
+
+    let mut allocated = head.clone();
+    allocated.live_allocations.insert(freed, size);
+    assert!(!head.has_same_allocation_lifetimes_up_to_ended(&allocated));
+}

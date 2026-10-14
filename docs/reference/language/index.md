@@ -2262,6 +2262,18 @@ guards the mutable footprint inferred from the resource. At an opaque call,
 Click decides the guard before evaluating its pointer and range expressions;
 an inactive body therefore contributes no footprint.
 
+A loop may free storage and continue. The ordinary iterative release unfolds
+the node its binder holds, frees it, and moves to the next one; the back edge
+returns the rest of the list in the binder, and the freed node's tombstone is
+the only heap difference from the loop head
+(`mdtests/loop_frees_one_list_node_per_iteration.md`). A tombstone is a
+double-free and stale-pointer diagnostic, not authority: what the back edge
+must return is ownership, so freeing storage the head held live, or freeing
+the same allocation on two iterations, is still refused by the ownership join
+(`mdtests/loop_heap_lifetime_join.md`), and a pointer kept to a node an earlier
+iteration freed cannot be read through
+(`mdtests/loop_reads_a_node_freed_in_an_earlier_iteration_is_refused.md`).
+
 Composite and token arguments are compared using proved scalar and pointer
 equalities. Thus a held `list(node->next)` can satisfy `list(tail)` after the
 proof establishes `node->next == tail`; the resource does not depend on one

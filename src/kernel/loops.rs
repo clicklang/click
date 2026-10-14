@@ -2702,7 +2702,7 @@ fn c_loop_state_components_match_at_back_edge_inner(
     if !top_state
         .memory()
         .heap
-        .have_same_allocation_lifetimes(&next_state.memory().heap)
+        .has_same_allocation_lifetimes_up_to_ended(&next_state.memory().heap)
     {
         changed.push("heap allocation lifetime");
     }

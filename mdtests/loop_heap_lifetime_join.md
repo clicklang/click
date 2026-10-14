@@ -1,5 +1,12 @@
 # loop back edge cannot resurrect a freed heap allocation
 
+The body frees `data` on every iteration. The loop head holds the
+allocation's authority, and the first `free` consumes it, so the back edge
+does not return the ownership the head started with and the second `free`
+can never be reached with authority. The refusal is the ownership join: the
+ended allocation's tombstone is a diagnostic, and authority is what a back
+edge must return.
+
 ```c filename=loop_heap_lifetime_join.c
 int32 loop_heap_lifetime_join(int32* data) {
     int32 i;
@@ -45,5 +52,5 @@ int32 loop_heap_lifetime_join(int32* data) {
 ```
 
 ```expect
-fail: heap allocation lifetime
+fail: loop state join changes resource ownership
 ```
