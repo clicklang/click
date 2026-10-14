@@ -716,10 +716,6 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         }
                         assumption();
                     } else {
-                        have i == at(iteration, i) + 1 by {
-                            normalize();
-                        }
-                        have k < at(iteration, i) + 1 by auto;
                         have k <= at(iteration, i) by {
                             apply(int32_less_than_increment_implies_less_equal(
                                 k,
@@ -746,12 +742,6 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 }
                 have i == at(iteration, i) + 1 by {
                     normalize();
-                }
-                have lo <= at(iteration, i) by {
-                    simp() using {
-                        lo <= hi;
-                        hi == at(iteration, i);
-                    }
                 }
                 have at(iteration, i) < at(iteration, i) + 1 by {
                     apply(int32_increment_strictly_increases(

@@ -57,9 +57,6 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
     match tree.model {
         RbTree::Empty => { contradiction(tree.model == RbTree::Empty); },
         RbTree::Node(identity, parent, color, left_model, right_model) => {
-            have rb_parent_is(RbTree::Node(identity, parent, color, left_model, right_model), 0) == 1 by {
-                rewrite(RbTree::Node(identity, parent, color, left_model, right_model) == tree.model); assumption();
-            }
             apply(rb_parent_is_node_parent(identity, parent, color, left_model, right_model, 0));
             have color == Color::Black by {
                 unfold(rb_color(RbTree::Node(identity, parent, color, left_model, right_model)));

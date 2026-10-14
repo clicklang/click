@@ -208,14 +208,6 @@ int32 input_cursor_shared_pipeline(
             0 < right->len;
         }
     }
-    have right->data == data by {
-        transport(at(statement(5).entry, right->data) == data, right->data == data) using {
-            at(statement(5).entry, right->data) == data;
-        }
-        assumption();
-    }
-    have at(statement(5).entry, left->pos) == 0;
-    have left->pos == at(statement(5).entry, left->pos) + 1;
     apply(incremented_zero_is_one(
         at(statement(5).entry, left->pos),
         left->pos

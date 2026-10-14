@@ -191,7 +191,6 @@ int32 owned_split_buffer_pipeline(
         }
     }
     step();
-    have data[1] == right_value;
     have at(statement(5).exit, owner->split) ==
         at(statement(5).entry, owner->split) + 1 by {
         simp();

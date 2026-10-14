@@ -444,12 +444,79 @@ impl<'a> Proof<'a> {
         &self,
         application: &TheoremApplication,
     ) -> Result<Self, ClickError> {
-        let Some(step) = self.select_theorem_application_step(application)? else {
+        let (proof, selected) = self.select_theorem_application_proving_premises(application)?;
+        let Some(step) = selected else {
             return Err(self.step_error(
                 "theorem application requires a result-sensitive fixed-state proof after function exit",
             ));
         };
-        self.apply_selected_theorem_application(step)
+        proof.apply_selected_theorem_application(step)
+    }
+
+    /// [`Self::select_theorem_application_step`], and when a requirement is
+    /// not an available fact, the same selection after proving each missing
+    /// requirement as a `have` by `auto`, the way a proof writes it by hand.
+    /// The returned Proof holds those `have`s; the selected step cites them.
+    /// A requirement `auto` cannot prove keeps the selection's refusal.
+    pub(in crate::surface::proof) fn select_theorem_application_proving_premises(
+        &self,
+        application: &TheoremApplication,
+    ) -> Result<(Self, Option<ProofStep>), ClickError> {
+        let error = match self.select_theorem_application_step(application) {
+            Ok(selected) => return Ok((self.clone(), selected)),
+            Err(error) if crate::instrumentation::deadline_exceeded() => return Err(error),
+            Err(error) => error,
+        };
+        let Some(proved) = self.prove_theorem_requirements_by_auto(application)? else {
+            return Err(error);
+        };
+        match proved.select_theorem_application_step(application) {
+            Ok(Some(step)) => Ok((proved, Some(step))),
+            Err(retry) if crate::instrumentation::deadline_exceeded() => Err(retry),
+            _ => Err(error),
+        }
+    }
+
+    /// Proves each requirement of `application` that is not an available
+    /// fact as a `have` by `auto`, spelled as the theorem's `requires` with
+    /// the written arguments substituted. `None` when there is none to prove,
+    /// one cannot be spelled, or `auto` does not prove one.
+    fn prove_theorem_requirements_by_auto(
+        &self,
+        application: &TheoremApplication,
+    ) -> Result<Option<Self>, ClickError> {
+        let Some((theorem, substitutions)) = self.theorem_application_instance(application) else {
+            return Ok(None);
+        };
+        let Ok(requirements) =
+            crate::surface::proof::pure_theorems::theorem_requirement_propositions(&theorem)
+        else {
+            return Ok(None);
+        };
+        let mut current = self.clone();
+        let mut proved = false;
+        for requirement in requirements {
+            check_verification_deadline()?;
+            let Ok(surface) = substitute_click_proposition(&requirement, &substitutions) else {
+                return Ok(None);
+            };
+            let Ok(lowered) = current.lower_surface_proposition(&surface, "`apply` requirement")
+            else {
+                return Ok(None);
+            };
+            if current.facts().contains(&lowered) {
+                continue;
+            }
+            let Ok(have) = current.begin_have(surface) else {
+                return Ok(None);
+            };
+            let Some(closed) = have.try_auto_fact_closure()? else {
+                return Ok(None);
+            };
+            current = closed.join()?;
+            proved = true;
+        }
+        Ok(proved.then_some(current))
     }
 
     /// The refusal for a requirement an execution-frontier `apply` cannot
@@ -1209,22 +1276,42 @@ impl<'a> Proof<'a> {
         &self,
         application: &TheoremApplication,
     ) -> Vec<ClickProposition> {
-        let Ok(application) = self.resolve_theorem_application(application) else {
+        let Some((theorem, substitutions)) = self.theorem_application_instance(application) else {
             return Vec::new();
         };
+        theorem
+            .ensures()
+            .iter()
+            .filter_map(|ensure| match ensure.ensure() {
+                Ensure::Proposition(conclusion) => {
+                    substitute_click_proposition(conclusion, &substitutions).ok()
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The theorem `application` names, instantiated, and its parameters'
+    /// substitutions by the application's written arguments. A generic
+    /// theorem is instantiated only in a pure theorem proof, where its type
+    /// instance is inferred from the arguments alone.
+    fn theorem_application_instance(
+        &self,
+        application: &TheoremApplication,
+    ) -> Option<(TheoremDefinition, BTreeMap<String, ContractExpression>)> {
+        let written = application;
+        let application = self.resolve_theorem_application(application).ok()?;
         let theorem_environment = match self.context.as_ref() {
             ProofContext::Pure(context) => context.theorem_environment,
             ProofContext::FixedState(context) => context.theorem_environment,
             ProofContext::Execution(context) => context.theorem_environment,
         };
-        let Some(theorem) = theorem_environment.get(&application.name) else {
-            return Vec::new();
-        };
+        let theorem = theorem_environment.get(&application.name)?;
         let theorem = if theorem.type_parameters().is_empty() {
             theorem.clone()
         } else {
             let ProofContext::Pure(context) = self.context.as_ref() else {
-                return Vec::new();
+                return None;
             };
             let state = CState::new().with_memory(context.theorem_context.memory.clone());
             let recorded_snapshots = RecordedSnapshots::new();
@@ -1267,29 +1354,23 @@ impl<'a> Proof<'a> {
                 &application_context,
                 context.spec_definitions,
             ) else {
-                return Vec::new();
+                return None;
             };
             theorem
         };
         if theorem.parameters().len() != application.arguments.len() {
-            return Vec::new();
+            return None;
         }
+        // The written arguments, not the resolved ones: resolution replaces
+        // a `match` arm's C binding by its kernel value, which has no
+        // spelling.
         let substitutions = theorem
             .parameters()
             .iter()
             .map(FunctionParameter::name)
             .map(str::to_string)
-            .zip(application.arguments.iter().cloned())
+            .zip(written.arguments.iter().cloned())
             .collect::<BTreeMap<_, _>>();
-        theorem
-            .ensures()
-            .iter()
-            .filter_map(|ensure| match ensure.ensure() {
-                Ensure::Proposition(conclusion) => {
-                    substitute_click_proposition(conclusion, &substitutions).ok()
-                }
-                _ => None,
-            })
-            .collect()
+        Some((theorem, substitutions))
     }
 }

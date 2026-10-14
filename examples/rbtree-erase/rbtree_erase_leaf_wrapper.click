@@ -47,9 +47,6 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                 rewrite(right == rb_right(RbTree::Node(id, parent_model, color, left, right)));
                 rewrite(RbTree::Node(id, parent_model, color, left, right) == tree.model); assumption();
             }
-            have ctx_consistent(up.model, RbTree::Node(id, parent_model, color, left, right), 0) == 1 by {
-                rewrite(RbTree::Node(id, parent_model, color, left, right) == tree.model); assumption();
-            }
             apply(rb_parent_consistent_empty(parent_model));
             apply(ctx_consistent_swap(up.model, id, parent_model, color, left, right, RbTree::Empty, 0));
             let { left: l, right: r } = unfold(tree);
@@ -197,7 +194,6 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                 execute_until(statement(10));
                 let { after: remaining } = step(__rb_change_child(node, child, parent, root), { before: up });
                 apply(ctx_rb_black_focus(old(up.model), Nat::Zero, Color::Red));
-                have is_rb(RbTree::Empty) == 1 by auto;
                 have ctx_rb(old(up.model), black_height(RbTree::Empty), rb_color(RbTree::Empty)) == 1 by {
                     unfold(black_height(RbTree::Empty)); unfold(rb_color(RbTree::Empty)); assumption();
                 }
@@ -244,7 +240,6 @@ void rb_erase(struct rb_node* node, struct rb_root* root) {
     step(); // Declare rebalance.
     let { hole: hole, remaining: deficit } = step(__rb_erase_augmented(node, root, &dummy_callbacks), { tree: tree, up: up });
     have deficit.model == old(up.model);
-    have ctx_consistent(deficit.model, RbTree::Empty, 0) == 1 by { rewrite(RbTree::Empty == hole.model); assumption(); }
     apply(plug_parent_consistent_transport(deficit.model, RbTree::Empty, 0));
     have rb_tree_parent_consistent(plug(deficit.model, RbTree::Empty)) == 1 by auto;
     if rebalance != 0 {

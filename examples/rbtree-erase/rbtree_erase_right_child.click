@@ -66,10 +66,6 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                 rewrite(right == rb_right(RbTree::Node(id, parent, color, left, right)));
                 rewrite(RbTree::Node(id, parent, color, left, right) == tree.model); assumption();
             }
-            have is_rb(RbTree::Node(id, parent, color, RbTree::Empty, right)) == 1 by {
-                rewrite(RbTree::Empty == left);
-                rewrite(RbTree::Node(id, parent, color, left, right) == tree.model); assumption();
-            }
             have ctx_rb(up.model, black_height(RbTree::Node(id, parent, color, RbTree::Empty, right)),
                 rb_color(RbTree::Node(id, parent, color, RbTree::Empty, right))) == 1 by {
                 rewrite(RbTree::Empty == left);
@@ -188,9 +184,6 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                             simp();
                         },
                         Context::Right(pid, gp, pc, sibling_model, above_model) => {
-                            have ctx_consistent(Context::Right(pid, gp, pc, sibling_model, above_model), RbTree::Node(id, parent, color, left, right), 0) == 1 by {
-                                rewrite(Context::Right(pid, gp, pc, sibling_model, above_model) == up.model); assumption();
-                            }
                             apply(ctx_consistent_right_focus(pid, gp, pc, sibling_model, above_model,
                                 RbTree::Node(id, parent, color, left, right), 0));
                             apply(rb_parent_consistent_node_fixes_parent(id, parent, color, left, right, pid));
@@ -455,9 +448,6 @@ void rb_erase(struct rb_node* node, struct rb_root* root) {
     fold(erase_callbacks(&dummy_callbacks));
     step();
     let { replacement: replacement, remaining: remaining } = step(__rb_erase_augmented(node, root, &dummy_callbacks), { tree: tree, up: up });
-    have rebalance == 0;
-    have remaining.model == old(up.model);
-    have replacement.model == rb_erase_one_child_model(old(tree.model));
     apply(plug_parent_consistent_transport(remaining.model, replacement.model, 0));
     have rb_tree_parent_consistent(plug(remaining.model, replacement.model)) == 1 by {
         unfold(rb_tree_parent_consistent(plug(remaining.model, replacement.model))); assumption();

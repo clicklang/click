@@ -965,9 +965,9 @@ fn advance_checked_linear_continuation<'a>(
             // The same selection `try_theorem_application` makes, keeping the
             // selector's refusal: a declined `apply` is reported by the
             // premise it was missing, not only as a declined shape.
-            match proof.select_theorem_application_step(application) {
-                Ok(Some(step)) => proof.apply_selected_theorem_application(step)?,
-                Ok(None) => return decline(),
+            match proof.select_theorem_application_proving_premises(application) {
+                Ok((proved, Some(step))) => proved.apply_selected_theorem_application(step)?,
+                Ok((_, None)) => return decline(),
                 Err(error) if crate::instrumentation::deadline_exceeded() => return Err(error),
                 Err(error) => {
                     let written = crate::surface::printing::format_partial_tactic_sequence(
