@@ -4,6 +4,7 @@
 mod array_lengths_tests;
 mod assignment_operators;
 mod chunks;
+mod closures;
 mod constants;
 mod constructors;
 mod protocol;
@@ -17,6 +18,7 @@ mod split_slices_tests;
 use super::profile;
 use super::schema::{self as out, Expression as E, MirStatement as S, MirTerminator as T, Type};
 use crate::languages::compiler_process::{CompilerLimits, run_compiler};
+use charon_lib::ast::AstVisitable;
 use charon_lib::ast::from_rustc::LangItem;
 use charon_lib::{ast as a, ullbc_ast as u};
 use std::collections::{BTreeMap, BTreeSet};
@@ -334,6 +336,12 @@ impl Adapter<'_> {
                     let id = self.record_id(&binder.skip_binder)?;
                     super::names::push_impl_type(&mut encoded, &self.records[&id]);
                 }
+                a::PathElem::Builtin(a::BuiltinPathElem::Closure, d) => {
+                    super::names::push_path_segment(
+                        &mut encoded,
+                        &super::names::closure_segment(d.index() as u32),
+                    )
+                }
                 _ => return Err(unsupported("qualified function path component")),
             }
         }
@@ -374,6 +382,10 @@ struct Adapter<'a> {
     records: BTreeMap<a::TypeDeclId, String>,
     functions: BTreeMap<a::FunDeclId, String>,
     destructors: BTreeMap<a::TypeDeclId, a::FunDeclId>,
+    /// Each closure's `ClosureAsFn` function, by the closure's name.
+    closure_shims: BTreeMap<a::FunDeclId, String>,
+    /// The `Fn::call` methods of closures, imported as the closures.
+    closure_calls: BTreeSet<a::FunDeclId>,
 }
 impl Adapter<'_> {
     fn ty(&self, t: &a::Ty) -> Result<Type, String> {
@@ -430,6 +442,8 @@ impl Adapter<'_> {
             a::TyKind::Adt(_) if self.chunk_type(t) => Type::ChunkIterator,
             a::TyKind::Adt(_) if self.chunk_option_type(t) => Type::ChunkOption,
             a::TyKind::Adt(r) if r.id == a::TypeDeclId::UNIT => Type::Unit,
+            // A closure that captures nothing has no state to carry.
+            a::TyKind::Adt(r) if self.empty_closure_state(r.id) => Type::Unit,
             a::TyKind::FnPtr(binder) => {
                 let signature = &binder.skip_binder;
                 if signature.is_unsafe || signature.abi != a::Abi::Rust || signature.is_variadic {
@@ -1028,6 +1042,7 @@ impl BodyAdapter<'_, '_> {
                         .adapter
                         .functions
                         .get(&id)
+                        .or_else(|| self.adapter.closure_shims.get(&id))
                         .ok_or_else(|| unsupported("function pointer to an unmodeled function"))?
                         .clone(),
                     value_type: self.adapter.ty(ty)?,
@@ -1080,7 +1095,9 @@ impl BodyAdapter<'_, '_> {
             u::StatementKind::Assign(p, v) => {
                 if self.adapter.ty(&p.ty)? == Type::Unit {
                     // Only the literal unit value can disappear; never discard a call/read.
-                    if !matches!(v, a::Rvalue::Aggregate(a::AggregateKind::Adt(r, None, None), fields) if r.id == a::TypeDeclId::UNIT && fields.is_empty())
+                    if !matches!(v, a::Rvalue::Aggregate(a::AggregateKind::Adt(r, None, None), fields)
+                        if (r.id == a::TypeDeclId::UNIT || self.adapter.empty_closure_state(r.id))
+                            && fields.is_empty())
                     {
                         return Err(unsupported("nonliteral unit assignment"));
                     }
@@ -1479,9 +1496,21 @@ pub(super) fn decode_crate(
         records: BTreeMap::new(),
         functions: BTreeMap::new(),
         destructors: BTreeMap::new(),
+        closure_shims: BTreeMap::new(),
+        closure_calls: BTreeSet::new(),
     };
     for (id, record) in krate.type_decls.iter_indexed() {
         if record.item_meta.is_local {
+            // A closure's state is not a record: only a closure that
+            // captures nothing, whose state has no fields, is imported.
+            if let a::TypeSource::Closure { .. } = &record.src {
+                if !matches!(&record.kind, a::TypeDeclKind::Struct(fields) if fields.is_empty())
+                    || !record.generics.types.is_empty()
+                {
+                    return Err(unsupported("closure that captures variables"));
+                }
+                continue;
+            }
             if !record.generics.types.is_empty()
                 || !record.generics.const_generics.is_empty()
                 || !matches!(record.src, a::TypeSource::Normal)
@@ -1503,6 +1532,13 @@ pub(super) fn decode_crate(
             continue;
         }
         let name = match &f.src {
+            a::FunSource::Normal
+                if crate_config.is_some() && adapter.closure_as_fn_name(f)?.is_some() =>
+            {
+                let closure = adapter.closure_as_fn_name(f)?.unwrap();
+                adapter.closure_shims.insert(id, closure);
+                continue;
+            }
             a::FunSource::Normal => {
                 if crate_config.is_some() {
                     adapter.qualified_function_name(&f.item_meta.name)?
@@ -1520,6 +1556,30 @@ pub(super) fn decode_crate(
                     .get(trait_ref.id)
                     .ok_or_else(|| unsupported("missing trait"))?;
                 if tr.item_meta.lang_item == Some(LangItem::Destruct) {
+                    continue;
+                }
+                // A closure's `Fn::call` is the closure; its `FnMut` and
+                // `FnOnce` methods only forward to it.
+                if matches!(
+                    tr.item_meta.lang_item,
+                    Some(LangItem::Fn | LangItem::FnMut | LangItem::FnOnce)
+                ) {
+                    let imp = krate
+                        .trait_impls
+                        .get(impl_ref.id)
+                        .ok_or_else(|| unsupported("missing Fn impl"))?;
+                    let closure = adapter
+                        .closure_impl_path(imp)
+                        .ok_or_else(|| unsupported("Fn trait implementation outside a closure"))?;
+                    if crate_config.is_none() {
+                        return Err(unsupported("closure outside crate imports"));
+                    }
+                    if tr.item_meta.lang_item != Some(LangItem::Fn) {
+                        continue;
+                    }
+                    adapter.closure_calls.insert(id);
+                    let name = adapter.closure_name(closure)?;
+                    adapter.functions.insert(id, name);
                     continue;
                 }
                 if tr.item_meta.lang_item != Some(LangItem::Drop) {
@@ -1624,13 +1684,26 @@ pub(super) fn decode_crate(
         let a::Body::Unstructured(body) = &f.body else {
             return Err(unsupported("missing or non-CFG source body"));
         };
+        let closure_body;
+        let body = if adapter.closure_calls.contains(id) {
+            closure_body = closures::closure_call_body(body)?;
+            &closure_body
+        } else {
+            body
+        };
+        // A closure's parameters are the fields of its argument tuple.
+        let inputs = if adapter.closure_calls.contains(id) {
+            closures::closure_parameter_types(&f.signature)?
+        } else {
+            f.signature.inputs.clone()
+        };
         if adapter.crate_mode {
             let return_local = body
                 .locals
                 .locals
                 .first()
                 .ok_or_else(|| unsupported("missing function return local"))?;
-            if body.locals.arg_count != f.signature.inputs.len()
+            if body.locals.arg_count != inputs.len()
                 || adapter.ty(&return_local.ty)? != adapter.ty(&f.signature.output)?
             {
                 return Err(unsupported("function body return/argument signature"));
@@ -1641,7 +1714,7 @@ pub(super) fn decode_crate(
                 .iter()
                 .skip(1)
                 .take(body.locals.arg_count)
-                .zip(&f.signature.inputs)
+                .zip(&inputs)
             {
                 if adapter.ty(&local.ty)? != adapter.ty(ty)? {
                     return Err(unsupported("function parameter local type"));

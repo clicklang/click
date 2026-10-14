@@ -23,9 +23,26 @@ use std::borrow::Cow;
 const PREFIX: &str = "__rust_q";
 
 /// Appends one path segment to an importer name: `_I`, its length, `_`, and
-/// the segment.
+/// the segment. A closure, `{closure#0}` as rustc names it, is `_K` and its
+/// index.
 pub(crate) fn push_path_segment(encoded: &mut String, segment: &str) {
-    encoded.push_str(&format!("_I{}_{segment}", segment.len()));
+    match closure_index(segment) {
+        Some(index) => encoded.push_str(&format!("_K{index}")),
+        None => encoded.push_str(&format!("_I{}_{segment}", segment.len())),
+    }
+}
+
+/// The index of a closure segment, `{closure#0}`.
+fn closure_index(segment: &str) -> Option<u32> {
+    let digits = segment.strip_prefix("{closure#")?.strip_suffix('}')?;
+    (!digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()))
+        .then(|| digits.parse().ok())
+        .flatten()
+}
+
+/// The rustc spelling of the closure with index `index`, `{closure#0}`.
+pub(crate) fn closure_segment(index: u32) -> String {
+    format!("{{closure#{index}}}")
 }
 
 /// Appends the type an inherent method's `impl` block names: `_T`, the
@@ -180,6 +197,18 @@ fn decode(text: &str) -> Option<(String, &str)> {
     let mut rest = text.strip_prefix(PREFIX)?;
     let mut segments: Vec<String> = Vec::new();
     while let Some(tail) = rest.strip_prefix('_') {
+        if let Some(closure) = tail.strip_prefix('K') {
+            let digits = closure.bytes().take_while(u8::is_ascii_digit).count();
+            let Ok(index) = closure[..digits].parse::<u32>() else {
+                break;
+            };
+            if !(closure[digits..].is_empty() || closure[digits..].starts_with('_')) {
+                break;
+            }
+            segments.push(closure_segment(index));
+            rest = &closure[digits..];
+            continue;
+        }
         let (kind, tail) = match tail.as_bytes().first() {
             Some(b'I') => ('I', &tail[1..]),
             Some(b'T') => ('T', &tail[1..]),
@@ -300,6 +329,20 @@ mod tests {
         );
         assert_eq!(rust_display_name("walk"), None);
         assert_eq!(rust_display_name("__rust_q_I9_short"), None);
+    }
+
+    #[test]
+    fn closure_names_read_as_rustc_spells_them() {
+        let name = path_name(&["closures", "choose", "{closure#1}"]);
+        assert_eq!(name, "__rust_q_I8_closures_I6_choose_K1");
+        assert_eq!(
+            rust_display_name(&name).as_deref(),
+            Some("closures::choose::{closure#1}")
+        );
+        // A segment that only resembles a closure is an ordinary segment.
+        assert_eq!(closure_index("{closure#}"), None);
+        assert_eq!(closure_index("{closure#1x}"), None);
+        assert_eq!(rust_display_name("__rust_q_I8_closures_K1x"), None);
     }
 
     #[test]

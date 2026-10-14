@@ -395,8 +395,20 @@ contract, which Click checks at the call from `twice`'s own contract, or an
 `executes` theorem shows. The importer reads Charon's `CastKind::FnPtr` of a
 crate function item and its `FnOperand::Dynamic` call through a local, and
 refuses unsafe or foreign function pointers, pointers of non-scalar
-parameters, closures and `dyn Fn`
+parameters, and `dyn Fn`
 ([`design/charon-trial/function-pointers`](https://github.com/clicklang/click/blob/master/design/charon-trial/function-pointers/callback.click)).
+
+A closure that captures nothing can be passed for such a pointer,
+`apply(|y| y + y, x)`. The sidecar names it as rustc does, by its enclosing
+function and its index there: `fn closures::caller::{closure#0}(y: i32) ->
+i32 { requires ...; ensures ...; } by { ... }`, verified like any function,
+and the caller's proof shows it meets the contract the callee requires of
+the pointer. The importer keeps the closure's `Fn::call` body, rewritten as
+a function of the closure's parameters, and reads Charon's cast of the
+generated `ClosureAsFn` function as the closure's address. A closure that
+captures variables, a closure called directly, and `impl Fn` or `&dyn Fn`
+parameters are refused
+([`design/charon-trial/closures`](https://github.com/clicklang/click/blob/master/design/charon-trial/closures/closure.click)).
 
 ### `extern` block functions
 
