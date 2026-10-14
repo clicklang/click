@@ -84,6 +84,30 @@ All 17 selected span/record kernel controls and the selected Markdown regression
 pass. This depends on unmerged native-entry machinery and is not an upstream
 activation verdict.
 
+## Upstream delivery boundary
+
+Rechecked on upstream `a826da1cc`: the unchanged reduced producer/caller and
+all three original projects (detachable-buffer, owned-split-buffer and
+owned-segmented-buffer) pass. This is an upstream compatibility baseline,
+not evidence that the archived native-span machinery can be activated.
+Upstream has no `native_span_inputs` module, `CNativeSpanRequirement` or typed
+pointer-designation machinery; the implementation in `86abef177` therefore
+cannot be cherry-picked as an independent fix.
+
+The reduced witness is preserved in
+[the modular-output fixture](../mdtests/c_buffer_resource_modular_output.md).
+Separate controls reject a producer missing backing ownership and a producer
+that never stores the pointer. The selected
+`c_buffer_resource_modular_output_expands_and_rechecks` test checks both producer
+and caller claims fresh, expands each complete claim, checks the written source
+fresh, and checks it in a retained session. Its multi-mode work runs in nightly;
+the two bounded rejection fixtures remain in the normal gate.
+
+Keep this bug open until the native-entry dependency closure is independently
+reviewable and the acceptance controls below pass on that candidate. The existing
+archive repair and later range-fold failures are distinct; passing upstream
+examples must not be reported as a completed native-span activation.
+
 ## Acceptance
 
 - Preserve the original C, contracts and resource bodies.
