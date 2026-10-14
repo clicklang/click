@@ -266,16 +266,6 @@ general word index.
 
 Decision: open; the maintainer will revisit it after L2–L7.
 
-### L2. No spec `bool`
-
-Today: truth values in specs are `int32` (`list_contains<T>(...) -> int32`
-in `stdlib/prelude.click`); a theorem exists only to show a `0`/`1` result
-is `1` when not `0` (`examples/modeled-binary-tree`).
-
-Proposed fix: a specification `bool`.
-
-Decision: fix (maintainer, 2026-10-13): a specification `bool`.
-
 ### L4. Rust and C++ specs still read like C
 
 Today: a Rust sidecar's pure function takes `bytes: const uint8*, end:

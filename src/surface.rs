@@ -277,6 +277,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "exit",
     "extract",
     "fact",
+    "false",
     "field",
     "fold",
     "forall",
@@ -354,6 +355,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "where",
     "witness",
     "write",
+    "true",
 ];
 
 /// Stable identifiers for the documented Surface Click declaration,
@@ -368,6 +370,7 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "at",
     "at-expression",
     "auto",
+    "bool",
     "by",
     "c-fragment",
     "contains-proposition",
@@ -1816,6 +1819,89 @@ thread_local! {
     /// this thread: the scaling regressions' measure of copying.
     pub(crate) static CLICK_PROPOSITION_NODES_COPIED: std::cell::Cell<usize> =
         const { std::cell::Cell::new(0) };
+}
+
+/// The specification `bool` literal `true` or `false`: a C `bool` value,
+/// exactly `1` or `0`.
+pub(crate) fn bool_literal(value: bool) -> ContractExpression {
+    ContractExpression::CFragment(CExpression::Value(CValue::Bool(
+        crate::kernel::Bitvector32Term::Constant(u32::from(value)),
+    )))
+}
+
+/// The value of a `bool` literal written as `true` or `false`.
+pub(crate) fn bool_literal_value(expression: &ContractExpression) -> Option<bool> {
+    match expression {
+        ContractExpression::CFragment(CExpression::Value(CValue::Bool(
+            crate::kernel::Bitvector32Term::Constant(value @ (0 | 1)),
+        ))) => Some(*value == 1),
+        _ => None,
+    }
+}
+
+/// A `bool` value claimed as a proposition: `value == true`.
+pub(crate) fn bool_truth(value: ContractExpression) -> ClickProposition {
+    ClickProposition::Comparison {
+        left: value,
+        operator: ComparisonOperator::Equal,
+        right: bool_literal(true),
+    }
+}
+
+/// The truth value of a proposition written where a `bool` value is
+/// expected. A claim `value == true` is `value` itself. Any other
+/// proposition `p` is `if p { true } else { false }`, with each connective
+/// opened into conditionals that test one atom, because a specification
+/// conditional's value selects on one condition: `p and q` is
+/// `if p { if q { true } else { false } } else { false }`, and `or`, `not`
+/// and `implies` likewise. Opening a connective can repeat a branch, so the
+/// result is bounded; a proposition past the bound is refused.
+pub(crate) fn proposition_bool_value(
+    proposition: ClickProposition,
+) -> Result<ContractExpression, String> {
+    const BOOL_VALUE_CONDITIONALS: usize = 256;
+    fn branch(
+        condition: ClickProposition,
+        then_branch: ContractExpression,
+        else_branch: ContractExpression,
+        conditionals: &mut usize,
+    ) -> Result<ContractExpression, String> {
+        *conditionals += 1;
+        if *conditionals > BOOL_VALUE_CONDITIONALS {
+            return Err(format!(
+                "a proposition used as a `bool` value opens into more than \
+                 {BOOL_VALUE_CONDITIONALS} conditionals; name part of it with a `bool` function"
+            ));
+        }
+        match condition {
+            ClickProposition::And(left, right) => {
+                let then_branch = branch(*right, then_branch, else_branch.clone(), conditionals)?;
+                branch(*left, then_branch, else_branch, conditionals)
+            }
+            ClickProposition::Or(left, right) => {
+                let else_branch = branch(*right, then_branch.clone(), else_branch, conditionals)?;
+                branch(*left, then_branch, else_branch, conditionals)
+            }
+            ClickProposition::Implies(left, right) => {
+                let consequent = branch(*right, then_branch.clone(), else_branch, conditionals)?;
+                branch(*left, consequent, then_branch, conditionals)
+            }
+            ClickProposition::Not(body) => branch(*body, else_branch, then_branch, conditionals),
+            condition => Ok(ContractExpression::If {
+                condition: Box::new(condition),
+                then_branch: Box::new(then_branch),
+                else_branch: Box::new(else_branch),
+            }),
+        }
+    }
+    match proposition {
+        ClickProposition::Comparison {
+            left,
+            operator: ComparisonOperator::Equal,
+            right,
+        } if bool_literal_value(&right) == Some(true) => Ok(left),
+        proposition => branch(proposition, bool_literal(true), bool_literal(false), &mut 0),
+    }
 }
 
 pub(crate) fn clone_click_proposition_iteratively(

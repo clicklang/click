@@ -468,7 +468,7 @@ fn nested_list_membership_expands_and_rechecks() {
     let source = r#"
 theorem client(xs: List<List<int32>>, ys: List<List<int32>>, value: List<int32>) {
     ensures list_contains(list_append(xs, ys), value)
-        == if list_contains(xs, value) == 1 { 1 } else { list_contains(ys, value) } by {
+        == if list_contains(xs, value) { true } else { list_contains(ys, value) } by {
         apply(list_contains_append(xs, ys, value));
     }
 }

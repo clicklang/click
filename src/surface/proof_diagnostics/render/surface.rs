@@ -1195,6 +1195,10 @@ impl Printer<'_> {
                 value.to_integer(),
                 if value.format().is_signed() { "i" } else { "u" }
             ))),
+            // A specification `bool` is read as the term it names.
+            B::If { .. } if let Some(application) = crate::kernel::spec_bool_term(value) => {
+                self.bitvector(application, hint, depth)
+            }
             B::If {
                 condition,
                 then_term,

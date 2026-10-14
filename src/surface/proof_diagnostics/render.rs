@@ -1557,6 +1557,12 @@ impl Renderer<'_> {
             return;
         }
         self.depth += 1;
+        // A specification `bool` is read as the term it names.
+        if let Some(application) = crate::kernel::spec_bool_term(v) {
+            self.bitvector(application);
+            self.depth -= 1;
+            return;
+        }
         if let Bitvector32Term::MemoryLoad(snapshot, pointer, kind) = v {
             // `memory` prints its own `snapshot=` prefix.
             if self.trace_facts {
