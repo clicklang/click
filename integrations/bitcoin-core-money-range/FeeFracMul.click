@@ -1,6 +1,6 @@
 verifying "bitcoin-src/src/util/feefrac.h";
 
-int128 FeeFrac_Mul(int64 a, int32 b) {
+static int128 FeeFrac::Mul(int64 a, int32 b) {
     requires -9223372036854775808 <= to_integer(a);
     requires to_integer(a) <= 9223372036854775807;
     requires -2147483648 <= to_integer(b);

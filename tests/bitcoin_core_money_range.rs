@@ -279,7 +279,7 @@ fn check_upstream_cpp_rounding_phase(
             ),
         ] {
             let proof = format!(
-                "verifying \"bitcoin-src/src/util/feefrac.h\"; int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {{ {premises} ensures 0 == 0; }} by {{ execute(); simp(); }}"
+                "verifying \"bitcoin-src/src/util/feefrac.h\"; static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {{ {premises} ensures 0 == 0; }} by {{ execute(); simp(); }}"
             );
             let parsed = read_click_project(&sidecar, &proof).unwrap();
             let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
@@ -975,7 +975,7 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
             verify_program_prepared_project(&parsed, &import)
                 .expect_err("explicit product certificates must establish all named bounds");
         }
-        let unsafe_source = "verifying \"bitcoin-src/src/util/feefrac.h\"; int128 FeeFrac_Mul(int64 a, int32 b) { ensures 0 == 0; } by { execute(); simp(); }";
+        let unsafe_source = "verifying \"bitcoin-src/src/util/feefrac.h\"; static int128 FeeFrac::Mul(int64 a, int32 b) { ensures 0 == 0; } by { execute(); simp(); }";
         let parsed = read_click_project(&sidecar, unsafe_source).unwrap();
         let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
         assert!(
@@ -1861,8 +1861,8 @@ fn check_upstream_fee_evaluation_fast(mode: &str, expected: i64, phase: Rounding
     let source = format!(
         r#"{}
 {div}
-int64 FeeFrac_EvaluateFee__bool_{instance}(const struct FeeFrac* this, int32 at_size) {{ {contract} }} by {{ execute(); simp(); }}
-int64 FeeFrac_EvaluateFee{mode}(const struct FeeFrac* this, int32 at_size) {{ {contract} }} by {{ execute(); simp(); }}
+int64 FeeFrac::EvaluateFee<{instance}>(int32 at_size) const {{ {contract} }} by {{ execute(); simp(); }}
+int64 FeeFrac::EvaluateFee{mode}(int32 at_size) const {{ {contract} }} by {{ execute(); simp(); }}
 "#,
         include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click")
     );
@@ -2289,7 +2289,7 @@ fn unified_fee_evaluation_source(mode: &str) -> String {
 
 fn unified_fee_evaluation_source_with_profile(mode: &str, result_fit: bool) -> String {
     let wide = wide_fee_evaluation_source_with_profile(mode, true, result_fit);
-    let (helpers, callers) = wide.split_once("int64 FeeFrac_EvaluateFee__bool_").unwrap();
+    let (helpers, callers) = wide.split_once("int64 FeeFrac::EvaluateFee<").unwrap();
     let wide_body = callers
         .split_once("} by {")
         .unwrap()
@@ -2710,13 +2710,19 @@ fn upstream_getfee_retains_certificates_offline() {
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_getfee_modular_callers_cover_empty_negative_and_oversize_inputs() {
     let source = getfee_source();
-    let root_contract = source
-        .split_once("int64 CFeeRate_GetFee(")
-        .unwrap()
-        .1
-        .split_once("} by {")
-        .unwrap()
-        .0;
+    // The method's head leaves `this` implicit; a named contract for its
+    // function type writes the receiver as a parameter.
+    let root_contract = format!(
+        "const struct CFeeRate* this, {}",
+        source
+            .split_once("int64 CFeeRate::GetFee(")
+            .unwrap()
+            .1
+            .split_once("} by {")
+            .unwrap()
+            .0
+            .replacen(") const {", ") {", 1)
+    );
     let mut callers = String::new();
     for (name, requirements, conclusion) in [
         (
@@ -2965,13 +2971,19 @@ fn upstream_getfee_per_k_rejects_false_rounding() {
 #[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_getfee_per_k_modular_callers_cover_signed_and_oversize_rates() {
     let source = getfee_per_k_source();
-    let root_contract = source
-        .split_once("int64 CFeeRate_GetFeePerK(")
-        .unwrap()
-        .1
-        .split_once("} by {")
-        .unwrap()
-        .0;
+    // The method's head leaves `this` implicit; a named contract for its
+    // function type writes the receiver as a parameter.
+    let root_contract = format!(
+        "const struct CFeeRate* this{}",
+        source
+            .split_once("int64 CFeeRate::GetFeePerK(")
+            .unwrap()
+            .1
+            .split_once("} by {")
+            .unwrap()
+            .0
+            .replacen(") const {", ") {", 1)
+    );
     let mut callers = String::new();
     for (name, fee, size) in [
         ("PositivePerK", 7_i64, 2),

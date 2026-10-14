@@ -2312,6 +2312,65 @@ fn rust_inherent_method_in_its_type_module(name: &str) -> Option<String> {
 }
 
 /// The segments of the Rust path that ends at token `end`, `a::b::name`.
+/// The name the parser gives a C++ head's declarator whose last token is at
+/// `end`, the token before its `(`: `Rec::m` is `Rec_m`, `Rec::Rec` is
+/// `Rec_constructor`, `Rec::~Rec` is `Rec_destructor`, `Rec::operator+=` is
+/// `Rec_operator_add_assign`, and `f<true>` is `f__bool_true`.
+fn cpp_declarator_name_ending_at(tokens: &[SourceToken], end: usize) -> String {
+    let text = |at: usize| tokens[at].text.as_str();
+    let mut at = end;
+    let mut suffix = String::new();
+    if text(at) == ">" {
+        let mut arguments = Vec::new();
+        while at > 0 && text(at) != "<" {
+            at -= 1;
+            if matches!(text(at), "true" | "false") {
+                arguments.push(text(at));
+            }
+        }
+        for argument in arguments.iter().rev() {
+            suffix.push_str(&format!("__bool_{argument}"));
+        }
+        at = at.saturating_sub(1);
+    }
+    let operator = match text(at) {
+        "]" if at >= 2 && text(at - 2) == "operator" => Some("operator_index"),
+        "=" if at >= 2 && text(at - 2) == "operator" && text(at - 1) == "+" => {
+            Some("operator_add_assign")
+        }
+        "=" if at >= 2 && text(at - 2) == "operator" && text(at - 1) == "-" => {
+            Some("operator_subtract_assign")
+        }
+        _ => None,
+    };
+    let mut segments = Vec::new();
+    let mut destructor = false;
+    if operator.is_some() {
+        at -= 2;
+        segments.push(text(at));
+    } else {
+        segments.push(text(at));
+        if at >= 1 && text(at - 1) == "~" {
+            destructor = true;
+            at -= 1;
+        }
+    }
+    while at >= 3 && text(at - 1) == ":" && text(at - 2) == ":" {
+        segments.insert(0, text(at - 3));
+        at -= 3;
+    }
+    let qualifier = segments.len().checked_sub(2).map(|index| segments[index]);
+    let last = segments[segments.len() - 1];
+    match (operator, qualifier) {
+        (Some(operator), Some(_)) => {
+            format!("{}_{operator}", segments[..segments.len() - 1].join("_"))
+        }
+        (None, Some(record)) if destructor => format!("{record}_destructor"),
+        (None, Some(record)) if record == last => format!("{record}_constructor"),
+        _ => segments.join("_") + &suffix,
+    }
+}
+
 fn rust_path_ending_at(tokens: &[SourceToken], end: usize) -> Vec<&str> {
     let mut segments = vec![tokens[end].text.as_str()];
     let mut at = end;
@@ -4166,6 +4225,14 @@ fn declaration_source_index(
 ) -> Result<std::collections::HashMap<String, FunctionSource>, ClickError> {
     let mut result = std::collections::HashMap::new();
     let mut candidate = None;
+    // A C++ sidecar's heads are C++ declarators: `Rec::Rec`, `Rec::~Rec`,
+    // `Rec::operator+=`, `f<true>`.
+    let cpp = tokens.windows(2).any(|pair| {
+        pair[0].text == "verifying"
+            && [".cpp\"", ".cc\"", ".cxx\"", ".h\"", ".hpp\""]
+                .iter()
+                .any(|extension| pair[1].text.ends_with(extension))
+    });
     // Inside a Rust `impl` block a method `name` is the function `Type_name`.
     // The block's type, its module when it is an inherent block for a type
     // named by a path, its trait argument's suffix, and where it closes.
@@ -4205,6 +4272,9 @@ fn declaration_source_index(
             "(" => {
                 if candidate.is_none() {
                     candidate = index.checked_sub(1).map(|before| {
+                        if cpp {
+                            return cpp_declarator_name_ending_at(tokens, before);
+                        }
                         let path = rust_path_ending_at(tokens, before);
                         match &impl_block {
                             // A method's own name, and an item inside it.

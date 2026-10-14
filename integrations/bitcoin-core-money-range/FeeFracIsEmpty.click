@@ -1,6 +1,6 @@
 verifying "bitcoin-src/src/util/feefrac.h";
 
-bool FeeFrac_IsEmpty(const struct FeeFrac* this) {
+bool FeeFrac::IsEmpty() const {
     views this->fee;
     views this->size;
     ensures this->fee == old(this->fee);

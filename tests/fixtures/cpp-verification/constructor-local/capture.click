@@ -1,6 +1,6 @@
 verifying "capture.cpp";
 
-void RestoreState_constructor(struct RestoreState* this, int32* slot) {
+RestoreState::RestoreState(int32* slot) {
     owns this->pointer;
     owns this->saved;
     owns slot[0..1];

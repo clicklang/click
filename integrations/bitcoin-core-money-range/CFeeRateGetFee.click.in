@@ -1,4 +1,4 @@
-int64 CFeeRate_GetFee(const struct CFeeRate* this, int32 virtual_bytes) {
+int64 CFeeRate::GetFee(int32 virtual_bytes) const {
     views this->m_feerate.base.fee;
     views this->m_feerate.base.size;
     requires 0 <= virtual_bytes;

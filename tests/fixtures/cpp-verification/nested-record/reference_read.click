@@ -5,7 +5,7 @@ int64 ReadFeeRef(const struct FeeState& state) {
     ensures result == state.fee;
 } by { execute(); simp(); }
 
-int64 FeeEnvelope_ReadRightByReference(const struct FeeEnvelope* this) {
+int64 FeeEnvelope::ReadRightByReference() const {
     views this->state.right.fee;
     ensures result == this->state.right.fee;
 } by { execute(); simp(); }

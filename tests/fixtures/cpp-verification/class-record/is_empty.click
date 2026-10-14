@@ -1,6 +1,6 @@
 verifying "class_record.cpp";
 
-bool FeeRateState_IsEmpty(const struct FeeRateState* this) {
+bool FeeRateState::IsEmpty() const {
     views this->fee;
     views this->size;
     ensures this->fee == old(this->fee);

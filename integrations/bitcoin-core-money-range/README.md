@@ -163,8 +163,8 @@ proofs. The gate checks the existing archive digest, header digest, and the
 
 After the full-checkout setup above, lock and verify each of these sidecars
 with the same commands used for `MoneyRange`. Their adjacent import configs
-select the exact upstream method; their proof interfaces use an explicit
-receiver and the names `FeeFrac_IsEmpty` and `FeeFrac_operator_add_assign`.
+select the exact upstream method; their heads are the C++ declarations,
+`bool FeeFrac::IsEmpty() const` and `void FeeFrac::operator+=(const FeeFrac& other)`.
 Exceptions and RTTI remain enabled in the real command. Unselected templates,
 constructors, wide-integer helpers, and other methods do not enter the proof
 graph; the whole record layout and selected method bodies do.

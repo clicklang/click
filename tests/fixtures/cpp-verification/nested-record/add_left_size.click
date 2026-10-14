@@ -1,6 +1,6 @@
 verifying "nested_record.cpp";
 
-void FeeEnvelope_AddLeftSize(struct FeeEnvelope* this, int delta) {
+void FeeEnvelope::AddLeftSize(int delta) {
     owns this->state.left.size;
     views this->state.right.size;
     requires 0 <= this->state.left.size;

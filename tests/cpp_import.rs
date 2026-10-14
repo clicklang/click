@@ -424,7 +424,7 @@ int probe(int input) noexcept {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let proof = r#"verifying "identity.cpp";
-void Node_constructor(struct Node* this, int32 input) {
+Node::Node(int32 input) {
  owns this->value;
  owns this->self;
  ensures this->value == input;
@@ -1159,7 +1159,7 @@ fn expression_observers_preserve_symbolic_field_reads_offline() {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "observe.cpp";
-uint64 Count_size(const struct Count* this) {
+uint64 Count::size() const {
  views this->value;
  ensures result == this->value;
 } by { execute(); simp(); }
@@ -1242,7 +1242,7 @@ fn expression_observers_normalize_nested_arguments_and_widened_results() {
         &project,
         &import,
         r#"verifying "observe.cpp";
-uint64 Count_size(const struct Count* this) { views this->value; ensures result == this->value; } by { execute(); simp(); }
+uint64 Count::size() const { views this->value; ensures result == this->value; } by { execute(); simp(); }
 uint64 echo(uint64 value) { ensures result == value; } by { execute(); simp(); }
 uint64 probe(const struct Count& count) { views count.value; ensures result == count.value + count.value; } by { execute(); simp(); }
 "#,
@@ -1314,7 +1314,7 @@ fn expression_observers_form_checked_reference_results() {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "observe.cpp";
-int32* View_data(const struct View* this) { views this->pointer; ensures result == this->pointer; } by { execute(); simp(); }
+int32* View::data() const { views this->pointer; ensures result == this->pointer; } by { execute(); simp(); }
 int32& probe(const struct View& view) { views view.pointer; views view.pointer[0..1]; ensures &result == view.pointer; } by { execute(); simp(); }
 "#;
     check_return_call_sidecar(&project, &import, source);
@@ -1337,7 +1337,7 @@ fn expression_observers_refuse_mutation_despite_a_matching_native_signature() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "observe.cpp";
-uint64 Count_size(struct Count* this) {
+uint64 Count::size() {
  views this->value;
  ensures result == 5u64;
 } by { execute(); simp(); }
@@ -2339,7 +2339,7 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
     ));
 
     let sidecar_source = r#"verifying "caller.cpp";
-        void Restore_constructor(struct Restore* this, int32* slot) {
+        Restore::Restore(int32* slot) {
             owns this->pointer;
             owns this->saved;
             owns slot[0..1];
@@ -2348,7 +2348,7 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
             ensures slot[0] == 9;
             ensures separate(memory(*this), memory(this->pointer[0..1]));
         } by { execute(); simp(); }
-        void Restore_destructor(struct Restore* this) {
+        Restore::~Restore() {
             requires separate(memory(*this), memory(this->pointer[0..1]));
             owns this->pointer;
             owns this->saved;
@@ -4704,7 +4704,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
         .expect("expanded terminal-cleanup proof must reverify");
 
     let missing_destructor = TERMINAL_DESTRUCTOR_SIDECAR.replace(
-        "void RestoreState_destructor(struct RestoreState* this) {\n    requires separate(memory(*this), memory(this->pointer[0..1]));\n    owns this->pointer;\n    owns this->saved;\n    owns this->pointer[0..1];\n    ensures this->pointer == old(this->pointer);\n    ensures this->saved == old(this->saved);\n    ensures this->pointer[0] == old(this->saved);\n} by {\n    execute();\n    simp();\n}\n\n",
+        "RestoreState::~RestoreState() {\n    requires separate(memory(*this), memory(this->pointer[0..1]));\n    owns this->pointer;\n    owns this->saved;\n    owns this->pointer[0..1];\n    ensures this->pointer == old(this->pointer);\n    ensures this->saved == old(this->saved);\n    ensures this->pointer[0] == old(this->saved);\n} by {\n    execute();\n    simp();\n}\n\n",
         "",
     );
     fs::write(&sidecar, &missing_destructor).unwrap();
@@ -6782,8 +6782,8 @@ fn value_methods_reject_false_claims_missing_authority_and_overflow() {
     let empty = include_str!("fixtures/cpp-verification/value-methods/is_empty.click");
     for (selector, proof, expected) in [
         ("FeeFrac::IsEmpty", empty.replace("if old(this->size) == 0", "if old(this->size) == 1"), "unclosed goal"),
-        // The receiver is the pointer `this`; the older `self` does not match.
-        ("FeeFrac::IsEmpty", empty.replace("this", "self"), ".click has const struct FeeFrac* self, C has const struct FeeFrac* this"),
+        // The receiver is implicit; the retired explicit `this` is refused.
+        ("FeeFrac::IsEmpty", empty.replace("bool FeeFrac::IsEmpty() const", "bool FeeFrac_IsEmpty(const struct FeeFrac* this)"), "a C++ member function's `this` is implicit"),
         ("FeeFrac::operator+=", add.replace("ensures this->fee == old(this->fee) + old(other.fee);", "ensures this->fee == old(this->fee);"), "unclosed goal"),
         ("FeeFrac::operator+=", add.replace("    owns this->fee;\n", ""), "missing resource fact"),
         ("FeeFrac::operator+=", add.replace("    requires -4611686018427387904 <= this->fee;\n    requires this->fee <= 4611686018427387903;\n", ""), "overflow"),
@@ -7498,11 +7498,11 @@ fn concrete_template_instances_have_distinct_identities_and_modular_contracts() 
         ));
     }
     let sidecar = r#"verifying "instances.cpp";
-int32 choose__bool_true(int32 a, int32 b) {
+int32 choose<true>(int32 a, int32 b) {
  requires a >= -1073741824; requires a <= 1073741823;
  ensures result == a; ensures result >= -1073741824; ensures result <= 1073741823;
 } by { execute(); simp(); }
-int32 choose__bool_false(int32 a, int32 b) {
+int32 choose<false>(int32 a, int32 b) {
  requires b >= -1073741824; requires b <= 1073741823;
  ensures result == b; ensures result >= -1073741824; ensures result <= 1073741823;
 } by { execute(); simp(); }
@@ -7550,12 +7550,12 @@ fn concrete_member_template_instances_preserve_receiver_authority() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let sidecar = r#"verifying "instances.cpp";
-int64 Value_select__bool_true(const struct Value* this) {
+int64 Value::select<true>() const {
  views this->fee;
  ensures result == this->fee;
  ensures this->fee == old(this->fee);
 } by { execute(); simp(); }
-int64 Value_select__bool_false(const struct Value* this) {
+int64 Value::select<false>() const {
  views this->fee;
  ensures result == 0i64;
  ensures this->fee == old(this->fee);
@@ -7581,7 +7581,7 @@ fn constexpr_discards_only_the_compiler_selected_arm() {
     let import = load_import(&project.config()).unwrap();
     assert_eq!(import.export().reachable_functions.len(), 1);
     let sidecar = r#"verifying "instances.cpp";
-int32 bounded__bool_true(int32 value) { ensures result == value; } by { execute(); simp(); }
+int32 bounded<true>(int32 value) { ensures result == value; } by { execute(); simp(); }
 int32 accepted(int32 value) { ensures result == value; } by { execute(); simp(); }
 "#;
     check_arithmetic_sidecar(&project, &import, sidecar);
@@ -7642,7 +7642,7 @@ fn substituted_boolean_template_arguments_are_typed_values() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "instances.cpp";
-int32 flag__bool_true() { ensures result == 1; } by { execute(); simp(); }
+int32 flag<true>() { ensures result == 1; } by { execute(); simp(); }
 int32 get_flag() { ensures result == 1; } by { execute(); simp(); }
 "#;
     check_arithmetic_sidecar(&project, &import, source);
@@ -7929,11 +7929,32 @@ fn class_template_instances_use_resolved_storage_types_and_constructor_names() {
             ensures result == next;
         } by { execute(); simp(); }
     "#;
+        // A class template instance keeps its mangled member names and
+        // explicit receiver; an ordinary class is written as C++ writes it.
+        let ordinary_sidecar = r#"
+        verifying "stored.cpp";
+        Stored::Stored(int64 next) {
+            owns this->value; ensures this->value == next;
+        } by { execute(); simp(); }
+        int64 Stored::Read() const {
+            views this->value; ensures result == this->value;
+        } by { execute(); simp(); }
+        Stored::~Stored() {
+            owns this->value; ensures this->value == 0i64;
+        } by { execute(); simp(); }
+        int64 create(int64 next) {
+            ensures result == next;
+        } by { execute(); simp(); }
+    "#;
         fs::remove_file(&project.exporter).unwrap();
         check_return_call_sidecar(
             &project,
             &import,
-            &sidecar.replace("Stored__long_long", record),
+            if record == "Stored" {
+                ordinary_sidecar
+            } else {
+                sidecar
+            },
         );
     }
 }
@@ -8254,15 +8275,15 @@ fn inherited_field_paths_preserve_base_authority_and_verify_offline() {
         ),
         (
             "Deep::Observe",
-            "int32 Deep_Observe(const struct Deep* this) { views this->base.base.size; ensures result == this->base.base.size; }",
+            "int32 Deep::Observe() const { views this->base.base.size; ensures result == this->base.base.size; }",
         ),
         (
             "Envelope::Read",
-            "int32 Envelope_Read(const struct Envelope* this) { views this->left.base.base.size; ensures result == this->left.base.base.size; }",
+            "int32 Envelope::Read() const { views this->left.base.base.size; ensures result == this->left.base.base.size; }",
         ),
         (
             "Envelope::Copy",
-            "void Envelope_Copy(struct Envelope* this) { views this->left.base.base.size; owns this->right.base.size; ensures this->right.base.size == this->left.base.base.size; ensures this->left.base.base.size == old(this->left.base.base.size); }",
+            "void Envelope::Copy() { views this->left.base.base.size; owns this->right.base.size; ensures this->right.base.size == this->left.base.base.size; ensures this->left.base.base.size == old(this->left.base.base.size); }",
         ),
     ] {
         let project = Project::with_fixture("inherited.cpp", selected, INHERITED_SOURCE);
@@ -8282,15 +8303,15 @@ fn inherited_method_and_reference_calls_verify_offline_with_sibling_frames() {
         (
             "Envelope::Via",
             r#"
-        int32 Base_Read(const struct Base* this) { views this->size; ensures result == this->size; } by { execute(); simp(); }
-        int32 Envelope_Via(const struct Envelope* this) { views this->left.base.base.size; views this->right.base.size; ensures result == this->left.base.base.size; ensures this->right.base.size == old(this->right.base.size); } by { execute(); simp(); }
+        int32 Base::Read() const { views this->size; ensures result == this->size; } by { execute(); simp(); }
+        int32 Envelope::Via() const { views this->left.base.base.size; views this->right.base.size; ensures result == this->left.base.base.size; ensures this->right.base.size == old(this->right.base.size); } by { execute(); simp(); }
         "#,
         ),
         (
             "Envelope::Write",
             r#"
-        void Base_Set(struct Base* this, int32 next) { owns this->size; ensures this->size == next; } by { execute(); simp(); }
-        void Envelope_Write(struct Envelope* this, int32 next) { owns this->right.base.size; views this->left.base.base.size; ensures this->right.base.size == next; ensures this->left.base.base.size == old(this->left.base.base.size); } by { execute(); simp(); }
+        void Base::Set(int32 next) { owns this->size; ensures this->size == next; } by { execute(); simp(); }
+        void Envelope::Write(int32 next) { owns this->right.base.size; views this->left.base.base.size; ensures this->right.base.size == next; ensures this->left.base.base.size == old(this->left.base.base.size); } by { execute(); simp(); }
         "#,
         ),
         (
@@ -8654,12 +8675,11 @@ fn direct_return_calls_preserve_fee_method_template_wrappers() {
         let project = Project::with_fixture("relay.cpp", selected, RETURN_CALL_SOURCE);
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let proof_name = selected.replace("::", "_");
         let contract = format!(
             "views this->fee; views this->size; requires this->fee == 7i64; requires this->size == 3; requires at_size == 2; ensures result == {expected}i64; ensures this->fee == old(this->fee); ensures this->size == old(this->size);"
         );
         let source = format!(
-            "verifying \"relay.cpp\"; int64 {instance}(const struct FeeFrac* this, int32 at_size) {{ {contract} }} by {{ execute(); simp(); }} int64 {proof_name}(const struct FeeFrac* this, int32 at_size) {{ {contract} }} by {{ execute(); simp(); }}"
+            "verifying \"relay.cpp\"; int64 {instance}(const struct FeeFrac* this, int32 at_size) {{ {contract} }} by {{ execute(); simp(); }} int64 {selected}(int32 at_size) const {{ {contract} }} by {{ execute(); simp(); }}"
         );
         check_return_call_sidecar(&project, &import, &source);
         let hostile = source.replace(
@@ -8771,12 +8791,12 @@ fn check_return_cleanup_cases(selected_type: &str) {
         };
         let source = format!(
             r#"verifying "cleanup.cpp";
-void Restore_constructor(struct Restore* this, int32* slot) {{
+Restore::Restore(int32* slot) {{
  owns this->p; owns this->saved; owns slot[0..1];
  ensures this->p == slot; ensures this->saved == old(slot[0]); ensures slot[0] == 7;
  ensures separate(memory(*this), memory(this->p[0..1]));
 }} by {{ execute(); simp(); }}
-void Restore_destructor(struct Restore* this) {{
+Restore::~Restore() {{
  requires separate(memory(*this), memory(this->p[0..1]));
  owns this->p; owns this->saved; owns this->p[0..1];
  ensures this->p == old(this->p); ensures this->saved == old(this->saved);
@@ -9353,13 +9373,13 @@ fn static_helpers_support_modular_nested_and_initializer_calls() {
         let source = format!(
             r#"verifying "static.cpp";
 int32 Scalar_echo(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}
-int32 Other_echo(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}
+static int32 Other::echo(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}
 int32 {selected}(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}
 "#
         );
         // The local caller reaches only Scalar_echo.
         let source = if selected == "static_local" {
-            source.replace("int32 Other_echo(int32 value) { ensures result == value; } by { execute(); simp(); }\n", "")
+            source.replace("static int32 Other::echo(int32 value) { ensures result == value; } by { execute(); simp(); }\n", "")
         } else {
             source
         };
@@ -9451,9 +9471,9 @@ fn static_helpers_propagate_scalar_exceptions_through_nested_calls() {
         &project,
         &import,
         r#"verifying "static.cpp";
-int32 H_inner(bool fail) throws int32 { ensures result == 5 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
-int32 H_outer(int32 value) { ensures result == value; } by { execute(); simp(); }
-int32 H_relay(bool fail) throws int32 { ensures result == 5 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
+static int32 H::inner(bool fail) throws int32 { ensures result == 5 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
+static int32 H::outer(int32 value) { ensures result == value; } by { execute(); simp(); }
+static int32 H::relay(bool fail) throws int32 { ensures result == 5 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
 "#,
     );
 }
@@ -9466,7 +9486,7 @@ fn static_helpers_called_from_value_methods_preserve_field_authority() {
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "static.cpp";
 int64 FeeMath_Mul(int64 fee, int32 at_size) { requires fee == 7i64; requires at_size == 3; ensures result == 21i64; } by { execute(); simp(); }
-int64 FeeValue_Evaluate(const struct FeeValue* this, int32 at_size) {
+int64 FeeValue::Evaluate(int32 at_size) const {
  owns this->fee;
  requires this->fee == 7i64;
  requires at_size == 3;
@@ -9576,14 +9596,14 @@ fn normalized_initializer_calls_capture_before_normal_cleanup() {
     let import = load_import(&project.config()).unwrap();
     // Reuse the existing independently checked constructor/destructor contracts.
     let source = r#"verifying "evaluation.cpp";
-void Restore_constructor(struct Restore* this, int32* value) {
+Restore::Restore(int32* value) {
  owns this->slot; owns this->saved; owns value[0..1];
  ensures this->slot == value;
  ensures this->saved == old(value[0]);
  ensures value[0] == 7;
  ensures separate(memory(*this), memory(this->slot[0..1]));
 } by { execute(); simp(); }
-void Restore_destructor(struct Restore* this) {
+Restore::~Restore() {
  requires separate(memory(*this), memory(this->slot[0..1]));
  owns this->slot; owns this->saved; owns this->slot[0..1];
  ensures this->slot == old(this->slot);
@@ -10176,8 +10196,8 @@ fn check_growing_lifetime_inventory(mode: &str) {
         // exercise complete proofs, rewritten certificates, and audit.
         if size <= 8 {
             let source = r#"verifying "guards.cpp";
-void Guard_constructor(struct Guard* this, int32 initial) { owns this->value; ensures this->value == initial; } by { execute(); simp(); }
-void Guard_destructor(struct Guard* this) { owns this->value; ensures this->value == 0; } by { execute(); simp(); }
+Guard::Guard(int32 initial) { owns this->value; ensures this->value == initial; } by { execute(); simp(); }
+Guard::~Guard() { owns this->value; ensures this->value == 0; } by { execute(); simp(); }
 int32 many(bool early, int32 value) { ensures result == value; } by { execute(); simp(); }
 "#;
             check_return_call_sidecar(&project, &import, source);
@@ -10296,8 +10316,8 @@ fn compiler_assumptions_require_proof_and_keep_normal_cleanup() {
         CppStatement::Assume { .. }
     ));
     let contracts = r#"verifying "assume.cpp";
-void Guard_constructor(struct Guard* this, int32 n) { owns this->value; ensures this->value == n; } by { execute(); simp(); }
-void Guard_destructor(struct Guard* this) { owns this->value; ensures this->value == 0; } by { execute(); simp(); }
+Guard::Guard(int32 n) { owns this->value; ensures this->value == n; } by { execute(); simp(); }
+Guard::~Guard() { owns this->value; ensures this->value == 0; } by { execute(); simp(); }
 "#;
     let source = format!(
         "{contracts}\nint32 guarded(int32 n) {{ requires n > 0; ensures result == n; }} by {{ execute(); simp(); }}"
@@ -10503,7 +10523,7 @@ fn check_field_sibling_rounding(direction: &str) {
 int64 Fee_Mul(int64 fee, int32 at_size) {{ requires fee == {fee}i64; requires at_size == 3; ensures result == {product}i64; }} by {{ execute(); simp(); }}
 int64 Fee_Div(int64 n, int32 d, bool round_down) {{ requires n == {product}i64; requires d == {divisor}; requires round_down == {down}; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
 int64 {instance}(const struct Fee* this, int32 at_size) {{ owns this->fee; owns this->size; requires this->fee == {fee}i64; requires this->size == {divisor}; requires at_size == 3; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
-int64 Fee_{selected}(const struct Fee* this, int32 at_size) {{ owns this->fee; owns this->size; requires this->fee == {fee}i64; requires this->size == {divisor}; requires at_size == 3; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+int64 Fee::{selected}(int32 at_size) const {{ owns this->fee; owns this->size; requires this->fee == {fee}i64; requires this->size == {divisor}; requires at_size == 3; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
 "#
         );
         check_return_call_sidecar(&project, &import, &proof);
@@ -11705,8 +11725,8 @@ fn assumed_library_assertions_require_proof_and_preserve_cleanup() {
     assert_eq!(contract.header, "gate.h");
     assert_eq!(span.file, "library.cpp");
     let source = r#"verifying "library.cpp";
-void Guard_constructor(struct Guard* this, int32 n) { owns this->value; ensures this->value == n; } by { execute(); simp(); }
-void Guard_destructor(struct Guard* this) { owns this->value; ensures this->value == 0; } by { execute(); simp(); }
+Guard::Guard(int32 n) { owns this->value; ensures this->value == n; } by { execute(); simp(); }
+Guard::~Guard() { owns this->value; ensures this->value == 0; } by { execute(); simp(); }
 int32 guarded(int32 n) { requires n > 0; ensures result == n; } by { execute(); simp(); }
 "#;
     check_return_call_sidecar(&project, &import, source);
@@ -12229,8 +12249,8 @@ fn consteval_library_metadata_preserves_normal_cleanup_and_modular_framing() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let proof = r#"verifying "library.cpp";
-void Guard_constructor(struct Guard* this, int32 n) { owns this->value; ensures this->value == n; } by { execute(); simp(); }
-void Guard_destructor(struct Guard* this) { owns this->value; ensures this->value == 0; } by { execute(); simp(); }
+Guard::Guard(int32 n) { owns this->value; ensures this->value == n; } by { execute(); simp(); }
+Guard::~Guard() { owns this->value; ensures this->value == 0; } by { execute(); simp(); }
 int32 checked(int32 n) { requires n > 0; ensures result == n; } by { execute(); simp(); }
 int32 guarded(int32& memory, int32 n) { owns memory; requires memory == 7; requires n > 0; ensures memory == 7; ensures result == n; } by { execute(); simp(); }
 "#;
@@ -12553,8 +12573,8 @@ int guarded(int& value, int* untouched) noexcept { int n = value; int result = c
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let proof = r#"verifying "library.cpp";
-void Guard_constructor(struct Guard* this, int32 n) { owns this->value; ensures this->value == n; } by { execute(); simp(); }
-void Guard_destructor(struct Guard* this) { owns this->value; ensures this->value == 0; } by { execute(); simp(); }
+Guard::Guard(int32 n) { owns this->value; ensures this->value == n; } by { execute(); simp(); }
+Guard::~Guard() { owns this->value; ensures this->value == 0; } by { execute(); simp(); }
 int32 checked(int32 n) { requires n > 0; ensures result == n; } by { execute(); simp(); }
 int32 guarded(int32& value, int32* untouched) {
     owns value; owns untouched[0..1]; requires value > 0; requires untouched[0] == 7;
@@ -13523,7 +13543,7 @@ fn nested_record_shared_layout_expansion_has_a_bounded_leaf_budget() {
     let project = Project::with_fixture("nested.cpp", "Envelope::Read", &source);
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let sidecar = "verifying \"nested.cpp\"; int Envelope_Read(const struct Envelope* this) { ensures result == 0; } by { execute(); simp(); }";
+    let sidecar = "verifying \"nested.cpp\"; int Envelope::Read() const { ensures result == 0; } by { execute(); simp(); }";
     let path = project.directory.join("budget.click");
     fs::write(&path, sidecar).unwrap();
     let parsed = read_click_project(&path, sidecar).unwrap();
@@ -14096,7 +14116,7 @@ fn condition_calls_preserve_inherited_receiver_and_sibling_frames() {
     for (value, expected) in [(0, 1), (3, 2)] {
         let sidecar = format!(
             r#"verifying "condition.cpp";
-        bool Base_Empty(const struct Base* this) {{ views this->value; ensures result == (if this->value == 0 {{ 1 }} else {{ 0 }}); }} by {{ execute(); simp(); }}
+        bool Base::Empty() const {{ views this->value; ensures result == (if this->value == 0 {{ 1 }} else {{ 0 }}); }} by {{ execute(); simp(); }}
         int32 observe(const struct State& state) {{ views state.left.base.value; views state.sibling; requires state.left.base.value == {value}; ensures result == {expected}; ensures state.sibling == old(state.sibling); }} by {{ execute(); simp(); }}
         "#
         );
@@ -14415,7 +14435,7 @@ fn locked_header_graph_conditions_verify_offline_with_inherited_frames() {
     for (value, result) in [(0, 1), (3, 3)] {
         let sidecar = format!(
             r#"verifying "graph.cpp";
-        bool Base_Empty(const struct Base* this) {{ views this->value; ensures result == (if this->value == 0 {{ 1 }} else {{ 0 }}); }} by {{ execute(); simp(); }}
+        bool Base::Empty() const {{ views this->value; ensures result == (if this->value == 0 {{ 1 }} else {{ 0 }}); }} by {{ execute(); simp(); }}
         bool predicate(const struct Base& state) {{ views state.value; ensures result == (if state.value == 0 {{ 1 }} else {{ 0 }}); }} by {{ execute(); simp(); }}
         int32 Read(const struct Base& state) {{ views state.value; ensures result == state.value; }} by {{ execute(); simp(); }}
         int32 choose(const struct Box& state) {{ views state.left.base.value; views state.sibling; requires state.left.base.value == {value}; ensures result == {result}; ensures state.sibling == old(state.sibling); }} by {{ execute(); simp(); }}
@@ -14443,7 +14463,7 @@ fn locked_header_graph_mutators_verify_offline_and_require_leaf_authority() {
     let import = load_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let sidecar = r#"verifying "graph.cpp";
-    void Base_Set(struct Base* this, int32 next) { owns this->value; ensures this->value == next; } by { execute(); simp(); }
+    void Base::Set(int32 next) { owns this->value; ensures this->value == next; } by { execute(); simp(); }
     void Store(struct Base& state, int32 next) { owns state.value; ensures state.value == next; } by { execute(); simp(); }
     void change(struct Box& state, int32 next) { owns state.left.base.value; views state.sibling; ensures state.left.base.value == next; ensures state.sibling == old(state.sibling); } by { execute(); simp(); }
     "#;
@@ -15181,12 +15201,12 @@ int relay(int& value) noexcept { Restore guard(&value); return static_cast<int>(
     let import = load_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let source = r#"verifying "relay.cpp";
-void Restore_constructor(struct Restore* this, int32* slot) {
+Restore::Restore(int32* slot) {
  owns this->p; owns this->saved; owns slot[0..1];
  ensures this->p == slot; ensures this->saved == old(slot[0]); ensures slot[0] == 7;
  ensures separate(memory(*this), memory(this->p[0..1]));
 } by { execute(); simp(); }
-void Restore_destructor(struct Restore* this) {
+Restore::~Restore() {
  requires separate(memory(*this), memory(this->p[0..1]));
  owns this->p; owns this->saved; owns this->p[0..1];
  ensures this->p == old(this->p); ensures this->saved == old(this->saved);
@@ -16229,7 +16249,7 @@ int32& run(const struct View& view) {
 fn direct_subscript_methods_select_and_preserve_reference_authority_offline() {
     let cpp = "struct Cell { int* data; int& operator[](unsigned long index) noexcept { return *data; } }; int& probe(Cell& cell, unsigned long index) noexcept { return cell[index]; }";
     let method = r#"verifying "index.cpp";
-int32& Cell_operator_index(struct Cell* this, uint64 index) {
+int32& Cell::operator[](uint64 index) {
  views this->data;
  views this->data[0..1];
  ensures &result == this->data;
@@ -16320,14 +16340,14 @@ fn check_cpp_descriptor_backing_lifetime(writes: bool) {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "lifetime.cpp";
-void View_constructor(struct View* this, int32* input) {
+View::View(int32* input) {
  owns this->data;
  ensures this->data == input;
 } by { execute(); simp(); }
-void View_destructor(struct View* this) {
+View::~View() {
  owns this->data;
 } by { execute(); simp(); }
-int32& View_get(const struct View* this) {
+int32& View::get() const {
  views this->data;
  views this->data[0..1];
  ensures &result == this->data;
@@ -16466,17 +16486,17 @@ fn cpp_reference_into_destroyed_local_backing_cannot_be_read_offline() {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "expired.cpp";
-void Cell_constructor(struct Cell* this, int32 input) {
+Cell::Cell(int32 input) {
  owns this->value;
  owns this->state;
  ensures this->value == input;
  ensures this->state == 1;
 } by { execute(); simp(); }
-void Cell_destructor(struct Cell* this) {
+Cell::~Cell() {
  owns this->state;
  ensures this->state == 0;
 } by { execute(); simp(); }
-int32& Cell_get(struct Cell* this) {
+int32& Cell::get() {
  views this->value;
  ensures &result == &this->value;
  ensures result == old(this->value);
@@ -16513,7 +16533,7 @@ fn cpp_field_reference_results_preserve_addresses_and_backing_authority_offline(
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "field.cpp";
-int32& Cell_get(struct Cell* this) {
+int32& Cell::get() {
  views this->value;
  ensures &result == &this->value;
  ensures result == old(this->value);
@@ -16550,7 +16570,7 @@ fn cpp_const_field_reference_results_retain_qualification_offline() {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "field.cpp";
-const int32& Cell_get(const struct Cell* this) {
+const int32& Cell::get() const {
  views this->value;
  ensures &result == &this->value;
  ensures result == old(this->value);
@@ -16628,11 +16648,11 @@ unsigned long probe(int* backing, unsigned long count) noexcept {
         CppStatement::MemberConstruct { .. }
     ));
     let proof = r#"verifying "embedded.cpp";
-void Extent_constructor(struct Extent* this, uint64 input) {
+Extent::Extent(uint64 input) {
  owns this->size;
  ensures this->size == input;
 } by { execute(); simp(); }
-void View_constructor(struct View* this, int32* backing, uint64 count) {
+View::View(int32* backing, uint64 count) {
  owns this->data;
  owns this->extent.size;
  ensures this->data == backing;
@@ -16728,13 +16748,13 @@ int probe(int input) noexcept {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let proof = r#"verifying "embedded.cpp";
-void Node_constructor(struct Node* this, int32 input) {
+Node::Node(int32 input) {
  owns this->self;
  owns this->value;
  ensures this->self == &this->value;
  ensures this->value == input;
 } by { execute(); simp(); }
-void Parent_constructor(struct Parent* this, int32 input) {
+Parent::Parent(int32 input) {
  owns this->prefix;
  owns this->child.self;
  owns this->child.value;
@@ -16796,11 +16816,11 @@ struct Descriptor {
     );
     let proof = r#"verifying "header-construction.cpp";
 int32* address(int32* value) { ensures result == value; } by { execute(); simp(); }
-void Extent_constructor(struct Extent* this, uint64 input) {
+Extent::Extent(uint64 input) {
  owns this->size;
  ensures this->size == input;
 } by { execute(); simp(); }
-void Descriptor_constructor(struct Descriptor* this, int32* backing, uint64 count) {
+Descriptor::Descriptor(int32* backing, uint64 count) {
  owns this->data;
  owns this->extent.size;
  ensures this->data == backing;
@@ -16876,11 +16896,11 @@ fn check_construction_return_descriptor_factories(expand_and_retain: bool) {
     let proof = r#"verifying "construct-return.cpp";
 int32* identity(int32* p) { ensures result == p; } by { execute(); simp(); }
 int32* address(int32* p) { ensures result == p; } by { execute(); simp(); }
-void Extent_constructor(struct Extent* this, uint64 n) {
+Extent::Extent(uint64 n) {
  owns this->size;
  ensures this->size == n;
 } by { execute(); simp(); }
-void View_constructor(struct View* this, int32* p, uint64 n) {
+View::View(int32* p, uint64 n) {
  owns this->data;
  owns this->extent.size;
  ensures this->data == p;
@@ -17037,7 +17057,7 @@ unsigned long probe(View& view, unsigned long n) noexcept {
     ));
     let proof = r#"verifying "construct-assignment.cpp";
 int32* identity(int32* p) { ensures result == p; } by { execute(); simp(); }
-void View_constructor(struct View* this, int32* p, uint64 n) {
+View::View(int32* p, uint64 n) {
  owns this->data;
  owns this->size;
  ensures this->data == p;
@@ -17124,7 +17144,7 @@ int& probe(View& view, unsigned long n) noexcept {
     ));
     let proof = r#"verifying "construct-assignment.cpp";
 int32* identity(int32* p) { ensures result == p; } by { execute(); simp(); }
-void View_constructor(struct View* this, int32* p, uint64 n) {
+View::View(int32* p, uint64 n) {
  owns this->data;
  owns this->size;
  ensures this->data == p;
@@ -17191,7 +17211,7 @@ int& probe(View& view, int n) noexcept {
     ));
     let proof = r#"verifying "construct-assignment.cpp";
 int32* identity(int32* p) { ensures result == p; } by { execute(); simp(); }
-void View_constructor(struct View* this, int32* p, int32 n) {
+View::View(int32* p, int32 n) {
  owns this->data;
  owns this->size;
  ensures this->data == p;
@@ -17254,8 +17274,8 @@ fn returned_constructor_composed_observers_verify_and_reject_writes_offline() {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let proof = r#"verifying "observe-result.cpp";
-uint64 Count_size(const struct Count* this) { views this->value; ensures result == this->value; } by { execute(); simp(); }
-void Box_constructor(struct Box* this, uint64 input) { owns this->value; ensures this->value == input; } by { execute(); simp(); }
+uint64 Count::size() const { views this->value; ensures result == this->value; } by { execute(); simp(); }
+Box::Box(uint64 input) { owns this->value; ensures this->value == input; } by { execute(); simp(); }
 struct Box probe(const struct Count& count) { views count.value; ensures result.value == count.value + 1u64; ensures count.value == old(count.value); } by { execute(); simp(); }
 "#;
     check_return_call_sidecar(&project, &import, proof);
@@ -17368,7 +17388,7 @@ fn scalar_assignment_observers_verify_and_reject_writes_offline() {
     refresh_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let proof = "verifying \"assign-observer.cpp\"; uint64 Count_size(const struct Count* this) { views this->value; ensures result == this->value; } by { execute(); simp(); } uint64 probe(const struct Count& count, uint64 n) { views count.value; ensures result == count.value + 1u64; ensures count.value == old(count.value); } by { execute(); simp(); }";
+    let proof = "verifying \"assign-observer.cpp\"; uint64 Count::size() const { views this->value; ensures result == this->value; } by { execute(); simp(); } uint64 probe(const struct Count& count, uint64 n) { views count.value; ensures result == count.value + 1u64; ensures count.value == old(count.value); } by { execute(); simp(); }";
     check_return_call_sidecar(&project, &import, proof);
     for bad in [
         proof

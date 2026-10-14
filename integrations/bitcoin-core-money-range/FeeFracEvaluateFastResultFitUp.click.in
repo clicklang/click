@@ -1,4 +1,4 @@
-int64 FeeFrac_EvaluateFee__bool_false(const struct FeeFrac* this, int32 at_size) {
+int64 FeeFrac::EvaluateFee<false>(int32 at_size) const {
     views this->fee;
     views this->size;
     requires this->fee >= 0i64;
@@ -197,7 +197,7 @@ int64 FeeFrac_EvaluateFee__bool_false(const struct FeeFrac* this, int32 at_size)
     simp();
 }
 
-int64 FeeFrac_EvaluateFeeUp(const struct FeeFrac* this, int32 at_size) {
+int64 FeeFrac::EvaluateFeeUp(int32 at_size) const {
     views this->fee;
     views this->size;
     requires this->fee >= 0i64;
