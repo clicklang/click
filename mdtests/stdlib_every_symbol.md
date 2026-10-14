@@ -45,6 +45,8 @@ int32 docs_identity(int32 value) {
 import click::integer;
 import click::machine_integer;
 import click::permutation;
+import click::cstr;
+import click::bytes;
 
 theorem use_uint32_widened_add_guard_by_integer_bound(left: uint32, right: uint32) {
     requires to_integer(left) + to_integer(right) <= 4294967295;
