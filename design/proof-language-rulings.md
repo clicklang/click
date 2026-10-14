@@ -72,3 +72,10 @@ only by the tests that read them.
   caller may rely on; a default that writers must opt out of cost more
   than it saved. `owns X` replaced `consumes X; produces X;` and `owns *s`
   covers a whole struct; a cell a contract only views needs no frame.
+- Program points stay named by source position (`statement(N)`, `read(N)`,
+  `loop(N)`). Closed 2026-10-14: neither source-named points nor a
+  `click migrate` renumbering tool is planned; `execute()` and `step()`
+  already avoid positions in most proofs.
+- The repository root keeps `design/`, `issues/` and `bugs/` beside the
+  product. Closed 2026-10-14: the maintainer judged the mix not a real
+  problem.

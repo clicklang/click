@@ -173,20 +173,6 @@ Decision: fix (maintainer, 2026-10-14), after smt-auto stage 1.
 
 ## W. Proof workflow and tooling
 
-### W1. Proofs are tied to C statement positions
-
-Today: `execute_until(statement(54))`, `read(0)`, `assignment(i, 1)`,
-`at(statement(4).entry, ...)` and `f.loop(N)` count positions in source
-preorder (`docs/concepts/proof-workflow.md`); adding one statement renumbers
-every later index, and expanded certificates hard-code them. There is no
-migration tool.
-
-Proposed fix: name program points by source (C labels, call names,
-patterns, comments), or ship `click migrate` that renumbers a sidecar after
-a C edit.
-
-Decision: open.
-
 ### W2. The tactic set is large and overlapping
 
 Today: about 57 forms over 41 tactic words (`docs/reference/tactics/index.md`);
@@ -196,7 +182,9 @@ Today: about 57 forms over 41 tactic words (`docs/reference/tactics/index.md`);
 Proposed fix: a documented core of about 15 tactics, with the rest marked as
 expansion output or specialized.
 
-Decision: open.
+Decision: fix (maintainer, 2026-10-14), in the documentation only: mark a
+core of about 15 tactics in `docs/reference/tactics/index.md`, and mark the
+rest as expansion output or specialized. No tactic is removed.
 
 ### W4. Expansion output is hard to read and gets committed
 
@@ -300,7 +288,11 @@ object and no independent checker.
 Proposed fix: serialize proof objects and write a small independent checker
 that re-checks them.
 
-Decision: inventory done; independent checker open.
+Decision: fix, after performance and completeness (maintainer,
+2026-10-14). Click's priorities are, in order: performance at the scale of
+large real-world projects, completeness on such projects, and then
+soundness infrastructure such as this item. The first two are measured in
+practice, on real code, rather than in theory.
 
 ### M2. No written semantics or soundness argument
 
@@ -311,7 +303,11 @@ Today: the resource algebra and loan ledger are described in prose
 Proposed fix: a paper-level operational semantics and a model of views and
 loans, with fold/unfold and loan recovery argued sound against it.
 
-Decision: open.
+Decision: fix, after performance and completeness (maintainer,
+2026-10-14). Click's priorities are, in order: performance at the scale of
+large real-world projects, completeness on such projects, and then
+soundness infrastructure such as this item. The first two are measured in
+practice, on real code, rather than in theory.
 
 ### M3. Several read-permission notions and no fractions
 
@@ -325,7 +321,10 @@ reader-writer pattern.
 Proposed fix: fractional or counted read permissions; fold `viewable` into
 them; reconcile `memcpy`.
 
-Decision: open.
+Decision: split (maintainer, 2026-10-14). Fix now: the trusted `memcpy`
+contract reads its source under `views`, as every other external load does.
+Fractional and counted read permissions are deferred until a program needs a
+reader-writer pattern.
 
 ### M4. Field-less resources hide a record
 
@@ -337,55 +336,9 @@ arguments in about thirty places (`design/proof-language-rulings.md`).
 Proposed fix: require explicit fields, or show the record in diagnostics and
 expansion. This revisits a recorded ruling.
 
-Decision: open.
-
-### M5. Aliasing and place syntax are inconsistent
-
-Today: `owns a->n` and `owns a->n[0..1]` differ
-(`design/place-based-resource-clauses.md`). The docs now agree that a
-contract's `owns` clauses are disjoint from each other and from its `views`
-clauses, and that `separate(...)` is needed only between views and
-`viewable` facts.
-
-Proposed fix: finish the place-based design.
-
-Decision: open.
-
-## N. Newcomer experience
-
-### N1. Maintainer launch actions
-
-Today: the human-only top of the README calls Click "a new programming
-language" and opens with the kernel-design essay, and no release has been
-tagged, so the installers fail.
-
-Proposed fix: the maintainer writes the README top (a one-line pitch; the
-essay moves to a design document or the website) and tags the first release.
-
-Decision: fix (maintainer).
-
-### N5. C++ and Rust look like research demos
-
-Today: both need a repository checkout and custom importer builds
-(`examples/basic-cpp/README.md`, `examples/basic-rust/README.md`); the C++
-example is `int increment(int& value)`. The AI reference now labels both
-experimental (`docs/reference/coverage.md`) and keeps migration history out of
-`docs/reference/rust.md`.
-
-Proposed fix: ship the exporter and Charon with the installer; a C++ example
-beyond a scalar reference.
-
-Decision: open.
-
-### N7. The repository root mixes product and process
-
-Today: `design/`, `issues/`, `bugs/`, `AGENTS.md` and `CLAUDE.md` sit at the
-root, next to the maintainer's `guide/`.
-
-Proposed fix: move process material under one directory or a separate
-repository; decide what the launch repository presents.
-
-Decision: open.
+Decision: fix (maintainer, 2026-10-14): show the record in diagnostics and
+expansion output. Explicit fields are not required; the recorded ruling
+stands.
 
 ## Strengths the review credited
 
