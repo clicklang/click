@@ -18,7 +18,10 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
             have parent == 0 by {
                 have ctx_node_is(Context::Top, parent) == 1 by auto;
                 if parent == 0 { assumption(); } else {
-                    have ctx_node_is(Context::Top, parent) != 1 by auto;
+                    have ctx_node_is(Context::Top, parent) != 1 by {
+                        unfold(ctx_node_is(Context::Top, parent));
+                        normalize() using { not(parent == 0); };
+                    }
                     contradiction(ctx_node_is(Context::Top, parent) == 1);
                 }
             }

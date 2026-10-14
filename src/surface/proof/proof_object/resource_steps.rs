@@ -2373,7 +2373,7 @@ impl<'a> Proof<'a> {
         {
             execution
                 .core
-                .record_return_transfer_wrapper_rewrite(
+                .record_return_composite_resource_rewrite(
                     context.function,
                     goal.path_index,
                     self.facts(),
@@ -2424,7 +2424,11 @@ impl<'a> Proof<'a> {
                 "population authority `fold` must run before the function reaches its outcome",
             ));
         }
-        self.apply_outcome_resource_fold_with_closure(resource, ResourceBodyClosure::Initialize)
+        self.apply_outcome_resource_fold_with_closure(
+            resource,
+            ResourceBodyClosure::Initialize,
+            true,
+        )
     }
 
     /// Closing an already open scope is checked by the same resource law as
@@ -2433,12 +2437,14 @@ impl<'a> Proof<'a> {
         &self,
         resource: &ResourceClause,
         preserve_exposed_body: bool,
+        contract_resources_established: bool,
     ) -> Result<Self, ClickError> {
         let transition = self.apply_outcome_resource_fold_with_closure(
             resource,
             ResourceBodyClosure::CloseOpen {
                 preserve_exposed_body,
             },
+            !contract_resources_established,
         )?;
         let successor = Self {
             site: self.site.clone(),
@@ -2453,6 +2459,7 @@ impl<'a> Proof<'a> {
         &self,
         resource: &ResourceClause,
         closure: ResourceBodyClosure,
+        retain_return_exchange: bool,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("outcome resource `fold` requires an execution proof"));
@@ -2491,11 +2498,60 @@ impl<'a> Proof<'a> {
         let CFunctionOutcome::Return { value, state } = checked.outcome else {
             unreachable!("folding a return outcome preserves its outcome kind")
         };
-        if self.is_authority_transfer_wrapper(resource) && family_reaches_population {
-            let selected = &checked.selected;
+        // Ordinary macro folds keep their final contract-definition law.
+        // Authority wrappers and guarded ownership need an execution exchange.
+        // Named outputs also require the exact published frontier after a scope
+        // closes; contracts with ordinary outputs retain their definition law.
+        let operational_exchange = match checked.selected.resource() {
+            CResource::Composite { name, .. } => context
+                .function
+                .composite_resource_definition(name)
+                .is_some_and(|definition| {
+                    definition.contains().iter().any(|spec| {
+                        matches!(
+                            spec.term(),
+                            crate::kernel::CResourceTerm::PopulationAuthority { .. }
+                                | crate::kernel::CResourceTerm::Iterated(_)
+                        )
+                    })
+                }),
+            _ => false,
+        };
+        // The checked contract transition has its own resource evidence and
+        // may bind outputs to their interface identities. A later scope close
+        // still checks its body law, but does not exchange that final contract
+        // presentation against the earlier C-body publication.
+        if retain_return_exchange
+            && *state != *goal.data.core.state
+            && (operational_exchange
+                || (matches!(closure, ResourceBodyClosure::CloseOpen { .. })
+                    && context
+                        .function
+                        .resource_ensures()
+                        .iter()
+                        .any(|spec| spec.is_instance()))
+                || (self.is_authority_transfer_wrapper(resource) && family_reaches_population))
+        {
+            let viewed = CResourceFact::View(checked.selected.resource().clone());
+            let selected = if state
+                .resources()
+                .directly_supporting_fact(&checked.selected, self.facts().assumptions())
+                .is_none()
+                && goal
+                    .data
+                    .core
+                    .state
+                    .resources()
+                    .directly_supporting_fact(&checked.selected, self.facts().assumptions())
+                    .is_none()
+            {
+                &viewed
+            } else {
+                &checked.selected
+            };
             execution
                 .core
-                .record_return_transfer_wrapper_rewrite(
+                .record_return_composite_resource_rewrite(
                     context.function,
                     goal.path_index,
                     self.facts(),

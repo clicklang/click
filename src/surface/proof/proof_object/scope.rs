@@ -84,6 +84,13 @@ impl<'a> ProofScope<'a> {
         self.body.begin_have(proposition)
     }
 
+    pub(in crate::surface::proof) fn begin_source_have(
+        &self,
+        have: &ProofHave,
+    ) -> Result<ProofScope<'a>, ClickError> {
+        self.body.begin_source_have(have)
+    }
+
     /// Associates the checked lowering metadata reported by a refused
     /// requirement with an already-open `have` body.
     ///

@@ -1135,6 +1135,23 @@ impl<'a> Proof<'a> {
         &self,
         proposition: ClickProposition,
     ) -> Result<ProofScope<'a>, ClickError> {
+        self.begin_have_with_goal_observations(proposition, true)
+    }
+
+    pub(in crate::surface::proof) fn begin_source_have(
+        &self,
+        have: &ProofHave,
+    ) -> Result<ProofScope<'a>, ClickError> {
+        let explicit_transport = matches!(&have.proof,
+            SourceProof::Script(tactics) if matches!(tactics.as_slice(), [ProofTactic::TransportUsing { .. }]));
+        self.begin_have_with_goal_observations(have.proposition.clone(), !explicit_transport)
+    }
+
+    pub(in crate::surface::proof) fn begin_have_with_goal_observations(
+        &self,
+        proposition: ClickProposition,
+        observe_goal: bool,
+    ) -> Result<ProofScope<'a>, ClickError> {
         #[cfg(test)]
         CHECKED_HAVE_OPERATIONS.with(|count| count.set(count.get() + 1));
         if self.state().open_branches().is_discharged() {
@@ -1195,77 +1212,85 @@ impl<'a> Proof<'a> {
         // postconditions stays lazy so source expansion preserves their
         // anchored rewrites.
         let at_frontier = matches!(self.focused_obligation(), Some(Obligation::Frontier(_)));
-        let resource_unfolded = self
-            .execution()
-            .is_some_and(|execution| execution.presentation.resource_unfolded);
-        // The current partition can answer a selected owned-field query
-        // directly. Try it before general reasoning over older compositions:
-        // those may require expensive snapshot/range transport even though
-        // both current owners already establish this goal.
-        let held_facts = if let Some(execution) = self.execution() {
-            self.facts()
-                .with_selected_held_resource_separation(&body_kernel, &execution.core.state)
-        } else {
-            self.facts().clone()
-        };
-        let mut body_facts = if !at_frontier || resource_unfolded {
-            held_facts.with_selected_resource_separation(&body_kernel)
-        } else {
-            held_facts.with_selected_composition_separation(&body_kernel)
-        };
-        // A `have` stated at an execution frontier may use the frontier's
-        // effect facts exactly as the shared mid-execution law offers them.
-        if at_frontier && let Some(execution) = self.execution() {
-            for fact in execution.core.effect_facts.iter() {
-                if !body_facts.contains(fact.proposition()) {
-                    body_facts = body_facts.with_kernel_checked_fact(fact.proposition().clone());
+        // A single written transport is already the selected proof of this
+        // goal. Do not search for an alternative separation or copy the
+        // effect history before that explicit operation can run.
+        let mut body_facts = self.facts().clone();
+        if observe_goal {
+            let resource_unfolded = self
+                .execution()
+                .is_some_and(|execution| execution.presentation.resource_unfolded);
+            // The current partition can answer a selected owned-field query
+            // directly. Try it before general reasoning over older compositions:
+            // those may require expensive snapshot/range transport even though
+            // both current owners already establish this goal.
+            let held_facts = if let Some(execution) = self.execution() {
+                self.facts()
+                    .with_selected_held_resource_separation(&body_kernel, &execution.core.state)
+            } else {
+                self.facts().clone()
+            };
+            body_facts = if !at_frontier || resource_unfolded {
+                held_facts.with_selected_resource_separation(&body_kernel)
+            } else {
+                held_facts.with_selected_composition_separation(&body_kernel)
+            };
+            // A `have` stated at an execution frontier may use the frontier's
+            // effect facts exactly as the shared mid-execution law offers them.
+            if at_frontier && let Some(execution) = self.execution() {
+                for fact in execution.core.effect_facts.iter() {
+                    if !body_facts.contains(fact.proposition()) {
+                        body_facts =
+                            body_facts.with_kernel_checked_fact(fact.proposition().clone());
+                    }
                 }
             }
-        }
-        // A `have` at the frontier may also consume a fact available across
-        // the frontier's certified effects, exactly as a statement step's
-        // prerequisite may. Load names are not preserved across call-havoc and
-        // store edges by path assumptions (see `CMemoryDerivation`), so the
-        // cell an earlier fact names can carry a different load variable at
-        // the frontier; the equality is proved in this path's context from the
-        // goal's own snapshot-blind candidates, never by search.
-        if at_frontier
-            && !body_facts.contains(&body_kernel)
-            && let Some(execution) = self.execution()
-            && body_facts.exact_available_across_effects(&body_kernel, &execution.core.effect_facts)
-        {
-            body_facts = body_facts.with_kernel_checked_fact(body_kernel.clone());
-        }
-        // A pointer-valued field's load can be minted from a load-path pruned
-        // snapshot, which records no DAG edge by design, so its renaming
-        // across a call is proved only by the explicit preservation equality a
-        // callee's postcondition states. The indexed load-variable chain is
-        // the checked bridge for that; integer goals keep the exact rule above.
-        if at_frontier
-            && matches!(
-                &body_kernel,
-                Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(_, _), true)
-            )
-        {
-            body_facts = body_facts.with_selected_load_equality_bridge(&body_kernel);
-        }
-        let selected_surface_separation = match &structural_proposition {
-            ClickProposition::Separate { .. } => true,
-            ClickProposition::At { proposition, .. } => {
-                matches!(proposition.as_ref(), ClickProposition::Separate { .. })
+            // A `have` at the frontier may also consume a fact available across
+            // the frontier's certified effects, exactly as a statement step's
+            // prerequisite may. Load names are not preserved across call-havoc and
+            // store edges by path assumptions (see `CMemoryDerivation`), so the
+            // cell an earlier fact names can carry a different load variable at
+            // the frontier; the equality is proved in this path's context from the
+            // goal's own snapshot-blind candidates, never by search.
+            if at_frontier
+                && !body_facts.contains(&body_kernel)
+                && let Some(execution) = self.execution()
+                && body_facts
+                    .exact_available_across_effects(&body_kernel, &execution.core.effect_facts)
+            {
+                body_facts = body_facts.with_kernel_checked_fact(body_kernel.clone());
             }
-            _ => false,
-        };
-        if !at_frontier
-            && selected_surface_separation
-            && !body_facts.contains(&body_kernel)
-            && crate::surface::planning::proposition_search::proves_by_tactic_search(
-                body_facts.assumptions(),
-                &body_kernel,
-                "have separation away from the frontier",
-            )
-        {
-            body_facts = body_facts.with_kernel_checked_fact(body_kernel.clone());
+            // A pointer-valued field's load can be minted from a load-path pruned
+            // snapshot, which records no DAG edge by design, so its renaming
+            // across a call is proved only by the explicit preservation equality a
+            // callee's postcondition states. The indexed load-variable chain is
+            // the checked bridge for that; integer goals keep the exact rule above.
+            if at_frontier
+                && matches!(
+                    &body_kernel,
+                    Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(_, _), true)
+                )
+            {
+                body_facts = body_facts.with_selected_load_equality_bridge(&body_kernel);
+            }
+            let selected_surface_separation = match &structural_proposition {
+                ClickProposition::Separate { .. } => true,
+                ClickProposition::At { proposition, .. } => {
+                    matches!(proposition.as_ref(), ClickProposition::Separate { .. })
+                }
+                _ => false,
+            };
+            if !at_frontier
+                && selected_surface_separation
+                && !body_facts.contains(&body_kernel)
+                && crate::surface::planning::proposition_search::proves_by_tactic_search(
+                    body_facts.assumptions(),
+                    &body_kernel,
+                    "have separation away from the frontier",
+                )
+            {
+                body_facts = body_facts.with_kernel_checked_fact(body_kernel.clone());
+            }
         }
         for name in self.focused_branch_unfolds().iter() {
             let recorded_bodies = match self.context.as_ref() {

@@ -1201,7 +1201,9 @@ impl<'a> Proof<'a> {
         proposition: &ClickProposition,
         proof: &ProofCertificate,
     ) -> Result<Self, ClickError> {
-        let mut scope = self.begin_have(proposition.clone())?;
+        let observe_goal = !matches!(proof.steps(), [ProofStep::TransportUsing { .. }]);
+        let mut scope =
+            self.begin_have_with_goal_observations(proposition.clone(), observe_goal)?;
         for step in proof.steps() {
             scope = scope.apply_step(step.clone())?;
         }

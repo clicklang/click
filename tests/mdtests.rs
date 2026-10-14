@@ -266,7 +266,7 @@ const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] 
             HiddenPrerequisiteRoute::KernelCondition,
             "decide_with_facts",
         ),
-        36,
+        32,
     ),
     // `issues/simplify-step.md` step 5 drives these to zero.
     (
@@ -274,7 +274,7 @@ const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] 
             HiddenPrerequisiteRoute::TacticSearch,
             "fold projected body fact",
         ),
-        26,
+        4,
     ),
     (
         (

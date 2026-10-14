@@ -210,8 +210,8 @@ Each step is its own pull request.
        comparison's assumed two-owner composition is read there.
      - After these, the census over the whole mdtests is 32 conditions and
        no `path facts` decisions, measured on master `d7501d30f` with
-       `branching_graph_dfs` masked. That mdtest fails on master
-       (`bugs/branching-graph-dfs-step-premise-not-retained.md`).
+       `branching_graph_dfs` masked. That fixture now explicitly retains
+       its old child-index bounds and passes in the full corpus.
    - *Left:*
      - tag bits in pointer words (the rbtree parent/colour word, `& 1`,
        `& 7`, `== (uint64)node`, alignment), which is bit-level reasoning on
