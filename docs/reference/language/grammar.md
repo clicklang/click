@@ -52,6 +52,7 @@ documentation inventory keep the following accepted words synchronized.
 | `contains`, `fact`, `field`, `if` | The containment proposition `contains(parent, child)`, resource facts, pure field declarations, and optional resource guard. A resource holds a child resource with `owns`, as it holds memory. `if` also forms expressions and proof splits. |
 | `object`, `memory`, `of`, `count` | Memory-resource forms, quantified resources, and resource-population expressions. |
 | `read`, `write` | Reserved: no resource may be named either. `read(N)` is also an execution target, below. |
+| `true`, `false` | The specification `bool` literals, the C `bool` values `1` and `0`. A C name of either spelling in scope keeps its C meaning; a Click binder may not use them. See [Booleans](index.md#booleans). |
 | `and`, `or`, `implies`, `not`, `in` | Proposition connectives and sequence membership. `and`, `or`, and `implies` have increasing precedence except right-associative `implies`; `in` has comparison precedence. |
 | `forall`, `exists` | Universal and existential quantifiers; `exists (x: T, y: U) { P }` binds multiple variables. |
 | `all`, `any`, `fold` | Range proposition and expression methods. |
@@ -151,11 +152,13 @@ From lowest to highest precedence:
 | 2 | `or` | Left |
 | 3 | `and` | Left |
 | 4 | prefix `not` | Prefix |
-| 5 | atoms, predicate calls, comparisons | Not applicable |
+| 5 | atoms, predicate calls, comparisons, `bool` values | Not applicable |
 
 Thus `p implies q implies r` means `p implies (q implies r)`, while `p or q
 or r` means `(p or q) or r`. Use parentheses whenever grouping carries the
-explanation.
+explanation. A `bool` value written alone as an atom, such as `flag` or a
+call `f(x)` of a `bool` function, means `value == true`; see
+[Booleans](index.md#booleans).
 
 ## Contract-expression precedence
 

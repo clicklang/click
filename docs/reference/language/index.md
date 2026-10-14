@@ -37,6 +37,7 @@ this page covers each form's full rules and edge cases.
 | `P and Q`, `P or Q`, `P implies Q`, `not P` | Proposition connectives (C's `&&` and `\|\|` are not Click syntax) | [Propositions](#propositions) |
 | `forall (k: int32) { P }`, `(lo..hi).all(\|k\| { P })` | Quantified propositions; the range form guards memory reads | [Propositions](#propositions) |
 | `Integer`, `to_integer(x)` | Unbounded mathematical integers | [Mathematical integers](#mathematical-integers) |
+| `true`, `false`, `-> bool`, `ensures p(x);` | Specification booleans; a `bool` value written alone is the claim `value == true` | [Booleans](#booleans) |
 | `function f(x: int32) -> int32 { ... }` | A pure Click function | [Pure Click functions](#pure-click-functions) |
 | `predicate p(...) { ... }` | A named proposition, possibly over resources | [Predicates](#predicates) |
 | `theorem t() { requires P; ensures Q; }` | A pure theorem | [Pure theorems](#pure-theorems) |
@@ -2537,6 +2538,70 @@ declares it. An application runs at an execution frontier before the function
 exits. See [User-defined tactics (design)](../../internals/user-defined-tactics.md)
 for the kernel rule.
 
+## Booleans
+
+`bool` is the specification boolean type. Its values are the C `bool` values,
+exactly `0` and `1`, written `true` and `false`; there is no separate kernel
+sort. A C `bool` parameter or result, a `bool` parameter of a pure function or
+theorem, and a `bool` pure function's application are all `bool` values.
+
+<!-- verified-example: mdtests/a_bool_pure_function_states_a_claim.md -->
+```click
+function positive(x: int32) -> bool { x > 0 }
+function in_range(x: int32) -> bool { x > 0 and x < 10 }
+function outside(x: int32) -> bool { not in_range(x) }
+function choose(flag: bool, x: int32) -> bool {
+    if flag { positive(x) } else { false }
+}
+
+theorem three_is_in_range() {
+    ensures in_range(3) by {
+        unfold(in_range(3));
+        normalize();
+    }
+}
+```
+
+- **Literals.** `true` and `false` are literals wherever no C name of that
+  spelling is in scope. C's `true` and `false` are conveniences rather than
+  reserved words, so a C parameter, local or global named `true` keeps its C
+  meaning inside its function's contract
+  (`mdtests/a_c_name_spelled_true_keeps_its_c_meaning.md`). A Click binder
+  (a Click parameter, `let`, or quantifier variable) may not use either
+  spelling (`mdtests/a_click_binder_spelled_true_is_refused.md`).
+- **Typing.** A `bool` literal compares only with a `bool` value. Comparing
+  an integer, pointer or other non-`bool` value with `true` or `false` is a
+  type error; compare an integer with `0` or `1` instead. A `bool` value
+  compared with an integer follows C's promotion, so `flag == 1` is
+  `flag == true`.
+- **A `bool` value as a claim.** A value written alone where a proposition
+  is expected means `value == true`: `requires flag;`, `ensures result;` for
+  a C function returning `bool`, and `ensures in_range(3);` for a call of a
+  `bool` pure function. The value must be a `bool`; an integer is not read
+  with C's nonzero truth, so `requires count;` for an `int` is refused
+  (`mdtests/an_integer_value_is_not_a_proposition.md`). A bare call of a
+  pure function is read this way; a predicate call is unchanged.
+- **`bool` pure functions.** A `-> bool` body is a `bool` value: `true`,
+  `false`, a `bool` parameter or binding, a call of a `bool` function, a
+  comparison, `and`, `or`, `not` or `implies` of such values, or an `if`,
+  `match` or `let` whose results all are. A proposition written as the value
+  is its truth value: `x > 0` is `if x > 0 { true } else { false }`, and a
+  connective opens into conditionals that each test one comparison, so
+  `p and q` is `if p { if q { true } else { false } } else { false }`. Only
+  this body, and the branches of its `if`, `match` and `let`, read a
+  proposition as a value; everywhere else a comparison is a proposition, and
+  C fragments keep C's `int` comparisons. A quantifier or predicate call is
+  not a `bool` value. An integer anywhere the body can produce a value is a
+  type error (`mdtests/an_integer_body_for_a_bool_function_is_refused.md`).
+- **Exactly `0` or `1`.** The kernel reads a `bool` function's application
+  through C's conversion to `bool`, so its value is `0` or `1` whatever its
+  definition says. For that reason `b != false`, `b == true` and `b` are one
+  claim, and `not b`, `b != true` and `b == false` are one claim, for a
+  `bool` application or a `bool` parameter of a pure theorem: no lemma moves
+  between the spellings (`mdtests/bool_negation_and_disequality_agree.md`).
+  The range `b == true or b == false` is a disjunction, proved like any other
+  with a case split such as `if b { ... } else { ... }`.
+
 ## Propositions
 
 Click proposition connectives are words:
@@ -2895,6 +2960,11 @@ Supported expression features include parameters, literals, `+`, `-`, `*`,
 `let name [: type] = value; body`, `if proposition { then } else { else }`,
 range `.fold`, and calls to other Click functions.
 
+A function returning `bool` states a truth value, and its body may be a
+comparison or a connective of comparisons: `function positive(x: int32) ->
+bool { x > 0 }`. A call of it written alone is a claim, `ensures
+positive(3);`. See [Booleans](#booleans).
+
 A range's endpoints are both `int32`, both `uint64`, or both `Integer`, and
 its item has that type. A `uint64` range is what a function over a `size_t`
 or `usize` index uses, `(0..end).fold(...)` with `end: uint64`; a nonnegative
@@ -2916,7 +2986,7 @@ function countdown(n: int32) -> int32
 Every direct or mutual integer-recursive edge must pass a nonnegative measure
 strictly smaller than the caller's. This form restricts the measure to one
 named `int32` parameter and recursive components to `int32` parameters and
-results.
+`int32` or `bool` results.
 
 A recursive algebraic datatype parameter can also be the named measure. After
 matching it, recursive calls may pass algebraic fields bound by that match;

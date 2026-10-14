@@ -25,17 +25,17 @@ function rb_inorder(tree: RbTree) -> List<struct rb_node*>
     }
 }
 
-function rb_member(tree: RbTree, target: struct rb_node*) -> int32
+function rb_member(tree: RbTree, target: struct rb_node*) -> bool
     decreases tree
 {
     match tree {
-        RbTree::Empty => 0,
+        RbTree::Empty => false,
         RbTree::Node(node, parent, color, left, right) =>
             if node == target {
-                1
+                true
             } else {
-                if rb_member(left, target) == 1 {
-                    1
+                if rb_member(left, target) {
+                    true
                 } else {
                     rb_member(right, target)
                 }
@@ -61,15 +61,15 @@ theorem rb_member_is_inorder_membership(tree: RbTree, target: struct rb_node*) {
                     List<struct rb_node*>::Cons(node, rb_inorder(right)), target));
                 rewrite(list_contains(list_append(rb_inorder(left),
                     List<struct rb_node*>::Cons(node, rb_inorder(right))), target)
-                    == if list_contains(rb_inorder(left), target) == 1 {
-                        1
+                    == if list_contains(rb_inorder(left), target) {
+                        true
                     } else {
                         list_contains(List<struct rb_node*>::Cons(node, rb_inorder(right)), target)
                     });
                 apply(list_contains_cons(node, rb_inorder(right), target));
                 rewrite(list_contains(List<struct rb_node*>::Cons(node, rb_inorder(right)), target)
                     == if node == target {
-                        1
+                        true
                     } else {
                         list_contains(rb_inorder(right), target)
                     });

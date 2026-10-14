@@ -4706,6 +4706,8 @@ fn typed_literal_spelling(spelled: String, suffix: &str) -> String {
 pub(super) fn describe_c_value(value: &CValue, parameter_binding: ParameterBinding<'_>) -> String {
     match value {
         CValue::Void => "void".to_string(),
+        CValue::Bool(Bitvector32Term::Constant(0)) => "false".to_string(),
+        CValue::Bool(Bitvector32Term::Constant(1)) => "true".to_string(),
         CValue::Int128(value) => typed_literal_spelling(
             describe_bitvector_with_context(value, parameter_binding),
             "i128",

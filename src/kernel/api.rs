@@ -134,6 +134,44 @@ pub fn bool_value(bits: impl Into<Bitvector32Term>) -> CValue {
     ))
 }
 
+/// A specification `bool` value over an opaque term: a `bool` pure
+/// function's application or a `bool` theorem parameter. It is C's
+/// conversion of the term to `bool`, so the value is exactly `0` or `1`
+/// whatever the term is. The comparison is spelled `0 == term`, with the
+/// constant first, which tells it apart from a conversion a C program or a
+/// contract wrote; [`spec_bool_term`] reads it back, so the proof surface can
+/// treat the value as the one `bool` it names.
+pub(crate) fn spec_bool_value(term: Bitvector32Term) -> CValue {
+    CValue::Bool(Bitvector32Term::if_then_else(
+        ConditionTerm::equal(Bitvector32Term::Constant(0), term),
+        Bitvector32Term::Constant(0),
+        Bitvector32Term::Constant(1),
+    ))
+}
+
+/// The opaque term inside a value built by [`spec_bool_value`].
+pub(crate) fn spec_bool_term(term: &Bitvector32Term) -> Option<&Bitvector32Term> {
+    let Bitvector32Term::If {
+        condition,
+        then_term,
+        else_term,
+    } = term
+    else {
+        return None;
+    };
+    if then_term.as_const() != Some(0) || else_term.as_const() != Some(1) {
+        return None;
+    }
+    match condition.as_ref() {
+        ConditionTerm::Bitvector32Equal(zero, inner)
+            if zero.as_const() == Some(0) && inner.as_const().is_none() =>
+        {
+            Some(inner)
+        }
+        _ => None,
+    }
+}
+
 /// The range fact `value == 0 or value == 1` of a `_Bool` rvalue, when its
 /// term is structurally normalized.
 ///
