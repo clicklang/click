@@ -718,12 +718,28 @@ impl ObjectEvidenceSources {
         } else if let Some(delta) = delta {
             *resources = resources.clone().unchecked_with_facts(delta);
         } else {
-            // An independent admission adds its explicit memory input once.
-            for fact in source.iter() {
-                if fact.memory_range().is_some() {
-                    *resources = resources.clone().unchecked_with_fact(fact.clone());
-                }
-            }
+            // Raw and observable forms can share memory inputs without
+            // sharing an admission history. Compare their persistent input
+            // indexes, admitting only facts absent from the accumulated set.
+            let held = resources.memory_input_facts();
+            let incoming = source.memory_input_facts();
+            let added = if incoming.len() < held.len() {
+                // A small contract beside a large caller frame: removed
+                // caller facts are irrelevant to monotone admission.
+                incoming
+                    .keys()
+                    .filter(|fact| !held.contains_key(*fact))
+                    .cloned()
+                    .collect::<Vec<_>>()
+            } else {
+                held.diff(incoming)
+                    .filter_map(|change| match change {
+                        SnapshotMapChange::Added(fact) => Some(fact.clone()),
+                        SnapshotMapChange::Changed(_) | SnapshotMapChange::Removed(_) => None,
+                    })
+                    .collect::<Vec<_>>()
+            };
+            *resources = resources.clone().unchecked_with_facts(added);
         }
         checkpoints.insert(origin, source.clone());
     }
@@ -1396,10 +1412,25 @@ impl ResourceContext {
         if let Some(query) = query {
             query.register(&graph);
         }
-        let mut addresses = self.storage.index.memory_addresses.clone();
-        for merge in graph.pointer_merges() {
-            addresses.merge(merge);
-        }
+        let addresses = if self.storage.facts.len() < graph.pointer_merge_count() {
+            // A small, cold contract beside a large caller equality history:
+            // index its actual occurrences in the already closed namespace.
+            // Keep this a raw index; it publishes no read or storage authority.
+            let mut addresses = MemoryAddresses::default();
+            for (entry, fact) in self.storage.facts.iter() {
+                crate::instrumentation::record_deterministic_work(1);
+                if let Some(range) = fact.memory_range() {
+                    addresses.update_in_graph(range, fact.is_own(), *entry, true, &graph, fact);
+                }
+            }
+            addresses
+        } else {
+            let mut addresses = self.storage.index.memory_addresses.clone();
+            for merge in graph.pointer_merges() {
+                addresses.merge(merge);
+            }
+            addresses
+        };
         let paired = std::sync::Arc::new(PairedMemoryIndex {
             resources: self.storage.clone(),
             graph,

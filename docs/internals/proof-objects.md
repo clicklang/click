@@ -242,6 +242,12 @@ one path per trace, its completing theorem under the contract's exit rule.
 It evaluates no C; completion inspects the retained evidence and applies the
 checked contract exit rule.
 
+Normalizing a call's facts to the source-statement exit retains each original
+execution fact alongside its transported copy. The statement theorem can name
+the original snapshot as a premise even for an ordinary, uncertified call
+bound. Certification still controls which facts persist as checked effects;
+transport does not replace the evidence the statement was checked under.
+
 Named-instance folds after return are persistent, path-indexed trace extensions.
 The fold reads the selected trace's completing state, never a sibling's state
 or the caller-side postcondition projection. Guarded folds must select the case

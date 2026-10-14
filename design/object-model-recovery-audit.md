@@ -491,3 +491,29 @@ object model or claiming the archived original loop repaired.
 The delivery is rebased onto `14746f449`; the same 59 selected kernel controls
 pass again (6.51s for the harness). This rebase does not change the archived
 candidate or credit its unresolved original loop.
+
+## Loop-havoc borrow-partition producer repair
+
+Recovery checkpoint `53da27b58` identifies and repairs the reduced loop's final
+read-chain gap. A bounded producer probe shows a certified backing-store frame,
+followed by a stop at the checked loop-havoc summary. The range-disjointness
+producer omitted the live borrowed-view/owner partition even though its checker
+already accepts that authority. Select it by the two queried address keys before
+the legacy ownership-composition frontier, retain the complete range/access
+memberships, and recheck the composition authority and non-overlap.
+
+All **87** selected memory-index, pointer-designation, native-span, loop-carrier
+and borrow-frame controls pass (6.42s for the harness). The new witness bounds
+selected producer work below 200 beside 16, 64, 256 and 1,024 unrelated owners;
+it rejects widened reads, overlap, ordinary/view-only compositions and withdrawn
+retained authority with a stale candidate index. The original C loop passes
+fresh checking, expansion, verification of the rewritten proof and retained
+rechecking with the safe endpoint rule. The diagnostic probe is removed.
+
+This is a preserved recovery implementation, not an upstream activation. Master
+has the independent footprint-query slice from merged PR #969; its range-frame
+certificate prerequisite still needs extraction before the borrow-partition
+producer can be delivered independently.
+
+The broader example-stage run was interrupted by the environment outage; its
+temporary log was lost on restart. No new full example-stage verdict is claimed.
