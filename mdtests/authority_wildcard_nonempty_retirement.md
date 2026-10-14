@@ -28,5 +28,5 @@ void lifecycle() { ensures 1 == 1; } by {
 ```
 
 ```expect
-fail: OutstandingMembers
+fail: members of the population are still outstanding, so its authority cannot be retired
 ```

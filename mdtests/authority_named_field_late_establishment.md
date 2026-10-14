@@ -16,5 +16,5 @@ int32 run() { ensures result == 0; } by {
 ```
 
 ```expect
-fail: MembersAlreadyExisted
+fail: members of the population already existed before it was created
 ```

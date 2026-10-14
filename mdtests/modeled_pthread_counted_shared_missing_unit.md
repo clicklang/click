@@ -60,5 +60,5 @@ int32 run(void* p, void* q) {
 ```
 
 ```expect
-fail: population call transfer refused: MissingMembers; declared 1 of ticket
+fail: population call transfer refused: fewer members of the population are held than the transition moves; declared 1 of ticket
 ```

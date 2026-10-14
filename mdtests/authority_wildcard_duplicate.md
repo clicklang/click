@@ -28,5 +28,5 @@ void lifecycle() { ensures 1 == 1; } by {
 ```
 
 ```expect
-fail: AlreadyEstablished
+fail: the population was already established at this anchor and cannot be established again
 ```

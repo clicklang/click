@@ -1930,6 +1930,10 @@ pub enum HiddenPrerequisiteRoute {
     ContextualCondition,
     /// The same, under the explicit policy.
     ExplicitCondition,
+    /// A condition the kernel's own evaluation decided with the general
+    /// condition decision after the difference graph left it open
+    /// (`issues/difference-logic.md`). The rule names the evaluation site.
+    KernelCondition,
 }
 
 /// The count of hidden prerequisite derivations by route and by the top rule
@@ -1946,8 +1950,12 @@ thread_local! {
 }
 
 pub(crate) fn record_hidden_prerequisite(route: HiddenPrerequisiteRoute, rule: &'static str) {
+    // A kernel condition decision is evaluation, not statement planning:
+    // it counts in the corpus census, not in a step's planning count.
     #[cfg(test)]
-    HIDDEN_PREREQUISITES_ON_THREAD.with(|count| count.set(count.get() + 1));
+    if route != HiddenPrerequisiteRoute::KernelCondition {
+        HIDDEN_PREREQUISITES_ON_THREAD.with(|count| count.set(count.get() + 1));
+    }
     *HIDDEN_PREREQUISITE_CENSUS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)

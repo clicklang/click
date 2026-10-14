@@ -611,7 +611,7 @@ void f(int32* p) {
             error
                 .message()
                 .contains("but slot `leaf` of `Container` owns `Leaf`"),
-            "{error:?}"
+            "{error}"
         );
     }
 
@@ -662,10 +662,10 @@ void f(int32* p) {
         );
         let error = super::super::selected_project_c_target(&conflicting)
             .expect_err("conflicting module targets");
-        assert!(error.message().contains("selects C target"), "{error:?}");
+        assert!(error.message().contains("selects C target"), "{error}");
         let error =
             resolve_click_project(&conflicting, &[]).expect_err("conflicting module targets");
-        assert!(error.message().contains("selects C target"), "{error:?}");
+        assert!(error.message().contains("selects C target"), "{error}");
     }
 
     #[test]
@@ -694,7 +694,7 @@ theorem local_conditional(x: int32) {
         let library = ClickProject::new("models/list.click", [project.modules()[0].clone()]);
         let error = verify_c0_project(&library, &[])
             .expect_err("selecting the imported theorem's own failing proof must fail");
-        assert!(error.message().contains("models/list.click"), "{error:?}");
+        assert!(error.message().contains("models/list.click"), "{error}");
     }
 
     #[test]
@@ -831,7 +831,7 @@ tactic keep(x: int32) { ensures x == x; } by { have x == x by normalize(); }
                 .expect_err("an importer must not select a library's proof body");
             assert!(
                 error.message().contains("imported from `library.click`"),
-                "{error:?}"
+                "{error}"
             );
         }
         let library = ClickProject::new("library.click", [library]);
@@ -868,7 +868,7 @@ tactic keep(x: int32) { ensures x == x; } by { have x == x by normalize(); }
             )],
         )
         .expect_err("an assumed contract still needs the correct signature");
-        assert!(error.message().contains("signature mismatch"), "{error:?}");
+        assert!(error.message().contains("signature mismatch"), "{error}");
     }
 
     #[test]
@@ -1150,8 +1150,8 @@ theorem sibling_bad() { ensures 0 == 1 by simp; }
         );
         let error = resolve_click_project(&collision, &[])
             .expect_err("unqualified imported names must not be ambiguous");
-        assert!(error.message().contains("left.click"), "{error:?}");
-        assert!(error.message().contains("right.click"), "{error:?}");
+        assert!(error.message().contains("left.click"), "{error}");
+        assert!(error.message().contains("right.click"), "{error}");
 
         let local_collision = ClickProject::new(
             "entry.click",
@@ -1170,8 +1170,8 @@ theorem sibling_bad() { ensures 0 == 1 by simp; }
         );
         let error = resolve_click_project(&local_collision, &[])
             .expect_err("a local declaration cannot shadow an imported declaration");
-        assert!(error.message().contains("library.click"), "{error:?}");
-        assert!(error.message().contains("entry.click"), "{error:?}");
+        assert!(error.message().contains("library.click"), "{error}");
+        assert!(error.message().contains("entry.click"), "{error}");
 
         let builtin_collision = ClickProject::new(
             "entry.click",
@@ -1183,7 +1183,7 @@ theorem sibling_bad() { ensures 0 == 1 by simp; }
         );
         let error = resolve_click_project(&builtin_collision, &[])
             .expect_err("a declaration cannot shadow a built-in conversion");
-        assert!(error.message().contains("built-in"), "{error:?}");
+        assert!(error.message().contains("built-in"), "{error}");
     }
 
     #[test]
@@ -1304,7 +1304,7 @@ theorem b() { ensures 0 == 0 by { apply(a()); assumption(); } }
         );
         let error = resolve_click_project(&invalid_recursion, &[])
             .expect_err("partial selection must not hide invalid recursion");
-        assert!(error.message().contains("recurse"), "{error:?}");
+        assert!(error.message().contains("recurse"), "{error}");
 
         let checked_recursion = ClickProject::new(
             "entry.click",

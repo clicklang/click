@@ -17,7 +17,7 @@ impl Drop for Guard {
 
 fn restore(early: bool, value: &mut i32) -> i32 {
     owns *value;
-    ensures result == (if early != 0 { 7 } else { 9 });
+    ensures result == (if early { 7 } else { 9 });
     ensures *value == old(*value);
 } by {
     execute();

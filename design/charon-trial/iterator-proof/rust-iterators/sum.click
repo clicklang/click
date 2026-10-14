@@ -1,7 +1,7 @@
 verifying "sum.rs";
-function prefix(bytes: const uint8*, end: uint64) -> Integer {
+function prefix(bytes: *const u8, end: usize) -> Integer {
     (0..end).fold(0, |acc, k| {
-        acc + to_integer((int32)bytes[k])
+        acc + to_integer(bytes[k] as i32)
     })
 }
 fn sum(bytes: &[u8]) -> i32 {
@@ -77,7 +77,7 @@ fn sum(bytes: &[u8]) -> i32 {
                     bytes.len() <= 9223372036854775807u64;
                 }
             }
-            have prefix(bytes, (bytes.len() - iter_remaining) + 1u64) == prefix(bytes, (bytes.len() - iter_remaining)) + to_integer((int32)bytes[(bytes.len() - iter_remaining)]) by {
+            have prefix(bytes, (bytes.len() - iter_remaining) + 1u64) == prefix(bytes, (bytes.len() - iter_remaining)) + to_integer(bytes[(bytes.len() - iter_remaining)] as i32) by {
                 peel(prefix(bytes, (bytes.len() - iter_remaining) + 1u64)) using {
                     0u64 <= (bytes.len() - iter_remaining);
                     (bytes.len() - iter_remaining) < 18446744073709551615u64;
@@ -95,53 +95,53 @@ fn sum(bytes: &[u8]) -> i32 {
             execute_until(read(0));
             step();
             mark loaded;
-            have 0 <= (int32)byte and 255 >= (int32)byte;
+            have 0 <= byte as i32 and 255 >= byte as i32;
             have at(iteration, bytes[(bytes.len() - iter_remaining)]) == byte;
-            have at(iteration, to_integer((int32)bytes[(bytes.len() - iter_remaining)])) == to_integer((int32)byte) by {
+            have at(iteration, to_integer(bytes[(bytes.len() - iter_remaining)] as i32)) == to_integer(byte as i32) by {
                 rewrite(at(iteration, bytes[(bytes.len() - iter_remaining)]) == byte);
                 normalize();
             }
-            have 0 <= to_integer((int32)byte) by {
-                apply(int32_less_equal_to_integer(0, (int32)byte)) using { 0 <= (int32)byte; }
+            have 0 <= to_integer(byte as i32) by {
+                apply(int32_less_equal_to_integer(0, byte as i32)) using { 0 <= byte as i32; }
             }
-            have to_integer((int32)byte) <= 255 by {
-                apply(int32_less_equal_to_integer((int32)byte, 255)) using { 255 >= (int32)byte; }
+            have to_integer(byte as i32) <= 255 by {
+                apply(int32_less_equal_to_integer(byte as i32, 255)) using { 255 >= byte as i32; }
             }
-            have to_integer(total) + to_integer((int32)byte) >= -2147483648 by {
-                arithmetic() using { 0 <= to_integer(total); 0 <= to_integer((int32)byte); }
+            have to_integer(total) + to_integer(byte as i32) >= -2147483648 by {
+                arithmetic() using { 0 <= to_integer(total); 0 <= to_integer(byte as i32); }
             }
-            have to_integer(total) + to_integer((int32)byte) <= 2147483647 by {
-                arithmetic() using { to_integer(total) <= 255000; to_integer((int32)byte) <= 255; }
+            have to_integer(total) + to_integer(byte as i32) <= 2147483647 by {
+                arithmetic() using { to_integer(total) <= 255000; to_integer(byte as i32) <= 255; }
             }
-            have defined(total + (int32)byte) by {
-                apply(int32_add_defined_by_integer_bounds(total, (int32)byte)) using {
-                    to_integer(total) + to_integer((int32)byte) >= -2147483648;
-                    to_integer(total) + to_integer((int32)byte) <= 2147483647;
+            have defined(total + byte as i32) by {
+                apply(int32_add_defined_by_integer_bounds(total, byte as i32)) using {
+                    to_integer(total) + to_integer(byte as i32) >= -2147483648;
+                    to_integer(total) + to_integer(byte as i32) <= 2147483647;
                 } simp();
             }
-            have to_integer(total + (int32)byte) == to_integer(total) + to_integer((int32)byte) by {
-                apply(int32_add_to_integer(total, (int32)byte)) using { defined(total + (int32)byte); }
+            have to_integer(total + byte as i32) == to_integer(total) + to_integer(byte as i32) by {
+                apply(int32_add_to_integer(total, byte as i32)) using { defined(total + byte as i32); }
             }
-            have to_integer(total + (int32)byte) == at(iteration, prefix(bytes, (bytes.len() - iter_remaining) + 1u64)) by {
+            have to_integer(total + byte as i32) == at(iteration, prefix(bytes, (bytes.len() - iter_remaining) + 1u64)) by {
                 arithmetic() using {
-                    to_integer(total + (int32)byte) == to_integer(total) + to_integer((int32)byte);
+                    to_integer(total + byte as i32) == to_integer(total) + to_integer(byte as i32);
                     at(iteration, to_integer(total) == prefix(bytes, (bytes.len() - iter_remaining)));
-                    at(iteration, prefix(bytes, (bytes.len() - iter_remaining) + 1u64) == prefix(bytes, (bytes.len() - iter_remaining)) + to_integer((int32)bytes[(bytes.len() - iter_remaining)]));
-                    at(iteration, to_integer((int32)bytes[(bytes.len() - iter_remaining)])) == to_integer((int32)byte);
+                    at(iteration, prefix(bytes, (bytes.len() - iter_remaining) + 1u64) == prefix(bytes, (bytes.len() - iter_remaining)) + to_integer(bytes[(bytes.len() - iter_remaining)] as i32));
+                    at(iteration, to_integer(bytes[(bytes.len() - iter_remaining)] as i32)) == to_integer(byte as i32);
                 }
             }
-            have 0 <= to_integer(total + (int32)byte) by {
+            have 0 <= to_integer(total + byte as i32) by {
                 arithmetic() using {
                     0 <= to_integer(total);
-                    0 <= to_integer((int32)byte);
-                    to_integer(total + (int32)byte) == to_integer(total) + to_integer((int32)byte);
+                    0 <= to_integer(byte as i32);
+                    to_integer(total + byte as i32) == to_integer(total) + to_integer(byte as i32);
                 }
             }
-            have to_integer(total + (int32)byte) <= 255 * at(iteration, to_integer((bytes.len() - iter_remaining) + 1u64)) by {
+            have to_integer(total + byte as i32) <= 255 * at(iteration, to_integer((bytes.len() - iter_remaining) + 1u64)) by {
                 arithmetic() using {
                     at(iteration, to_integer(total) <= 255 * to_integer((bytes.len() - iter_remaining)));
-                    to_integer((int32)byte) <= 255;
-                    to_integer(total + (int32)byte) == to_integer(total) + to_integer((int32)byte);
+                    to_integer(byte as i32) <= 255;
+                    to_integer(total + byte as i32) == to_integer(total) + to_integer(byte as i32);
                     at(iteration, to_integer((bytes.len() - iter_remaining) + 1u64) == to_integer((bytes.len() - iter_remaining)) + 1);
                 }
             }
@@ -154,7 +154,7 @@ fn sum(bytes: &[u8]) -> i32 {
             }
             mark addition;
             execute_until(assignment(total, 1)); step();
-            have to_integer(total) == at(addition, to_integer(total + (int32)byte));
+            have to_integer(total) == at(addition, to_integer(total + byte as i32));
             execute_until(back_edge());
             have iter_remaining <= bytes.len() by {
                 arithmetic() using {
@@ -175,8 +175,8 @@ fn sum(bytes: &[u8]) -> i32 {
             }
             have 0 <= to_integer(total) by {
                 arithmetic() using {
-                    to_integer(total) == at(addition, to_integer(total + (int32)byte));
-                    at(addition, 0 <= to_integer(total + (int32)byte));
+                    to_integer(total) == at(addition, to_integer(total + byte as i32));
+                    at(addition, 0 <= to_integer(total + byte as i32));
                 }
             }
             have to_integer((bytes.len() - iter_remaining)) == at(iteration, to_integer((bytes.len() - iter_remaining) + 1u64)) by {
@@ -185,8 +185,8 @@ fn sum(bytes: &[u8]) -> i32 {
             }
             have to_integer(total) <= 255 * to_integer((bytes.len() - iter_remaining)) by {
                 arithmetic() using {
-                    to_integer(total) == at(addition, to_integer(total + (int32)byte));
-                    at(addition, to_integer(total + (int32)byte)) <= 255 * at(iteration, to_integer((bytes.len() - iter_remaining) + 1u64));
+                    to_integer(total) == at(addition, to_integer(total + byte as i32));
+                    at(addition, to_integer(total + byte as i32)) <= 255 * at(iteration, to_integer((bytes.len() - iter_remaining) + 1u64));
                     to_integer((bytes.len() - iter_remaining)) == at(iteration, to_integer((bytes.len() - iter_remaining) + 1u64));
                 }
             }
@@ -196,8 +196,8 @@ fn sum(bytes: &[u8]) -> i32 {
             }
             have to_integer(total) == prefix(bytes, (bytes.len() - iter_remaining)) by {
                 arithmetic() using {
-                    to_integer(total) == at(addition, to_integer(total + (int32)byte));
-                    at(addition, to_integer(total + (int32)byte)) == at(iteration, prefix(bytes, (bytes.len() - iter_remaining) + 1u64));
+                    to_integer(total) == at(addition, to_integer(total + byte as i32));
+                    at(addition, to_integer(total + byte as i32)) == at(iteration, prefix(bytes, (bytes.len() - iter_remaining) + 1u64));
                     prefix(bytes, (bytes.len() - iter_remaining)) == at(iteration, prefix(bytes, (bytes.len() - iter_remaining) + 1u64));
                 }
             }

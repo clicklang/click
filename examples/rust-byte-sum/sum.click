@@ -1,7 +1,7 @@
 verifying "sum.rs";
-function prefix(bytes: const uint8*, end: uint64) -> Integer {
+function prefix(bytes: *const u8, end: usize) -> Integer {
     (0..end).fold(0, |acc, k| {
-        acc + to_integer((int32)bytes[k])
+        acc + to_integer(bytes[k] as i32)
     })
 }
 fn sum(bytes: &[u8]) -> i32 {
@@ -31,20 +31,20 @@ fn sum(bytes: &[u8]) -> i32 {
                     bytes.len() <= 9223372036854775807u64;
                 }
             }
-            have 0 <= (int32)bytes[i] and 255 >= (int32)bytes[i];
+            have 0 <= bytes[i] as i32 and 255 >= bytes[i] as i32;
             have 0 <= to_integer(total);
-            have defined(total + (int32)bytes[i]) by auto;
+            have defined(total + bytes[i] as i32) by auto;
             have i < 18446744073709551615u64 by auto;
-            have prefix(bytes, i + 1u64) == prefix(bytes, i) + to_integer((int32)bytes[i]) by {
+            have prefix(bytes, i + 1u64) == prefix(bytes, i) + to_integer(bytes[i] as i32) by {
                 peel(prefix(bytes, i + 1u64)) using {
                     0u64 <= i;
                     i < 18446744073709551615u64;
                 }
                 simp();
             }
-            have to_integer(total + (int32)bytes[i]) == prefix(bytes, i + 1u64) by auto;
-            have 0 <= to_integer(total + (int32)bytes[i]) by auto;
-            have to_integer(total + (int32)bytes[i]) <= 255 * to_integer(i + 1u64) by auto;
+            have to_integer(total + bytes[i] as i32) == prefix(bytes, i + 1u64) by auto;
+            have 0 <= to_integer(total + bytes[i] as i32) by auto;
+            have to_integer(total + bytes[i] as i32) <= 255 * to_integer(i + 1u64) by auto;
             execute_until(assignment(i, 1));
             step();
             have i <= bytes.len();

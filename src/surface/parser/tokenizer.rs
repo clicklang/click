@@ -511,7 +511,7 @@ mod comment_tests {
             error
                 .message()
                 .contains("Click line comments start with `//`, not `#`"),
-            "{error:?}"
+            "{error}"
         );
     }
 

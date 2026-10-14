@@ -6567,7 +6567,7 @@ impl CState {
             .as_ref()
             .ok_or("opaque import requires the creation ledger")?
             .import_observable_contract_population(description, owned_members)
-            .map_err(|refusal| format!("opaque population import refused: {refusal:?}"))?;
+            .map_err(|refusal| format!("opaque population import refused: {refusal}"))?;
         let mut next = self.clone();
         Arc::make_mut(&mut next.population_effects).creation = Some(events);
         Ok(next)
@@ -6595,7 +6595,7 @@ impl CState {
                 .as_ref()
                 .ok_or("opaque import requires the creation ledger")?
                 .import_observable_named_authority(description)
-                .map_err(|refusal| format!("named authority import refused: {refusal:?}"))?;
+                .map_err(|refusal| format!("named authority import refused: {refusal}"))?;
             let mut next = self.clone();
             Arc::make_mut(&mut next.population_effects).creation = Some(events);
             return Ok(next);
@@ -6640,7 +6640,7 @@ impl CState {
                     description,
                     &Bitvector32Term::Constant(total),
                 )
-                .map_err(|refusal| format!("batch population import refused: {refusal:?}"))?;
+                .map_err(|refusal| format!("batch population import refused: {refusal}"))?;
             let mut next = self.clone();
             Arc::make_mut(&mut next.population_effects).creation = Some(events);
             Ok(next)
@@ -6683,7 +6683,7 @@ impl CState {
             .as_ref()
             .ok_or("batch import requires the creation ledger")?
             .import_observable_contract_population_quantity(description, quantity)
-            .map_err(|refusal| format!("batch population import refused: {refusal:?}"))?;
+            .map_err(|refusal| format!("batch population import refused: {refusal}"))?;
         let mut next = self.clone();
         Arc::make_mut(&mut next.population_effects).creation = Some(events);
         Ok(next)
@@ -6721,7 +6721,7 @@ impl CState {
             .as_ref()
             .ok_or("opaque import requires the creation ledger")?
             .import_opaque_wildcard_population(scope, &description)
-            .map_err(|refusal| format!("wildcard population import refused: {refusal:?}"))?;
+            .map_err(|refusal| format!("wildcard population import refused: {refusal}"))?;
         let mut next = self.clone();
         Arc::make_mut(&mut next.population_effects).creation = Some(events);
         Ok(next)
@@ -6748,7 +6748,7 @@ impl CState {
             .as_ref()
             .ok_or("opaque import requires the creation ledger")?
             .import_opaque_wildcard_authority(scope)
-            .map_err(|refusal| format!("wildcard authority import refused: {refusal:?}"))?;
+            .map_err(|refusal| format!("wildcard authority import refused: {refusal}"))?;
         let mut next = self.clone();
         Arc::make_mut(&mut next.population_effects).creation = Some(events);
         Ok(next)
@@ -6851,7 +6851,7 @@ impl CState {
             .collect::<Vec<_>>();
         let projected = projected
             .try_compose_with_facts_delaying_normalization(missing, assumptions)
-            .map_err(|error| format!("control body ownership refused: {error:?}"))?;
+            .map_err(|error| format!("control body ownership refused: {error}"))?;
         Ok((projected, count))
     }
 
@@ -7020,7 +7020,7 @@ impl CState {
                 .sum::<u32>();
             let events = events
                 .import_acquired_control_population(description, owned)
-                .map_err(|refusal| format!("acquired control authority refused: {refusal:?}"))?;
+                .map_err(|refusal| format!("acquired control authority refused: {refusal}"))?;
             Arc::make_mut(&mut next.population_effects).creation = Some(events);
         }
         Ok(next)
@@ -7232,8 +7232,8 @@ impl CState {
                         assumptions,
                         &mut budget,
                     )
-                    .map_err(|error| format!("control authority evaluation failed: {error:?}"))?
-                    .map_err(|error| format!("control authority evaluation failed: {error:?}"))?
+                    .map_err(|error| format!("control authority evaluation failed: {error}"))?
+                    .map_err(|error| format!("control authority evaluation failed: {error}"))?
                 }
                 super::super::CResourceTerm::Memory(_) => {
                     super::super::functions::evaluate_function_resource_spec(
@@ -7242,8 +7242,8 @@ impl CState {
                         assumptions,
                         &mut budget,
                     )
-                    .map_err(|error| format!("control memory evaluation failed: {error:?}"))?
-                    .map_err(|error| format!("control memory evaluation failed: {error:?}"))?
+                    .map_err(|error| format!("control memory evaluation failed: {error}"))?
+                    .map_err(|error| format!("control memory evaluation failed: {error}"))?
                 }
                 super::super::CResourceTerm::Token { name, .. }
                     if name == CResourceFact::ALLOCATION_RESOURCE_NAME =>
@@ -7254,8 +7254,8 @@ impl CState {
                         assumptions,
                         &mut budget,
                     )
-                    .map_err(|error| format!("control allocation evaluation failed: {error:?}"))?
-                    .map_err(|error| format!("control allocation evaluation failed: {error:?}"))?
+                    .map_err(|error| format!("control allocation evaluation failed: {error}"))?
+                    .map_err(|error| format!("control allocation evaluation failed: {error}"))?
                 }
                 _ => {
                     return Err(
@@ -7380,12 +7380,12 @@ impl CState {
         let evidence = if establish {
             let (history, evidence) = events
                 .checked_establish(&anchor.block, description)
-                .map_err(|refusal| format!("authority establishment refused: {refusal:?}"))?;
+                .map_err(|refusal| format!("authority establishment refused: {refusal}"))?;
             let resources = self
                 .resources
                 .clone()
                 .try_compose_with_fact(selected.clone(), assumptions)
-                .map_err(|error| format!("authority ownership refused: {error:?}"))?;
+                .map_err(|error| format!("authority ownership refused: {error}"))?;
             next.resources = resources;
             Arc::make_mut(&mut next.population_effects).creation = Some(history);
             evidence
@@ -7400,7 +7400,7 @@ impl CState {
             } else {
                 events.checked_retire(&anchor.block, description)
             }
-            .map_err(|refusal| format!("authority retirement refused: {refusal:?}"))?;
+            .map_err(|refusal| format!("authority retirement refused: {refusal}"))?;
             next.resources = resources;
             Arc::make_mut(&mut next.population_effects).creation = Some(history);
             evidence
@@ -7617,7 +7617,7 @@ impl CState {
             }
             resources
                 .try_compose_with_fact(selected.clone(), assumptions)
-                .map_err(|error| format!("member ownership refused: {error:?}"))?
+                .map_err(|error| format!("member ownership refused: {error}"))?
         } else {
             let resources = self
                 .resources
@@ -7626,7 +7626,7 @@ impl CState {
                 .ok_or_else(|| format!("Requires owns {name}(p)"))?;
             resources
                 .try_compose_with_facts_delaying_normalization(body.iter().cloned(), assumptions)
-                .map_err(|error| format!("member body ownership refused: {error:?}"))?
+                .map_err(|error| format!("member body ownership refused: {error}"))?
         };
         let exchange = if definition.has_fixed_exclusive_memory() {
             events.checked_exclusive_member_exchange_quantity(
@@ -7653,7 +7653,7 @@ impl CState {
                 {
                     format!("Requires defined(count({name}({}, {})) + 1)", definition.parameters().first().map_or("anchor", |parameter| parameter.name()),
                         std::iter::repeat_n("_", arguments.len() - 1).collect::<Vec<_>>().join(", "))
-                } else { format!("member change refused: {error:?}") }
+                } else { format!("member change refused: {error}") }
             })?;
         let mut next = self.clone();
         next.resources = resources;
@@ -7698,11 +7698,11 @@ impl CState {
                 }
                 events
                     .checked_imported_instance_exchange(instance, produce, assumptions)
-                    .map_err(|refusal| format!("named member change refused: {refusal:?}"))?
+                    .map_err(|refusal| format!("named member change refused: {refusal}"))?
             } else {
                 events
                     .checked_instance_exchange(&reference, produce)
-                    .map_err(|refusal| format!("named member change refused: {refusal:?}"))?
+                    .map_err(|refusal| format!("named member change refused: {refusal}"))?
             }
         } else if produce {
             let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = description.arguments().first()
@@ -7753,7 +7753,7 @@ impl CState {
         if let Some(events) = &self.population_effects.creation {
             let next = events.retired(block).map_err(|refusal| {
                 CRuntimeError::FunctionContract(format!(
-                    "population authority prevents storage retirement: {refusal:?}"
+                    "population authority prevents storage retirement: {refusal}"
                 ))
             })?;
             Arc::make_mut(&mut self.population_effects).creation = Some(next);
@@ -7774,7 +7774,7 @@ impl CState {
         for block in blocks {
             events = events.retired(block).map_err(|refusal| {
                 CRuntimeError::FunctionContract(format!(
-                    "population authority prevents storage retirement: {refusal:?}"
+                    "population authority prevents storage retirement: {refusal}"
                 ))
             })?;
         }
@@ -7791,7 +7791,7 @@ impl CState {
             .and_then(|events| events.retirement_refusal(block))
             .map(|refusal| {
                 CRuntimeError::FunctionContract(format!(
-                    "population authority prevents storage {block:?} retirement: {refusal:?}"
+                    "population authority prevents storage {block:?} retirement: {refusal}"
                 ))
             })
     }

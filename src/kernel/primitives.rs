@@ -4814,6 +4814,13 @@ pub enum ExecutionLimit {
     AuthorityCountOverflows,
 }
 
+/// The stopping point as [`ExecutionLimit::describe`] names it.
+impl std::fmt::Display for ExecutionLimit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&(*self).describe())
+    }
+}
+
 impl ExecutionLimit {
     /// The one naming table for a bounded evaluation's stopping point, as a
     /// noun phrase that reads after "stopped at". Every message a user can
@@ -4874,6 +4881,13 @@ impl ExecutionLimit {
                 "a model field of a resource instance this state does not hold".to_string()
             }
         }
+    }
+}
+
+/// The kernel-side one-line rendering, [`CRuntimeError::kernel_summary`].
+impl std::fmt::Display for CRuntimeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.kernel_summary())
     }
 }
 
@@ -7664,6 +7678,18 @@ pub enum ResourceContextValidityError {
     },
 }
 
+impl std::fmt::Display for ResourceContextValidityError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::InvalidExclusiveAccess(_) => {
+                "field-bearing resource instances and mutex guards require exclusive ownership with quantity one"
+            }
+            Self::DuplicateOwnedResourceFact(_) => "the same resource is owned twice",
+            Self::OverlappingOwnedMemoryResources { .. } => "two owned memory resources overlap",
+        })
+    }
+}
+
 /// The result of consuming one available resource fact to satisfy a required
 /// fact. Viewed facts are normally preserved; owned facts may be removed or
 /// replaced by residual ownership.
@@ -10261,6 +10287,10 @@ pub struct PureFactContext {
     /// facts instead of every condition fact. Derived incrementally with
     /// the condition-match indexes.
     pub(super) order_condition_facts: crate::persistent::PersistentMap<ConditionTerm, bool>,
+    /// Difference logic over `condition_facts`
+    /// (`issues/difference-logic.md`), the fast path condition evaluation
+    /// asks before the general decision.
+    pub(super) difference_graph: super::difference_graph::ContextDifferenceGraph,
     /// True `Bitvector32Equal` and `Bitvector64Equal` facts that pin a term
     /// to a constant, keyed by that term and carrying, per fact, the constant
     /// it names. Derived incrementally from `condition_facts`; ordered by

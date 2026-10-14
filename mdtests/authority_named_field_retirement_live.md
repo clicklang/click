@@ -17,5 +17,5 @@ int32 run() { ensures result == 0; } by {
 ```
 
 ```expect
-fail: OutstandingMembers
+fail: members of the population are still outstanding, so its authority cannot be retired
 ```

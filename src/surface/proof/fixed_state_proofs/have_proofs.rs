@@ -1261,7 +1261,7 @@ pub(in crate::surface::proof) fn finish_ordered_proof_units<'a>(
                 steps: ProofCertificate::from_proof_tactics(&captured)
                     .map_err(|error| {
                         ClickError::new(format!(
-                            "captured branch expansion was not a simple proof: {error:?}"
+                            "captured branch expansion was not a simple proof: {error}"
                         ))
                     })?
                     .steps()

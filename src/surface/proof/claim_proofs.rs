@@ -111,11 +111,11 @@ fn synthesize_post_execution_paths(
         .zip(choices)
         .map(|((tactics, closers), choices)| {
             let mut steps = ProofCertificate::from_proof_tactics(tactics)
-                .map_err(|error| format!("post-execution path is not simple: {error:?}"))?
+                .map_err(|error| format!("post-execution path is not simple: {error}"))?
                 .into_steps();
             steps.extend(
                 ProofCertificate::from_proof_tactics(closers)
-                    .map_err(|error| format!("post-execution closer is not simple: {error:?}"))?
+                    .map_err(|error| format!("post-execution closer is not simple: {error}"))?
                     .into_steps(),
             );
             Ok(ProofCertificateBuilder {
@@ -3528,7 +3528,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                                             .collect::<Result<Vec<_>, _>>()
                                                             .map_err(|error| {
                                                                 focused.step_error(format!(
-                                                                    "post-execution Integer premise snapshot could not be serialized: {error:?}"
+                                                                    "post-execution Integer premise snapshot could not be serialized: {error}"
                                                                 ))
                                                             })?
                                                     } else {
@@ -3933,7 +3933,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     ])
                                     .map_err(|error| {
                                         ClickError::new(format!(
-                                            "`{proof_label}` path {path_index}, tactic {tactic_index}: divergence produced an invalid normalize certificate: {error:?}"
+                                            "`{proof_label}` path {path_index}, tactic {tactic_index}: divergence produced an invalid normalize certificate: {error}"
                                         ))
                                     })?;
                                     for (claim_index, closure) in closures.iter_mut().enumerate() {
@@ -4040,7 +4040,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                             ProofCertificate::from_proof_tactics(&tactics)
                                                 .map_err(|error| {
                                                     ClickError::new(format!(
-                                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: resource `simp` produced an invalid surface certificate: {error:?}"
+                                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: resource `simp` produced an invalid surface certificate: {error}"
                                                     ))
                                                 })?;
                                         if proof_context.constants.grouped_contract {
@@ -4295,7 +4295,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                             tactics.push(ProofTactic::Normalize);
                                             let certificate = ProofCertificate::from_proof_tactics(&tactics)
                                                 .map_err(|error| ClickError::new(format!(
-                                                    "checked normalization closure is not simple: {error:?}"
+                                                    "checked normalization closure is not simple: {error}"
                                                 )))?;
                                             return Ok(Some((direct_proof, certificate, completed.1)));
                                         }
@@ -4336,7 +4336,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                                     ProofCertificate::from_proof_tactics(&tactics)
                                                         .map_err(|error| {
                                                             ClickError::new(format!(
-                                                                "`{proof_label}` path {path_index}, tactic {tactic_index}: grouped resource closer was invalid: {error:?}"
+                                                                "`{proof_label}` path {path_index}, tactic {tactic_index}: grouped resource closer was invalid: {error}"
                                                             ))
                                                         })?
                                                 };
@@ -4391,7 +4391,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                                         ])
                                                         .map_err(|error| {
                                                             ClickError::new(format!(
-                                                                "`{proof_label}` path {path_index}, tactic {tactic_index}: resource `simp` produced an invalid surface certificate: {error:?}"
+                                                                "`{proof_label}` path {path_index}, tactic {tactic_index}: resource `simp` produced an invalid surface certificate: {error}"
                                                             ))
                                                         })?;
                                                     for (claim_index, _, _) in
@@ -5413,7 +5413,7 @@ fn finish_deferred_expansion(
         match ProofCertificate::from_proof_tactics(&deferred_capture_tactics_by_path[0]) {
             Ok(proof) => capture.steps = proof.steps().to_vec(),
             Err(error) => capture.block(format!(
-                "deferred expansion produced a non-simple proof: {error:?}"
+                "deferred expansion produced a non-simple proof: {error}"
             )),
         }
     } else if !contributes_no_tactics
@@ -5476,7 +5476,7 @@ fn finish_deferred_expansion(
             match ProofCertificate::from_proof_tactics(&capture_tactics) {
                 Ok(proof) => capture.steps = proof.steps().to_vec(),
                 Err(error) => capture.block(format!(
-                    "deferred expansion produced a non-simple proof: {error:?}"
+                    "deferred expansion produced a non-simple proof: {error}"
                 )),
             }
         }
