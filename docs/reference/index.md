@@ -15,7 +15,9 @@ Kernel Click, and C fragments, and records unsupported neighboring forms.
 
 The [tactic reference](tactics/index.md) covers simple checked operations, smart
 search operations, and structured control tactics. It documents the proof state
-each tactic accepts and produces.
+each tactic accepts and produces. Its
+[core tactics](tactics/index.md#core-tactics) are the ones a hand-written proof
+needs.
 
 ## Command-line interface
 

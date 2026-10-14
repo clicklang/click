@@ -173,19 +173,6 @@ Decision: fix (maintainer, 2026-10-14), after smt-auto stage 1.
 
 ## W. Proof workflow and tooling
 
-### W2. The tactic set is large and overlapping
-
-Today: about 57 forms over 41 tactic words (`docs/reference/tactics/index.md`);
-`simp`, `normalize`, `assumption`, `arithmetic`, `extract`, `rewrite` and
-`transport` overlap.
-
-Proposed fix: a documented core of about 15 tactics, with the rest marked as
-expansion output or specialized.
-
-Decision: fix (maintainer, 2026-10-14), in the documentation only: mark a
-core of about 15 tactics in `docs/reference/tactics/index.md`, and mark the
-rest as expansion output or specialized. No tactic is removed.
-
 ### W4. Expansion output is hard to read and gets committed
 
 Today: expanded arithmetic certificates use numbered nodes and repeat

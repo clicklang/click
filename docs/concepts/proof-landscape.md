@@ -34,7 +34,8 @@ will have exactly the names used here.
   steps.
 
 See the [proof tactics reference](../reference/tactics/index.md) for the exhaustive current
-classification.
+classification, and its [core tactics](../reference/tactics/index.md#core-tactics)
+for the ones a hand-written proof needs.
 
 The current `.click` language exposes function-level `requires` clauses and
 per-guarantee `ensures ... by auto;` clauses, backed by native C symbolic
