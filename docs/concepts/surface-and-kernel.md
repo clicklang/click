@@ -142,7 +142,7 @@ permutation(
 )
 ```
 
-This is why `permutation` can live in `stdlib/prelude.click`: it is an ordinary
+This is why `permutation` can live in `library/permutation.click`: it is an ordinary
 Click predicate over pure array refs, not a kernel-level permutation concept.
 
 ## Loop invariants

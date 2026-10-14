@@ -23,7 +23,7 @@ language's role.
 | `src/bin/` | Thin entry points and command-specific reporting for verify, profile, expand, and audit. |
 | `src/instrumentation.rs` | Work attribution, deadlines, budgets, and profiler events. |
 | `src/persistent.rs` | Persistent structures used where proof states share prior versions. |
-| `stdlib/prelude.click` | Public Click declarations loaded with user source. |
+| `library/` | Click library modules loaded with user source. |
 | `mdtests/`, `examples/` | End-to-end proof fixtures. |
 
 ## Data flow
@@ -183,7 +183,7 @@ reference inventory in the same slice:
   why the rule is sound;
 - a CLI option belongs in shared metadata and command tests before its
   synchronized reference entry;
-- a standard-library declaration belongs in `stdlib/prelude.click`, an mdtest,
+- a Click library declaration belongs in a `library/` module, an mdtest,
   and the source-checked library reference.
 
 See [Feature playbook](feature-playbook.md) for the review sequence and

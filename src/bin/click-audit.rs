@@ -1522,7 +1522,7 @@ fn changed_paths_require_full_audit(repo: &Path, changed_paths: &[PathBuf]) -> b
             path.starts_with("src")
                 || path == Path::new("Cargo.toml")
                 || path == Path::new("Cargo.lock")
-                || path.starts_with("stdlib")
+                || path.starts_with("library")
         })
 }
 

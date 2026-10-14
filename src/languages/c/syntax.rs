@@ -7790,7 +7790,7 @@ impl LibraryType {
 }
 
 /// The standard C prototype of each library function Click specifies: the
-/// `<string.h>` functions with a contract in `stdlib/prelude.click` and the
+/// `<string.h>` functions with a contract in `library/c/string.click` and the
 /// `<stdlib.h>` functions of the allocation model. A call binds to Click's
 /// specification by the function's name, so a declaration of one of these
 /// names must have the library's type.

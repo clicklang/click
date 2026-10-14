@@ -34,7 +34,7 @@ the change description. Otherwise, preserve the C and fix the proof boundary.
 
 Prefer this order:
 
-1. Ordinary Click definition in `stdlib/prelude.click`.
+1. Ordinary Click definition in a `library/` module.
 2. Deterministic proof support in the kernel for a general pattern.
 3. New tactic if users need explicit control.
 4. New syntax only when the concept cannot be expressed clearly with existing
@@ -95,7 +95,7 @@ provenance when possible.
 
 Checklist:
 
-- Add source to `stdlib/prelude.click`.
+- Add source to the `library/` module for its topic.
 - Add an mdtest that imports it implicitly.
 - If the proof needs special support, add general kernel support and unit tests.
 - Update the [standard-library reference](../reference/library/index.md).

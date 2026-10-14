@@ -25,8 +25,8 @@ options, defaults, output, and exit behavior.
 
 ## Standard library
 
-The [standard-library reference](library/index.md) covers every public theorem,
-function, predicate, and abstract resource loaded from `stdlib/prelude.click`.
+The [Click library reference](library/index.md) covers every public theorem,
+function, predicate, and abstract resource loaded from the `library/` modules.
 
 ## Glossary
 

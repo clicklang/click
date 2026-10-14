@@ -18,8 +18,8 @@ declare for code that Click does not verify. Smart proof search is not trusted.
 | Smart planning and proof search | No | Part of `src/surface` | `src/surface/planning`, `src/surface/proof/smart_*` |
 | C front end and target model | Yes | 29,000 lines of Rust | `src/languages/c` |
 | C++ and Rust import, with their pinned external front ends | Yes, for those languages | 11,000 and 8,000 lines of Rust, plus a 4,500-line C++ exporter | `src/languages/cpp`, `src/languages/rust`, `tools/cpp-exporter` |
-| Standard library theorems | Checked by the gate, then applied without re-checking | 158 theorems in 1,626 lines | `stdlib/prelude.click` |
-| `extern` contracts | Yes: assumptions | 5 in the prelude, plus any you declare | `stdlib/prelude.click`, your sidecars |
+| Click library theorems | Checked by the gate, then applied without re-checking | 162 theorems in 1,651 lines | `library/` |
+| `extern` contracts | Yes: assumptions | 5 in the library, plus any you declare | `library/c/`, your sidecars |
 | CLI rendering and profiling | No: they do not decide validity | 9,500 lines of Rust | `src/bin` |
 
 Line counts exclude test files and inline `#[cfg(test)]` modules, and are
@@ -79,7 +79,7 @@ Click verifies C as it models it. The following are trusted:
 - Modeled system headers: `src/languages/c/modeled_*.h` declare `memcpy`,
   `memcmp`, `memset`, `strlen`, the allocation functions, and the selected
   pthread and atomic interfaces. They carry no executable semantics; their
-  behavior comes from the prelude `extern` contracts and the kernel's
+  behavior comes from the library's `extern` contracts and the kernel's
   allocation model.
 
 A verified claim says nothing about a different target, compiler flag set, or
@@ -100,16 +100,16 @@ C++ system-header functions are axioms checked against Click's catalog
 contracts in `src/languages/cpp/standard_library.rs`. See
 [Experimental Rust imports](../reference/rust.md).
 
-## The standard library
+## The Click library
 
-`stdlib/prelude.click` declares 158 theorems. None is an unproved axiom: the
+The `library/` modules declare 162 theorems. None is an unproved axiom: the
 gate proves every one of them with `verify_standard_library`. Ordinary
 verification then applies them as dependencies without re-checking them, so a
-prelude theorem is trusted to the extent that the gate that checked it is.
+library theorem is trusted to the extent that the gate that checked it is.
 
-The prelude also declares five `extern` contracts that are assumed, not
-proved: `memcpy`, `memcmp`, `memset`, `strlen`, and the internal
-`__click_constant_p_unknown`.
+The library also declares five `extern` contracts that are assumed, not
+proved: `memcpy`, `memcmp`, `memset` and `strlen` in `library/c/string.click`,
+and the internal `__click_constant_p_unknown` in `library/c/builtins.click`.
 
 ## Your assumptions
 

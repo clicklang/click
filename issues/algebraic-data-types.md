@@ -18,7 +18,7 @@ Click has first-class generic and strictly positive recursive ADTs, typed
 symbolic variables, constructors, symbolic matches and pure calls, checked
 constructor rules, structurally recursive pure functions, same-datatype
 induction, and generic theorems checked at arbitrary types. The
-[prelude](../stdlib/prelude.click) supplies List and Nat with checked laws.
+[Click library](../library/list.click) supplies List and Nat with checked laws.
 Pure Click defines symbolic terms; only C executes.
 
 Exclusive resource fields connect these values to concrete ownership.
