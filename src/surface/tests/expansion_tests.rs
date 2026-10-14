@@ -1,6 +1,37 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: checks two post-return unfolds through expansion and retained verification"]
+fn call_produced_instances_unfold_after_return_in_all_proof_modes() {
+    for fixture in [
+        "mdtests/return_unfold_call_instance.md",
+        "mdtests/return_unfold_call_instance_with_local.md",
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        verify_c0_sources(&source, &sources).unwrap();
+        let expanded =
+            expand_c0_claim_source(&source, &sources, "pick", CProofClaim::Grouped).unwrap();
+        verify_c0_sources(&expanded, &sources).unwrap();
+        let position =
+            expansion::position_at_offset(&expanded, expanded.find("ensures o.model").unwrap());
+        let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+        session
+            .verify_at(&expanded, position.line, position.column)
+            .unwrap();
+        drop(session);
+        let false_frame = source.replace(
+            "ensures o.model == 0;",
+            "ensures o.model == 0; ensures r->top == old(r->top);",
+        );
+        assert!(verify_c0_sources(&false_frame, &sources).is_err());
+    }
+}
+
+#[test]
 fn long_flat_integer_sum_expands_and_rechecks_without_parenthesis_growth() {
     let sum = std::iter::repeat_n("a", 24).collect::<Vec<_>>().join(" + ");
     let source = format!(

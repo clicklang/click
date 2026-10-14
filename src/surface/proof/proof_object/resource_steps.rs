@@ -712,7 +712,7 @@ impl<'a> Proof<'a> {
         //
         // Use the kernel's exact opening delta for pointer spelling. Later
         // body facts must not rename a cell after its equation was recorded.
-        let after = if unfold {
+        let after = if unfold && outcome.is_none() {
             let naming_assumptions = rewrite.naming_facts.into_iter().fold(
                 self.facts().assumptions().clone(),
                 PureFactContext::assume_proposition,
@@ -740,6 +740,7 @@ impl<'a> Proof<'a> {
                     &facts,
                     unfold,
                     selected_children.clone(),
+                    Some((&goal.data.core.state, &after)),
                 )
                 .map_err(|message| self.step_error(message))?;
             execution.core.state = after.clone().into();

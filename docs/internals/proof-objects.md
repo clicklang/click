@@ -251,6 +251,15 @@ complete execution after all outcomes are finished. This preserves coverage
 without re-certifying every sibling for each fold. Indexing and extending one
 path shares the unchanged traces and history.
 
+An instance exchange also retains its checked observation at the published
+return snapshot, where automatic locals have ended. Its input must be that
+path's publication or the preceding observed exchange's output. Certification
+checks the selected resource body at both snapshots and imports only the
+semantic facts those exchanges produce, including exact loadability facts.
+Post-return unfolds do not materialize additional cached cells: no C statement
+follows the return, and naming those loads would change the snapshot used by
+claim completion. Unfolds during execution still name their exposed cells.
+
 When a proof matches an already constructed model, an algebraic payload that
 already has a Surface variable keeps that identity under the new source name.
 The kernel still allocates fresh constructor witnesses and checks the case;

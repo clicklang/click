@@ -253,11 +253,12 @@ Other friction:
   that passes in the retired `rbtree_erase_black_spine.click`; the other
   unfolded `erase_outcome`. Both were replaced by explicit steps. This is an
   observation; it has not been reduced.
-- Unfolding an instance that `__rb_change_child` produced is refused after
-  the C returns
-  ([bugs/post-return-unfold-of-a-call-produced-instance-is-refused.md](../bugs/post-return-unfold-of-a-call-produced-instance-is-refused.md)),
-  so the exits that unfold such an instance do so before the final
-  `augment->propagate` call, and fold the outcome after return.
+- Unfolding an instance that `__rb_change_child` produced was refused after
+  the C returned. The reduced post-return forms now verify, including
+  [retirement of a local](../mdtests/return_unfold_call_instance_with_local.md)
+  and [a direct call](../mdtests/return_unfold_call_instance.md). The general
+  proof was written with these unfolds before the final `augment->propagate`
+  call and the outcome folds after return.
 - Moving `refold_to_root` out of the color-repair module made the theorem
   requirement that `apply` proves by `auto` in
   `rbtree_erase_leaf_wrapper.click` miss; it is now an explicit `have`.
