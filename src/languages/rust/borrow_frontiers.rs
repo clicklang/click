@@ -122,8 +122,14 @@ fn transfer<'a>(
             if source_escapes {
                 return Err(FrontierRefusal::ReferenceEscape);
             }
-            let target_uses =
-                !matches!(target, E::Local { .. }) && alias_effect(target, aliases)?.0;
+            let (target_uses, target_escapes) = if matches!(target, E::Local { .. }) {
+                (false, false)
+            } else {
+                alias_effect(target, aliases)?
+            };
+            if target_escapes {
+                return Err(FrontierRefusal::ReferenceEscape);
+            }
             if after_end && (source_uses || target_uses) {
                 return Err(FrontierRefusal::FutureUse);
             }
@@ -436,6 +442,17 @@ mod tests {
                     right: Box::new(E::Integer { value: 1 }),
                 },
             ),
+        );
+        assert_eq!(refusal(&f, 3), FrontierRefusal::ReferenceEscape);
+        block_mut(&mut f).statements[1] = assign(
+            E::Deref {
+                reference: Box::new(E::Call {
+                    function: "capture".into(),
+                    arguments: vec![local("child")],
+                }),
+                value_type: Type::I32,
+            },
+            E::Integer { value: 7 },
         );
         assert_eq!(refusal(&f, 3), FrontierRefusal::ReferenceEscape);
         block_mut(&mut f).statements[1] = assign(
