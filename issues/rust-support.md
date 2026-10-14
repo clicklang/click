@@ -241,6 +241,12 @@ behind new language coverage:
   tracks copies and replacement definitions, refuses capture and unsupported
   paths, and never uses storage death as a discharge. The native witness checks
   actual imported MIR; bounded alias-chain tests check deterministic scaling.
+  Its certificate now indexes exact scalar reads/writes by borrow instance and
+  MIR point, distinguishes replacement definitions, and refuses shared writes
+  or value-dependent addresses as pointer identity. Native evidence binds the
+  original child store; access-index construction and lookup also have bounded
+  deterministic scaling checks. These identities still need to travel through
+  C0 lowering and bind actual memory permission.
   Local reference access binding and kernel recovery at checked frontiers
   remain open, so this does not close
   the entire borrow-authority requirement.
