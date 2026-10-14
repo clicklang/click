@@ -18073,3 +18073,39 @@ fn returned_struct_pointer_lemmas_survive_expansion_and_retained_verification() 
         .verify_at_project(&expanded, claim.line, claim.column)
         .unwrap();
 }
+
+#[test]
+#[ignore = "nightly: checks byte-field ownership through expansion and retained verification"]
+fn whole_struct_byte_fields_reassemble_in_all_proof_modes() {
+    for fixture in [
+        "mdtests/whole_struct_reassembles_from_byte_fields.md",
+        "mdtests/whole_struct_reassembles_from_padded_byte_field.md",
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        verify_c0_sources(&source, &sources).unwrap();
+        let expanded =
+            expand_c0_claim_source(&source, &sources, "mixed_fields", CProofClaim::Grouped)
+                .unwrap();
+        verify_c0_sources(&expanded, &sources).unwrap();
+        let position =
+            expansion::position_at_offset(&expanded, expanded.find("owns p->a;").unwrap());
+        let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+        session
+            .verify_at(&expanded, position.line, position.column)
+            .unwrap();
+        let field_clause = if source.contains("owns p->f;") {
+            "owns p->f;"
+        } else {
+            "owns p->c;"
+        };
+        for replacement in [String::new(), field_clause.replace("owns", "views")] {
+            assert!(
+                verify_c0_sources(&source.replace(field_clause, &replacement), &sources).is_err()
+            );
+        }
+    }
+}
