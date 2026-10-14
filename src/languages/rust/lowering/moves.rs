@@ -292,6 +292,38 @@ pub(super) fn lower(
             T::Call {
                 function,
                 arguments,
+                destination,
+                through_pointer: true,
+                owned_arguments,
+                ..
+            } => {
+                // The pointer's own type gives the arguments and result.
+                let Some(Type::FnPointer { parameters, result }) = mir
+                    .locals
+                    .iter()
+                    .find(|local| &local.name == function)
+                    .map(|local| &local.value_type)
+                else {
+                    return Err("Rust pointer call target is not a function-pointer local".into());
+                };
+                if !owned_arguments.is_empty() {
+                    return Err("Rust pointer call carries owned-argument metadata".into());
+                }
+                let (prefix, arguments_values) =
+                    cx.typed_arguments(parameters.clone(), arguments)?;
+                let call = if **result == Type::Unit {
+                    c_call(function, arguments_values)
+                } else {
+                    c_call_assign(destination, function, arguments_values)
+                };
+                c_seq(
+                    accesses(&arguments.iter().collect::<Vec<_>>(), &live),
+                    c_seq(prefix, call),
+                )
+            }
+            T::Call {
+                function,
+                arguments,
                 owned_arguments,
                 destination,
                 ..

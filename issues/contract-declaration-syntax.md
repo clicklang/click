@@ -142,7 +142,11 @@ that writes `int32` for such a source already writes the source's spelling.
   stored or forwarded, and `std::function` is not imported. Diagnostics and proof steps (`executes`,
   `step(callee(...))`) still name functions by the importer's names.
 - **Rust.** Verified functions in native form, including `impl Drop for Guard`
-  and module paths. No `extern` or named contracts.
+  and module paths. A named contract is `contract fn Doubling(x: i32) -> i32`,
+  and a `fn(i32) -> i32` parameter is a callback under it, with a crate
+  function item passed for one. No `extern`, closures or `dyn Fn`. A
+  diagnostic's suggested refinement theorem still uses the importer's name
+  and C's `&f` spelling.
 
 ## Work, in delivery order
 
@@ -158,10 +162,10 @@ that writes `int32` for such a source already writes the source's spelling.
    functions.
 3. **`extern` and `contract` for C++ and Rust.** Done: native C++ `extern`
    heads, members included, and calls through C++ function-pointer
-   parameters under a named contract. Remaining: storing and forwarding C++
-   function pointers, function pointers in Rust, `std::function` in C++
-   (whose call operator throws when empty), and closures (`impl Fn`,
-   `&dyn Fn`) in Rust,
+   parameters under a named contract, and Rust `contract fn` with calls
+   through `fn` pointers. Remaining: storing and forwarding C++ function
+   pointers, `std::function` in C++ (whose call operator throws when
+   empty), Rust `extern fn`, and closures (`impl Fn`, `&dyn Fn`) in Rust,
    through the C++ exporter and Charon, with the same refinement check as C
    (`Comparator(&f)`).
 4. **Base-class and trait method interfaces.** A contract on a C++ virtual

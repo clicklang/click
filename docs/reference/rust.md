@@ -382,6 +382,22 @@ or array whose element is not a scalar. `fn` in a C or C++ sidecar is
 refused. Click's own words (`requires`, `ensures`, `owns`, `result`, the
 tactics) are the same in every language.
 
+### Function pointers and named contracts
+
+A parameter of a safe Rust-ABI function-pointer type of scalar parameters and
+a scalar or unit result, `f: fn(i32) -> i32`, is a callback, as in C. A named
+contract is written as a Rust item, `contract fn Doubling(x: i32) -> i32 {
+requires ...; ensures result == x + x; }`, and `requires Doubling(f);` gives
+a call through `f` that contract, and a function passing its own `f` on
+needs the contract too. Passing a function item, `apply(twice, x)`,
+reifies it as a pointer; the caller's proof needs `twice` to meet the
+contract, which Click checks at the call from `twice`'s own contract, or an
+`executes` theorem shows. The importer reads Charon's `CastKind::FnPtr` of a
+crate function item and its `FnOperand::Dynamic` call through a local, and
+refuses unsafe or foreign function pointers, pointers of non-scalar
+parameters, closures and `dyn Fn`
+([`design/charon-trial/function-pointers`](https://github.com/clicklang/click/blob/master/design/charon-trial/function-pointers/callback.click)).
+
 ## Supported semantics
 
 The scalar slice supports `i32`, `u8`, `u16`, `u32`, target-sized `usize`, booleans, unit returns, initialized scalar
