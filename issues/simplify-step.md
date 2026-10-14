@@ -261,7 +261,7 @@ corpus, and give the fast path, implicit `auto`, and `by`/`requires` forms
 only to the tactics it shows searching. Tactics whose premises are already
 cited exactly, with a smart sibling that finds them, need no change.
 
-**5a, the census (in progress).** A survey of the simple tactics found these
+**5a, the census (landed).** A survey of the simple tactics found these
 still searching the proof context after an exact lookup misses; each now
 counts under `HiddenPrerequisiteRoute::TacticSearch` by site:
 
@@ -300,6 +300,31 @@ are not yet counted. Each requirement spelling the implicit `auto` proves is
 now checked to re-lower (a debug assertion), and a written `requires` entry
 matches an `assert`'s truthiness obligation by its asserted condition
 (`mdtests/step_requires_states_an_asserted_condition.md`).
+
+**5b, `fold` (in progress).** `fold` no longer searches for a body fact. One
+the exact checks miss is a requirement spelled where it is created: the
+definition's fact with the fold's arguments as written and each witness as a
+synthesized source expression. The driver `step` uses runs a bare `fold`'s
+fast path under the probe, proves each open body fact by the implicit
+`auto`, and records the proof, so expansion prints `fold(r) by { ... }` or
+`fold(r) { requires P by ...; }`; both forms parse and check, after
+`execute()` as well. When `auto` misses one of several, the fold refuses at
+that one. `simp` gained the frame the search supplied for
+`examples/perpetual-service`: a goal reading one cell at two snapshots is
+carried by `transport` from the cell's reflexive equality at a recorded point
+(`mdtests/simp_frames_a_read_across_a_separate_store.md`). Three gaps remain:
+
+- A body fact of an authority control resource is lowered in the authority's
+  projected state, which a `have` at the frontier does not see, so it keeps
+  the counted search (`fold projected body fact`).
+- A body fact over a witness the proof cannot name, such as the `next` an
+  `unfold` exposed in `examples/marked-linked-list`'s `list_mark`, has no
+  source spelling, so it keeps the counted search too
+  (`fold unspellable body fact`). Naming unfolded witnesses removes it.
+- `mdtests/resource_witness_fold_infers_origin.md` and
+  `examples/marked-linked-list`'s `list_prepend` state the low-bit lemma the
+  search used to find, which `auto` proves alone but not inside the body
+  fact.
 
 ## Acceptance criteria
 

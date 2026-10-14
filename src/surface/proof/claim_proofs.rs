@@ -2147,6 +2147,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 | PostExecutionTactic::AutoClose
                                 | PostExecutionTactic::SimpUsing(_)
                                 | PostExecutionTactic::Fold(_)
+                                | PostExecutionTactic::FoldProved(_)
                                 | PostExecutionTactic::Unfold(_)
                                 | PostExecutionTactic::Construct(_)
                                 | PostExecutionTactic::CloseOpen { .. }
@@ -2300,19 +2301,26 @@ pub(super) fn finish_ordered_proof<'a>(
                             }
                         });
                         match post_tactic {
-                            PostExecutionTactic::Fold(resource)
-                            | PostExecutionTactic::Unfold(resource) => {
+                            PostExecutionTactic::Fold(_)
+                            | PostExecutionTactic::FoldProved(_)
+                            | PostExecutionTactic::Unfold(_) => {
                                 let Some(evolving) = outcome_proof.take() else {
                                     return Err(ClickError::new(format!(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: typed outcome resource operation has no Proof goal"
                                     )));
                                 };
                                 let before = evolving.checkpoint();
-                                let step = if matches!(post_tactic, PostExecutionTactic::Unfold(_))
-                                {
-                                    ProofStep::UnfoldResource(resource.clone())
-                                } else {
-                                    ProofStep::FoldResource(resource.clone())
+                                let step = match post_tactic {
+                                    PostExecutionTactic::Unfold(resource) => {
+                                        ProofStep::UnfoldResource(resource.clone())
+                                    }
+                                    PostExecutionTactic::Fold(resource) => {
+                                        ProofStep::FoldResource(resource.clone())
+                                    }
+                                    PostExecutionTactic::FoldProved(tactic) => {
+                                        ProofStep::from_validated_tactic(tactic)
+                                    }
+                                    _ => unreachable!("matched a resource operation above"),
                                 };
                                 let folded = evolving.apply_step(step)?;
                                 has_return_resource_rewrite |=
