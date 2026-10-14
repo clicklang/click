@@ -170,7 +170,7 @@ exactly the three targeted projects are restored, with no new failing project.
 This is not a full green gate.
 
 The next preserved checkpoint, `bd6659d9a`, records an attributed loop escape
-repair and the [retained-resource candidate lookup repair](../bugs/retained-resource-lookup-omits-framed-pointer-carriers.md).
+repair and the [retained-resource candidate lookup repair](../design/object-model-recovery-audit.md#loop-havoc-borrow-partition-producer-repair).
 All 31 selected kernel controls and both C++ member-domain rejection fixtures
 pass; eight of nine selected unfold fixtures pass, with the remaining failure
 confirmed on the prior checkpoint. The full normal example stage improves to
