@@ -1639,28 +1639,76 @@ fn logical_and_or_short_circuit_right_operand() {
 }
 
 #[test]
-fn untyped_pointer_operations_report_indeterminate_pointee_type() {
+fn void_pointer_dereferences_report_indeterminate_pointee_type() {
     let pointer = Pointer {
         block: "array".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let pointer_value = || c_pointer_value(pointer.clone());
+    let pointer_value = || c_typed_pointer_value(pointer.clone(), CType::VoidPointer);
     let expressions = [
         c_load(pointer_value()),
         c_index(pointer_value(), c_int32_literal(1)),
-        c_add(pointer_value(), c_int32_literal(1)),
-        c_add(c_int32_literal(1), pointer_value()),
     ];
 
     for expression in expressions {
         let theorem = prove_c_expression_evaluation(CState::new(), expression.clone())
-            .expect("an untyped pointer operation should produce an explicit model error");
+            .expect("a void-pointer dereference should produce an explicit model error");
         assert_eq!(
             theorem.proposition(),
             &Proposition::CExpressionEvaluates {
                 state: Box::new(CState::new()),
                 expression,
                 outcome: CExpressionOutcome::RuntimeError(CRuntimeError::IndeterminatePointeeType,),
+            }
+        );
+    }
+}
+
+#[test]
+fn captured_typed_pointer_load_requires_read_authority() {
+    let pointer = Pointer {
+        block: "array".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let state = CState::new();
+    let expression = c_load(c_pointer_value(pointer.clone()));
+    let theorem = prove_c_expression_evaluation(state.clone(), expression.clone())
+        .expect("a typed pointer without a view should report the missing authority");
+    assert_eq!(
+        theorem.proposition(),
+        &Proposition::CExpressionEvaluates {
+            state: Box::new(state),
+            expression,
+            outcome: CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource {
+                resource: Box::new(view_memory_fact(pointer, 0, 1)),
+            }),
+        }
+    );
+}
+
+#[test]
+fn captured_void_pointer_arithmetic_retains_the_gnu_byte_stride() {
+    let pointer = Pointer {
+        block: "bytes".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let state = CState::new().with_memory(CMemory::new().with_block("bytes", 8));
+    let value = || c_typed_pointer_value(pointer.clone(), CType::VoidPointer);
+    for expression in [
+        c_add(value(), c_int32_literal(1)),
+        c_add(c_int32_literal(1), value()),
+    ] {
+        let theorem = prove_c_expression_evaluation(state.clone(), expression.clone())
+            .expect("GNU void-pointer arithmetic uses a byte stride inside live storage");
+        assert_eq!(
+            theorem.proposition(),
+            &Proposition::CExpressionEvaluates {
+                state: Box::new(state.clone()),
+                expression,
+                outcome: CExpressionOutcome::Value(CValue::typed_pointer(
+                    pointer.offset_by_bytes(1),
+                    CType::VoidPointer,
+                )),
             }
         );
     }
