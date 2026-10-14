@@ -240,6 +240,9 @@ void rb_erase(struct rb_node* node, struct rb_root* root) {
     step(); // Declare rebalance.
     let { hole: hole, remaining: deficit } = step(__rb_erase_augmented(node, root, &dummy_callbacks), { tree: tree, up: up });
     have deficit.model == old(up.model);
+    have ctx_consistent(deficit.model, RbTree::Empty, 0) == 1 by {
+        rewrite(RbTree::Empty == hole.model); assumption();
+    }
     apply(plug_parent_consistent_transport(deficit.model, RbTree::Empty, 0));
     have rb_tree_parent_consistent(plug(deficit.model, RbTree::Empty)) == 1 by auto;
     if rebalance != 0 {

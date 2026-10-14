@@ -4864,18 +4864,11 @@ pub(crate) fn certified_store_loadability_facts(
         .fact_iter()
         .filter_map(|fact| {
             let store = fact.certified_store_data()?;
-            let byte_width = match store.value {
+            // The store materializes one cell of the value's own width; a
+            // pointer is `C_POINTER_BYTE_WIDTH` bytes, not four.
+            let byte_width = match &store.value {
                 CValue::Void => return None,
-                CValue::Bool(_) => 1,
-                CValue::UInt8(_) => 1,
-                CValue::Int8(_) => 1,
-                CValue::Int16(_) | CValue::UInt16(_) => 2,
-                CValue::Int32(_) | CValue::UInt32(_) => 4,
-                CValue::Int64(_) | CValue::UInt64(_) => 8,
-                CValue::Int128(_) | CValue::UInt128(_) => 16,
-                CValue::Pointer(_) => 4,
-                CValue::Float32(_) => 4,
-                CValue::Float64(_) => 8,
+                value => value.byte_width(),
             };
             Some(Proposition::CMemoryLoadable {
                 memory: store.after.clone(),

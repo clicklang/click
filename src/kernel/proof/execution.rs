@@ -148,6 +148,14 @@ pub(crate) struct CheckedReturnProposition {
     context: Arc<CheckedReturnContext>,
 }
 
+/// Why [`ExecutionProofCore::checked_return_path`] refused a path: the
+/// kernel's reason and, when a return proof assumed a fact the path does not
+/// justify, that fact, for the diagnostic to name.
+pub(crate) struct ReturnPathRefusal {
+    pub(crate) reason: &'static str,
+    pub(crate) unjustified_fact: Option<Proposition>,
+}
+
 impl CheckedReturnProposition {
     fn check(
         proof: super::CheckedProposition,
@@ -7123,6 +7131,7 @@ fn trace_completion(
         assumptions,
         checked_void_fallthrough,
         None,
+        &mut None,
     )
 }
 
@@ -7130,12 +7139,17 @@ fn trace_completion(
 /// entry was checked under. A return proof's facts that the entry already
 /// held are the proof's assumptions, not path facts, so only the facts it
 /// introduced since are checked against the path.
+///
+/// When a return proof assumes a fact the path does not justify, that fact
+/// is left in `unjustified` for the refusal's diagnostic. It is only read
+/// after the refusal; it never affects the verdict.
 fn trace_completion_from_entry(
     function: &CFunction,
     events: &[CheckedExecutionEvent],
     assumptions: &PureFactContext,
     checked_void_fallthrough: bool,
     entry_facts: Option<&ProofFacts>,
+    unjustified: &mut Option<Proposition>,
 ) -> Result<
     (
         CStatementOutcome,
@@ -7381,6 +7395,7 @@ fn trace_completion_from_entry(
                                 .try_compose_with_facts(resources.facts().iter().cloned(), executed_under)
                                 .is_ok())
                     {
+                        *unjustified = Some(fact.clone());
                         return Err("return proof assumes an unjustified path fact");
                     }
                     *executed_under =
@@ -10510,7 +10525,13 @@ impl ExecutionProofCore {
             );
         }
         let (paths, has_checked_entry, deferred_contract_exits, deferred_contract_exit_errors) =
-            self.checked_execution_paths(candidates, checked_function, &assumptions, None)?;
+            self.checked_execution_paths(
+                candidates,
+                checked_function,
+                &assumptions,
+                None,
+                &mut None,
+            )?;
         let path_count = paths.len();
         Ok(crate::kernel::CCheckedFunctionExecution {
             state: candidates.state().clone(),
@@ -10549,11 +10570,25 @@ impl ExecutionProofCore {
         function: &CFunction,
         assumptions: &PureFactContext,
         path_index: usize,
-    ) -> Result<crate::kernel::SymbolicCExecutionPath, &'static str> {
-        self.checked_execution_paths(candidates, function, assumptions, Some(path_index))?
-            .0
-            .pop()
-            .ok_or("return fold selected an unknown path")
+    ) -> Result<crate::kernel::SymbolicCExecutionPath, ReturnPathRefusal> {
+        let mut unjustified = None;
+        self.checked_execution_paths(
+            candidates,
+            function,
+            assumptions,
+            Some(path_index),
+            &mut unjustified,
+        )
+        .map_err(|reason| ReturnPathRefusal {
+            reason,
+            unjustified_fact: unjustified,
+        })?
+        .0
+        .pop()
+        .ok_or(ReturnPathRefusal {
+            reason: "return fold selected an unknown path",
+            unjustified_fact: None,
+        })
     }
 
     /// Whether this path retains a kernel-checked exchange after its C return.
@@ -10594,6 +10629,7 @@ impl ExecutionProofCore {
         checked_function: &CFunction,
         assumptions: &PureFactContext,
         selected: Option<usize>,
+        unjustified: &mut Option<Proposition>,
     ) -> Result<
         (
             Vec<crate::kernel::SymbolicCExecutionPath>,
@@ -10674,6 +10710,7 @@ impl ExecutionProofCore {
                         && self.evidence_source.is_none()
                         && self.frontier.region == ExecutionRegionKind::Function,
                     self.entry_facts.as_ref(),
+                    unjustified,
                 )?;
             // Publication precedes post-return logical folds. Check its
             // original C outcome against the trace before those exchanges;
@@ -11997,6 +12034,37 @@ mod tests {
                 assert_eq!(after.memory(), state.memory());
             }
         }
+    }
+
+    /// A certified store's loadability fact names the stored cell's own
+    /// width, so return certification accepts it as that materialized read.
+    /// A pointer cell is eight bytes; a four-byte fact over it was refused as
+    /// an unjustified path fact once a post-return `have` imported it.
+    #[test]
+    fn return_proposition_accepts_the_store_loadability_of_a_pointer_cell() {
+        let pointer = Pointer::symbolic(Variable(42));
+        let value = CValue::pointer(Pointer::symbolic(Variable(43)));
+        let memory = CMemory::new().store(pointer.clone(), value.clone());
+        let state = CState::new().with_memory(memory.clone());
+        let empty = ProofFacts::default();
+        let store = crate::kernel::ExecutionPureFact::certified_store(
+            CMemory::new(),
+            memory,
+            pointer,
+            value,
+            None,
+        );
+        let [fact]: [Proposition; 1] =
+            crate::kernel::certified_store_loadability_facts(&vec![store])
+                .try_into()
+                .expect("one loadability fact");
+        let (function, mut events) = returned_proposition_trace(&state, &empty);
+        let context = returned_proposition_context(&state);
+        let roots = empty.clone().with_fact(fact.clone());
+        events.push(returned_proposition_event(
+            &context, &state, &empty, &roots, fact,
+        ));
+        assert!(trace_completion(&function, &events, empty.assumptions(), false).is_ok());
     }
 
     #[test]

@@ -137,9 +137,10 @@ Decision: open.
 
 ### P5. Copy-paste across case files and sidecars
 
-Today: `rb_erase` has 11 per-case contracts and no general one. The general
-erase-color repair proof's left and right arms (about 1,380 lines each) are
-mirror images. C++ caller sidecars repeat callee contracts
+Today: `rb_erase` and `__rb_erase_augmented` each have one general contract
+(R2, below). The general erase-color repair proof's left and right arms
+(about 1,380 lines each) are mirror images, and so are the general unlink's
+left and right exits. C++ caller sidecars repeat callee contracts
 (`examples/basic-cpp/with_restore_caller.click`).
 
 Proposed fix: [design/proof-reuse.md](../design/proof-reuse.md):
@@ -152,12 +153,18 @@ Proposed fix: [design/proof-reuse.md](../design/proof-reuse.md):
 
 Decision: fix (maintainer, 2026-10-14), starting with R2.
 
+R2 is done (2026-10-14): general `__rb_erase_augmented` and `rb_erase`
+contracts replace 16 per-case sidecars of `examples/rbtree-erase`; see
+[design/proof-reuse.md](../design/proof-reuse.md#r2-one-general-contract-per-function).
+R3, R4 and R5 remain.
+
 ### P6. Loop proofs restate facts
 
 Today: invariants restate immutable facts and held views
 (`examples/rust-byte-sum/sum.click`), iterations end with explicit
 `step(); step(); step(); close_invariants();`, and identical facts are
-re-`have`d after steps (`examples/rbtree-erase/rbtree_erase_black_spine.click`).
+re-`have`d after steps (the deeper-successor arms of
+`examples/rbtree-erase/rbtree_erase_augmented.click`).
 
 Proposed fix: facts about values a step cannot change carry across steps
 automatically; the back edge closes implicitly.

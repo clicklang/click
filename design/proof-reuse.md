@@ -148,10 +148,13 @@ per-case development but re-execute the shared prefix once per case.
 Reconsider it only if R2's prototype shows the single-proof form failing on
 size or speed.
 
-Prototype (2026-10-14, master `93bc0b8`): both general contracts verify, but
-only in a form that works around a verifier bug, so nothing has landed yet.
-Work stopped at
-[bugs/post-return-apply-blocks-return-instance-fold.md](../bugs/post-return-apply-blocks-return-instance-fold.md).
+Done (2026-10-14): both general contracts landed in `examples/rbtree-erase`
+and replaced 16 per-case sidecars. The prototype first verified only with
+every exit's bookkeeping moved before the final C call, because return
+certification refused a theorem applied after return. That bug and a
+four-byte loadability fact over an eight-byte pointer store, which blocked
+the same spelling, are fixed, so each exit now folds its outcome after the C
+returns.
 
 The general `__rb_erase_augmented` consumes `rb_at(node)` and
 `ctx_at(node, root)`. It requires a nonempty node with `is_rb`, `ctx_rb` at the
@@ -215,24 +218,30 @@ leaf, or not). Two changes make the arms position-general:
 
 | | Sidecars | Lines | Verification |
 |---|---|---|---|
-| Before: 11 `rb_erase` contracts and their case contracts | 14 | 4,786 | 37.1 s |
-| After: general unlink and general `rb_erase` | 2 | 2,707 | 20.5 s |
+| Before: the retired per-case sidecars | 16 | 4,815 | 37.7 s |
+| After: general unlink, general `rb_erase`, shared refold tactic | 3 | 2,793 | 21.1 s |
 
 The time is the sum of single release runs, one sidecar at a time. The
-general unlink is 2,615 lines and takes 19.3 s as one proof unit. Of those
-lines, 495 are definitions, lemmas, and the spine tactics moved out of the
-case files. The general `rb_erase` is 92 lines and takes 1.1 s. The three
-older root and leaf increments (`rbtree_erase.click`,
-`rbtree_erase_black_leaf.click`, `rbtree_erase_red_leaf.click`, 517 lines) are
-also subsumed. The single-proof form therefore does not fail on size or speed,
-and contract intersection is not needed.
+general unlink is 2,607 lines and takes 19.2 s as one proof unit; the general
+`rb_erase` is 92 lines and takes 1.2 s. `refold_to_root` (94 lines, 0.7 s)
+moved out of the color-repair proof into `rbtree_refold_to_root.click`, which
+both proofs import. The single-proof form therefore does not fail on size or
+speed, and contract intersection is not needed. `examples/rbtree-erase` went
+from 22 sidecars and 9,747 lines to 9 sidecars and 7,504 lines.
 
-The blocker is in the natural spelling, where each exit folds `erase_out`
-after the C returns, as `rbtree_erase_leaf_wrapper.click` folds its outputs.
-Return certification refuses that spelling with an unusable diagnostic. The
-prototype verifies only when every exit's bookkeeping moves before the final
-`augment->propagate` call. Per the tooling-defect rule, that version was not
-landed. The prototype is not in the tree.
+`rbtree_erase_leaf_wrapper.click` stays: `examples/rbtree-augmented` imports
+its leaf unlink, whose hole-and-context outputs that proof consumes. The
+retired sidecars' 42 mutation tests named 25 distinct mutations of
+`rb_erase_augmented.c`, and 14 more mutated the inlined `__rb_change_child`,
+which the general unlink steps by contract and `rbtree_change_child.click`'s
+own checks cover. The 25 are nightly checks against the general unlink, each
+asserting the specific refusal. A mutation that deleted a statement is now a
+same-length replacement: statement positions are counted in source preorder
+(design-review W1), and a deletion would otherwise shift a later
+`execute_until` and be refused for that instead. Two of them ran in the gate
+against `rbtree_erase.click` in about 1 s each; against the general unlink
+they take 13 to 14 s, so they are nightly too. The pinned-source checks stay
+in the gate.
 
 Other friction:
 
@@ -241,12 +250,17 @@ Other friction:
   subtree had to stay folded across the call.
 - Two `by auto` steps in the merged proof exhausted their work budgets, after
   2 to 2.5 million units. One was a deeper-successor `ctx_node_is` disequality
-  that passes in `rbtree_erase_black_spine.click`; the other unfolded
-  `erase_outcome`. Both were replaced by explicit steps. This is an
+  that passes in the retired `rbtree_erase_black_spine.click`; the other
+  unfolded `erase_outcome`. Both were replaced by explicit steps. This is an
   observation; it has not been reduced.
-
-Next: fix the bug, then land the two sidecars. Then delete the 17 subsumed
-sidecars and point their mutation checks at the general unlink, as in R1.
+- Unfolding an instance that `__rb_change_child` produced is refused after
+  the C returns
+  ([bugs/post-return-unfold-of-a-call-produced-instance-is-refused.md](../bugs/post-return-unfold-of-a-call-produced-instance-is-refused.md)),
+  so the exits that unfold such an instance do so before the final
+  `augment->propagate` call, and fold the outcome after return.
+- Moving `refold_to_root` out of the color-repair module made the theorem
+  requirement that `apply` proves by `auto` in
+  `rbtree_erase_leaf_wrapper.click` miss; it is now an explicit `have`.
 
 ### R3. Automatic unfolding of recursive specification functions
 
@@ -314,9 +328,8 @@ These are estimates, to be replaced by measurements.
 
 - R1: delete the superseded files and port their mutation checks. Record the
   example's line count and gate time before and after.
-- R2: prove general `__rb_erase_augmented` and `rb_erase` contracts. Record
-  their size against the 11 wrappers they replace. Prototype measured (see
-  R2); landing waits on the return-certification bug.
+- R2: done. General `__rb_erase_augmented` and `rb_erase` contracts replace
+  16 sidecars (4,815 lines, 37.7 s) with 3 (2,793 lines, 21.1 s); see R2.
 - R3 and R4: mdtests for one fuel unfold, one automatic open on a field read,
   and a refold at a join. Add negative cases for an unknown constructor (no
   unfold) and a field mismatch at refold (refused). Then rewrite one arm of
