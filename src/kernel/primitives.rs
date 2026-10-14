@@ -5681,6 +5681,41 @@ impl CHeapMemory {
             && self.zeroed_pending_allocations == other.zeroed_pending_allocations
             && self.pending_reallocations == other.pending_reallocations
     }
+
+    /// Whether `next` has this heap's allocation lifetimes except for
+    /// tombstones of allocations that ended after this state, none of which
+    /// was live, pending, or being reallocated here.
+    ///
+    /// A loop body that frees storage it reached through a resource it
+    /// unfolded ends an allocation the loop head never held as live: the
+    /// head state knows it only folded inside a resource. Its tombstone is a
+    /// double-free and stale-pointer diagnostic, not authority. Every access
+    /// and every `free` needs ownership of the allocation, which the body
+    /// consumed, and heap identities are never reused within a proof, so a
+    /// head that does not record the tombstone admits no operation the back
+    /// edge refuses. Any other difference is refused as before. Work is the
+    /// changed entries, found by the maps' structural diff.
+    pub(super) fn has_same_allocation_lifetimes_up_to_ended(&self, next: &Self) -> bool {
+        self.live_allocations == next.live_allocations
+            && self.pending_allocations == next.pending_allocations
+            && self.uninitialized_allocations == next.uninitialized_allocations
+            && self.uninitialized_objects == next.uninitialized_objects
+            && self.zeroed_allocations == next.zeroed_allocations
+            && self.zeroed_prefix_allocations == next.zeroed_prefix_allocations
+            && self.zeroed_pending_allocations == next.zeroed_pending_allocations
+            && self.pending_reallocations == next.pending_reallocations
+            && self
+                .deallocated_allocations
+                .diff(&next.deallocated_allocations)
+                .all(|change| match change {
+                    SnapshotMapChange::Added(pointer) => {
+                        !self.live_allocations.contains_key(pointer)
+                            && !self.pending_allocations.contains_key(pointer)
+                            && !self.pending_reallocations.contains_key(pointer)
+                    }
+                    _ => false,
+                })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]

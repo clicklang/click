@@ -32,20 +32,15 @@ Click currently supports:
 - recursive calls inside ranked loops whose descent depends on the loop's
   changing counters, ranked by a function-level expression or tuple measure
   and discharged from the loop invariants
-  (`mdtests/c_decreases_lexicographic_recursion_under_loops.md`).
+  (`mdtests/c_decreases_lexicographic_recursion_under_loops.md`);
+- recursive calls inside ranked loops that consume a child and free its node,
+  ranked by a model measure, with the loop continuing to the next sibling
+  (`mdtests/c_decreases_model_measure_recursion_consumes_inside_loop.md`).
 
 These behaviors have checked positive and negative regressions. They should
 remain unchanged while the hard cases below are added.
 
 ## Remaining hard cases
-
-### Resource transitions inside ranked loops
-
-A structurally decreasing recursive call that consumes or mutates a child
-resource inside a ranked loop still cannot cross a continuing loop back edge.
-The next iteration must receive exactly the surviving resource populations,
-allocation authority, and heap lifetime required by its invariant. The proof
-must never recover a consumed child or hide a mutation behind the loop join.
 
 ### Mutual structural recursion over a model-free resource
 
@@ -63,12 +58,9 @@ cycles remain a separate resource-algebra concern.
 
 Use unchanged C fixtures and checked sidecars for each slice:
 
-1. A finite ranked loop calls a structural recursive helper that consumes or
-   mutates a child and then continues. A positive case must preserve the
-   residual resource state; a negative case must show that a freed or consumed
-   child cannot be resurrected at the loop join.
-2. Mutually recursive C functions descend through guarded structural resource
-   children. Parent, unrelated-child, and unguarded edges remain rejected.
+1. Mutually recursive C functions descend through guarded children of a
+   model-free structural resource. Parent, unrelated-child, and unguarded
+   edges remain rejected.
 
 ## Acceptance criteria
 
