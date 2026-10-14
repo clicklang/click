@@ -79,6 +79,12 @@ pub(crate) struct DifferenceGraph {
     /// (`EDGE_LIMIT`): a neighbour's stored interval may miss it, so reads
     /// pull from these nodes.
     truncated: crate::persistent::PersistentSet<NodeId>,
+    /// Each narrow integer cast's node and its operand's: `t ≡ v (mod m)`
+    /// with `v` in the source type's range, linked as `t = v - k·m` once the
+    /// two intervals leave one `k` (`resolve_casts`).
+    cast_links: PersistentMap<NodeId, CastLink>,
+    /// The casts waiting on each operand node.
+    casts_of: PersistentMap<NodeId, crate::persistent::PersistentSet<NodeId>>,
     /// Pointer equality facts: a union-find over the pointer terms they
     /// name (`pointer_ids`, `pointer_parent`, `pointer_size`), with each
     /// class root's known-unequal pointers, so `p == null` and `q != null`
@@ -407,6 +413,7 @@ impl DifferenceGraph {
             }
             self.resolve_pending(node);
             self.resolve_flip(node);
+            self.resolve_casts(node);
         }
     }
 
@@ -441,6 +448,49 @@ impl DifferenceGraph {
             self.tighten(base, Some(0), None);
         } else if low >= 0 {
             self.tighten(base, None, Some(-1));
+        }
+    }
+
+    /// Links each cast `node` belongs to, as operand or as cast, whose two
+    /// intervals now leave a single multiple of the modulus between them.
+    fn resolve_casts(&mut self, node: NodeId) {
+        let mut casts: Vec<NodeId> = self
+            .casts_of
+            .get(&node)
+            .map(|casts| casts.iter().copied().take(EDGE_LIMIT).collect())
+            .unwrap_or_default();
+        if self.cast_links.contains_key(&node) {
+            casts.push(node);
+        }
+        for cast in casts {
+            charge();
+            let Some(link) = self.cast_links.get(&cast).copied() else {
+                continue;
+            };
+            let (v_low, v_high) = self.interval(link.base);
+            if v_low < link.source.0 || v_high > link.source.1 {
+                continue;
+            }
+            let (t_low, t_high) = self.interval(cast);
+            // v - t = k·m with both in their intervals.
+            let k_low = -((t_high - v_low).div_euclid(link.modulus));
+            let k_high = (v_high - t_low).div_euclid(link.modulus);
+            if k_low != k_high {
+                continue;
+            }
+            self.cast_links.remove(&cast);
+            if let Some(waiting) = self.casts_of.get(&link.base).cloned() {
+                let waiting = waiting.without_value(&cast);
+                if waiting.is_empty() {
+                    self.casts_of.remove(&link.base);
+                } else {
+                    self.casts_of.insert(link.base, waiting);
+                }
+            }
+            // cast = base - k·m
+            let offset = -k_low * link.modulus;
+            self.constrain((Some(link.base), 0), (Some(cast), 0), offset);
+            self.constrain((Some(cast), 0), (Some(link.base), 0), -offset);
         }
     }
 
@@ -514,6 +564,23 @@ impl DifferenceGraph {
         self.next += 1;
         self.nodes.insert((domain, term.clone()), node);
         self.domains.insert(node, domain);
+        if let Some((value, source, destination, modulus)) = narrow_cast_parts(domain, term) {
+            // A cast's value is always in its destination's range.
+            self.tighten(node, Some(destination.0), Some(destination.1));
+            if let (Some(base), 0) = self.affine(Domain::Int32, value) {
+                self.cast_links.insert(
+                    node,
+                    CastLink {
+                        base,
+                        source,
+                        modulus,
+                    },
+                );
+                let waiting = self.casts_of.get(&base).cloned().unwrap_or_default();
+                self.casts_of.insert(base, waiting.with_value(node));
+                self.resolve_casts(node);
+            }
+        }
         if let Some(base) = sign_flip_base(domain, term) {
             match self.affine(domain, base) {
                 (None, value) => {
@@ -783,6 +850,16 @@ impl DifferenceGraph {
         let [(domain, ref lower, ref upper, strict)] = condition_orders(condition, true)[..] else {
             return None;
         };
+        // An unsigned `a - b` with `b <= a` does not wrap, so it lies in
+        // `[0, a]`: it is at most `a`, and below `a` when `b >= 1`.
+        if let (Domain::UInt64, Bitvector32Term::UInt64Subtract(a, b)) = (domain, lower)
+            && a.as_ref() == upper
+            && let (Some(a), Some(b)) = (self.resolve(domain, a), self.resolve(domain, b))
+            && self.difference_bound(a, b) <= 0
+            && (!strict || self.affine_interval(b).0 >= 1)
+        {
+            return Some(true);
+        }
         // lower < upper (or <=) holds when lower - upper <= -strict, and
         // fails when upper - lower <= -(not strict).
         let (holds, fails) = match (self.resolve(domain, lower), self.resolve(domain, upper)) {
@@ -1103,6 +1180,52 @@ fn link_fits((low, high): (i128, i128), offset: i128, domain: Domain, nonnegativ
     } else {
         low + offset >= min && high + offset <= max
     }
+}
+
+/// A cast between integer types held as `int32` values: its operand, the
+/// source type's range, and the modulus of the destination's width.
+#[derive(Clone, Copy, Debug)]
+struct CastLink {
+    base: NodeId,
+    source: (i128, i128),
+    modulus: i128,
+}
+
+/// The range of a narrow integer type as its `int32` value holds it.
+fn narrow_range(kind: crate::kernel::MachineIntegerType) -> Option<(i128, i128)> {
+    use crate::kernel::MachineIntegerType as M;
+    Some(match kind {
+        M::Int8 => (-128, 127),
+        M::UInt8 => (0, 255),
+        M::Int16 => (-32_768, 32_767),
+        M::UInt16 => (0, 65_535),
+        M::Int32 => (i128::from(i32::MIN), i128::from(i32::MAX)),
+        _ => return None,
+    })
+}
+
+/// A cast between narrow integer types (`int32` or narrower, as `int32`
+/// values): its operand, the source and destination ranges, and the
+/// destination's modulus. The cast keeps the operand modulo that modulus.
+fn narrow_cast_parts(
+    domain: Domain,
+    term: &Bitvector32Term,
+) -> Option<(&Bitvector32Term, (i128, i128), (i128, i128), i128)> {
+    let (
+        Domain::Int32,
+        Bitvector32Term::MachineIntegerCast {
+            value,
+            source,
+            destination,
+        },
+    ) = (domain, term)
+    else {
+        return None;
+    };
+    let source_range = narrow_range(*source)?;
+    let destination_range = narrow_range(*destination)?;
+    let modulus = destination_range.1 - destination_range.0 + 1;
+    Some((value, source_range, destination_range, modulus))
 }
 
 /// When `term` is `x ^ MIN` in a signed `domain`, the spelling of an
