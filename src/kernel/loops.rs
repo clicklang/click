@@ -9110,8 +9110,18 @@ pub(super) fn assume_invariant_checks(
                         facts.push(ExecutionPureFact::new(path.proposition));
                     }
                     next_contexts.push((facts, obligations, invariant_propositions));
-                } else if add_path_fact(&mut facts, assumptions, path.proposition).is_some() {
-                    next_contexts.push((facts, obligations, invariant_propositions));
+                } else {
+                    let before = facts.len();
+                    if add_path_fact(&mut facts, assumptions, path.proposition.clone()).is_some() {
+                        // A condition inferred from the enclosing context is
+                        // consistent but add_path_fact need not emit it. The
+                        // loop head still owes its declared hypothesis to the
+                        // separate preservation proof and exit correspondence.
+                        if facts.len() == before {
+                            facts.push(ExecutionPureFact::new(path.proposition));
+                        }
+                        next_contexts.push((facts, obligations, invariant_propositions));
+                    }
                 }
             }
         }

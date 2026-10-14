@@ -6578,10 +6578,14 @@ impl AnnotationLowerer<'_> {
                 expression,
                 target_type,
                 ..
-            } if matches!(
-                target_type,
-                CType::Int32 | CType::UInt32 | CType::Int64 | CType::UInt64
-            ) || target_type.is_pointer() =>
+            } if matches!(target_type, CType::Int32 | CType::UInt32 | CType::Int64)
+                || *target_type == CType::UInt64
+                    && (!matches!(environment.current_memory, SpecMemory::Current)
+                        || environment.current_loop_entry.is_some()
+                        || self
+                            .c_expression_array_element_width(expression, environment)
+                            .is_some())
+                || target_type.is_pointer() =>
             {
                 Ok(SpecExpression::Cast(
                     Box::new(self.lower_c_fragment_to_spec(expression, environment)?),

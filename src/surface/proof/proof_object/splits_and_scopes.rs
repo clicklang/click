@@ -1072,13 +1072,42 @@ impl<'a> Proof<'a> {
                     .iter()
                     .any(|inherited| inherited == name)
         };
-        let body_surface = unfold_selected_predicates_in_proposition(
+        let mut body_surface = unfold_selected_predicates_in_proposition(
             context.spec_definitions.predicates,
             &selected,
             &proposition,
             &mut BTreeSet::new(),
         )
         .map_err(|message| self.step_error(message))?;
+        // A range declaration also owes its native extent bound. That goal
+        // is the count comparison, not the loadability predicate; retaining
+        // a theorem application must use a source spelling of the judgment
+        // it actually checked. Build it from this declaration's endpoints
+        // and validate it against the producer's exact obligation.
+        if let ClickProposition::Loadable { segment } = &body_surface
+            && let Some((_, start, end)) = segment.surface_range()
+            && let Proposition::ConditionIs(
+                ConditionTerm::Bitvector64UnsignedLessEqual(_, limit),
+                true,
+            ) = kernel
+            && let Bitvector32Term::UInt64Constant(limit) = limit.as_ref()
+        {
+            let candidate = ClickProposition::Comparison {
+                left: ContractExpression::Subtract(Box::new(end.clone()), Box::new(start.clone())),
+                operator: ComparisonOperator::LessEqual,
+                right: ContractExpression::CFragment(CExpression::Value(CValue::UInt64(
+                    Bitvector32Term::UInt64Constant(*limit),
+                ))),
+            };
+            if self
+                .lower_surface_proposition(&candidate, "loop extent bound")
+                .is_ok_and(|lowered| {
+                    crate::kernel::proof::propositions_are_alpha_equal(&lowered, kernel)
+                })
+            {
+                body_surface = candidate;
+            }
+        }
         let body = self.focus_fixed_state_goal_with_surface(kernel.clone(), Some(body_surface))?;
         let scope = ProofScope {
             root: self.clone(),

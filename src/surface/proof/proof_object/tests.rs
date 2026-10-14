@@ -14710,3 +14710,179 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
         "{costs:?}"
     );
 }
+
+#[test]
+fn loop_entry_wide_extent_guard_retains_its_own_source_and_scales() {
+    let parsed = syntax::parse_function("void span(const uint8* buf, uint64 len) { }").unwrap();
+    let pointer = Pointer::symbolic(Variable(812_000));
+    let original = Bitvector32Term::Variable(Variable(812_001));
+    let remaining =
+        Bitvector32Term::uint64_subtract(original.clone(), Bitvector32Term::UInt64Constant(16));
+    let extent =
+        Bitvector32Term::uint64_add(Bitvector32Term::UInt64Constant(16), remaining.clone());
+    let goal = Proposition::ConditionIs(
+        ConditionTerm::uint64_less_equal(extent, Bitvector32Term::UInt64Constant(i64::MAX as u64)),
+        true,
+    );
+    let obligation = crate::kernel::ProofObligation::new(goal.clone());
+    let base = CExpression::Variable("buf".into());
+    let start = CExpression::Value(CValue::UInt64(Bitvector32Term::UInt64Constant(0)));
+    let end = CExpression::Add(
+        Box::new(CExpression::Value(CValue::UInt64(
+            Bitvector32Term::UInt64Constant(16),
+        ))),
+        Box::new(CExpression::Variable("len".into())),
+    );
+    let surface = ClickProposition::Loadable {
+        segment: ContractSegment {
+            state: ContractSegmentState::Current,
+            base: base.clone(),
+            start: start.clone(),
+            end: end.clone(),
+            surface: ContractSegmentSurface::Range {
+                base: ContractExpression::CFragment(base),
+                start: ContractExpression::CFragment(start),
+                end: ContractExpression::CFragment(end),
+            },
+        },
+    };
+    let arguments = vec![
+        CExpression::Value(CValue::typed_pointer(pointer.clone(), CType::UInt8Pointer)),
+        CExpression::Value(CValue::UInt64(original.clone())),
+    ];
+    let entry = CState::new()
+        .with_local(
+            "buf",
+            CValue::typed_pointer(pointer.clone(), CType::UInt8Pointer),
+        )
+        .with_local("len", CValue::UInt64(original));
+    let snapshots = RecordedSnapshots::new();
+    let surfaces = SurfacePropositionMap::default();
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let mut work = Vec::new();
+    for size in [16, 64, 256, 1024] {
+        let mut state = entry
+            .clone()
+            .with_local("len", CValue::UInt64(remaining.clone()));
+        for index in 0..size {
+            state = state.with_local(&format!("unused_{index}"), int32(index));
+        }
+        let facts = vec![goal.clone()];
+        let root = Proof::for_fixed_state_frontier(
+            "wide loop view guard",
+            0,
+            &facts,
+            ParameterBinding::new(parsed.parameters(), &arguments),
+            FixedStateFrame::new(&entry, &state, None, &snapshots),
+            &surfaces,
+            SpecDefinitions::new(&predicates, &functions),
+            &theorems,
+            &[],
+            &[],
+        );
+        let (_, units) = crate::instrumentation::measure_deterministic_work(|| {
+            let scope = root
+                .begin_loop_entry_goal(surface.clone(), &obligation)
+                .unwrap();
+            let before = scope.body().clone();
+            let completed = before.apply_step(ProofStep::Assumption).unwrap();
+            let retained = before.retain_completed_goal(&completed, &[]).unwrap();
+            assert!(retained.facts().contains(&goal));
+        });
+        work.push(units);
+    }
+    assert!(
+        work[3] <= work[0] * 3 + 128,
+        "loop guard source walked unrelated locals: {work:?}"
+    );
+}
+
+#[test]
+fn completed_goal_retention_validates_current_source_after_stale_recording() {
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let entry_len = Bitvector32Term::Variable(Variable(813_000));
+    let current_len =
+        Bitvector32Term::uint64_subtract(entry_len.clone(), Bitvector32Term::UInt64Constant(16));
+    let limit = Bitvector32Term::UInt64Constant(22208);
+    let bound = |length| {
+        Proposition::ConditionIs(
+            ConditionTerm::uint64_less_equal(length, limit.clone()),
+            true,
+        )
+    };
+    let old_goal = bound(entry_len.clone());
+    let current_goal = bound(current_len.clone());
+    let surface = ClickProposition::Comparison {
+        left: ContractExpression::CFragment(CExpression::Variable("len".into())),
+        operator: ComparisonOperator::LessEqual,
+        right: ContractExpression::CFragment(CExpression::Value(CValue::UInt64(limit))),
+    };
+    let entry = CState::new().with_local("len", CValue::UInt64(entry_len));
+    let snapshots = RecordedSnapshots::new();
+    let mut surfaces = SurfacePropositionMap::default();
+    surfaces.record_lowering(&surface, &old_goal).unwrap();
+    let mut work = Vec::new();
+    for size in [0, 16, 64, 256, 1024] {
+        let mut state = entry
+            .clone()
+            .with_local("len", CValue::UInt64(current_len.clone()));
+        for index in 0..size {
+            state = state.with_local(&format!("unused_{index}"), int32(index));
+        }
+        let facts = vec![old_goal.clone(), current_goal.clone()];
+        let root = Proof::for_fixed_state_surface_goal(
+            "current retained bound",
+            0,
+            &facts,
+            current_goal.clone(),
+            surface.clone(),
+            ParameterBinding::default(),
+            &entry,
+            &state,
+            &snapshots,
+            &surfaces,
+            SpecDefinitions::new(&predicates, &functions),
+            &theorems,
+            &[],
+            &[],
+        );
+        assert_eq!(
+            root.lower_surface_proposition(&surface, "stale source")
+                .unwrap(),
+            old_goal
+        );
+        let completed = root.apply_step(ProofStep::Assumption).unwrap();
+        let (retained, units) = crate::instrumentation::measure_deterministic_work(|| {
+            root.retain_completed_goal(&completed, &[]).unwrap()
+        });
+        assert!(retained.facts().contains(&current_goal));
+        work.push(units);
+        let empty_surfaces = SurfacePropositionMap::default();
+        let wrong = Proof::for_fixed_state_surface_goal(
+            "mismatched retained bound",
+            0,
+            std::slice::from_ref(&old_goal),
+            old_goal.clone(),
+            surface.clone(),
+            ParameterBinding::default(),
+            &entry,
+            &state,
+            &snapshots,
+            &empty_surfaces,
+            SpecDefinitions::new(&predicates, &functions),
+            &theorems,
+            &[],
+            &[],
+        );
+        let completed = wrong.apply_step(ProofStep::Assumption).unwrap();
+        assert!(wrong.retain_completed_goal(&completed, &[]).is_err());
+    }
+    assert!(
+        work[4] <= work[0] * 3 + 128,
+        "retention walked unrelated locals: {work:?}"
+    );
+}
