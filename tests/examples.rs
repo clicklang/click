@@ -56,6 +56,13 @@ const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] 
     (
         (
             HiddenPrerequisiteRoute::TacticSearch,
+            "transport quantified frame",
+        ),
+        2,
+    ),
+    (
+        (
+            HiddenPrerequisiteRoute::TacticSearch,
             "have separation away from the frontier",
         ),
         1,
@@ -73,13 +80,6 @@ const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] 
             "fold projected body fact",
         ),
         14,
-    ),
-    (
-        (
-            HiddenPrerequisiteRoute::TacticSearch,
-            "transport load-variable chain",
-        ),
-        11,
     ),
 ];
 

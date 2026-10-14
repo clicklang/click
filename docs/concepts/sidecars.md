@@ -137,6 +137,31 @@ Library theorem names stay reserved: built-in tactics such as `simp`,
 their own reasoning, whatever the file imports. When `click expand` writes
 such a step out, it also adds the import its cited theorem needs.
 
+### Qualified library names
+
+A library declaration also has a qualified name: its module path and its
+name. A full `click::` path needs no import and brings its module, as an
+import would; a module in scope, implicit or imported, is named by its last
+segment:
+
+<!-- verified-example: mdtests/qualified_library_names.md -->
+```click
+theorem append_nil_by_paths(xs: List<int32>) {
+    ensures list::list_append(List<int32>::Nil, xs) == xs by {
+        apply(click::list::list_append_left_identity(xs));
+    }
+}
+```
+
+A short path to a module the file does not import is refused, and the
+message names the import or the full path to write
+(`mdtests/a_module_path_needs_its_module_in_scope.md`). A full path whose
+last segment is not a declaration of its module is refused too
+(`mdtests/a_full_path_must_name_a_module_declaration.md`). Library names
+still carry their module prefixes, and bare names keep working; the planned
+rename to `list::append` and selective imports are tracked in
+[`issues/standard-library.md`](https://github.com/clicklang/click/blob/master/issues/standard-library.md).
+
 ## Contracts are per function
 
 Each function block in a sidecar describes one C function:

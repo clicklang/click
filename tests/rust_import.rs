@@ -2168,6 +2168,67 @@ fn rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop(
     fs::write(p.root.join("borrow.click"), proof).unwrap();
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
+    // Source loan ending evidence is independent of the existing call receipts.
+    // Locate the actual imported child borrow and its last store, not StorageDead.
+    let helper = prepared
+        .export()
+        .functions
+        .iter()
+        .find(|f| f.name.rsplit("::").next() == Some("set_seven"))
+        .unwrap();
+    let mir = helper.mir.as_ref().unwrap();
+    let (block, borrow, child) = mir
+        .blocks
+        .iter()
+        .enumerate()
+        .find_map(|(block, body)| {
+            body.statements
+                .iter()
+                .enumerate()
+                .find_map(|(index, statement)| match statement {
+                    click::languages::rust::schema::MirStatement::Assign {
+                        target: click::languages::rust::schema::Expression::Local { name },
+                        value: click::languages::rust::schema::Expression::Borrow { .. },
+                    } => Some((block, index, name.as_str())),
+                    _ => None,
+                })
+        })
+        .unwrap();
+    let last_store = mir.blocks[block].statements.iter().enumerate().find_map(|(index, statement)| {
+        match statement {
+            click::languages::rust::schema::MirStatement::Assign {
+                target: click::languages::rust::schema::Expression::Deref { reference, .. }, ..
+            } if matches!(reference.as_ref(), click::languages::rust::schema::Expression::Local { name } if name == child) => Some(index),
+            _ => None,
+        }
+    }).unwrap();
+    use click::languages::rust::borrow_frontiers::{FrontierRefusal, MirPoint};
+    let borrow_point = MirPoint {
+        block,
+        statement: borrow,
+    };
+    let end_point = MirPoint {
+        block,
+        statement: last_store + 1,
+    };
+    let ending = prepared
+        .certify_scalar_reference_end(&helper.name, borrow_point, end_point)
+        .unwrap();
+    assert!(std::ptr::eq(ending.function(), helper));
+    assert_eq!(ending.import_identity(), prepared.identity());
+    assert_eq!(
+        prepared
+            .certify_scalar_reference_end(
+                &helper.name,
+                borrow_point,
+                MirPoint {
+                    block,
+                    statement: borrow + 1
+                }
+            )
+            .unwrap_err(),
+        FrontierRefusal::FutureUse
+    );
     C0VerificationSession::new_program_prepared(proof, &prepared).unwrap();
     for invalid in [
         proof.replacen("ensures *value == 8;", "ensures *value == 7;", 1),

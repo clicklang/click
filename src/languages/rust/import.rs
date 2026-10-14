@@ -14,10 +14,37 @@ pub struct PreparedRustImport {
 #[derive(Debug)]
 struct Inner {
     export: RustExport,
+    function_index: std::collections::BTreeMap<String, Option<usize>>,
     identity: String,
     execution: crate::languages::ExecutionCache,
 }
 impl PreparedRustImport {
+    /// Check a selected local-reference frontier against this immutable,
+    /// locked compiler import. This evidence does not grant memory authority.
+    pub fn certify_scalar_reference_end(
+        &self,
+        function_name: &str,
+        borrow: super::borrow_frontiers::MirPoint,
+        end: super::borrow_frontiers::MirPoint,
+    ) -> Result<
+        super::borrow_frontiers::CheckedScalarReferenceEnd<'_>,
+        super::borrow_frontiers::FrontierRefusal,
+    > {
+        let index = self
+            .inner
+            .function_index
+            .get(function_name)
+            .and_then(|index| *index)
+            .ok_or(super::borrow_frontiers::FrontierRefusal::UnsupportedBorrow)?;
+        let function = &self.inner.export.functions[index];
+        super::borrow_frontiers::certify_scalar_reference_end(
+            function,
+            &self.inner.identity,
+            borrow,
+            end,
+        )
+    }
+
     pub fn logical_source(&self) -> &str {
         &self.inner.export.logical_source
     }
@@ -35,11 +62,23 @@ impl PreparedRustImport {
             .get_or_lower(|| super::prepare_execution(self))
     }
 }
+fn index_functions(export: &RustExport) -> std::collections::BTreeMap<String, Option<usize>> {
+    let mut index = std::collections::BTreeMap::new();
+    for (position, function) in export.functions.iter().enumerate() {
+        index
+            .entry(function.name.clone())
+            .and_modify(|value| *value = None)
+            .or_insert(Some(position));
+    }
+    index
+}
+
 #[cfg(test)]
 pub(super) fn prepared_for_test(export: RustExport) -> Result<PreparedRustImport, String> {
     super::lowering::lower(&export)?;
     Ok(PreparedRustImport {
         inner: Arc::new(Inner {
+            function_index: index_functions(&export),
             export,
             identity: "charon-authority-test".into(),
             execution: Default::default(),
@@ -351,6 +390,7 @@ pub fn load_import(path: &Path) -> Result<PreparedRustImport, String> {
     let export = decode(&artifact, &c, &source_files)?;
     Ok(PreparedRustImport {
         inner: Arc::new(Inner {
+            function_index: index_functions(&export),
             export,
             identity: lock.identity,
             execution: Default::default(),

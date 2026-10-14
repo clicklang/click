@@ -892,6 +892,27 @@ fn nested_null_check_chain_expands_and_reverifies() {
     }
 }
 
+#[test]
+#[ignore = "nightly: descriptor-backed loop across all proof modes"]
+fn descriptor_backing_range_loop_survives_all_proof_modes() {
+    let (source, sources) =
+        mdtest_sources("mdtests/loop_resource_backing_range_fold_after_write.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded =
+        expand_c0_claim_source(&source, &sources, "probe", CProofClaim::Grouped).unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+    let position =
+        expansion::position_at_offset(&expanded, expanded.find("owns cells(h->data, n);").unwrap());
+    let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+    session
+        .verify_at(&expanded, position.line, position.column)
+        .unwrap();
+}
+
 fn mdtest_sources(relative: &str) -> (String, Vec<(String, String)>) {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(relative);
     let source = std::fs::read_to_string(&path)

@@ -442,8 +442,8 @@ fn check_fixed_state_fact_transport_using_facts_inner(
 
     if !available.available_across_effects(&target, effect_facts) {
         let transition_facts = fact_transport_transition_facts(effect_facts, &source);
-        // Uncharged, a known violation: the path's effect facts and every
-        // available fact below are assumed afresh at each explicit
+        // Uncharged, a known violation: the path's effect facts and the
+        // listed premises below are assumed afresh at each explicit
         // transport, so a transport is linear in the path; charging these
         // two builds grows `expanded_roundtrip_work_per_source_byte_is_logarithmic`
         // faster than its bound (docs/internals/verification-efficiency.md).
@@ -462,7 +462,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
         // equality legs would re-enter snapshot comparison on exactly these
         // targets.
         let chain_facts: Vec<Proposition> = {
-            let mut chain_facts = available.to_vec();
+            let mut chain_facts = explicit_premises.clone();
             chain_facts.push(source.clone());
             // The frontier's certified effect facts (call postconditions and
             // effect summaries) may relate a load at one snapshot to the same
@@ -477,11 +477,11 @@ fn check_fixed_state_fact_transport_using_facts_inner(
             );
             chain_facts
         };
-        // The origins-unchanged frame evidence may consult every certified
-        // ambient condition fact (requirement orderings above all): frame
-        // justification is contract-level context, not a proof premise the
-        // tactic must list. The restricted premise contract still governs
-        // what proves the target; this context only decides whether two
+        // The origins-unchanged frame evidence reads the listed premises, the
+        // certified effect facts, and the implicit frame facts (loadability,
+        // store permission, separation) the selected assumptions carry; it
+        // never searches the rest of the proof context
+        // (`issues/simplify-step.md`, step 5). It only decides whether two
         // load variables denote one unchanged cell.
         let chain_assumptions = chain_facts
             .iter()
@@ -528,12 +528,6 @@ fn check_fixed_state_fact_transport_using_facts_inner(
                 )
             },
         ) {
-            // The chain may cite any ambient condition fact, not only the
-            // transport's premises.
-            crate::instrumentation::record_hidden_prerequisite(
-                crate::instrumentation::HiddenPrerequisiteRoute::TacticSearch,
-                "transport load-variable chain",
-            );
             return Ok(CheckedFixedStateFactTransport { source, target });
         }
         // A fact about a checked range-fold application crosses a step that

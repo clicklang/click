@@ -306,6 +306,16 @@ it is an abstract-state optimization, not the soundness source for post-loop
 load transport. If a footprint cannot be evaluated, the edge retains the
 unconditional barrier semantics.
 
+A loop frame may also select a live borrowed-view/owner partition by the
+queried footprint and read addresses. `BorrowPartitionRangeEvidence` retains
+the selected composition and both members. Its checker requires that exact
+authority to remain available, verifies the entire mutable range is contained
+by its member, checks both endpoints of the full read, and rejects overlap
+under current address equalities. Unbound views and view-only compositions
+provide no such frame. Candidate indexes alone grant no separation, read
+permission, or native-object validity. The selected-member query avoids walking
+unrelated holdings or constructing pairwise separation facts.
+
 ## Range index domains
 
 `CMemoryRange` retains either signed `Int32` or unsigned `UInt64` bounds.

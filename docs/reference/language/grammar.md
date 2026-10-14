@@ -127,6 +127,7 @@ item             := import-declaration
 verifying-declaration := "verifying" string-literal ";"
 import-declaration    := "import" (string-literal | library-path) ";"
 library-path          := "click" ("::" identifier)+
+qualified-name        := ("click" "::")? identifier ("::" identifier)* "::" identifier
 target-declaration    := "target" string-literal ";"
 algebraic-declaration := "spec" "enum" identifier type-parameters?
                          "{" variant ("," variant)* ","? "}"

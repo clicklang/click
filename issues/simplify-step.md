@@ -336,6 +336,17 @@ it and the implicit `auto` proves it, so
 `mdtests/an_unsigned_index_that_wraps_below_zero_is_refused.md` is now refused
 at the read's bounds rather than at the pointer arithmetic after them.
 
+**5d, `transport`'s load-variable chain (in progress).** The chain that
+decides two load variables name one unchanged cell read every available
+condition fact. It now reads only the listed premises, the certified effect
+facts, and the implicit frame facts (loadability, store permission,
+separation) the transport always carried, and the corpus needed nothing more:
+restricting it changed no verdict. Some targets the chain used to reach now
+fall to the quantified frame, which still reads the proof context and is
+counted (`transport quantified frame`). Restricting that frame the same way
+fails 9 more mdtests and `examples/arena` and `examples/owned-vector`, so it
+needs the frame to report the facts it used, for the smart callers to cite.
+
 ## Acceptance criteria
 
 - No simple tactic performs a search over the proof context; its cost is

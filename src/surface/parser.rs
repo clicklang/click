@@ -1,5 +1,6 @@
 mod cpp_model;
 mod cpp_syntax;
+mod library_paths;
 mod rust_syntax;
 mod tokenizer;
 use cpp_model::rewrite_model_accessors;
@@ -970,7 +971,9 @@ impl Parser {
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
         parser.c_object_names_by_function = layouts.c_object_names;
         parser.recursion_peers_by_function = layouts.recursion_peers;
-        parser.implied_library_modules = layouts.library_modules;
+        parser
+            .implied_library_modules
+            .extend(layouts.library_modules);
         parser.qualified_objects = Some(layouts.qualified_objects);
         parser.local_struct_pointers_by_function = layouts.local_struct_pointers;
         parser.plain_char = layouts.plain_char;
@@ -992,6 +995,8 @@ impl Parser {
     ) -> Result<Self, ClickError> {
         let (tokens, positions) = tokenize(source, container)?;
         let (tokens, positions) = rewrite_model_accessors(tokens, positions, &struct_layouts);
+        let (tokens, positions, path_library_modules) =
+            library_paths::resolve_library_paths(tokens, positions)?;
         // Source clauses may follow declarations. Choose the spelling for the
         // whole file so moving the clause cannot bypass a Rust syntax check.
         let language =
@@ -1041,7 +1046,7 @@ impl Parser {
             current_void_pointer_params: BTreeSet::new(),
             c_object_names_by_function: BTreeMap::new(),
             recursion_peers_by_function: BTreeMap::new(),
-            implied_library_modules: BTreeSet::new(),
+            implied_library_modules: path_library_modules,
             current_c_parameter_types: BTreeMap::new(),
             current_parameter_struct_casts: BTreeMap::new(),
             aggregate_objects_by_function,
