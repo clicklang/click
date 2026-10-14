@@ -322,6 +322,12 @@ fn lower_parameter(
                 ),
             )
         }
+        CppType::FunctionPointer { .. } => Ok(c_parameter(
+            parameter.name.clone(),
+            super::interface::function_pointer_signature(&parameter.value_type)?
+                .pointer_type()
+                .to_kernel_type(),
+        )),
         CppType::Pointer { pointee } if Scalar::pointer_element(pointee, false).is_some() => {
             Ok(c_parameter(
                 parameter.name.clone(),
@@ -517,11 +523,7 @@ impl LoweringContext<'_> {
                         prefix,
                         c_seq(
                             c_allocate_aggregate_destination(local.name.clone(), layout),
-                            c_call_assign(
-                                local.name.clone(),
-                                self.names.require(&callee.declaration_id)?.to_owned(),
-                                actual,
-                            ),
+                            c_call_assign(local.name.clone(), self.callee_name(callee)?, actual),
                         ),
                     ))
                 }
@@ -593,10 +595,7 @@ impl LoweringContext<'_> {
                     lowered_arguments.extend(self.lower_call_arguments(arguments)?);
                     Ok(c_seq(
                         c_allocate_aggregate_destination(local.name.clone(), layout),
-                        c_call(
-                            self.names.require(&callee.declaration_id)?.to_owned(),
-                            lowered_arguments,
-                        ),
+                        c_call(self.callee_name(callee)?, lowered_arguments),
                     ))
                 }
                 _ => Err(format!(
@@ -644,10 +643,7 @@ impl LoweringContext<'_> {
                 );
                 let mut lowered = vec![destination];
                 lowered.extend(self.lower_call_arguments(arguments)?);
-                Ok(c_call(
-                    self.names.require(&callee.declaration_id)?.to_owned(),
-                    lowered,
-                ))
+                Ok(c_call(self.callee_name(callee)?, lowered))
             }
             CppStatement::MemberStore {
                 object,
@@ -719,10 +715,7 @@ impl LoweringContext<'_> {
                 let (prefix, arguments) = self.normalize_arguments(arguments)?;
                 Ok(evaluate_then(
                     prefix,
-                    c_call(
-                        self.names.require(&callee.declaration_id)?.to_owned(),
-                        arguments,
-                    ),
+                    c_call(self.callee_name(callee)?, arguments),
                 ))
             }
             CppStatement::CallStore {
@@ -753,7 +746,7 @@ impl LoweringContext<'_> {
                                 c_declare(address.clone(), element_pointer_type(element)?),
                                 c_call_assign(
                                     address.clone(),
-                                    self.names.require(&callee.declaration_id)?.to_owned(),
+                                    self.callee_name(callee)?,
                                     arguments,
                                 ),
                             ),
@@ -845,11 +838,7 @@ impl LoweringContext<'_> {
                     c_seq(
                         c_allocate_aggregate_destination(temporary.clone(), layout.clone()),
                         c_seq(
-                            c_call_assign(
-                                temporary.clone(),
-                                self.names.require(&callee.declaration_id)?.to_owned(),
-                                actual,
-                            ),
+                            c_call_assign(temporary.clone(), self.callee_name(callee)?, actual),
                             c_seq(
                                 c_copy_aggregate(
                                     self.lower_place(target)?,
@@ -874,10 +863,7 @@ impl LoweringContext<'_> {
                 Ok(evaluate_then(
                     prefix,
                     c_seq(
-                        c_call(
-                            self.names.require(&callee.declaration_id)?.to_owned(),
-                            actual,
-                        ),
+                        c_call(self.callee_name(callee)?, actual),
                         c_return(c_variable(crate::kernel::C_CONTRACT_RESULT_NAME)),
                     ),
                 ))
@@ -891,7 +877,7 @@ impl LoweringContext<'_> {
                     c_seq(
                         c_call_assign(
                             crate::kernel::C_CONTRACT_RESULT_NAME,
-                            self.names.require(&callee.declaration_id)?.to_owned(),
+                            self.callee_name(callee)?,
                             arguments,
                         ),
                         c_return(c_variable(crate::kernel::C_CONTRACT_RESULT_NAME)),
@@ -1109,11 +1095,7 @@ impl LoweringContext<'_> {
                                 false,
                                 scalar::returns_constant_element(value_type),
                             ),
-                            c_call_assign(
-                                capture.clone(),
-                                self.names.require(&callee.declaration_id)?.to_owned(),
-                                arguments,
-                            ),
+                            c_call_assign(capture.clone(), self.callee_name(callee)?, arguments),
                         ),
                     ),
                     value,
@@ -1375,7 +1357,7 @@ impl LoweringContext<'_> {
     fn lower_cleanup(&self, cleanup: &CppCleanup) -> Result<CStatement, String> {
         let CppCleanup::Destructor { object, callee, .. } = cleanup;
         Ok(c_call(
-            self.names.require(&callee.declaration_id)?.to_owned(),
+            self.callee_name(callee)?,
             vec![c_cast(self.lower_place(object)?, CType::Int32Pointer)],
         ))
     }
@@ -1429,6 +1411,9 @@ impl LoweringContext<'_> {
 
             CppExpression::ObserverCall { .. } => Err(
                 "C++ expression observers are supported in normalized scalar values only".into(),
+            ),
+            CppExpression::FunctionAddress { function, .. } => Ok(
+                crate::kernel::c_function_address(self.names.require(&function.declaration_id)?),
             ),
             CppExpression::NullPointer { value_type, .. } => Ok(c_cast(
                 CExpression::Value(int32(0)),
@@ -1697,6 +1682,31 @@ impl LoweringContext<'_> {
             c_pointer_offset_bytes(c_variable(self.variable_name(object)), offset),
             cpp_scalar_kernel_type(value_type)?,
         ))
+    }
+
+    /// The kernel name a call invokes: the function's, or, for a call
+    /// through a function pointer, the variable that holds it.
+    fn callee_name(&self, callee: &super::CppFunctionReference) -> Result<String, String> {
+        if !callee.through_pointer {
+            return Ok(self.names.require(&callee.declaration_id)?.to_owned());
+        }
+        let place = self
+            .places
+            .get(callee.declaration_id.as_str())
+            .ok_or_else(|| {
+                format!(
+                    "C++ lowering found unknown function pointer `{}`",
+                    callee.name
+                )
+            })?;
+        if place.name != callee.name || !matches!(place.value_type, CppType::FunctionPointer { .. })
+        {
+            return Err(format!(
+                "C++ call target `{}` is not a function pointer",
+                callee.name
+            ));
+        }
+        Ok(place.name.clone())
     }
 
     /// The kernel variable a place reference reads: the place's own name,

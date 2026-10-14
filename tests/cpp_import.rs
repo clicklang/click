@@ -17742,3 +17742,207 @@ fn cpp_native_pointer_local_from_reference_verifies_offline() {
         "verifying \"bump_reference.cpp\"; int32 bump_reference(int32& value) { views value; ensures result == value; ensures value == old(value); } by { execute(); simp(); }",
     );
 }
+
+// A C++ function pointer is a callback, as in C: `apply` calls through `f`
+// under the named contract it requires of `f`, and `caller` passes `&twice`,
+// which the `executes` theorem shows meets that contract.
+const FUNCTION_POINTER_SOURCE: &str = "int twice(int x) noexcept { return x + x; }\n\
+int apply(int (*f)(int) noexcept, int x) noexcept { return f(x); }\n\
+int caller(int x) noexcept { return apply(&twice, x); }\n";
+
+const FUNCTION_POINTER_SIDECAR: &str = r#"verifying "callback.cpp";
+contract int Doubling(int x) {
+    requires 0 <= x and x <= 1000;
+    ensures result == x + x;
+}
+int twice(int x) {
+    requires 0 <= x and x <= 1000;
+    ensures result == x + x;
+} by { execute(); simp(); }
+theorem twice_doubles() executes twice(int x) {
+    ensures Doubling(&twice) by { execute(); simp(); }
+}
+int apply(int (*f)(int), int x) {
+    requires Doubling(f);
+    requires 0 <= x and x <= 1000;
+    ensures result == x + x;
+} by { execute(); simp(); }
+int caller(int x) {
+    requires 0 <= x and x <= 1000;
+    ensures result == x + x;
+} by { apply(twice_doubles()); execute(); simp(); }
+"#;
+
+// A pointer call may be a returned call, a local's initializer, or a
+// statement whose result is discarded.
+#[test]
+#[ignore = "nightly: 1.1s in the parallel gate"]
+fn calls_through_a_cpp_function_pointer_meet_its_named_contract() {
+    let returned = "return f(x);";
+    for body in [returned, "int y = f(x); f(x); return y;"] {
+        let source = FUNCTION_POINTER_SOURCE.replace(returned, body);
+        let project = Project::with_fixture("callback.cpp", "caller", &source);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let sidecar = project.directory.join("callback.click");
+        fs::write(&sidecar, FUNCTION_POINTER_SIDECAR).unwrap();
+        let parsed = read_click_project(&sidecar, FUNCTION_POINTER_SIDECAR).unwrap();
+        verify_program_prepared_project(&parsed, &import)
+            .unwrap_or_else(|error| panic!("{body}: {}", error.message()));
+        if body == returned {
+            // The expanded proofs of the pointer call and of the caller
+            // passing `&twice` reverify.
+            for label in ["apply.contract", "caller.contract"] {
+                let expanded = expand_project_claim_source_by_label(
+                    &parsed,
+                    &ProgramInputs::program(&import),
+                    label,
+                )
+                .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
+                verify_program_prepared_project(&parsed.with_entry_source(expanded), &import)
+                    .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
+            }
+        }
+    }
+}
+
+// The call through `f` needs the contract `apply` requires of it, and the
+// call passing `&twice` needs `twice` to meet that contract: from its own
+// contract, which Click checks at the call, or by the `executes` theorem.
+// A contract `twice` does not meet is refused either way.
+#[test]
+#[ignore = "nightly: 0.8s in the parallel gate"]
+fn a_cpp_function_pointer_call_needs_its_contract_and_its_refinement() {
+    let project = Project::with_fixture("callback.cpp", "caller", FUNCTION_POINTER_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let sidecar = project.directory.join("callback.click");
+    let theorem = "theorem twice_doubles() executes twice(int x) {\n    ensures Doubling(&twice) by { execute(); simp(); }\n}\n";
+    let without_theorem = FUNCTION_POINTER_SIDECAR
+        .replace(theorem, "")
+        .replace("apply(twice_doubles()); ", "");
+    let verify = |source: &str| {
+        fs::write(&sidecar, source).unwrap();
+        let parsed = read_click_project(&sidecar, source).unwrap();
+        verify_program_prepared_project(&parsed, &import)
+    };
+    verify(&without_theorem).unwrap_or_else(|error| panic!("{}", error.message()));
+    let weak_twice = "    ensures result >= 0;\n} by { execute(); simp(); }";
+    for hostile in [
+        FUNCTION_POINTER_SIDECAR.replace("    requires Doubling(f);\n", ""),
+        FUNCTION_POINTER_SIDECAR.replacen(
+            "    ensures result == x + x;\n}\nint twice",
+            "    ensures result == x + x + 1;\n}\nint twice",
+            1,
+        ),
+        without_theorem.replacen(
+            "    ensures result == x + x;\n} by { execute(); simp(); }",
+            weak_twice,
+            1,
+        ),
+    ] {
+        assert_ne!(hostile, FUNCTION_POINTER_SIDECAR);
+        let Err(error) = verify(&hostile) else {
+            panic!("accepted:\n{hostile}");
+        };
+        if hostile.contains(weak_twice) {
+            assert!(
+                error
+                    .message()
+                    .contains("does not satisfy named contract `Doubling`"),
+                "{}",
+                error.message()
+            );
+        }
+    }
+}
+
+// The importer admits a call through a pointer to a noexcept function, in
+// a variable, with value arguments; it refuses the rest by name.
+#[test]
+fn cpp_function_pointer_shapes_outside_the_profile_are_refused() {
+    for (source, expected) in [
+        (
+            "int twice(int x) { return x + x; }\nint apply(int (*f)(int), int x) noexcept { return f(x); }\nint caller(int x) noexcept { return apply(&twice, x); }\n",
+            "noexcept, non-variadic function",
+        ),
+        (
+            "int twice(int x) noexcept { return x + x; }\nint apply(int (*f)(int) noexcept, int x) noexcept { int (*g)(int) noexcept = f; return g(x); }\nint caller(int x) noexcept { return apply(&twice, x); }\n",
+            "the supported automatic C++ local",
+        ),
+        (
+            "int twice(int x) noexcept { return x + x; }\nint apply(int (*f)(int) noexcept, int x) noexcept { return f(twice(x)); }\nint caller(int x) noexcept { return apply(&twice, x); }\n",
+            "takes no call as an argument",
+        ),
+        (
+            "int twice(int x) noexcept { return x + x; }\nint apply(int (*f)(int) noexcept, int x) noexcept { return twice(f(x)); }\nint caller(int x) noexcept { return apply(&twice, x); }\n",
+            "not admitted as a call argument",
+        ),
+    ] {
+        let project = Project::with_fixture("callback.cpp", "caller", source);
+        let error = refresh_import(&project.config())
+            .and_then(|()| load_import(&project.config()).map(|_| ()))
+            .unwrap_err();
+        assert!(error.contains(expected), "{error}");
+    }
+}
+
+// The importer checks a function pointer's uses in the artifact itself: an
+// address has its function's type, a pointer call goes through a
+// function-pointer variable, and an ordinary call names a function.
+#[test]
+#[ignore = "nightly: 0.8s in the parallel gate"]
+fn forged_cpp_function_pointer_artifacts_are_refused() {
+    use sha2::{Digest, Sha256};
+    for (change, expected) in [
+        ("address_type", "does not have its function's type"),
+        ("address_function", "does not have its function's type"),
+        (
+            "pointer_variable",
+            "requires a function-pointer parameter or local",
+        ),
+        ("direct_pointer", "missing reachable definition"),
+    ] {
+        let project = Project::with_fixture("callback.cpp", "caller", FUNCTION_POINTER_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let mut artifact: serde_json::Value =
+            serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+        let apply_index = artifact["reachable_functions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|function| function["name"] == "apply")
+            .unwrap();
+        let apply = artifact["reachable_functions"][apply_index].clone();
+        let address = &mut artifact["function"]["body"][0]["arguments"][0]["value"];
+        assert_eq!(address["kind"], "function_address");
+        match change {
+            "address_type" => address["value_type"]["parameters"][0]["bits"] = 64.into(),
+            "address_function" => {
+                address["function"]["declaration_id"] = apply["declaration_id"].clone();
+                address["function"]["name"] = "apply".into();
+            }
+            "pointer_variable" | "direct_pointer" => {
+                let call = &mut artifact["reachable_functions"][apply_index]["body"][0]["callee"];
+                assert_eq!(call["through_pointer"], true);
+                if change == "pointer_variable" {
+                    call["declaration_id"] = apply["parameters"][1]["declaration_id"].clone();
+                    call["name"] = "x".into();
+                } else {
+                    call.as_object_mut().unwrap().remove("through_pointer");
+                }
+            }
+            _ => unreachable!(),
+        }
+        let mut lock: serde_json::Value =
+            serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+        let bytes = serde_json::to_vec(&artifact).unwrap();
+        lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        lock["artifact_bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
+        let error = load_import(&project.config()).unwrap_err();
+        assert!(error.contains(expected), "{change}: {error}");
+    }
+}
