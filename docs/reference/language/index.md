@@ -372,6 +372,18 @@ consume or mutate resources; postorder recursive deallocation is supported.
 This proves descent of the finite resource witness, not descent of a pointer
 value.
 
+In a recursive component of two or more, a binder measure is ranked at each
+call instead, as an expression measure is: every member declares `decreases`
+on one of its own binders, of a resource with a `match model` body, and the
+instance a call passes for the callee's measured binder must hold a model
+strictly contained in the model the caller's binder held at its entry. The
+decision is the one a loop's `decreases` binder makes at its back edge: it
+follows the arms the path's facts decide, so the unfold that exposed the child
+is the evidence, and no size function is needed
+(`mdtests/c_decreases_binder_measure_mutual_recursion.md`, and the negatives
+`mdtests/c_decreases_binder_measure_mutual_recursion_must_descend.md` and
+`mdtests/c_decreases_binder_measure_mutual_recursion_rejects_mixed_kinds.md`).
+
 A loop measure is one component, or a nonempty lexicographic tuple of components, and each component
 is any pure `int32`, unsigned, or mathematical `Integer` expression: a C
 fragment, a

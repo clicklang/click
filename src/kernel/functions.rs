@@ -8367,6 +8367,57 @@ fn prepare_verified_function_call<'a>(
     // its preconditions alone.
     if let Some(anchor) = environment.recursion_anchor()
         && anchor.ranks_call_to(application.name)
+        && let Some(entry) = anchor.structural_entry()
+    {
+        // A structural measure is ranked by the instance this call passes for
+        // the callee's own measured binder: its model must be strictly
+        // contained in the model the certified function's binder held at its
+        // entry, through the arms this path's facts decide. The decision is
+        // the loop back edge's, so nothing here proves by cases or unfolds.
+        let failure = match contract_interface.recursion_binder() {
+            None => Some(format!(
+                "`{}` is in `{}`'s recursive component but declares no structural \
+                 `decreases` binder; every member of a component ranked by structural \
+                 binders must declare one",
+                application.name,
+                anchor.function()
+            )),
+            Some(binder) => {
+                let passed = contract_interface
+                    .resource_binder_identity(binder)
+                    .and_then(|formal| {
+                        resource_application.and_then(|call| call.bindings.get(&formal))
+                    })
+                    .and_then(|actual| caller_state.resources().owned_instance(*actual));
+                match passed {
+                    None => Some(format!(
+                        "the call to `{}` passes no owned instance for its measured binder \
+                         `{binder}`, so its structural descent cannot be ranked",
+                        application.name
+                    )),
+                    Some(next) => crate::kernel::loops::structural_instance_descent_failure(
+                        entry,
+                        next,
+                        &format!(
+                            "{} recursion measure `decreases {binder}`",
+                            anchor.function()
+                        ),
+                        &format!("the call to `{}` passes", application.name),
+                        &format!("`{}` held at its entry", anchor.function()),
+                        contract_interface.composite_resource_definitions(),
+                        &path_assumptions,
+                    ),
+                }
+            }
+        };
+        if let Some(message) = failure {
+            obligations.push(
+                ProofObligation::verification_condition(false_equals_true_proposition())
+                    .with_context(message),
+            );
+        }
+    } else if let Some(anchor) = environment.recursion_anchor()
+        && anchor.ranks_call_to(application.name)
     {
         // A self-call ranks the measure the anchor was derived from, so the
         // two states being compared are readings of one declared object. An

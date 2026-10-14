@@ -10467,8 +10467,7 @@ impl ExecutionProofCore {
         // obligations were never raised.
         if checked_function
             .contract_interface()
-            .recursion_measure()
-            .is_some()
+            .has_call_ranked_recursion()
             && environment
                 .recursion_anchor()
                 .is_none_or(|anchor| anchor.function() != checked_function.name())

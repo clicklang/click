@@ -2762,7 +2762,38 @@ pub(super) fn c_function_recursion_anchor(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> Result<Option<CRecursionAnchor>, String> {
-    let Some(components) = function.contract_interface().recursion_measure() else {
+    let interface = function.contract_interface();
+    if let Some(binder) = interface.recursion_binder() {
+        // A structural measure is the instance the binder holds at entry; the
+        // descent at each call compares the instance it passes with this one.
+        let identity = interface.resource_binder_identity(binder).ok_or_else(|| {
+            format!(
+                "the `decreases {binder}` measure of `{}` names no resource binder of its \
+                 contract",
+                function.name()
+            )
+        })?;
+        let entry = entry_state
+            .resources()
+            .owned_instance(identity)
+            .cloned()
+            .ok_or_else(|| {
+                format!(
+                    "the `decreases {binder}` measure of `{}` names a binder with no owned \
+                     instance at the function's entry",
+                    function.name()
+                )
+            })?;
+        return Ok(Some(CRecursionAnchor {
+            function: function.name().to_string(),
+            components: Vec::new(),
+            peers: interface.recursion_peers().to_vec(),
+            measure: Vec::new(),
+            structural_entry: Some(entry),
+            entry_obligations: Vec::new(),
+        }));
+    }
+    let Some(components) = interface.recursion_measure() else {
         return Ok(None);
     };
     let mut reader = CRankingMeasureReader {
@@ -2800,6 +2831,7 @@ pub(super) fn c_function_recursion_anchor(
         components: components.to_vec(),
         peers: function.contract_interface().recursion_peers().to_vec(),
         measure,
+        structural_entry: None,
         entry_obligations,
     }))
 }
@@ -4112,7 +4144,7 @@ fn check_expression_measure_recursion(
     plans: &BTreeMap<String, &CFunctionTerminationPlan>,
     loop_rules: &[CVerifiedLoopRule],
 ) -> Result<(), CTerminationError> {
-    if function.contract_interface().recursion_measure().is_none() {
+    if !function.contract_interface().has_call_ranked_recursion() {
         return Err(error(format!(
             "the termination plan ranks `{name}` by the expression measure `{source}`, but the \
              certified `{name}` carries no declared measure, so no recursive call of it owed a \
@@ -4160,7 +4192,6 @@ fn check_expression_measure_recursion(
     // certified without the anchor is a summary that swallowed the inner
     // one's, so the requirement is the same at every level and nesting needs
     // no separate case.
-    let declared = function.contract_interface().recursion_measure();
     let mut next_index = 0;
     let mut enclosing = Vec::new();
     let mut self_call_loops = BTreeSet::new();
@@ -4184,7 +4215,7 @@ fn check_expression_measure_recursion(
                 && rule
                     .recursion_anchor
                     .as_ref()
-                    .is_some_and(|anchor| anchor.ranks(name, declared, peers))
+                    .is_some_and(|anchor| anchor.ranks(name, function.contract_interface()))
                 && source_loop.is_some_and(|source_loop| {
                     same_statement_shape(source_loop, &rule.loop_statement)
                 })
@@ -6859,6 +6890,7 @@ mod local_descent_tests {
             function: name.to_string(),
             components: vec![declared_component()],
             peers: Vec::new(),
+            structural_entry: None,
             measure: vec![CRankingMeasureValue::Machine(Bitvector32Term::Constant(7))],
             entry_obligations: Vec::new(),
         }

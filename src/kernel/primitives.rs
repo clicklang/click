@@ -3663,6 +3663,12 @@ pub struct CFunctionContractInterface {
     /// name each other here, so a peer left out is a refusal, never an
     /// unranked edge.
     pub(crate) recursion_peers: Vec<String>,
+    /// The contract resource binder a structural `decreases t` measure names,
+    /// when the measure is ranked at each call rather than by reading the
+    /// body: every call to a member of the component passes, for the callee's
+    /// own measured binder, an instance whose model is strictly contained in
+    /// this function's entry model.
+    pub(crate) recursion_binder: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -4424,6 +4430,9 @@ pub struct CRecursionAnchor {
     /// off the same interface as `components`.
     pub(super) peers: Vec<String>,
     pub(super) measure: Vec<CRankingMeasureValue>,
+    /// For a structural measure, the instance the measured binder held at
+    /// the function's own entry; `components` and `measure` are then empty.
+    pub(super) structural_entry: Option<ResourceInstance>,
     pub(super) entry_obligations: Vec<ProofObligation>,
 }
 
@@ -4459,15 +4468,15 @@ impl CRecursionAnchor {
     /// The certified [`CFunction`] is what a judgment has in hand, and its
     /// interface is where the anchor's component was read from, so comparing
     /// both is what binds an anchor to one declared measure of one function.
-    pub(super) fn ranks(
-        &self,
-        function: &str,
-        measure: Option<&[CRankingComponent]>,
-        peers: &[String],
-    ) -> bool {
+    pub(super) fn ranks(&self, function: &str, interface: &CFunctionContractInterface) -> bool {
         self.function == function
-            && measure == Some(self.components.as_slice())
-            && peers == self.peers.as_slice()
+            && interface.recursion_measure().unwrap_or_default() == self.components.as_slice()
+            && interface.recursion_binder().is_some() == self.structural_entry.is_some()
+            && interface.recursion_peers() == self.peers.as_slice()
+    }
+
+    pub(super) fn structural_entry(&self) -> Option<&ResourceInstance> {
+        self.structural_entry.as_ref()
     }
 }
 
