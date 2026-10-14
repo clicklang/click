@@ -143,7 +143,7 @@ existing fieldless entry-argument proof pass. The original C remains unchanged;
 the reduced C witness uses existing viewed-range access rather than the
 archive's unmerged `valid_place` surface. All 3,758 selected Markdown fixtures,
 all-target Clippy and selected expansion/fresh/retained rechecks pass before the
-upstream rebase. After rebasing onto `7920aaf0e`, all 52 normal examples, 3,758 Markdown
+upstream rebase. After rebasing onto `7920aaf0e`, all 52 normal examples, 3,764 Markdown
 fixtures, 37 documentation checks, all-target Clippy and the three selected
 expansion/fresh/retained checks pass. The first attributed archive group is the
 [conditional native-composite output check](../bugs/native-composite-output-requires-decided-body-guard.md):

@@ -327,7 +327,7 @@ The unchanged fieldless entry-argument proof is a compatibility control; a
 second interpretation previously selected a different representation.
 
 The rebased entry-fold slice on `7920aaf0e` passes all 52 normal examples,
-3,758 Markdown fixtures, 37 documentation checks and all-target Clippy. Plain
+3,764 Markdown fixtures, 37 documentation checks and all-target Clippy. Plain
 and nested indexed-cell proofs and the existing fieldless entry proof pass
 fresh, expanded, rewritten and retained checking. Wrong-cell controls reject.
 The reduced C indexed-cell contracts use the existing viewed range; no unmerged
