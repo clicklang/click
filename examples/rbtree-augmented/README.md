@@ -158,3 +158,16 @@ both the structural shape and the full sized model. This is the ownership
 bridge for callbacks that update metadata while structural proofs rearrange
 links; rejoining the resources and integrating the writable callback table
 remain unfinished.
+
+`rbtree_size_metadata.click` now verifies both directions of the ownership
+bridge. `split_sized_tree` separates tree links from cache cells indexed by
+logical node identities. `join_sized_tree` restores `sized_at` when the
+structural shape agrees with the metadata model and its counts are valid.
+It preserves the complete model and proves recursive termination by subtree
+size. All nine split/rejoin expansion sites pass.
+
+`rbtree_size_callback_frames.click` supplies `CopySizedStructure`: the unchanged
+copy callback updates its two metadata cells while preserving independently
+owned `rb_at` trees. Its execution theorem and expansion audit check the
+returned structural ownership and models. This is a callback frame contract;
+writable callback-table integration with insertion and erasure remains pending.
