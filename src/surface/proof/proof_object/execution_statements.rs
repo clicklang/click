@@ -2587,6 +2587,12 @@ impl<'a> Proof<'a> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("`loop` requires an execution-frontier proof"));
         };
+        let read_checkpoint = crate::surface::proof_trace::enabled_for(self.claim_label())
+            .then(|| {
+                self.focused_branch()
+                    .map(|branch| branch.state.facts.assumptions().read_equality_checkpoint())
+            })
+            .flatten();
         let tactic_context = context.with_tactic_index(tactic_index);
         self.require_execution_frontier("`loop`")?;
         let mut execution = self
@@ -2679,7 +2685,13 @@ impl<'a> Proof<'a> {
             // The loop's exported delta is the evidence available to its
             // continuation, including the exit disjunction. Do not truncate
             // that delta before it reaches the shared fact renderer.
-            self.record_checked_trace_step(&next, "loop", None, usize::MAX);
+            self.record_checked_trace_step(
+                &next,
+                "loop",
+                None,
+                usize::MAX,
+                read_checkpoint.as_ref(),
+            );
         }
         Ok(next)
     }

@@ -167,7 +167,17 @@ value label, and `at(snapshot, load_function_pointer(address))`. The address and
 value share labels with subsequent facts and goals; the legend distinguishes
 concrete function addresses from symbolic function addresses. The read snapshot
 comes from the accepted statement evidence, including entry initialization and
-resource preparation, rather than from the later proof frontier.
+resource preparation, rather than from the later proof state.
+
+The trace also prints `admitted read equality:` for each new checked-read
+input or pointer, scalar, or offset equality involving a producer-defined read
+value retained in the step's egraph context. These use the same proposition
+printer and labels as `adds:` and `goal:`. Query-only registrations and discarded
+scratch contexts are excluded. Context replacement is identified explicitly;
+equalities inherited from a common prefix are not printed again. A callback
+load with no such input says `no checked read equalities admitted by this step`.
+This reports actual admissions, rather than guessing a missing equality, and
+reads the selected history delta without searching older facts.
 
 Call snapshot origins list the recorded caller-owned ranges retained
 beside the write footprint and their placement premises. Each list shows up to

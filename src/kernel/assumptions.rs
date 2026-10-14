@@ -3056,6 +3056,18 @@ impl PureFactContext {
         }
     }
 
+    /// Diagnostic-only access to already admitted read equalities.
+    pub(crate) fn read_equality_checkpoint(&self) -> crate::kernel::ReadEqualityCheckpoint {
+        self.equality_graph.read_equality_checkpoint()
+    }
+
+    pub(crate) fn read_equalities_since(
+        &self,
+        checkpoint: &crate::kernel::ReadEqualityCheckpoint,
+    ) -> crate::kernel::ReadEqualityDelta {
+        self.equality_graph.read_equalities_since(checkpoint)
+    }
+
     /// File the typed producer's checked value against an exact defining
     /// equation already admitted on this path. Plain propositions cannot
     /// create this bridge; the execution fact must carry producer metadata.

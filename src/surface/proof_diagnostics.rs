@@ -629,6 +629,8 @@ mod tests {
                     more_facts: 0,
                     frontier: None,
                     load: None,
+                    read_equalities: Vec::new(),
+                    read_context_changed: false,
                     resources: Vec::new(),
                     more_resources: 0,
                 },

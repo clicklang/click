@@ -108,7 +108,9 @@ pub(crate) use assumptions::{
     collect_reasoning_provenance, finite_forall_goal_instances,
     record_implicit_reasoning_provenance, with_search_attempt_rollback,
 };
-pub(crate) use equality_graph::logical_pointer_read_term;
+pub(crate) use equality_graph::{
+    ReadEqualityCheckpoint, ReadEqualityDelta, logical_pointer_read_term,
+};
 pub(crate) use eval::canonical_condition_fact;
 pub(crate) use eval::canonical_form_of_load;
 pub(crate) use eval::canonical_term;

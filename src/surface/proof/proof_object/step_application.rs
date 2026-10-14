@@ -590,6 +590,12 @@ impl<'a> Proof<'a> {
         step: ProofStep,
         origin: Option<ProofStepOrigin>,
     ) -> Result<Self, ClickError> {
+        let read_checkpoint = crate::surface::proof_trace::enabled_for(self.claim_label())
+            .then(|| {
+                self.focused_branch()
+                    .map(|branch| branch.state.facts.assumptions().read_equality_checkpoint())
+            })
+            .flatten();
         if let Some(execution) = self.execution() {
             execution
                 .core
@@ -620,7 +626,7 @@ impl<'a> Proof<'a> {
             && crate::surface::proof_trace::enabled_for(self.claim_label())
             && !Arc::ptr_eq(&self.node, &next.node)
         {
-            self.record_checked_trace_step(next, tactic, call_source, 8);
+            self.record_checked_trace_step(next, tactic, call_source, 8, read_checkpoint.as_ref());
         }
         result
     }
@@ -668,6 +674,7 @@ impl<'a> Proof<'a> {
         tactic: &str,
         call_source: Option<crate::surface::proof_trace::TraceCallSource>,
         fact_limit: usize,
+        read_checkpoint: Option<&crate::kernel::ReadEqualityCheckpoint>,
     ) {
         let location = self
             .site()
@@ -686,9 +693,26 @@ impl<'a> Proof<'a> {
             more_facts: 0,
             frontier: None,
             load: None,
+            read_equalities: Vec::new(),
+            read_context_changed: false,
             resources: Vec::new(),
             more_resources: 0,
         };
+        if let Some(checkpoint) = read_checkpoint
+            && let Some(branch) = next.focused_branch().or_else(|| self.focused_branch())
+        {
+            let admitted = branch
+                .state
+                .facts
+                .assumptions()
+                .read_equalities_since(checkpoint);
+            detail.read_context_changed = admitted.context_changed;
+            detail.read_equalities = admitted
+                .equalities
+                .into_iter()
+                .map(|kernel| next.checked_trace_fact(kernel))
+                .collect();
+        }
         let added = self
             .focused_branch()
             .zip(next.focused_branch())

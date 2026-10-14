@@ -130,6 +130,8 @@ pub(super) struct TraceStep {
     pub more_facts: usize,
     pub frontier: Option<String>,
     pub load: Option<TraceLoad>,
+    pub read_equalities: Vec<TraceFact>,
+    pub read_context_changed: bool,
     pub resources: Vec<TraceResourceChange>,
     pub more_resources: usize,
 }
@@ -312,7 +314,7 @@ impl ChildArgumentTrace {
 }
 
 pub(super) fn pointer_definition(pointer: &Pointer) -> Option<Bitvector32Term> {
-    // Function-pointer cells use a canonical load variable as their address
+    // Function-pointer cells use a load variable as their address
     // identity. It has the same registered read provenance as scalar cells.
     if let crate::kernel::PointerBlock::FunctionSymbolic(variable) = &pointer.block
         && pointer.offset == crate::kernel::PointerOffsetTerm::Constant(0)
@@ -1094,6 +1096,17 @@ fn append_path(
             if let Some(load) = &step.load {
                 load.append(&mut detail, labels, &detail_indent);
             }
+            if step.read_context_changed {
+                detail.push_str(&format!(
+                    "\n{detail_indent}egraph read-equality context changed"
+                ));
+            }
+            append_read_equalities(&mut detail, &step.read_equalities, labels, &detail_indent);
+            if step.load.is_some() && step.read_equalities.is_empty() {
+                detail.push_str(&format!(
+                    "\n{detail_indent}no checked read equalities admitted by this step"
+                ));
+            }
             for resource in &step.resources {
                 let change = match (resource.before, resource.after) {
                     (0, 1) => format!("resource gained: {}", resource.description),
@@ -1196,6 +1209,21 @@ fn source_same(position: &SourcePosition, target: &SourcePosition) -> bool {
     (position.line, position.column) == (target.line, target.column)
 }
 
+fn append_read_equalities(
+    output: &mut String,
+    equalities: &[TraceFact],
+    labels: &mut SnapshotLabels,
+    indent: &str,
+) {
+    let _typed = crate::surface::proof_diagnostics::render::TypedNotationScope::enter();
+    for equality in equalities {
+        output.push_str(&format!(
+            "\n{indent}admitted read equality: {}",
+            render::render_proposition_labeled(&equality.kernel, labels)
+        ));
+    }
+}
+
 fn append_added_facts(
     output: &mut String,
     facts: &[TraceFact],
@@ -1238,6 +1266,37 @@ fn trace_text(text: &str, max_bytes: usize) -> String {
 mod tests {
     use super::*;
     use crate::kernel::{Bitvector32Term, CMemory, Pointer, PointerBlock, PointerOffsetTerm};
+
+    #[test]
+    fn admitted_read_equalities_share_the_fact_printer_and_read_labels() {
+        let address = Pointer::symbolic(crate::kernel::Variable(303_000));
+        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let read = Pointer::loaded_value(&memory, &address);
+        let target = Pointer::function("callback");
+        let fact = TraceFact {
+            kernel: Proposition::ConditionIs(ConditionTerm::pointer_equal(read, target), true),
+        };
+        let mut labels = SnapshotLabels::default();
+        let mut ordinary = String::new();
+        append_added_facts(
+            &mut ordinary,
+            &[TraceFact {
+                kernel: fact.kernel.clone(),
+            }],
+            &mut labels,
+            "  ",
+        );
+        let mut admitted = String::new();
+        append_read_equalities(&mut admitted, &[fact], &mut labels, "  ");
+        assert_eq!(
+            admitted,
+            ordinary.replace("adds:", "admitted read equality:")
+        );
+        let mut report = format!("{ordinary}{admitted}");
+        append_legend(&mut report, &mut labels);
+        assert!(report.contains("pointer read at snapshot#1"), "{report}");
+        assert!(report.contains("function `callback`"), "{report}");
+    }
 
     #[test]
     fn legend_preserves_long_trace_and_line_boundaries() {
@@ -1471,6 +1530,8 @@ mod tests {
                     more_facts: 0,
                     frontier: None,
                     load: None,
+                    read_equalities: Vec::new(),
+                    read_context_changed: false,
                     resources: Vec::new(),
                     more_resources: 0,
                 },
@@ -1531,6 +1592,8 @@ mod tests {
                 more_facts: 0,
                 frontier: None,
                 load: None,
+                read_equalities: Vec::new(),
+                read_context_changed: false,
                 resources: Vec::new(),
                 more_resources: 0,
             };
@@ -1621,6 +1684,8 @@ mod tests {
                 more_facts: 0,
                 frontier: None,
                 load: None,
+                read_equalities: Vec::new(),
+                read_context_changed: false,
                 resources: Vec::new(),
                 more_resources: 0,
             };
@@ -1729,6 +1794,8 @@ mod tests {
                     more_facts: 0,
                     frontier: None,
                     load: None,
+                    read_equalities: Vec::new(),
+                    read_context_changed: false,
                     resources: Vec::new(),
                     more_resources: 0,
                 },
@@ -1743,6 +1810,8 @@ mod tests {
                     more_facts: 0,
                     frontier: None,
                     load: None,
+                    read_equalities: Vec::new(),
+                    read_context_changed: false,
                     resources: Vec::new(),
                     more_resources: 0,
                 },
@@ -1808,6 +1877,8 @@ mod tests {
                 more_facts: 0,
                 frontier: None,
                 load: None,
+                read_equalities: Vec::new(),
+                read_context_changed: false,
                 resources: Vec::new(),
                 more_resources: 0,
             };
