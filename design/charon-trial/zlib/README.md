@@ -227,10 +227,34 @@ cases. A separate nightly regression expands and checks every new helper claim
 and rejects invalid cast, pointer-sum, read-bound, and endpoint claims. The
 import manifest and lock reuse the unchanged prepared source and headers.
 
-The next increment is matched canonical packed seeds and incremental C
-processing, followed by C/Rust result equality and the shared demonstration.
-The explicit signed specification limit remains; this proof makes no claim for
-larger native lengths.
+`canonical.click` now covers arbitrary canonical decoded seed components
+(0–65520 each), nonnull input, and every length 0–2147483647. It checks the
+original mask/shift decoding, all four one-byte subtraction combinations,
+both short-path A reductions, NMAX batches and both tail outcomes. The checksum
+uses the decoded initial A/B; bits above the packed 32-bit seed are ignored by
+the unchanged C. Its original source, headers and prepared artifact remain
+byte-for-byte unchanged. The offline fixture verifies all 16 postconditions,
+every dependency body, complete expansion, and false checksum/cursor/seed/view
+claims. A separate fixture expands all 14 canonical helper claims.
+
+`incremental.c` is a real two-call client, compiled as a single translation unit
+including the pinned C implementation. `incremental.click` proves the whole
+checksum and byte preservation for every split from zero through the total,
+with the same length and canonical-seed limits. Both call pointers must be
+nonnull: `buf != 0` and `buf + split != 0`, including empty pieces, because zlib
+uses null as a reset request. Views establish read authority; they do not
+establish allocation provenance or make the suffix nonnull. Checked uint64
+field recovery and Integer round trips recover the first result's canonical
+state before the second call. The client import locks GCC 14, LP64 layout,
+headers, included original source and the prepared single translation unit.
+Its offline fixture also verifies the callee's complete proof against that
+unit, expands the client claim, and rejects invalid splits, null suffixes,
+missing/shortened authority and false results.
+
+Next connect reset/null behavior to the Rust constructors, derive C/Rust result
+equality under matched input and state conditions, and publish the shared
+demonstration. Native lengths above the signed specification limit remain
+unproved.
 
 | Original file | SHA-256 |
 | --- | --- |

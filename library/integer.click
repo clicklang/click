@@ -92,6 +92,19 @@ theorem uint64_pack_uint16_to_integer(low: uint64, high: uint64) {
     ensures to_integer(low | (high << 16)) == to_integer(low) + 65536 * to_integer(high);
 }
 
+// LP64 C saves the same bounded fields in a uint64 result.
+theorem uint64_unpack_uint16_low(low: uint64, high: uint64) {
+    requires low <= 65535u64;
+    requires high <= 65535u64;
+    ensures ((low | (high << 16)) & 65535u64) == low;
+}
+
+theorem uint64_unpack_uint16_high(low: uint64, high: uint64) {
+    requires low <= 65535u64;
+    requires high <= 65535u64;
+    ensures (((low | (high << 16)) >> 16) & 65535u64) == high;
+}
+
 theorem uint64_less_than_implies_not_greater_equal(left: uint64, right: uint64) {
     requires left < right;
     ensures not (left >= right);

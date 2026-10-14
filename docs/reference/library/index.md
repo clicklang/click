@@ -1426,6 +1426,34 @@ Two unsigned 16-bit fields have this exact packed Integer value when both native
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `uint64_unpack_uint16_low`
+
+```click
+theorem uint64_unpack_uint16_low(low: uint64, high: uint64) {
+    requires low <= 65535u64;
+    requires high <= 65535u64;
+    ensures ((low | (high << 16)) & 65535u64) == low;
+}
+```
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint64_unpack_uint16_high`
+
+```click
+theorem uint64_unpack_uint16_high(low: uint64, high: uint64) {
+    requires low <= 65535u64;
+    requires high <= 65535u64;
+    ensures (((low | (high << 16)) >> 16) & 65535u64) == high;
+}
+```
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+The kernel issues these exact LP64 word identities only with both 16-bit field
+bounds. They retain all packed bits, including bit 31; the high field uses a
+logical right shift.
+
 ### `uint64_less_than_implies_not_greater_equal`
 
 ```click

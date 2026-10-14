@@ -174,10 +174,24 @@ remain unchanged. Offline nightly regressions check all dependency bodies,
 complete expansion for the C proof and every new helper claim, and rejection
 of invalid results/invariants/views and a ceiling above the signed limit.
 
-Next prove matched canonical packed seeds and incremental C processing,
-connect the existing reset/null behavior to the Rust constructors, and derive
-C/Rust result equality under matched input and state conditions. Lengths beyond
-the shared signed specification range remain unproved for both implementations.
+The canonical-seed sidecar now proves all original C paths for arbitrary
+canonical decoded A/B (0–65520 each), nonnull input, and the full shared signed
+length range. It checks both one-byte conditional reductions and the short
+path's conditional A reduction, and carries the initial state through every
+batch and tail. The real two-call C client proves the whole checksum and byte
+preservation at every split, including empty pieces, when both call pointers
+are nonnull. Checked packed-field recovery establishes the first result's
+canonical state before the second call. Its single translation unit includes
+the unchanged pinned C; the offline fixture verifies the callee against that
+unit too. Complete expansion and negative result, state, split and authority
+cases cover the C contracts and all new helper claims. Seed-rewrite goal
+presentation and theorem-argument Integer conversions were repaired with
+normal regressions; bounded uint64 unpacking rules now match the LP64 word.
+
+Next connect the existing reset/null behavior to the Rust constructors and
+derive C/Rust result equality under matched input and state conditions, then
+publish the scoped demonstration. Lengths beyond the shared signed specification
+range remain unproved for both implementations.
 
 Acceptance:
 
