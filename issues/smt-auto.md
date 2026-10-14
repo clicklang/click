@@ -214,8 +214,21 @@ The next steps, in order:
    open records each conclusion the way the caller would write it, so `auto`
    can rewrite by a lemma's conclusion. On the 715 sampled `have`s, `auto`
    then proves 24 more (577) and 5 more can be deleted (178).
-3. **Unfold definitions applied to constructors.** `heap_right(Node(...))`
-   and similar facts are stated by hand in every arm of a tree proof.
+3. **Unfold definitions applied to constructors.** Partly done. `auto`
+   already unfolds a definition at a constructor on the goal side
+   (`heap_right(Node(...)) == right_model by auto`). It now also reads a
+   condition out of a fact: `is_rb(Node(.., left, right)) == 1` gives
+   `is_rb(left) == 1`, `black_height(left) == black_height(right)` and the
+   other conditions on the way to `1`. The 36 hand-written proofs of that
+   shape in the rbtree examples, about 470 lines, are now `by auto;`.
+   Measured on the 86 sampled `have`s that apply a function to a
+   constructor, none could be deleted before this, for three other
+   reasons: a fact about a resource's model is restated over the
+   constructor before `unfold` consumes the resource and a written `simp()`
+   then misses it (leaving the claim to `auto` instead finds it);
+   `contradiction(f(Node(...)) == 1)` in an excluded `match` arm needs the
+   restated fact exactly; and an `apply` or `fold` requirement is not
+   discharged by `auto`.
 
 Each step is judged by deleting `have`s from the examples and checking that
 the proofs still verify.
