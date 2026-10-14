@@ -212,6 +212,7 @@ const NIGHTLY: &[&str] = &[
     "resource_unfold_binds_scalar_field.md",                                   // 0.6s
     "resource_unfold_names_unmatched_body_cells.md",                           // 0.8s
     "result_parameter_false_array_postcondition.md",                           // 0.6s
+    "rbtree_return_fold_pointer_lemma.click", // full rotation theorem with imported pointer lemmas
     "return_fold_retains_readable_ranges_after_store.md",                      // 8.0s
     "return_unfold_call_instance_with_local.md",                               // 0.6s
     "rotation_model_preserved.md",                                             // 1.0s
