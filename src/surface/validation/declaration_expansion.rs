@@ -214,20 +214,22 @@ fn library_selection(mask: u64) -> Result<&'static LibrarySelection, ClickError>
         return Ok(selection);
     }
     // Built outside the lock: two runs that race build equal selections, and
-    // the first one stored is kept.
-    let mut file = empty_library_file()?;
-    for (index, module) in modules.iter().enumerate() {
-        if mask & (1 << index) != 0 {
-            append_library_module(&mut file, module.file.clone());
-        }
-    }
-    let file = expand_declared_resource_clauses(file)?;
-    let theorem_index = file
-        .theorem_definitions()
-        .iter()
-        .enumerate()
-        .map(|(index, theorem)| (theorem.name().to_string(), index))
-        .collect();
+    // the first one stored is kept. A selection can first be needed in the
+    // middle of a proof, and expansion resets the thread's ambient proof
+    // source and diagnostic naming, so it is built on its own thread.
+    let (file, theorem_index) = std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .name("click-library-selection".to_string())
+            .stack_size(64 * 1024 * 1024)
+            .spawn_scoped(scope, || build_library_selection(modules, mask))
+            .map_err(|error| {
+                ClickError::new(format!(
+                    "could not build a Click library selection: {error}"
+                ))
+            })?
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+    })?;
     let mut selections = LIBRARY_SELECTIONS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -408,6 +410,26 @@ pub(in crate::surface) fn library_import_hint(name: &str) -> String {
         let path = crate::surface::library_module_path(identity);
         format!("; it is declared in Click library module `{path}`, so add `import {path};`")
     })
+}
+
+fn build_library_selection(
+    modules: &[LibraryModule],
+    mask: u64,
+) -> Result<(ClickFile, BTreeMap<String, usize>), ClickError> {
+    let mut file = empty_library_file()?;
+    for (index, module) in modules.iter().enumerate() {
+        if mask & (1 << index) != 0 {
+            append_library_module(&mut file, module.file.clone());
+        }
+    }
+    let file = expand_declared_resource_clauses(file)?;
+    let theorem_index = file
+        .theorem_definitions()
+        .iter()
+        .enumerate()
+        .map(|(index, theorem)| (theorem.name().to_string(), index))
+        .collect();
+    Ok((file, theorem_index))
 }
 
 /// The whole Click library, for the accessors that are not specific to one
