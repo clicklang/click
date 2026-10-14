@@ -812,6 +812,76 @@ fn pinned_zlib_null_reset_is_independent_of_seed_and_nonunit_length() {
 }
 
 #[test]
+fn adler_c_rust_correspondence_requires_matched_inputs() {
+    let source = include_str!("../design/charon-trial/adler2/correspondence.click").replace(
+        "import \"../../adler32-spec.click\";",
+        include_str!("../design/adler32-spec.click"),
+    );
+    let verify_unit = |proof: &str, name: &str| {
+        let start = proof.find(&format!("theorem {name}(")).unwrap();
+        let offset = start + proof[start..].find(" by {").unwrap() + " by {".len();
+        let offset = offset + proof[offset..].len() - proof[offset..].trim_start().len();
+        let prefix = &proof[..offset];
+        let line = prefix.bytes().filter(|&byte| byte == b'\n').count() + 1;
+        let column = prefix.rsplit('\n').next().unwrap().len() + 1;
+        verify_sources_at(proof, &ProgramInputs::Bundle(vec![]), line, column)
+    };
+    for name in [
+        "adler_result_widen",
+        "adler_c_rust_results",
+        "adler_c_rust_reset",
+    ] {
+        verify_unit(&source, name).expect("checked correspondence body");
+    }
+    for (correct, incorrect) in [
+        (
+            "requires forall (k: int32) { 0 <= k and k < length implies c_bytes[k] == rust_bytes[k] };",
+            "",
+        ),
+        (
+            "requires to_integer(rust_result) == adler_spec_checksum(rust_bytes, length, initial_a, initial_b);",
+            "requires to_integer(rust_result) == adler_spec_checksum(rust_bytes, length, initial_a + 1, initial_b);",
+        ),
+        (
+            "ensures c_result == (uint64)rust_result by",
+            "ensures c_result == (uint64)rust_result + 1u64 by",
+        ),
+        ("requires rust_a == 1u32;", "requires rust_a == 2u32;"),
+    ] {
+        assert!(source.contains(correct), "mutation target must exist");
+        let invalid = source.replace(correct, incorrect);
+        let name = if correct.contains("rust_a") {
+            "adler_c_rust_reset"
+        } else {
+            "adler_c_rust_results"
+        };
+        assert!(verify_unit(&invalid, name).is_err());
+    }
+}
+
+#[test]
+#[ignore = "nightly: correspondence expansion and every shared-specification body"]
+fn adler_c_rust_correspondence_expands_with_checked_dependencies() {
+    let source = include_str!("../design/charon-trial/adler2/correspondence.click").replace(
+        "import \"../../adler32-spec.click\";",
+        include_str!("../design/adler32-spec.click"),
+    );
+    click::surface::verify_click_theorems(&source)
+        .expect("result correspondence and every shared-specification dependency body");
+    let mut expanded = source.clone();
+    for label in [
+        "adler_result_widen.ensures_0",
+        "adler_c_rust_results.ensures_0",
+        "adler_c_rust_reset.ensures_0",
+    ] {
+        expanded = click::surface::expand_c0_claim_source_by_label(&expanded, &[], label)
+            .expect("checked C/Rust correspondence expansion");
+    }
+    click::surface::verify_click_theorems(&expanded)
+        .expect("expanded correspondence and every shared-specification body");
+}
+
+#[test]
 #[ignore = "nightly: unchanged DO16 checksum proof, checked helpers, and mutations"]
 fn pinned_zlib_sixteen_block_matches_checked_shared_specification_offline() {
     let root = tempfile::tempdir().expect("isolated offline zlib DO16 fixture");

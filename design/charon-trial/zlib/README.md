@@ -2,10 +2,12 @@
 
 The unchanged zlib 1.3.1 computation now proves its shared Adler-32 checksum,
 termination, and preservation of every input byte for every length zero through
-2,147,483,647, canonical seed 1, and a nonnull buffer. This matches the Rust
-trial's supported length range. **General canonical packed seeds, incremental
-C processing, and C/Rust result equality remain unproved.** The C adapter uses
-the shared [checksum specification](../../adler32-spec.click).
+2,147,483,647, arbitrary canonical decoded A/B seeds, and a nonnull buffer.
+The real two-call C client proves incremental processing across every split
+under its nonnull call-pointer contracts. Checked result and reset
+correspondence connect these proofs to the Rust trial over the same length
+range. See the [scoped demonstration](../checksum-correspondence.md).
+The C adapter uses the shared [checksum specification](../../adler32-spec.click).
 
 `adler32.c`, `zutil.h`, `zlib.h`, and `zconf.h` are byte-for-byte upstream files
 from revision `51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf` of
@@ -52,7 +54,8 @@ executes no byte-processing iteration. The one-byte proof follows the original e
 prunes both reduction branches with unsigned bounds, and observes the original
 shift/OR result through a bounded packing theorem. Its imported specification
 lemmas have checked bodies. The empty and one-byte sidecars do not cover longer inputs; the short-loop
-proof below covers lengths 2–15. Arbitrary-length termination remains unproved.
+proof below covers lengths 2–15. The full-stream and canonical proofs below
+establish termination through the shared signed length limit.
 
 `reset.click` checks the original null-buffer reset path for any seed and every
 length except one, returning 1 without byte-read authority. The original
@@ -160,7 +163,8 @@ complete expanded certificate, false checksum and A/B invariants, missing
 read authority, and a view one byte too short. It runs in nightly to preserve
 the gate budget. `repeated.click.import.json` and its lock reuse the unchanged
 prepared source and headers; compiler extraction is unnecessary. The
-arbitrary-length C claim and C/Rust result equality remain unproved.
+full-stream and canonical sidecars below extend the length and seed ranges;
+the shared correspondence demonstration connects their results to Rust.
 
 The locked [NMAX sidecar](batch.click) now proves the shared checksum,
 termination, and preservation of every input byte for exactly 5552 bytes,
@@ -251,10 +255,16 @@ Its offline fixture also verifies the callee's complete proof against that
 unit, expands the client claim, and rejects invalid splits, null suffixes,
 missing/shortened authority and false results.
 
-Next connect reset/null behavior to the Rust constructors, derive C/Rust result
-equality under matched input and state conditions, and publish the shared
-demonstration. Native lengths above the signed specification limit remain
-unproved.
+The [checked correspondence and scoped demonstration](../checksum-correspondence.md)
+now derive native C/Rust return-word equality under matched entry bytes,
+length and canonical state, including the independently checked incremental
+clients. The reset lemma connects the existing null/nonunit-length C result
+with Rust's checked new/default fields and getter. Complete correspondence
+expansion and specification-body checks run nightly; bounded normal mutations
+reject missing input matching, mismatched state and false result/reset claims.
+The demonstration specifies all caller authority and nonnull obligations;
+composition of these separate programs does not establish an FFI boundary.
+Native lengths above the signed specification limit remain unproved.
 
 | Original file | SHA-256 |
 | --- | --- |

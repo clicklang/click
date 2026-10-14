@@ -76,9 +76,11 @@ A/B specification. Logical byte-index guards are bridged explicitly to native
 The independently locked, unchanged zlib one-byte and short-loop paths prove
 their packed results equal the same specification and preserve every input byte
 for canonical seed 1 and lengths 1–15; its empty path also verifies.
-The unified C sidecar now proves the same signed length range for canonical
-seed 1 and nonnull input, including all original return paths. General
-canonical seed composition and C/Rust result equality remain pending.
+The unified C sidecar now proves the same signed length range for arbitrary
+canonical decoded A/B and nonnull input, including all original return paths.
+The real incremental C client composes all splits under nonnull call-pointer
+contracts. Checked C/Rust result and reset correspondence now connect these
+independent proofs; the scoped demonstration records the precise conditions.
 
 Full original-computation smart audits exhaust the standard ten-minute run
 bound before completing a site, while ordinary verification succeeds. Continue
@@ -188,10 +190,22 @@ cases cover the C contracts and all new helper claims. Seed-rewrite goal
 presentation and theorem-argument Integer conversions were repaired with
 normal regressions; bounded uint64 unpacking rules now match the LP64 word.
 
-Next connect the existing reset/null behavior to the Rust constructors and
-derive C/Rust result equality under matched input and state conditions, then
-publish the scoped demonstration. Lengths beyond the shared signed specification
+Checked correspondence now derives native C/Rust return-word equality from
+those independently proved postconditions, equal entry bytes and matched
+canonical state. A checked uint32-to-uint64 observation bridge preserves the
+Rust return word; specification extensionality handles distinct input buffers.
+The reset correspondence connects the existing C null/nonunit-length result
+with Rust new/default fields and the checked checksum getter. Normal negatives
+reject missing byte matching, mismatched state and false result/reset claims;
+a nightly fixture checks every specification body and all three expanded
+correspondence claims. The [scoped demonstration](../design/charon-trial/checksum-correspondence.md)
+records precise call conditions, proof dependencies and reproducible locked
+fixture commands. This composes independently checked programs; it does not
+claim a verified FFI boundary. Lengths beyond the shared signed specification
 range remain unproved for both implementations.
+
+Next assess the experimental-support architecture requirements below against
+production evidence, starting with borrow-authority suspension and recovery.
 
 Acceptance:
 
