@@ -4578,21 +4578,18 @@ pub enum CUndefinedBehavior {
     UninitializedRead,
     /// An operation on a pointer value whose pointee's lifetime has ended
     /// (C11 6.2.4p2, Annex J.2): comparing, subtracting, offsetting, testing
-    /// or converting a pointer into a freed allocation. `allocation` names
-    /// the freed allocation for the diagnostic.
-    FreedPointerUse {
-        allocation: String,
-    },
+    /// or converting a pointer into a freed allocation. A refusal names the
+    /// operation through [`crate::kernel::locate_undefined_behavior`]; the
+    /// kernel's name for the allocation is not something the reader wrote.
+    FreedPointerUse,
     /// An equality comparison whose answer C11 6.5.9p6 leaves to the
     /// implementation's object layout: one operand may be one past the end
     /// of its object and the other the start of a different object, and the
     /// two are equal exactly when the objects are adjacent. The result is
     /// unspecified rather than undefined, and refused because the kernel does
-    /// not model object placement. `pointer` names the one-past-the-end
-    /// operand for the diagnostic.
-    OnePastEndComparison {
-        pointer: String,
-    },
+    /// not model object placement. A refusal names the comparison through
+    /// [`crate::kernel::locate_undefined_behavior`].
+    OnePastEndComparison,
 }
 
 impl CUndefinedBehavior {
@@ -4608,14 +4605,12 @@ impl CUndefinedBehavior {
             Self::InvalidShift => "invalid shift".to_string(),
             Self::InvalidMemory => "invalid memory access".to_string(),
             Self::UninitializedRead => "read of uninitialized storage".to_string(),
-            Self::FreedPointerUse { allocation } => format!(
-                "use of a pointer into freed allocation {allocation}: its value is \
+            Self::FreedPointerUse => "use of a pointer into a freed allocation: its value is \
                  indeterminate after the free"
-            ),
-            Self::OnePastEndComparison { pointer } => format!(
-                "comparison of the one-past-the-end pointer {pointer} with the start of \
-                 another object: whether the two objects are adjacent is unspecified"
-            ),
+                .to_string(),
+            Self::OnePastEndComparison => "comparison of a one-past-the-end pointer with the start \
+                 of another object: whether the two objects are adjacent is unspecified"
+                .to_string(),
         }
     }
 }
