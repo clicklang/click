@@ -21,9 +21,11 @@ use crate::kernel::{CComparisonOperator, CFloatCondition, CUpdateOperator};
 use crate::surface::validation::describe_click_type;
 
 mod cpp_model;
+mod object_fields;
 mod rust_spelling;
 pub(in crate::surface) use cpp_model::ModelAccessorScope;
 use cpp_model::describe_model_accessor;
+pub(crate) use object_fields::{clear_ambient_object_fields, enter_ambient_object_fields};
 use rust_spelling::rust_scalar_spelling;
 pub(crate) use rust_spelling::{enter_rust_spelling, rust_spelling, rust_variable_spelling};
 
@@ -999,7 +1001,7 @@ pub(super) fn describe_goal_proof_context(
     // The returned value's checked type decides how a constant beside it
     // prints, even when the value has no source name.
     if let Some(result) = result {
-        labels.source_value_type(result);
+        labels.source_result(result);
     }
     let mut relevant = match goal {
         Some(goal) => pure_facts_relevant_to(goal, pure_facts),
@@ -3274,7 +3276,7 @@ fn describe_cell_version_stop(
     stated: &[&Proposition],
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
-    let cell = describe_source_cell(pointer, parameter_binding);
+    let cell = describe_source_cell_of_width(pointer, Some(widths.read), parameter_binding);
     // Without the C names — a pure theorem has none — the address has no
     // source spelling, so the sentence says "this read" rather than repeating
     // a verifier-owned one.
@@ -3415,7 +3417,7 @@ fn describe_store_cause(
     stated: &[&Proposition],
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
-    let store = describe_source_cell(written, parameter_binding);
+    let store = describe_source_cell_of_width(written, widths.store, parameter_binding);
     if certain {
         return match &store {
             Some(store) => format!("the store to `{}` wrote it.", store.text()),
@@ -3951,6 +3953,17 @@ fn describe_source_cell(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<SourceCell> {
+    describe_source_cell_of_width(pointer, None, parameter_binding)
+}
+
+/// [`describe_source_cell`] for an access of `width` bytes, when the width is
+/// known: a constant offset into a struct-typed global is then the field
+/// that occupies exactly those bytes, where exactly one does.
+fn describe_source_cell_of_width(
+    pointer: &Pointer,
+    width: Option<u32>,
+    parameter_binding: ParameterBinding<'_>,
+) -> Option<SourceCell> {
     // Two parameters can point into one block, and then every one of them
     // can express the address -- `b[j]` is also `a[(b - a) + j]`. The
     // shortest spelling is the one written through the parameter the address
@@ -4019,6 +4032,18 @@ fn describe_source_cell(
         return Some(best);
     }
     let declared = describe_memory_block(&pointer.block, parameter_binding)?;
+    if let (Some(width), PointerOffsetTerm::Constant(offset), PointerBlock::Concrete(block)) =
+        (width, &pointer.offset, &pointer.block)
+        && let Ok(offset) = u32::try_from(*offset)
+        && let Some(field) = object_fields::object_field_spelling(block, offset, width)
+    {
+        return Some(SourceCell {
+            object: field,
+            index: CellIndex::StructMember,
+            element_bytes: None,
+            index_term: None,
+        });
+    }
     match &pointer.offset {
         // A local's block holds one declared object, and the name the reader
         // wrote for it *is* the address: `q`, not `q[0]`, which would read as a
@@ -4893,6 +4918,11 @@ thread_local! {
 /// Kernel reference results carry addresses. Function-directed proof printing
 /// must spell that carrier as `&result`, and a load through it as `result`.
 pub(super) struct ReferenceResultSourceScope(bool);
+
+/// Whether `result` is spelled as a reference result's carrier here.
+pub(crate) fn reference_result_source() -> bool {
+    REFERENCE_RESULT_SOURCE.with(std::cell::Cell::get)
+}
 
 impl ReferenceResultSourceScope {
     pub(super) fn enter(reference: bool) -> Self {
