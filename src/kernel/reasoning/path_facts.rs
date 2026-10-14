@@ -1586,6 +1586,25 @@ fn merge_facts_with_changes(
             *facts.get_mut(index) = fact.clone();
             changed.push(index);
         }
+        // A redundant defining equation may still carry a new checked
+        // producer binding. Keep the original packet rather than dropping
+        // its typed read evidence along with the proposition's redundancy.
+        if existing_index.is_none()
+            && fact.is_certified()
+            && matches!(
+                fact.generated_load_binding(),
+                Some(GeneratedLoadBinding::Exact {
+                    typed_pointer_value: Some(_),
+                    ..
+                })
+            )
+        {
+            facts.push(fact.clone());
+            if facts.len() != before + 1 {
+                share_append = false;
+                changed.extend(before..facts.len());
+            }
+        }
         if facts.len() == before + 1 {
             share_append &= &facts[before] == fact;
             appended.push(source_index);

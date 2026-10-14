@@ -1226,6 +1226,27 @@ impl ProofFacts {
         successor
     }
 
+    /// Preserve the selected statement's certified typed-read bindings beside
+    /// its plain facts. Only the explicit producer delta is inspected; no
+    /// ambient facts or earlier execution history are traversed.
+    pub(crate) fn with_checked_statement_read_facts(mut self, facts: &ExecutionFacts) -> Self {
+        for fact in facts {
+            crate::instrumentation::record_deterministic_work(1);
+            if fact.is_certified()
+                && matches!(
+                    fact.generated_load_binding(),
+                    Some(GeneratedLoadBinding::Exact {
+                        typed_pointer_value: Some(_),
+                        ..
+                    })
+                )
+            {
+                self.assumptions = self.assumptions.assume_execution_pure_fact(fact);
+            }
+        }
+        self
+    }
+
     /// Availability accepted by explicit check, answered from persistent
     /// indexes. Snapshot-blind buckets only select structurally compatible
     /// candidates; the kernel still proves every cross-snapshot match.

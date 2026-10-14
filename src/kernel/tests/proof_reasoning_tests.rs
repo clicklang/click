@@ -665,6 +665,71 @@ fn function_contract_lookup_ignores_unrelated_pointer_facts() {
 }
 
 #[test]
+fn callback_contract_availability_uses_scoped_pointer_equality() {
+    let c_type = CType::FunctionPointer(CallbackSignature::from_encoded(90_000));
+    let contract = |name: &str, pointer, state, c_type| Proposition::Predicate {
+        name: CFunctionContract::predicate_name_for(name),
+        arguments: vec![
+            Term::CState(Box::new(state)),
+            Term::CValue(CValue::typed_pointer(pointer, c_type)),
+        ],
+    };
+    let target = Pointer::function("callback-target");
+    let callback = Pointer::symbolic_function(Variable(90_011));
+    let source = contract("Invoke", target.clone(), CState::new(), c_type);
+    let required = contract("Invoke", callback.clone(), CState::new(), c_type);
+    let alias =
+        Proposition::ConditionIs(ConditionTerm::pointer_equal(callback.clone(), target), true);
+    let mut samples = Vec::new();
+    for size in [4, 64, 256] {
+        let mut context = PureFactContext::new()
+            .assume_proposition(source.clone())
+            .assume_proposition(alias.clone());
+        for index in 0..size {
+            context = context.assume_proposition(contract(
+                "Invoke",
+                Pointer::symbolic_function(Variable(91_000 + index)),
+                CState::new(),
+                c_type,
+            ));
+        }
+        let ((known, work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| context.contains_known(&required))
+        });
+        assert!(known);
+        samples.push((work, map_work));
+        assert!(!context.contains_known(&contract(
+            "Other",
+            callback.clone(),
+            CState::new(),
+            c_type
+        )));
+        assert!(!context.contains_known(&contract(
+            "Invoke",
+            callback.clone(),
+            CState::new().with_local("changed", int32(1)),
+            c_type
+        )));
+        assert!(!context.contains_known(&contract(
+            "Invoke",
+            callback.clone(),
+            CState::new(),
+            CType::FunctionPointer(CallbackSignature::from_encoded(90_001))
+        )));
+        assert!(
+            !context
+                .clone()
+                .without_exact_fact(&source)
+                .contains_known(&required)
+        );
+        assert!(!context.without_exact_fact(&alias).contains_known(&required));
+    }
+    assert!(samples[2].0 <= samples[0].0 * 2 + 16, "{samples:?}");
+    assert!(samples[2].1 <= samples[0].1 * 3 + 128, "{samples:?}");
+    eprintln!("callback contract availability work: {samples:?}");
+}
+
+#[test]
 fn pointer_substitution_replaces_the_block_and_preserves_the_offset() {
     let from = Variable(90_100);
     let replacement = Pointer {

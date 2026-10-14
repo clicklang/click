@@ -73,8 +73,13 @@ pub(in crate::kernel) fn evaluate_c_memory_load_paths(
         }];
     }
     let mut alias_cache = MemoryLoadAliasCache::default();
-    let observed = (!volatile && assumptions.should_require_owned_expression_loads())
-        .then(|| (crate::kernel::intern_c_memory_ref(memory), pointer.clone()));
+    // Function-pointer cells already contain typed read values, so the
+    // scalar-cache adapter does not emit their binding. Retain that checked
+    // producer evidence at every nonvolatile program callback read.
+    let observed = (!volatile
+        && (assumptions.should_require_owned_expression_loads()
+            || matches!(value_type, CType::FunctionPointer(_))))
+    .then(|| (crate::kernel::intern_c_memory_ref(memory), pointer.clone()));
     let mut paths = evaluate_c_memory_load_paths_with_alias_cache(
         memory,
         pointer,
@@ -1655,6 +1660,25 @@ fn canonicalized_symbolic_load_value_with_identity(
     let CValue::Pointer(pointer_value) = &value else {
         return Some(value);
     };
+    if let PointerBlock::FunctionSymbolic(variable) = &pointer_value.pointer().block
+        && let Some(load @ Bitvector32Term::MemoryLoad(_, _, _)) =
+            registered_load_term_for_variable(variable)
+    {
+        if matches!(purpose, LoadPurpose::Logical | LoadPurpose::Validity) {
+            record_pointer_read_observation(pointer_value.pointer(), memory, &address);
+            if let Bitvector32Term::MemoryLoad(memory, address, _) = &load {
+                assumptions.register_pointer_read(pointer_value.pointer(), memory, address);
+            }
+        }
+        record_load_variable_defining_fact_with_source_and_pointer(
+            *variable,
+            load,
+            facts,
+            source,
+            (purpose == LoadPurpose::Program).then_some(pointer_value.pointer()),
+        );
+        return Some(value);
+    }
     let Some((block, bits, byte_width)) = pointer_value.pointer().as_loaded() else {
         return Some(value);
     };
@@ -1711,7 +1735,10 @@ thread_local! {
 /// Its shape is not itself evidence: indexed arithmetic can look identical.
 pub(crate) fn typed_pointer_read_variable(value: &Pointer) -> Option<Variable> {
     Some(match (&value.block, &value.offset) {
-        (PointerBlock::Symbolic(variable), PointerOffsetTerm::Constant(0)) => *variable,
+        (
+            PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable),
+            PointerOffsetTerm::Constant(0),
+        ) => *variable,
         (_, PointerOffsetTerm::Int32Scaled { value, .. }) => {
             let Bitvector32Term::Variable(variable) = value.as_ref() else {
                 return None;
@@ -3780,9 +3807,10 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
                 LoadKind::Bits32,
             );
             let (variable, _) = load_variable_for_term(&load)?;
-            Some(CValue::typed_pointer(
-                Pointer::symbolic_function(variable),
+            Some(crate::kernel::primitives::cell_run_value(
+                pointer,
                 value_type,
+                Bitvector32Term::Variable(variable),
             ))
         }
         CType::Int8Array(_) => None,
@@ -3915,6 +3943,151 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn function_pointer_load_producers_retain_their_exact_read_definitions() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = CMemory::new();
+        let c_type = CType::FunctionPointer(CType::function_pointer_signature(
+            CType::Void,
+            &[CType::Int32Pointer],
+        ));
+        for producer in 0..4u64 {
+            let address = Pointer::symbolic(Variable(955_890 + producer));
+            let load = Bitvector32Term::MemoryLoad(
+                crate::kernel::intern_c_memory_ref(&memory),
+                Box::new(address.clone()),
+                LoadKind::Bits32,
+            );
+            let (variable, definition) = load_variable_for_term(&load).unwrap();
+            let value = match producer {
+                0 => symbolic_load_value_unrecorded(&memory, &address, c_type).unwrap(),
+                1 => symbolic_storage_cell_value(&memory, &address, c_type, true).unwrap(),
+                2 => crate::kernel::primitives::cell_run_value(&address, c_type, load),
+                _ => crate::kernel::primitives::cell_run_value(
+                    &address,
+                    c_type,
+                    Bitvector32Term::Variable(variable),
+                ),
+            };
+            let CValue::Pointer(value) = value else {
+                panic!("a typed function pointer");
+            };
+            assert_eq!(value.pointer(), &Pointer::symbolic_function(variable));
+            assert_eq!(typed_pointer_read_variable(value.pointer()), Some(variable));
+            assert_eq!(
+                crate::kernel::equality_graph::logical_pointer_read_term(value.pointer()),
+                Some(definition),
+            );
+        }
+    }
+
+    #[test]
+    fn checked_function_pointer_read_reaches_its_initialized_alias() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let c_type = CType::FunctionPointer(CType::function_pointer_signature(
+            CType::Void,
+            &[CType::Int32Pointer],
+        ));
+        let table = Pointer {
+            block: PointerBlock::from("global:callback-table"),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let address = Pointer::symbolic(Variable(955_895));
+        let target = Pointer::function("callback-target");
+        let source = CMemory::new()
+            .with_block(table.block.clone(), 8)
+            .store(table.clone(), CValue::typed_pointer(target.clone(), c_type));
+        let memory = source.clone().with_seeded_cells(
+            address.clone(),
+            4,
+            c_type,
+            0,
+            2,
+            intern_c_memory_ref(&source),
+        );
+        let alias =
+            Proposition::ConditionIs(ConditionTerm::pointer_equal(address.clone(), table), true);
+        let context = PureFactContext::new().assume_proposition(alias.clone());
+        let paths = evaluate_c_memory_load_paths(
+            &memory,
+            address.clone(),
+            c_type,
+            ExecutionFacts::new(),
+            Vec::new(),
+            &context,
+            true,
+            false,
+            None,
+            None,
+        );
+        let [path] = paths.as_slice() else {
+            panic!("one callback read");
+        };
+        let CExpressionOutcome::Value(CValue::Pointer(value)) = &path.outcome else {
+            panic!("callback read: {:?}", path.outcome);
+        };
+        let merged =
+            crate::kernel::reasoning::merge_facts(&ExecutionFacts::new(), &path.facts, &context)
+                .unwrap();
+        assert!(
+            merged.iter().any(|fact| matches!(
+                fact.generated_load_binding(),
+                Some(GeneratedLoadBinding::Exact {
+                    typed_pointer_value: Some(_),
+                    ..
+                })
+            )),
+            "the assignment merge discarded its callback read binding"
+        );
+        let checked = assumptions_with_path_context(&context, &merged, &path.obligations);
+        assert!(
+            checked.pointers_known_equal(value.pointer(), &target),
+            "the checked read lost its target: {:?}",
+            path.facts
+        );
+        assert!(!context.pointers_known_equal(value.pointer(), &target));
+        assert!(
+            !checked
+                .restricted_to_facts(&[], &[])
+                .pointers_known_equal(value.pointer(), &target)
+        );
+        assert!(!ResourceContext::new().permits_memory_read(&address, 8, &checked));
+        let initial = crate::kernel::proof::ProofFacts::from_source(&vec![alias]);
+        let published = initial.clone().with_checked_statement_read_facts(&merged);
+        assert!(
+            published
+                .assumptions()
+                .pointers_known_equal(value.pointer(), &target)
+        );
+        assert!(
+            !initial
+                .assumptions()
+                .pointers_known_equal(value.pointer(), &target)
+        );
+        let forged = merged
+            .iter()
+            .map(|fact| {
+                ExecutionPureFact::new(fact.proposition().clone())
+                    .with_generated_load_binding(fact.generated_load_binding().unwrap().clone())
+            })
+            .collect::<ExecutionFacts>();
+        assert!(
+            !initial
+                .clone()
+                .with_checked_statement_read_facts(&forged)
+                .assumptions()
+                .pointers_known_equal(value.pointer(), &target)
+        );
+        let without_alias =
+            crate::kernel::proof::ProofFacts::from_source(&Vec::<Proposition>::new())
+                .with_checked_statement_read_facts(&merged);
+        assert!(
+            !without_alias
+                .assumptions()
+                .pointers_known_equal(value.pointer(), &target)
+        );
+    }
 
     #[test]
     fn logical_cached_pointer_read_carries_its_current_cell_equation() {

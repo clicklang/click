@@ -1626,6 +1626,7 @@ pub(super) fn execute_step_from_frontier_position(
         None,
         None,
         None,
+        None,
     )
 }
 
@@ -1633,6 +1634,8 @@ pub(super) struct ExecutionPointStepSuccessor {
     pub(super) execution: ExecutionProofState,
     pub(super) pure_facts: PureFactList,
     pub(super) introduced_facts: Vec<Proposition>,
+    /// Typed producers from this selected, kernel-checked statement only.
+    pub(super) read_facts: ExecutionFacts,
 }
 
 /// The checked frontier and the two direct outcomes of a call whose throw
@@ -2023,6 +2026,7 @@ pub(super) fn execute_step_successor_from_frontier_position(
 ) -> Result<ExecutionPointStepSuccessor, ClickError> {
     let mut successor = execution.clone();
     let mut successor_facts = available_pure_facts.clone();
+    let mut read_facts = ExecutionFacts::new();
     let introduced_facts = execute_step_from_frontier_position_selecting_path(
         &mut successor,
         proof_context,
@@ -2034,11 +2038,13 @@ pub(super) fn execute_step_successor_from_frontier_position(
         None,
         context,
         None,
+        Some(&mut read_facts),
     )?;
     Ok(ExecutionPointStepSuccessor {
         execution: successor,
         pure_facts: successor_facts,
         introduced_facts,
+        read_facts,
     })
 }
 
@@ -2085,6 +2091,7 @@ fn execute_step_from_frontier_position_selecting_path(
     selected_path_fact: Option<&Proposition>,
     context: Option<&PureFactContext>,
     path_cases: Option<&mut Vec<CertifiedStatementTransition>>,
+    read_facts: Option<&mut ExecutionFacts>,
 ) -> Result<Vec<Proposition>, ClickError> {
     let function_block = proof_context.function_block;
     let function = proof_context.function;
@@ -2954,6 +2961,18 @@ fn execute_step_from_frontier_position_selecting_path(
                 describe_evidence_refusal(&refusal, parameter_binding)
             ))
         })?;
+    if let Some(read_facts) = read_facts {
+        *read_facts = transition.execution_facts.filtered(|fact| {
+            fact.is_certified()
+                && matches!(
+                    fact.generated_load_binding(),
+                    Some(crate::kernel::GeneratedLoadBinding::Exact {
+                        typed_pointer_value: Some(_),
+                        ..
+                    })
+                )
+        });
+    }
     if let Some(parent) = loop_return_parent {
         for (return_index, returned) in loop_return_transitions.into_iter().enumerate() {
             // The path's fact base: what was available at the loop, plus what

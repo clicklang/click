@@ -772,7 +772,14 @@ pub(crate) fn cell_run_value(
                     "symbolic function-pointer fields use raw or canonical exact loads"
                 ),
             };
-            CValue::typed_pointer(Pointer::symbolic_function(variable), element_type)
+            let value = Pointer::symbolic_function(variable);
+            if let Some(Bitvector32Term::MemoryLoad(memory, address, LoadKind::Bits32)) =
+                crate::kernel::registered_load_term_for_variable(&variable)
+            {
+                crate::kernel::equality_graph::EqualityGraph::default()
+                    .register_pointer_read_definition(&value, &memory, &address);
+            }
+            CValue::typed_pointer(value, element_type)
         }
         c_type if c_type.is_pointer() => {
             // A seeded pointer cell is already a typed read, even before a

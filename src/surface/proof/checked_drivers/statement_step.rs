@@ -157,10 +157,12 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
     };
     let successor = apply(prerequisite_policy, context)?;
     let mut completed = successor.execution;
-    let facts = requirement_pure_facts.with_statement_facts_retaining_prefix(
-        successor.pure_facts.into_vec(),
-        &completed.core.publication_case_prefix(),
-    );
+    let facts = requirement_pure_facts
+        .with_statement_facts_retaining_prefix(
+            successor.pure_facts.into_vec(),
+            &completed.core.publication_case_prefix(),
+        )
+        .with_checked_statement_read_facts(&successor.read_facts);
     // This is checked semantic state, shared by both source and Proof drivers.
     // A statement with several outcomes cannot attach one branch's facts to
     // every candidate; loop-return producers likewise keep their own bases.
