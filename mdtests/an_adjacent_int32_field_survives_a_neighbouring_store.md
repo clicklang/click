@@ -25,12 +25,10 @@ int32 keep_second(struct pair* p) {
 verifying "an_adjacent_int32_field_survives_a_neighbouring_store.c";
 
 int32 keep_second(struct pair* p) {
-    consumes p->first;
-    consumes p->second;
+    owns p->first;
+    owns p->second;
 
     ensures result == old(p->second);
-    produces p->first;
-    produces p->second;
 } by {
     execute();
     simp();

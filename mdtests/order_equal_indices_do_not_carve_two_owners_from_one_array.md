@@ -1,11 +1,9 @@
 # order-equal indices do not carve two owners from one array
 
-`i <= j` and `j <= i` make `x + i` and `x + j` one cell. Reserving
-`owns x[i..i + 1]` for `p` carves the caller's `owns x[0..4]` into
-`x[0..i]` and `x[i + 1..4]`, and neither piece covers `x[j..j + 1]`, so the
-second owner `wr` needs is missing. Admitting it would hand `wr` two owners of
-one cell, and `wr` proves `result == 1` from their separation where the C
-returns 2.
+`i <= j` and `j <= i` make `x + i` and `x + j` one cell, so the call would
+hand `wr` two owners of it. The call is refused for overlapping owners.
+Admitting it would let `wr` prove `result == 1` from their separation where
+the C returns 2.
 
 ```c filename=order_equal_indices_do_not_carve_two_owners_from_one_array.c
 int32 wr(int32* p, int32* q) {
@@ -43,5 +41,5 @@ int32 caller(int32* x, int32 i, int32 j) {
 ```
 
 ```expect
-fail: missing resource fact `owns x[j]`
+fail: overlapping owned memory resource facts `owns x[i]` and `owns x[j]`
 ```

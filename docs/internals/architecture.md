@@ -20,10 +20,10 @@ language's role.
 | `src/source.rs` | Share source-file positions between Surface Click and target-language frontends. |
 | `src/kernel/` | Define primitive terms, states, rules, symbolic execution, assumptions, memory reasoning, and the persistent checked proof object. |
 | `src/cli.rs` | Shared CLI parsing, target selection, durations, and user-facing command metadata. |
-| `src/bin/` | Thin entry points and command-specific reporting for verify, profile, expand, and audit. |
+| `src/bin/` | Thin entry points and command-specific reporting for verify, profile, expand, audit, and import, plus the `click` dispatcher's version manager (`install`, `use`) in `src/bin/click/`. |
 | `src/instrumentation.rs` | Work attribution, deadlines, budgets, and profiler events. |
 | `src/persistent.rs` | Persistent structures used where proof states share prior versions. |
-| `stdlib/prelude.click` | Public Click declarations loaded with user source. |
+| `library/` | Click library modules loaded with user source. |
 | `mdtests/`, `examples/` | End-to-end proof fixtures. |
 
 ## Data flow
@@ -183,7 +183,7 @@ reference inventory in the same slice:
   why the rule is sound;
 - a CLI option belongs in shared metadata and command tests before its
   synchronized reference entry;
-- a standard-library declaration belongs in `stdlib/prelude.click`, an mdtest,
+- a Click library declaration belongs in a `library/` module, an mdtest,
   and the source-checked library reference.
 
 See [Feature playbook](feature-playbook.md) for the review sequence and

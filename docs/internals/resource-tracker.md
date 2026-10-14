@@ -461,7 +461,7 @@ edge exists. Each decides the same abstract question as the matching arm of
 | `CMemory::without_field_cells` | disagrees | Same-block equality and a constant byte interval. Across blocks it removes too little, which for a copy is the safe direction; a completeness difference only. |
 | `heap_allocation_may_contain_pointer`, `CMemory::freed_heap_allocation_may_contain` | disagrees | `base.block != pointer.block` answers "not contained", which is fail-open on a spelling. The rule's `HeapFreed` arm is two separation ladders instead. Reaching it needs a freed allocation whose base block is not proven distinct from a live cell's block. The second is the same test over every deallocated allocation, and it is what the zeroed drop, the availability check below and contract certification all read, so the spelling is at least in one place. |
 | loop frame assembly `src/kernel/loops.rs`, `collect_loop_effect_check_obligations`, the multi-exit join | disagrees | Each reinstates or drops cells against the loop's *stated* effect summaries rather than a recorded edge, with a hardcoded `local:` skip. |
-| `memory_diff_is_covered_by_pointers`, `memory_diff_is_covered_by_ranges` `src/kernel/proof/execution.rs` | another question | The containment direction: is every observed change *inside* the declared write set. The tracker has no containment question. |
+| `memory_diff_is_covered_by_writes`, `memory_diff_is_covered_by_ranges` `src/kernel/proof/execution.rs` | another question | The containment direction: is every observed change *inside* the declared write set. The tracker has no containment question. |
 
 ### State versus state: "do these two snapshots agree about this read"
 
@@ -1162,9 +1162,9 @@ No pairwise facts or recursive footprint expansion are produced.
 The two sites that know they are at a contract entry produce it independently
 from the same list, so neither trusts the other: the body proof's
 `initial_claim_context_with_caller_owner` (`src/surface/proof.rs`), and
-`contract_certification::c_function_contract_certification_assumptions`, which
-authorizes such an entry premise as derivable from the contract's own clauses
-the way it already authorizes a `viewable` one from the resources those clauses
+`contract_certification::c_function_contract_entry_facts`, which records the
+partition as an entry fact with origin `Partition`, beside the other facts it
+derives from the contract's own clauses and the resources those clauses
 supply. Emitting instead at `ResourceContext::observable_facts_assuming_valid`
 — the one point the two sides share — was the shape rejected: it sees a
 context, not an entry, and would assert the partition for every bound view in

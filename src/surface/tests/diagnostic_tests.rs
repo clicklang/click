@@ -314,8 +314,7 @@ fn resource_neutral_callee_preserves_callers_allocation_resource() {
 
         int32 caller(struct vector* owner, int32 value) {
             requires owner->len < owner->cap;
-            consumes allocated(owner);
-            produces allocated(owner);
+            owns allocated(owner);
             ensures result == old(owner->len) + 1;
             ensures result == old(owner->len) + 1 or result == 0;
             ensures owner->len == old(owner->len) + 1;
@@ -861,7 +860,7 @@ fn negative_mdtest_failures_include_structured_proof_context() {
                 "{name}: {message}"
             );
             assert!(
-                message.contains("Requires produces owns p[0]"),
+                message.contains("left `caller_needs_write_back.owns_0` unproved"),
                 "{name}: {message}"
             );
             assert!(

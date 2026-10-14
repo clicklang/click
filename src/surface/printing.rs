@@ -1420,7 +1420,7 @@ pub(in crate::surface) fn describe_iterated_tactic(tactic: &IteratedTactic) -> S
     )
 }
 
-fn format_resource_target(resource: &ResourceClause) -> String {
+pub(in crate::surface) fn format_resource_target(resource: &ResourceClause) -> String {
     match resource {
         ResourceClause::Conditional {
             condition,

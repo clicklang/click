@@ -1970,7 +1970,7 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
     }
     // Two loads of one cell whose derivations resolve to the same source
     // are equal after a bounded walk over named edges, with no snapshot
-    // comparison at all (see `loads_equal_along_memory_derivations`). The
+    // comparison at all (see `atomic_loads_equal_along_memory_derivations`). The
     // walk applies only to two load terms of one pointer.
     if crate::kernel::api::atomic_loads_equal_along_memory_derivations(left, right, assumptions) {
         return true;
@@ -3668,7 +3668,7 @@ pub(in crate::kernel) fn run_access(run: &CellRun, pointer: &Pointer) -> RunAcce
 /// and at a different constant distance from every other slot, which the
 /// facts need not be consulted to tell apart.
 ///
-/// [`PureFactContext::resolve_memory_load_value`]: crate::kernel::assumptions::PureFactContext::resolve_memory_load_value
+/// [`PureFactContext::resolve_memory_load_value`]: crate::kernel::PureFactContext::resolve_memory_load_value
 pub(in crate::kernel) fn run_slots_resolving_load(
     run: &CellRun,
     pointer: &Pointer,

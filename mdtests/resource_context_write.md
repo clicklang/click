@@ -25,19 +25,17 @@ verifying "write_next.c";
 verifying "write_twice.c";
 
 int32 write_next(int32 p[], int32 x) {
-    consumes p[0..1];
+    owns p[0..1] by auto;
     requires x < 2147483647;
 
     ensures returns_written: result == p[0] by auto;
     ensures writes_next: p[0] == x + 1 by auto;
-    produces p[0..1] by auto;
 }
 
 int32 write_twice(int32 p[]) {
-    consumes p[0..1];
+    owns p[0..1] by auto;
 
     ensures writes_two: p[0] == 2 by auto;
-    produces p[0..1] by auto;
 }
 ```
 

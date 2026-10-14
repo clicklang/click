@@ -19,10 +19,9 @@ resource alias(p: struct node*) {
     }
 }
 void probe(struct node *p, struct node *q, struct node *value) {
-    consumes p->next;
+    owns p->next;
     consumes a: alias(p);
     requires p->next == value;
-    produces p->next;
     produces b: alias(p);
     ensures p->next == value;
 } by {

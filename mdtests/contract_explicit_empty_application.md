@@ -12,7 +12,7 @@ int32 invoke(int32 (*callback)(int32), int32 x) {
 ```click
 verifying "invoke.c";
 
-contract Identity() for int32(int32 x) {
+contract int32 Identity(int32 x) {
     ensures result == x;
 }
 
@@ -20,7 +20,7 @@ int32 invoke(int32 (*callback)(int32), int32 x) {
     requires Identity(callback);
     ensures result == x;
 } by {
-    step(Identity());
+    step(Identity);
     execute();
     simp();
 }

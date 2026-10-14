@@ -182,6 +182,7 @@ pub use verification::{
     verify_sources_at, verify_standard_library, with_allow_sorry,
 };
 mod proof_trace;
+pub use proof::without_implicit_auto;
 pub use proof_trace::with_proof_trace;
 
 /// Render one accepted checked path while `with_proof_trace` is active.
@@ -236,6 +237,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "and",
     "any",
     "apply",
+    "arithmetic",
     "as",
     "assumption",
     "at",
@@ -289,6 +291,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "import",
     "implies",
     "arithmetic_certificate",
+    "peel",
     "signed_int32",
     "rules",
     "in",
@@ -334,6 +337,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "separate",
     "simp",
     "sizeof",
+    "sorry",
     "spec",
     "statement",
     "step",
@@ -431,7 +435,42 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "write",
 ];
 
-const CLICK_STANDARD_LIBRARY: &str = include_str!("../stdlib/prelude.click");
+/// The Click library modules loaded implicitly with every sidecar, as
+/// `(identity, source)` pairs in declaration order. Each module is parsed
+/// with the declarations of the modules before it.
+const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
+    (
+        "library/primitives.click",
+        include_str!("../library/primitives.click"),
+    ),
+    ("library/nat.click", include_str!("../library/nat.click")),
+    ("library/list.click", include_str!("../library/list.click")),
+    (
+        "library/machine_integer.click",
+        include_str!("../library/machine_integer.click"),
+    ),
+    (
+        "library/permutation.click",
+        include_str!("../library/permutation.click"),
+    ),
+    (
+        "library/bytes.click",
+        include_str!("../library/bytes.click"),
+    ),
+    ("library/cstr.click", include_str!("../library/cstr.click")),
+    (
+        "library/c/builtins.click",
+        include_str!("../library/c/builtins.click"),
+    ),
+    (
+        "library/c/string.click",
+        include_str!("../library/c/string.click"),
+    ),
+    (
+        "library/integer.click",
+        include_str!("../library/integer.click"),
+    ),
+];
 
 /// Emits one non-overlapping verifier phase on every exit path, including an
 /// early `?`; see [`instrumentation::VerificationPhase`].
@@ -496,6 +535,22 @@ enum DeclarationIdentity {
     Contract(String),
     CFunction(String),
     Tactic(String),
+}
+
+impl std::fmt::Display for DeclarationIdentity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (kind, name) = match self {
+            Self::AlgebraicType(name) => ("type", name),
+            Self::Predicate(name) => ("predicate", name),
+            Self::Function(name) => ("function", name),
+            Self::Resource(name) => ("resource", name),
+            Self::Theorem(name) => ("theorem", name),
+            Self::Contract(name) => ("contract", name),
+            Self::CFunction(name) => ("C function", name),
+            Self::Tactic(name) => ("tactic", name),
+        };
+        write!(f, "{kind} `{name}`")
+    }
 }
 
 /// One canonical source file in a resolved local specification graph.
@@ -930,14 +985,21 @@ impl TacticDefinition {
     }
 }
 
+/// `step(Contract)`, or `step(Contract, { handle: instance, ... })` for a
+/// contract whose body declares resource handles. Entries keep the order
+/// written; the checker matches them to the contract's handles by name.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractApplication {
     name: String,
-    arguments: Option<Vec<ContractResourceArgument>>,
+    arguments: Vec<ContractResourceArgument>,
 }
 
+/// One `handle: instance` entry of a named-contract application.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractResourceArgument {
+    /// The contract's handle name, written on the left of the entry.
+    handle: String,
+    /// The caller's instance name.
     name: String,
     resource_name: String,
     identity: Variable,
@@ -1106,9 +1168,9 @@ impl std::fmt::Display for CallBinderTransport {
             write!(f, "{}", diagnostics::describe_contract_expression(argument))?;
         }
         write!(f, ")")?;
-        // The map is what makes this a call step: without it the same text
-        // is `step(Contract(...))`, a named-contract step. A call that lends
-        // no instance keeps its empty map.
+        // A call step always prints its map, so it never reads as a
+        // named-contract step. A call that lends no instance keeps its empty
+        // map.
         let entries = self.map_entries();
         if entries.is_empty() {
             write!(f, ", {{}}")?;
@@ -1123,7 +1185,7 @@ impl From<String> for ContractApplication {
     fn from(name: String) -> Self {
         Self {
             name,
-            arguments: None,
+            arguments: Vec::new(),
         }
     }
 }
@@ -1137,15 +1199,15 @@ impl From<&str> for ContractApplication {
 impl std::fmt::Display for ContractApplication {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)?;
-        if let Some(arguments) = &self.arguments {
-            write!(f, "(")?;
-            for (index, argument) in arguments.iter().enumerate() {
+        if !self.arguments.is_empty() {
+            write!(f, ", {{ ")?;
+            for (index, argument) in self.arguments.iter().enumerate() {
                 if index != 0 {
                     write!(f, ", ")?;
                 }
-                write!(f, "{}", argument.name)?;
+                write!(f, "{}: {}", argument.handle, argument.name)?;
             }
-            write!(f, ")")?;
+            write!(f, " }}")?;
         }
         Ok(())
     }
@@ -1620,7 +1682,7 @@ impl IteratedTactic {
 
 /// One iterated guarded-ownership clause as written. The shape the kernel
 /// needs (index bounds, element stride and offsets, guard cell and value) is
-/// derived from these by [`crate::surface::lowering::iterated_clause_shape`],
+/// derived from these by `crate::surface::lowering::iterated_clause_shape`,
 /// which validation runs once per definition.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct IteratedResourceClause {
@@ -1648,6 +1710,11 @@ pub struct ResourceInstanceBinding {
     /// Explicit child slot, surface name, and instance identity. Shared to
     /// keep recursive tactic syntax small.
     child_bindings: Option<std::sync::Arc<[(String, String, Variable)]>>,
+    /// On a `fold` construction, the child slots its map left out that an
+    /// in-scope resource of the same name could fill, as slot, name and
+    /// identity. The fold step keeps the ones its selected arm owns and
+    /// hands the kernel the explicit map; the rest are dropped.
+    default_child_bindings: Option<std::sync::Arc<[(String, String, Variable)]>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -3847,7 +3914,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "step-contract-application",
-        syntax: "step(Contract(...))",
+        syntax: "step(Contract, { handle: instance, ... })",
         class: "simple",
     },
     PublicTacticForm {

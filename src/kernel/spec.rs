@@ -5650,8 +5650,22 @@ fn lower_spec_memory_loadable_at_state_in(
                         } else {
                             guards
                         };
+                        let ordered = Proposition::ConditionIs(
+                            ConditionTerm::signed_less_equal(
+                                range_start.clone(),
+                                range_end.clone(),
+                            ),
+                            true,
+                        );
                         for guard in guards {
-                            add_proof_obligation(&mut obligations, assumptions, guard)?;
+                            // A guard this context refutes prunes the path;
+                            // record which, as the constant case does.
+                            let reversed = guard == ordered;
+                            if add_proof_obligation(&mut obligations, assumptions, guard).is_none()
+                            {
+                                budget.record_dropped_refuted_range_extent(reversed);
+                                return None;
+                            }
                         }
                     }
                 }
@@ -7612,7 +7626,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
                     // snapshot is compared structurally, so the live one
                     // would make this argument -- and every fact about a
                     // function of it -- different after any step at all.
-                    // `block_epoch_for_array_ref` gives the latest snapshot
+                    // `array_ref_argument_memory` gives the latest snapshot
                     // that still agrees with this one about everything the
                     // function can observe through this pointer, so a fact
                     // survives exactly the steps that cannot touch the array.

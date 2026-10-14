@@ -359,7 +359,6 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
             apply(int32_add_to_integer(source->checked_out, count(pool_slot(source)))) using {
                 defined(source->checked_out + count(pool_slot(source)));
             }
-            have to_integer(source->capacity) == to_integer(source->checked_out) + to_integer(count(pool_slot(source))) by auto;
             have 0 <= to_integer(count(pool_slot(source))) by {
                 apply(int32_less_equal_to_integer(0, count(pool_slot(source)))) using { 0 <= count(pool_slot(source)); }
                 simp();

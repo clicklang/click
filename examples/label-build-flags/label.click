@@ -18,9 +18,7 @@ theorem label_source_prefix_viewable(bytes: uint8[], length: uint64, taken: uint
     ensures viewable(bytes[0u64..taken]) by {
         apply(uint64_less_than_to_integer(length, 18446744073709551615u64));
         apply(uint64_less_equal_to_integer(taken, length));
-        have to_integer(length) + 1 <= 18446744073709551615 by { auto; }
         apply(uint64_add_to_integer(length, 1u64));
-        have to_integer(taken) <= to_integer(length + 1u64) by { auto; }
         apply(uint64_to_integer_less_equal_implies_less_equal(taken, length + 1u64));
         apply(uint64_less_equal_transitive(taken, length + 1u64, 9223372036854775807u64));
         simp() using {

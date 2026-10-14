@@ -55,7 +55,7 @@ pub(super) fn infer_type_substitution(
     Ok(substitution)
 }
 
-fn unify_click_type(
+pub(super) fn unify_click_type(
     pattern: &ClickType,
     actual: &ClickType,
     allowed: &BTreeSet<&str>,
@@ -103,6 +103,18 @@ fn unify_click_type(
                     validation::describe_click_type(actual)
                 ));
             };
+            // A constructor that leaves out its type arguments, where
+            // nothing around it fixed them, reaches here as the bare name.
+            if !actual.rigid
+                && expected.name == actual.name
+                && actual.arguments.is_empty()
+                && !expected.arguments.is_empty()
+            {
+                return Err(format!(
+                    "a `{}` constructor leaves out its type arguments and nothing around it fixes them; write them, as in `{}<...>::...`",
+                    actual.name, actual.name
+                ));
+            }
             if expected.rigid != actual.rigid
                 || expected.name != actual.name
                 || expected.arguments.len() != actual.arguments.len()

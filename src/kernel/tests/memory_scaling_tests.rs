@@ -1835,8 +1835,15 @@ fn wide_shifted_suffix_coverage_ignores_unrelated_bounds() {
         assert!(covered);
         samples.push(work);
     }
+    // Every unrelated bound shares `n`, so the difference graph's bounded
+    // propagation (`EDGE_LIMIT`) follows a fixed number of their edges once
+    // there are more of them than the limit: the work is constant from then
+    // on, and above no unrelated bounds by at most a fixed multiple of the
+    // limit (124 units at a limit of 32 when this was written).
+    let limit = crate::kernel::difference_graph::EDGE_LIMIT;
     assert!(
-        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        samples[1..].windows(2).all(|pair| pair[0] == pair[1])
+            && samples[1] <= samples[0] + 8 * limit,
         "suffix coverage scanned unrelated bounds: {samples:?}"
     );
 }
@@ -1933,5 +1940,66 @@ fn hashing_a_memory_fact_is_constant_in_the_memory_size() {
     assert!(
         samples.iter().all(|(_, bytes)| *bytes == smallest),
         "hashing a memory fact fed its hasher bytes in proportion to the memory: {samples:?}"
+    );
+}
+
+/// Stores to a sequence of separately owned parameter fields must not revisit
+/// cached fields of earlier objects. Check both scalar and pointer contents;
+/// the latter reproduces the linked-node shape from the bug report.
+#[test]
+fn sequential_owned_parameter_stores_ignore_earlier_cached_fields() {
+    let mut samples = Vec::new();
+    for pointer_values in [false, true] {
+        for count in [4, 16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let objects: Vec<_> = (0..count)
+                .map(|index| Pointer {
+                    block: PointerBlock::ExternalArgument,
+                    offset: PointerOffsetTerm::scale_int32(
+                        Bitvector32Term::Variable(Variable(980_000 + index as u64)),
+                        4,
+                    ),
+                })
+                .collect();
+            let composition = objects
+                .iter()
+                .fold(ResourceContext::new(), |resources, base| {
+                    resources.unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                        base.clone(),
+                        0u32.into(),
+                        4u32.into(),
+                    )))
+                });
+            let assumptions = PureFactContext::new()
+                .assume_proposition(Proposition::CResourceComposition(composition));
+            let mut memory = CMemory::new();
+            let mut largest = 0;
+            for (index, object) in objects.iter().enumerate() {
+                let value = if pointer_values {
+                    CValue::pointer(objects[(index + 1) % count].clone())
+                } else {
+                    scaling_value(index)
+                };
+                let width = value.byte_width();
+                let (next, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    memory.without_possible_aliasing_cells(object, width, &assumptions)
+                });
+                largest = largest.max(work);
+                memory = next.store(object.clone(), value);
+            }
+            for (index, object) in objects.iter().enumerate() {
+                let value = if pointer_values {
+                    CValue::pointer(objects[(index + 1) % count].clone())
+                } else {
+                    scaling_value(index)
+                };
+                assert_eq!(memory.known_value(object), Some(value));
+            }
+            samples.push((pointer_values, count, largest));
+        }
+    }
+    assert!(
+        samples.iter().all(|(_, _, work)| *work <= 100),
+        "a field store visited unrelated cached objects: {samples:?}"
     );
 }

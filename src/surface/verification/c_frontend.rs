@@ -780,6 +780,7 @@ pub(super) fn c_layouts(
     }
     let mut tables = parser::ProgramLayouts {
         plain_char: Some(target.plain_char()),
+        int64_t_rank: Some(target.int64_t_rank()),
         ..Default::default()
     };
     // The C call graph over every verified function, for the recursion

@@ -12,8 +12,8 @@ These labels describe what the CLI observed. The rest of this guide diagnoses
 why a proof error happened. A rejected proof may need an available explicit
 step, expose a missing capability, or reveal a bug in a documented rule.
 
-Parsing errors in the embedded standard library name `stdlib/prelude.click` and
-the line within that file. An enclosing module-checking context names the
+Parsing errors in the embedded Click library name the module file, such as
+`library/cstr.click`, and the line within that file. An enclosing module-checking context names the
 verification being attempted; it does not change the error's source location.
 
 A failed proof is evidence, but it does not by itself identify a Click bug.
@@ -327,8 +327,8 @@ Structured proof failures retain the claim, stage, source location, focused
 kernel goal, and a newest-first suffix of recent premises. The original
 reason remains the first line. Context is rendered only when the terminal
 message is requested, with a 64 KiB report cap, bounded proposition printer,
-and at most eight premises. Individual premise renderings are capped at 2 KiB
-and reports say when additional context was omitted. In an ordinary report a
+and at most eight premises. Individual premise renderings are truncated at 4 KiB
+in an ordinary report, and reports say when additional context was omitted. In an ordinary report a
 memory with no source name is labeled `<state A>`, `<state B>`, and so on, and
 in a trace `snapshot#1`, `snapshot#2`, numbered by first appearance within one
 report: equal memory shares one label and memory that differs gets another, so

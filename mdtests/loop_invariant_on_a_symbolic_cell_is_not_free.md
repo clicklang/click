@@ -21,8 +21,7 @@ void mark_prefix(int32 a[], int32 n, int32 m) {
     requires m < n;
     requires n <= 1073741823;
     requires a[m] == 7;
-    consumes a[0..n];
-    produces a[0..n];
+    owns a[0..n];
 } by {
     step();
     step();

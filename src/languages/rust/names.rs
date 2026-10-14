@@ -4,7 +4,7 @@
 //! segment with its length, `__rust_q_I4_quad_I4_walk`, and an inherent
 //! method by its module, then `_T` and its type's own name, then the method:
 //! `__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I3_new`
-//! ([`path_name`], [`inherent_method_name`]).
+//! (`path_name`, `inherent_method_name`).
 //! A sidecar writes the path, `adler2::Adler32::new`, and a diagnostic prints
 //! it the same way. The encoding is self-delimiting, so decoding needs no
 //! import.

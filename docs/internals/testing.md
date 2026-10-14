@@ -415,9 +415,9 @@ runner, preserving fixture and exporter sysroot paths embedded at compile
 time. Test archives are extracted at the checkout root for embedded CLI
 paths. Temporary upload archives stay outside the build cache.
 
-For docs-only changes, CI and the explicit
+For docs-only changes, pull-request CI and the explicit
 `scripts/check.sh --docs-only` path run only the focused documentation gate
-described above. The proof fixtures verify their inputs on every core. Judge
+described above. The merge queue always runs the full gate. The proof fixtures verify their inputs on every core. Judge
 the verdict from the script's exit status.
 
 The mdtest harness checks each `mdtests/*.click` file as an entry module as
@@ -843,10 +843,10 @@ skips the comparison.
 
 A simple tactic must close each requirement by an exact or indexed check
 ([`issues/simplify-step.md`](https://github.com/clicklang/click/blob/master/issues/simplify-step.md)).
-A `step()` no longer searches; where statement checking under the contextual
-or explicit policies still derives a prerequisite by a search whose result
-the proof does not retain, it counts the derivation by route and top rule
-(`instrumentation::HiddenPrerequisiteRoute`). Both pins are empty. The fixture harnesses take
+Where statement checking under the contextual or explicit policies still
+derives a prerequisite by a search whose result the proof does not retain, it
+counts the derivation by route and top rule
+(`instrumentation::HiddenPrerequisiteRoute`). The fixture harnesses take
 that census after an unfiltered run and compare it with
 `HIDDEN_PREREQUISITE_BASELINE` in `tests/mdtests.rs` and `tests/examples.rs`,
 exactly as the artifact reuse ratchet does: a count that rose must not land,
@@ -860,7 +860,13 @@ which records the claim and step of each hidden derivation. The
 condition the general decision settled after the difference graph left it
 open
 ([`issues/difference-logic.md`](https://github.com/clicklang/click/blob/master/issues/difference-logic.md)),
-by evaluation site.
+by evaluation site. The `TacticSearch` route counts a premise a simple tactic
+proved by searching the proof context after its exact lookup missed, by
+tactic site: resource `fold`, `unfold` and `observe`, `transport ... using`
+at an execution or fixed-state frontier, a `branch` arm's condition
+obligation, an outcome `if` or `cases` condition, a `have` of a separation
+away from the frontier, and a step's resource, separation or loadable-memory
+obligation.
 
 ## Quarantine
 
@@ -1040,8 +1046,9 @@ mistaken for mdtests. Project targets select sidecars exactly as `click verify`
 does.
 
 The defaults report smart tactics at 2 seconds, simple tactics at
-500 milliseconds, control-tactic containers at 6 seconds, and stop each project
-after 30 seconds. Override them with `--smart-threshold`,
+500 milliseconds, and control-tactic containers at 2 seconds. A 10-minute
+per-project time limit contains crashes and hangs; it is not a verdict about
+the proof. Override them with `--smart-threshold`,
 `--simple-threshold`, `--control-threshold`, and `--time-limit`;
 `--threshold` is shorthand for setting all three class thresholds equally.
 
@@ -1262,12 +1269,12 @@ CLAIM scalar.arithmetic_result verify 1 rewrite(s) ... ok (1210 units, 17ms)
 
 Checked verification advances a persistent `Proof`; its execution snapshot
 (`ExecutionProofState`) is carried by value through the driver frames.
-`selected_pure_case_split_simp_expands_by_removal` runs on an explicit 1.75
-MiB thread stack, below libtest's 2 MiB default, and pins that representation
-budget. The run needed between 1216 and 1280 KiB on rustc 1.92 / macOS and
-overflowed a 1.25 MiB budget on CI's Linux toolchain, so the budget
-carries about 40% headroom over the measured need; recalibrate on the CI
-platform before tightening it. The outlined proof-rule and driver adapters
+`nested_conjunction_body_parsing_uses_small_frames_and_linear_work` parses
+nested proof bodies on an explicit 1.75 MiB thread stack, below libtest's
+2 MiB default, and
+`nested_simp_derivations_keep_rule_temporaries_off_the_recursive_stack` checks
+nested simp derivations on the same budget. Recalibrate on the CI platform
+before tightening it. The outlined proof-rule and driver adapters
 keep rule-local enum and proposition payloads out of their dispatchers'
 frames; they are stable stack budget boundaries. Changes to those boundaries
 must keep the small-stack canary green.

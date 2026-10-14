@@ -83,17 +83,7 @@ theorem rb_root_black_node_color_bit(node: struct rb_node*, parent: struct rb_no
 theorem ctx_node_is_top_null(p: struct rb_node*) {
     requires ctx_node_is(Context::Top, p) == 1;
 
-    ensures p == 0 by {
-        if p == 0 {
-            assumption();
-        } else {
-            have ctx_node_is(Context::Top, p) != 1 by {
-                unfold(ctx_node_is(Context::Top, p));
-                normalize() using { not(p == 0); }
-            }
-            contradiction(ctx_node_is(Context::Top, p) == 1);
-        }
-    }
+    ensures p == 0 by auto;
 }
 
 theorem rb_ptr_transitive(a: struct rb_node*, b: struct rb_node*, c: struct rb_node*) {
@@ -107,19 +97,7 @@ theorem rb_has_parent_node(identity: struct rb_node*, parent: struct rb_node*, c
                            left: RbTree, right: RbTree, q: struct rb_node*) {
     requires rb_has_parent(RbTree::Node(identity, parent, color, left, right), q) == 1;
 
-    ensures parent == q by {
-        if parent == q {
-            assumption();
-        } else {
-            have rb_has_parent(RbTree::Node(identity, parent, color, left, right), q) != 1 by {
-                unfold(rb_has_parent(
-                    RbTree::Node(identity, parent, color, left, right), q));
-                normalize() using { not(parent == q); }
-            }
-            contradiction(rb_has_parent(
-                RbTree::Node(identity, parent, color, left, right), q) == 1);
-        }
-    }
+    ensures parent == q by auto;
 }
 
 theorem rb_has_parent_same(sub: RbTree, q: struct rb_node*, p: struct rb_node*) {
@@ -235,20 +213,7 @@ theorem ctx_node_is_left_identity(cid: struct rb_node*, grandparent: struct rb_n
     requires ctx_node_is(Context::Left(cid, grandparent, ccolor, sibling_model, up_model),
         p) == 1;
 
-    ensures p == cid by {
-        if p == cid {
-            assumption();
-        } else {
-            have ctx_node_is(
-                Context::Left(cid, grandparent, ccolor, sibling_model, up_model), p) != 1 by {
-                unfold(ctx_node_is(
-                    Context::Left(cid, grandparent, ccolor, sibling_model, up_model), p));
-                normalize() using { not(p == cid); }
-            }
-            contradiction(ctx_node_is(
-                Context::Left(cid, grandparent, ccolor, sibling_model, up_model), p) == 1);
-        }
-    }
+    ensures p == cid by auto;
 }
 
 theorem ctx_node_is_right_identity(cid: struct rb_node*, grandparent: struct rb_node*,
@@ -257,20 +222,7 @@ theorem ctx_node_is_right_identity(cid: struct rb_node*, grandparent: struct rb_
     requires ctx_node_is(Context::Right(cid, grandparent, ccolor, sibling_model, up_model),
         p) == 1;
 
-    ensures p == cid by {
-        if p == cid {
-            assumption();
-        } else {
-            have ctx_node_is(
-                Context::Right(cid, grandparent, ccolor, sibling_model, up_model), p) != 1 by {
-                unfold(ctx_node_is(
-                    Context::Right(cid, grandparent, ccolor, sibling_model, up_model), p));
-                normalize() using { not(p == cid); }
-            }
-            contradiction(ctx_node_is(
-                Context::Right(cid, grandparent, ccolor, sibling_model, up_model), p) == 1);
-        }
-    }
+    ensures p == cid by auto;
 }
 
 theorem ctx_reroot_top_fixed(p: struct rb_node*) {

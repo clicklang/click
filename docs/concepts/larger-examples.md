@@ -11,7 +11,7 @@ C files, sidecar specs, and local documentation explaining the proof boundary.
 
 ## Current examples
 
-The current project fixtures are:
+Selected project fixtures are:
 
 ### Heap object
 
@@ -59,8 +59,8 @@ This fixture's proof scope is intentionally narrow:
 - one `int32` field in the json-c-shaped struct,
 - pointer-to-struct parameters,
 - `->` field loads and stores for that first field,
-- `views obj->ref_count` for field reads,
-- `owns obj->ref_count` for field writes.
+- `views *obj;` for field reads,
+- `consumes *obj;` for field writes.
 
 This gives Click a realistic preallocated shape alongside the separate
 heap-object fixture.
@@ -184,8 +184,9 @@ rotation, recolor, leaf insertion, and both erase splices preserve them. The
 zipper half adds `plug`, a context-level red-black predicate `ctx_rb` from
 which `is_rb_root` of the whole plug follows, its insert-fixup weakening
 `ctx_almost_rb_insert`, and each fixup case restated as one step of the fixup
-loop. The proofs about verbatim Linux C that use this model live in the `rb_*`
-mdtests; this project is the library they cite.
+loop. The proofs about verbatim Linux C that use this model live in
+`examples/rbtree-insert` and `examples/rbtree-erase`; this project is the
+library they cite.
 
 ### Recursive zero list
 
@@ -196,7 +197,8 @@ examples/recursive-zero-list/
 This fixture gives every nonnull node the invariant `node->value == 0`, then
 uses a viewed recursive resource to verify an opaque self-call on the tail. Its
 ordinary contract proves that a returning call yields zero, while `decreases
-resource` separately certifies return by descent through the contained tail. A
+zero_list(node);` separately certifies return by descent through the contained
+tail. A
 second fuel-bounded traversal proves termination with a numeric measure. A
 small pipeline constructs two nodes from caller-owned fields, folds the list,
 and composes both traversal contracts.

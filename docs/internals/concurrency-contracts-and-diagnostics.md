@@ -26,8 +26,10 @@ Today, `owns mutex_guard(mu)` can occur directly in preserving function
 contracts and in declared resource bodies. `owns h: holding(counter)` can
 preserve a folded guard wrapper through a helper. The
 helper can unfold and refold the wrapper, establish `held(mu)` from the exposed
-guard, and use separately supplied protected memory. It cannot change mutex
-protocols. This is a conservative implementation
+guard, and use separately supplied protected memory. A helper given only the
+guard wrapper cannot change mutex protocols; a preserving `owns mutex_use(mu)`
+helper may lock and unlock that mutex, as described below. This is a
+conservative implementation
 boundary, not the proposed final meaning of concurrency contracts.
 
 Modeled initialization also has a generative internal identity. Loop joins
@@ -36,7 +38,9 @@ address, even when the protected assertion is identical. Replacing a loop-head
 initialization is currently refused with an explicit unsupported-contract
 message. A mutex may still be initialized and destroyed entirely within an
 iteration. The lifecycle resource described below now carries that identity;
-the complete storage-lifetime and `mutex_use` protocol remains future work.
+preserving `mutex_use` contracts are implemented, while the complete
+storage-lifetime protocol, worker transfer of `mutex_use`, and abstract
+acquire/release transitions remain future work.
 
 Heap allocation retirement now checks initialized mutex storage. The modeled
 ABI records a 40-byte mutex footprint, indexed by memory block. Direct `free`,
@@ -619,8 +623,9 @@ these operations. The hold transition itself carries no stable-read assertion.
 Tests cover mixed identities, transferred and split shares, pinned reborrows,
 ended scopes, forged certificates, and deterministic scaling over loan counts.
 
-The concrete mutex adapter below builds on this shared infrastructure. Neither
-checkpoint exposes `mutex_use` in the surface language yet.
+The concrete mutex adapter below builds on this shared infrastructure. At
+these checkpoints `mutex_use` had no surface syntax; the surface form is
+described in [Preserving use contracts are wired](#preserving-use-contracts-are-wired).
 
 ## Concrete use-loan kernel checkpoint
 
@@ -682,7 +687,7 @@ nested acquisition/release, cross-participant returns, outstanding guards,
 forged parent identities and stale transitions, protocol freezing, and
 multi-size scaling of deep reborrow chains.
 
-These remain internal adapters. There is still no accepted `mutex_use` surface
+At this checkpoint these were internal adapters, with no `mutex_use` surface
 syntax or automatic transport through contract resources, worker creation,
 join, or returned guards. Ordinary C calls continue to require `mutex_live`,
 and abstract protocol transitions remain frozen. The next boundary is binding
@@ -708,8 +713,8 @@ pinned share. Outstanding guards still prevent closure and recovery.
 Hostile tests cover missing occurrences, stale children, pinned parent facts,
 duplicate ownership, invalid quantities, and attempted views. The existing
 multi-size mutex round-trip test now exercises these resource exchanges too.
-This remains internal kernel support: there is no accepted `mutex_use` surface
-term, automatic contract lending, or worker transport yet. Thread confinement
+At this checkpoint this was internal kernel support, with no `mutex_use`
+surface term, automatic contract lending, or worker transport. Thread confinement
 explicitly rejects use resources until moving an occurrence also checks share
 custody and guard dependencies. The next boundary is abstract use bindings and
 checked contract transport, followed by worker return and escaping guards.
@@ -735,10 +740,10 @@ end transitions; closing a child restores the exact abstract parent permission.
 Tests cover absent and duplicate resources, invalid quantities and views,
 wrong participants, split shares, stale evidence, forbidden recovery, outstanding
 guards, nested helper return, and deterministic scaling with unrelated roots.
-This is a checked kernel boundary, not yet accepted surface syntax or automatic
-contract transport. The proof-entry builder and call-site resource planner still
-need to connect contract clauses to these roots, with precise missing-resource
-diagnostics. Abstract acquire/release protocols and escaping output guards remain
+This checkpoint was a checked kernel boundary, without surface syntax or
+automatic contract transport. The proof-entry builder and call-site resource
+planner later connected contract clauses to these roots, with precise
+missing-resource diagnostics. Abstract acquire/release protocols and escaping output guards remain
 separate work; the existing transition freeze stays in place.
 
 ## Synchronous use-call transfer kernel checkpoint
@@ -766,9 +771,10 @@ Deterministic multi-size checks cover unrelated frames and explicit certificate
 deltas. This component checks loan/resource transport; it does not replace body
 certification or check mutex invariant restoration on its own.
 
-Surface `mutex_use` clauses and automatic contract-planner integration are still
-pending. That integration must select exact clause occurrences, retain the body
-loan evidence, and report missing resources using Click syntax. Abstract mutex
+Surface `mutex_use` clauses and automatic contract-planner integration came
+next, in the following section. That integration selects exact clause
+occurrences, retains the body loan evidence, and reports missing resources using
+Click syntax. Abstract mutex
 operations, returned guards, and worker transport remain separate boundaries;
 the current protocol freeze is unchanged.
 

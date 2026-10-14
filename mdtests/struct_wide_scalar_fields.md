@@ -41,14 +41,11 @@ verifying "struct_wide_scalar_pointer.c";
 verifying "struct_wide_scalar_value.c";
 
 uint64 update_wide_packet(struct wide_packet* packet) {
-    consumes packet->count;
-    consumes packet->total;
-    consumes packet->mask;
+    owns packet->count;
+    owns packet->total;
+    owns packet->mask;
 
     ensures result == 1311768467463790320u64;
-    produces packet->count;
-    produces packet->total;
-    produces packet->mask;
 } by {
     step();
     step();

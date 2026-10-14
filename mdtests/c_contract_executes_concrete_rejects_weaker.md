@@ -18,8 +18,8 @@ verifying "c_contract_executes_concrete_rejects_weaker.c";
 spec enum Mark { Clear, Set }
 resource Counter() { field model: Mark; field revision: int32; }
 
-contract Exact(cell: Counter()) for void(int32* state) {
-    owns cell;
+contract void Exact(int32* state) {
+    owns cell: Counter();
     ensures cell.model == Mark::Set;
     ensures cell.revision == 1;
 }

@@ -1,7 +1,6 @@
 resource list(node: struct node*) {
     if node != 0 {
-        owns node->value;
-        owns node->next;
+        owns *node;
         owns list(node->next);
     }
 }
@@ -39,8 +38,7 @@ int32 list_push_front(
     struct node* tail
 ) {
     requires node != 0;
-    consumes node->value;
-    consumes node->next;
+    consumes *node;
     consumes list(tail);
     produces list(node);
 
@@ -58,8 +56,7 @@ int32 list_pop_front(
 ) {
     requires node != 0;
     consumes list(node);
-    produces node->value;
-    produces node->next;
+    produces *node;
     produces list(node->next);
 
     ensures result == old(node->value);
@@ -77,11 +74,8 @@ int32 list_roundtrip(
     struct node* tail
 ) {
     requires node != 0;
-    consumes node->value;
-    consumes node->next;
+    owns *node;
     owns list(tail);
-    produces node->value;
-    produces node->next;
 
     ensures result == value;
     ensures node->next == tail;

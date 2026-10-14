@@ -692,3 +692,100 @@ fn a_remainder_by_a_constant_is_bounded() {
     );
     assert_eq!(graph(&[]).decide(&le(&constant(0), &remainder(4))), None);
 }
+
+/// The `int64` division guard also holds for a zero divisor (its
+/// constructor folds `right == 0` to overflow), so a divisor known only to
+/// be non-negative leaves it open; the `int32` guard leaves zero to a
+/// separate check and is answered.
+#[test]
+fn an_int64_division_guard_needs_a_nonzero_divisor() {
+    let (n, d) = (variable(0), variable(1));
+    let int64 = Bitvector32Term::Int64Constant;
+    let nonnegative = graph(&[(
+        ConditionTerm::int64_signed_less_equal(int64(0), d.clone()),
+        true,
+    )]);
+    let divide =
+        ConditionTerm::Bitvector64SignedDivideOverflows(Box::new(n.clone()), Box::new(d.clone()));
+    assert_eq!(nonnegative.decide(&divide), None);
+    let zero = graph(&[(ConditionTerm::int64_equal(d.clone(), int64(0)), true)]);
+    assert_eq!(zero.decide(&divide), None);
+    let positive = graph(&[(
+        ConditionTerm::int64_signed_less_than(int64(0), d.clone()),
+        true,
+    )]);
+    assert_eq!(positive.decide(&divide), Some(false));
+    let nonzero = graph(&[
+        (
+            ConditionTerm::int64_signed_less_equal(int64(0), d.clone()),
+            true,
+        ),
+        (ConditionTerm::int64_equal(d.clone(), int64(0)), false),
+    ]);
+    assert_eq!(nonzero.decide(&divide), Some(false));
+    let int32 = graph(&[(le(&constant(0), &d), true)]);
+    assert_eq!(
+        int32.decide(&ConditionTerm::Bitvector32SignedDivideOverflows(
+            Box::new(n),
+            Box::new(d)
+        )),
+        Some(false)
+    );
+}
+/// A value many others are bounded by (an array length `n` with
+/// `v_i <= n` for 64 to 4,096 values) is a hub: a new bound on it, a
+/// question about it, and a question about one dependent cost the same at
+/// every size. Insertion pushes a bound a bounded distance and a query
+/// pulls one bounded hop, so a dependent still reads its hub's bound.
+#[test]
+fn a_bound_on_a_shared_value_costs_the_same_beside_any_number_of_dependents() {
+    let n = variable(0);
+    let mut samples = Vec::new();
+    for size in [64, 256, 1024, 4096] {
+        let mut graph = DifferenceGraph::new();
+        for index in 0..size {
+            graph.assume_condition(&le(&variable(10 + index), &n), true);
+        }
+        let (_, insert) = graph_work(|| graph.assume_condition(&le(&n, &constant(10)), true));
+        let first = variable(10);
+        let (answer, dependent) = graph_work(|| graph.decide(&le(&first, &constant(10))));
+        assert_eq!(answer, Some(true));
+        let (answer, hub) = graph_work(|| graph.decide(&le(&n, &constant(10))));
+        assert_eq!(answer, Some(true));
+        let (_, joined) = graph_work(|| graph.assume_condition(&lt(&variable(5), &n), true));
+        samples.push((insert, dependent, hub, joined));
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "work on a shared value should not grow with its dependents: {samples:?}"
+    );
+}
+
+/// A fact names a load by its load variable, the load's canonical form; a
+/// question may spell the load itself. The context's graph is asked the
+/// canonical question too, so `0 <= v` answers `0 <= load` for the load `v`
+/// names.
+#[test]
+fn a_load_spelled_as_itself_reads_facts_about_its_load_variable() {
+    let pointer = crate::kernel::Pointer {
+        block: "difference-graph-cell".into(),
+        offset: crate::kernel::PointerOffsetTerm::Constant(0),
+    };
+    let memory = crate::kernel::CMemory::new().with_block("difference-graph-cell", 4);
+    let load = Bitvector32Term::MemoryLoad(
+        crate::kernel::intern_c_memory(memory),
+        Box::new(pointer),
+        crate::kernel::LoadKind::Bits32,
+    );
+    let named = crate::kernel::eval::canonical_term(&load);
+    assert_ne!(named, load, "the load takes a load variable");
+    let context = PureFactContext::new().assume_condition(le(&constant(0), &named), true);
+    assert_eq!(
+        context.difference_decision(&le(&constant(0), &load), &[]),
+        Some(true)
+    );
+    assert_eq!(
+        context.difference_decision(&lt(&load, &constant(0)), &[]),
+        Some(false)
+    );
+}

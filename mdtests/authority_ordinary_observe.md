@@ -20,9 +20,7 @@ resource zero_flag(flag: int32*) {
 verifying "write_flag_observed.c";
 
 int32 write_flag_observed(int32* flag) {
-    consumes zero_flag(flag);
-
-    produces zero_flag(flag) by {
+    owns zero_flag(flag) by {
         observe(zero_flag(flag));
         execute();
     }

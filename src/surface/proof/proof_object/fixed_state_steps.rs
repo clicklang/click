@@ -248,9 +248,17 @@ fn partition_outcome_cases(
     let positive = crate::kernel::canonical_condition_fact(&lowered);
     let negative =
         crate::kernel::canonical_condition_fact(&Proposition::Not(Box::new(lowered.clone())));
-    let known = if query.assumptions().proves(&positive) {
+    let known = if crate::surface::planning::proposition_search::proves_by_tactic_search(
+        query.assumptions(),
+        &positive,
+        "outcome if condition",
+    ) {
         Some(true)
-    } else if query.assumptions().proves(&negative) {
+    } else if crate::surface::planning::proposition_search::proves_by_tactic_search(
+        query.assumptions(),
+        &negative,
+        "outcome if condition",
+    ) {
         Some(false)
     } else {
         None
@@ -2867,9 +2875,18 @@ impl<'a> Proof<'a> {
         let negative =
             self.lower_surface_proposition(&negative_surface, "post-execution `if` negation")?;
         let assumptions = self.facts().assumptions();
-        let positive_holds = self.facts().contains(&positive) || assumptions.proves(&positive);
+        let positive_holds = self.facts().contains(&positive)
+            || crate::surface::planning::proposition_search::proves_by_tactic_search(
+                assumptions,
+                &positive,
+                "outcome cases condition",
+            );
         let negative_holds = self.facts().contains(&negative)
-            || assumptions.proves(&negative)
+            || crate::surface::planning::proposition_search::proves_by_tactic_search(
+                assumptions,
+                &negative,
+                "outcome cases condition",
+            )
             || fact_conflicts_with_assumptions(&positive, assumptions);
         match (positive_holds, negative_holds) {
             (true, false) => Ok(true),

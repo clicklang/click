@@ -140,7 +140,13 @@ the existing memory-support rules. Potentially aliasing writes invalidate
 that transport. Deallocation discharges the allocation obligation only at
 the checked final-release transition.
 
-## Composable mutex resources (subsequent implementation)
+## Composable mutex resources
+
+[Mutex operations as resource contracts](mutex-resource-contracts.md)
+describes the implemented subset: named lifecycle operations, typed
+protected-state transport, and same-thread acquiring and releasing helpers.
+General lifecycle-consuming and lifecycle-producing helper contracts, named
+storage transfer, and destruction's named state output remain open.
 
 Separate the persistent description of a lock's protocol from its live-use
 permission, thread-owned acquisition guard, and protected assertion `I`.
@@ -353,8 +359,9 @@ semantic boundary.
 
 Direct named primitive guard/lifecycle binders, lock-changing contracts, loop joins
 across acquisition epochs, borrowed lifetime authority, and
-shared interference remain later work. This checkpoint does not add
-concurrent population access.
+shared interference were left for later work at this checkpoint, which did not
+add concurrent population access. [Mutex resource contracts](mutex-resource-contracts.md)
+records what has landed since.
 
 The surface's return-resource adapter now checks the obligations returned by
 the kernel before marking its transition checked. Calls involving counted
@@ -410,9 +417,9 @@ aggregated aliases still undergo the count-overflow check. This changes
 accounting, not the requirement to restore every remaining population's body.
 
 All eight claims pass the complete 42-site expansion and independent
-reverification audit. Composable mutex access authority and mutex
-integration remain later work; this checkpoint proves sequential lifecycles,
-not concurrent reclamation.
+reverification audit. This checkpoint proves sequential lifecycles, not
+concurrent reclamation; [mutex resource contracts](mutex-resource-contracts.md)
+describes the mutex integration.
 
 Path completion performs the checked
 return-resource exchange after open bodies and deferred invariants have been

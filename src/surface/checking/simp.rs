@@ -80,10 +80,9 @@ pub(in crate::surface) use crate::kernel::proof::equality_rewrite::rewrite_propo
 
 /// The single explicit-certificate search shared by every smart-simplification
 /// construction path. Both the fixed-state proof `simp() using` chain and the
-/// post-execution outcome planner must call through here (directly or via
-/// [`plan_explicit_equality_rewrites_then`]), so a named simple rule available
-/// to one is available to the other. `is_available` is the caller's judgment
-/// of when the current goal closes by `assumption`.
+/// post-execution outcome planner must call through here, so a named simple
+/// rule available to one is available to the other. `is_available` is the
+/// caller's judgment of when the current goal closes by `assumption`.
 pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
     goal: &Proposition,
     premises: &[(Proposition, ClickProposition)],

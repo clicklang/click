@@ -68,7 +68,6 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                         rewrite(RbTree::Node(sid, sp, sc, sl, sr) == right_model); assumption();
                     }
                     have sc == Color::Black by auto;
-                    have rb_minimum(right_model) == RbMinimum::Found(sid, Color::Black, RbTree::Empty) by auto;
                     have rb_erase_immediate_leaf_model(RbTree::Node(identity, parent, color, left_model, RbTree::Node(sid, sp, sc, sl, sr)))
                         == rb_successor_splice(sid, parent, color, left_model, RbTree::Node(sid, sp, sc, sl, sr)) by {
                         unfold(rb_erase_immediate_leaf_model(RbTree::Node(identity, parent, color, left_model, RbTree::Node(sid, sp, sc, sl, sr)))); normalize();
@@ -137,7 +136,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                     open(erase_callbacks(augment)) { execute(); }
                                     let moved_left = fold(rb_at(lid), { model: RbTree::Node(lid, sid, lc, ll, lr) }, { left: lleft, right: lright });
                                     let hole = fold(rb_at(0), { model: RbTree::Empty });
-                                    let outer = fold(ctx_at(sid, root), { model: Context::Left(pid, gp, pc, sibling_model, above_model) }, { sibling: sibling, up: above });
+                                    let outer = fold(ctx_at(sid, root), { model: Context::Left(pid, gp, pc, sibling_model, above_model) }, { up: above });
                                     have ctx_node_is(Context::Left(pid, gp, pc, sibling_model, above_model), parent) == 1 by {
                                         rewrite(parent == pid); unfold(ctx_node_is(Context::Left(pid, gp, pc, sibling_model, above_model), pid)); normalize();
                                     }
@@ -176,9 +175,6 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                     simp();
                                 },
                                 Context::Right(pid, gp, pc, sibling_model, above_model) => {
-                                    have ctx_consistent(Context::Right(pid, gp, pc, sibling_model, above_model), RbTree::Node(identity, parent, color, left_model, right_model), 0) == 1 by {
-                                        rewrite(Context::Right(pid, gp, pc, sibling_model, above_model) == up.model); assumption();
-                                    }
                                     apply(ctx_consistent_right_focus(pid, gp, pc, sibling_model, above_model,
                                         RbTree::Node(identity, parent, color, left_model, right_model), 0));
                                     apply(rb_parent_consistent_node_fixes_parent(identity, parent, color, left_model, right_model, pid));
@@ -204,7 +200,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                             let sibling = fold(rb_at(0), { model: RbTree::Empty });
                                             let moved_left = fold(rb_at(lid), { model: RbTree::Node(lid, sid, lc, ll, lr) }, { left: lleft, right: lright });
                                             let hole = fold(rb_at(0), { model: RbTree::Empty });
-                                            let outer = fold(ctx_at(sid, root), { model: Context::Right(pid, gp, pc, sibling_model, above_model) }, { sibling: sibling, up: above });
+                                            let outer = fold(ctx_at(sid, root), { model: Context::Right(pid, gp, pc, sibling_model, above_model) }, { up: above });
                                             have ctx_node_is(Context::Right(pid, gp, pc, sibling_model, above_model), parent) == 1 by {
                                                 rewrite(parent == pid); unfold(ctx_node_is(Context::Right(pid, gp, pc, sibling_model, above_model), pid)); normalize();
                                             }
@@ -248,7 +244,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                             let sibling = fold(rb_at(sbid), { model: RbTree::Node(sbid, sbp, sbc, sbl, sbr) }, { left: sb_left, right: sb_right });
                                             let moved_left = fold(rb_at(lid), { model: RbTree::Node(lid, sid, lc, ll, lr) }, { left: lleft, right: lright });
                                             let hole = fold(rb_at(0), { model: RbTree::Empty });
-                                            let outer = fold(ctx_at(sid, root), { model: Context::Right(pid, gp, pc, sibling_model, above_model) }, { sibling: sibling, up: above });
+                                            let outer = fold(ctx_at(sid, root), { model: Context::Right(pid, gp, pc, sibling_model, above_model) }, { up: above });
                                             have ctx_node_is(Context::Right(pid, gp, pc, sibling_model, above_model), parent) == 1 by {
                                                 rewrite(parent == pid); unfold(ctx_node_is(Context::Right(pid, gp, pc, sibling_model, above_model), pid)); normalize();
                                             }

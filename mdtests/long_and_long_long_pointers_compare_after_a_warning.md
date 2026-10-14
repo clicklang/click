@@ -13,12 +13,12 @@ int differ(unsigned long *p, long long *q) { return p != q; }
 ```click
 verifying "long_and_long_long_pointers_compare_after_a_warning.c";
 
-int32 same(int64 *p, int64 *q) {
+int same(long *p, long long *q) {
     requires p == q;
     ensures result == 1 by auto;
 }
 
-int32 differ(uint64 *p, int64 *q) {
+int differ(unsigned long *p, long long *q) {
     requires (uint8*)p == (uint8*)q;
     ensures result == 0 by auto;
 }

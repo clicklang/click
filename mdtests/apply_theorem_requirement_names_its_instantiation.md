@@ -30,8 +30,7 @@ theorem head_below_one_is_below_two(a: int32[], seed: int32) {
 
 int32 raise_head(int32 box[1]) {
     requires box[0] == 7;
-    consumes box[0..1];
-    produces box[0..1];
+    owns box[0..1];
     ensures unreported_requirement: old(box[0]) < 2 by {
         execute();
         apply(head_below_one_is_below_two(old(box), 7)) using {

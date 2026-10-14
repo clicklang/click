@@ -30,9 +30,8 @@ int32 consume_first_write(int32 p[]) {
 }
 
 int32 needs_write_back(int32 p[]) {
-    consumes p[0..1];
+    owns p[0..1] by auto;
 
-    produces p[0..1] by auto;
 }
 ```
 

@@ -471,6 +471,10 @@ id = "language.word.address"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
+id = "language.word.arithmetic"
+path = "reference/language/grammar.md#word-index"
+
+[[item]]
 id = "language.word.import"
 path = "reference/language/grammar.md#word-index"
 
@@ -511,6 +515,10 @@ id = "language.word.arithmetic_certificate"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
+id = "language.word.peel"
+path = "reference/language/grammar.md#word-index"
+
+[[item]]
 id = "language.word.signed_int32"
 path = "reference/language/grammar.md#word-index"
 
@@ -528,6 +536,10 @@ path = "reference/language/grammar.md#word-index"
 
 [[item]]
 id = "language.word.scale"
+path = "reference/language/grammar.md#word-index"
+
+[[item]]
+id = "language.word.sorry"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -979,11 +991,11 @@ path = "reference/language/grammar.md#word-index"
 
 
 [[item]]
-id = "stdlib.resource.allocation"
+id = "library.resource.allocation"
 path = "reference/library/index.md#allocation"
 
 [[item]]
-id = "stdlib.resource.authority"
+id = "library.resource.authority"
 path = "reference/library/index.md#authority"
 
 [[item]]
@@ -2062,411 +2074,411 @@ id = "cli.behavior.audit.check.performance"
 path = "reference/cli/audit.md#checks"
 
 [[item]]
-id = "stdlib.theorem.int32_increment_upper_bound"
+id = "library.theorem.int32_increment_upper_bound"
 path = "reference/library/index.md#int32_increment_upper_bound"
 
 [[item]]
-id = "stdlib.theorem.int32_increment_strictly_increases"
+id = "library.theorem.int32_increment_strictly_increases"
 path = "reference/library/index.md#int32_increment_strictly_increases"
 
 [[item]]
-id = "stdlib.theorem.int32_increment_lower_bound"
+id = "library.theorem.int32_increment_lower_bound"
 path = "reference/library/index.md#int32_increment_lower_bound"
 
 [[item]]
-id = "stdlib.theorem.int32_increment_greater_equal_lower_bound"
+id = "library.theorem.int32_increment_greater_equal_lower_bound"
 path = "reference/library/index.md#int32_increment_greater_equal_lower_bound"
 
 [[item]]
-id = "stdlib.theorem.int32_increment_greater_than_lower_bound"
+id = "library.theorem.int32_increment_greater_than_lower_bound"
 path = "reference/library/index.md#int32_increment_greater_than_lower_bound"
 
 [[item]]
-id = "stdlib.theorem.int32_increment_preserves_order"
+id = "library.theorem.int32_increment_preserves_order"
 path = "reference/library/index.md#int32_increment_preserves_order"
 
 [[item]]
-id = "stdlib.theorem.int32_increment_less_equal_implies_less_than"
+id = "library.theorem.int32_increment_less_equal_implies_less_than"
 path = "reference/library/index.md#int32_increment_less_equal_implies_less_than"
 
 [[item]]
-id = "stdlib.theorem.int32_less_than_increment_implies_less_equal"
+id = "library.theorem.int32_less_than_increment_implies_less_equal"
 path = "reference/library/index.md#int32_less_than_increment_implies_less_equal"
 
 [[item]]
-id = "stdlib.theorem.int32_positive_is_nonnegative"
+id = "library.theorem.int32_positive_is_nonnegative"
 path = "reference/library/index.md#int32_positive_is_nonnegative"
 
 [[item]]
-id = "stdlib.theorem.int32_less_than_implies_less_equal"
+id = "library.theorem.int32_less_than_implies_less_equal"
 path = "reference/library/index.md#int32_less_than_implies_less_equal"
 
 [[item]]
-id = "stdlib.theorem.int32_less_than_implies_not_equal"
+id = "library.theorem.int32_less_than_implies_not_equal"
 path = "reference/library/index.md#int32_less_than_implies_not_equal"
 
 [[item]]
-id = "stdlib.theorem.int32_not_less_than_implies_greater_equal"
+id = "library.theorem.int32_not_less_than_implies_greater_equal"
 path = "reference/library/index.md#int32_not_less_than_implies_greater_equal"
 
 [[item]]
-id = "stdlib.theorem.int32_increment_below_max_is_defined"
+id = "library.theorem.int32_increment_below_max_is_defined"
 path = "reference/library/index.md#int32_increment_below_max_is_defined"
 
 [[item]]
-id = "stdlib.theorem.int32_increment_left_below_max_is_defined"
+id = "library.theorem.int32_increment_left_below_max_is_defined"
 path = "reference/library/index.md#int32_increment_left_below_max_is_defined"
 
 [[item]]
-id = "stdlib.theorem.int32_increment_left_strictly_increases"
+id = "library.theorem.int32_increment_left_strictly_increases"
 path = "reference/library/index.md#int32_increment_left_strictly_increases"
 
 [[item]]
-id = "stdlib.theorem.int32_nonnegative_add_within_max_is_defined"
+id = "library.theorem.int32_nonnegative_add_within_max_is_defined"
 path = "reference/library/index.md#int32_nonnegative_add_within_max_is_defined"
 
 [[item]]
-id = "stdlib.theorem.int32_nonnegative_subtract_within_value_is_defined"
+id = "library.theorem.int32_nonnegative_subtract_within_value_is_defined"
 path = "reference/library/index.md#int32_nonnegative_subtract_within_value_is_defined"
 
 [[item]]
-id = "stdlib.theorem.int32_move_one_from_right_to_left_preserves_sum"
+id = "library.theorem.int32_move_one_from_right_to_left_preserves_sum"
 path = "reference/library/index.md#int32_move_one_from_right_to_left_preserves_sum"
 
 [[item]]
-id = "stdlib.theorem.int32_subtract_equal_sum_right_cancels"
+id = "library.theorem.int32_subtract_equal_sum_right_cancels"
 path = "reference/library/index.md#int32_subtract_equal_sum_right_cancels"
 
 [[item]]
-id = "stdlib.theorem.int32_add_nonnegative_right_is_at_least_left"
+id = "library.theorem.int32_add_nonnegative_right_is_at_least_left"
 path = "reference/library/index.md#int32_add_nonnegative_right_is_at_least_left"
 
 [[item]]
-id = "stdlib.theorem.int32_add_nonnegative_left_is_at_least_right"
+id = "library.theorem.int32_add_nonnegative_left_is_at_least_right"
 path = "reference/library/index.md#int32_add_nonnegative_left_is_at_least_right"
 
 [[item]]
-id = "stdlib.theorem.int32_positive_predecessor_is_nonnegative"
+id = "library.theorem.int32_positive_predecessor_is_nonnegative"
 path = "reference/library/index.md#int32_positive_predecessor_is_nonnegative"
 
 [[item]]
-id = "stdlib.theorem.int32_above_one_predecessor_is_at_least_one"
+id = "library.theorem.int32_above_one_predecessor_is_at_least_one"
 path = "reference/library/index.md#int32_above_one_predecessor_is_at_least_one"
 
 [[item]]
-id = "stdlib.theorem.int32_positive_predecessor_strictly_decreases"
+id = "library.theorem.int32_positive_predecessor_strictly_decreases"
 path = "reference/library/index.md#int32_positive_predecessor_strictly_decreases"
 
 [[item]]
-id = "stdlib.theorem.uint32_positive_predecessor_strictly_decreases"
+id = "library.theorem.uint32_positive_predecessor_strictly_decreases"
 path = "reference/library/index.md#uint32_positive_predecessor_strictly_decreases"
 
 [[item]]
-id = "stdlib.theorem.uint32_increment_upper_bound"
+id = "library.theorem.uint32_increment_upper_bound"
 path = "reference/library/index.md#uint32_increment_upper_bound"
 
 [[item]]
-id = "stdlib.theorem.uint32_increment_strictly_increases"
+id = "library.theorem.uint32_increment_strictly_increases"
 path = "reference/library/index.md#uint32_increment_strictly_increases"
 
 [[item]]
-id = "stdlib.theorem.uint32_less_than_implies_positive_difference"
+id = "library.theorem.uint32_less_than_implies_positive_difference"
 path = "reference/library/index.md#uint32_less_than_implies_positive_difference"
 
 [[item]]
-id = "stdlib.theorem.uint32_difference_decreases_after_increment"
+id = "library.theorem.uint32_difference_decreases_after_increment"
 path = "reference/library/index.md#uint32_difference_decreases_after_increment"
 
 [[item]]
-id = "stdlib.theorem.uint32_less_than_less_equal_transitive"
+id = "library.theorem.uint32_less_than_less_equal_transitive"
 path = "reference/library/index.md#uint32_less_than_less_equal_transitive"
 
 [[item]]
-id = "stdlib.theorem.uint32_less_equal_less_than_transitive"
+id = "library.theorem.uint32_less_equal_less_than_transitive"
 path = "reference/library/index.md#uint32_less_equal_less_than_transitive"
 
 [[item]]
-id = "stdlib.theorem.uint32_less_than_transitive"
+id = "library.theorem.uint32_less_than_transitive"
 path = "reference/library/index.md#uint32_less_than_transitive"
 
 [[item]]
-id = "stdlib.theorem.uint32_less_equal_transitive"
+id = "library.theorem.uint32_less_equal_transitive"
 path = "reference/library/index.md#uint32_less_equal_transitive"
 
 [[item]]
-id = "stdlib.theorem.uint64_less_than_less_equal_transitive"
+id = "library.theorem.uint64_less_than_less_equal_transitive"
 path = "reference/library/index.md#uint64_less_than_less_equal_transitive"
 
 [[item]]
-id = "stdlib.theorem.uint64_less_equal_less_than_transitive"
+id = "library.theorem.uint64_less_equal_less_than_transitive"
 path = "reference/library/index.md#uint64_less_equal_less_than_transitive"
 
 [[item]]
-id = "stdlib.theorem.uint64_less_than_transitive"
+id = "library.theorem.uint64_less_than_transitive"
 path = "reference/library/index.md#uint64_less_than_transitive"
 
 [[item]]
-id = "stdlib.theorem.uint64_less_equal_transitive"
+id = "library.theorem.uint64_less_equal_transitive"
 path = "reference/library/index.md#uint64_less_equal_transitive"
 
 [[item]]
-id = "stdlib.theorem.uint64_less_equal_and_not_less_than_implies_equal"
+id = "library.theorem.uint64_less_equal_and_not_less_than_implies_equal"
 path = "reference/library/index.md#uint64_less_equal_and_not_less_than_implies_equal"
 
 [[item]]
-id = "stdlib.theorem.int64_less_than_less_equal_transitive"
+id = "library.theorem.int64_less_than_less_equal_transitive"
 path = "reference/library/index.md#int64_less_than_less_equal_transitive"
 
 [[item]]
-id = "stdlib.theorem.int64_less_equal_less_than_transitive"
+id = "library.theorem.int64_less_equal_less_than_transitive"
 path = "reference/library/index.md#int64_less_equal_less_than_transitive"
 
 [[item]]
-id = "stdlib.theorem.int64_less_than_transitive"
+id = "library.theorem.int64_less_than_transitive"
 path = "reference/library/index.md#int64_less_than_transitive"
 
 [[item]]
-id = "stdlib.theorem.int64_less_equal_transitive"
+id = "library.theorem.int64_less_equal_transitive"
 path = "reference/library/index.md#int64_less_equal_transitive"
 
 [[item]]
-id = "stdlib.theorem.uint32_greater_than_implies_reversed_less_than"
+id = "library.theorem.uint32_greater_than_implies_reversed_less_than"
 path = "reference/library/index.md#uint32_greater_than_implies_reversed_less_than"
 
 [[item]]
-id = "stdlib.theorem.uint32_less_than_implies_reversed_greater_than"
+id = "library.theorem.uint32_less_than_implies_reversed_greater_than"
 path = "reference/library/index.md#uint32_less_than_implies_reversed_greater_than"
 
 [[item]]
-id = "stdlib.theorem.uint32_greater_equal_implies_reversed_less_equal"
+id = "library.theorem.uint32_greater_equal_implies_reversed_less_equal"
 path = "reference/library/index.md#uint32_greater_equal_implies_reversed_less_equal"
 
 [[item]]
-id = "stdlib.theorem.uint32_less_equal_implies_reversed_greater_equal"
+id = "library.theorem.uint32_less_equal_implies_reversed_greater_equal"
 path = "reference/library/index.md#uint32_less_equal_implies_reversed_greater_equal"
 
 [[item]]
-id = "stdlib.theorem.int32_nonnegative_predecessor_upper_bound"
+id = "library.theorem.int32_nonnegative_predecessor_upper_bound"
 path = "reference/library/index.md#int32_nonnegative_predecessor_upper_bound"
 
 [[item]]
-id = "stdlib.theorem.int32_less_equal_less_than_transitive"
+id = "library.theorem.int32_less_equal_less_than_transitive"
 path = "reference/library/index.md#int32_less_equal_less_than_transitive"
 
 [[item]]
-id = "stdlib.theorem.int32_less_equal_transitive"
+id = "library.theorem.int32_less_equal_transitive"
 path = "reference/library/index.md#int32_less_equal_transitive"
 
 [[item]]
-id = "stdlib.theorem.int32_less_than_transitive"
+id = "library.theorem.int32_less_than_transitive"
 path = "reference/library/index.md#int32_less_than_transitive"
 
 [[item]]
-id = "stdlib.theorem.int32_less_than_less_equal_transitive"
+id = "library.theorem.int32_less_than_less_equal_transitive"
 path = "reference/library/index.md#int32_less_than_less_equal_transitive"
 
 [[item]]
-id = "stdlib.theorem.int32_greater_equal_transitive"
+id = "library.theorem.int32_greater_equal_transitive"
 path = "reference/library/index.md#int32_greater_equal_transitive"
 
 [[item]]
-id = "stdlib.theorem.int32_greater_equal_implies_reversed_less_equal"
+id = "library.theorem.int32_greater_equal_implies_reversed_less_equal"
 path = "reference/library/index.md#int32_greater_equal_implies_reversed_less_equal"
 
 [[item]]
-id = "stdlib.theorem.int32_less_equal_implies_reversed_greater_equal"
+id = "library.theorem.int32_less_equal_implies_reversed_greater_equal"
 path = "reference/library/index.md#int32_less_equal_implies_reversed_greater_equal"
 
 [[item]]
-id = "stdlib.theorem.int32_less_equal_and_not_less_than_implies_equal"
+id = "library.theorem.int32_less_equal_and_not_less_than_implies_equal"
 path = "reference/library/index.md#int32_less_equal_and_not_less_than_implies_equal"
 
 [[item]]
-id = "stdlib.theorem.int32_less_equal_and_not_equal_implies_less_than"
+id = "library.theorem.int32_less_equal_and_not_equal_implies_less_than"
 path = "reference/library/index.md#int32_less_equal_and_not_equal_implies_less_than"
 
 [[item]]
-id = "stdlib.theorem.int32_greater_equal_and_not_greater_than_implies_equal"
+id = "library.theorem.int32_greater_equal_and_not_greater_than_implies_equal"
 path = "reference/library/index.md#int32_greater_equal_and_not_greater_than_implies_equal"
 
 [[item]]
-id = "stdlib.type.Nat"
+id = "library.type.Nat"
 path = "reference/library/index.md#nat"
 
 [[item]]
-id = "stdlib.function.nat_add"
+id = "library.function.nat_add"
 path = "reference/library/index.md#nat_add"
 
 [[item]]
-id = "stdlib.theorem.nat_add_left_identity"
+id = "library.theorem.nat_add_left_identity"
 path = "reference/library/index.md#nat_add_left_identity"
 
 [[item]]
-id = "stdlib.theorem.nat_add_succ_left"
+id = "library.theorem.nat_add_succ_left"
 path = "reference/library/index.md#nat_add_succ_left"
 
 [[item]]
-id = "stdlib.theorem.nat_add_right_identity"
+id = "library.theorem.nat_add_right_identity"
 path = "reference/library/index.md#nat_add_right_identity"
 
 [[item]]
-id = "stdlib.theorem.nat_add_succ_right"
+id = "library.theorem.nat_add_succ_right"
 path = "reference/library/index.md#nat_add_succ_right"
 
 [[item]]
-id = "stdlib.theorem.nat_add_associative"
+id = "library.theorem.nat_add_associative"
 path = "reference/library/index.md#nat_add_associative"
 
 [[item]]
-id = "stdlib.theorem.nat_add_commutative"
+id = "library.theorem.nat_add_commutative"
 path = "reference/library/index.md#nat_add_commutative"
 
 [[item]]
-id = "stdlib.function.list_length"
+id = "library.function.list_length"
 path = "reference/library/index.md#list_length"
 
 [[item]]
-id = "stdlib.theorem.list_length_nil"
+id = "library.theorem.list_length_nil"
 path = "reference/library/index.md#list_length_nil"
 
 [[item]]
-id = "stdlib.theorem.list_length_cons"
+id = "library.theorem.list_length_cons"
 path = "reference/library/index.md#list_length_cons"
 
 [[item]]
-id = "stdlib.theorem.list_length_append"
+id = "library.theorem.list_length_append"
 path = "reference/library/index.md#list_length_append"
 
 [[item]]
-id = "stdlib.type.List"
+id = "library.type.List"
 path = "reference/library/index.md#list"
 
 [[item]]
-id = "stdlib.function.list_append"
+id = "library.function.list_append"
 path = "reference/library/index.md#list_append"
 
 [[item]]
-id = "stdlib.function.list_contains"
+id = "library.function.list_contains"
 path = "reference/library/index.md#list_contains"
 
 [[item]]
-id = "stdlib.theorem.list_append_left_identity"
+id = "library.theorem.list_append_left_identity"
 path = "reference/library/index.md#list_append_left_identity"
 
 [[item]]
-id = "stdlib.theorem.list_append_right_identity"
+id = "library.theorem.list_append_right_identity"
 path = "reference/library/index.md#list_append_right_identity"
 
 [[item]]
-id = "stdlib.theorem.list_append_cons"
+id = "library.theorem.list_append_cons"
 path = "reference/library/index.md#list_append_cons"
 
 [[item]]
-id = "stdlib.theorem.list_append_associative"
+id = "library.theorem.list_append_associative"
 path = "reference/library/index.md#list_append_associative"
 
 [[item]]
-id = "stdlib.theorem.list_contains_nil"
+id = "library.theorem.list_contains_nil"
 path = "reference/library/index.md#list_contains_nil"
 
 [[item]]
-id = "stdlib.theorem.list_contains_cons"
+id = "library.theorem.list_contains_cons"
 path = "reference/library/index.md#list_contains_cons"
 
 [[item]]
-id = "stdlib.theorem.list_contains_append"
+id = "library.theorem.list_contains_append"
 path = "reference/library/index.md#list_contains_append"
 
 [[item]]
-id = "stdlib.function.count"
+id = "library.function.count"
 path = "reference/library/index.md#count"
 
 [[item]]
-id = "stdlib.predicate.permutation"
+id = "library.predicate.permutation"
 path = "reference/library/index.md#permutation"
 
 [[item]]
-id = "stdlib.function.byte_count"
+id = "library.function.byte_count"
 path = "reference/library/index.md#byte_count"
 
 [[item]]
-id = "stdlib.predicate.bytes_equal"
+id = "library.predicate.bytes_equal"
 path = "reference/library/index.md#bytes_equal"
 
 [[item]]
-id = "stdlib.predicate.bytes_equal_range"
+id = "library.predicate.bytes_equal_range"
 path = "reference/library/index.md#bytes_equal_range"
 
 [[item]]
-id = "stdlib.predicate.bytes_all_equal"
+id = "library.predicate.bytes_all_equal"
 path = "reference/library/index.md#bytes_all_equal"
 
 [[item]]
-id = "stdlib.predicate.bytes_contains"
+id = "library.predicate.bytes_contains"
 path = "reference/library/index.md#bytes_contains"
 
 [[item]]
-id = "stdlib.predicate.bytes_all_not_equal"
+id = "library.predicate.bytes_all_not_equal"
 path = "reference/library/index.md#bytes_all_not_equal"
 
 [[item]]
-id = "stdlib.predicate.cstr_prefix"
+id = "library.predicate.cstr_prefix"
 path = "reference/library/index.md#cstr_prefix"
 
 [[item]]
-id = "stdlib.predicate.cstr_len"
+id = "library.predicate.cstr_len"
 path = "reference/library/index.md#cstr_len"
 
 [[item]]
-id = "stdlib.predicate.cstr"
+id = "library.predicate.cstr"
 path = "reference/library/index.md#cstr"
 
 [[item]]
-id = "stdlib.predicate.cstr_readable_len"
+id = "library.predicate.cstr_readable_len"
 path = "reference/library/index.md#cstr_readable_len"
 
 [[item]]
-id = "stdlib.theorem.cstr_readable_len_unique"
+id = "library.theorem.cstr_readable_len_unique"
 path = "reference/library/index.md#cstr_readable_len_unique"
 
 [[item]]
-id = "stdlib.predicate.cstr_readable"
+id = "library.predicate.cstr_readable"
 path = "reference/library/index.md#cstr_readable"
 
 [[item]]
-id = "stdlib.predicate.cstr_bounded"
+id = "library.predicate.cstr_bounded"
 path = "reference/library/index.md#cstr_bounded"
 
 [[item]]
-id = "stdlib.theorem.cstr_len_is_viewable"
+id = "library.theorem.cstr_len_is_viewable"
 path = "reference/library/index.md#cstr_len_is_viewable"
 
 [[item]]
-id = "stdlib.theorem.cstr_len_has_prefix"
+id = "library.theorem.cstr_len_has_prefix"
 path = "reference/library/index.md#cstr_len_has_prefix"
 
 [[item]]
-id = "stdlib.theorem.cstr_len_has_terminator"
+id = "library.theorem.cstr_len_has_terminator"
 path = "reference/library/index.md#cstr_len_has_terminator"
 
 [[item]]
-id = "stdlib.extern.__click_constant_p_unknown"
+id = "library.extern.__click_constant_p_unknown"
 path = "reference/library/index.md#__click_constant_p_unknown"
 
 [[item]]
-id = "stdlib.extern.memcpy"
+id = "library.extern.memcpy"
 path = "reference/library/index.md#memcpy"
 
 [[item]]
-id = "stdlib.extern.memcmp"
+id = "library.extern.memcmp"
 path = "reference/library/index.md#memcmp"
 
 [[item]]
-id = "stdlib.extern.memset"
+id = "library.extern.memset"
 path = "reference/library/index.md#memset"
 
 [[item]]
-id = "stdlib.extern.strlen"
+id = "library.extern.strlen"
 path = "reference/library/index.md#strlen"
 
 [[item]]
@@ -3145,6 +3157,26 @@ path = "reference/cli/import.md#options-and-exit-status"
 id = "cli.import.--"
 path = "reference/cli/import.md#options-and-exit-status"
 
+[[item]]
+id = "cli.install.command"
+path = "reference/cli/versions.md#click-install"
+
+[[item]]
+id = "cli.use.command"
+path = "reference/cli/versions.md#click-use"
+
+[[item]]
+id = "cli.use.--unset"
+path = "reference/cli/versions.md#click-use"
+
+[[item]]
+id = "cli.default.command"
+path = "reference/cli/versions.md#click-default"
+
+[[item]]
+id = "cli.versions.command"
+path = "reference/cli/versions.md#click-versions"
+
 
 [[item]]
 id = "cli.behavior.import.lock"
@@ -3163,327 +3195,327 @@ id = "cli.behavior.import.trust-boundary"
 path = "reference/cli/import.md#locations-and-trust-boundary"
 
 [[item]]
-id = "stdlib.theorem.uint32_widened_add_guard_by_integer_bound"
+id = "library.theorem.uint32_widened_add_guard_by_integer_bound"
 path = "reference/library/index.md#uint32_widened_add_guard_by_integer_bound"
 
 [[item]]
-id = "stdlib.theorem.uint32_add_to_integer"
+id = "library.theorem.uint32_add_to_integer"
 path = "reference/library/index.md#uint32_add_to_integer"
 
 [[item]]
-id = "stdlib.theorem.uint32_subtract_to_integer"
+id = "library.theorem.uint32_subtract_to_integer"
 path = "reference/library/index.md#uint32_subtract_to_integer"
 
 [[item]]
-id = "stdlib.theorem.uint32_multiply_to_integer"
+id = "library.theorem.uint32_multiply_to_integer"
 path = "reference/library/index.md#uint32_multiply_to_integer"
 
 [[item]]
-id = "stdlib.theorem.uint32_multiply_guard_by_integer_bound"
+id = "library.theorem.uint32_multiply_guard_by_integer_bound"
 path = "reference/library/index.md#uint32_multiply_guard_by_integer_bound"
 
 [[item]]
-id = "stdlib.theorem.uint64_add_to_integer"
+id = "library.theorem.uint64_add_to_integer"
 path = "reference/library/index.md#uint64_add_to_integer"
 
 [[item]]
-id = "stdlib.theorem.uint64_multiply_to_integer"
+id = "library.theorem.uint64_multiply_to_integer"
 path = "reference/library/index.md#uint64_multiply_to_integer"
 
 [[item]]
-id = "stdlib.theorem.uint64_subtract_to_integer"
+id = "library.theorem.uint64_subtract_to_integer"
 path = "reference/library/index.md#uint64_subtract_to_integer"
 
 [[item]]
-id = "stdlib.theorem.uint64_divide_to_integer"
+id = "library.theorem.uint64_divide_to_integer"
 path = "reference/library/index.md#uint64_divide_to_integer"
 
 [[item]]
-id = "stdlib.theorem.uint64_remainder_to_integer"
+id = "library.theorem.uint64_remainder_to_integer"
 path = "reference/library/index.md#uint64_remainder_to_integer"
 
 [[item]]
-id = "stdlib.theorem.uint64_less_equal_to_integer"
+id = "library.theorem.uint64_less_equal_to_integer"
 path = "reference/library/index.md#uint64_less_equal_to_integer"
 
 [[item]]
-id = "stdlib.theorem.uint64_to_integer_less_equal_implies_less_equal"
+id = "library.theorem.uint64_to_integer_less_equal_implies_less_equal"
 path = "reference/library/index.md#uint64_to_integer_less_equal_implies_less_equal"
 
 [[item]]
-id = "stdlib.theorem.uint64_less_than_to_integer"
+id = "library.theorem.uint64_less_than_to_integer"
 path = "reference/library/index.md#uint64_less_than_to_integer"
 
 [[item]]
-id = "stdlib.theorem.uint64_to_integer_less_than_implies_less_than"
+id = "library.theorem.uint64_to_integer_less_than_implies_less_than"
 path = "reference/library/index.md#uint64_to_integer_less_than_implies_less_than"
 
 [[item]]
-id = "stdlib.theorem.uint32_less_equal_to_integer"
+id = "library.theorem.uint32_less_equal_to_integer"
 path = "reference/library/index.md#uint32_less_equal_to_integer"
 
 [[item]]
-id = "stdlib.theorem.uint32_to_integer_less_equal_implies_less_equal"
+id = "library.theorem.uint32_to_integer_less_equal_implies_less_equal"
 path = "reference/library/index.md#uint32_to_integer_less_equal_implies_less_equal"
 
 [[item]]
-id = "stdlib.theorem.uint32_to_integer_equal_implies_equal"
+id = "library.theorem.uint32_to_integer_equal_implies_equal"
 path = "reference/library/index.md#uint32_to_integer_equal_implies_equal"
 
 [[item]]
-id = "stdlib.theorem.uint32_to_integer_bounds"
+id = "library.theorem.uint32_to_integer_bounds"
 path = "reference/library/index.md#uint32_to_integer_bounds"
 
 [[item]]
-id = "stdlib.theorem.uint64_to_integer_bounds"
+id = "library.theorem.uint64_to_integer_bounds"
 path = "reference/library/index.md#uint64_to_integer_bounds"
 
 [[item]]
-id = "stdlib.theorem.int32_to_integer_bounds"
+id = "library.theorem.int32_to_integer_bounds"
 path = "reference/library/index.md#int32_to_integer_bounds"
 
 [[item]]
-id = "stdlib.theorem.int64_to_integer_bounds"
+id = "library.theorem.int64_to_integer_bounds"
 path = "reference/library/index.md#int64_to_integer_bounds"
 
 [[item]]
-id = "stdlib.theorem.int32_add_to_integer"
+id = "library.theorem.int32_add_to_integer"
 path = "reference/library/index.md#int32_add_to_integer"
 
 [[item]]
-id = "stdlib.theorem.int32_to_integer_equal_implies_equal"
+id = "library.theorem.int32_to_integer_equal_implies_equal"
 path = "reference/library/index.md#int32_to_integer_equal_implies_equal"
 
 [[item]]
-id = "stdlib.theorem.int32_less_equal_to_integer"
+id = "library.theorem.int32_less_equal_to_integer"
 path = "reference/library/index.md#int32_less_equal_to_integer"
 
 [[item]]
-id = "stdlib.theorem.int32_subtract_to_integer"
+id = "library.theorem.int32_subtract_to_integer"
 path = "reference/library/index.md#int32_subtract_to_integer"
 
 [[item]]
-id = "stdlib.theorem.int32_add_defined_by_integer_bounds"
+id = "library.theorem.int32_add_defined_by_integer_bounds"
 path = "reference/library/index.md#int32_add_defined_by_integer_bounds"
 
 [[item]]
-id = "stdlib.theorem.int32_subtract_defined_by_integer_bounds"
+id = "library.theorem.int32_subtract_defined_by_integer_bounds"
 path = "reference/library/index.md#int32_subtract_defined_by_integer_bounds"
 
 [[item]]
-id = "stdlib.theorem.integer_to_int8_round_trip"
+id = "library.theorem.integer_to_int8_round_trip"
 path = "reference/library/index.md#integer_to_int8_round_trip"
 
 [[item]]
-id = "stdlib.theorem.integer_to_int16_round_trip"
+id = "library.theorem.integer_to_int16_round_trip"
 path = "reference/library/index.md#integer_to_int16_round_trip"
 
 [[item]]
-id = "stdlib.theorem.integer_to_int32_round_trip"
+id = "library.theorem.integer_to_int32_round_trip"
 path = "reference/library/index.md#integer_to_int32_round_trip"
 
 [[item]]
-id = "stdlib.theorem.integer_to_uint8_round_trip"
+id = "library.theorem.integer_to_uint8_round_trip"
 path = "reference/library/index.md#integer_to_uint8_round_trip"
 
 [[item]]
-id = "stdlib.theorem.integer_to_uint16_round_trip"
+id = "library.theorem.integer_to_uint16_round_trip"
 path = "reference/library/index.md#integer_to_uint16_round_trip"
 
 [[item]]
-id = "stdlib.theorem.integer_to_uint32_round_trip"
+id = "library.theorem.integer_to_uint32_round_trip"
 path = "reference/library/index.md#integer_to_uint32_round_trip"
 
 [[item]]
-id = "stdlib.theorem.integer_to_int64_round_trip"
+id = "library.theorem.integer_to_int64_round_trip"
 path = "reference/library/index.md#integer_to_int64_round_trip"
 
 [[item]]
-id = "stdlib.theorem.integer_to_uint64_round_trip"
+id = "library.theorem.integer_to_uint64_round_trip"
 path = "reference/library/index.md#integer_to_uint64_round_trip"
 
 [[item]]
-id = "stdlib.theorem.nat_integer_zero"
+id = "library.theorem.nat_integer_zero"
 path = "reference/library/index.md#nat_integer_zero"
 
 [[item]]
-id = "stdlib.theorem.nat_integer_succ"
+id = "library.theorem.nat_integer_succ"
 path = "reference/library/index.md#nat_integer_succ"
 
 [[item]]
-id = "stdlib.theorem.nat_integer_nonnegative"
+id = "library.theorem.nat_integer_nonnegative"
 path = "reference/library/index.md#nat_integer_nonnegative"
 
 [[item]]
-id = "stdlib.theorem.nat_integer_round_trip"
+id = "library.theorem.nat_integer_round_trip"
 path = "reference/library/index.md#nat_integer_round_trip"
 
 [[item]]
-id = "stdlib.theorem.integer_nat_round_trip"
+id = "library.theorem.integer_nat_round_trip"
 path = "reference/library/index.md#integer_nat_round_trip"
 
 [[item]]
-id = "stdlib.theorem.integer_to_nat_zero"
+id = "library.theorem.integer_to_nat_zero"
 path = "reference/library/index.md#integer_to_nat_zero"
 
 [[item]]
-id = "stdlib.theorem.nat_integer_add"
+id = "library.theorem.nat_integer_add"
 path = "reference/library/index.md#nat_integer_add"
 
 [[item]]
-id = "stdlib.resource.mutex_guard"
+id = "library.resource.mutex_guard"
 path = "reference/library/index.md#mutex_guard"
 
 [[item]]
-id = "stdlib.resource.mutex_live"
+id = "library.resource.mutex_live"
 path = "reference/library/index.md#mutex_live"
 
 [[item]]
-id = "stdlib.resource.mutex_use"
+id = "library.resource.mutex_use"
 path = "reference/library/index.md#mutex_use"
 
 [[item]]
-id = "stdlib.resource.publisher"
+id = "library.resource.publisher"
 path = "reference/library/index.md#publisher"
 
 [[item]]
-id = "stdlib.resource.subscriber"
+id = "library.resource.subscriber"
 path = "reference/library/index.md#subscriber"
 
 [[item]]
-id = "stdlib.theorem.int32_to_integer_less_equal_implies_less_equal"
+id = "library.theorem.int32_to_integer_less_equal_implies_less_equal"
 path = "reference/library/index.md#int32_to_integer_less_equal_implies_less_equal"
 
 [[item]]
-id = "stdlib.theorem.int64_less_equal_to_integer"
+id = "library.theorem.int64_less_equal_to_integer"
 path = "reference/library/index.md#int64_less_equal_to_integer"
 
 [[item]]
-id = "stdlib.theorem.int64_to_integer_less_equal_implies_less_equal"
+id = "library.theorem.int64_to_integer_less_equal_implies_less_equal"
 path = "reference/library/index.md#int64_to_integer_less_equal_implies_less_equal"
 
 [[item]]
-id = "stdlib.theorem.uint64_to_integer_equal_implies_equal"
+id = "library.theorem.uint64_to_integer_equal_implies_equal"
 path = "reference/library/index.md#uint64_to_integer_equal_implies_equal"
 
 [[item]]
-id = "stdlib.theorem.int64_to_integer_equal_implies_equal"
+id = "library.theorem.int64_to_integer_equal_implies_equal"
 path = "reference/library/index.md#int64_to_integer_equal_implies_equal"
 
 [[item]]
-id = "stdlib.theorem.int64_add_defined_by_integer_bounds"
+id = "library.theorem.int64_add_defined_by_integer_bounds"
 path = "reference/library/index.md#int64_add_defined_by_integer_bounds"
 
 [[item]]
-id = "stdlib.theorem.int64_subtract_defined_by_integer_bounds"
+id = "library.theorem.int64_subtract_defined_by_integer_bounds"
 path = "reference/library/index.md#int64_subtract_defined_by_integer_bounds"
 
 [[item]]
-id = "stdlib.theorem.int64_to_integer_less_than_implies_less_than"
+id = "library.theorem.int64_to_integer_less_than_implies_less_than"
 path = "reference/library/index.md#int64_to_integer_less_than_implies_less_than"
 
 [[item]]
-id = "stdlib.theorem.int64_add_to_integer"
+id = "library.theorem.int64_add_to_integer"
 path = "reference/library/index.md#int64_add_to_integer"
 
 [[item]]
-id = "stdlib.theorem.int64_subtract_to_integer"
+id = "library.theorem.int64_subtract_to_integer"
 path = "reference/library/index.md#int64_subtract_to_integer"
 
 [[item]]
-id = "stdlib.theorem.integer_truncation_identity"
+id = "library.theorem.integer_truncation_identity"
 path = "reference/library/index.md#integer_truncation_identity"
 
 [[item]]
-id = "stdlib.theorem.integer_positive_divisor_remainder_lower"
+id = "library.theorem.integer_positive_divisor_remainder_lower"
 path = "reference/library/index.md#integer_positive_divisor_remainder_lower"
 
 [[item]]
-id = "stdlib.theorem.integer_positive_divisor_remainder_upper"
+id = "library.theorem.integer_positive_divisor_remainder_upper"
 path = "reference/library/index.md#integer_positive_divisor_remainder_upper"
 
 [[item]]
-id = "stdlib.theorem.integer_nonnegative_dividend_remainder"
+id = "library.theorem.integer_nonnegative_dividend_remainder"
 path = "reference/library/index.md#integer_nonnegative_dividend_remainder"
 
 [[item]]
-id = "stdlib.theorem.integer_nonpositive_dividend_remainder"
+id = "library.theorem.integer_nonpositive_dividend_remainder"
 path = "reference/library/index.md#integer_nonpositive_dividend_remainder"
 
 [[item]]
-id = "stdlib.theorem.int32_less_than_to_integer"
+id = "library.theorem.int32_less_than_to_integer"
 path = "reference/library/index.md#int32_less_than_to_integer"
 
 [[item]]
-id = "stdlib.theorem.uint32_less_than_to_integer"
+id = "library.theorem.uint32_less_than_to_integer"
 path = "reference/library/index.md#uint32_less_than_to_integer"
 
 [[item]]
-id = "stdlib.theorem.uint32_remainder_less_than_divisor"
+id = "library.theorem.uint32_remainder_less_than_divisor"
 path = "reference/library/index.md#uint32_remainder_less_than_divisor"
 
 [[item]]
-id = "stdlib.theorem.uint32_less_than_divisor_implies_remainder_is_value"
+id = "library.theorem.uint32_less_than_divisor_implies_remainder_is_value"
 path = "reference/library/index.md#uint32_less_than_divisor_implies_remainder_is_value"
 
 [[item]]
-id = "stdlib.theorem.integer_multiply_add"
+id = "library.theorem.integer_multiply_add"
 path = "reference/library/index.md#integer_multiply_add"
 
 [[item]]
-id = "stdlib.theorem.integer_floor_from_remainder"
+id = "library.theorem.integer_floor_from_remainder"
 path = "reference/library/index.md#integer_floor_from_remainder"
 
 [[item]]
-id = "stdlib.theorem.integer_ceiling_from_remainder"
+id = "library.theorem.integer_ceiling_from_remainder"
 path = "reference/library/index.md#integer_ceiling_from_remainder"
 
 [[item]]
-id = "stdlib.theorem.integer_positive_divisor_quotient_lower"
+id = "library.theorem.integer_positive_divisor_quotient_lower"
 path = "reference/library/index.md#integer_positive_divisor_quotient_lower"
 
 [[item]]
-id = "stdlib.theorem.integer_positive_divisor_quotient_upper"
+id = "library.theorem.integer_positive_divisor_quotient_upper"
 path = "reference/library/index.md#integer_positive_divisor_quotient_upper"
 
 [[item]]
-id = "stdlib.theorem.integer_positive_divisor_quotient_strict_lower"
+id = "library.theorem.integer_positive_divisor_quotient_strict_lower"
 path = "reference/library/index.md#integer_positive_divisor_quotient_strict_lower"
 
 [[item]]
-id = "stdlib.theorem.integer_positive_divisor_quotient_strict_upper"
+id = "library.theorem.integer_positive_divisor_quotient_strict_upper"
 path = "reference/library/index.md#integer_positive_divisor_quotient_strict_upper"
 
 [[item]]
-id = "stdlib.theorem.integer_lower_correction_bound"
+id = "library.theorem.integer_lower_correction_bound"
 path = "reference/library/index.md#integer_lower_correction_bound"
 
 [[item]]
-id = "stdlib.theorem.integer_upper_correction_bound"
+id = "library.theorem.integer_upper_correction_bound"
 path = "reference/library/index.md#integer_upper_correction_bound"
 
 [[item]]
-id = "stdlib.theorem.integer_multiply_order_nonnegative"
+id = "library.theorem.integer_multiply_order_nonnegative"
 path = "reference/library/index.md#integer_multiply_order_nonnegative"
 
 [[item]]
-id = "stdlib.theorem.integer_multiply_order_nonpositive"
+id = "library.theorem.integer_multiply_order_nonpositive"
 path = "reference/library/index.md#integer_multiply_order_nonpositive"
 
 [[item]]
-id = "stdlib.theorem.integer_scaled_product_bounds"
+id = "library.theorem.integer_scaled_product_bounds"
 path = "reference/library/index.md#integer_scaled_product_bounds"
 
 [[item]]
-id = "stdlib.theorem.int64_less_than_to_integer"
+id = "library.theorem.int64_less_than_to_integer"
 path = "reference/library/index.md#int64_less_than_to_integer"
 
 [[item]]
-id = "stdlib.theorem.int64_greater_equal_to_integer"
+id = "library.theorem.int64_greater_equal_to_integer"
 path = "reference/library/index.md#int64_greater_equal_to_integer"
 
 [[item]]
-id = "stdlib.theorem.int32_remainder_to_integer"
+id = "library.theorem.int32_remainder_to_integer"
 path = "reference/library/index.md#int32_remainder_to_integer"
 
 [[item]]
@@ -3507,39 +3539,39 @@ id = "glossary.protected-resource"
 path = "reference/glossary.md#protected-resource"
 
 [[item]]
-id = "stdlib.theorem.uint32_nonzero_to_integer"
+id = "library.theorem.uint32_nonzero_to_integer"
 path = "reference/library/index.md#uint32_nonzero_to_integer"
 
 [[item]]
-id = "stdlib.theorem.uint32_divide_to_integer"
+id = "library.theorem.uint32_divide_to_integer"
 path = "reference/library/index.md#uint32_divide_to_integer"
 
 [[item]]
-id = "stdlib.theorem.uint32_remainder_to_integer"
+id = "library.theorem.uint32_remainder_to_integer"
 path = "reference/library/index.md#uint32_remainder_to_integer"
 
 [[item]]
-id = "stdlib.theorem.uint32_pack_uint16_to_integer"
+id = "library.theorem.uint32_pack_uint16_to_integer"
 path = "reference/library/index.md#uint32_pack_uint16_to_integer"
 
 [[item]]
-id = "stdlib.theorem.uint32_pack_uint16_high_first_to_integer"
+id = "library.theorem.uint32_pack_uint16_high_first_to_integer"
 path = "reference/library/index.md#uint32_pack_uint16_high_first_to_integer"
 
 [[item]]
-id = "stdlib.theorem.uint32_unpack_uint16_low"
+id = "library.theorem.uint32_unpack_uint16_low"
 path = "reference/library/index.md#uint32_unpack_uint16_low"
 
 [[item]]
-id = "stdlib.theorem.uint32_unpack_uint16_high"
+id = "library.theorem.uint32_unpack_uint16_high"
 path = "reference/library/index.md#uint32_unpack_uint16_high"
 
 [[item]]
-id = "stdlib.theorem.uint64_pack_uint16_to_integer"
+id = "library.theorem.uint64_pack_uint16_to_integer"
 path = "reference/library/index.md#uint64_pack_uint16_to_integer"
 
 [[item]]
-id = "stdlib.theorem.uint64_less_than_implies_not_greater_equal"
+id = "library.theorem.uint64_less_than_implies_not_greater_equal"
 path = "reference/library/index.md#uint64_less_than_implies_not_greater_equal"
 
 [[item]]

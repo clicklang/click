@@ -624,9 +624,12 @@ impl<'a> ProofScope<'a> {
             Some(body) => body,
             None => match self.body.try_constructor_join_closure()? {
                 Some(body) => body,
-                None => match self.body.try_wide_equality_solver_closure()? {
+                None => match self.body.try_definition_condition_closure()? {
                     Some(body) => body,
-                    None => return Ok(None),
+                    None => match self.body.try_wide_equality_solver_closure()? {
+                        Some(body) => body,
+                        None => return Ok(None),
+                    },
                 },
             },
         };
@@ -772,9 +775,8 @@ impl<'a> ProofScope<'a> {
         self.join_inner()
     }
 
-    /// The enclosing-frontier bookkeeping of a checked execution `have`,
-    /// shared in meaning with `check_mid_execution_have`: lowering and
-    /// certificate fact recording.
+    /// The enclosing-frontier bookkeeping of a checked execution `have`:
+    /// lowering and certificate fact recording.
     fn carry_have_into_frontier(
         execution: &mut ExecutionProofState,
         proposition: &ClickProposition,

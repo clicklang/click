@@ -35,9 +35,6 @@ void rb_erase(struct rb_node* node, struct rb_root* root) {
     step();
     let { hole: hole, deficit: deficit } = step(__rb_erase_augmented(node, root, &dummy_callbacks), { tree: tree, up: up });
     have deficit.model == rb_successor_context(old(node->rb_right), 0, Color::Black, rb_left(old(tree.model)), rb_right(old(tree.model)), Context::Top);
-    have ctx_consistent(deficit.model, RbTree::Empty, 0) == 1 by {
-        rewrite(RbTree::Empty == hole.model); assumption();
-    }
     apply(plug_parent_consistent_transport(deficit.model, RbTree::Empty, 0));
     have rb_tree_parent_consistent(plug(deficit.model, RbTree::Empty)) == 1 by auto;
     have ctx_rb(deficit.model, Nat::Succ(black_height(RbTree::Empty)), Color::Black) == 1 by {

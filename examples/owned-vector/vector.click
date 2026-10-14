@@ -8,9 +8,7 @@ theorem int32_equality_transitive(first: int32, second: int32, third: int32) {
 }
 
 resource empty_vector(owner: struct vector*) {
-    owns owner->len;
-    owns owner->cap;
-    owns owner->data;
+    owns *owner;
     owns owner->data[0..owner->cap];
     fact owner->len == 0;
     fact 1 <= owner->cap;
@@ -19,9 +17,7 @@ resource empty_vector(owner: struct vector*) {
 }
 
 resource nonempty_vector(owner: struct vector*) {
-    owns owner->len;
-    owns owner->cap;
-    owns owner->data;
+    owns *owner;
     owns owner->data[0..owner->cap];
     fact 1 <= owner->len;
     fact owner->len <= owner->cap;
@@ -30,9 +26,7 @@ resource nonempty_vector(owner: struct vector*) {
 }
 
 resource vector_storage(owner: struct vector*) {
-    owns owner->len;
-    owns owner->cap;
-    owns owner->data;
+    owns *owner;
     owns owner->data[0..owner->cap];
     fact 0 <= owner->len;
     fact owner->len <= owner->cap;
@@ -41,9 +35,7 @@ resource vector_storage(owner: struct vector*) {
 }
 
 resource allocated_vector(owner: struct vector*) {
-    owns owner->len;
-    owns owner->cap;
-    owns owner->data;
+    owns *owner;
     owns allocation(owner->data, owner->cap * 4);
     owns owner->data[0..owner->cap];
     fact 0 <= owner->len;
@@ -159,8 +151,7 @@ int32 vector_grow(struct vector* owner) {
     let entry_capacity = old(owner->cap);
 
     requires owner->cap <= 536870910;
-    consumes allocated_vector(owner);
-    produces allocated_vector(owner);
+    owns allocated_vector(owner);
     ensures result == 0 or result == 1;
     ensures owner->len == entry_length;
     ensures result == 0 implies owner->cap == entry_capacity;
@@ -290,8 +281,7 @@ int32 vector_push(struct vector* owner, int32 value) {
 
 int32 allocated_vector_push(struct vector* owner, int32 value) {
     requires owner->cap <= 536870910;
-    consumes allocated_vector(owner);
-    produces allocated_vector(owner);
+    owns allocated_vector(owner);
     ensures result == 0 or result == 1;
     ensures result == 0 implies owner->len == old(owner->len);
     ensures result == 0 implies owner->cap == old(owner->cap);

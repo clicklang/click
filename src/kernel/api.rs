@@ -3017,6 +3017,19 @@ fn no_single_path_message<T>(what: &str, paths: &[T], budget: &ExecutionBudget) 
             )
         };
     }
+    if paths.is_empty()
+        && let Some(reversed) = budget.dropped_refuted_range_extent()
+    {
+        return if reversed {
+            format!(
+                "the kernel {what} produced no path: a memory range runs backwards, so it is not a byte extent: this context proves its end is before its start"
+            )
+        } else {
+            format!(
+                "the kernel {what} produced no path: a memory range is too wide to be a 32-bit byte extent: this context bounds its element count past the byte limit"
+            )
+        };
+    }
     if paths.is_empty() && budget.dropped_relation_range_extent() {
         return format!(
             "the kernel {what} produced no path: it relates a memory range this context already \
@@ -4442,18 +4455,20 @@ pub fn prove_symbolic_c_statement_verification_paths_with_environment_and_loop_r
     )
 }
 
-fn statement_kernel_variables(
-    state: &CState,
-    statement: &CStatement,
-    assumptions: &PureFactContext,
+fn statement_kernel_variables<'scope>(
+    state: &'scope CState,
+    statement: &'scope CStatement,
+    assumptions: &'scope PureFactContext,
     environment: &CExecutionEnvironment,
-) -> KernelVariableGenerator {
-    let mut existing = BTreeSet::new();
-    collect_c_state_bitvector_variables(state, &mut existing);
-    collect_c_statement_bitvector_variables(statement, &mut existing);
-    collect_assumption_variables(assumptions, &mut existing);
-    KernelVariableGenerator::fresh_for_execution_with_shared_reservations(
-        existing,
+) -> KernelVariableGenerator<'scope> {
+    KernelVariableGenerator::fresh_for_execution_with_deferred_reservations(
+        move || {
+            let mut existing = BTreeSet::new();
+            collect_c_state_bitvector_variables(state, &mut existing);
+            collect_c_statement_bitvector_variables(statement, &mut existing);
+            collect_assumption_variables(assumptions, &mut existing);
+            existing
+        },
         execution_environment_variable_index(environment),
     )
 }
@@ -4475,6 +4490,7 @@ pub(crate) fn prove_symbolic_c_statement_verification_paths_with_environment_and
         budget,
         &mut variables,
     );
+    drop(variables);
     let paths = match execution {
         Ok(paths) => paths,
         Err(limit) => {
@@ -4588,6 +4604,7 @@ pub(crate) fn prove_symbolic_c_loop_exit_with_proven_phases_using_budget(
         budget,
         &mut variables,
     );
+    drop(variables);
     let paths = match execution {
         Ok(paths) => paths,
         Err(limit) => {
@@ -5933,17 +5950,7 @@ pub fn prove_owned_resource_quantity_nonnegative(
 /// diagnostic.
 fn describe_contract_reuse_premise(premise: &Proposition) -> String {
     fn resource_name(resource: &CResource) -> &str {
-        match resource {
-            CResource::Composite { name, .. } | CResource::Token { name, .. } => name,
-            CResource::Memory(_) => "memory",
-            CResource::PopulationAuthority(_) => "population authority",
-            CResource::MutexGuard(_) => "mutex guard",
-            CResource::MutexLive(_) => "mutex lifetime",
-            CResource::MutexUse(_) => "mutex use",
-            CResource::Publication(_) => "publication right",
-            CResource::Instance(instance) => instance.name(),
-            CResource::Iterated(iterated) => iterated.owner(),
-        }
+        resource.diagnostic_name()
     }
     match premise {
         Proposition::Predicate { name, .. } => format!("the predicate identity `{name}`"),
@@ -6320,9 +6327,10 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
     };
     // Certification computes the anchor a second time here; the proof
     // stepped with its own. An artifact whose environment carries no
-    // anchor, or a different one, then fails `matches_execution_metadata`
-    // below and is not reused: a body stepped without the anchor emitted no
-    // descent obligation at its self-calls, and certifying a contract from it
+    // anchor, or a different one, then fails
+    // `matches_execution_metadata_except_state` below and is not reused: a
+    // body stepped without the anchor emitted no descent obligation at its
+    // self-calls, and certifying a contract from it
     // would grant a recursive function everything but the descent.
     let environment = match c_execution_environment_with_recursion_anchor(
         environment,

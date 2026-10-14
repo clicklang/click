@@ -4579,7 +4579,7 @@ pub enum CUndefinedBehavior {
     /// An operation on a pointer value whose pointee's lifetime has ended
     /// (C11 6.2.4p2, Annex J.2): comparing, subtracting, offsetting, testing
     /// or converting a pointer into a freed allocation. A refusal names the
-    /// operation through [`crate::kernel::locate_undefined_behavior`]; the
+    /// operation through `crate::kernel::locate_undefined_behavior`; the
     /// kernel's name for the allocation is not something the reader wrote.
     FreedPointerUse,
     /// An equality comparison whose answer C11 6.5.9p6 leaves to the
@@ -4588,7 +4588,7 @@ pub enum CUndefinedBehavior {
     /// two are equal exactly when the objects are adjacent. The result is
     /// unspecified rather than undefined, and refused because the kernel does
     /// not model object placement. A refusal names the comparison through
-    /// [`crate::kernel::locate_undefined_behavior`].
+    /// `crate::kernel::locate_undefined_behavior`.
     OnePastEndComparison,
 }
 
@@ -4974,6 +4974,11 @@ pub struct ExecutionBudget {
     /// element count to report, only the reason. Diagnostic only: no
     /// evaluation reads it back.
     pub(super) dropped_relation_range_extent: bool,
+    /// Set when a stated memory range was dropped because this context
+    /// refutes one of its extent guards: `Some(true)` when the refuted guard
+    /// orders its endpoints (the range runs backwards), `Some(false)` when
+    /// it bounds the byte count (the range is too wide). Diagnostic only.
+    pub(super) dropped_refuted_range_extent: Option<bool>,
     /// The byte order of the environment whose statements this budget is
     /// executing, installed from `CExecutionEnvironment` at each statement.
     /// `None` until a statement installs it: an expression evaluated with no
@@ -6130,7 +6135,7 @@ pub enum CMemoryDerivation {
     /// element order, of each slot the run held live when it was seeded
     /// ([`CellRun`]). One edge stands for the whole run so that seeding a
     /// constant range costs the same whatever its length; every consumer
-    /// reads it as that sequence of stores ([`Self::seeded_stores`]).
+    /// reads it as that sequence of stores (`Self::seeded_stores`).
     CellsSeeded {
         base: SharedCMemory,
         run: std::sync::Arc<CellRun>,
@@ -7572,6 +7577,22 @@ impl MutexIdentity {
 }
 
 impl CResource {
+    /// The resource's name in a diagnostic, with no argument or address
+    /// spelling: the kernel has no source names for those.
+    pub(crate) fn diagnostic_name(&self) -> &str {
+        match self {
+            CResource::Composite { name, .. } | CResource::Token { name, .. } => name,
+            CResource::Memory(_) => "memory",
+            CResource::PopulationAuthority(_) => "population authority",
+            CResource::MutexGuard(_) => "mutex guard",
+            CResource::MutexLive(_) => "mutex lifetime",
+            CResource::MutexUse(_) => "mutex use",
+            CResource::Publication(_) => "publication right",
+            CResource::Instance(instance) => instance.name(),
+            CResource::Iterated(iterated) => iterated.owner(),
+        }
+    }
+
     /// One iterated guarded-ownership fact. The fact is shared, so cloning a
     /// resource context never copies its terms.
     pub(crate) fn iterated(iterated: CIteratedMemory) -> Self {
@@ -7884,6 +7905,24 @@ pub enum ResourceFamily {
     Publication,
 }
 
+impl ResourceFamily {
+    /// The family's name in a diagnostic.
+    pub(crate) fn describe(self) -> &'static str {
+        match self {
+            Self::Memory => "memory",
+            Self::PopulationAuthority => "population authority",
+            Self::Composite => "composite",
+            Self::Token => "token",
+            Self::Instance => "resource instance",
+            Self::MutexGuard => "mutex_guard",
+            Self::MutexLive => "mutex_live",
+            Self::MutexUse => "mutex_use",
+            Self::Iterated => "iterated ownership",
+            Self::Publication => "publication",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CResourceAccessMode {
     Own,
@@ -8061,15 +8100,21 @@ impl std::fmt::Display for CResourceSpecError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::InvalidAccess { family, access } => {
+                let access = match access {
+                    CResourceAccessMode::Own => "owns",
+                    CResourceAccessMode::View => "views",
+                };
                 write!(
                     formatter,
-                    "{family:?} resources do not permit {access:?} access"
+                    "{} resources do not permit `{access}` access",
+                    family.describe()
                 )
             }
             Self::InvalidQuantity { family, reason } => {
                 write!(
                     formatter,
-                    "{family:?} resource has invalid quantity: {reason}"
+                    "{} resource has invalid quantity: {reason}",
+                    family.describe()
                 )
             }
             Self::InvalidNestedTerm(reason) => formatter.write_str(reason),
@@ -10278,7 +10323,7 @@ pub struct PureFactContext {
     /// still asks these. A fact of two atoms is matched only through its
     /// key.
     /// Keyed by the family of kinds that can match one another
-    /// (`condition_match_family`).
+    /// ([`ConditionMatchKey::family`]).
     pub(super) open_condition_facts:
         crate::persistent::PersistentMap<u8, crate::persistent::PersistentMap<ConditionTerm, bool>>,
     /// The signed-order condition facts (`<`, `<=`, `>`, `>=`, either
@@ -10348,6 +10393,17 @@ pub struct PureFactContext {
     pub(super) pointer_block_aliases_by_offset: crate::persistent::PersistentMap<
         PointerOffsetTerm,
         crate::persistent::PersistentSet<Pointer>,
+    >,
+    /// Cross-block alias endpoints grouped by object. External arguments
+    /// use their offset stem, since all parameters share one block; other
+    /// blocks use one bucket. Derived incrementally from exact aliases.
+    pub(super) pointer_alias_endpoints_by_object:
+        crate::persistent::PersistentMap<Pointer, crate::persistent::PersistentSet<Pointer>>,
+    /// Pointer-address endpoints of full-width equalities, by object.
+    /// Lets store framing follow address copies without scanning size facts.
+    pub(super) wide_pointer_alias_endpoints_by_object: crate::persistent::PersistentMap<
+        Pointer,
+        crate::persistent::PersistentSet<Bitvector32Term>,
     >,
     /// Trusted persistent equality closure for pointers, offsets, and int32
     /// terms. Appended on insertion; withdrawal rebuilds from exact equality
@@ -11384,14 +11440,14 @@ enum KernelVariableCounter {
     Execution,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct KernelVariableGenerator {
+pub(super) struct KernelVariableGenerator<'scope> {
     counter: KernelVariableCounter,
     reserved: BTreeSet<Variable>,
     shared_reserved: Option<Arc<BTreeSet<Variable>>>,
+    deferred_reserved: Option<Box<dyn FnOnce() -> BTreeSet<Variable> + 'scope>>,
 }
 
-impl KernelVariableGenerator {
+impl<'scope> KernelVariableGenerator<'scope> {
     /// Build the deterministic term-local fresh-name stream used by both
     /// planning and certificate validation. Given the same lower bound and
     /// reserved set, the first available identifier and every successor are
@@ -11402,6 +11458,7 @@ impl KernelVariableGenerator {
             counter: KernelVariableCounter::Local(lower_bound),
             reserved: existing,
             shared_reserved: None,
+            deferred_reserved: None,
         }
     }
 
@@ -11414,6 +11471,7 @@ impl KernelVariableGenerator {
             counter: KernelVariableCounter::Execution,
             reserved: existing,
             shared_reserved: None,
+            deferred_reserved: None,
         }
     }
 
@@ -11425,6 +11483,25 @@ impl KernelVariableGenerator {
             counter: KernelVariableCounter::Execution,
             reserved: existing,
             shared_reserved: Some(shared_reserved),
+            deferred_reserved: None,
+        }
+    }
+
+    /// Borrow the statement inputs without walking them until execution
+    /// actually needs a fresh identity. A plain store requests none.
+    pub(super) fn fresh_for_execution_with_deferred_reservations(
+        collect: impl FnOnce() -> BTreeSet<Variable> + 'scope,
+        shared_reserved: Arc<BTreeSet<Variable>>,
+    ) -> Self {
+        let mut generator =
+            Self::fresh_for_execution_with_shared_reservations(BTreeSet::new(), shared_reserved);
+        generator.deferred_reserved = Some(Box::new(collect));
+        generator
+    }
+
+    fn prepare_reservations(&mut self) {
+        if let Some(collect) = self.deferred_reserved.take() {
+            self.reserved.extend(collect());
         }
     }
 
@@ -11470,6 +11547,7 @@ impl KernelVariableGenerator {
             matches!(self.counter, KernelVariableCounter::Execution),
             "a term-local fresh-variable stream must not allocate from an execution budget"
         );
+        self.prepare_reservations();
         loop {
             let variable = budget.allocate_kernel_variable()?;
             let shared_contains = self

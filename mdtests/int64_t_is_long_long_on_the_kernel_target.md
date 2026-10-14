@@ -28,11 +28,11 @@ int identities(void) {
 target "x86_64-linux-kernel";
 verifying "main.c";
 
-int64 *values(int64 *p) {
+long long *values(int64_t *p) {
     ensures result == p by auto;
 }
 
-uint64 *words(uint64 *p) {
+uint64_t *words(unsigned long long *p) {
     ensures result == p by auto;
 }
 

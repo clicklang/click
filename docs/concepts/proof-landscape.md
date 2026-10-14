@@ -26,8 +26,8 @@ will have exactly the names used here.
   occurrence the class of its supported body: SMART, SIMPLE, or CONTROL.
 - A **pure proof** derives a proposition without a symbolic C state.
 - A **fixed-state proof** reasons against one fixed symbolic C state. It has no
-  execution frontier and cannot execute C, though it can transform logical
-  resources.
+  execution frontier and cannot execute C. Of these proofs, only a
+  result-aware outcome proof can fold and unfold logical resources.
 - An **execution proof** establishes a pre/post relationship for a code region.
   It advances an execution frontier carrying symbolic state, pure facts, and
   resource facts. It may use pure and resource reasoning between execution
@@ -92,17 +92,14 @@ arrays, byte buffers, and Click proposition syntax with `and`, `or`, `not`,
 `implies`, `forall`, `exists`, `.all`, and `.any`.
 `auto` can prove quantified array-segment postconditions, unchanged-memory
 cases, frame facts outside loop write footprints, and several stdlib
-fold/permutation facts. Region execution proofs support executable `assert`
-propositions and loop `invariant` clauses, including memory-changing invariants
-and invariants that unfold stdlib definitions such as `permutation`.
+fold/permutation facts. Region execution proofs support `have` propositions
+at the execution frontier and loop `invariant` clauses, including
+memory-changing invariants and invariants that unfold stdlib definitions such
+as `permutation`.
 
 It is not yet enough for the full real-library proof story. The main missing
-pieces are full struct values and aggregate types, heap allocation beyond the
-fixed-size object slice, richer shared-ownership models, broader integer
-types/conversions, theorem libraries beyond the first `apply(...)` slice,
-richer intermediate fact
-management, module/import support, and a real-C or pilot-driven frontend
-strategy.
+pieces are richer shared-ownership models and richer intermediate fact
+management.
 
 That is intentional. The mdtests should make the next missing piece obvious:
 when a proof pattern needs a new C feature, add the feature because the proof

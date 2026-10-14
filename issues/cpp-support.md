@@ -15,6 +15,15 @@ Bitcoin Core as a whole.
 
 ## Current remaining work
 
+The accumulated PR #646 implementation is being recovered through
+[object-model.md](object-model.md), which owns the fixed-baseline audit,
+dependency decomposition and sequential green deliveries. New C++ feature
+admission is paused while that foundation is established. The
+[archived object-model design](https://github.com/lacker/click/blob/e3d84a785792c007da19d2f42d75b9e143372164/design/cpp-object-model.md)
+records accepted laws and historical implementation evidence; it is not an
+upstream support claim. The remaining C++ targets below resume after this shared
+milestone.
+
 The original design cleanup and selected fee arithmetic proofs are delivered.
 `GetFeePerK` is also verified on the unchanged pinned header: it delegates to
 `EvaluateFeeDown(1000)`, requires positive size and the Down result-fit profile,

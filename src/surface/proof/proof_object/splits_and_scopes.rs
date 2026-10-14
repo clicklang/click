@@ -1,7 +1,6 @@
 //! Logical/execution/outcome splits, joins, and `have`/`open` scopes.
 
 use super::*;
-use crate::surface::planning::proposition_search::PropositionSearch;
 
 pub(in crate::surface::proof) struct CheckedBothSurfaceChild {
     surface: Option<ClickProposition>,
@@ -1260,7 +1259,11 @@ impl<'a> Proof<'a> {
         if !at_frontier
             && selected_surface_separation
             && !body_facts.contains(&body_kernel)
-            && body_facts.assumptions().proves(&body_kernel)
+            && crate::surface::planning::proposition_search::proves_by_tactic_search(
+                body_facts.assumptions(),
+                &body_kernel,
+                "have separation away from the frontier",
+            )
         {
             body_facts = body_facts.with_kernel_checked_fact(body_kernel.clone());
         }

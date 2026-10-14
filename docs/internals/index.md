@@ -14,12 +14,17 @@ name differ, user-facing documentation uses the Surface Click name.
 - [Kernel implementation](kernel.md)
 - [Separation logic](separation-logic.md)
 - [Stable views](stable-views.md)
+- [View output inventory](view-output-inventory.md)
 - [Resource invariants and synchronization](resource-invariants.md)
+- [Object-anchored population authority](authority-establishment-review.md)
+- [Worker authority protocol](worker-authority-protocol.md)
 - [Byte representation](byte-representation.md)
 - [Memory derivation DAG](memory-dag.md)
 - [The resource tracker](resource-tracker.md)
 - [Fold read ranges](fold-read-ranges.md)
 - [Mathematical integers](mathematical-integers.md)
+- [Canonicalization](canonicalization.md)
+- [Equality closure design](equality-closure.md)
 
 ## Engineering constraints
 
@@ -33,6 +38,10 @@ name differ, user-facing documentation uses the Surface Click name.
 
 - [Rbtree launch roadmap](roadmap.md)
 - [Supporting more languages: C++ first, Rust next](https://github.com/clicklang/click/blob/master/design/supporting-more-languages.md)
+- [Concurrency contracts and diagnostics (proposal)](concurrency-contracts-and-diagnostics.md)
+- [Resource arguments and mutex associations (design)](resource-parameters.md)
+- [Mutex operations as resource contracts (proposal)](mutex-resource-contracts.md)
+- [User-defined tactics (design)](user-defined-tactics.md)
 
 The roadmap is to complete P1, verify rbtree, and launch publicly with rbtree
 as the key demo. It describes intended work, not accepted syntax or a stability

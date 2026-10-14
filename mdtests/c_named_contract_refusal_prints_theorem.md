@@ -24,8 +24,8 @@ resource tree_at(p: int32*) {
     owns p[0..1];
 }
 
-contract AugmentRotate(t: tree_at(p)) for void(int32* p) {
-    owns t;
+contract void AugmentRotate(int32* p) {
+    owns t: tree_at(p);
     ensures t.model == old(t.model);
 }
 

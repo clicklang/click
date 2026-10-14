@@ -8,13 +8,13 @@ unsigned long bump64(unsigned long *p) { *p += 1; return *p; }
 ```click
 verifying "main.c";
 unsigned int bump(unsigned int *p) {
-    consumes p[0..1]; produces p[0..1];
+    owns *p;
     ensures *p == old(*p) + 1u32;
     ensures *p == p[0];
     ensures old(*p) == old(p[0]);
 } by { execute(); simp(); }
 unsigned long bump64(unsigned long *p) {
-    consumes p[0..1]; produces p[0..1];
+    owns *p;
     ensures *p == old(*p) + 1u64;
     ensures *p == p[0];
     ensures old(*p) == old(p[0]);

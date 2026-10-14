@@ -1868,6 +1868,9 @@ impl<'a> Proof<'a> {
         if let Some(closed) = self.try_constructor_join_closure()? {
             return Ok(Some(closed));
         }
+        if let Some(closed) = self.try_definition_condition_closure()? {
+            return Ok(Some(closed));
+        }
         self.try_wide_equality_solver_closure()
     }
 
@@ -8816,6 +8819,29 @@ impl<'a> Proof<'a> {
         kept.into_iter()
             .reduce(|left, right| ClickProposition::Or(Box::new(left), Box::new(right)))
             .unwrap_or(surface)
+    }
+
+    /// Whether `lowered`, a written proposition, states `requirement`. An
+    /// `assert`'s truthiness obligation is stated by the asserted condition,
+    /// as written or as [`Self::asserted_condition_given_context`] narrows
+    /// it, which is how `requirement_surface` spells it.
+    pub(in crate::surface::proof) fn written_states_requirement(
+        &self,
+        lowered: &Proposition,
+        requirement: &UnresolvedRequirement,
+    ) -> bool {
+        let Some(condition) = &requirement.assertion_condition else {
+            return lowered_states_requirement(lowered, requirement);
+        };
+        [
+            asserted_condition_proposition(condition),
+            self.asserted_condition_given_context(condition),
+        ]
+        .iter()
+        .any(|surface| {
+            self.lower_surface_goal(surface, "asserted condition")
+                .is_ok_and(|spelled| propositions_match_after_canonical_loads(&spelled, lowered))
+        })
     }
 }
 

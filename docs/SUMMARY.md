@@ -40,6 +40,7 @@
     - [`click profile`](reference/cli/profile.md)
     - [`click expand`](reference/cli/expand.md)
     - [`click audit`](reference/cli/audit.md)
+    - [Version manager commands](reference/cli/versions.md)
     - [Environment variables](reference/cli/environment.md)
   - [Standard library](reference/library/index.md)
   - [Language](reference/language/index.md)

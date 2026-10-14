@@ -13,9 +13,9 @@ int32 invoke(int32 (*callback)()) { return callback(); }
 ```click
 resource Counter() { field revision: int32; }
 
-contract Pair(first: Counter(), second: Counter()) for int32() {
-    owns first;
-    owns second;
+contract int32 Pair() {
+    owns first: Counter();
+    owns second: Counter();
     ensures first.revision == old(first.revision);
     ensures second.revision == old(second.revision);
     ensures result == 0;
@@ -29,12 +29,12 @@ int32 invoke(int32 (*callback)()) {
     ensures c.revision == old(c.revision);
     ensures result == 0;
 } by {
-    step(Pair(c, c));
+    step(Pair, { first: c, second: c });
     execute();
     simp();
 }
 ```
 
 ```expect
-fail: an exclusive instance cannot supply two contract proof parameters
+fail: an exclusive instance cannot supply two contract resource handles
 ```

@@ -4153,7 +4153,8 @@ fn quantified_atomic_derivation_retains_its_specialization_and_guards() {
     // `ForallInt32Instantiation` rule to guards that are builtin solvable or
     // exactly available, because the evidence must name the premises it
     // consumed and the frozen condition checker does not report its own. The
-    // `exit_guard_needing_a_derivation` case below pins that narrowing.
+    // `a_quantified_instantiation_guard_needing_a_derivation_is_refused` test
+    // below pins that narrowing.
     let exit_guard = Proposition::ConditionIs(
         ConditionTerm::signed_less_than(Bitvector32Term::Constant(2), exit.clone()),
         true,

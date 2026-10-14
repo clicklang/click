@@ -88,7 +88,7 @@ Decision: open.
 Today: `+` in a specification is the C operation and is partial
 (`docs/reference/language/index.md`, "an int32 fold's `+` is partial in
 specifications"). Proofs bridge with `to_integer`, width-specific lemmas
-(`int64_less_equal_transitive` and about 150 more in `stdlib/prelude.click`)
+(`int64_less_equal_transitive` and about 110 more in `library/`)
 and hand-written `arithmetic_certificate` blocks: about 270 lines of
 `examples/bounded-pool/bounded_pool.click` show counters do not overflow.
 ACSL, Dafny and Verus specs use mathematical integers by default.
@@ -276,25 +276,41 @@ Rust proof applies.
 
 Decision: fix (maintainer, 2026-10-13), after L2: Rust types, `as` and `bool` throughout Rust sidecars. Types, `as` and `bool` done; the items above remain.
 
-### L5. Resource clauses overlap
+### L5. Frames for owned cells are restated
 
-Today: `consumes X; produces X;` beside `owns X`; per-field `owns` lists;
-frames restated after `produces`.
+Today: frames restated for owned cells the body leaves alone, as in
+`examples/vector-push`: `consumes *owner; consumes
+owner->data[0..owner->cap]; produces nonempty_vector(owner); ensures
+owner->cap == old(owner->cap);`.
 
-Proposed fix: `owns *s` for whole structs; infer frames for produced cells.
+Proposed fix: infer frames for produced cells.
 
 Decision: fix (maintainer, 2026-10-14).
 
-### L6. Fold syntax is heavy and generics are fully applied
+Done: `consumes X; produces X;` for one fixed `X` is refused with the
+`owns X;` spelling, and the corpus is migrated. `owns *s` and `views *s`
+cover a whole struct, and the examples' complete per-field lists use them.
+A cell a contract only views needs no frame; `examples/ring-buffer` dropped
+its restated ones. Two gaps in using `*s` beside per-field ownership are
+filed as bugs (`bugs/whole-struct-ownership-does-not-reassemble-from-a-byte-field.md`,
+`bugs/a-whole-global-struct-does-not-cover-its-object.md`); a struct whose
+size is not a multiple of four bytes has no `*s` form.
 
-Today: `fold(tree_at(result), { model: ... }, { left: lower, right: z })`;
-`List<struct tree_node*>::Nil`; the reference shows both `as { ... }` and
-`let {...} = unfold(...)`.
-
-Proposed fix: infer constructor type arguments and default child maps by
-name; one documented unfold binding form.
-
-Decision: fix (maintainer, 2026-10-13): infer constructor type arguments and default child maps by name; one documented unfold binding form.
+Open question for the maintainer: a frame for an owned cell can come only
+from the body. A function's write footprint is exactly the memory its
+contract owns (`docs/reference/language/index.md`, Write footprints), and
+`mdtests/field_derived_precise_effect_after_metadata_write.md` states that
+callers rely on the contract, not on the callee's writes. Inferring
+`owner->cap == old(owner->cap)` would make a caller's proof depend on the
+callee's body: either the contract summary is computed from the body's text
+(a conservative syntactic write set, each inferred frame then proved at
+certification like a written `ensures`, so nothing is trusted), or from the
+certified body (which makes callers wait on the callee's proof). Both change
+what a contract means. Recommendation: the syntactic write set, limited to
+scalar field cells of a consumed or owned parameter object that the body
+never stores to, whose callees' footprints cannot reach them and that no
+loop without its own `owns` header encloses; refuse nothing new and add no
+kernel rule.
 
 ## M. Memory model, semantics and trust
 

@@ -7059,7 +7059,7 @@ pub(super) fn resource_quantity_is_positive(
 /// `2000000000 + 2000000000` is `-294967296`: four billion units reading as a
 /// negative population. Every quantity rule beneath this one is signed —
 /// [`resource_quantity_at_least`], [`constant_quantity_is_positive`],
-/// `population_quantity_is_positive` — so a wrapped total is not an
+/// [`resource_quantity_is_positive`] — so a wrapped total is not an
 /// imprecision, it is a different and smaller number. Two `produces k of
 /// tok(o)` clauses at `k == 2000000000` composed to `k + k` this way, and
 /// `ensures count(tok(o)) < 0` verified on the result.
@@ -8991,8 +8991,9 @@ fn memory_ranges_structurally_disjoint(left: &CMemoryRange, right: &CMemoryRange
 /// consumable without deciding its orientation.
 ///
 /// A structural difference covers the ordinary shapes (`p[i..i + 1]`,
-/// `p[0..3]`) the way [`memory_range_contained_for_memory_resolution`] already
-/// reads them; anything else has to be decided from the context, as
+/// `p[0..3]`) the way
+/// [`crate::kernel::assumptions::memory_range_contained_for_memory_resolution`]
+/// already reads them; anything else has to be decided from the context, as
 /// `p[0..n]` is under `0 <= n`.
 fn consumed_range_is_well_formed(
     start: &Bitvector32Term,
@@ -9483,6 +9484,18 @@ impl CResource {
 }
 
 impl CResourceFact {
+    /// The fact's access and resource name in a diagnostic, as `owns
+    /// pair(...)` or `views memory`.
+    pub(crate) fn diagnostic_summary(&self) -> String {
+        let access = if self.is_own() { "owns" } else { "views" };
+        match self.resource() {
+            CResource::Composite { .. } | CResource::Token { .. } | CResource::Instance(_) => {
+                format!("{access} {}(...)", self.resource().diagnostic_name())
+            }
+            resource => format!("{access} {}", resource.diagnostic_name()),
+        }
+    }
+
     fn has_valid_exclusive_access(&self) -> bool {
         !matches!(
             self.resource(),
@@ -9640,7 +9653,7 @@ impl CResourceFact {
         self.resource().family()
     }
 
-    /// This fact's owner observation, per [`owner_observation_core`]: a viewed
+    /// This fact's owner observation, per `owner_observation_core`: a viewed
     /// description of ownership this context holds, carrying no access share,
     /// scope, or recovery right of its own.
     pub fn core(&self) -> Option<Self> {

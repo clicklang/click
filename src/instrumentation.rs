@@ -584,8 +584,8 @@ thread_local! {
 ///
 /// Not charging is not enough on its own: a check that names a value or
 /// fills a memo the checked code reads later leaves that later read cheaper
-/// in a debug build than in a release one. [`without_debug_checks`] runs an
-/// operation with every check skipped, as a release build runs it, so a
+/// in a debug build than in a release one. The test-only `without_debug_checks`
+/// runs an operation with every check skipped, as a release build runs it, so a
 /// test can compare the two.
 #[cfg(debug_assertions)]
 pub(crate) fn uncharged_debug_check(check: impl FnOnce()) {
@@ -1934,6 +1934,10 @@ pub enum HiddenPrerequisiteRoute {
     /// condition decision after the difference graph left it open
     /// (`issues/difference-logic.md`). The rule names the evaluation site.
     KernelCondition,
+    /// A premise a simple tactic other than `step` proved by searching the
+    /// proof context after the exact lookup missed
+    /// (`issues/simplify-step.md`, step 5). The rule names the tactic site.
+    TacticSearch,
 }
 
 /// The count of hidden prerequisite derivations by route and by the top rule
@@ -1950,10 +1954,14 @@ thread_local! {
 }
 
 pub(crate) fn record_hidden_prerequisite(route: HiddenPrerequisiteRoute, rule: &'static str) {
-    // A kernel condition decision is evaluation, not statement planning:
-    // it counts in the corpus census, not in a step's planning count.
+    // A kernel condition decision is evaluation and a tactic search is not a
+    // statement's: each counts in the corpus census, not in a step's
+    // planning count.
     #[cfg(test)]
-    if route != HiddenPrerequisiteRoute::KernelCondition {
+    if !matches!(
+        route,
+        HiddenPrerequisiteRoute::KernelCondition | HiddenPrerequisiteRoute::TacticSearch
+    ) {
         HIDDEN_PREREQUISITES_ON_THREAD.with(|count| count.set(count.get() + 1));
     }
     *HIDDEN_PREREQUISITE_CENSUS

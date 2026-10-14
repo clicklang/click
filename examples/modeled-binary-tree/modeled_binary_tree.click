@@ -10,9 +10,7 @@ resource tree_at(p: struct tree_node*) {
     match model {
         HeapTree::Empty => { fact p == 0; },
         HeapTree::Node(identity, value, left_model, right_model) => {
-            owns p->value;
-            owns p->left;
-            owns p->right;
+            owns *p;
             owns left: tree_at(p->left);
             owns right: tree_at(p->right);
             fact p != 0;
@@ -100,9 +98,7 @@ theorem plug_right_frame(parent: struct tree_node*, value: int, sibling: HeapTre
 
 void tree_node_init(struct tree_node* node, int value,
                     struct tree_node* left, struct tree_node* right) {
-    consumes node->value;
-    consumes node->left;
-    consumes node->right;
+    consumes *node;
     consumes l: tree_at(left);
     consumes r: tree_at(right);
     requires node != 0;
@@ -158,9 +154,9 @@ function heap_inorder(tree: HeapTree) -> List<struct tree_node*>
     decreases tree
 {
     match tree {
-        HeapTree::Empty => List<struct tree_node*>::Nil,
+        HeapTree::Empty => List::Nil,
         HeapTree::Node(node, value, left, right) =>
-            list_append(heap_inorder(left), List<struct tree_node*>::Cons(node, heap_inorder(right))),
+            list_append(heap_inorder(left), List::Cons(node, heap_inorder(right))),
     }
 }
 
@@ -188,7 +184,7 @@ theorem heap_member_is_inorder_membership(tree: HeapTree, target: struct tree_no
             HeapTree::Empty => {
                 unfold(heap_member(HeapTree::Empty, target));
                 unfold(heap_inorder(HeapTree::Empty));
-                unfold(list_contains(List<struct tree_node*>::Nil, target));
+                unfold(list_contains(List::Nil, target));
                 normalize();
             }
             HeapTree::Node(node, value, left, right) => {
@@ -197,16 +193,16 @@ theorem heap_member_is_inorder_membership(tree: HeapTree, target: struct tree_no
                 unfold(heap_member(HeapTree::Node(node, value, left, right), target));
                 unfold(heap_inorder(HeapTree::Node(node, value, left, right)));
                 apply(list_contains_append(heap_inorder(left),
-                    List<struct tree_node*>::Cons(node, heap_inorder(right)), target));
+                    List::Cons(node, heap_inorder(right)), target));
                 rewrite(list_contains(list_append(heap_inorder(left),
-                    List<struct tree_node*>::Cons(node, heap_inorder(right))), target)
+                    List::Cons(node, heap_inorder(right))), target)
                     == if list_contains(heap_inorder(left), target) {
                         true
                     } else {
-                        list_contains(List<struct tree_node*>::Cons(node, heap_inorder(right)), target)
+                        list_contains(List::Cons(node, heap_inorder(right)), target)
                     });
                 apply(list_contains_cons(node, heap_inorder(right), target));
-                rewrite(list_contains(List<struct tree_node*>::Cons(node, heap_inorder(right)), target)
+                rewrite(list_contains(List::Cons(node, heap_inorder(right)), target)
                     == if node == target {
                         true
                     } else {
@@ -243,16 +239,16 @@ theorem heap_rotate_left_node_preserves_inorder(node: struct tree_node*, value: 
                 unfold(heap_inorder(HeapTree::Node(node, value, left, middle)));
                 unfold(heap_inorder(HeapTree::Node(pivot, pivot_value, middle, far_right)));
                 apply(list_append_associative(heap_inorder(left),
-                    List<struct tree_node*>::Cons(node, heap_inorder(middle)),
-                    List<struct tree_node*>::Cons(pivot, heap_inorder(far_right))));
+                    List::Cons(node, heap_inorder(middle)),
+                    List::Cons(pivot, heap_inorder(far_right))));
                 rewrite(list_append(list_append(heap_inorder(left),
-                    List<struct tree_node*>::Cons(node, heap_inorder(middle))),
-                    List<struct tree_node*>::Cons(pivot, heap_inorder(far_right)))
+                    List::Cons(node, heap_inorder(middle))),
+                    List::Cons(pivot, heap_inorder(far_right)))
                     == list_append(heap_inorder(left),
-                        list_append(List<struct tree_node*>::Cons(node, heap_inorder(middle)),
-                            List<struct tree_node*>::Cons(pivot, heap_inorder(far_right)))));
-                unfold(list_append(List<struct tree_node*>::Cons(node, heap_inorder(middle)),
-                    List<struct tree_node*>::Cons(pivot, heap_inorder(far_right))));
+                        list_append(List::Cons(node, heap_inorder(middle)),
+                            List::Cons(pivot, heap_inorder(far_right)))));
+                unfold(list_append(List::Cons(node, heap_inorder(middle)),
+                    List::Cons(pivot, heap_inorder(far_right))));
                 normalize();
             }
         }
@@ -293,16 +289,16 @@ theorem heap_rotate_right_node_preserves_inorder(node: struct tree_node*, value:
                 unfold(heap_inorder(HeapTree::Node(node, value, middle, right)));
                 unfold(heap_inorder(HeapTree::Node(pivot, pivot_value, far_left, middle)));
                 apply(list_append_associative(heap_inorder(far_left),
-                    List<struct tree_node*>::Cons(pivot, heap_inorder(middle)),
-                    List<struct tree_node*>::Cons(node, heap_inorder(right))));
+                    List::Cons(pivot, heap_inorder(middle)),
+                    List::Cons(node, heap_inorder(right))));
                 rewrite(list_append(list_append(heap_inorder(far_left),
-                    List<struct tree_node*>::Cons(pivot, heap_inorder(middle))),
-                    List<struct tree_node*>::Cons(node, heap_inorder(right)))
+                    List::Cons(pivot, heap_inorder(middle))),
+                    List::Cons(node, heap_inorder(right)))
                     == list_append(heap_inorder(far_left),
-                        list_append(List<struct tree_node*>::Cons(pivot, heap_inorder(middle)),
-                            List<struct tree_node*>::Cons(node, heap_inorder(right)))));
-                unfold(list_append(List<struct tree_node*>::Cons(pivot, heap_inorder(middle)),
-                    List<struct tree_node*>::Cons(node, heap_inorder(right))));
+                        list_append(List::Cons(pivot, heap_inorder(middle)),
+                            List::Cons(node, heap_inorder(right)))));
+                unfold(list_append(List::Cons(pivot, heap_inorder(middle)),
+                    List::Cons(node, heap_inorder(right))));
                 normalize();
             }
         }
@@ -381,16 +377,16 @@ struct tree_node* tree_rotate_left(struct tree_node* root) {
             match right_model {
                 HeapTree::Empty => { contradiction(right_model == HeapTree::Empty); },
                 HeapTree::Node(pivot_node, pivot_value, middle_model, far_right_model) => {
-                    let { left: l, right: r } = unfold(t);
-                    let { left: m, right: z } = unfold(r);
+                    let { left: left, right: r } = unfold(t);
+                    let { left: m, right: right } = unfold(r);
                     execute();
                     let lower = fold(tree_at(root), {
                         model: HeapTree::Node(node, value, left_model, middle_model)
-                    }, { left: l, right: m });
+                    }, { right: m });
                     let rotated = fold(tree_at(result), {
                         model: HeapTree::Node(pivot_node, pivot_value,
                             HeapTree::Node(node, value, left_model, middle_model), far_right_model)
-                    }, { left: lower, right: z });
+                    }, { left: lower });
                     apply(heap_rotate_left_preserves_inorder(old(t.model)));
                 },
             }
@@ -414,16 +410,16 @@ struct tree_node* tree_rotate_right(struct tree_node* root) {
             match left_model {
                 HeapTree::Empty => { contradiction(left_model == HeapTree::Empty); },
                 HeapTree::Node(pivot_node, pivot_value, far_left_model, middle_model) => {
-                    let { left: l, right: r } = unfold(t);
-                    let { left: z, right: m } = unfold(l);
+                    let { left: l, right: right } = unfold(t);
+                    let { left: left, right: m } = unfold(l);
                     execute();
                     let lower = fold(tree_at(root), {
                         model: HeapTree::Node(node, value, middle_model, right_model)
-                    }, { left: m, right: r });
+                    }, { left: m });
                     let rotated = fold(tree_at(result), {
                         model: HeapTree::Node(pivot_node, pivot_value, far_left_model,
                             HeapTree::Node(node, value, middle_model, right_model))
-                    }, { left: z, right: lower });
+                    }, { right: lower });
                     apply(heap_rotate_right_preserves_inorder(old(t.model)));
                 },
             }
@@ -644,9 +640,9 @@ function tree_mirror<T>(tree: Tree<T>) -> Tree<T>
     decreases tree
 {
     match tree {
-        Tree::Empty => Tree<T>::Empty,
+        Tree::Empty => Tree::Empty,
         Tree::Node(left, value, right) =>
-            Tree<T>::Node(tree_mirror(right), value, tree_mirror(left)),
+            Tree::Node(tree_mirror(right), value, tree_mirror(left)),
     }
 }
 
@@ -660,8 +656,8 @@ theorem tree_mirror_twice<T>(tree: Tree<T>) {
             Tree::Node(left, value, right) => {
                 apply(ih(left));
                 apply(ih(right));
-                unfold(tree_mirror(Tree<T>::Node(left, value, right)));
-                unfold(tree_mirror(Tree<T>::Node(tree_mirror(right), value, tree_mirror(left))));
+                unfold(tree_mirror(Tree::Node(left, value, right)));
+                unfold(tree_mirror(Tree::Node(tree_mirror(right), value, tree_mirror(left))));
                 rewrite(tree_mirror(tree_mirror(left)) == left);
                 rewrite(tree_mirror(tree_mirror(right)) == right);
                 normalize();
@@ -680,9 +676,9 @@ theorem tree_mirror_preserves_size<T>(tree: Tree<T>) {
             Tree::Node(left, value, right) => {
                 apply(ih(left));
                 apply(ih(right));
-                unfold(tree_mirror(Tree<T>::Node(left, value, right)));
-                unfold(tree_size(Tree<T>::Node(tree_mirror(right), value, tree_mirror(left))));
-                unfold(tree_size(Tree<T>::Node(left, value, right)));
+                unfold(tree_mirror(Tree::Node(left, value, right)));
+                unfold(tree_size(Tree::Node(tree_mirror(right), value, tree_mirror(left))));
+                unfold(tree_size(Tree::Node(left, value, right)));
                 rewrite(tree_size(tree_mirror(left)) == tree_size(left));
                 rewrite(tree_size(tree_mirror(right)) == tree_size(right));
                 apply(nat_add_commutative(tree_size(right), tree_size(left)));

@@ -118,8 +118,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
     requires from < n;
     requires n <= 1073741823;
     views next[0..n];
-    consumes visited[0..n];
-    produces visited[0..n];
+    owns visited[0..n];
     requires separate(memory(next[0..n]), memory(visited[0..n]));
     requires forall (k: int32) {
         0 <= k and k < n implies 0 <= next[k] and next[k] < n

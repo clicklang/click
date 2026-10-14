@@ -3844,8 +3844,7 @@ fn parses_struct_object_segments_without_exposing_layout_cells() {
 
         int32 initialize(struct vector* owner) {
             requires viewable(owner->data[0..owner->cap]);
-            consumes *owner;
-            produces *owner;
+            owns *owner;
             ensures separate(memory(*owner), memory(owner->data[0..owner->cap]));
         }
     "#;
@@ -4618,6 +4617,16 @@ fn a_contract_cannot_return_one_place_twice() {
             !refused.contains("two owners of one place"),
             "{contract}: {refused}"
         );
+        // A fixed place given up and returned is spelled `owns`, in a
+        // function contract and a named contract alike.
+        if !contract.contains("Swap") {
+            assert!(
+                refused.contains(
+                    "consumes and produces `p->value`; write the one clause `owns p->value;`"
+                ),
+                "{contract}: {refused}"
+            );
+        }
     }
 }
 
@@ -4687,7 +4696,7 @@ fn a_contract_cannot_return_overlapping_places() {
     );
     // Two fields of one struct do not overlap.
     let disjoint = "verifying \"cell.c\"; int32 get(struct cell* p) { owns p->value; \
-        consumes p->other; produces p->other; ensures result == result; } by { execute(); simp(); }";
+        owns p->other; ensures result == result; } by { execute(); simp(); }";
     verify_c0_sources(disjoint, &[("cell.c", c_source)]).unwrap();
 }
 

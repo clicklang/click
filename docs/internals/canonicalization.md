@@ -105,13 +105,15 @@ candidates but may not omit a pair accepted by the checked theory. They remain
 context-local indexing, not canonical identity, because they consult proved
 facts and do not satisfy the assumption-free contract above.
 
-Context-local ground equality is currently an adjacency index over canonical
-keys, with target-directed paths retaining the propositions that justify each
-edge. The completed callers do not require equality saturation or extraction
-of a preferred e-class member, so Click deliberately has no general e-graph.
-Such a structure would be an alternative proof-producing contextual index,
-not a replacement for canonical form, and should be reconsidered only if a
-measured caller cannot be served by the targeted index.
+Context-local ground equality is answered by the trusted equality graph
+(`src/kernel/equality_graph.rs`): a congruence closure over pointer, offset,
+int32, uint64, and registered load classes, described in
+[Equality closure design](equality-closure.md). Consumers that enumerate
+aliases or need premise-path evidence still use adjacency indexes over
+canonical keys, with target-directed paths retaining the propositions that
+justify each edge. Neither performs equality saturation or extracts a
+preferred class member. Both are contextual indexes, not a replacement for
+canonical form.
 
 ## Load variables are the canonical form of a load
 
@@ -180,7 +182,7 @@ refers to one through a snapshot form such as `at(statement(3).entry, x)` or
   repeated verification.
 - Symbolic execution introduces load variables for loaded **pointers**
   (`canonicalized_pointer_value_from_int_cell`,
-  `canonicalized_symbolic_load_value`), so a pointer loaded from an opaque
+  `canonicalized_symbolic_load_value_with_identity`), so a pointer loaded from an opaque
   cell never enters offset arithmetic as a load term, and its defining fact
   is emitted beside it. The same function names every **integer scalar** it
   loads, one to eight bytes wide, signed or unsigned. Contract lowering
@@ -284,7 +286,8 @@ variable. None of these creation paths chooses a member of a proved equality
 class.
 
 A load variable is identified by its cell and the cell's *epoch*: the
-snapshot the epoch walk (`cell_epoch_for_load_variable`) reaches from
+snapshot the epoch walk (`resource_tracker::last_same_point`, through
+`cell_last_same_point`, called from `load_variable_for_cell_with_origin`) reaches from
 the load's snapshot by crossing only edges proven, without assumptions, not
 to write the cell — block declarations, cells forgotten, stores and call
 havocs at constant-disjoint offsets or in distinct blocks. The walk runs on

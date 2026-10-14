@@ -9,8 +9,7 @@ int main(void) { overwrite((int *)&state); return state; }
 ```click
 verifying "main.c";
 void overwrite(int *p) {
-    consumes p[0..1];
-    produces p[0..1];
+    owns p[0..1];
     ensures p[0] == 9;
 } by { execute(); simp(); }
 int main() { ensures result == 9; } by { execute(); simp(); }

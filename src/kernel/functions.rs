@@ -921,7 +921,9 @@ fn recover_candidate_stable_view_resources(
     let Some(plan) = &transfer.stable_view_plan else {
         if let Some((head, piece)) = transfer.produced_borrowing_pieces.first() {
             return Err(CRuntimeError::FunctionContract(format!(
-                "produced borrowing composite {head:?} packages a view {piece:?} that no viewed input of this call backs"
+                "produced borrowing composite `{}` packages a view `{}` that no viewed input of this call backs",
+                head.diagnostic_summary(),
+                piece.diagnostic_summary()
             )));
         }
         return Ok((
@@ -1017,7 +1019,9 @@ fn recover_candidate_stable_view_resources(
         match (backing_loans.len(), entering) {
             (0, _) => {
                 return Err(CRuntimeError::FunctionContract(format!(
-                    "produced borrowing composite {head:?} packages a view {piece:?} that no viewed input of this call backs"
+                    "produced borrowing composite `{}` packages a view `{}` that no viewed input of this call backs",
+                    head.diagnostic_summary(),
+                    piece.diagnostic_summary()
                 )));
             }
             (1, Some(binding)) => {
@@ -1037,7 +1041,9 @@ fn recover_candidate_stable_view_resources(
             }
             _ => {
                 return Err(CRuntimeError::FunctionContract(format!(
-                    "produced borrowing composite {head:?} packages a view {piece:?} that more than one viewed input of this call could back; the borrow cannot be elided"
+                    "produced borrowing composite `{}` packages a view `{}` that more than one viewed input of this call could back; the borrow cannot be elided",
+                    head.diagnostic_summary(),
+                    piece.diagnostic_summary()
                 )));
             }
         }
@@ -1211,7 +1217,8 @@ fn recover_candidate_stable_view_resources(
             .find(|occurrence| recovered_resources.loan_dependency(*occurrence).is_none())
         else {
             return Err(CRuntimeError::FunctionContract(format!(
-                "produced borrowing composite {head:?} has no occurrence to carry its borrow"
+                "produced borrowing composite `{}` has no occurrence to carry its borrow",
+                head.diagnostic_summary()
             )));
         };
         recovered_resources = recovered_resources.with_loan_dependency(occurrence, binding.clone());
@@ -1804,7 +1811,8 @@ pub(super) fn execute_c_function_paths_with_contract_resources(
             let (outcome, obligations, loan_evidence) = if defer_conditional_resource_effect {
                 // This is the body-only candidate used to assemble a checked
                 // proof frontier. Its function-boundary transition is applied
-                // by `checked_contract_exit_outcome`, which records an explicit
+                // by `checked_contract_exit_outcome_with_boundary_transfer`,
+                // which records an explicit
                 // deferred marker when a conditional produced effect is not
                 // decided by the proof entry facts.
                 without_loan_evidence(function_outcome_from_body(
@@ -4987,11 +4995,7 @@ pub(crate) fn apply_verified_tactic_rule(
         CExecutionContext::apply_verified_rules(environment),
         &mut budget,
     )
-    .map_err(|limit| {
-        Refused(format!(
-            "applying tactic `{name}` exhausted its budget: {limit:?}"
-        ))
-    })?;
+    .map_err(|limit| Refused(format!("applying tactic `{name}` stopped at {limit}")))?;
     let [path] = paths.as_slice() else {
         return Err(Refused(format!(
             "applying tactic `{name}` produced {} outcomes; an application has exactly one",
@@ -5007,7 +5011,8 @@ pub(crate) fn apply_verified_tactic_rule(
         }
         CFunctionOutcome::UndefinedBehavior(behavior) => {
             return Err(Refused(format!(
-                "tactic `{name}` could not be applied: {behavior:?}"
+                "tactic `{name}` could not be applied: undefined behavior: {}",
+                behavior.description()
             )));
         }
         CFunctionOutcome::Throw { .. } | CFunctionOutcome::VerificationDiverges => {
@@ -8793,7 +8798,7 @@ impl ResourceCallApplication {
     /// The one checked binding of a callee's instance binders to the caller's
     /// instances, whether the proof wrote a direct call map
     /// (`step(callee(...), { binder: instance })`) or a named contract's
-    /// proof arguments (`step(Contract(instance, ...))`). Each bound
+    /// handle map (`step(Contract, { handle: instance })`). Each bound
     /// parameter must be an exclusive instance the caller owns now, and no
     /// instance may supply two parameters. The surface refuses both mistakes
     /// with source positions; the kernel refuses them here regardless, so a
@@ -12520,9 +12525,9 @@ fn evaluate_refinement_resource_context(
 
 /// Checks that the named requirements can supply the concrete requirements,
 /// preserving everything the concrete transition only borrows or does not
-/// need as a frame. Then requires `concrete_ensures * frame` to provide the
-/// named ensures. The resource context's indexed algebras perform ownership
-/// splitting, symbolic exact-resource quantity arithmetic, range containment,
+/// need as a frame. Then requires the concrete ensures together with that
+/// frame to provide the named ensures. The resource context's indexed
+/// algebras perform ownership splitting, symbolic exact-resource quantity arithmetic, range containment,
 /// exact token and folded-composite identity, and scoped borrowing; no project
 /// functions, composite definitions, or unrelated proof state are inspected.
 #[allow(clippy::too_many_arguments)]
@@ -12638,7 +12643,8 @@ fn framed_resource_transition_refines(
 /// The walk over the contract's declared segments is not a selection. Its only
 /// result is whether some declared segment covers the required range; no later
 /// check consults which one, and a corpus probe (both fixture harnesses, plus
-/// `c_named_contract_refinement_selects_guarded_segment`) found exactly one
+/// the since-deleted `c_named_contract_refinement_selects_guarded_segment`
+/// mdtest) found exactly one
 /// covering segment at every reached site. So this is a discharge, and a
 /// finite disjunction over the declared segments would spell a choice that
 /// nothing consumes.
@@ -19629,11 +19635,10 @@ fn prepare_contract_resource_transfer_unexplained(
     } else {
         Vec::new()
     };
-    // A population's cardinality lives in the tracked population and its
-    // transition, not in the resource algebra: the caller holds one
-    // representative unit whose quantity is the unit, while `N of p` is
-    // discharged definitionally and the count arithmetic is checked by
-    // `apply_counted_population_transitions_with_interface`. The stable
+    // A population's cardinality lives in the population authority
+    // (`crate::kernel::population_authority`), not in the resource algebra:
+    // the caller holds one representative unit whose quantity is the unit,
+    // while `N of p` is discharged definitionally. The stable
     // planner's exclusive reservation asks for one owned entry that directly
     // entails the whole requirement, which no representative can supply for a
     // symbolic or non-unit constant quantity, so such a requirement takes the
@@ -21202,7 +21207,8 @@ fn evaluate_contract_return_resources(
             .copied()
         else {
             return Ok(Err(CRuntimeError::FunctionContract(format!(
-                "ensured resource support was not preserved after call: {support:?}"
+                "ensured resource support `{}` was not preserved after call",
+                support.diagnostic_summary()
             ))));
         };
         *rank += 1;
@@ -21249,7 +21255,8 @@ fn evaluate_contract_return_resources(
             .copied()
         else {
             return Ok(Err(CRuntimeError::FunctionContract(format!(
-                "ensured resource support was not preserved after call: {support:?}"
+                "ensured resource support `{}` was not preserved after call",
+                support.diagnostic_summary()
             ))));
         };
         return_resources = return_resources
@@ -22351,6 +22358,51 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
     })
 }
 
+/// The named children of the body `instance` folds or unfolds into, as
+/// the arm the premises select for its model names them, without the
+/// children a resource argument supplies. This is a read-only query for
+/// the Surface, which completes a fold's child map with it; it selects the
+/// arm the way [`rewrite_resource_instance_selecting_children`] does and
+/// checks nothing. `None` when no arm is selected.
+pub(crate) fn selected_instance_child_names(
+    state: &CState,
+    instance: &ResourceInstance,
+    definition: &CCompositeResourceDefinition,
+    definitions: &[CCompositeResourceDefinition],
+    assumptions: &PureFactContext,
+) -> Option<Vec<String>> {
+    let children = if definition.matched.is_some() {
+        let arm = match selected_instance_match_arm(instance, definition, definitions, assumptions)
+        {
+            Ok((arm, _)) => arm,
+            Err(_) => {
+                let assumptions =
+                    instance_arm_model_facts(instance, definitions, state, assumptions)
+                        .into_iter()
+                        .fold(assumptions.clone(), PureFactContext::assume_proposition);
+                selected_instance_match_arm(instance, definition, definitions, &assumptions)
+                    .ok()?
+                    .0
+            }
+        };
+        arm.children.as_slice()
+    } else {
+        definition.children.as_slice()
+    };
+    let references = definition
+        .resource_parameters()
+        .iter()
+        .filter_map(|formal| formal.instance_identity())
+        .collect::<BTreeSet<_>>();
+    Some(
+        children
+            .iter()
+            .filter(|child| !references.contains(&child.binding))
+            .map(|child| child.name.clone())
+            .collect(),
+    )
+}
+
 fn rewrite_resource_instance_selecting_children_unspelled(
     state: &CState,
     instance: &ResourceInstance,
@@ -22740,7 +22792,11 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     if !authorities.is_empty() {
         body = body
             .try_compose_into_valid_context_delaying_normalization(authorities, assumptions)
-            .map_err(|_| "instance body repeats an authority")?;
+            .map_err(|error| {
+                ResourceRewriteRefusal::OwnedMessage(format!(
+                    "instance body repeats an authority: {error}"
+                ))
+            })?;
     }
     // Only the immediate declared memory justifies child-argument loads, not
     // the ambient frame or a child that has not been constructed. On fold,
@@ -22962,7 +23018,11 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         next.resources = next
             .resources
             .try_compose_into_valid_context_delaying_normalization([folded.clone()], assumptions)
-            .map_err(|_| "fold would duplicate instance ownership")?;
+            .map_err(|error| {
+                ResourceRewriteRefusal::OwnedMessage(format!(
+                    "fold would duplicate instance ownership: {error}"
+                ))
+            })?;
     }
     // Body propositions retain their source bindings, including exact facts
     // about model pointers. Only memory/child placement uses the early alias

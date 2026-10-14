@@ -5558,7 +5558,8 @@ pub(crate) fn parse_translation_unit_for_import(
     )
 }
 
-/// [`parse_translation_unit_for_import`] under the import's target.
+/// Parses compiler-preprocessed C under the import's target, retaining
+/// original file/line locations from validated line markers.
 pub(crate) fn parse_translation_unit_for_import_target(
     source: &str,
     source_identity: &str,
@@ -7790,7 +7791,7 @@ impl LibraryType {
 }
 
 /// The standard C prototype of each library function Click specifies: the
-/// `<string.h>` functions with a contract in `stdlib/prelude.click` and the
+/// `<string.h>` functions with a contract in `library/c/string.click` and the
 /// `<stdlib.h>` functions of the allocation model. A call binds to Click's
 /// specification by the function's name, so a declaration of one of these
 /// names must have the library's type.
@@ -16285,8 +16286,8 @@ impl Parser {
                     pointee_constant: false,
                     site: C0Site::NONE,
                 }),
-                target => Err(self.error_here(format!(
-                    "expected memory lvalue assignment target in {context}, got {target:?}"
+                _ => Err(self.error_here(format!(
+                    "expected memory lvalue assignment target in {context}, got an expression that does not designate an object"
                 ))),
             };
         }

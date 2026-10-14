@@ -46,7 +46,7 @@ documentation inventory keep the following accepted words synchronized.
 | `let`, `where` | Value abbreviation and existential-binding forms. |
 | `requires`, `ensures`, `exceptional`, `throws`, `decreases` | Contract, theorem, function-totality, exceptional-postcondition, and loop-termination clauses. The initial exceptional signature is `throws int32`, with clauses spelled `exceptional ensures`; a `decreases` clause is one expression, classified after name resolution as a numeric (int32, unsigned, or `Integer`) measure, a resource application, or a resource binder; there is no `decreases resource` spelling. |
 | `diverges` | Signature and `loop`-head marker declaring that the function or loop may not return. It follows the parameter list, after `throws` when a signature carries both, and excludes a `decreases` clause on the same function or loop. |
-| `owns`, `views`, `consumes`, `produces` | Resource transfer clauses, in a contract and in a loop header. In a resource body, `owns` and `views` state what the resource holds, memory and child resources alike. |
+| `owns`, `views`, `consumes`, `produces` | Resource transfer clauses, in a contract and in a loop header. In a resource body, `owns` and `views` state what the resource holds, memory and child resources alike. `consumes X; produces X;` for one fixed `X` is refused: it is spelled `owns X;`. |
 | `constructs` | Authorizes one function to create an abstract resource token. |
 | `invariant`, `initialize`, `preserve` | Loop structural items and phase proofs; a loop header also takes `owns` and `views` clauses of its own. |
 | `contains`, `fact`, `field`, `if` | The containment proposition `contains(parent, child)`, resource facts, pure field declarations, and optional resource guard. A resource holds a child resource with `owns`, as it holds memory. `if` also forms expressions and proof splits. |
@@ -63,10 +63,14 @@ documentation inventory keep the following accepted words synchronized.
 | `by`, `auto`, `using` | Proof introduction, default smart proof, and exact-premise syntax. |
 | `mark`, `step`, `execute`, `execute_until` | Execution tactics. |
 | `unfold`, `fold`, `observe`, `construct`, `open` | Predicate and resource tactics. |
+| `peel` | Range-fold tactic: `peel(f(args)) using { ... }` opens the range-fold law of an `Integer`-valued pure function whose body is a range fold, selected by the listed guards. |
 | `take`, `give`, `gather`, `scatter` | Iterated guarded-ownership tactics: move one element out of or into an iterated fact, and form or dissolve the whole fact. `forall` inside a resource body starts the iterated clause itself. |
 | `apply`, `have`, `if`, `cases`, `both`, `branch`, `outcomes`, `loop` | Theorem application and structural proof tactics. |
 | `witness`, `obtain` | Existential introduction and elimination. `let` binds what an operation produces. |
 | `assumption`, `extract`, `normalize`, `intro`, `enumerate`, `contradiction` | Explicit proposition tactics. |
+| `arithmetic` | Smart arithmetic tactic: `arithmetic()` and `arithmetic() using { ... }` plan and check a bounded arithmetic certificate. |
+| `sorry` | Dev-only proof hole `sorry()`. It parses only under `click verify --allow-sorry`; see [Dev-only proof hole](../cli/verify.md#dev-only-proof-hole). A user-defined tactic may not take the name. |
+| `split`, `left`, `right` | Retired tactic spellings. Unless a user-defined tactic has the name, the parser rejects each with a diagnostic that names `assumption()`. |
 | `arithmetic_certificate` | Starts the typed arithmetic-certificate envelope. The canonical mathematical family is `arithmetic_certificate { ... }`; checked machine families are `arithmetic_certificate signed_int32 { ... }` and `arithmetic_certificate rules { ... }`. Its step words are listed under [Arithmetic-certificate words](#arithmetic-certificate-words). |
 | `rewrite`, `transport`, `instantiate`, `simp`, `induct`, `close_invariants` | Equality, snapshot, quantifier, simplification, induction, and loop-proof tactics. |
 | `as`, `else`, `ensuring`, `then` | Names and branches inside structural proof forms. `as` also introduces the target contract's proof instances on an `executes` conclusion. |
@@ -202,7 +206,10 @@ Click and need no parentheses. See
 
 The algebraic-datatype slice supports generic, specification-only
 sum-of-products declarations as first-class Click types. A
-constructor is fully type-applied at its use site. Pure functions, predicates,
+constructor of a generic datatype may leave out its type arguments where its
+arguments or its position fix them (see
+[Constructor type arguments](#constructor-type-arguments)); every later check,
+and the kernel, sees the fully applied constructor. Pure functions, predicates,
 and theorems may receive arbitrary algebraic values, pure functions may return
 them, and an exhaustive `match` may inspect an unknown variant and return a
 common C or algebraic type. Algebraic-valued `if` expressions are not supported;
@@ -260,6 +267,50 @@ ensures match Maybe<int32>::Some(value) {
     Maybe::None => fallback,
     Maybe::Some(inner) => inner,
 } == value;
+```
+
+### Constructor type arguments
+
+`List::Cons(x, List::Nil)` with `x: int32` means
+`List<int32>::Cons(x, List<int32>::Nil)`. Before any checking, a constructor
+that leaves out its type arguments takes them from one of two places:
+
+- Its own arguments, by their declared types: a declaration parameter, the
+  binder of a `match` arm or of a proof `match` or `induct` arm (typed from
+  its scrutinee), a quantifier binder, a typed `let`, a resource field,
+  another constructor whose type is known, or a pure-function call's result.
+- The type its position expects: a pure function's result type, the
+  parameter of the function, predicate or theorem it is passed to (once the
+  call's other arguments fix that parameter's type arguments), the field of
+  an enclosing constructor, the other side of `==` or `!=`, or a `let` with a
+  written type. A `match`, `let` or `old(...)` passes the expected type on to
+  its result.
+
+Nothing else is consulted, and no type is guessed: a bare integer literal
+fixes nothing, and names a proof introduces by `intro`, `obtain`, a proof
+`let` or a step are not read; one that reuses a declaration parameter's name
+is read as that parameter, and a type that does not fit is then refused by
+the ordinary type check. When neither place fixes the arguments the
+constructor is refused with the written form to use, as in
+`mdtests/constructor_type_arguments_that_nothing_fixes_are_refused.md`,
+`mdtests/a_proof_constructor_whose_type_nothing_fixes_is_refused.md` and
+`mdtests/a_generic_call_on_constructors_nothing_types_is_refused.md`. In
+`unfold(list_append(List<int32>::Nil, List<int32>::Nil))` both arguments must
+be written: neither the call nor its arguments fix `T`. The written form is
+accepted everywhere.
+
+<!-- verified-example: mdtests/constructor_type_arguments_are_inferred.md -->
+```click
+function singleton(x: int32) -> List<int32> {
+    List::Cons(x, List::Nil)
+}
+
+theorem append_nothing(xs: List<int32>) {
+    ensures list_append(List::Nil, xs) == xs by {
+        unfold(list_append(List::Nil, xs));
+        normalize();
+    }
+}
 ```
 
 Constructor equality is structural and checked against the resolved datatype

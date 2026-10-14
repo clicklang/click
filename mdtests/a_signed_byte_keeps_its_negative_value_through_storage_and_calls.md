@@ -50,8 +50,7 @@ int sum_view(const signed char *p) {
 int view_caller() { ensures result == -3 by auto; }
 void store(signed char *p, signed char value) {
     requires viewable(p[0..1]);
-    consumes p[0..1];
-    produces p[0..1];
+    owns p[0..1];
     ensures p[0] == value by auto;
 }
 int store_caller() { ensures result == -100 by auto; }

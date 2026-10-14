@@ -298,7 +298,7 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
             [CResourceFact::own(CResource::Instance(instance))],
             assumptions,
         )
-        .map_err(|_| "conditional loop resource ownership overlaps")?;
+        .map_err(|error| format!("conditional loop resource ownership overlaps: {error}"))?;
     let ledger = state.mutex_ledger.as_ref().unwrap();
     let mut ledger = ledger.with_inserted(mutex.clone(), ledger.get(&mutex).unwrap().clone());
     Arc::get_mut(&mut ledger.storage)

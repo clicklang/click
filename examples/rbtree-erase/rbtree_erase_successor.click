@@ -58,7 +58,6 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
     match tree.model {
         RbTree::Empty => { contradiction(tree.model == RbTree::Empty); },
         RbTree::Node(identity, parent, color, left_model, right_model) => {
-            have rb_parent_is(RbTree::Node(identity, parent, color, left_model, right_model), 0) == 1 by auto;
             apply(rb_parent_is_node_parent(identity, parent, color, left_model, right_model, 0));
             have color == Color::Black by auto;
             have rb_left(tree.model) == left_model by auto;
@@ -97,7 +96,6 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                         rewrite(RbTree::Node(sid, sp, sc, sl, sr) == right_model); assumption();
                     }
                     have sc == Color::Red by auto;
-                    have rb_minimum(right_model) == RbMinimum::Found(sid, Color::Red, RbTree::Empty) by auto;
                     have rb_successor_splice(sid, 0, Color::Black, left_model, right_model)
                         == rb_successor_splice(sid, parent, color, left_model, right_model) by {
                         rewrite(parent == 0); rewrite(color == Color::Black); normalize();

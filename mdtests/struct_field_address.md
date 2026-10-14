@@ -35,10 +35,9 @@ int32 update_direct(struct outer* packet) {
 verifying "struct_field_address.c";
 
 int32 update_nested(struct outer* packet) {
-    consumes packet->inner.value;
+    owns packet->inner.value;
 
     ensures result == 7;
-    produces packet->inner.value;
 } by {
     step();
     step();
@@ -48,10 +47,9 @@ int32 update_nested(struct outer* packet) {
 }
 
 int32 update_direct(struct outer* packet) {
-    consumes packet->tail;
+    owns packet->tail;
 
     ensures result == 9;
-    produces packet->tail;
 } by {
     step();
     step();

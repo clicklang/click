@@ -42,9 +42,8 @@ int32 complete(int32 cb) {
 
 int32 complete_primary_and_secondary(int32 primary, int32 secondary) {
     consumes can_complete(primary);
-    consumes can_complete(secondary);
+    owns can_complete(secondary) by auto;
 
-    produces can_complete(secondary) by auto;
     ensures result == 0 by auto;
 }
 

@@ -16,9 +16,7 @@ abstract resource socket_open(fd: int32);
 verifying "use_token.c";
 
 int32 use_token(int32 fd) {
-    consumes socket_open(fd);
-
-    produces socket_open(fd) by {
+    owns socket_open(fd) by {
         unfold(socket_open(fd));
         execute();
     }

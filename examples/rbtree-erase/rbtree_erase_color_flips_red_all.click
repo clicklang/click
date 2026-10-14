@@ -466,20 +466,7 @@ p: struct rb_node*) {
     requires ctx_node_is(Context::Left(cid, grandparent, ccolor, sibling_model, up_model),
     p) == 1;
 
-    ensures p == cid by {
-        if p == cid {
-            assumption();
-        } else {
-            have ctx_node_is(
-            Context::Left(cid, grandparent, ccolor, sibling_model, up_model), p) != 1 by {
-                unfold(ctx_node_is(
-                Context::Left(cid, grandparent, ccolor, sibling_model, up_model), p));
-                normalize() using { not(p == cid); }
-            }
-            contradiction(ctx_node_is(
-            Context::Left(cid, grandparent, ccolor, sibling_model, up_model), p) == 1);
-        }
-    }
+    ensures p == cid by auto;
 }
 
 theorem ctx_node_is_right_identity(cid: struct rb_node*, grandparent: struct rb_node*,
@@ -488,20 +475,7 @@ p: struct rb_node*) {
     requires ctx_node_is(Context::Right(cid, grandparent, ccolor, sibling_model, up_model),
     p) == 1;
 
-    ensures p == cid by {
-        if p == cid {
-            assumption();
-        } else {
-            have ctx_node_is(
-            Context::Right(cid, grandparent, ccolor, sibling_model, up_model), p) != 1 by {
-                unfold(ctx_node_is(
-                Context::Right(cid, grandparent, ccolor, sibling_model, up_model), p));
-                normalize() using { not(p == cid); }
-            }
-            contradiction(ctx_node_is(
-            Context::Right(cid, grandparent, ccolor, sibling_model, up_model), p) == 1);
-        }
-    }
+    ensures p == cid by auto;
 }
 
 theorem ctx_reroot_top_fixed(p: struct rb_node*) {
@@ -608,17 +582,7 @@ color: Color, left: RbTree, right: RbTree) {
 theorem ctx_node_is_top_null(p: struct rb_node*) {
     requires ctx_node_is(Context::Top, p) == 1;
 
-    ensures p == 0 by {
-        if p == 0 {
-            assumption();
-        } else {
-            have ctx_node_is(Context::Top, p) != 1 by {
-                unfold(ctx_node_is(Context::Top, p));
-                normalize() using { not(p == 0); }
-            }
-            contradiction(ctx_node_is(Context::Top, p) == 1);
-        }
-    }
+    ensures p == 0 by auto;
 }
 
 tactic refold_to_root(focus: struct rb_node*, root: struct rb_root*) {

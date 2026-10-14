@@ -1234,18 +1234,18 @@ fn flattened_aggregate_claims_resolve_to_their_written_clause() {
         .find(|block| block.signature().name() == "write_inner")
         .unwrap();
     let produced = (0..write_inner.ensures().len())
-        .filter(|index| write_inner.ensure_claim_label(*index) == "write_inner.produces_0")
+        .filter(|index| write_inner.ensure_claim_label(*index) == "write_inner.owns_0")
         .count();
     assert!(produced >= 2, "the member should flatten to several claims");
-    assert_eq!(write_inner.ensure_claim_label(0), "write_inner.ensures_0");
+    assert_eq!(write_inner.ensure_claim_label(0), "write_inner.owns_0");
     let sites = expansion::c0_smart_tactic_source_sites(&click_source, &c_sources).unwrap();
     let written = click_source
-        .find("produces packet->inner by auto;")
+        .find("owns packet->inner by auto;")
         .expect("the fixture states the aggregate clause");
     let written = expansion::position_at_offset(&click_source, written);
     let produced_sites = sites
         .iter()
-        .filter(|site| site.claim_label == "write_inner.produces_0")
+        .filter(|site| site.claim_label == "write_inner.owns_0")
         .collect::<Vec<_>>();
     assert_eq!(
         produced_sites.len(),
@@ -1255,7 +1255,7 @@ fn flattened_aggregate_claims_resolve_to_their_written_clause() {
     let position = expansion::c0_tactic_source_position(
         &click_source,
         &c_sources,
-        "write_inner.produces_0",
+        "write_inner.owns_0",
         produced_sites[0].source_index,
     )
     .unwrap_or_else(|error| panic!("{}", error.message()));
@@ -3273,7 +3273,7 @@ fn program_entry_signed_resource_shadowing_expands() {
     let source = format!(
         r#"resource cell(p: int32*) {{ owns p[0..1]; }}
 verifying "main.c";
-int read_cell(int *p) {{ consumes cell(p); produces cell(p); ensures result == old(p[0]); }} {helper}
+int read_cell(int *p) {{ owns cell(p); ensures result == old(p[0]); }} {helper}
 int main() {{ ensures result == 7; }} {main}"#
     );
     let verified = verify_c0_sources(&source, &sources).unwrap();
@@ -3302,7 +3302,7 @@ fn program_entry_resource_bindings_expand_and_reverify() {
 resource pair(p: {click_type}*) {{ owns p[0..2]; }}
 verifying "main.c";
 {c_type} read_pair({c_type} *p) {{
-    requires viewable(p[0..2]); consumes pair(p); produces pair(p);
+    requires viewable(p[0..2]); owns pair(p);
     ensures result == old(p[0]) + old(p[1]);
 }} {helper_proof}
 int main() {{ ensures result == 16; }} {main_proof}
@@ -3321,8 +3321,7 @@ int main() {{ ensures result == 16; }} {main_proof}
         verify_c0_sources(&rewritten, &sources).unwrap();
         // Repeated folding may be idempotent; requiring the same exclusive
         // resource twice must still be rejected.
-        let duplicate =
-            click_source.replace("consumes pair(p);", "consumes pair(p); consumes pair(p);");
+        let duplicate = click_source.replace("owns pair(p);", "owns pair(p); owns pair(p);");
         assert!(verify_c0_sources(&duplicate, &sources).is_err());
         let mismatched = click_source.replace("pair(p: uint32*)", "pair(p: int32*)");
         assert!(verify_c0_sources(&mismatched, &sources).is_err());
@@ -3337,7 +3336,7 @@ fn composite_uint64_range_expansion_preserves_type() {
     let click_source = r#"resource pair(p: uint64*) { owns p[0..2]; }
 verifying "main.c";
 unsigned long read_pair(unsigned long *p) {
-    requires viewable(p[0..2]); consumes pair(p); produces pair(p);
+    requires viewable(p[0..2]); owns pair(p);
     ensures result == old(p[0]) + old(p[1]);
 } by { unfold(pair(p)); execute(); fold(pair(p)); simp(); }"#;
     let sources = [("main.c", c_source)];
@@ -3359,7 +3358,7 @@ fn program_entry_typed_dereference_snapshots_expand_and_reverify() {
         let click_source = format!(
             r#"verifying "main.c";
 {c_type} bump({c_type} *p) {{
-    requires viewable(p[0..1]); consumes p[0..1]; produces p[0..1];
+    requires viewable(p[0..1]); owns p[0..1];
     ensures *p == old(*p) + 1{suffix};
     ensures *p == p[0];
     ensures old(*p) == old(p[0]);
@@ -3512,8 +3511,7 @@ fn unsigned_narrowing_snapshot_expansion_reverifies() {
         verifying "take.c";
         unsigned int take(struct state *p) {
             requires viewable(p->value);
-            consumes p->value;
-            produces p->value;
+            owns p->value;
             ensures result == old((uint32)p->value);
             ensures p->value == old(p->value) + 1u64;
         } by { execute(); simp(); }
@@ -3728,8 +3726,7 @@ fn opaque_reallocation_execute_does_not_invent_an_identity_if() {
             verifying "replace_after_scoped_open.c";
 
             int32 replace_allocated_cell(struct cell_owner* owner) {
-                consumes allocated_cell(owner);
-                produces allocated_cell(owner);
+                owns allocated_cell(owner);
 
                 ensures result == 0 or result == 1;
                 ensures result == 0 implies owner->data == old(owner->data);
@@ -3741,8 +3738,7 @@ fn opaque_reallocation_execute_does_not_invent_an_identity_if() {
             }
 
             int32 replace_after_scoped_open(struct cell_owner* owner) {
-                consumes allocated_cell(owner);
-                produces allocated_cell(owner);
+                owns allocated_cell(owner);
 
                 ensures result == 0 or result == 1;
             } by {
@@ -4946,8 +4942,7 @@ fn post_execution_store_transport_expands_from_the_recorded_store_equation() {
         verifying "store_both.c";
 
         int32 store_both(int32 p[2]) {
-            consumes p[0..2];
-            produces p[0..2];
+            owns p[0..2];
             ensures p[0] == 7;
         } by {
             execute();
@@ -4989,8 +4984,7 @@ fn statement_snapshots_support_complete_loadability_propositions() {
             verifying "snapshot_loadable.c";
 
             int32 store_second_return_first(int32 p[2]) {
-                consumes p[0..2];
-                produces p[0..2];
+                owns p[0..2];
                 ensures result == p[0];
             } by {
                 step();
@@ -5027,8 +5021,7 @@ fn statement_snapshots_preserve_declared_resource_argument_types() {
             verifying "snapshot_resource.c";
 
             int32 preserve_owner(int32* owner) {
-                consumes owner_cell(owner);
-                produces owner_cell(owner);
+                owns owner_cell(owner);
                 ensures result == owner[0];
             } by {
                 unfold(owner_cell(owner));
@@ -10688,8 +10681,7 @@ fn branch_arms_retain_bare_fact_transports_on_proof() {
 
         int32 set_choice_return_first(int32 p[2], int32 flag) {
             requires first_is_seven(p);
-            consumes p[0..2];
-            produces p[0..2];
+            owns p[0..2];
             ensures result == 7;
         } by {
             unfold(first_is_seven);
@@ -13314,8 +13306,7 @@ fn smart_have_uses_transport_planned_at_the_mutation_boundary() {
 
             int32 set_second_return_first(int32 p[2]) {
                 requires first_is_seven(p);
-                consumes p[0..2];
-                produces p[0..2];
+                owns p[0..2];
             } by {
                 unfold(first_is_seven);
                 step();
@@ -13470,9 +13461,8 @@ fn source_expander_derives_separation_from_call_postconditions() {
                 requires 0 <= length;
                 requires ((uint32)length) <= 1073741823u32;
                 requires separate(memory(*owner), memory(data[0..length]));
-                consumes *owner;
+                owns *owner;
                 views data[0..length];
-                produces *owner;
                 ensures result == 0;
                 ensures owner->pos == 0;
                 ensures owner->len == length;
@@ -13492,11 +13482,9 @@ fn source_expander_derives_separation_from_call_postconditions() {
                 requires ((uint32)length) <= 1073741823u32;
                 requires separate(memory(*left), memory(data[0..length]));
                 requires separate(memory(*right), memory(data[0..length]));
-                consumes *left;
-                consumes *right;
+                owns *left;
+                owns *right;
                 views data[0..length];
-                produces *left;
-                produces *right;
                 ensures result == 0;
             } by {
                 execute_until(statement(2));

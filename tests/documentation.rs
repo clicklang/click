@@ -784,9 +784,22 @@ fn markdown_links(source: &str) -> Vec<String> {
     links
 }
 
+/// Every Click library module under `library/`, concatenated in path order.
+fn library_source() -> String {
+    let mut files = Vec::new();
+    files_with_extension(&root().join("library"), "click", &mut files);
+    files.sort();
+    assert!(!files.is_empty(), "no Click library modules");
+    files
+        .iter()
+        .map(|path| fs::read_to_string(path).expect("read library module"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[test]
 fn standard_library_inventory_is_bidirectional() {
-    let source = fs::read_to_string(root().join("stdlib/prelude.click")).expect("read prelude");
+    let source = library_source();
     let mut declarations = BTreeSet::new();
     for line in source.lines() {
         let line = line.trim_start();
@@ -816,7 +829,7 @@ fn standard_library_inventory_is_bidirectional() {
             declarations.insert(format!("extern.{name}"));
         }
     }
-    assert_eq!(declarations, inventory_ids("stdlib."));
+    assert_eq!(declarations, inventory_ids("library."));
 }
 
 #[test]
@@ -876,7 +889,7 @@ fn c0_surface_inventory_is_bidirectional() {
 
 #[test]
 fn standard_library_declarations_are_exact_source_includes() {
-    let source = fs::read_to_string(root().join("stdlib/prelude.click")).expect("read prelude");
+    let source = library_source();
     let reference = fs::read_to_string(root().join("docs/reference/library/index.md"))
         .expect("read library reference");
     let mut declaration = String::new();
@@ -908,7 +921,7 @@ fn standard_library_declarations_are_exact_source_includes() {
             declaration.clear();
         }
     }
-    assert!(declaration.is_empty(), "unterminated stdlib declaration");
+    assert!(declaration.is_empty(), "unterminated library declaration");
 }
 
 #[test]
@@ -916,7 +929,7 @@ fn every_standard_library_symbol_has_a_verified_use() {
     let fixture = fs::read_to_string(root().join("mdtests/stdlib_every_symbol.md"))
         .expect("read standard-library fixture");
     assert!(fixture.contains("```expect\npass\n```"));
-    for id in inventory_ids("stdlib.") {
+    for id in inventory_ids("library.") {
         let name = id
             .split_once('.')
             .map(|(_, name)| name)

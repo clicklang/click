@@ -23,8 +23,7 @@ mod fixed_state_proofs;
 mod language_context;
 mod proof_object;
 
-#[cfg(test)]
-pub(crate) use proof_object::without_implicit_auto;
+pub use proof_object::without_implicit_auto;
 #[cfg(test)]
 pub(in crate::surface) use proof_object::{
     count_checked_execution_interface_joins, count_checked_expanded_execution_ifs,
@@ -2124,9 +2123,9 @@ fn refuse_overlapping_returned_places(
 /// Only `And` is structurally safe to split: an atom in an `Or`, implication,
 /// negation, or quantifier is conditional and cannot become unconditional read
 /// authority.  Those propositions are retained as whole logical facts, while
-/// [`precondition_read_facts`] below recognizes only a standalone
-/// `CMemoryLoadable` proposition as a checked read view.  This keeps unrelated
-/// conjuncts from disappearing merely because one projected atom was removed.
+/// [`explicit_entry_loadability_facts`] below takes only an unconditional,
+/// conjunctive loadability requirement as a checked read view.  This keeps
+/// unrelated conjuncts from disappearing merely because one projected atom was removed.
 fn entry_pure_fact_without_unconditional_loadability(
     proposition: &Proposition,
 ) -> Option<Proposition> {

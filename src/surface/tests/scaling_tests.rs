@@ -50,10 +50,10 @@ fn execution_target_resource_scope_parsing_is_linear_in_selected_declarations() 
     let samples = [1, 8, 32, 128].map(|count| {
         let mut source = "resource Counter() { field revision: int32; }\n".to_string();
         for index in 0..count {
-            source.push_str(&format!("theorem lift{index}(callback: int32 (*)()) executes callback() {{ requires C{index}(callback); ensures C{index}(callback) as {{ cell: k }} by {{ step(C{index}(k)); simp(); }} }}\n"));
+            source.push_str(&format!("theorem lift{index}(callback: int32 (*)()) executes callback() {{ requires C{index}(callback); ensures C{index}(callback) as {{ cell: k }} by {{ step(C{index}, {{ cell: k }}); simp(); }} }}\n"));
         }
         for index in 0..count {
-            source.push_str(&format!("contract C{index}(cell: Counter()) for int32() {{ owns cell; ensures result == 0; }}\n"));
+            source.push_str(&format!("contract int32 C{index}() {{ owns cell: Counter(); ensures result == 0; }}\n"));
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::surface::parse(&source).expect("forward target proof scopes parse")
@@ -786,6 +786,58 @@ fn function_with_unrelated_facts(fact_count: usize, proof: &str) -> (String, Str
     (c_source, click_source)
 }
 
+/// `memcmp`'s byte-range precondition, which a call step's fast path leaves
+/// open, proved by the written `by` body `click expand` prints for it, beside
+/// `fact_count` unrelated facts about another parameter.
+fn call_with_unrelated_facts(fact_count: usize) -> (String, String) {
+    let c_source =
+        "int32 call_target(uint8 bytes[], int32 n) {\n    return memcmp(bytes, bytes, 2);\n}\n"
+            .to_string();
+    let mut click_source = String::from(
+        "verifying \"call_target.c\";\n\nint32 call_target(uint8 bytes[], int32 n) {\n    requires viewable(bytes[0..2]);\n",
+    );
+    for index in 0..fact_count {
+        click_source.push_str(&format!("    requires n != {};\n", index + 100));
+    }
+    click_source.push_str(
+        "    ensures 1 == 1 by {
+        step() by {
+            have defined(bytes[0]) and defined(bytes[0]) by {
+                both {
+                    transport(at(function.entry, viewable(bytes[0..2])), defined(bytes[0])) using {
+                        at(function.entry, viewable(bytes[0..2]));
+                    }
+                } and {
+                    transport(at(function.entry, viewable(bytes[0..2])), defined(bytes[0])) using {
+                        at(function.entry, viewable(bytes[0..2]));
+                    }
+                }
+            }
+            have defined(bytes[1]) and defined(bytes[1]) by {
+                both {
+                    transport(at(function.entry, viewable(bytes[0..2])), defined(bytes[1])) using {
+                        at(function.entry, viewable(bytes[0..2]));
+                    }
+                } and {
+                    transport(at(function.entry, viewable(bytes[0..2])), defined(bytes[1])) using {
+                        at(function.entry, viewable(bytes[0..2]));
+                    }
+                }
+            }
+            enumerate();
+        }
+        step();
+        have 1 == 1 by {
+            normalize();
+        }
+        assumption();
+    }
+}
+",
+    );
+    (c_source, click_source)
+}
+
 /// Distinct surface forms of one kernel fact, each of constant size, so the
 /// source grows linearly with `form_count`. Form `k` wraps `target` in a
 /// fixed number of `+ 0` additions and the bits of `k` choose which side each
@@ -1117,6 +1169,35 @@ fn explicit_step_scales_near_linearly_with_unrelated_ambient_facts() {
         .collect::<Vec<_>>();
 
     assert_near_linear_scaling("explicit step with unrelated facts", &samples);
+}
+
+/// A call step whose fast path leaves the callee's precondition open, proved
+/// by a written `by` body of simple tactics and checked with the implicit
+/// `auto` off, as an expanded proof is. Unrelated context facts mention the
+/// same variable, so a search over the context would visit every one.
+#[test]
+#[ignore = "nightly: 1.0s alone (2026-10-14)"]
+fn step_with_written_obligation_proof_scales_near_linearly_with_unrelated_ambient_facts() {
+    let samples = [4, 8, 16, 32]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = call_with_unrelated_facts(size);
+            let (verified, sample) = scaling_sample(size, || {
+                crate::surface::proof::without_implicit_auto(|| {
+                    verify_c0_sources(&click_source, &[("call_target.c", c_source.as_str())])
+                })
+            });
+            verified.unwrap_or_else(|error| {
+                panic!(
+                    "size {size} written-obligation step scaling fixture failed: {}",
+                    error.message()
+                )
+            });
+            sample
+        })
+        .collect::<Vec<_>>();
+
+    assert_near_linear_scaling("step with a written obligation proof", &samples);
 }
 
 #[test]
@@ -7835,4 +7916,114 @@ fn symbolic_index_store_work_is_flat_across_recorded_order_chains() {
     eprintln!("ordered store peaks: {peaks:?}");
     assert!(peaks.iter().all(|work| *work <= peaks[0] * 2), "{peaks:?}");
     assert_near_linear_scaling("symbolic ordered stores", &totals);
+}
+
+/// Owns seed every input field before the first store. This catches both the
+/// initial index cost leaking into a step and repeated visits to other objects.
+#[test]
+#[ignore = "nightly: 11s for six full-source proofs including calls"]
+fn owned_parameter_field_store_work_is_flat() {
+    let mut peaks = Vec::new();
+    for linked in [false, true] {
+        for size in [4usize, 16, 64] {
+            let count = size + usize::from(linked);
+            let kind = if linked { "node" } else { "box" };
+            let layout = if linked {
+                "struct node { struct node* next; int32 v; };"
+            } else {
+                "struct box { int32 v; };"
+            };
+            let parameters = (0..count)
+                .map(|i| format!(", struct {kind}* p{i}"))
+                .collect::<String>();
+            let owns = (0..count)
+                .map(|i| format!("owns *p{i};\n"))
+                .collect::<String>();
+            let stores = (0..size)
+                .map(|i| {
+                    if linked {
+                        format!("p{i}->next = p{};\n", i + 1)
+                    } else {
+                        format!("p{i}->v = {i};\n")
+                    }
+                })
+                .collect::<String>();
+            let (last_store, read, expected) = if linked {
+                (
+                    format!("p{size}->v = 9;\n"),
+                    format!("p0{}->v", "->next".repeat(size)),
+                    9,
+                )
+            } else {
+                (
+                    String::new(),
+                    (0..size)
+                        .map(|i| format!("p{i}->v"))
+                        .collect::<Vec<_>>()
+                        .join(" + "),
+                    (size * (size - 1) / 2) as i32,
+                )
+            };
+            let signature = format!("int32 caller(int32* flags, int32* data, int32 k{parameters})");
+            let c = format!(
+                "{layout}
+void touch(int32* flags, int32* data, int32 k) {{ return; }}
+{signature} {{ int32 total; {stores}{last_store}
+touch(flags, data, k); total = {read}; return total; }}"
+            );
+            let source = format!(
+                "verifying \"fields.c\";
+void touch(int32* flags, int32* data, int32 k) {{
+owns flags[0..k]; owns data[0..k];
+}} by {{ execute(); simp(); }}
+{signature} {{ owns flags[0..k]; owns data[0..k]; {owns}
+ensures result == {expected};
+}} by {{ {} simp(); }}",
+                "step();\n".repeat(size + usize::from(linked) + 4)
+            );
+            let ((result, samples), events) = crate::instrumentation::collect(|| {
+                crate::instrumentation::collect_tactic_work(|| {
+                    verify_c0_sources(&source, &[("fields.c", c.as_str())])
+                })
+            });
+            result.unwrap_or_else(|error| {
+                panic!("linked={linked}, size={size}: {}", error.message())
+            });
+            let steps: Vec<_> = samples
+                .iter()
+                .filter(|sample| sample.tactic.tactic_name == "step")
+                .skip(1)
+                .take(size + usize::from(linked))
+                .map(|sample| sample.work)
+                .collect();
+            assert_eq!(steps.len(), size + usize::from(linked));
+            let mut micros: Vec<_> = events
+                .iter()
+                .filter_map(|event| match event {
+                    crate::instrumentation::VerificationEvent::TacticFinished {
+                        tactic,
+                        elapsed,
+                        ..
+                    } if tactic.tactic_name == "step" => Some(elapsed.as_micros()),
+                    _ => None,
+                })
+                .skip(1)
+                .take(size + usize::from(linked))
+                .collect();
+            micros.sort_unstable();
+            eprintln!(
+                "field stores linked={linked} N={size}: median {}us, max {}us",
+                micros[micros.len() / 2],
+                micros.last().unwrap()
+            );
+            peaks.push((linked, size, *steps.iter().max().unwrap()));
+        }
+    }
+    eprintln!("owned parameter field stores: {peaks:?}");
+    for family in peaks.chunks(3) {
+        assert!(
+            family.iter().all(|(_, _, work)| *work <= family[0].2 + 32),
+            "a field store visited unrelated owned objects: {peaks:?}"
+        );
+    }
 }

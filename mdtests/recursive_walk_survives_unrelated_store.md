@@ -104,8 +104,7 @@ theorem walk_frame(a: int32[], b: int32[], n: int32, from: int32, fuel: Nat) {
 
 void mark(int32 *next, int32 *visited) {
     views next[0..1];
-    consumes visited[0..1];
-    produces visited[0..1];
+    owns visited[0..1];
     requires separate(memory(next[0..1]), memory(visited[0..1]));
     requires next[0] == 0;
     requires walk(next, 0, Nat::Succ(Nat::Zero)) == 0;

@@ -10,8 +10,7 @@ resource cell(p: int32*) {
 }
 
 int32 read_cell(int32* p) {
-    consumes cell(p);
-    produces cell(p);
+    owns cell(p);
 }
 ```
 

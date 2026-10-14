@@ -21,9 +21,8 @@ predicate first_is_seven(p: int32[]) {
 
 int32 set_second_return_first(int32 p[2]) {
     requires first_is_seven(p);
-    consumes p[0..2];
+    owns p[0..2];
 
-    produces p[0..2];
     ensures result == 7;
 } by {
     unfold(first_is_seven);

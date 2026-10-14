@@ -24,10 +24,7 @@ resource arena_cells(data: int32*, occupied: int32*, capacity: int32) {
 resource arena_state(arena: struct arena*) {
     field live: int32;
     field capacity: int32;
-    owns arena->data;
-    owns arena->occupied;
-    owns arena->capacity;
-    owns arena->live_regions;
+    owns *arena;
     owns arena_initialized_storage(
         arena->data,
         arena->occupied,
@@ -330,7 +327,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
     }
     let outcome = fold(arena_init_outcome(arena), {
         model: ArenaInitOutcome::Success(0, capacity)
-    }, { state: state });
+    });
     simp();
 }
 
@@ -719,10 +716,6 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         }
                         assumption();
                     } else {
-                        have i == at(iteration, i) + 1 by {
-                            normalize();
-                        }
-                        have k < at(iteration, i) + 1 by auto;
                         have k <= at(iteration, i) by {
                             apply(int32_less_than_increment_implies_less_equal(
                                 k,
@@ -749,12 +742,6 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 }
                 have i == at(iteration, i) + 1 by {
                     normalize();
-                }
-                have lo <= at(iteration, i) by {
-                    simp() using {
-                        lo <= hi;
-                        hi == at(iteration, i);
-                    }
                 }
                 have at(iteration, i) < at(iteration, i) + 1 by {
                     apply(int32_increment_strictly_increases(
@@ -1748,7 +1735,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
     let st = fold(arena_state(arena), { live: n + 1, capacity: arena->capacity });
     let outcome = fold(arena_alloc_result(region), {
         model: ArenaAllocOutcome::Success(start, end)
-    }, { allocated: allocated });
+    });
     step();
     have result == 1 by {
         normalize();

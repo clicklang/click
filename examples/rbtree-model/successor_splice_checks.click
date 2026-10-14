@@ -99,11 +99,6 @@ theorem deep_red_right_subtree(erased: struct rb_node*, successor: struct rb_nod
         apply(splice_black_leaf_facts(l, erased));
         apply(splice_black_leaf_facts(successor, r));
         apply(splice_black_leaf_facts(far, r));
-        have black_height(splice_black_leaf(successor, r)) == black_height(splice_black_leaf(far, r)) by {
-            rewrite(black_height(splice_black_leaf(successor, r)) == Nat::Succ(Nat::Zero));
-            rewrite(black_height(splice_black_leaf(far, r)) == Nat::Succ(Nat::Zero));
-            normalize();
-        }
         apply(is_rb_red_node(r, erased, splice_black_leaf(successor, r), splice_black_leaf(far, r)));
         apply(rb_node_is_reflexive(erased));
         apply(rb_parent_consistent_node(r, erased, Color::Red,

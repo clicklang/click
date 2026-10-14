@@ -10,13 +10,12 @@ authorized resource slot(pool: int32*, p: int32*) { owns cell(pool, p); }
 verifying "contained_bad.c";
 void issue(int32* pool, int32* p) {
     owns authority(slot(pool, _));
-    consumes cell(pool, p);
+    owns cell(pool, p);
     requires defined(count(slot(pool, _)) + 1);
     produces slot(pool, p);
-    produces cell(pool, p);
 } by { fold(slot(pool, p)); execute(); simp(); }
 ```
 
 ```expect
-fail: Requires produces cell(pool, p)
+fail: missing resource fact `owns cell(pool, p)`
 ```

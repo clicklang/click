@@ -88,13 +88,13 @@ function shape_right(tree: Shape) -> Shape {
     }
 }
 
-contract AugmentRotate(t: tree_at(new)) for void(struct node* old, struct node* new) {
+contract void AugmentRotate(struct node* old, struct node* new) {
     requires old != 0;
     requires new != 0;
     requires old != new;
     requires 0 <= old->augmented;
     requires old->augmented < 1000;
-    owns t;
+    owns t: tree_at(new);
     owns old->augmented;
     owns new->augmented;
     ensures t.model == old(t.model);
@@ -169,7 +169,7 @@ struct node* rotate_left(
                 unfold(shape_right(Shape::Node(pivot_node, middle_model, far_model)));
                 normalize();
             }
-            step(AugmentRotate(rotated));
+            step(AugmentRotate, { t: rotated });
             have rotated.model == Shape::Node(old(node->right),
                 Shape::Node(node, old(l.model), shape_left(old(r.model))),
                 shape_right(old(r.model))) by {

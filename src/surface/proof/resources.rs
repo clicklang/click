@@ -1,7 +1,7 @@
 use super::*;
 use crate::kernel::ExecutionFactSource;
 use crate::kernel::ResourceInstance;
-use crate::surface::planning::proposition_search::PropositionSearch;
+use crate::surface::planning::proposition_search::proves_by_tactic_search;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ResourceBodyAccess {
@@ -1647,13 +1647,17 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             .owned_quantity_term()
             .expect("an explicitly quantified observation lowers to owned authority");
         let positive = quantity.as_const().is_some_and(|value| value > 0)
-            || assumptions.proves(&Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedGreaterThan(
-                    Box::new(quantity.clone()),
-                    Box::new(Bitvector32Term::Constant(0)),
+            || proves_by_tactic_search(
+                &assumptions,
+                &Proposition::ConditionIs(
+                    ConditionTerm::Bitvector32SignedGreaterThan(
+                        Box::new(quantity.clone()),
+                        Box::new(Bitvector32Term::Constant(0)),
+                    ),
+                    true,
                 ),
-                true,
-            ));
+                "observe quantity positive",
+            );
         if !positive {
             // The count lower bound remains valid for zero or an undecided
             // nonnegative quantity. The population body, however, grants
@@ -2224,7 +2228,7 @@ fn try_select_composite_resource_body(
             }
             _ => false,
         },
-        _ => assumptions.proves_exact(proposition) || assumptions.proves(proposition),
+        _ => proves_by_tactic_search(assumptions, proposition, "resource body selection"),
     };
     if proves_condition(&lowered) {
         return Ok(Some(true));
@@ -3087,11 +3091,16 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     if access == ResourceBodyAccess::Finalize {
         let quantity = requested_quantity;
         let count = population_count;
+        // A constant quantity is decided by reading it, as `fold` reads its
+        // own; only a symbolic one needs a fact about it.
+        let final_by_constant = quantity.as_const() == Some(1);
         let final_unit = Proposition::ConditionIs(
             ConditionTerm::Bitvector32Equal(Box::new(count), Box::new(quantity)),
             true,
         );
-        if !assumptions.proves(&final_unit) {
+        if !final_by_constant
+            && !proves_by_tactic_search(&assumptions, &final_unit, "unfold population final unit")
+        {
             return Err(ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `unfold({})` Requires count({}) == {}",
                 describe_resource_clause(resource),
@@ -3674,26 +3683,34 @@ fn fold_composite_resources_on_outcome_with_facts(
             };
             let assumptions = pure_facts.assumptions();
             let quantity_is_zero = quantity.as_const() == Some(0)
-                || assumptions.proves(&Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(quantity.clone()),
-                        Box::new(Bitvector32Term::Constant(0)),
+                || proves_by_tactic_search(
+                    assumptions,
+                    &Proposition::ConditionIs(
+                        ConditionTerm::Bitvector32Equal(
+                            Box::new(quantity.clone()),
+                            Box::new(Bitvector32Term::Constant(0)),
+                        ),
+                        true,
                     ),
-                    true,
-                ));
+                    "fold quantity zero",
+                );
             // A resource quantity is a signed `int32`, and `as_const` answers
             // `u32`, so `-1` read here as `4294967295` was both "positive"
             // and the thing that made the body active. The symbolic arm
             // beside it always asked the signed question; reading the
             // constant signed is what makes the two agree.
             let quantity_is_positive = quantity.as_const().is_some_and(|value| (value as i32) > 0)
-                || assumptions.proves(&Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedGreaterThan(
-                        Box::new(quantity.clone()),
-                        Box::new(Bitvector32Term::Constant(0)),
+                || proves_by_tactic_search(
+                    assumptions,
+                    &Proposition::ConditionIs(
+                        ConditionTerm::Bitvector32SignedGreaterThan(
+                            Box::new(quantity.clone()),
+                            Box::new(Bitvector32Term::Constant(0)),
+                        ),
+                        true,
                     ),
-                    true,
-                ));
+                    "fold quantity positive",
+                );
             if !quantity_is_zero && !quantity_is_positive {
                 return Err(ClickError::new(format!(
                     "`{claim_label}` path {path_index}: `fold({})` requires its quantity to be proved zero or positive",
@@ -3928,7 +3945,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 pure_facts.exact_available_across_effects(&required, execution_pure_facts);
             if !exactly_available
                 && !matches!(normalize_proposition(&required), SimpProposition::True)
-                && !body_assumptions.proves(&required)
+                && !proves_by_tactic_search(&body_assumptions, &required, "fold body fact")
             {
                 // `proves` returns false when the active budget runs out
                 // mid-derivation. Reporting that truncation as a missing fact

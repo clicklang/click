@@ -17,5 +17,5 @@ int32 symn(int32 p[], int32 n) {
 ```
 
 ```expect
-fail: kernel lowering produced 0 paths
+fail: kernel lowering produced no path: a memory range is too wide to be a 32-bit byte extent
 ```

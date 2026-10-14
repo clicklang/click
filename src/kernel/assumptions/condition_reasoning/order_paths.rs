@@ -3165,7 +3165,8 @@ mod slice_index_tests {
         let lt = ConditionTerm::uint64_less_than;
         let le = ConditionTerm::uint64_less_equal;
         assert_eq!(unsigned.decide(&lt(a.clone(), u(10))), Some(true));
-        assert_eq!(unsigned.decide(&le(a.clone(), u(9))), None);
+        // `a < b <= 10` entails `a <= 9`, which the difference graph reads.
+        assert_eq!(unsigned.decide(&le(a.clone(), u(9))), Some(true));
         assert_eq!(unsigned.decide(&lt(a.clone(), u(u64::MAX))), Some(true));
         assert_eq!(unsigned.decide(&lt(u(5), b.clone())), Some(true));
         assert_eq!(unsigned.decide(&lt(u(4), a.clone())), Some(true));

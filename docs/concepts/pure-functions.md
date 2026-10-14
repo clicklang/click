@@ -75,7 +75,7 @@ Use functions for reusable computed values. Use predicates for reusable facts.
 
 ## Array refs
 
-When a pure Click function takes `int32 p[]` or `uint8 p[]`, the parameter is a
+When a pure Click function takes `p: int32[]` or `p: uint8[]`, the parameter is a
 specification-level array ref. It contains:
 
 - a memory snapshot,

@@ -270,7 +270,11 @@ through two calls to a pointer-taking helper without resetting the state.
   them compare after only a warning in GCC and Clang and so compare in Click
   (`mdtests/long_and_long_long_pointers_compare_after_a_warning.md`), and
   declarations, function pointer types, and library prototypes that differ only
-  in rank conflict. A Click `int64` or `uint64` in a sidecar specifies either.
+  in rank conflict. A function head restates its C declaration and keeps the
+  rank, so a `long long` function's head writes `long long`
+  (`mdtests/a_function_head_keeps_the_c_long_long_rank.md`); in a head,
+  `int64` and `uint64` are `long` and `unsigned long`. A Click `int64` or
+  `uint64` in a specification position specifies either.
   See `mdtests/long_and_long_long_values_convert_implicitly.md` and
   `mdtests/a_long_pointer_does_not_initialize_a_long_long_pointer.md`.
 - C `_Bool` and the modeled `stdbool.h` spelling `bool`; both use one-byte
@@ -1552,47 +1556,51 @@ are supported.
 
 ## Named function contracts
 
-Named contracts may explicitly separate proof parameters from the C signature:
+`contract` before a C function declaration names an interface instead of
+declaring a function. The declaration's name is the contract's name, and its
+signature is the function type the interface applies to. A named contract has
+no proof, `decreases`, or `constructs` clause.
+
+A named contract declares a resource handle with a named `owns` or `consumes`
+clause, as a verified function does:
 
 <!-- verified-example: mdtests/contract_resource_parameters.md -->
 ```click
-contract Read(cell: marked_cell(p)) for int32(int32* p) {
-    owns cell;
+contract int32 Read(int32* p) {
+    owns cell: marked_cell(p);
     ensures cell.revision == old(cell.revision);
 }
 ```
 
-The resource is declared in the linked fixture. The first parameter list
-declares proof-side resource handles. The signature after `for` describes the
-C call and supplies `p`. `owns cell` requires and returns ownership; the
-parameter declaration alone grants none. Resource bindings in this form must
-appear in the explicit parameter list, not be introduced implicitly in the
-body. Default arguments are not supported.
+The resource is declared in the linked fixture. `owns cell: marked_cell(p);`
+declares the handle `cell` and requires and returns ownership of the instance
+a call binds to it. In declaration order, the handles are the contract's proof
+parameters.
 
-An application supplies positional resource names, as in
-`step(Read(first))`. The caller must bind `first` through named ownership.
-Missing arguments, wrong resource families, and duplicate exclusive arguments
-are rejected. Explicit callback applications transport opaque instances and
-check their resource arguments against the actual C arguments. Returned
-instances keep their identities but get fresh symbolic fields; only explicit
-guarantees relate those fields to the call-entry values. Unselected instances
-remain framed. Concrete function refinement for these parameterized contracts
-and ordinary inline-call instance transport are not supported.
+A step binds each handle to an instance by name, as a call step binds a
+callee's binders: `step(Read, { cell: first })`. The caller must bind `first`
+through named ownership. A missing, unknown, or repeated handle, a wrong
+resource family, and one exclusive instance for two handles are rejected.
+Explicit callback applications transport opaque instances and check their
+resource arguments against the actual C arguments. Returned instances keep
+their identities but get fresh symbolic fields; only explicit guarantees
+relate those fields to the call-entry values. Unselected instances remain
+framed. Concrete function refinement for contracts with handles and ordinary
+inline-call instance transport are not supported.
 
-Empty applications are supported end to end:
+A contract without handles is selected by its name alone:
 
 <!-- verified-example: mdtests/contract_explicit_empty_application.md -->
 ```click
-contract Identity() for int32(int32 x) {
+contract int32 Identity(int32 x) {
     ensures result == x;
 }
 ```
 
-Use `step(Identity())` to select that contract. The C argument `x` comes from
-the C call, not from the proof application. The older C-signature-only
-declaration and `step(Identity)` selection syntax remain supported for older
-contracts; contracts declared with the new parameter-list syntax require an
-explicit application when selected by name.
+Use `step(Identity)` to select that contract. The C argument `x` comes from
+the C call, not from the proof application. The retired forms
+`contract Name(handle: R(...)) for T(...)`, `step(Name())`, and
+`step(Name(instance))` are refused with their replacements.
 
 A top-level `contract` block defines a reusable behavioral interface without
 declaring a concrete C function:
@@ -1662,7 +1670,7 @@ must imply the named postconditions. A contract like `Comparator`, whose
 clauses read no memory, needs nothing further. The proposition classes
 formation admits and excludes, the extra resource conditions a memory-reading
 clause carries, the exactness rule it follows, and the pairing it needs for a
-contract with resource proof parameters are in
+contract with resource handles are in
 [Automatic formation at `&f`](index.md#automatic-formation-at-f).
 
 A refinement outside that route is stated as a closed pure theorem, whose proof

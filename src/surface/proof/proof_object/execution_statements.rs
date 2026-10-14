@@ -1005,21 +1005,72 @@ impl<'a> Proof<'a> {
                 .contract_definition(name)
                 .ok_or_else(|| self.step_error(format!("unknown call contract `{name}`")))?;
             let parameters = definition.proof_parameters.as_deref().unwrap_or(&[]);
-            if definition.proof_parameters.is_some() && application.arguments.is_none() {
-                return Err(self.step_error(format!(
-                    "contract `{name}` requires explicit application syntax: `{name}(...)`"
-                )));
+            let handle_names = || {
+                parameters
+                    .iter()
+                    .map(|parameter| match parameter {
+                        ResourceClause::Named { binding, .. } => format!("`{}`", binding.name),
+                        _ => unreachable!(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            // Entries name the contract's handles; each handle takes exactly
+            // one entry, matched by name in one lookup per entry.
+            let mut by_handle = BTreeMap::new();
+            for argument in &application.arguments {
+                crate::instrumentation::record_deterministic_work(1);
+                if !parameters.iter().any(|parameter| {
+                    matches!(parameter, ResourceClause::Named { binding, .. }
+                        if binding.name == argument.handle)
+                }) {
+                    return Err(self.step_error(if parameters.is_empty() {
+                        format!(
+                            "contract `{name}` declares no resource handles; write `step({name})`"
+                        )
+                    } else {
+                        format!(
+                            "contract `{name}` has no resource handle `{}`; its handles are {}",
+                            argument.handle,
+                            handle_names()
+                        )
+                    }));
+                }
+                if by_handle
+                    .insert(argument.handle.as_str(), argument)
+                    .is_some()
+                {
+                    return Err(self.step_error(format!(
+                        "contract `{name}` handle `{}` is bound twice",
+                        argument.handle
+                    )));
+                }
             }
-            let arguments = application.arguments.as_deref().unwrap_or(&[]);
-            if arguments.len() != parameters.len() {
-                return Err(self.step_error(format!(
-                    "contract `{name}` expects {} proof argument(s), got {}",
-                    parameters.len(),
-                    arguments.len()
-                )));
+            let mut arguments = Vec::with_capacity(parameters.len());
+            for parameter in parameters {
+                let ResourceClause::Named { binding, .. } = parameter else {
+                    unreachable!()
+                };
+                let Some(argument) = by_handle.get(binding.name.as_str()) else {
+                    return Err(self.step_error(format!(
+                        "contract `{name}` declares resource handles; write \
+                         `step({name}, {{ {} }})` with one instance for each of {}",
+                        parameters
+                            .iter()
+                            .map(|parameter| match parameter {
+                                ResourceClause::Named { binding, .. } =>
+                                    format!("{}: ...", binding.name),
+                                _ => unreachable!(),
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                        handle_names()
+                    )));
+                };
+                arguments.push(*argument);
             }
             let mut identities = BTreeSet::new();
-            for (parameter, argument) in parameters.iter().zip(arguments) {
+            for (parameter, argument) in parameters.iter().zip(&arguments) {
                 let ResourceClause::Named { binding, resource } = parameter else {
                     unreachable!()
                 };
@@ -1028,13 +1079,13 @@ impl<'a> Proof<'a> {
                 };
                 if argument.resource_name != *expected {
                     return Err(self.step_error(format!(
-                        "contract `{name}` parameter `{}` expects resource `{expected}`, got `{}`",
+                        "contract `{name}` handle `{}` expects resource `{expected}`, got `{}`",
                         binding.name, argument.resource_name
                     )));
                 }
                 if !identities.insert(argument.identity) {
                     return Err(self.step_error(
-                        "an exclusive instance cannot supply two contract proof parameters",
+                        "an exclusive instance cannot supply two contract resource handles",
                     ));
                 }
             }
@@ -1499,10 +1550,7 @@ impl<'a> Proof<'a> {
                     let written = crate::surface::printing::source_click_proposition(proposition);
                     let lowered = self.lower_surface_goal(proposition, "`requires` entry")?;
                     let Some(slot) = open.iter().position(|requirement| {
-                        crate::surface::proof::smart_closures::lowered_states_requirement(
-                            &lowered,
-                            requirement,
-                        )
+                        self.written_states_requirement(&lowered, requirement)
                     }) else {
                         let open_now = if open.is_empty() {
                             "it leaves none open".to_string()
@@ -1613,6 +1661,7 @@ impl<'a> Proof<'a> {
                 return Ok(None);
             };
             let surface = spelling.surface.clone();
+            current.debug_assert_spelling_relowers(requirement, &surface);
             let checkpoint = current.checkpoint();
             let Ok(have) = current.begin_have(surface.clone()) else {
                 return Ok(None);
@@ -1632,6 +1681,28 @@ impl<'a> Proof<'a> {
             });
         }
         Ok(Some((current, entries)))
+    }
+
+    /// Every requirement's Surface spelling must lower back to that
+    /// requirement, so that the expanded `requires` entry matches it.
+    fn debug_assert_spelling_relowers(
+        &self,
+        requirement: &UnresolvedRequirement,
+        surface: &ClickProposition,
+    ) {
+        if !cfg!(debug_assertions) {
+            return;
+        }
+        let lowered = self.lower_surface_goal(surface, "requirement spelling");
+        debug_assert!(
+            lowered
+                .as_ref()
+                .is_ok_and(|lowered| self.written_states_requirement(lowered, requirement)),
+            "the spelling `{}` of requirement {:?} lowers to {:?}",
+            crate::surface::printing::source_click_proposition(surface),
+            requirement.proposition,
+            lowered.map_err(|error| error.to_string())
+        );
     }
 
     /// This Proof advanced by `stepped`'s checked step, recorded as one
@@ -2637,9 +2708,10 @@ fn implicit_auto_disabled() -> bool {
 /// Runs `operation` with the implicit `auto` off: a step gets only its fast
 /// path and its written obligation proofs, with no search, so an obligation
 /// nothing written proves is refused with its structured requirement. This
-/// is how an expanded proof is checked cold (`issues/simplify-step.md`).
-#[cfg(test)]
-pub(crate) fn without_implicit_auto<R>(operation: impl FnOnce() -> R) -> R {
+/// is how an expanded proof is checked cold (`issues/simplify-step.md`):
+/// `click expand --claim` and `click audit`'s whole-claim expansion check their
+/// output this way.
+pub fn without_implicit_auto<R>(operation: impl FnOnce() -> R) -> R {
     struct Restore(bool);
     impl Drop for Restore {
         fn drop(&mut self) {

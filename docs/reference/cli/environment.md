@@ -1,8 +1,33 @@
 # Environment variables
 
 Click's ordinary user workflow does not require environment variables. The
-variables on this page enable diagnostics, fixture selection, or controlled
-contributor experiments.
+variables on this page configure the version launcher, enable diagnostics,
+select fixtures, or control contributor experiments.
+
+## Launcher variables
+
+These variables configure the `click` launcher and the
+[version manager commands](versions.md).
+
+### `CLICK_HOME`
+
+Set `CLICK_HOME=DIR` to keep the launcher, installed versions, and the global
+default under `DIR`. When it is unset or empty, Click uses `.click` under
+`HOME`, or under `USERPROFILE` when `HOME` is unset. The installers read the
+same variable.
+
+### `CLICK_NO_VERSION_DISPATCH`
+
+Set `CLICK_NO_VERSION_DISPATCH` to any value to make `click` run the command
+itself instead of dispatching to a pinned or default version. The launcher
+sets it to `1` for the version it dispatches to.
+
+### `CLICK_RELEASE_REPOSITORY`
+
+Set `CLICK_RELEASE_REPOSITORY=OWNER/NAME` to make `click install` download
+releases, and resolve `latest`, from that GitHub repository instead of
+`clicklang/click`. Each part may contain ASCII letters, digits, `-`, `_`, and
+`.`; any other value fails.
 
 ## Diagnostic variables
 
@@ -48,6 +73,11 @@ write the deterministic work every tactic charged, one tab-separated file per
 fixture, into `DIR`. `scripts/measure-tactic-work.sh` sets it together with
 `CLICK_DISABLE_TACTIC_BUDGETS=1` to calibrate the tactic work budgets; see
 [Testing Click](../../internals/testing.md).
+
+`scripts/check.sh` and the fixture harnesses also read `CLICK_NIGHTLY`,
+`MDTEST_PARTITION`, `EXAMPLE_PARTITION`, `CLICK_REQUIRE_FRONTENDS`, and
+`CLICK_CPP_EXPORTER`. [Testing Click](../../internals/testing.md) documents
+them with the gate they configure.
 
 ## Contributor A/B controls
 

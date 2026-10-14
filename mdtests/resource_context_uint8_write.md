@@ -14,9 +14,8 @@ uint8 write_second_byte(uint8 p[]) {
 verifying "write_second_byte.c";
 
 uint8 write_second_byte(uint8 p[]) {
-    consumes p[1..2];
+    owns p[1..2] by auto;
 
-    produces p[1..2] by auto;
 }
 ```
 

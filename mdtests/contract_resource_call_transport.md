@@ -14,8 +14,8 @@ verifying "invoke.c";
 spec enum Mark { Clear, Set }
 resource marker() { field model: Mark; field revision: int32; }
 
-contract Touch(cell: marker()) for int32() {
-    owns cell;
+contract int32 Touch() {
+    owns cell: marker();
     ensures cell.model == old(cell.model);
     ensures cell.revision == 1;
     ensures result == 0;
@@ -31,7 +31,7 @@ int32 invoke(int32 (*callback)()) {
     ensures second.revision == old(second.revision);
     ensures result == 0;
 } by {
-    step(Touch(first));
+    step(Touch, { cell: first });
     execute();
     simp();
 }

@@ -239,17 +239,20 @@ whole context under every policy but `Exact`. Count it before claiming a
 step decides conditions without search; its fast path is
 [difference-logic.md](difference-logic.md).
 
-### 4. Check expansion cold
+### 4. Check expansion cold (landed)
 
-`click expand` already checks its output before writing it. Run that check,
-and `click audit`'s, with the implicit `auto` off, so every expansion is
-proven self-contained when it is produced. There is no user-facing
-cold-check option; the check belongs to expansion. Add deterministic scaling
-regressions showing step cost does not grow with unrelated context facts.
+`click expand --claim` checks its output with the implicit `auto` off, and
+`click audit` checks a claim's whole expansion the same way when it
+verifies the rewritten proof unit afresh: nothing smart remains there, so
+each such expansion is shown self-contained when it is produced. A single
+site's expansion is checked as before, since the claim's other steps and
+smart tactics still use the implicit `auto`. There is no user-facing
+cold-check option. `step_with_written_obligation_proof_scales_near_linearly_with_unrelated_ambient_facts`
+(nightly) checks, cold, a call step whose open obligation a written `by`
+body proves, beside a growing set of unrelated facts.
 
-Implicit `auto` has its own budget, and profiling attributes its work to
-`auto`, not to the simple tactic, so a slow `auto` is not reported as a slow
-step.
+Implicit `auto` has its own budget, and profiling attributing its work to
+`auto` rather than the simple tactic remains to do.
 
 ### 5. Other simple tactics
 
@@ -257,6 +260,46 @@ Extend the census to every simple tactic's prerequisite checks, run it on the
 corpus, and give the fast path, implicit `auto`, and `by`/`requires` forms
 only to the tactics it shows searching. Tactics whose premises are already
 cited exactly, with a smart sibling that finds them, need no change.
+
+**5a, the census (in progress).** A survey of the simple tactics found these
+still searching the proof context after an exact lookup misses; each now
+counts under `HiddenPrerequisiteRoute::TacticSearch` by site:
+
+- resource `fold` (body facts, quantity sign), `unfold` (population final
+  unit), and `observe` (quantity sign), plus the composite-body selection all
+  three share (`src/surface/proof/resources.rs`);
+- `transport ... using` at an execution or fixed-state frontier: the
+  load-variable chain over every ambient condition fact and the quantified
+  frame (`src/surface/proof/fixed_state_proofs/fact_transport.rs`);
+- a `branch` arm's condition obligation
+  (`certified_proof_condition_split`);
+- an outcome `if` or `cases` condition
+  (`src/surface/proof/proof_object/fixed_state_steps.rs`);
+- a `have` of a separation away from the frontier;
+- `step`'s own fast path for a resource-contains, separation, or loadable-memory
+  obligation (`derive_atomic_proposition`).
+
+Baseline on the whole corpus, nightly fixtures included:
+
+| Site | mdtests | examples |
+| --- | --- | --- |
+| `fold body fact` | 61 | 52 |
+| `transport load-variable chain` | 16 | 10 |
+| `transport quantified frame` | 11 | 0 |
+| `outcome if condition` | 6 | 2 |
+| `step resource atomic derivation` | 1 | 0 |
+
+`unfold`'s population final unit (262 and 91) was always `1 == q` with a
+constant `q`; reading the constant, as `fold` already reads its own,
+removed it.
+
+`loop {}` still runs on the `Contextual` policy and counts under the existing
+routes. The kernel's iterated-resource deciders (`take`, `give`, `gather`,
+`scatter`) are not `PropositionSearch` but are not delta-bounded either; they
+are not yet counted. Each requirement spelling the implicit `auto` proves is
+now checked to re-lower (a debug assertion), and a written `requires` entry
+matches an `assert`'s truthiness obligation by its asserted condition
+(`mdtests/step_requires_states_an_asserted_condition.md`).
 
 ## Acceptance criteria
 

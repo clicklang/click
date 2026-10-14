@@ -75,11 +75,23 @@ pub(crate) struct DifferenceGraph {
     /// open, under both `x` and `t`: `t` is `x + MIN` when `x >= 0` and
     /// `x - MIN` when `x < 0`, so the sign of either decides the link.
     flips: PersistentMap<NodeId, (NodeId, NodeId)>,
+    /// Nodes whose bound was not pushed along all their edges
+    /// (`EDGE_LIMIT`): a neighbour's stored interval may miss it, so reads
+    /// pull from these nodes.
+    truncated: crate::persistent::PersistentSet<NodeId>,
     /// Overflow conditions recorded false (`OverflowKey`).
     no_overflow: crate::persistent::PersistentSet<OverflowKey>,
     contradictory: bool,
     next: NodeId,
 }
+
+/// How many edges one bound's propagation, one cycle check, one path query
+/// or one interval read follows, and how many waiting links one bound
+/// examines. Past it the graph stays sound and answers less: a stored bound
+/// is still true, only looser, and an unseen cycle leaves a dead path
+/// undetected. A value many others are bounded by (an array length) then
+/// costs the same however many there are.
+pub(crate) const EDGE_LIMIT: usize = 32;
 
 /// Charges and, in test builds, counts one unit of graph work.
 fn charge() {
@@ -110,11 +122,40 @@ impl DifferenceGraph {
             .unwrap_or_else(|| self.domain(node).range())
     }
 
+    /// `node`'s stored interval narrowed by one hop from neighbours whose
+    /// bound the bounded propagation did not push to it (`truncated`):
+    /// `node - p <= w` bounds `node <= hi(p) + w`, and `s - node <= w`
+    /// bounds `node >= lo(s) - w`. With no truncated push it is the stored
+    /// interval.
+    fn read_interval(&self, node: NodeId) -> (i128, i128) {
+        let (mut low, mut high) = self.interval(node);
+        if self.truncated.is_empty() {
+            return (low, high);
+        }
+        if let Some(edges) = self.in_edges.get(&node) {
+            for (previous, weight) in edges.iter().take(EDGE_LIMIT) {
+                charge();
+                if self.truncated.contains(previous) {
+                    high = high.min(self.interval(*previous).1.saturating_add(*weight));
+                }
+            }
+        }
+        if let Some(edges) = self.out_edges.get(&node) {
+            for (next, weight) in edges.iter().take(EDGE_LIMIT) {
+                charge();
+                if self.truncated.contains(next) {
+                    low = low.max(self.interval(*next).0.saturating_sub(*weight));
+                }
+            }
+        }
+        (low, high)
+    }
+
     fn affine_interval(&self, (node, offset): Affine) -> (i128, i128) {
         match node {
             None => (offset, offset),
             Some(node) => {
-                let (low, high) = self.interval(node);
+                let (low, high) = self.read_interval(node);
                 (low + offset, high + offset)
             }
         }
@@ -298,6 +339,8 @@ impl DifferenceGraph {
     /// higher lower bound backward (`n - p <= w` bounds `p >= lo(n) - w`).
     fn tighten(&mut self, node: NodeId, low: Option<i128>, high: Option<i128>) {
         let mut work = vec![(node, low, high)];
+        // Edges this propagation may still follow (`EDGE_LIMIT`).
+        let mut budget = EDGE_LIMIT;
         while let Some((node, low, high)) = work.pop() {
             if self.contradictory {
                 return;
@@ -328,14 +371,22 @@ impl DifferenceGraph {
             if new_high < old_high
                 && let Some(edges) = self.out_edges.get(&node)
             {
-                for (next, weight) in edges.iter() {
+                if edges.len() > budget {
+                    self.truncated = self.truncated.with_value(node);
+                }
+                for (next, weight) in edges.iter().take(budget) {
+                    budget -= 1;
                     work.push((*next, None, Some(new_high.saturating_add(*weight))));
                 }
             }
             if new_low > old_low
                 && let Some(edges) = self.in_edges.get(&node)
             {
-                for (previous, weight) in edges.iter() {
+                if edges.len() > budget {
+                    self.truncated = self.truncated.with_value(node);
+                }
+                for (previous, weight) in edges.iter().take(budget) {
+                    budget -= 1;
                     work.push((*previous, Some(new_low.saturating_sub(*weight)), None));
                 }
             }
@@ -387,7 +438,7 @@ impl DifferenceGraph {
         let (low, high) = self.interval(base);
         let mut remaining = waiting.clone();
         let mut linked = Vec::new();
-        for (node, link) in waiting.iter() {
+        for (node, link) in waiting.iter().take(EDGE_LIMIT) {
             charge();
             if link_fits((low, high), link.offset, link.domain, link.nonnegative) {
                 remaining = remaining.without_key(node);
@@ -406,20 +457,28 @@ impl DifferenceGraph {
         }
     }
 
-    /// Shortest distances from `source` over the edges it reaches
-    /// (`distance[v]` bounds `v - source`). The caller has excluded negative
-    /// cycles, so the relaxation terminates.
+    /// Shortest distances from `source` over at most `EDGE_LIMIT` edges it
+    /// reaches (`distance[v]` bounds `v - source`). The caller has excluded
+    /// negative cycles it could see, and the limit ends the relaxation in
+    /// any case.
     fn shortest_from(&self, source: NodeId) -> std::collections::BTreeMap<NodeId, i128> {
         let mut distance = std::collections::BTreeMap::from([(source, 0i128)]);
         // First in, first out: with negative weights a stack can revisit a
         // node exponentially often; a queue relaxes in rounds.
         let mut work = std::collections::VecDeque::from([source]);
+        let mut budget = EDGE_LIMIT;
         while let Some(node) = work.pop_front() {
             let Some(edges) = self.out_edges.get(&node) else {
                 continue;
             };
             let base = distance[&node];
             for (next, weight) in edges.iter() {
+                if budget == 0 {
+                    // Each distance found is a real path's length, so a
+                    // partial walk still bounds every node it reached.
+                    return distance;
+                }
+                budget -= 1;
                 charge();
                 let candidate = base + weight;
                 if distance.get(next).is_none_or(|known| candidate < *known) {
@@ -633,21 +692,24 @@ impl DifferenceGraph {
         if let C::Bitvector32SignedDivideOverflows(a, b)
         | C::Bitvector64SignedDivideOverflows(a, b) = condition
         {
-            // `a / b` overflows exactly when `a` is the domain's least value
-            // and `b` is `-1`; as above, only the absence is answered.
-            let domain = if matches!(condition, C::Bitvector32SignedDivideOverflows(..)) {
-                Domain::Int32
-            } else {
-                Domain::Int64
-            };
+            // `a / b` overflows when `a` is the domain's least value and `b`
+            // is `-1`. The `int64` condition also holds for a zero divisor
+            // (`ConditionTerm::int64_signed_divide_overflows`); the `int32`
+            // one leaves zero to a separate check. As above, only the
+            // absence is answered.
+            let int64 = matches!(condition, C::Bitvector64SignedDivideOverflows(..));
+            let domain = if int64 { Domain::Int64 } else { Domain::Int32 };
             let (a_low, _) = self.term_interval(domain, a);
             let (b_low, b_high) = self.term_interval(domain, b);
-            let excludes_minus_one = matches!(
-                self.resolve(domain, b),
-                Some((Some(node), offset)) if self.excludes(node, -1 - offset)
-            );
-            return (a_low > domain.range().0 || b_low > -1 || b_high < -1 || excludes_minus_one)
-                .then_some(false);
+            let excludes = |value: i128| {
+                matches!(
+                    self.resolve(domain, b),
+                    Some((Some(node), offset)) if self.excludes(node, value - offset)
+                )
+            };
+            let no_pair = a_low > domain.range().0 || b_low > -1 || b_high < -1 || excludes(-1);
+            let nonzero = b_low > 0 || b_high < 0 || excludes(0);
+            return (no_pair && (!int64 || nonzero)).then_some(false);
         }
         if let C::Bitvector32Equal(a, b) | C::Bitvector64Equal(a, b) = condition {
             let domains: &[Domain] = if matches!(condition, C::Bitvector32Equal(..)) {
@@ -733,6 +795,10 @@ impl DifferenceGraph {
     /// `term_interval` from `term`'s operands alone.
     fn structural_interval(&self, domain: Domain, term: &Bitvector32Term) -> (i128, i128) {
         use Bitvector32Term as T;
+        if matches!(term, T::Variable(_) | T::Constant(_)) {
+            // No operands to read: nothing to charge.
+            return domain.range();
+        }
         charge();
         let (low, high) = match (domain, term) {
             (Domain::Int32, T::Add(a, b))
@@ -888,6 +954,11 @@ impl ContextDifferenceGraph {
     /// facts.
     pub(crate) fn reset(&mut self) {
         *self = Self::default();
+    }
+
+    /// The graph, unless it was cleared and not yet rebuilt.
+    pub(crate) fn built(&self) -> Option<&DifferenceGraph> {
+        self.0.get()
     }
 
     /// The graph of the context's `facts`, rebuilt from them when cleared.

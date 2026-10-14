@@ -1,10 +1,11 @@
-# Standard library
+# Click library
 
-The Click standard library is the public Surface Click API loaded from
-`stdlib/prelude.click` with every user sidecar. It isn't the Rust crate's
+The Click library is the public Surface Click API loaded from the
+[`library/`](https://github.com/clicklang/click/tree/master/library) modules
+with every user sidecar. It isn't the Rust crate's
 internal `pub` API.
 
-Every declaration below is copied exactly from the prelude and checked by the
+Every declaration below is copied exactly from the library and checked by the
 documentation gate. The same gate compares declaration names bidirectionally,
 so adding, removing, or changing a public symbol requires a matching reference
 update.
@@ -2944,14 +2945,14 @@ the concrete empty-string guarantee.
 
 ## Namespace and extension rules
 
-Standard-library definitions share the logic-declaration namespace with user
-Click definitions. A user predicate, pure function, resource, or theorem can't
-redefine a prelude name. A C function contract can have the same name as a
-prelude pure function when no user Click definition creates a conflict.
+Library definitions share the logic-declaration namespace with user Click
+definitions. A user predicate, pure function, resource, or theorem can't
+redefine a library name. A C function contract can have the same name as a
+library pure function when no user Click definition creates a conflict.
 
 To add a public symbol:
 
-1. Add its declaration to `stdlib/prelude.click`.
+1. Add its declaration to the `library/` module for its topic.
 2. Add a focused mdtest that uses it from an ordinary sidecar.
 3. Add its semantic entry here; the inventory and exact-declaration checks fail
    until this page agrees with the source.

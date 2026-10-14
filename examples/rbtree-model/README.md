@@ -711,8 +711,8 @@ step's hypotheses.
 
 ## Standard library
 
-The example adds `list_tail` locally rather than to `stdlib/prelude.click`; it
-is used only here. Everything else comes from the prelude: `List`, `Nat`,
+The example adds `list_tail` locally rather than to `library/list.click`; it
+is used only here. Everything else comes from the Click library: `List`, `Nat`,
 `list_append`, `list_contains`, `list_append_associative`,
 `list_contains_append`, and `list_contains_cons`.
 
