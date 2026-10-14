@@ -212,7 +212,7 @@ uint64_t uint64_from_uint32(uint32_t value) {
     ensures widened: result == value by auto;
 }
 
-int64_t long_long_identity(int64_t value) {
+long long long_long_identity(long long value) {
     ensures identity: result == value by auto;
 }
 

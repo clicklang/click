@@ -46,38 +46,38 @@ long long read_both(long *a, long long *b) {
 ```click
 verifying "main.c";
 
-int64 narrow(int64 value) {
+long narrow(long long value) {
     ensures result == value by auto;
 }
 
-int64 round_trip(int64 value) {
+long round_trip(long value) {
     ensures result == value by auto;
 }
 
-int64 sum(int64 a, int64 b) {
+long long sum(long a, long long b) {
     requires a >= 0 and a <= 100;
     requires b >= 0 and b <= 100;
     ensures result == a + b by auto;
 }
 
-uint64 mixed(uint64 a, int64 b) {
+unsigned long long mixed(unsigned long a, long long b) {
     requires a <= 100u64;
     requires b == 7;
     ensures result == a + 7u64 by auto;
 }
 
-int64 take(int64 value) {
+long long take(long long value) {
     ensures result == value by auto;
 }
 
-int64 pass_long(int64 value) {
+long pass_long(long value) {
     ensures result == value;
 } by {
     execute();
     simp();
 }
 
-int64 read_both(int64 *a, int64 *b) {
+long long read_both(long *a, long long *b) {
     views a[0];
     views b[0];
     requires a[0] >= 0 and a[0] <= 100;

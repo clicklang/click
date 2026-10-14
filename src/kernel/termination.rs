@@ -246,6 +246,8 @@ struct StructuralRecursionPath {
 }
 
 struct StructuralResourceMeasure {
+    /// The measured resource family.
+    family: String,
     arguments: Vec<CExpression>,
     /// One entry per body the definition can take. An `if`-guarded body is
     /// the single arm, guarded by the definition's own condition; a
@@ -365,10 +367,24 @@ fn check_structural_recursive_call(
     arguments: &[CExpression],
     function: &CFunction,
     measure: &StructuralResourceMeasure,
+    callees: &BTreeMap<String, StructuralCallee>,
     path: &StructuralRecursionPath,
 ) -> Result<(), CTerminationError> {
-    if function_name != function.name() {
+    // A call to a member of the recursive component passes, for that
+    // member's own measured requirement, the arguments its measure is
+    // written over; they must name a direct child of this function's measured
+    // instance. Every member is checked this way, so each edge of the cycle
+    // moves to a strictly contained child of the finite witness.
+    let Some(callee) = callees.get(function_name) else {
         return Ok(());
+    };
+    if callee.family != measure.family {
+        return Err(error(format!(
+            "recursive call to `{function_name}` is ranked by the structural measure `{}`, but \
+             the caller's is `{}`; the members of a structurally ranked component must measure \
+             one resource family",
+            callee.family, measure.family
+        )));
     }
     // An arm is active on this path when the path establishes one of the
     // conditions that selects it, or when the function's own requirements
@@ -390,18 +406,18 @@ fn check_structural_recursive_call(
             "recursive call to `{function_name}` is reachable without establishing the active structural resource guard"
         )));
     }
-    let parameter_substitutions = function
-        .parameters()
+    let parameter_substitutions = callee
+        .parameters
         .iter()
         .zip(arguments)
         .map(|(parameter, argument)| {
             (
-                parameter.name().to_string(),
+                parameter.clone(),
                 resolve_c_expression_aliases(argument, &path.aliases),
             )
         })
         .collect::<BTreeMap<_, _>>();
-    let call_measure_arguments = measure
+    let call_measure_arguments = callee
         .arguments
         .iter()
         .map(|argument| substitute_c_expression_variables(argument, &parameter_substitutions))
@@ -426,6 +442,7 @@ fn check_structural_recursive_call(
 struct StructuralMeasureWalk<'a> {
     function: &'a CFunction,
     measure: &'a StructuralResourceMeasure,
+    callees: &'a BTreeMap<String, StructuralCallee>,
 }
 
 impl TerminationWalk for StructuralMeasureWalk<'_> {
@@ -490,6 +507,7 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
                         arguments,
                         self.function,
                         self.measure,
+                        self.callees,
                         path,
                     )?;
                 }
@@ -505,6 +523,7 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
                         arguments,
                         self.function,
                         self.measure,
+                        self.callees,
                         path,
                     )?;
                 }
@@ -545,10 +564,15 @@ fn structural_recursion_paths(
     statement: &CStatement,
     function: &CFunction,
     measure: &StructuralResourceMeasure,
+    callees: &BTreeMap<String, StructuralCallee>,
     paths: Vec<StructuralRecursionPath>,
 ) -> Result<Vec<StructuralRecursionPath>, CTerminationError> {
     Ok(walk_termination_paths(
-        &StructuralMeasureWalk { function, measure },
+        &StructuralMeasureWalk {
+            function,
+            measure,
+            callees,
+        },
         statement,
         paths,
     )?
@@ -952,8 +976,52 @@ fn structural_resource_children(
         )));
     }
     Ok(StructuralResourceMeasure {
+        family: name.to_string(),
         arguments: arguments.to_vec(),
         arms,
+    })
+}
+
+/// What a structural measure walk needs to know about one member of the
+/// recursive component it may call: the parameters the member's measure is
+/// written over, and the measured family and arguments.
+struct StructuralCallee {
+    parameters: Vec<String>,
+    family: String,
+    arguments: Vec<CExpression>,
+}
+
+/// The measured family and arguments of `function`'s structural measure,
+/// without the arm analysis [`structural_resource_children`] performs.
+fn structural_callee(
+    function: &CFunction,
+    requirement_index: usize,
+) -> Result<StructuralCallee, CTerminationError> {
+    let invalid = || {
+        error(format!(
+            "structural resource measure index is invalid for `{}`",
+            function.name()
+        ))
+    };
+    let resource = function
+        .resource_requires()
+        .get(requirement_index)
+        .ok_or_else(invalid)?;
+    let term = resource
+        .term()
+        .instance_resource()
+        .unwrap_or_else(|| resource.term());
+    let (Some(family), Some(arguments)) = (term.declared_name(), term.declared_arguments()) else {
+        return Err(invalid());
+    };
+    Ok(StructuralCallee {
+        parameters: function
+            .parameters()
+            .iter()
+            .map(|parameter| parameter.name().to_string())
+            .collect(),
+        family: family.to_string(),
+        arguments: arguments.to_vec(),
     })
 }
 
@@ -4784,10 +4852,18 @@ fn termination_rules_recording_function<'a>(
                 } else if let Some(CFunctionTerminationMeasure::ResourceRequirement(index)) =
                     recursive_measure
                 {
-                    if recursive_callees.len() != 1 || !recursive_callees.contains(name) {
-                        return Err(error(
-                            "structural resource termination currently supports direct recursion only",
-                        ));
+                    // Every member of the component is ranked structurally,
+                    // so each one's walk checks its own edges.
+                    for member in &recursive_callees {
+                        charge_termination_work(1);
+                        if !matches!(
+                            plans[member].recursive_measure,
+                            Some(CFunctionTerminationMeasure::ResourceRequirement(_))
+                        ) {
+                            return Err(error(
+                                "a recursive component cannot mix structural and other measures",
+                            ));
+                        }
                     }
                     structural_requirement = Some(index);
                 } else if let Some(CFunctionTerminationMeasure::Expression(source)) =
@@ -4912,6 +4988,17 @@ fn termination_rules_recording_function<'a>(
 
                 if let Some(requirement_index) = structural_requirement {
                     let measure = structural_resource_children(function, requirement_index)?;
+                    let mut callees = BTreeMap::new();
+                    for member in &recursive_callees {
+                        charge_termination_work(1);
+                        let Some(CFunctionTerminationMeasure::ResourceRequirement(index)) =
+                            plans[member].recursive_measure
+                        else {
+                            continue;
+                        };
+                        callees
+                            .insert(member.clone(), structural_callee(functions[member], index)?);
+                    }
                     // An arm the function's own requirements already select is
                     // active on every path; the check reads that from the arm
                     // rather than seeding a synthetic path condition.
@@ -4919,6 +5006,7 @@ fn termination_rules_recording_function<'a>(
                         &function.source_body,
                         function,
                         &measure,
+                        &callees,
                         vec![StructuralRecursionPath {
                             aliases: BTreeMap::new(),
                             conditions: Vec::new(),

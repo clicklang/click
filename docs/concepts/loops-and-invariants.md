@@ -117,14 +117,16 @@ need separate evidence: the loop must have its own ranking, and the
 function-level `decreases` measure must strictly decrease at every recursive
 edge. The loop guard is used when proving the recursive argument is
 nonnegative. The numeric function-level measure must remain unchanged by the
-loop body; calls whose descent depends on a changing lexicographic caller
-measure remain unsupported. A read-only structural-resource call inside a
+loop body; a call whose descent depends on the loop's changing counters is
+ranked instead by a function-level expression or tuple measure, discharged
+from the loop invariants. A read-only structural-resource call inside a
 ranked loop is supported when the parent resource is observed before the loop;
 the call must still receive a direct contained child. Pointer-valued branch guards are not scalar
 ranking facts, so the ranking checker checks the scalar measure on every path
-without importing those pointer comparisons. Resource-consuming or mutating
-structural calls across a loop back edge remain tracked in the hard-bucket
-`issues/recursion.md`.
+without importing those pointer comparisons. A recursive call that consumes a
+child inside a ranked loop is ranked by a model measure, and the loop may free
+the node and continue
+(`mdtests/c_decreases_model_measure_recursion_consumes_inside_loop.md`).
 
 Termination is also a claim about everything the loop body calls: every
 reachable loop, recursive cycle, and callee needs a checked ranking proof. A

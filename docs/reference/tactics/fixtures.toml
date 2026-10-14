@@ -34,8 +34,8 @@ needle = "step(Buffered);"
 
 [[form]]
 id = "step-contract-application"
-path = "mdtests/contract_explicit_empty_application.md"
-needle = "step(Identity());"
+path = "mdtests/contract_resource_call_transport.md"
+needle = "step(Touch, { cell: first });"
 
 [[form]]
 id = "step-call"

@@ -7572,6 +7572,22 @@ impl MutexIdentity {
 }
 
 impl CResource {
+    /// The resource's name in a diagnostic, with no argument or address
+    /// spelling: the kernel has no source names for those.
+    pub(crate) fn diagnostic_name(&self) -> &str {
+        match self {
+            CResource::Composite { name, .. } | CResource::Token { name, .. } => name,
+            CResource::Memory(_) => "memory",
+            CResource::PopulationAuthority(_) => "population authority",
+            CResource::MutexGuard(_) => "mutex guard",
+            CResource::MutexLive(_) => "mutex lifetime",
+            CResource::MutexUse(_) => "mutex use",
+            CResource::Publication(_) => "publication right",
+            CResource::Instance(instance) => instance.name(),
+            CResource::Iterated(iterated) => iterated.owner(),
+        }
+    }
+
     /// One iterated guarded-ownership fact. The fact is shared, so cloning a
     /// resource context never copies its terms.
     pub(crate) fn iterated(iterated: CIteratedMemory) -> Self {
@@ -7884,6 +7900,24 @@ pub enum ResourceFamily {
     Publication,
 }
 
+impl ResourceFamily {
+    /// The family's name in a diagnostic.
+    pub(crate) fn describe(self) -> &'static str {
+        match self {
+            Self::Memory => "memory",
+            Self::PopulationAuthority => "population authority",
+            Self::Composite => "composite",
+            Self::Token => "token",
+            Self::Instance => "resource instance",
+            Self::MutexGuard => "mutex_guard",
+            Self::MutexLive => "mutex_live",
+            Self::MutexUse => "mutex_use",
+            Self::Iterated => "iterated ownership",
+            Self::Publication => "publication",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CResourceAccessMode {
     Own,
@@ -8061,15 +8095,21 @@ impl std::fmt::Display for CResourceSpecError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::InvalidAccess { family, access } => {
+                let access = match access {
+                    CResourceAccessMode::Own => "owns",
+                    CResourceAccessMode::View => "views",
+                };
                 write!(
                     formatter,
-                    "{family:?} resources do not permit {access:?} access"
+                    "{} resources do not permit `{access}` access",
+                    family.describe()
                 )
             }
             Self::InvalidQuantity { family, reason } => {
                 write!(
                     formatter,
-                    "{family:?} resource has invalid quantity: {reason}"
+                    "{} resource has invalid quantity: {reason}",
+                    family.describe()
                 )
             }
             Self::InvalidNestedTerm(reason) => formatter.write_str(reason),

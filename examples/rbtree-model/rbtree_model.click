@@ -18,10 +18,10 @@ function rb_inorder(tree: RbTree) -> List<struct rb_node*>
     decreases tree
 {
     match tree {
-        RbTree::Empty => List<struct rb_node*>::Nil,
+        RbTree::Empty => List::Nil,
         RbTree::Node(node, parent, color, left, right) =>
             list_append(rb_inorder(left),
-                List<struct rb_node*>::Cons(node, rb_inorder(right))),
+                List::Cons(node, rb_inorder(right))),
     }
 }
 
@@ -49,7 +49,7 @@ theorem rb_member_is_inorder_membership(tree: RbTree, target: struct rb_node*) {
             RbTree::Empty => {
                 unfold(rb_member(RbTree::Empty, target));
                 unfold(rb_inorder(RbTree::Empty));
-                unfold(list_contains(List<struct rb_node*>::Nil, target));
+                unfold(list_contains(List::Nil, target));
                 normalize();
             }
             RbTree::Node(node, parent, color, left, right) => {
@@ -58,16 +58,16 @@ theorem rb_member_is_inorder_membership(tree: RbTree, target: struct rb_node*) {
                 unfold(rb_member(RbTree::Node(node, parent, color, left, right), target));
                 unfold(rb_inorder(RbTree::Node(node, parent, color, left, right)));
                 apply(list_contains_append(rb_inorder(left),
-                    List<struct rb_node*>::Cons(node, rb_inorder(right)), target));
+                    List::Cons(node, rb_inorder(right)), target));
                 rewrite(list_contains(list_append(rb_inorder(left),
-                    List<struct rb_node*>::Cons(node, rb_inorder(right))), target)
+                    List::Cons(node, rb_inorder(right))), target)
                     == if list_contains(rb_inorder(left), target) {
                         true
                     } else {
-                        list_contains(List<struct rb_node*>::Cons(node, rb_inorder(right)), target)
+                        list_contains(List::Cons(node, rb_inorder(right)), target)
                     });
                 apply(list_contains_cons(node, rb_inorder(right), target));
-                rewrite(list_contains(List<struct rb_node*>::Cons(node, rb_inorder(right)), target)
+                rewrite(list_contains(List::Cons(node, rb_inorder(right)), target)
                     == if node == target {
                         true
                     } else {
@@ -283,16 +283,16 @@ theorem rb_rotate_left_node_preserves_inorder(node: struct rb_node*, parent: str
                 apply(rb_reparent_preserves_inorder(middle, node));
                 rewrite(rb_inorder(rb_reparent(middle, node)) == rb_inorder(middle));
                 apply(list_append_associative(rb_inorder(left),
-                    List<struct rb_node*>::Cons(node, rb_inorder(middle)),
-                    List<struct rb_node*>::Cons(pivot, rb_inorder(far_right))));
+                    List::Cons(node, rb_inorder(middle)),
+                    List::Cons(pivot, rb_inorder(far_right))));
                 rewrite(list_append(list_append(rb_inorder(left),
-                    List<struct rb_node*>::Cons(node, rb_inorder(middle))),
-                    List<struct rb_node*>::Cons(pivot, rb_inorder(far_right)))
+                    List::Cons(node, rb_inorder(middle))),
+                    List::Cons(pivot, rb_inorder(far_right)))
                     == list_append(rb_inorder(left),
-                        list_append(List<struct rb_node*>::Cons(node, rb_inorder(middle)),
-                            List<struct rb_node*>::Cons(pivot, rb_inorder(far_right)))));
-                unfold(list_append(List<struct rb_node*>::Cons(node, rb_inorder(middle)),
-                    List<struct rb_node*>::Cons(pivot, rb_inorder(far_right))));
+                        list_append(List::Cons(node, rb_inorder(middle)),
+                            List::Cons(pivot, rb_inorder(far_right)))));
+                unfold(list_append(List::Cons(node, rb_inorder(middle)),
+                    List::Cons(pivot, rb_inorder(far_right))));
                 normalize();
             }
         }
@@ -337,16 +337,16 @@ theorem rb_rotate_right_node_preserves_inorder(node: struct rb_node*, parent: st
                 apply(rb_reparent_preserves_inorder(middle, node));
                 rewrite(rb_inorder(rb_reparent(middle, node)) == rb_inorder(middle));
                 apply(list_append_associative(rb_inorder(far_left),
-                    List<struct rb_node*>::Cons(pivot, rb_inorder(middle)),
-                    List<struct rb_node*>::Cons(node, rb_inorder(right))));
+                    List::Cons(pivot, rb_inorder(middle)),
+                    List::Cons(node, rb_inorder(right))));
                 rewrite(list_append(list_append(rb_inorder(far_left),
-                    List<struct rb_node*>::Cons(pivot, rb_inorder(middle))),
-                    List<struct rb_node*>::Cons(node, rb_inorder(right)))
+                    List::Cons(pivot, rb_inorder(middle))),
+                    List::Cons(node, rb_inorder(right)))
                     == list_append(rb_inorder(far_left),
-                        list_append(List<struct rb_node*>::Cons(pivot, rb_inorder(middle)),
-                            List<struct rb_node*>::Cons(node, rb_inorder(right)))));
-                unfold(list_append(List<struct rb_node*>::Cons(pivot, rb_inorder(middle)),
-                    List<struct rb_node*>::Cons(node, rb_inorder(right))));
+                        list_append(List::Cons(pivot, rb_inorder(middle)),
+                            List::Cons(node, rb_inorder(right)))));
+                unfold(list_append(List::Cons(pivot, rb_inorder(middle)),
+                    List::Cons(node, rb_inorder(right))));
                 normalize();
             }
         }
@@ -579,83 +579,28 @@ theorem is_rb_node_left(node: struct rb_node*, parent: struct rb_node*, color: C
                         left: RbTree, right: RbTree) {
     requires is_rb(RbTree::Node(node, parent, color, left, right)) == 1;
 
-    ensures is_rb(left) == 1 by {
-        if is_rb(left) == 1 {
-            assumption();
-        } else {
-            have is_rb(RbTree::Node(node, parent, color, left, right)) != 1 by {
-                unfold(is_rb(RbTree::Node(node, parent, color, left, right)));
-                normalize() using { not(is_rb(left) == 1); }
-            }
-            contradiction(is_rb(RbTree::Node(node, parent, color, left, right)) == 1);
-        }
-    }
+    ensures is_rb(left) == 1 by auto;
 }
 
 theorem is_rb_node_right(node: struct rb_node*, parent: struct rb_node*, color: Color,
                          left: RbTree, right: RbTree) {
     requires is_rb(RbTree::Node(node, parent, color, left, right)) == 1;
 
-    ensures is_rb(right) == 1 by {
-        if is_rb(right) == 1 {
-            assumption();
-        } else {
-            apply(is_rb_node_left(node, parent, color, left, right));
-            have is_rb(RbTree::Node(node, parent, color, left, right)) != 1 by {
-                unfold(is_rb(RbTree::Node(node, parent, color, left, right)));
-                normalize() using { is_rb(left) == 1; not(is_rb(right) == 1); }
-            }
-            contradiction(is_rb(RbTree::Node(node, parent, color, left, right)) == 1);
-        }
-    }
+    ensures is_rb(right) == 1 by auto;
 }
 
 theorem is_rb_node_black_heights(node: struct rb_node*, parent: struct rb_node*, color: Color,
                                  left: RbTree, right: RbTree) {
     requires is_rb(RbTree::Node(node, parent, color, left, right)) == 1;
 
-    ensures black_height(left) == black_height(right) by {
-        if black_height(left) == black_height(right) {
-            assumption();
-        } else {
-            apply(is_rb_node_left(node, parent, color, left, right));
-            apply(is_rb_node_right(node, parent, color, left, right));
-            have is_rb(RbTree::Node(node, parent, color, left, right)) != 1 by {
-                unfold(is_rb(RbTree::Node(node, parent, color, left, right)));
-                normalize() using {
-                    is_rb(left) == 1;
-                    is_rb(right) == 1;
-                    not(black_height(left) == black_height(right));
-                }
-            }
-            contradiction(is_rb(RbTree::Node(node, parent, color, left, right)) == 1);
-        }
-    }
+    ensures black_height(left) == black_height(right) by auto;
 }
 
 theorem is_rb_red_node_children_are_black(node: struct rb_node*, parent: struct rb_node*,
                                           left: RbTree, right: RbTree) {
     requires is_rb(RbTree::Node(node, parent, Color::Red, left, right)) == 1;
 
-    ensures rb_root_black(left) == 1 by {
-        if rb_root_black(left) == 1 {
-            assumption();
-        } else {
-            apply(is_rb_node_left(node, parent, Color::Red, left, right));
-            apply(is_rb_node_right(node, parent, Color::Red, left, right));
-            apply(is_rb_node_black_heights(node, parent, Color::Red, left, right));
-            have is_rb(RbTree::Node(node, parent, Color::Red, left, right)) != 1 by {
-                unfold(is_rb(RbTree::Node(node, parent, Color::Red, left, right)));
-                normalize() using {
-                    is_rb(left) == 1;
-                    is_rb(right) == 1;
-                    black_height(left) == black_height(right);
-                    not(rb_root_black(left) == 1);
-                }
-            }
-            contradiction(is_rb(RbTree::Node(node, parent, Color::Red, left, right)) == 1);
-        }
-    }
+    ensures rb_root_black(left) == 1 by auto;
 }
 
 function is_rb_root(tree: RbTree) -> int32 {
@@ -718,58 +663,21 @@ theorem almost_rb_insert_node_left(node: struct rb_node*, parent: struct rb_node
                                    left: RbTree, right: RbTree) {
     requires almost_rb_insert(RbTree::Node(node, parent, color, left, right)) == 1;
 
-    ensures is_rb(left) == 1 by {
-        if is_rb(left) == 1 {
-            assumption();
-        } else {
-            have almost_rb_insert(RbTree::Node(node, parent, color, left, right)) != 1 by {
-                unfold(almost_rb_insert(RbTree::Node(node, parent, color, left, right)));
-                normalize() using { not(is_rb(left) == 1); }
-            }
-            contradiction(almost_rb_insert(RbTree::Node(node, parent, color, left, right)) == 1);
-        }
-    }
+    ensures is_rb(left) == 1 by auto;
 }
 
 theorem almost_rb_insert_node_right(node: struct rb_node*, parent: struct rb_node*, color: Color,
                                     left: RbTree, right: RbTree) {
     requires almost_rb_insert(RbTree::Node(node, parent, color, left, right)) == 1;
 
-    ensures is_rb(right) == 1 by {
-        if is_rb(right) == 1 {
-            assumption();
-        } else {
-            apply(almost_rb_insert_node_left(node, parent, color, left, right));
-            have almost_rb_insert(RbTree::Node(node, parent, color, left, right)) != 1 by {
-                unfold(almost_rb_insert(RbTree::Node(node, parent, color, left, right)));
-                normalize() using { is_rb(left) == 1; not(is_rb(right) == 1); }
-            }
-            contradiction(almost_rb_insert(RbTree::Node(node, parent, color, left, right)) == 1);
-        }
-    }
+    ensures is_rb(right) == 1 by auto;
 }
 
 theorem almost_rb_insert_node_black_heights(node: struct rb_node*, parent: struct rb_node*,
                                             color: Color, left: RbTree, right: RbTree) {
     requires almost_rb_insert(RbTree::Node(node, parent, color, left, right)) == 1;
 
-    ensures black_height(left) == black_height(right) by {
-        if black_height(left) == black_height(right) {
-            assumption();
-        } else {
-            apply(almost_rb_insert_node_left(node, parent, color, left, right));
-            apply(almost_rb_insert_node_right(node, parent, color, left, right));
-            have almost_rb_insert(RbTree::Node(node, parent, color, left, right)) != 1 by {
-                unfold(almost_rb_insert(RbTree::Node(node, parent, color, left, right)));
-                normalize() using {
-                    is_rb(left) == 1;
-                    is_rb(right) == 1;
-                    not(black_height(left) == black_height(right));
-                }
-            }
-            contradiction(almost_rb_insert(RbTree::Node(node, parent, color, left, right)) == 1);
-        }
-    }
+    ensures black_height(left) == black_height(right) by auto;
 }
 
 theorem is_rb_is_almost_rb_insert(tree: RbTree) {
@@ -850,37 +758,13 @@ theorem almost_rb_erase_node(tree: RbTree, required: Nat) {
 theorem almost_rb_erase_is_rb(tree: RbTree, required: Nat) {
     requires almost_rb_erase(tree, required) == 1;
 
-    ensures is_rb(tree) == 1 by {
-        if is_rb(tree) == 1 {
-            assumption();
-        } else {
-            have almost_rb_erase(tree, required) != 1 by {
-                unfold(almost_rb_erase(tree, required));
-                normalize() using { not(is_rb(tree) == 1); }
-            }
-            contradiction(almost_rb_erase(tree, required) == 1);
-        }
-    }
+    ensures is_rb(tree) == 1 by auto;
 }
 
 theorem almost_rb_erase_black_deficit(tree: RbTree, required: Nat) {
     requires almost_rb_erase(tree, required) == 1;
 
-    ensures Nat::Succ(black_height(tree)) == required by {
-        if Nat::Succ(black_height(tree)) == required {
-            assumption();
-        } else {
-            apply(almost_rb_erase_is_rb(tree, required));
-            have almost_rb_erase(tree, required) != 1 by {
-                unfold(almost_rb_erase(tree, required));
-                normalize() using {
-                    is_rb(tree) == 1;
-                    not(Nat::Succ(black_height(tree)) == required);
-                }
-            }
-            contradiction(almost_rb_erase(tree, required) == 1);
-        }
-    }
+    ensures Nat::Succ(black_height(tree)) == required by auto;
 }
 
 function rb_insert_fix_recolor(tree: RbTree) -> RbTree {
@@ -1324,14 +1208,14 @@ theorem rb_insert_fix_inner_right_restores(grandparent: struct rb_node*,
 
 function list_tail<T>(xs: List<T>) -> List<T> {
     match xs {
-        List::Nil => List<T>::Nil,
+        List::Nil => List::Nil,
         List::Cons(head, tail) => tail,
     }
 }
 
 theorem list_tail_cons<T>(head: T, tail: List<T>) {
-    ensures list_tail(List<T>::Cons(head, tail)) == tail by {
-        unfold(list_tail(List<T>::Cons(head, tail)));
+    ensures list_tail(List::Cons(head, tail)) == tail by {
+        unfold(list_tail(List::Cons(head, tail)));
         normalize();
     }
 }
@@ -1340,9 +1224,9 @@ function rb_min_list(tree: RbTree) -> List<struct rb_node*>
     decreases tree
 {
     match tree {
-        RbTree::Empty => List<struct rb_node*>::Nil,
+        RbTree::Empty => List::Nil,
         RbTree::Node(node, parent, color, left, right) => match left {
-            RbTree::Empty => List<struct rb_node*>::Cons(node, List<struct rb_node*>::Nil),
+            RbTree::Empty => List::Cons(node, List::Nil),
             RbTree::Node(inner_node, inner_parent, inner_color, inner_left, inner_right) =>
                 rb_min_list(left),
         },
@@ -1366,7 +1250,7 @@ theorem rb_inorder_node_splits(node: struct rb_node*, parent: struct rb_node*, c
                                left: RbTree, right: RbTree) {
     ensures rb_inorder(RbTree::Node(node, parent, color, left, right))
         == list_append(rb_inorder(left),
-            List<struct rb_node*>::Cons(node, rb_inorder(right))) by {
+            List::Cons(node, rb_inorder(right))) by {
         unfold(rb_inorder(RbTree::Node(node, parent, color, left, right)));
         normalize();
     }
@@ -1375,11 +1259,11 @@ theorem rb_inorder_node_splits(node: struct rb_node*, parent: struct rb_node*, c
 theorem rb_erase_no_left_child(erased: struct rb_node*, parent: struct rb_node*, color: Color,
                                right: RbTree) {
     ensures rb_inorder(RbTree::Node(erased, parent, color, RbTree::Empty, right))
-        == List<struct rb_node*>::Cons(erased, rb_inorder(right)) by {
+        == List::Cons(erased, rb_inorder(right)) by {
         unfold(rb_inorder(RbTree::Node(erased, parent, color, RbTree::Empty, right)));
         unfold(rb_inorder(RbTree::Empty));
-        unfold(list_append(List<struct rb_node*>::Nil,
-            List<struct rb_node*>::Cons(erased, rb_inorder(right))));
+        unfold(list_append(List::Nil,
+            List::Cons(erased, rb_inorder(right))));
         normalize();
     }
 }
@@ -1388,7 +1272,7 @@ theorem rb_erase_no_right_child(erased: struct rb_node*, parent: struct rb_node*
                                 left: RbTree) {
     ensures rb_inorder(RbTree::Node(erased, parent, color, left, RbTree::Empty))
         == list_append(rb_inorder(left),
-            List<struct rb_node*>::Cons(erased, List<struct rb_node*>::Nil)) by {
+            List::Cons(erased, List::Nil)) by {
         unfold(rb_inorder(RbTree::Node(erased, parent, color, left, RbTree::Empty)));
         unfold(rb_inorder(RbTree::Empty));
         normalize();
@@ -1411,11 +1295,11 @@ theorem rb_min_list_splits_node(node: struct rb_node*, parent: struct rb_node*, 
                 rewrite(rb_inorder(rb_reparent(right, parent)) == rb_inorder(right));
                 unfold(rb_inorder(RbTree::Node(node, parent, color, RbTree::Empty, right)));
                 unfold(rb_inorder(RbTree::Empty));
-                unfold(list_append(List<struct rb_node*>::Nil,
-                    List<struct rb_node*>::Cons(node, rb_inorder(right))));
-                unfold(list_append(List<struct rb_node*>::Cons(node,
-                    List<struct rb_node*>::Nil), rb_inorder(right)));
-                unfold(list_append(List<struct rb_node*>::Nil, rb_inorder(right)));
+                unfold(list_append(List::Nil,
+                    List::Cons(node, rb_inorder(right))));
+                unfold(list_append(List::Cons(node,
+                    List::Nil), rb_inorder(right)));
+                unfold(list_append(List::Nil, rb_inorder(right)));
                 normalize();
             }
             RbTree::Node(inner_node, inner_parent, inner_color, inner_left, inner_right) => {
@@ -1446,7 +1330,7 @@ theorem rb_min_list_splits_node(node: struct rb_node*, parent: struct rb_node*, 
                     rb_inorder(rb_remove_min(
                         RbTree::Node(inner_node, inner_parent, inner_color,
                             inner_left, inner_right))),
-                    List<struct rb_node*>::Cons(node, rb_inorder(right))));
+                    List::Cons(node, rb_inorder(right))));
                 assumption();
             }
         }
@@ -1475,32 +1359,32 @@ theorem rb_min_list_splits_inorder(tree: RbTree) {
 
 theorem rb_remove_min_drops_head(tree: RbTree, minimum: struct rb_node*) {
     requires rb_min_list(tree)
-        == List<struct rb_node*>::Cons(minimum, List<struct rb_node*>::Nil);
+        == List::Cons(minimum, List::Nil);
 
     ensures rb_inorder(tree)
-        == List<struct rb_node*>::Cons(minimum, rb_inorder(rb_remove_min(tree))) by {
+        == List::Cons(minimum, rb_inorder(rb_remove_min(tree))) by {
         apply(rb_min_list_splits_inorder(tree));
         rewrite(rb_inorder(tree)
             == list_append(rb_min_list(tree), rb_inorder(rb_remove_min(tree))));
         rewrite(rb_min_list(tree)
-            == List<struct rb_node*>::Cons(minimum, List<struct rb_node*>::Nil));
+            == List::Cons(minimum, List::Nil));
         unfold(list_append(
-            List<struct rb_node*>::Cons(minimum, List<struct rb_node*>::Nil),
+            List::Cons(minimum, List::Nil),
             rb_inorder(rb_remove_min(tree))));
-        unfold(list_append(List<struct rb_node*>::Nil, rb_inorder(rb_remove_min(tree))));
+        unfold(list_append(List::Nil, rb_inorder(rb_remove_min(tree))));
         normalize();
     }
 }
 
 theorem rb_remove_min_is_inorder_tail(tree: RbTree, minimum: struct rb_node*) {
     requires rb_min_list(tree)
-        == List<struct rb_node*>::Cons(minimum, List<struct rb_node*>::Nil);
+        == List::Cons(minimum, List::Nil);
 
     ensures rb_inorder(rb_remove_min(tree)) == list_tail(rb_inorder(tree)) by {
         apply(rb_remove_min_drops_head(tree, minimum));
         rewrite(rb_inorder(tree)
-            == List<struct rb_node*>::Cons(minimum, rb_inorder(rb_remove_min(tree))));
-        unfold(list_tail(List<struct rb_node*>::Cons(minimum,
+            == List::Cons(minimum, rb_inorder(rb_remove_min(tree))));
+        unfold(list_tail(List::Cons(minimum,
             rb_inorder(rb_remove_min(tree)))));
         normalize();
     }
@@ -1510,7 +1394,7 @@ theorem rb_erase_two_child_splice(erased: struct rb_node*, successor: struct rb_
                                   parent: struct rb_node*, color: Color,
                                   left: RbTree, right: RbTree) {
     requires rb_min_list(right)
-        == List<struct rb_node*>::Cons(successor, List<struct rb_node*>::Nil);
+        == List::Cons(successor, List::Nil);
 
     ensures rb_inorder(RbTree::Node(successor, parent, color,
             rb_reparent(left, successor),
@@ -1528,11 +1412,11 @@ theorem rb_erase_two_child_splice(erased: struct rb_node*, successor: struct rb_
         rewrite(rb_inorder(right)
             == list_append(rb_min_list(right), rb_inorder(rb_remove_min(right))));
         rewrite(rb_min_list(right)
-            == List<struct rb_node*>::Cons(successor, List<struct rb_node*>::Nil));
+            == List::Cons(successor, List::Nil));
         unfold(list_append(
-            List<struct rb_node*>::Cons(successor, List<struct rb_node*>::Nil),
+            List::Cons(successor, List::Nil),
             rb_inorder(rb_remove_min(right))));
-        unfold(list_append(List<struct rb_node*>::Nil, rb_inorder(rb_remove_min(right))));
+        unfold(list_append(List::Nil, rb_inorder(rb_remove_min(right))));
         normalize();
     }
 }
@@ -1590,17 +1474,7 @@ theorem rb_node_is_equal(a: struct rb_node*, b: struct rb_node*) {
 theorem rb_node_is_same(a: struct rb_node*, b: struct rb_node*) {
     requires rb_node_is(a, b) == 1;
 
-    ensures a == b by {
-        if a == b {
-            assumption();
-        } else {
-            have rb_node_is(a, b) != 1 by {
-                unfold(rb_node_is(a, b));
-                normalize() using { not(a == b); }
-            }
-            contradiction(rb_node_is(a, b) == 1);
-        }
-    }
+    ensures a == b by auto;
 }
 
 theorem rb_parent_is_node_is(node: struct rb_node*, parent: struct rb_node*, color: Color,
@@ -1661,19 +1535,7 @@ theorem rb_parent_consistent_node_left(node: struct rb_node*, parent: struct rb_
                                        p: struct rb_node*) {
     requires rb_parent_consistent(RbTree::Node(node, parent, color, left, right), p) == 1;
 
-    ensures rb_parent_consistent(left, node) == 1 by {
-        if rb_parent_consistent(left, node) == 1 {
-            assumption();
-        } else {
-            have rb_parent_consistent(RbTree::Node(node, parent, color, left, right), p) != 1 by {
-                unfold(rb_parent_consistent(
-                    RbTree::Node(node, parent, color, left, right), p));
-                normalize() using { not(rb_parent_consistent(left, node) == 1); }
-            }
-            contradiction(rb_parent_consistent(
-                RbTree::Node(node, parent, color, left, right), p) == 1);
-        }
-    }
+    ensures rb_parent_consistent(left, node) == 1 by auto;
 }
 
 theorem rb_parent_consistent_node_right(node: struct rb_node*, parent: struct rb_node*,
@@ -1681,23 +1543,7 @@ theorem rb_parent_consistent_node_right(node: struct rb_node*, parent: struct rb
                                         p: struct rb_node*) {
     requires rb_parent_consistent(RbTree::Node(node, parent, color, left, right), p) == 1;
 
-    ensures rb_parent_consistent(right, node) == 1 by {
-        if rb_parent_consistent(right, node) == 1 {
-            assumption();
-        } else {
-            apply(rb_parent_consistent_node_left(node, parent, color, left, right, p));
-            have rb_parent_consistent(RbTree::Node(node, parent, color, left, right), p) != 1 by {
-                unfold(rb_parent_consistent(
-                    RbTree::Node(node, parent, color, left, right), p));
-                normalize() using {
-                    rb_parent_consistent(left, node) == 1;
-                    not(rb_parent_consistent(right, node) == 1);
-                }
-            }
-            contradiction(rb_parent_consistent(
-                RbTree::Node(node, parent, color, left, right), p) == 1);
-        }
-    }
+    ensures rb_parent_consistent(right, node) == 1 by auto;
 }
 
 theorem rb_parent_consistent_node_parent(node: struct rb_node*, parent: struct rb_node*,
@@ -1705,25 +1551,7 @@ theorem rb_parent_consistent_node_parent(node: struct rb_node*, parent: struct r
                                          p: struct rb_node*) {
     requires rb_parent_consistent(RbTree::Node(node, parent, color, left, right), p) == 1;
 
-    ensures rb_node_is(parent, p) == 1 by {
-        if rb_node_is(parent, p) == 1 {
-            assumption();
-        } else {
-            apply(rb_parent_consistent_node_left(node, parent, color, left, right, p));
-            apply(rb_parent_consistent_node_right(node, parent, color, left, right, p));
-            have rb_parent_consistent(RbTree::Node(node, parent, color, left, right), p) != 1 by {
-                unfold(rb_parent_consistent(
-                    RbTree::Node(node, parent, color, left, right), p));
-                normalize() using {
-                    rb_parent_consistent(left, node) == 1;
-                    rb_parent_consistent(right, node) == 1;
-                    not(rb_node_is(parent, p) == 1);
-                }
-            }
-            contradiction(rb_parent_consistent(
-                RbTree::Node(node, parent, color, left, right), p) == 1);
-        }
-    }
+    ensures rb_node_is(parent, p) == 1 by auto;
 }
 
 theorem rb_reparent_parent_consistent_at(tree: RbTree, p: struct rb_node*,
@@ -2159,17 +1987,7 @@ theorem plug_inorder_transport(ctx: Context, a: RbTree, b: RbTree) {
 theorem ctx_consistent_top(sub: RbTree, root_parent: struct rb_node*) {
     requires ctx_consistent(Context::Top, sub, root_parent) == 1;
 
-    ensures rb_parent_consistent(sub, root_parent) == 1 by {
-        if rb_parent_consistent(sub, root_parent) == 1 {
-            assumption();
-        } else {
-            have ctx_consistent(Context::Top, sub, root_parent) != 1 by {
-                unfold(ctx_consistent(Context::Top, sub, root_parent));
-                normalize() using { not(rb_parent_consistent(sub, root_parent) == 1); }
-            }
-            contradiction(ctx_consistent(Context::Top, sub, root_parent) == 1);
-        }
-    }
+    ensures rb_parent_consistent(sub, root_parent) == 1 by auto;
 }
 
 theorem ctx_consistent_top_frame(sub: RbTree, root_parent: struct rb_node*) {
@@ -2188,23 +2006,7 @@ theorem ctx_consistent_left_focus(identity: struct rb_node*, grandparent: struct
         Context::Left(identity, grandparent, color, sibling_model, up_model),
         sub, root_parent) == 1;
 
-    ensures rb_parent_consistent(sub, identity) == 1 by {
-        if rb_parent_consistent(sub, identity) == 1 {
-            assumption();
-        } else {
-            have ctx_consistent(
-                Context::Left(identity, grandparent, color, sibling_model, up_model),
-                sub, root_parent) != 1 by {
-                unfold(ctx_consistent(
-                    Context::Left(identity, grandparent, color, sibling_model, up_model),
-                    sub, root_parent));
-                normalize() using { not(rb_parent_consistent(sub, identity) == 1); }
-            }
-            contradiction(ctx_consistent(
-                Context::Left(identity, grandparent, color, sibling_model, up_model),
-                sub, root_parent) == 1);
-        }
-    }
+    ensures rb_parent_consistent(sub, identity) == 1 by auto;
 }
 
 theorem ctx_consistent_left_sibling(identity: struct rb_node*, grandparent: struct rb_node*,
@@ -2214,28 +2016,7 @@ theorem ctx_consistent_left_sibling(identity: struct rb_node*, grandparent: stru
         Context::Left(identity, grandparent, color, sibling_model, up_model),
         sub, root_parent) == 1;
 
-    ensures rb_parent_consistent(sibling_model, identity) == 1 by {
-        if rb_parent_consistent(sibling_model, identity) == 1 {
-            assumption();
-        } else {
-            apply(ctx_consistent_left_focus(identity, grandparent, color, sibling_model,
-                up_model, sub, root_parent));
-            have ctx_consistent(
-                Context::Left(identity, grandparent, color, sibling_model, up_model),
-                sub, root_parent) != 1 by {
-                unfold(ctx_consistent(
-                    Context::Left(identity, grandparent, color, sibling_model, up_model),
-                    sub, root_parent));
-                normalize() using {
-                    rb_parent_consistent(sub, identity) == 1;
-                    not(rb_parent_consistent(sibling_model, identity) == 1);
-                }
-            }
-            contradiction(ctx_consistent(
-                Context::Left(identity, grandparent, color, sibling_model, up_model),
-                sub, root_parent) == 1);
-        }
-    }
+    ensures rb_parent_consistent(sibling_model, identity) == 1 by auto;
 }
 
 theorem ctx_consistent_left_up(identity: struct rb_node*, grandparent: struct rb_node*,
@@ -2308,23 +2089,7 @@ theorem ctx_consistent_right_focus(identity: struct rb_node*, grandparent: struc
         Context::Right(identity, grandparent, color, sibling_model, up_model),
         sub, root_parent) == 1;
 
-    ensures rb_parent_consistent(sub, identity) == 1 by {
-        if rb_parent_consistent(sub, identity) == 1 {
-            assumption();
-        } else {
-            have ctx_consistent(
-                Context::Right(identity, grandparent, color, sibling_model, up_model),
-                sub, root_parent) != 1 by {
-                unfold(ctx_consistent(
-                    Context::Right(identity, grandparent, color, sibling_model, up_model),
-                    sub, root_parent));
-                normalize() using { not(rb_parent_consistent(sub, identity) == 1); }
-            }
-            contradiction(ctx_consistent(
-                Context::Right(identity, grandparent, color, sibling_model, up_model),
-                sub, root_parent) == 1);
-        }
-    }
+    ensures rb_parent_consistent(sub, identity) == 1 by auto;
 }
 
 theorem ctx_consistent_right_sibling(identity: struct rb_node*, grandparent: struct rb_node*,
@@ -2334,28 +2099,7 @@ theorem ctx_consistent_right_sibling(identity: struct rb_node*, grandparent: str
         Context::Right(identity, grandparent, color, sibling_model, up_model),
         sub, root_parent) == 1;
 
-    ensures rb_parent_consistent(sibling_model, identity) == 1 by {
-        if rb_parent_consistent(sibling_model, identity) == 1 {
-            assumption();
-        } else {
-            apply(ctx_consistent_right_focus(identity, grandparent, color, sibling_model,
-                up_model, sub, root_parent));
-            have ctx_consistent(
-                Context::Right(identity, grandparent, color, sibling_model, up_model),
-                sub, root_parent) != 1 by {
-                unfold(ctx_consistent(
-                    Context::Right(identity, grandparent, color, sibling_model, up_model),
-                    sub, root_parent));
-                normalize() using {
-                    rb_parent_consistent(sub, identity) == 1;
-                    not(rb_parent_consistent(sibling_model, identity) == 1);
-                }
-            }
-            contradiction(ctx_consistent(
-                Context::Right(identity, grandparent, color, sibling_model, up_model),
-                sub, root_parent) == 1);
-        }
-    }
+    ensures rb_parent_consistent(sibling_model, identity) == 1 by auto;
 }
 
 theorem ctx_consistent_right_up(identity: struct rb_node*, grandparent: struct rb_node*,
@@ -2807,37 +2551,13 @@ theorem node_color_ok_red(left_color: Color, right_color: Color) {
 theorem node_color_ok_red_left(left_color: Color, right_color: Color) {
     requires node_color_ok(Color::Red, left_color, right_color) == 1;
 
-    ensures color_black(left_color) == 1 by {
-        if color_black(left_color) == 1 {
-            assumption();
-        } else {
-            have node_color_ok(Color::Red, left_color, right_color) != 1 by {
-                unfold(node_color_ok(Color::Red, left_color, right_color));
-                normalize() using { not(color_black(left_color) == 1); }
-            }
-            contradiction(node_color_ok(Color::Red, left_color, right_color) == 1);
-        }
-    }
+    ensures color_black(left_color) == 1 by auto;
 }
 
 theorem node_color_ok_red_right(left_color: Color, right_color: Color) {
     requires node_color_ok(Color::Red, left_color, right_color) == 1;
 
-    ensures color_black(right_color) == 1 by {
-        if color_black(right_color) == 1 {
-            assumption();
-        } else {
-            apply(node_color_ok_red_left(left_color, right_color));
-            have node_color_ok(Color::Red, left_color, right_color) != 1 by {
-                unfold(node_color_ok(Color::Red, left_color, right_color));
-                normalize() using {
-                    color_black(left_color) == 1;
-                    not(color_black(right_color) == 1);
-                }
-            }
-            contradiction(node_color_ok(Color::Red, left_color, right_color) == 1);
-        }
-    }
+    ensures color_black(right_color) == 1 by auto;
 }
 
 theorem is_rb_red_node_value(node: struct rb_node*, parent: struct rb_node*,
@@ -2981,17 +2701,7 @@ function ctx_rb(ctx: Context, bh: Nat, focus_color: Color) -> int32
 theorem ctx_rb_top(bh: Nat, focus_color: Color) {
     requires ctx_rb(Context::Top, bh, focus_color) == 1;
 
-    ensures color_black(focus_color) == 1 by {
-        if color_black(focus_color) == 1 {
-            assumption();
-        } else {
-            have ctx_rb(Context::Top, bh, focus_color) != 1 by {
-                unfold(ctx_rb(Context::Top, bh, focus_color));
-                normalize() using { not(color_black(focus_color) == 1); }
-            }
-            contradiction(ctx_rb(Context::Top, bh, focus_color) == 1);
-        }
-    }
+    ensures color_black(focus_color) == 1 by auto;
 }
 
 theorem ctx_rb_top_frame(bh: Nat, focus_color: Color) {
@@ -3009,21 +2719,7 @@ theorem ctx_rb_left_sibling(identity: struct rb_node*, grandparent: struct rb_no
     requires ctx_rb(Context::Left(identity, grandparent, color, sibling_model, up_model),
         bh, focus_color) == 1;
 
-    ensures is_rb(sibling_model) == 1 by {
-        if is_rb(sibling_model) == 1 {
-            assumption();
-        } else {
-            have ctx_rb(Context::Left(identity, grandparent, color, sibling_model, up_model),
-                bh, focus_color) != 1 by {
-                unfold(ctx_rb(Context::Left(identity, grandparent, color, sibling_model,
-                    up_model), bh, focus_color));
-                normalize() using { not(is_rb(sibling_model) == 1); }
-            }
-            contradiction(ctx_rb(
-                Context::Left(identity, grandparent, color, sibling_model, up_model),
-                bh, focus_color) == 1);
-        }
-    }
+    ensures is_rb(sibling_model) == 1 by auto;
 }
 
 theorem ctx_rb_left_height(identity: struct rb_node*, grandparent: struct rb_node*,
@@ -3032,26 +2728,7 @@ theorem ctx_rb_left_height(identity: struct rb_node*, grandparent: struct rb_nod
     requires ctx_rb(Context::Left(identity, grandparent, color, sibling_model, up_model),
         bh, focus_color) == 1;
 
-    ensures bh == black_height(sibling_model) by {
-        if bh == black_height(sibling_model) {
-            assumption();
-        } else {
-            apply(ctx_rb_left_sibling(identity, grandparent, color, sibling_model, up_model,
-                bh, focus_color));
-            have ctx_rb(Context::Left(identity, grandparent, color, sibling_model, up_model),
-                bh, focus_color) != 1 by {
-                unfold(ctx_rb(Context::Left(identity, grandparent, color, sibling_model,
-                    up_model), bh, focus_color));
-                normalize() using {
-                    is_rb(sibling_model) == 1;
-                    not(bh == black_height(sibling_model));
-                }
-            }
-            contradiction(ctx_rb(
-                Context::Left(identity, grandparent, color, sibling_model, up_model),
-                bh, focus_color) == 1);
-        }
-    }
+    ensures bh == black_height(sibling_model) by auto;
 }
 
 theorem ctx_rb_left_colors(identity: struct rb_node*, grandparent: struct rb_node*,
@@ -3060,29 +2737,7 @@ theorem ctx_rb_left_colors(identity: struct rb_node*, grandparent: struct rb_nod
     requires ctx_rb(Context::Left(identity, grandparent, color, sibling_model, up_model),
         bh, focus_color) == 1;
 
-    ensures node_color_ok(color, focus_color, rb_color(sibling_model)) == 1 by {
-        if node_color_ok(color, focus_color, rb_color(sibling_model)) == 1 {
-            assumption();
-        } else {
-            apply(ctx_rb_left_sibling(identity, grandparent, color, sibling_model, up_model,
-                bh, focus_color));
-            apply(ctx_rb_left_height(identity, grandparent, color, sibling_model, up_model,
-                bh, focus_color));
-            have ctx_rb(Context::Left(identity, grandparent, color, sibling_model, up_model),
-                bh, focus_color) != 1 by {
-                unfold(ctx_rb(Context::Left(identity, grandparent, color, sibling_model,
-                    up_model), bh, focus_color));
-                normalize() using {
-                    is_rb(sibling_model) == 1;
-                    bh == black_height(sibling_model);
-                    not(node_color_ok(color, focus_color, rb_color(sibling_model)) == 1);
-                }
-            }
-            contradiction(ctx_rb(
-                Context::Left(identity, grandparent, color, sibling_model, up_model),
-                bh, focus_color) == 1);
-        }
-    }
+    ensures node_color_ok(color, focus_color, rb_color(sibling_model)) == 1 by auto;
 }
 
 theorem ctx_rb_left_value(identity: struct rb_node*, grandparent: struct rb_node*,
@@ -3154,21 +2809,7 @@ theorem ctx_rb_right_sibling(identity: struct rb_node*, grandparent: struct rb_n
     requires ctx_rb(Context::Right(identity, grandparent, color, sibling_model, up_model),
         bh, focus_color) == 1;
 
-    ensures is_rb(sibling_model) == 1 by {
-        if is_rb(sibling_model) == 1 {
-            assumption();
-        } else {
-            have ctx_rb(Context::Right(identity, grandparent, color, sibling_model, up_model),
-                bh, focus_color) != 1 by {
-                unfold(ctx_rb(Context::Right(identity, grandparent, color, sibling_model,
-                    up_model), bh, focus_color));
-                normalize() using { not(is_rb(sibling_model) == 1); }
-            }
-            contradiction(ctx_rb(
-                Context::Right(identity, grandparent, color, sibling_model, up_model),
-                bh, focus_color) == 1);
-        }
-    }
+    ensures is_rb(sibling_model) == 1 by auto;
 }
 
 theorem ctx_rb_right_height(identity: struct rb_node*, grandparent: struct rb_node*,
@@ -3177,26 +2818,7 @@ theorem ctx_rb_right_height(identity: struct rb_node*, grandparent: struct rb_no
     requires ctx_rb(Context::Right(identity, grandparent, color, sibling_model, up_model),
         bh, focus_color) == 1;
 
-    ensures black_height(sibling_model) == bh by {
-        if black_height(sibling_model) == bh {
-            assumption();
-        } else {
-            apply(ctx_rb_right_sibling(identity, grandparent, color, sibling_model, up_model,
-                bh, focus_color));
-            have ctx_rb(Context::Right(identity, grandparent, color, sibling_model, up_model),
-                bh, focus_color) != 1 by {
-                unfold(ctx_rb(Context::Right(identity, grandparent, color, sibling_model,
-                    up_model), bh, focus_color));
-                normalize() using {
-                    is_rb(sibling_model) == 1;
-                    not(black_height(sibling_model) == bh);
-                }
-            }
-            contradiction(ctx_rb(
-                Context::Right(identity, grandparent, color, sibling_model, up_model),
-                bh, focus_color) == 1);
-        }
-    }
+    ensures black_height(sibling_model) == bh by auto;
 }
 
 theorem ctx_rb_right_colors(identity: struct rb_node*, grandparent: struct rb_node*,
@@ -3205,29 +2827,7 @@ theorem ctx_rb_right_colors(identity: struct rb_node*, grandparent: struct rb_no
     requires ctx_rb(Context::Right(identity, grandparent, color, sibling_model, up_model),
         bh, focus_color) == 1;
 
-    ensures node_color_ok(color, rb_color(sibling_model), focus_color) == 1 by {
-        if node_color_ok(color, rb_color(sibling_model), focus_color) == 1 {
-            assumption();
-        } else {
-            apply(ctx_rb_right_sibling(identity, grandparent, color, sibling_model, up_model,
-                bh, focus_color));
-            apply(ctx_rb_right_height(identity, grandparent, color, sibling_model, up_model,
-                bh, focus_color));
-            have ctx_rb(Context::Right(identity, grandparent, color, sibling_model, up_model),
-                bh, focus_color) != 1 by {
-                unfold(ctx_rb(Context::Right(identity, grandparent, color, sibling_model,
-                    up_model), bh, focus_color));
-                normalize() using {
-                    is_rb(sibling_model) == 1;
-                    black_height(sibling_model) == bh;
-                    not(node_color_ok(color, rb_color(sibling_model), focus_color) == 1);
-                }
-            }
-            contradiction(ctx_rb(
-                Context::Right(identity, grandparent, color, sibling_model, up_model),
-                bh, focus_color) == 1);
-        }
-    }
+    ensures node_color_ok(color, rb_color(sibling_model), focus_color) == 1 by auto;
 }
 
 theorem ctx_rb_right_value(identity: struct rb_node*, grandparent: struct rb_node*,
@@ -3639,17 +3239,7 @@ theorem plug_rb_from_ctx_rb(ctx: Context, sub: RbTree) {
 theorem is_rb_root_is_rb(tree: RbTree) {
     requires is_rb_root(tree) == 1;
 
-    ensures is_rb(tree) == 1 by {
-        if is_rb(tree) == 1 {
-            assumption();
-        } else {
-            have is_rb_root(tree) != 1 by {
-                unfold(is_rb_root(tree));
-                normalize() using { not(is_rb(tree) == 1); }
-            }
-            contradiction(is_rb_root(tree) == 1);
-        }
-    }
+    ensures is_rb(tree) == 1 by auto;
 }
 
 theorem is_rb_root_value(tree: RbTree) {
@@ -5568,17 +5158,7 @@ theorem rb_parent_is_node_parent(node: struct rb_node*, parent: struct rb_node*,
                                  left: RbTree, right: RbTree, p: struct rb_node*) {
     requires rb_parent_is(RbTree::Node(node, parent, color, left, right), p) == 1;
 
-    ensures parent == p by {
-        if parent == p {
-            assumption();
-        } else {
-            have rb_parent_is(RbTree::Node(node, parent, color, left, right), p) != 1 by {
-                unfold(rb_parent_is(RbTree::Node(node, parent, color, left, right), p));
-                normalize() using { not(parent == p); }
-            }
-            contradiction(rb_parent_is(RbTree::Node(node, parent, color, left, right), p) == 1);
-        }
-    }
+    ensures parent == p by auto;
 }
 
 theorem rb_parent_is_node_of(node: struct rb_node*, parent: struct rb_node*, color: Color,
@@ -6180,10 +5760,10 @@ theorem rb_inorder_node_congruence(node: struct rb_node*, parent: struct rb_node
         apply(rb_inorder_node_splits(node, parent, right_color, left2, right2));
         rewrite(rb_inorder(RbTree::Node(node, parent, left_color, left1, right1))
             == list_append(rb_inorder(left1),
-                List<struct rb_node*>::Cons(node, rb_inorder(right1))));
+                List::Cons(node, rb_inorder(right1))));
         rewrite(rb_inorder(RbTree::Node(node, parent, right_color, left2, right2))
             == list_append(rb_inorder(left2),
-                List<struct rb_node*>::Cons(node, rb_inorder(right2))));
+                List::Cons(node, rb_inorder(right2))));
         rewrite(rb_inorder(left1) == rb_inorder(left2));
         rewrite(rb_inorder(right1) == rb_inorder(right2));
         normalize();

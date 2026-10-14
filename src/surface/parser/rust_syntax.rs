@@ -17,7 +17,7 @@ impl Parser {
                 "a `fn` signature is the Rust spelling; a C or C++ source's contract is written `type name(type parameter, ...)`",
             ));
         }
-        if self.pending_contract_name.is_some() {
+        if self.in_contract_definition {
             return Err(self.error(
                 "a named contract does not take a `fn` signature yet; write `contract type Name(type parameter, ...)`",
             ));

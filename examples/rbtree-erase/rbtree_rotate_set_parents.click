@@ -48,7 +48,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
             execute();
             let after = fold(ctx_at(new, root), {
                 model: Context::Left(identity, grandparent, color, sibling_model, outer_model)
-            }, { sibling: sibling, up: outer });
+            }, { up: outer });
             simp();
         },
         Context::Right(identity, grandparent, color, sibling_model, outer_model) => {
@@ -80,7 +80,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                     let sibling = fold(rb_at(parent->rb_left), { model: RbTree::Empty });
                     let after = fold(ctx_at(new, root), {
                         model: Context::Right(identity, grandparent, color, sibling_model, outer_model)
-                    }, { sibling: sibling, up: outer });
+                    }, { up: outer });
                     simp();
                 },
                 RbTree::Node(sid, sp, sc, sl, sr) => {
@@ -88,10 +88,10 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                     execute();
                     let sibling = fold(rb_at(parent->rb_left), {
                         model: RbTree::Node(sid, sp, sc, sl, sr)
-                    }, { left: left, right: right });
+                    });
                     let after = fold(ctx_at(new, root), {
                         model: Context::Right(identity, grandparent, color, sibling_model, outer_model)
-                    }, { sibling: sibling, up: outer });
+                    }, { up: outer });
                     simp();
                 },
             }

@@ -1250,23 +1250,29 @@ impl MutexContext {
             .unwrap_or_else(LoanLedger::new);
         let participant = match self.state.loan_participant {
             Some(participant) => participant,
-            None => ledger.fresh_participant().map_err(|_| {
-                MutexTransitionError::Refusal("cannot establish mutex loan participant")
+            None => ledger.fresh_participant().map_err(|error| {
+                MutexTransitionError::OwnedRefusal(format!(
+                    "cannot establish mutex loan participant: {error}"
+                ))
             })?,
         };
         let (ledger, loan) = ledger
             .lend_mutex_use(participant, participant, support, live)
-            .map_err(|_| MutexTransitionError::Refusal("cannot lend mutex lifetime authority"))?;
+            .map_err(|error| {
+                MutexTransitionError::OwnedRefusal(format!(
+                    "cannot lend mutex lifetime authority: {error}"
+                ))
+            })?;
         let mut state = self.state.clone();
         let usage = ledger
             .mutex_use_resource(loan.usage, participant)
             .map_err(|_| MutexTransitionError::MissingUse(mutex.clone()))?;
         state.resources = resources
             .try_compose_with_facts_delaying_normalization([usage], assumptions)
-            .map_err(|_| {
-                MutexTransitionError::Refusal(
-                    "mutex use occurrence conflicts with current authority",
-                )
+            .map_err(|error| {
+                MutexTransitionError::OwnedRefusal(format!(
+                    "mutex use occurrence conflicts with current authority: {error}"
+                ))
             })?;
         state.loan_ledger = Some(ledger);
         state.loan_participant = Some(participant);
@@ -1294,7 +1300,11 @@ impl MutexContext {
             .ok_or("missing mutex loan participant")?;
         let fact = ledger
             .mutex_use_resource(usage, participant)
-            .map_err(|_| MutexTransitionError::Refusal("mutex use permission is not available"))?;
+            .map_err(|error| {
+                MutexTransitionError::OwnedRefusal(format!(
+                    "mutex use permission is not available: {error}"
+                ))
+            })?;
         if self
             .state
             .resources
@@ -1332,22 +1342,26 @@ impl MutexContext {
         let parent_fact = self.owned_use_resource(usage)?;
         let (ledger, loan) = ledger
             .reborrow_mutex_use(usage, participant, participant)
-            .map_err(|_| {
-                MutexTransitionError::Refusal(
-                    "mutex use permission is not available for reborrowing",
-                )
+            .map_err(|error| {
+                MutexTransitionError::OwnedRefusal(format!(
+                    "mutex use permission is not available for reborrowing: {error}"
+                ))
             })?;
         let child_fact = ledger
             .mutex_use_resource(loan.usage, participant)
-            .map_err(|_| MutexTransitionError::Refusal("missing reborrowed mutex use"))?;
+            .map_err(|error| {
+                MutexTransitionError::OwnedRefusal(format!("missing reborrowed mutex use: {error}"))
+            })?;
         let mut state = self.state.clone();
         state.resources = state
             .resources
             .without_fact_delaying_normalization(&parent_fact, assumptions)
             .ok_or("missing parent mutex use occurrence")?
             .try_compose_with_facts_delaying_normalization([child_fact], assumptions)
-            .map_err(|_| {
-                MutexTransitionError::Refusal("mutex use child conflicts with current authority")
+            .map_err(|error| {
+                MutexTransitionError::OwnedRefusal(format!(
+                    "mutex use child conflicts with current authority: {error}"
+                ))
             })?;
         state.loan_ledger = Some(ledger);
         Ok((
@@ -1379,10 +1393,10 @@ impl MutexContext {
         let child_fact = self.owned_use_resource(loan.usage)?;
         let (ledger, parent_fact) = ledger
             .end_mutex_reborrow_with_parent(loan, participant)
-            .map_err(|_| {
-                MutexTransitionError::Refusal(
-                    "mutex use reborrow still has outstanding shares or guards",
-                )
+            .map_err(|error| {
+                MutexTransitionError::OwnedRefusal(format!(
+                    "mutex use reborrow still has outstanding shares or guards: {error}"
+                ))
             })?;
         let mut state = self.state.clone();
         state.resources = state
@@ -1390,8 +1404,10 @@ impl MutexContext {
             .without_fact_delaying_normalization(&child_fact, assumptions)
             .ok_or("missing child mutex use occurrence")?
             .try_compose_with_facts_delaying_normalization([parent_fact], assumptions)
-            .map_err(|_| {
-                MutexTransitionError::Refusal("returned mutex use conflicts with current authority")
+            .map_err(|error| {
+                MutexTransitionError::OwnedRefusal(format!(
+                    "returned mutex use conflicts with current authority: {error}"
+                ))
             })?;
         state.loan_ledger = Some(ledger);
         Ok(Self {
@@ -1421,19 +1437,23 @@ impl MutexContext {
             .loan_participant
             .ok_or("missing mutex loan participant")?;
         let use_fact = self.owned_use_resource(loan.usage)?;
-        let (ledger, owner) = ledger.recover_mutex_use(loan, participant).map_err(|_| {
-            MutexTransitionError::Refusal("mutex use loan still has outstanding shares or guards")
-        })?;
+        let (ledger, owner) = ledger
+            .recover_mutex_use(loan, participant)
+            .map_err(|error| {
+                MutexTransitionError::OwnedRefusal(format!(
+                    "mutex use loan still has outstanding shares or guards: {error}"
+                ))
+            })?;
         let mut state = self.state.clone();
         state.resources = state
             .resources
             .without_fact_delaying_normalization(&use_fact, assumptions)
             .ok_or("missing mutex use occurrence during recovery")?
             .try_compose_with_facts_delaying_normalization([owner], assumptions)
-            .map_err(|_| {
-                MutexTransitionError::Refusal(
-                    "recovered mutex owner conflicts with current authority",
-                )
+            .map_err(|error| {
+                MutexTransitionError::OwnedRefusal(format!(
+                    "recovered mutex owner conflicts with current authority: {error}"
+                ))
             })?;
         state.loan_ledger = Some(ledger);
         Ok(Self {
@@ -1527,10 +1547,10 @@ impl MutexContext {
         let resources = if let Some(invariant) = &invariant {
             resources
                 .try_compose_with_facts_delaying_normalization([invariant.clone()], assumptions)
-                .map_err(|_| {
-                    MutexTransitionError::Refusal(
-                        "mutex invariant conflicts with current authority",
-                    )
+                .map_err(|error| {
+                    MutexTransitionError::OwnedRefusal(format!(
+                        "mutex invariant conflicts with current authority: {error}"
+                    ))
                 })?
         } else {
             resources
@@ -1545,8 +1565,10 @@ impl MutexContext {
         };
         state.resources = resources
             .try_compose_with_facts_delaying_normalization([guard.resource_fact()], assumptions)
-            .map_err(|_| {
-                MutexTransitionError::Refusal("mutex guard conflicts with current authority")
+            .map_err(|error| {
+                MutexTransitionError::OwnedRefusal(format!(
+                    "mutex guard conflicts with current authority: {error}"
+                ))
             })?;
         state.mutex_ledger = Some(ledger.with_inserted(
             mutex.clone(),
@@ -1694,10 +1716,10 @@ impl MutexContext {
         let resources = if let Some(invariant) = invariant {
             resources
                 .try_compose_with_facts_delaying_normalization([invariant], assumptions)
-                .map_err(|_| {
-                    MutexTransitionError::Refusal(
-                        "destroyed mutex invariant conflicts with current authority",
-                    )
+                .map_err(|error| {
+                    MutexTransitionError::OwnedRefusal(format!(
+                        "destroyed mutex invariant conflicts with current authority: {error}"
+                    ))
                 })?
         } else {
             resources
@@ -1713,10 +1735,10 @@ impl MutexContext {
                     [CResourceFact::own_memory(storage_range(mutex, bytes))],
                     assumptions,
                 )
-                .map_err(|_| {
-                    MutexTransitionError::Refusal(
-                        "destroyed mutex storage conflicts with current ownership",
-                    )
+                .map_err(|error| {
+                    MutexTransitionError::OwnedRefusal(format!(
+                        "destroyed mutex storage conflicts with current ownership: {error}"
+                    ))
                 })?
         } else {
             resources
@@ -1832,7 +1854,11 @@ impl MutexContext {
                     hold,
                     participant,
                 )
-                .map_err(|_| MutexTransitionError::Refusal("missing mutex guard lifetime hold"))?;
+                .map_err(|error| {
+                    MutexTransitionError::OwnedRefusal(format!(
+                        "missing mutex guard lifetime hold: {error}"
+                    ))
+                })?;
             runtime_loan_transition = Some((loans.clone(), participant, transition));
             state.loan_ledger = Some(next);
         }

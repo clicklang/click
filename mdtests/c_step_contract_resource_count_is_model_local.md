@@ -13,14 +13,14 @@ int32 invoke(int32 (*callback)(int32), int32 x) { return callback(x); }
 resource A(x: int32) {}
 resource B(x: int32) {}
 resource Ledger() { field remaining: int32; }
-contract Keep(model: Ledger()) for int32(int32 x) {
-    owns model;
+contract int32 Keep(int32 x) {
+    owns model: Ledger();
     owns A(x);
     ensures model.remaining == old(model.remaining);
     ensures result == 0;
 }
-contract Alternative(model: Ledger()) for int32(int32 x) {
-    owns model;
+contract int32 Alternative(int32 x) {
+    owns model: Ledger();
     consumes A(x);
     produces B(x);
     ensures model.remaining == 0;
@@ -34,7 +34,7 @@ int32 invoke(int32 (*callback)(int32), int32 x) {
     owns A(x);
     requires model.remaining == 1;
     ensures result == 1;
-} by { step(Keep(model)); execute(); simp(); }
+} by { step(Keep, { model: model }); execute(); simp(); }
 ```
 
 ```expect

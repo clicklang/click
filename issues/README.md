@@ -143,13 +143,10 @@ Additional languages:
 - [Extend C++ support toward Bitcoin Core](cpp-support.md)
 - [Model C++ exceptions with class types and exceptional resources](cpp-exceptions.md)
 
-Semantics and reasoning:
-
-- [Recursion](recursion.md)
-
 Proof language and tooling:
 
 - [Extend modules and imports beyond the delivered rbtree slice](specification-imports.md)
 - [Reduce repeated work in deeply nested `Integer` quantifiers](deep-quantifier-scaling.md)
 - [Complete general-purpose algebraic data type support](algebraic-data-types.md)
 - [One contract declaration syntax, native in C, C++ and Rust](contract-declaration-syntax.md)
+- [Design a consistent standard library](standard-library.md)

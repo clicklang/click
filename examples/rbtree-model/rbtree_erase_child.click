@@ -336,7 +336,7 @@ theorem rb_erase_immediate_successor_child(erased: struct rb_node*, successor: s
         rewrite(rb_inorder(rb_reparent(rb_recolor(child, Color::Black), successor)) == rb_inorder(rb_recolor(child, Color::Black)));
         rewrite(rb_inorder(rb_recolor(child, Color::Black)) == rb_inorder(child));
         rewrite(rb_inorder(RbTree::Node(successor, erased, sc, RbTree::Empty, child))
-            == List<struct rb_node*>::Cons(successor, rb_inorder(child))); normalize();
+            == List::Cons(successor, rb_inorder(child))); normalize();
     }
 }
 

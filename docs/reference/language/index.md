@@ -354,9 +354,12 @@ int32 tree_depth_ok(struct node* root) {
 ```
 
 The declaration must exactly name an owned or viewed entry resource, or one of
-the contract's own resource binders. The current structural slice supports
-direct recursion, a directly recursive composite definition, and a simple
-resource guard. The definition may be `if`-guarded or `match model`-bodied: a
+the contract's own resource binders. The structural analysis supports
+direct and mutual recursion, a directly recursive composite definition, and a
+simple resource guard: in a component of two or more, every member is ranked
+by the same resource family, and a call to another member must pass a direct
+contained child for that member's own measured requirement
+(`mdtests/c_decreases_resource_mutual_recursion.md`). The definition may be `if`-guarded or `match model`-bodied: a
 matched body's named and unnamed children of the same family are its direct
 contained children, and the arm is selected by a fact of its own that every
 other arm's facts deny, as `fact p != 0` is denied by an `Empty` arm's
@@ -600,11 +603,13 @@ assignments, updates, allocation results, and call results. Structural
 recursive calls in loops are supported for read-only resource transitions when
 the parent is observed before the loop; the recursive call must still receive
 a direct contained child. See
-`mdtests/c_decreases_resource_recursive_in_loop.md`. Resource-consuming or
-mutating structural calls across a loop back edge remain tracked in the
-hard-bucket `issues/recursion.md`.
-Recursive calls whose descent depends on a changing lexicographic caller
-measure remain unsupported.
+`mdtests/c_decreases_resource_recursive_in_loop.md`. A recursive call that
+consumes a child inside a ranked loop is ranked by a model measure, and the
+loop may free the node and continue
+(`mdtests/c_decreases_model_measure_recursion_consumes_inside_loop.md`). A
+call whose descent depends on the loop's changing counters is ranked by a
+function-level expression or tuple measure, discharged from the loop
+invariants (`mdtests/c_decreases_lexicographic_recursion_under_loops.md`).
 
 Click certifies termination of the whole function, so every reachable loop and
 recursive component must be ranked and every callee must itself have
@@ -1196,7 +1201,7 @@ introduce names:
 
 - the `executes` parameter list introduces the call's C parameters;
 - `as { parameter: name }` on the conclusion introduces one arbitrary instance
-  per proof parameter of the target contract;
+  per resource handle of the target contract;
 - `let { binder: name, ... } = step(...)` introduces instances a callee
   `produces`.
 
@@ -1209,7 +1214,7 @@ into theorem premises or conclusions. Their names must be distinct from the
 callback and from `result`; a return-valued callback parameter also cannot be
 named `result`.
 
-When the target contract declares resource proof parameters, the conclusion
+When the target contract declares resource handles, the conclusion
 introduces one arbitrary instance per parameter with an `as` map keyed by the
 contract's parameter names:
 
@@ -1218,7 +1223,7 @@ contract's parameter names:
 theorem lift(callback: int32 (*)()) executes callback() {
     requires Exact(callback);
     ensures Progress(callback) as { cell: k } by {
-        step(Exact(k));
+        step(Exact, { cell: k });
         have k.revision == old(k.revision) + 1 by { assumption(); }
         apply(int32_increment_strictly_increases(old(k.revision), 2147483647));
         simp();
@@ -1228,18 +1233,17 @@ theorem lift(callback: int32 (*)()) executes callback() {
 
 `k` is the only name for that instance inside the block, and the theorem proves
 the refinement for an arbitrary such instance. The target's own spelling `cell`
-is not in scope. Every target proof parameter must be named exactly once, and
+is not in scope. Every target handle must be named exactly once, and
 an introduced name cannot shadow the callback, the call arguments, a theorem
 local name, or `result`. The names do not escape the block. A target with no
-proof parameters takes no map, though an empty `as {}` is accepted, and a map
+handles takes no map, though an empty `as {}` is accepted, and a map
 on such a target is an error. Source and target parameter names are unrelated,
 and the target contract may be declared later in the file.
 
-A step passes instances in the spelling the callee's own declaration fixes.
-A named contract has a parameter list, so `step(Exact(k))` passes them
-positionally. A C function's binders live in its `owns`, `consumes`, and
-`produces` clauses rather than in its signature, so
-`step(increment(state), { first: k })` passes them by binder name, as in
+A step passes instances by the binder names the callee's own declaration
+fixes. Both a named contract and a C function declare their binders in
+`owns`, `consumes`, and `produces` clauses, so `step(Exact, { cell: k })` and
+`step(increment(state), { first: k })` use the same map, as in
 [Calls that transport named instances](#calls-that-transport-named-instances).
 
 The [counter refinement tests](https://github.com/clicklang/click/blob/master/mdtests/c_contract_executes_counter.md)
@@ -1275,7 +1279,7 @@ theorem parameters are refused, and every feasible proof case must
 execute exactly one call, as in the abstract form.
 `apply(increment_is_exact())` then introduces `Exact(&increment)` at a call site
 exactly like a concrete `unfold(Name)` refinement theorem. This is the explicit
-route for a target contract with proof parameters, which `unfold(Name)` refuses.
+route for a target contract with resource handles, which `unfold(Name)` refuses.
 The [modeled-instance variant](https://github.com/clicklang/click/blob/master/mdtests/c_contract_executes_concrete_model.md)
 carries a tree instance through the same two maps.
 
@@ -1313,7 +1317,7 @@ about, and searches no equality for a rewrite. A clause outside the admitted
 classes, or one needing any of that reasoning, is proved by an explicit theorem
 instead.
 
-When the contract declares proof parameters, formation also requires the
+When the contract declares resource handles, formation also requires the
 pairing between its parameters and the implementation's binders to be forced:
 for each parameter exactly one binder of the same resource family with equal
 arguments, and the reverse. Two binders of one family, or a binder with no
@@ -1651,7 +1655,7 @@ explicit postcondition. Instance identity is distinct from field state, and
 fields are symbolic Click values, not executable C ghost parameters.
 
 Explicit callback applications such as
-`step(Read(first))` transport ownership with fresh post-call fields constrained
+`step(Read, { cell: first })` transport ownership with fresh post-call fields constrained
 by the selected contract. `unfold(cell)` exposes an instance's immediate memory
 body and its facts; field names in the body denote that instance's fields.
 For witness-free memory-only bodies, including guarded and matched bodies, unfolding consumes the named
@@ -1896,7 +1900,9 @@ let root = fold(tree(p), { model: old(root.model) }, { left: l, right: r });
 ```
 
 `let { ... } = unfold(root)` consumes `root`, exposes its immediate memory,
-and introduces folded children. No parent handle or `root.left` path remains.
+and introduces folded children. It is the one form that names what an unfold
+opens; the trailing `unfold(root) as { ... }` spelling is refused with that
+advice (`mdtests/unfold_names_its_pieces_on_the_left.md`). No parent handle or `root.left` path remains.
 Each selected-arm child must be named exactly once. An introduced name must
 not already own a resource. `unfold(l)` exposes the child's immediate body;
 an arm with no children needs no bindings (an empty output pattern is also
@@ -1907,6 +1913,27 @@ consumes those children and the parent's immediate memory, checking each
 child's family, arguments, and fields against the proposed model. Replacements
 and reordered children are allowed when those checks hold. Missing, duplicate,
 unfolded, or mismatched children are rejected. A leaf omits the empty child map.
+
+A child whose owned resource has the slot's own name may be left out of the
+map: `{ left: left, right: r }` is written `{ right: r }`, and a map whose
+every child is taken this way is left out. The fold keeps the children of
+the arm its model selects, so a leaf folded beside an owned `left` leaves
+`left` alone, and the kernel checks the completed map exactly as a written
+one. A slot is taken by name only from a resource binding of that name in
+scope, never the fold's own result, a name the map already uses, or a pure
+binding; one of another resource family is not taken. The taken resource
+must still be owned in folded form: otherwise the fold names the missing
+child and why the in-scope one does not fill it
+(`mdtests/a_fold_does_not_take_an_unfolded_child_by_name.md`).
+
+<!-- verified-example: mdtests/a_fold_takes_children_by_name.md -->
+```click
+let { left: left, right: right } = unfold(root);
+unfold(left);
+execute();
+let left = fold(tree(lp), { model: Tree::Leaf(2) });
+let root = fold(tree(p), { model: old(root.model) });
+```
 
 A resource that declares no `field` may still name a child that has fields,
 and state facts about them:
@@ -1927,7 +1954,8 @@ values survive a fold as a declared field's do. The child must be declared
 before it. Because it has no field a contract could name, it is held without
 a name, `owns pair(p);`, unfolded with `let { first: c } = unfold(pair(p));`,
 and folded with `fold(pair(p), { first: c });`, which takes only the child
-map. Holding it by name, `owns x: pair(p);`, is also accepted.
+map; with the child bound to `first`, `fold(pair(p));` takes it by name
+(`mdtests/a_hidden_record_folds_its_child_by_name.md`). Holding it by name, `owns x: pair(p);`, is also accepted.
 
 A resource that declares fields of its own says where a named child's field
 is kept with one equation,
@@ -1951,8 +1979,9 @@ The new parent need not have existed before; `consumes l: tree(left);` names
 an input child without promising to return it separately.
 
 Parent-qualified resource handles such as `root.left` are not supported.
-Unfolding a recursive body requires `as { ... }` to name its selected children;
-refolding requires the explicit child map. Unfold consumes the parent, so it
+Unfolding a recursive body requires `let { ... } = unfold(...)` to name its
+selected children; refolding requires the child map, less the children taken
+by name. Unfold consumes the parent, so it
 cannot be projected or unfolded again unless a new owned parent is constructed.
 
 A child names one declared field-bearing resource: the parent's own definition
@@ -2495,9 +2524,8 @@ is already a C local or a proof-local binding. The map is still written, as
 `{ }` when the callee declares no instance binder at all.
 
 The callee's binder names come from its own sidecar, so that sidecar must be
-declared before the proof that calls it. A named contract takes its instances
-positionally instead, as `step(Exact(k))`, because it declares a parameter
-list.
+declared before the proof that calls it. A named-contract step uses the same
+map after the contract's name, as `step(Exact, { cell: k })`.
 
 ## User-defined tactics
 

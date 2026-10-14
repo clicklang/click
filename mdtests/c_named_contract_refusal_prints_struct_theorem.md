@@ -30,8 +30,8 @@ resource tree_at(p: struct node*) {
     owns p->augmented;
 }
 
-contract AugmentRotate(t: tree_at(p)) for void(struct node* p) {
-    owns t;
+contract void AugmentRotate(struct node* p) {
+    owns t: tree_at(p);
     ensures t.model == old(t.model);
 }
 

@@ -50,10 +50,10 @@ fn execution_target_resource_scope_parsing_is_linear_in_selected_declarations() 
     let samples = [1, 8, 32, 128].map(|count| {
         let mut source = "resource Counter() { field revision: int32; }\n".to_string();
         for index in 0..count {
-            source.push_str(&format!("theorem lift{index}(callback: int32 (*)()) executes callback() {{ requires C{index}(callback); ensures C{index}(callback) as {{ cell: k }} by {{ step(C{index}(k)); simp(); }} }}\n"));
+            source.push_str(&format!("theorem lift{index}(callback: int32 (*)()) executes callback() {{ requires C{index}(callback); ensures C{index}(callback) as {{ cell: k }} by {{ step(C{index}, {{ cell: k }}); simp(); }} }}\n"));
         }
         for index in 0..count {
-            source.push_str(&format!("contract C{index}(cell: Counter()) for int32() {{ owns cell; ensures result == 0; }}\n"));
+            source.push_str(&format!("contract int32 C{index}() {{ owns cell: Counter(); ensures result == 0; }}\n"));
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::surface::parse(&source).expect("forward target proof scopes parse")
@@ -786,6 +786,58 @@ fn function_with_unrelated_facts(fact_count: usize, proof: &str) -> (String, Str
     (c_source, click_source)
 }
 
+/// `memcmp`'s byte-range precondition, which a call step's fast path leaves
+/// open, proved by the written `by` body `click expand` prints for it, beside
+/// `fact_count` unrelated facts about another parameter.
+fn call_with_unrelated_facts(fact_count: usize) -> (String, String) {
+    let c_source =
+        "int32 call_target(uint8 bytes[], int32 n) {\n    return memcmp(bytes, bytes, 2);\n}\n"
+            .to_string();
+    let mut click_source = String::from(
+        "verifying \"call_target.c\";\n\nint32 call_target(uint8 bytes[], int32 n) {\n    requires viewable(bytes[0..2]);\n",
+    );
+    for index in 0..fact_count {
+        click_source.push_str(&format!("    requires n != {};\n", index + 100));
+    }
+    click_source.push_str(
+        "    ensures 1 == 1 by {
+        step() by {
+            have defined(bytes[0]) and defined(bytes[0]) by {
+                both {
+                    transport(at(function.entry, viewable(bytes[0..2])), defined(bytes[0])) using {
+                        at(function.entry, viewable(bytes[0..2]));
+                    }
+                } and {
+                    transport(at(function.entry, viewable(bytes[0..2])), defined(bytes[0])) using {
+                        at(function.entry, viewable(bytes[0..2]));
+                    }
+                }
+            }
+            have defined(bytes[1]) and defined(bytes[1]) by {
+                both {
+                    transport(at(function.entry, viewable(bytes[0..2])), defined(bytes[1])) using {
+                        at(function.entry, viewable(bytes[0..2]));
+                    }
+                } and {
+                    transport(at(function.entry, viewable(bytes[0..2])), defined(bytes[1])) using {
+                        at(function.entry, viewable(bytes[0..2]));
+                    }
+                }
+            }
+            enumerate();
+        }
+        step();
+        have 1 == 1 by {
+            normalize();
+        }
+        assumption();
+    }
+}
+",
+    );
+    (c_source, click_source)
+}
+
 /// Distinct surface forms of one kernel fact, each of constant size, so the
 /// source grows linearly with `form_count`. Form `k` wraps `target` in a
 /// fixed number of `+ 0` additions and the bits of `k` choose which side each
@@ -1117,6 +1169,35 @@ fn explicit_step_scales_near_linearly_with_unrelated_ambient_facts() {
         .collect::<Vec<_>>();
 
     assert_near_linear_scaling("explicit step with unrelated facts", &samples);
+}
+
+/// A call step whose fast path leaves the callee's precondition open, proved
+/// by a written `by` body of simple tactics and checked with the implicit
+/// `auto` off, as an expanded proof is. Unrelated context facts mention the
+/// same variable, so a search over the context would visit every one.
+#[test]
+#[ignore = "nightly: 1.0s alone (2026-10-14)"]
+fn step_with_written_obligation_proof_scales_near_linearly_with_unrelated_ambient_facts() {
+    let samples = [4, 8, 16, 32]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = call_with_unrelated_facts(size);
+            let (verified, sample) = scaling_sample(size, || {
+                crate::surface::proof::without_implicit_auto(|| {
+                    verify_c0_sources(&click_source, &[("call_target.c", c_source.as_str())])
+                })
+            });
+            verified.unwrap_or_else(|error| {
+                panic!(
+                    "size {size} written-obligation step scaling fixture failed: {}",
+                    error.message()
+                )
+            });
+            sample
+        })
+        .collect::<Vec<_>>();
+
+    assert_near_linear_scaling("step with a written obligation proof", &samples);
 }
 
 #[test]

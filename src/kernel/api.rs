@@ -5937,17 +5937,7 @@ pub fn prove_owned_resource_quantity_nonnegative(
 /// diagnostic.
 fn describe_contract_reuse_premise(premise: &Proposition) -> String {
     fn resource_name(resource: &CResource) -> &str {
-        match resource {
-            CResource::Composite { name, .. } | CResource::Token { name, .. } => name,
-            CResource::Memory(_) => "memory",
-            CResource::PopulationAuthority(_) => "population authority",
-            CResource::MutexGuard(_) => "mutex guard",
-            CResource::MutexLive(_) => "mutex lifetime",
-            CResource::MutexUse(_) => "mutex use",
-            CResource::Publication(_) => "publication right",
-            CResource::Instance(instance) => instance.name(),
-            CResource::Iterated(iterated) => iterated.owner(),
-        }
+        resource.diagnostic_name()
     }
     match premise {
         Proposition::Predicate { name, .. } => format!("the predicate identity `{name}`"),

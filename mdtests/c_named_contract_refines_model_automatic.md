@@ -23,8 +23,8 @@ resource cell_at(p: int32*) {
     owns p[0..1];
 }
 
-contract Preserve(root: cell_at(p)) for void(int32* p) {
-    owns root;
+contract void Preserve(int32* p) {
+    owns root: cell_at(p);
     ensures root.model == old(root.model);
 }
 

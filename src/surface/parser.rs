@@ -106,6 +106,7 @@ pub(super) fn parse_for_target(
     let mut parser =
         Parser::new(source).map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
     parser.plain_char = Some(target.plain_char());
+    parser.int64_t_rank = target.int64_t_rank();
     parser.parse_file()
 }
 
@@ -151,6 +152,9 @@ pub(in crate::surface) struct ProgramLayouts {
     /// The signedness the program's C target gives plain `char`. `None` for
     /// a program with no C target, where spelling plain `char` is refused.
     pub(in crate::surface) plain_char: Option<syntax::PlainChar>,
+    /// The rank the program's C target gives `int64_t` and `uint64_t`;
+    /// `None` reads them as `long`.
+    pub(in crate::surface) int64_t_rank: Option<LongRank>,
 }
 
 pub(super) fn parse_with_layouts_and_aggregate_objects(
@@ -227,6 +231,7 @@ pub(super) fn parse_file_items_for_module(
     imported_tactic_names: &BTreeSet<String>,
     imported_function_names: &BTreeSet<String>,
     imported_callees: &[&FunctionBlock],
+    imported_resources: &[&ResourceDefinition],
     layouts: ProgramLayouts,
 ) -> Result<ClickFile, ClickError> {
     let mut parser = Parser::with_program_layouts(
@@ -268,6 +273,14 @@ pub(super) fn parse_file_items_for_module(
                     CalleeResourceBinderKind::Produced,
                 );
             }
+        }
+    }
+    for definition in imported_resources {
+        if let Some(body) = definition.composite_body() {
+            parser.declared_resource_child_slots.insert(
+                definition.name().to_string(),
+                composite_body_child_slots(body),
+            );
         }
     }
     for definition in imported_algebraic_types {
@@ -539,7 +552,6 @@ struct Parser {
     recursion_peers_by_function: BTreeMap<String, Vec<String>>,
     source_aliases: BTreeMap<String, String>,
     qualified_objects: Option<BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>>,
-    pending_contract_name: Option<String>,
     /// Set while a `tactic` declaration's signature is parsed: the name
     /// follows directly, the parameters use Click's `name: type` spelling,
     /// and the implicit result is `void`.
@@ -547,7 +559,6 @@ struct Parser {
     /// Every user-defined tactic declared so far in this file, so a proof
     /// can tell `name(args)` applying one from other syntax.
     tactic_names: BTreeSet<String>,
-    contract_resource_parameters: BTreeMap<String, ResourceClause>,
     contract_proof_bindings: BTreeMap<String, Vec<(String, Variable, String)>>,
     next_resource_identity: u64,
     current_resource_bindings: BTreeMap<String, (Variable, String)>,
@@ -561,6 +572,10 @@ struct Parser {
     in_resource_definition: bool,
     /// The fields of each resource declared so far, hidden ones included.
     declared_resource_fields: BTreeMap<String, Vec<ResourceFieldDefinition>>,
+    /// The named child slots of each resource declared so far, across its
+    /// unmatched body and every match arm. A `fold` may leave out a slot
+    /// whose child is the in-scope resource of the same name.
+    declared_resource_child_slots: BTreeMap<String, BTreeSet<String>>,
     /// In a resource that declares no fields and names a child: the hidden
     /// parent field that holds each `child.field`.
     hidden_child_fields: BTreeMap<(String, String), ResourceFieldAccess>,
@@ -570,6 +585,13 @@ struct Parser {
     /// The signedness the selected C target gives plain `char`, or `None`
     /// where no C target applies; plain `char` is then refused.
     plain_char: Option<syntax::PlainChar>,
+    /// The rank a function head's `int64_t` and `uint64_t` have on the
+    /// target. Only heads keep a rank: see `exact_long_rank`.
+    int64_t_rank: LongRank,
+    /// Set while a function head is parsed. A head restates a C
+    /// declaration, so it keeps the C type exactly, `long` apart from
+    /// `long long`; a specification type elsewhere names a representation.
+    exact_long_rank: bool,
     /// The slice parameters of the Rust signature being parsed. Each is one
     /// name in the sidecar and a pointer with a `name_len` length underneath.
     rust_slice_params: BTreeSet<String>,
@@ -915,6 +937,7 @@ impl Parser {
         parser.qualified_objects = Some(layouts.qualified_objects);
         parser.local_struct_pointers_by_function = layouts.local_struct_pointers;
         parser.plain_char = layouts.plain_char;
+        parser.int64_t_rank = layouts.int64_t_rank.unwrap_or(LongRank::Long);
         Ok(parser)
     }
 
@@ -942,10 +965,8 @@ impl Parser {
         Ok(Self {
             source_aliases: BTreeMap::new(),
             qualified_objects: None,
-            pending_contract_name: None,
             pending_tactic_signature: false,
             tactic_names: BTreeSet::new(),
-            contract_resource_parameters: BTreeMap::new(),
             contract_proof_bindings: BTreeMap::new(),
             next_resource_identity: 0,
             current_resource_bindings: BTreeMap::new(),
@@ -954,9 +975,12 @@ impl Parser {
             current_resource_targets: BTreeMap::new(),
             in_resource_definition: false,
             declared_resource_fields: BTreeMap::new(),
+            declared_resource_child_slots: BTreeMap::new(),
             hidden_child_fields: BTreeMap::new(),
             language,
             plain_char: None,
+            int64_t_rank: LongRank::Long,
+            exact_long_rank: false,
             rust_slice_params: BTreeSet::new(),
             rust_impl_type: None,
             rust_impl_method_suffix: None,
@@ -1309,69 +1333,23 @@ impl Parser {
 
     fn parse_contract_definition(&mut self) -> Result<ContractDefinition, ClickError> {
         self.expect_ident_spelling("contract")?;
-        let proof_parameters = if self.peek_next() == Some(&Token::LParen) {
-            let name = self.expect_ident("contract name")?;
-            self.expect(Token::LParen)?;
-            let mut parameters = Vec::new();
-            while self.peek() != Some(&Token::RParen) {
-                if self.peek_next() != Some(&Token::Colon) {
-                    return Err(
-                        self.error("contract proof parameters require `name: resource(...)`")
-                    );
-                }
-                let parameter = self.parse_owned_resource_binding()?;
-                let ResourceClause::Named { binding, .. } = &parameter else {
-                    return Err(
-                        self.error("contract proof parameters require `name: resource(...)`")
-                    );
-                };
-                self.contract_resource_parameters
-                    .insert(binding.name.clone(), parameter.clone());
-                parameters.push(parameter);
-                if self.peek() != Some(&Token::Comma) {
-                    break;
-                }
-                self.position += 1;
-            }
-            self.expect(Token::RParen)?;
-            self.expect_ident_spelling("for")?;
-            self.current_resource_bindings.clear();
-            self.pending_contract_name = Some(name);
-            Some(parameters)
-        } else {
-            None
-        };
+        // The retired form put proof parameters before the C signature:
+        // `contract Read(cell: marked_cell(p)) for int32(int32* p)`. A name
+        // followed directly by `(` can only be that form, since a C head
+        // starts with its return type.
+        if let Some(name) = self.peek_ident()
+            && self.peek_next() == Some(&Token::LParen)
+        {
+            return Err(self.error(format!(
+                "`contract {name}(...) for ...` is retired; write the C declaration and \
+                 declare each resource handle in the body, as in \
+                 `contract int32 {name}(int32* p) {{ owns cell: marked_cell(p); ... }}`"
+            )));
+        }
         let previous_in_contract = std::mem::replace(&mut self.in_contract_definition, true);
         let function_block = self.parse_function_block(false);
         self.in_contract_definition = previous_in_contract;
         let function_block = function_block?;
-        if let Some(parameters) = &proof_parameters {
-            let identities = parameters
-                .iter()
-                .filter_map(|parameter| match parameter {
-                    ResourceClause::Named { binding, .. } => Some(binding.identity),
-                    _ => None,
-                })
-                .collect::<BTreeSet<_>>();
-            let mut owned_parameters = BTreeSet::new();
-            for requirement in function_block.requires() {
-                if let Requirement::Resource(ResourceClause::Named { binding, .. }) = requirement {
-                    if !identities.contains(&binding.identity) {
-                        return Err(self.error(format!(
-                            "resource `{}` must be declared in the contract proof-parameter list",
-                            binding.name
-                        )));
-                    }
-                    if !owned_parameters.insert(binding.identity) {
-                        return Err(self.error(format!(
-                            "duplicate ownership of proof parameter `{}`",
-                            binding.name
-                        )));
-                    }
-                }
-            }
-        }
-        self.contract_resource_parameters.clear();
         if function_block.decreases().is_some()
             || function_block.grouped_proof().is_some()
             || !function_block.constructs().is_empty()
@@ -1384,9 +1362,20 @@ impl Parser {
                 "named contracts cannot carry proofs, `decreases`, or `constructs` clauses",
             ));
         }
+        // A named `owns` or `consumes` clause declares one of the contract's
+        // resource handles. In declaration order they are the contract's
+        // proof parameters, which an application binds by name.
+        let proof_parameters = function_block
+            .requires()
+            .iter()
+            .filter_map(|requirement| match requirement {
+                Requirement::Resource(parameter @ ResourceClause::Named { .. }) => {
+                    Some(parameter.clone())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
         let bindings = proof_parameters
-            .as_deref()
-            .unwrap_or_default()
             .iter()
             .filter_map(|parameter| {
                 let ResourceClause::Named { binding, resource } = parameter else {
@@ -1401,7 +1390,7 @@ impl Parser {
         self.contract_proof_bindings
             .insert(function_block.signature().name().to_string(), bindings);
         Ok(ContractDefinition {
-            proof_parameters,
+            proof_parameters: (!proof_parameters.is_empty()).then_some(proof_parameters),
             function_block,
         })
     }
@@ -1902,6 +1891,8 @@ impl Parser {
         if let Some(body) = &composite_body {
             self.declared_resource_fields
                 .insert(name.clone(), body.fields.clone());
+            self.declared_resource_child_slots
+                .insert(name.clone(), composite_body_child_slots(body));
         }
         self.current_struct_params = previous_struct_params;
         self.current_struct_array_params = previous_struct_array_params;
@@ -2848,25 +2839,8 @@ impl Parser {
 
     fn parse_function_block(&mut self, external: bool) -> Result<FunctionBlock, ClickError> {
         let previous_function_block = std::mem::replace(&mut self.in_function_block, true);
-        let previous_resource_targets = std::mem::replace(
-            &mut self.current_resource_targets,
-            self.contract_resource_parameters.clone(),
-        );
+        let previous_resource_targets = std::mem::take(&mut self.current_resource_targets);
         let previous_resource_bindings = std::mem::take(&mut self.current_resource_bindings);
-        for (name, parameter) in &self.contract_resource_parameters {
-            let ResourceClause::Named { binding, resource } = parameter else {
-                unreachable!()
-            };
-            let ResourceClause::Declared {
-                name: resource_name,
-                ..
-            } = resource.as_ref()
-            else {
-                unreachable!()
-            };
-            self.current_resource_bindings
-                .insert(name.clone(), (binding.identity, resource_name.clone()));
-        }
         if external {
             self.expect_ident_spelling("extern")?;
         }
@@ -2876,7 +2850,12 @@ impl Parser {
             struct_array_params,
             mut reference_params,
             return_struct_name,
-        } = self.parse_function_signature()?;
+        } = {
+            let previous = std::mem::replace(&mut self.exact_long_rank, true);
+            let signature = self.parse_function_signature();
+            self.exact_long_rank = previous;
+            signature?
+        };
         if let Some(struct_name) = return_struct_name {
             struct_params.insert("result".to_string(), struct_name);
         }
@@ -3625,12 +3604,7 @@ impl Parser {
         } else {
             parsed_return_type.c_type
         };
-        let pending_contract_name = self.pending_contract_name.take();
-        let is_named_contract = pending_contract_name.is_some();
-        let name = match pending_contract_name {
-            Some(name) => name,
-            None => self.expect_ident("function name")?,
-        };
+        let name = self.expect_ident("function name")?;
         self.expect(Token::LParen)?;
         let parsed_parameters = self.parse_parameters()?;
         self.expect(Token::RParen)?;
@@ -3643,11 +3617,6 @@ impl Parser {
                 || parsed.c_type != C0Type::Int32
             {
                 return Err(self.error("the exceptional payload type must be `int32`"));
-            }
-            if is_named_contract {
-                return Err(
-                    self.error("named exceptional contracts are not supported in this slice")
-                );
             }
             Some(C0Type::Int32)
         } else {
@@ -3923,8 +3892,20 @@ impl Parser {
         )
         .map_err(|message| self.error(message))?;
         // A specification type names a representation: a sidecar's `long
-        // long` is `int64`, which matches a C `long` or `long long` alike.
-        let integer = integer.map(|(c_type, count)| (c_type.erase_long_rank(), count));
+        // long` is `int64`, which matches a C `long` or `long long` alike. A
+        // function head restates a C declaration and keeps its rank.
+        let integer = integer.map(|(c_type, count)| {
+            if self.exact_long_rank {
+                (c_type, count)
+            } else {
+                (c_type.erase_long_rank(), count)
+            }
+        });
+        let typedef_rank = if self.exact_long_rank {
+            self.int64_t_rank
+        } else {
+            LongRank::Long
+        };
         let scalar_type = if let Some((c_type, count)) = integer {
             self.position += count - 1;
             c_type
@@ -3938,8 +3919,10 @@ impl Parser {
                 "uint8" | "uint8_t" => C0Type::UInt8,
                 "uint16" | "uint16_t" => C0Type::UInt16,
                 "uint32" | "uint32_t" => C0Type::UInt32,
-                "int64" | "int64_t" | "ssize_t" => C0Type::Int64(LongRank::Long),
-                "uint64" | "size_t" | "uint64_t" => C0Type::UInt64(LongRank::Long),
+                "int64" | "ssize_t" => C0Type::Int64(LongRank::Long),
+                "int64_t" => C0Type::Int64(typedef_rank),
+                "uint64" | "size_t" => C0Type::UInt64(LongRank::Long),
+                "uint64_t" => C0Type::UInt64(typedef_rank),
                 "int128" => C0Type::Int128,
                 "uint128" => C0Type::UInt128,
                 "float" => C0Type::Float32,
@@ -4688,6 +4671,7 @@ impl Parser {
                         fields: None,
                         fold_fields: None,
                         child_bindings: None,
+                        default_child_bindings: None,
                     },
                     resource: Box::new(protected),
                 });
@@ -4869,6 +4853,7 @@ impl Parser {
                     fields: binding.fields,
                     fold_fields: None,
                     child_bindings: binding.child_bindings,
+                    default_child_bindings: None,
                 },
                 resource,
             },
@@ -4916,6 +4901,7 @@ impl Parser {
                         fields: None,
                         fold_fields: None,
                         child_bindings: None,
+                        default_child_bindings: None,
                     },
                     resource: Box::new(ResourceClause::Declared {
                         type_schema: None,
@@ -5019,13 +5005,6 @@ impl Parser {
         &mut self,
         rebinding: bool,
     ) -> Result<ResourceClause, ClickError> {
-        if let Some(name) = self.peek_ident()
-            && self.peek_next() != Some(&Token::Colon)
-            && let Some(parameter) = self.contract_resource_parameters.get(name).cloned()
-        {
-            self.position += 1;
-            return Ok(parameter);
-        }
         if !matches!(self.peek(), Some(Token::Ident(_))) || self.peek_next() != Some(&Token::Colon)
         {
             let target = self.parse_owned_resource_target()?;
@@ -5092,6 +5071,7 @@ impl Parser {
                 fields: None,
                 fold_fields: None,
                 child_bindings: None,
+                default_child_bindings: None,
             },
             resource: Box::new(resource),
         };
@@ -5152,6 +5132,7 @@ impl Parser {
                 fields: None,
                 fold_fields: None,
                 child_bindings: None,
+                default_child_bindings: None,
             },
             resource: Box::new(target),
         };
@@ -6207,6 +6188,7 @@ impl Parser {
                             fields: None,
                             fold_fields: None,
                             child_bindings: Some(Vec::new().into()),
+                            default_child_bindings: None,
                         },
                         resource: Box::new(parent.clone()),
                     },
@@ -6387,9 +6369,9 @@ impl Parser {
             self.next_resource_identity += 1;
             identity
         };
-        self.expect(Token::Comma)?;
         // A resource whose every field is hidden has no field the proof
-        // could write, so its one brace is the child map.
+        // could write, so its one brace is the child map, and a map whose
+        // every child defaults by name may be left out with it.
         let declared = self
             .declared_resource_fields
             .get(resource_name)
@@ -6397,6 +6379,9 @@ impl Parser {
             .unwrap_or_default();
         let only_hidden =
             !declared.is_empty() && declared.iter().all(|field| field.name.contains('.'));
+        if !(only_hidden && self.peek() == Some(&Token::RParen)) {
+            self.expect(Token::Comma)?;
+        }
         let mut fields = Vec::new();
         if !only_hidden {
             self.expect(Token::LBrace)?;
@@ -6412,15 +6397,19 @@ impl Parser {
             }
             self.expect(Token::RBrace)?;
         }
-        let child_bindings = if only_hidden {
+        let child_bindings = if only_hidden && self.peek() == Some(&Token::LBrace) {
             self.parse_resource_child_bindings(&resource, false)?
-        } else if self.peek() == Some(&Token::Comma) {
+        } else if !only_hidden && self.peek() == Some(&Token::Comma) {
             self.position += 1;
             self.parse_resource_child_bindings(&resource, false)?
         } else {
             Vec::new()
         };
-        self.fill_hidden_fold_fields(&declared, &child_bindings, &mut fields);
+        let default_child_bindings =
+            self.default_fold_child_bindings(resource_name, &name, &child_bindings);
+        let mut hidden_sources = child_bindings.clone();
+        hidden_sources.extend(default_child_bindings.iter().cloned());
+        self.fill_hidden_fold_fields(&declared, &hidden_sources, &mut fields);
         self.expect(Token::RParen)?;
         self.expect(Token::Semicolon)?;
         let binding = ResourceInstanceBinding {
@@ -6431,6 +6420,7 @@ impl Parser {
             fields: None,
             fold_fields: None,
             child_bindings: Some(Vec::new().into()),
+            default_child_bindings: None,
         };
         self.current_resource_bindings
             .insert(name.clone(), (identity, resource_name.clone()));
@@ -6445,10 +6435,46 @@ impl Parser {
             binding: ResourceInstanceBinding {
                 fold_fields: Some(fields),
                 child_bindings: Some(child_bindings.into()),
+                default_child_bindings: (!default_child_bindings.is_empty())
+                    .then(|| default_child_bindings.into()),
                 ..binding
             },
             resource: Box::new(resource),
         }))
+    }
+
+    /// The child slots of `family` that a fold's map left out and that an
+    /// in-scope resource of the same name could fill: `{ left: left }` is
+    /// written `{}` or not at all. A name the map already uses, the fold's
+    /// own result, or a name that is also a pure binding fills nothing.
+    /// Which of these the fold keeps is decided by the arm it selects.
+    #[inline(never)]
+    fn default_fold_child_bindings(
+        &self,
+        family: &str,
+        result: &str,
+        explicit: &[(String, String, Variable)],
+    ) -> Vec<(String, String, Variable)> {
+        let Some(slots) = self.declared_resource_child_slots.get(family) else {
+            return Vec::new();
+        };
+        slots
+            .iter()
+            .filter(|slot| {
+                slot.as_str() != result
+                    && !explicit
+                        .iter()
+                        .any(|(bound, name, _)| bound == *slot || name == *slot)
+                    && !self.current_contract_bindings.contains(*slot)
+                    && !self.current_integer_params.contains(*slot)
+                    && !self.current_integer_lets.contains(*slot)
+                    && !self.current_proof_let_names.contains(*slot)
+            })
+            .filter_map(|slot| {
+                let (identity, _) = self.current_resource_bindings.get(slot)?;
+                Some((slot.clone(), slot.clone(), *identity))
+            })
+            .collect()
     }
 
     /// A hidden field `slot.field` is the field of the child bound to
@@ -7070,11 +7096,27 @@ impl Parser {
                     ProofTactic::StepCall(self.parse_call_binder_transport(None, false)?)
                 } else {
                     let name = self.expect_ident("call contract name")?;
-                    let arguments = if self.peek() == Some(&Token::LParen) {
+                    if self.peek() == Some(&Token::LParen) {
+                        return Err(self.error(format!(
+                            "`step({name}(...))` is retired; select a named contract with \
+                             `step({name})`, or `step({name}, {{ handle: instance }})` \
+                             when its body declares resource handles"
+                        )));
+                    }
+                    let mut arguments = Vec::new();
+                    if self.peek() == Some(&Token::Comma) {
                         self.position += 1;
-                        let mut arguments = Vec::new();
-                        while self.peek() != Some(&Token::RParen) {
-                            let name = self.expect_ident("owned resource argument")?;
+                        if self.peek() != Some(&Token::LBrace) {
+                            return Err(self.error(format!(
+                                "`step({name}, ...)` selects one contract; after the comma it \
+                                 takes a handle map, `{{ handle: instance }}`"
+                            )));
+                        }
+                        self.position += 1;
+                        while self.peek() != Some(&Token::RBrace) {
+                            let handle = self.expect_ident("contract resource handle")?;
+                            self.expect(Token::Colon)?;
+                            let name = self.expect_ident("resource instance")?;
                             let (identity, resource_name) = self
                                 .current_resource_bindings
                                 .get(&name)
@@ -7083,6 +7125,7 @@ impl Parser {
                                     self.error(format!("unknown resource instance `{name}`"))
                                 })?;
                             arguments.push(ContractResourceArgument {
+                                handle,
                                 name,
                                 resource_name,
                                 identity,
@@ -7092,11 +7135,8 @@ impl Parser {
                             }
                             self.position += 1;
                         }
-                        self.expect(Token::RParen)?;
-                        Some(arguments)
-                    } else {
-                        None
-                    };
+                        self.expect(Token::RBrace)?;
+                    }
                     ProofTactic::StepContract(ContractApplication { name, arguments })
                 };
                 self.expect(Token::RParen)?;
@@ -7527,6 +7567,7 @@ impl Parser {
                 fields: None,
                 fold_fields: None,
                 child_bindings: None,
+                default_child_bindings: None,
             },
             resource: Box::new(resource),
         };
@@ -12962,4 +13003,22 @@ fn struct_byte_base(base: CExpression) -> CExpression {
         pointee_constant: false,
         explicit_qualification: false,
     }
+}
+
+/// Every named child slot of a composite resource body: its unmatched
+/// body's and each match arm's, whichever resource each one owns.
+fn composite_body_child_slots(body: &CompositeResourceBody) -> BTreeSet<String> {
+    std::iter::once(body)
+        .chain(
+            body.matched
+                .iter()
+                .flat_map(|matched| &matched.arms)
+                .map(|arm| &arm.body),
+        )
+        .flat_map(|body| &body.contains)
+        .filter_map(|clause| match clause {
+            ResourceClause::Named { binding, .. } => Some(binding.name.clone()),
+            _ => None,
+        })
+        .collect()
 }

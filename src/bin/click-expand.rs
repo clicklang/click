@@ -16,7 +16,7 @@ use click::surface::{
     tactic_source_position, verify_project_at, verify_sources_at,
 };
 
-const USAGE: &str = "usage: click expand [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>:<line>[:<column>]\n       click expand --claim <LABEL|PATH:LINE[:COLUMN]> [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>\n\n--claim selects a claim by its label or by a line its clause or proof covers. Expansion is checked before output. With --in-place, the original is atomically replaced only after targeted verification succeeds.\n\nThe whole command, generating the expansion and checking it, has a deterministic budget of --work-limit units (default 50000000), beside every tactic's own work budget. --time-limit (default 10m) is only a wall-clock crash-containment bound for a hung or CPU-starved run, not a verdict about the proof.";
+const USAGE: &str = "usage: click expand [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>:<line>[:<column>]\n       click expand --claim <LABEL|PATH:LINE[:COLUMN]> [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>\n\n--claim selects a claim by its label or by a line its clause or proof covers. Expansion is checked before output; a --claim expansion is checked with the implicit `auto` off, so it is self-contained. With --in-place, the original is atomically replaced only after targeted verification succeeds.\n\nThe whole command, generating the expansion and checking it, has a deterministic budget of --work-limit units (default 50000000), beside every tactic's own work budget. --time-limit (default 10m) is only a wall-clock crash-containment bound for a hung or CPU-starved run, not a verdict about the proof.";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Arguments {
@@ -175,7 +175,13 @@ fn run_bounded(arguments: &Arguments) -> Result<ExpandedArtifact, String> {
             },
         )
     })?;
-    verify_expansion(Some(&project), &expanded, &inputs, &claim)?;
+    verify_expansion(
+        Some(&project),
+        &expanded,
+        &inputs,
+        &claim,
+        matches!(arguments.selection, Selection::Claim(_)),
+    )?;
     Ok(ExpandedArtifact {
         source: expanded,
         claim,
@@ -264,6 +270,7 @@ fn write_context_preserved(
             &rebased,
             &verified_inputs,
             &artifact.claim,
+            matches!(arguments.selection, Selection::Claim(_)),
         )
     })();
     if let Err(verification) = verification {
@@ -384,7 +391,13 @@ fn run_mdtest(arguments: &Arguments) -> Result<ExpandedArtifact, String> {
             &location,
         )
     })?;
-    verify_expansion(project.as_ref(), &expanded, &inputs, &claim)?;
+    verify_expansion(
+        project.as_ref(),
+        &expanded,
+        &inputs,
+        &claim,
+        matches!(arguments.selection, Selection::Claim(_)),
+    )?;
     let source = mdtest.replace_click_source(&markdown, &expanded)?;
     Ok(ExpandedArtifact { source, claim })
 }
@@ -570,7 +583,30 @@ fn select_smart_tactic(
     }
 }
 
+/// Checks the expansion before it is written. A whole claim's expansion has
+/// nothing smart left, so it is checked with the implicit `auto` off and so
+/// shown self-contained (`issues/simplify-step.md`); a single site's leaves
+/// the claim's other steps and smart tactics, which still use it.
 fn verify_expansion(
+    project: Option<&ClickProject>,
+    expanded: &str,
+    inputs: &CInput,
+    claim: &str,
+    whole_claim: bool,
+) -> Result<(), String> {
+    let check = || {
+        if whole_claim {
+            click::surface::without_implicit_auto(|| {
+                verify_expansion_now(project, expanded, inputs, claim)
+            })
+        } else {
+            verify_expansion_now(project, expanded, inputs, claim)
+        }
+    };
+    check()
+}
+
+fn verify_expansion_now(
     project: Option<&ClickProject>,
     expanded: &str,
     inputs: &CInput,
@@ -1375,7 +1411,7 @@ int32 identity(int32 x) {
 }
 "#;
         let inputs = CInput::Bundle(vec![("identity.c".to_string(), c_source.to_string())]);
-        let check = || verify_expansion(None, click_source, &inputs, "identity.ensures_0");
+        let check = || verify_expansion(None, click_source, &inputs, "identity.ensures_0", false);
 
         check().expect("the generated proof verifies within the default budgets");
         let first = click::instrumentation::with_run_work_limit(10, check)

@@ -47,9 +47,9 @@ impl AssumedMutexProtocol {
             .loan_participant
             .ok_or("missing mutex use participant")?;
         let loans = state.loan_ledger.as_ref().ok_or("missing mutex use loan")?;
-        let use_fact = loans
-            .mutex_use_resource(usage, holder)
-            .map_err(|_| MutexTransitionError::Refusal("missing rooted mutex use input"))?;
+        let use_fact = loans.mutex_use_resource(usage, holder).map_err(|error| {
+            MutexTransitionError::OwnedRefusal(format!("missing rooted mutex use input: {error}"))
+        })?;
         let CResource::MutexUse(identity) = use_fact.resource() else {
             unreachable!()
         };
@@ -135,10 +135,10 @@ impl AssumedMutexProtocol {
         // heldness by merely searching the visible resource context.
         loans
             .check_mutex_use_available(self.usage, self.holder, &state.resources)
-            .map_err(|_| {
-                MutexTransitionError::Refusal(
-                    "mutex_use has an outstanding mutex_guard or reborrow",
-                )
+            .map_err(|error| {
+                MutexTransitionError::OwnedRefusal(format!(
+                    "mutex_use has an outstanding mutex_guard or reborrow: {error}"
+                ))
             })?;
         if state.resources.mutex_guard_at(self.mutex()).is_some() {
             return Err("mutex is already guarded".into());
@@ -155,8 +155,10 @@ impl AssumedMutexProtocol {
             .resources
             .clone()
             .try_compose_with_facts_delaying_normalization([fact.clone()], assumptions)
-            .map_err(|_| {
-                MutexTransitionError::Refusal("mutex guard conflicts with current authority")
+            .map_err(|error| {
+                MutexTransitionError::OwnedRefusal(format!(
+                    "mutex guard conflicts with current authority: {error}"
+                ))
             })?;
         let evidence = self.evidence(loans, transition, &next)?;
         let mut state = state.clone();
@@ -166,10 +168,10 @@ impl AssumedMutexProtocol {
                     [CResourceFact::own(CResource::Instance(payload.clone()))],
                     assumptions,
                 )
-                .map_err(|_| {
-                    MutexTransitionError::Refusal(
-                        "protected resource conflicts with current ownership",
-                    )
+                .map_err(|error| {
+                    MutexTransitionError::OwnedRefusal(format!(
+                        "protected resource conflicts with current ownership: {error}"
+                    ))
                 })?
         } else {
             resources

@@ -1481,9 +1481,8 @@ path to satisfy termination.
 There is no separately demonstrated missing structural-ranking operation to
 implement next. Resume the corresponding rbtree proof package and reduce any
 new kernel obstruction it exposes. Preserve the same-instance, unrelated-node,
-and rebuilt-layer negatives. Concurrent-reader termination, general recursion
-extensions, and broader well-founded resource families remain outside this
-sequential MVR obligation; see [recursion.md](recursion.md).
+and rebuilt-layer negatives. Concurrent-reader termination and broader well-founded resource families
+remain outside this sequential MVR obligation.
 
 Audit validation: all four `loop_decreases` fixtures pass under ordinary and
 candidate stable-loan semantics. Ordinary `click audit` checks all five smart
@@ -1524,5 +1523,4 @@ The maintained language explanation is
 Integer specification coverage is landed and documented in
 [the mathematical-integer internals](../docs/internals/mathematical-integers.md);
 this MVR model work has no pending dependency on the retired Integer P1
-issue. Related: [algebraic-data-types.md](algebraic-data-types.md) and
-[recursion.md](recursion.md).
+issue. Related: [algebraic-data-types.md](algebraic-data-types.md).

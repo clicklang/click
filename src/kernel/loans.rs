@@ -2441,6 +2441,23 @@ pub(crate) enum StableViewPlanError {
     UnsupportedPartition,
 }
 
+/// The plan error for a resource that could not join a context: an owned
+/// resource that the context already holds, or that overlaps one it holds,
+/// is a conflicting requirement naming that resource.
+fn composition_conflict(
+    error: crate::kernel::primitives::ResourceContextValidityError,
+    composed: &CResourceFact,
+) -> StableViewPlanError {
+    use crate::kernel::primitives::ResourceContextValidityError as Invalid;
+    match error {
+        Invalid::DuplicateOwnedResourceFact(_)
+        | Invalid::OverlappingOwnedMemoryResources { .. } => {
+            StableViewPlanError::ConflictingRequirement(composed.clone())
+        }
+        Invalid::InvalidExclusiveAccess(_) => StableViewPlanError::InvalidResidual,
+    }
+}
+
 impl StableViewPlanError {
     pub(crate) fn loan_diagnostic(
         &self,
@@ -2580,7 +2597,7 @@ fn lend_owned_view_to_suspended_worker(
     let (next_residual, occurrence) = residual
         .clone()
         .try_compose_with_fact_with_occurrence(viewed.clone(), assumptions)
-        .map_err(|_| StableViewPlanError::InvalidResidual)?;
+        .map_err(|error| composition_conflict(error, &viewed))?;
     let occurrence = occurrence.ok_or(StableViewPlanError::InvalidResidual)?;
     let (split, retained, worker) = ledger.split(root.root_share, caller, caller, caller)?;
     *ledger = ledger.apply(&split)?;
@@ -2828,7 +2845,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             let fact = use_plan.ledger.mutex_use_resource(use_plan.usage, callee)?;
             callee_resources = callee_resources
                 .try_compose_with_fact(fact.clone(), assumptions)
-                .map_err(|_| StableViewPlanError::InvalidResidual)?;
+                .map_err(|error| composition_conflict(error, &fact))?;
             mutex_use_requirements.insert(requirement.fact.clone(), fact.clone());
             let mut checked = requirement.clone();
             checked.fact = fact;
@@ -2864,7 +2881,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             }
             callee_resources = callee_resources
                 .try_compose_with_fact(requirement.fact.clone(), assumptions)
-                .map_err(|_| StableViewPlanError::InvalidResidual)?;
+                .map_err(|error| composition_conflict(error, &requirement.fact))?;
             memory_effects.push(
                 requirement
                     .fact
@@ -2956,7 +2973,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         };
         callee_resources = callee_resources
             .try_compose_with_fact(requirement.fact.clone(), assumptions)
-            .map_err(|_| StableViewPlanError::InvalidResidual)?;
+            .map_err(|error| composition_conflict(error, &requirement.fact))?;
         if let Some(range) = requirement.fact.memory_own_range() {
             memory_effects.push(range.clone());
         }
@@ -3169,7 +3186,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 };
                 let (next_resources, occurrence) = callee_resources
                     .try_compose_with_fact_with_occurrence(requirement.fact.clone(), assumptions)
-                    .map_err(|_| StableViewPlanError::InvalidResidual)?;
+                    .map_err(|error| composition_conflict(error, &requirement.fact))?;
                 let occurrence = occurrence
                     .or_else(|| owner_occurrences.get(&binding).copied())
                     .or_else(|| {
@@ -3453,7 +3470,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 };
                 let (next_resources, occurrence) = callee_resources
                     .try_compose_with_fact_with_occurrence(requirement.fact.clone(), assumptions)
-                    .map_err(|_| StableViewPlanError::InvalidResidual)?;
+                    .map_err(|error| composition_conflict(error, &requirement.fact))?;
                 let occurrence = occurrence
                     .or_else(|| owner_occurrences.get(&binding).copied())
                     .or_else(|| {
@@ -3541,7 +3558,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             }
             let (next_resources, occurrence) = callee_resources
                 .try_compose_with_fact_with_occurrence(requirement.fact.clone(), assumptions)
-                .map_err(|_| StableViewPlanError::InvalidResidual)?;
+                .map_err(|error| composition_conflict(error, &requirement.fact))?;
             let occurrence = occurrence
                 .or(child_occurrence)
                 .or_else(|| {
@@ -3649,7 +3666,7 @@ impl StableViewTransferPlan {
                 .callee_resources
                 .clone()
                 .try_compose_with_fact_with_occurrence(requirement.fact.clone(), assumptions)
-                .map_err(|_| StableViewPlanError::InvalidResidual)?;
+                .map_err(|error| composition_conflict(error, &requirement.fact))?;
             let support = occurrence.ok_or(StableViewPlanError::InvalidResidual)?;
             if let Some(existing) = existing {
                 let parent = if let Some(binding) = existing.get(&requirement.fact) {
@@ -3874,7 +3891,7 @@ impl StableViewTransferPlan {
                 .map(|resources| {
                     resources.normalized_around_facts(std::slice::from_ref(fact), assumptions)
                 })
-                .map_err(|_| StableViewPlanError::InvalidResidual)
+                .map_err(|error| composition_conflict(error, fact))
         };
         let parent_ledger = self.parent_ledger;
         let stable_views = self.stable_views.clone();
@@ -4090,7 +4107,7 @@ impl StableViewTransferPlan {
                 let source = use_plan.source_resource().clone();
                 resources = resources
                     .try_compose_with_facts_delaying_normalization([source.clone()], assumptions)
-                    .map_err(|_| StableViewPlanError::InvalidResidual)?;
+                    .map_err(|error| composition_conflict(error, &source))?;
                 recovered_escrows.push((source, None));
             }
         }

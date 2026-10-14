@@ -74,6 +74,11 @@ diagnostic.
   **specification language**, in which contracts, models, and proofs are
   written. Rust is also Click's implementation language. Do not write
   *program language* or *proof language*.
+- A **function head** (of a verified function, an `extern`, or a `contract`)
+  restates a target-language declaration. Write it as the source writes the
+  declaration: `long long` where the source says `long long`, `int` where it
+  says `int`. Click checks the head's exact types; the spelling is this
+  convention.
 - **Kernel Click** is the explicit proof core. It has no textual user syntax.
 - A **C fragment** is C syntax embedded in Surface Click and elaborated into
   Kernel Click meaning.

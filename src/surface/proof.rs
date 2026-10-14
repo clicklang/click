@@ -23,8 +23,7 @@ mod fixed_state_proofs;
 mod language_context;
 mod proof_object;
 
-#[cfg(test)]
-pub(crate) use proof_object::without_implicit_auto;
+pub use proof_object::without_implicit_auto;
 #[cfg(test)]
 pub(in crate::surface) use proof_object::{
     count_checked_execution_interface_joins, count_checked_expanded_execution_ifs,

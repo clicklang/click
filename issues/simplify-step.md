@@ -239,17 +239,20 @@ whole context under every policy but `Exact`. Count it before claiming a
 step decides conditions without search; its fast path is
 [difference-logic.md](difference-logic.md).
 
-### 4. Check expansion cold
+### 4. Check expansion cold (landed)
 
-`click expand` already checks its output before writing it. Run that check,
-and `click audit`'s, with the implicit `auto` off, so every expansion is
-proven self-contained when it is produced. There is no user-facing
-cold-check option; the check belongs to expansion. Add deterministic scaling
-regressions showing step cost does not grow with unrelated context facts.
+`click expand --claim` checks its output with the implicit `auto` off, and
+`click audit` checks a claim's whole expansion the same way when it
+verifies the rewritten proof unit afresh: nothing smart remains there, so
+each such expansion is shown self-contained when it is produced. A single
+site's expansion is checked as before, since the claim's other steps and
+smart tactics still use the implicit `auto`. There is no user-facing
+cold-check option. `step_with_written_obligation_proof_scales_near_linearly_with_unrelated_ambient_facts`
+(nightly) checks, cold, a call step whose open obligation a written `by`
+body proves, beside a growing set of unrelated facts.
 
-Implicit `auto` has its own budget, and profiling attributes its work to
-`auto`, not to the simple tactic, so a slow `auto` is not reported as a slow
-step.
+Implicit `auto` has its own budget, and profiling attributing its work to
+`auto` rather than the simple tactic remains to do.
 
 ### 5. Other simple tactics
 

@@ -7803,7 +7803,7 @@ impl CState {
             .and_then(|events| events.retirement_refusal(block))
             .map(|refusal| {
                 CRuntimeError::FunctionContract(format!(
-                    "population authority prevents storage {block:?} retirement: {refusal}"
+                    "population authority prevents storage retirement: {refusal}"
                 ))
             })
     }
