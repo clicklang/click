@@ -432,6 +432,16 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "write",
 ];
 
+/// The `click::` path of a Click library module identity:
+/// `library/c/string.click` is `click::c::string`.
+fn library_module_path(identity: &str) -> String {
+    let relative = identity
+        .strip_prefix("library/")
+        .and_then(|path| path.strip_suffix(".click"))
+        .unwrap_or(identity);
+    format!("click::{}", relative.replace('/', "::"))
+}
+
 /// The Click library modules loaded implicitly with every sidecar, as
 /// `(identity, source)` pairs in declaration order. Each module is parsed
 /// with the declarations of the modules before it.
@@ -489,6 +499,9 @@ pub struct ClickFile {
     /// Unique source spelling to C execution identity, shared by specification lowering.
     c_function_names: std::sync::Arc<BTreeMap<String, String>>,
     imports: Vec<ImportDeclaration>,
+    /// Click library modules this file imports with `import click::...;`, as
+    /// their `library/` identities, once each in source order.
+    library_imports: Vec<String>,
     verifying_sources: Vec<String>,
     /// The C implementation target this file selects with a `target`
     /// directive. `None` selects the default target.
@@ -7196,6 +7209,13 @@ pub struct C0VerificationSession {
 impl ClickFile {
     pub fn imports(&self) -> &[ImportDeclaration] {
         &self.imports
+    }
+
+    /// The `library/` identities of the Click library modules this file
+    /// imports. Every library module is currently loaded implicitly, so an
+    /// import only checks that its module exists.
+    pub fn library_imports(&self) -> &[String] {
+        &self.library_imports
     }
 
     pub(crate) fn entry_module(&self) -> Option<&str> {
