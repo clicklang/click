@@ -105,7 +105,14 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
     let mut proposition_calls = predicates.clone();
     proposition_calls.insert("same_object".to_string(), 2);
     proposition_calls.insert("held".to_string(), 1);
-    proposition_calls.extend(contracts.keys().map(|name| (name.clone(), 1)));
+    // A contract proposition takes the function value, then one value per
+    // value parameter.
+    proposition_calls.extend(file.contract_definitions().iter().map(|definition| {
+        (
+            definition.name().to_string(),
+            1 + definition.value_parameters().len(),
+        )
+    }));
 
     let mut click_functions = BTreeMap::new();
     let mut click_function_types = BTreeMap::new();
@@ -903,11 +910,24 @@ fn validate_contract_applications_in_proposition_one(
             let Some(expected) = contracts.get(name) else {
                 return Ok(());
             };
-            let [argument] = arguments.as_slice() else {
+            // The function value comes first; the rest are the contract's
+            // value parameters, whose count the parser checked by name and
+            // whose exact types the kernel checks where it binds them.
+            let Some((argument, values)) = arguments.split_first() else {
                 return Err(ClickError::new(format!(
                     "contract `{name}` expects one function-pointer argument in {context}"
                 )));
             };
+            for value in values {
+                let actual =
+                    infer_contract_expression_type(value, variables, click_functions, context)?;
+                if actual.is_some_and(|actual| actual.is_pointer()) {
+                    return Err(ClickError::new(format!(
+                        "contract `{name}` value parameters are scalars, got {} in {context}",
+                        actual.map_or_else(|| "an unknown type".to_string(), describe_c0_type)
+                    )));
+                }
+            }
             // A named C function's address carries its precise signature in
             // the built kernel environment rather than in the pure theorem's
             // local variable map. Accept the address shape here; contract

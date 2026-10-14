@@ -3851,10 +3851,13 @@ fn diverging_contract_objects(
                 if !diverging_contracts.contains(contract) {
                     return;
                 }
+                // The function value comes first; any values after it fix
+                // the contract's value parameters.
                 let [
                     SpecPredicateArgument::Value(SpecExpression::CExpression(
                         CExpression::Variable(object),
                     )),
+                    ..,
                 ] = arguments.as_slice()
                 else {
                     return;

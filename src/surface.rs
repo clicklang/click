@@ -964,6 +964,10 @@ pub struct TheoremExecution {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractDefinition {
     proof_parameters: Option<Vec<ResourceClause>>,
+    /// Value parameters, `let amount: int32;`, in declaration order. They are
+    /// the last parameters of the block's signature and are not part of the
+    /// function type the contract applies to.
+    value_parameters: Vec<String>,
     function_block: FunctionBlock,
 }
 
@@ -7588,11 +7592,21 @@ impl ContractDefinition {
         &self.function_block
     }
 
+    /// The value parameters, `let amount: int32;`, in declaration order.
+    pub fn value_parameters(&self) -> &[String] {
+        &self.value_parameters
+    }
+
+    /// The parameters of the function type the contract applies to: the
+    /// signature's, without the trailing value parameters.
+    pub fn call_parameters(&self) -> &[FunctionParameter] {
+        let parameters = self.function_block.signature().parameters();
+        &parameters[..parameters.len() - self.value_parameters.len()]
+    }
+
     pub fn function_pointer_type(&self) -> C0Type {
         let parameter_types = self
-            .function_block
-            .signature()
-            .parameters()
+            .call_parameters()
             .iter()
             .map(|parameter| {
                 (

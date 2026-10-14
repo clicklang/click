@@ -64,11 +64,14 @@ impl EqualityGraph {
         state
             .terms
             .adjust_pointer_fact(address, key, source, insert);
+        // A contract fact names its function value first; the values after
+        // it fix the contract's value parameters.
         if let Proposition::Predicate { name, arguments } = proposition
             && CFunctionContract::surface_name_from_predicate(name).is_some()
             && matches!(
                 arguments.as_slice(),
-                [Term::CState(_), Term::CValue(CValue::Pointer(_))]
+                [Term::CState(_), Term::CValue(CValue::Pointer(_)), values @ ..]
+                    if values.iter().all(|value| matches!(value, Term::CValue(_)))
             )
         {
             state.terms.adjust_pointer_fact(
@@ -141,26 +144,31 @@ impl EqualityGraph {
 
     /// Call consumers use the same class-bucket mechanism as predicates.
     /// The caller still checks the declared contract's exact call signature.
+    /// A contract appears once for each distinct list of values its facts
+    /// fix for its value parameters: once for a contract with none.
     pub(in crate::kernel) fn pointer_function_contracts(
         &self,
         pointer: &Pointer,
     ) -> impl Iterator<Item = (String, crate::kernel::Proposition)> {
-        self.pointer_fact_candidates(pointer, &terms::PointerFactKey::FunctionContracts)
+        use crate::kernel::{Proposition, Term};
+        let mut contracts = Vec::new();
+        for (name, sources) in self
+            .pointer_fact_candidates(pointer, &terms::PointerFactKey::FunctionContracts)
             .iter()
-            .map(|(name, sources)| {
+        {
+            crate::instrumentation::record_deterministic_work(1);
+            let mut seen = std::collections::BTreeSet::<Vec<Term>>::new();
+            for (_, source) in sources.iter() {
                 crate::instrumentation::record_deterministic_work(1);
-                (
-                    name.clone(),
-                    sources
-                        .iter()
-                        .next()
-                        .expect("nonempty contract sources")
-                        .1
-                        .proposition()
-                        .clone(),
-                )
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
+                let proposition = source.proposition();
+                let Proposition::Predicate { arguments, .. } = proposition else {
+                    continue;
+                };
+                if seen.insert(arguments.iter().skip(2).cloned().collect()) {
+                    contracts.push((name.clone(), proposition.clone()));
+                }
+            }
+        }
+        contracts.into_iter()
     }
 }

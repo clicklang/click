@@ -1959,6 +1959,12 @@ fn verify_contract_refinement_theorem(
     let Some(contract_definition) = spec_definitions.predicates.contract_definition(name) else {
         return Ok(None);
     };
+    if !contract_definition.value_parameters().is_empty() {
+        return Err(ClickError::new(format!(
+            "`{claim_label}`: a refinement theorem cannot yet conclude `{name}`, which has value \
+             parameters; Click checks `{name}(&f, {{ ... }})` automatically where a call needs it"
+        )));
+    }
     let [argument] = arguments.as_slice() else {
         return Ok(None);
     };
