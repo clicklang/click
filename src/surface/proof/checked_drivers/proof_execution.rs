@@ -109,6 +109,7 @@ fn bridges_without_executing(tactic: &ProofTactic) -> bool {
         tactic,
         ProofTactic::Have(_)
             | ProofTactic::UnfoldResource(_)
+            | ProofTactic::UnfoldWitnesses { .. }
             | ProofTactic::UnfoldPredicate(_)
             | ProofTactic::UnfoldFunction(_)
             | ProofTactic::PeelFunction { .. }
@@ -164,6 +165,10 @@ fn linear_execution_proof_step(tactic: &ProofTactic) -> Option<ProofStep> {
             premises: premises.clone(),
         }),
         ProofTactic::UnfoldResource(resource) => Some(ProofStep::UnfoldResource(resource.clone())),
+        ProofTactic::UnfoldWitnesses { resource, names } => Some(ProofStep::UnfoldWitnesses {
+            resource: resource.clone(),
+            names: names.clone(),
+        }),
         ProofTactic::FoldResource(resource) => Some(ProofStep::FoldResource(resource.clone())),
         ProofTactic::ObserveResource(resource) => {
             Some(ProofStep::ObserveResource(resource.clone()))

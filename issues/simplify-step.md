@@ -352,6 +352,16 @@ a step makes, not a search, so it is no longer counted. The rule: a simple
 tactic may consult the context through the kernel's indexed, bounded
 decisions, never through a `PropositionSearch`.
 
+**5e, naming unfolded witnesses (in progress).** `let { witness: name } =
+unfold(resource)` on a declared resource binds a `let ... where` witness to a
+proof name, and a `fold` spells a body fact over that witness with the name,
+so the body fact gets a requirement spelling instead of the counted search.
+`examples/marked-linked-list`'s `list_mark` keeps its bare `unfold` and the
+counted search for now: with `next` named, its body fact needs
+`(w | 1) == n + 1` from `w == n + (w & 1)` and `aligned(n, 8)`, which `auto`
+does not prove. A `by` body containing `both` now rechecks when checked step by step as a
+certificate (`mdtests/fold_by_with_both_rechecks_after_execute.md`).
+
 ## Acceptance criteria
 
 - No simple tactic performs a search over the proof context; its cost is

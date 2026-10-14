@@ -722,14 +722,45 @@ pub(in crate::surface) fn synthesize_surface_machine_expression(
     synthesize_surface_bitvector(term, parameter_binding, state, &BTreeMap::new())
 }
 
+thread_local! {
+    static PROOF_LOCAL_VALUE_NAMES: std::cell::RefCell<Vec<(CValue, String)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Runs `operation` with the proof locals that name C values, such as an
+/// unfold's named witnesses, in scope for [`synthesize_surface_value`].
+pub(in crate::surface) fn with_proof_local_value_names<R>(
+    names: Vec<(CValue, String)>,
+    operation: impl FnOnce() -> R,
+) -> R {
+    struct Restore(Vec<(CValue, String)>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let previous = std::mem::take(&mut self.0);
+            PROOF_LOCAL_VALUE_NAMES.with(|names| *names.borrow_mut() = previous);
+        }
+    }
+    let _restore = Restore(PROOF_LOCAL_VALUE_NAMES.with(|current| current.replace(names)));
+    operation()
+}
+
 /// A source expression for a semantic C value, such as a resource witness
-/// inferred from memory: a pointer or an `int32` as the proof would write it
-/// at `state`.
+/// inferred from memory: the proof local that names it, else a pointer or an
+/// `int32` as the proof would write it at `state`.
 pub(in crate::surface) fn synthesize_surface_value(
     value: &CValue,
     parameter_binding: ParameterBinding<'_>,
     state: &CState,
 ) -> Option<ContractExpression> {
+    if let Some(name) = PROOF_LOCAL_VALUE_NAMES.with(|names| {
+        names
+            .borrow()
+            .iter()
+            .find(|(named, _)| named == value)
+            .map(|(_, name)| name.clone())
+    }) {
+        return Some(ContractExpression::CFragment(CExpression::Variable(name)));
+    }
     let _scope = SurfaceSynthesisScope::enter();
     match value {
         CValue::Pointer(pointer) => synthesize_surface_pointer_expression(

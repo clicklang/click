@@ -2896,6 +2896,54 @@ fn unfold_composite_resource_for_proof_with_access(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// The values a held declared resource's `let ... where` witnesses take at
+/// `state`, by name, as an unfold of it binds them; empty when its body
+/// declares none.
+pub(super) fn declared_resource_witness_values(
+    resource_environment: &ResourceEnvironment,
+    resource: &ResourceClause,
+    parameter_binding: ParameterBinding<'_>,
+    state: &CState,
+    assumptions: &PureFactContext,
+    spec_definitions: SpecDefinitions<'_>,
+    claim_label: &str,
+    tactic_index: usize,
+) -> Result<Vec<(String, CValue)>, ClickError> {
+    let definition = composite_resource_law_definition(
+        resource_environment,
+        resource,
+        "unfold",
+        claim_label,
+        tactic_index,
+    )?;
+    let Some(body) = definition.composite_body() else {
+        return Ok(Vec::new());
+    };
+    let mut substitutions = BTreeMap::new();
+    extend_substitutions_with_witnesses(
+        &mut substitutions,
+        definition,
+        resource,
+        parameter_binding,
+        state,
+        None,
+        assumptions,
+        resource_environment,
+        spec_definitions,
+        None,
+    )?;
+    Ok(body
+        .witnesses()
+        .iter()
+        .filter_map(|witness| match substitutions.get(witness.name()) {
+            Some(ContractExpression::CFragment(CExpression::Value(value))) => {
+                Some((witness.name().to_string(), value.clone()))
+            }
+            _ => None,
+        })
+        .collect())
+}
+
 fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     resource_environment: &ResourceEnvironment,
     resource: &ResourceClause,

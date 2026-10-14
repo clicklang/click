@@ -3662,6 +3662,13 @@ pub enum ProofTactic {
         premises: Vec<ClickProposition>,
     },
     UnfoldResource(ResourceClause),
+    /// `let { witness: name, ... } = unfold(resource)` on a declared
+    /// resource: the unfold, with each named `let ... where` witness of the
+    /// opened body bound to a proof name.
+    UnfoldWitnesses {
+        resource: ResourceClause,
+        names: Vec<(String, String)>,
+    },
     FoldResource(ResourceClause),
     Induct {
         parameter: String,
@@ -4298,6 +4305,13 @@ pub enum ProofStep {
         premises: Vec<ClickProposition>,
     },
     UnfoldResource(ResourceClause),
+    /// `let { witness: name, ... } = unfold(resource)` on a declared
+    /// resource: the unfold, with each named `let ... where` witness of the
+    /// opened body bound to a proof name.
+    UnfoldWitnesses {
+        resource: ResourceClause,
+        names: Vec<(String, String)>,
+    },
     FoldResource(ResourceClause),
     Induct {
         parameter: String,
@@ -4682,6 +4696,10 @@ impl ProofStep {
                 premises: premises.clone(),
             },
             ProofTactic::UnfoldResource(resource) => Self::UnfoldResource(resource.clone()),
+            ProofTactic::UnfoldWitnesses { resource, names } => Self::UnfoldWitnesses {
+                resource: resource.clone(),
+                names: names.clone(),
+            },
             ProofTactic::FoldResource(resource) => Self::FoldResource(resource.clone()),
             ProofTactic::ConstructResource(resource) => Self::ConstructResource(resource.clone()),
             ProofTactic::Induct {
@@ -4940,6 +4958,10 @@ impl ProofStep {
                 premises: premises.clone(),
             },
             Self::UnfoldResource(resource) => ProofTactic::UnfoldResource(resource.clone()),
+            Self::UnfoldWitnesses { resource, names } => ProofTactic::UnfoldWitnesses {
+                resource: resource.clone(),
+                names: names.clone(),
+            },
             Self::FoldResource(resource) => ProofTactic::FoldResource(resource.clone()),
             Self::ConstructResource(resource) => ProofTactic::ConstructResource(resource.clone()),
             Self::Induct {
@@ -5204,7 +5226,9 @@ fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::UnfoldFunction(_) | ProofStep::PeelFunction { .. } => {
             TacticClass::Simple(SimpleTactic::UnfoldFunction)
         }
-        ProofStep::UnfoldResource(_) => TacticClass::Simple(SimpleTactic::UnfoldResource),
+        ProofStep::UnfoldResource(_) | ProofStep::UnfoldWitnesses { .. } => {
+            TacticClass::Simple(SimpleTactic::UnfoldResource)
+        }
         ProofStep::ObserveResource(_) => TacticClass::Simple(SimpleTactic::ObserveResource),
         ProofStep::Iterated(_) => TacticClass::Simple(SimpleTactic::IteratedOwnership),
         ProofStep::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
@@ -5556,7 +5580,9 @@ impl ProofTactic {
             Self::UnfoldFunction(_) | Self::PeelFunction { .. } => {
                 TacticClass::Simple(SimpleTactic::UnfoldFunction)
             }
-            Self::UnfoldResource(_) => TacticClass::Simple(SimpleTactic::UnfoldResource),
+            Self::UnfoldResource(_) | Self::UnfoldWitnesses { .. } => {
+                TacticClass::Simple(SimpleTactic::UnfoldResource)
+            }
             Self::ObserveResource(_) => TacticClass::Simple(SimpleTactic::ObserveResource),
             Self::Iterated(_) => TacticClass::Simple(SimpleTactic::IteratedOwnership),
             Self::Induct { .. } => TacticClass::Simple(SimpleTactic::Induct),

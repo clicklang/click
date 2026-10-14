@@ -1277,6 +1277,7 @@ fn expand_declared_resource_tactic(
             expand_declared_resource_tactic_with_propositions(tactic, resource_definitions)
         }
         tactic @ (ProofTactic::UnfoldResource(_)
+        | ProofTactic::UnfoldWitnesses { .. }
         | ProofTactic::ObserveResource(_)
         | ProofTactic::FoldResource(_)
         | ProofTactic::ConstructResource(_)
@@ -1943,6 +1944,10 @@ fn expand_declared_resource_tactic_with_resources(
         ProofTactic::UnfoldResource(resource) => Ok(ProofTactic::UnfoldResource(
             expand_declared_resource_clause(resource, resource_definitions)?,
         )),
+        ProofTactic::UnfoldWitnesses { resource, names } => Ok(ProofTactic::UnfoldWitnesses {
+            resource: expand_declared_resource_clause(resource, resource_definitions)?,
+            names,
+        }),
         ProofTactic::ObserveResource(resource) => Ok(ProofTactic::ObserveResource(
             expand_declared_resource_clause(resource, resource_definitions)?,
         )),
