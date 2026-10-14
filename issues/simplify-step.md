@@ -283,12 +283,15 @@ Baseline on the whole corpus, nightly fixtures included:
 
 | Site | mdtests | examples |
 | --- | --- | --- |
-| `unfold population final unit` | 262 | 91 |
 | `fold body fact` | 61 | 52 |
 | `transport load-variable chain` | 16 | 10 |
 | `transport quantified frame` | 11 | 0 |
 | `outcome if condition` | 6 | 2 |
 | `step resource atomic derivation` | 1 | 0 |
+
+`unfold`'s population final unit (262 and 91) was always `1 == q` with a
+constant `q`; reading the constant, as `fold` already reads its own,
+removed it.
 
 `loop {}` still runs on the `Contextual` policy and counts under the existing
 routes. The kernel's iterated-resource deciders (`take`, `give`, `gather`,

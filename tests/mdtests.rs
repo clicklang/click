@@ -302,13 +302,6 @@ const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] 
         ),
         11,
     ),
-    (
-        (
-            HiddenPrerequisiteRoute::TacticSearch,
-            "unfold population final unit",
-        ),
-        262,
-    ),
 ];
 
 #[test]
