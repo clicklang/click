@@ -390,12 +390,18 @@ fn expand_project_claim_source(
         ProofSourceEdit::OmittedLoopPhase { .. } => unreachable!(),
     };
     let expanded = splice_source(click_source, &tokens, span, &replacement);
-    checked_expanded_source(click_source, &sources, &replacement, expanded).map_err(|error| {
-        error.with_context(format!(
-            "expanding `{function_name}` {} at {target}",
-            claim.describe()
-        ))
-    })
+    let rewritten = project.with_entry_source(expanded.clone());
+    let rewritten_sources = CSourceContext::of(inputs)?.with_click_project(&rewritten);
+    resolve_click_project_context(&rewritten, &rewritten_sources)
+        .map(|_| expanded)
+        .map_err(|error| {
+            unparseable_expansion_error_for_file(&replacement, error, Some(&file)).with_context(
+                format!(
+                    "expanding `{function_name}` {} at {target}",
+                    claim.describe()
+                ),
+            )
+        })
 }
 
 fn expand_c0_prepared_claim_source(

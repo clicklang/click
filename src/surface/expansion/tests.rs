@@ -1,5 +1,34 @@
 use super::*;
 
+#[test]
+fn project_claim_expansion_retains_imported_resources() {
+    let source = r#"
+import "cell.click";
+verifying "skip.c";
+int32 skip(int32* p) {
+    owns cell(p);
+    ensures result == 0;
+} by { execute(); simp(); }
+"#;
+    let project = ClickProject::new(
+        "skip.click",
+        [
+            ClickModuleSource::new("skip.click", source, ["cell.click".to_string()]),
+            ClickModuleSource::new("cell.click", "resource cell(p: int32*) { owns *p; }", []),
+        ],
+    );
+    let sources = [("skip.c", "int32 skip(int32* p) { return 0; }")];
+    verify_c0_project(&project, &sources).expect("the imported resource contract verifies");
+    let expanded = expand_project_claim_source_by_label(
+        &project,
+        &ProgramInputs::Bundle(sources.to_vec()),
+        "skip.contract",
+    )
+    .expect("validation must retain the imported resource declaration");
+    verify_c0_project(&project.with_entry_source(expanded), &sources)
+        .expect("the expanded imported-resource proof must reverify");
+}
+
 // Audit may format the certificate its session already checked, but the
 // rewrite still needs independent verification against the actual program.
 #[test]
