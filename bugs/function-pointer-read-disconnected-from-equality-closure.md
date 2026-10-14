@@ -1,4 +1,4 @@
-# Function-pointer reads omit the shared checked read bridge
+# Callback contract lookup does not consume checked pointer equality
 
 Soundness: incomplete. A valid callback call is rejected when an argument is
 proved equal to a constant callback table. No false acceptance is known.
@@ -8,24 +8,30 @@ Its target function and execution theorem check independently; normal verificati
 fails at `have Invoke(cb->call) by { assumption(); }`. The same failure blocks
 `CopySizedStructure` dispatch in the rbtree augmentation table prototype.
 
-The trace shows the available `cb == &table` fact, the original initialized
-function address still stored in the load's defining memory, and a separate
-symbolic function-pointer read value. The contract is known for the initialized
-function address, but lookup does not connect it to the checked read.
+The checked read bridge is now repaired: function reads retain their exact
+producer definitions, expression composition preserves certified load metadata
+even when the defining equation is redundant, and statement publication carries
+the checked read evidence into the following proof context. The complete copy
+proof in `mdtests/function_pointer_read_uses_checked_table_alias.md` verifies;
+its missing-alias counterpart is refused. Kernel regressions cover withdrawal,
+branch isolation, changed snapshots, and absence of additional read permission.
 
-`cell_run_value` constructs function-pointer cells with canonical load variables,
-but does not register their typed pointer read definitions. The checked read
-candidate filter also omits `PointerBlock::FunctionSymbolic`. Object-pointer
-reads already use this producer/checked evidence path and address-class lookup.
+In the reproduction below, adding
+`have cb->call == (&table)->call by { assumption(); }` after the load now passes.
+The trace prints the admitted equality between the defining read and the
+initialized function. The following `Invoke(cb->call)` obligation still fails:
+predicate assumption requires exact arguments, and callback-contract lookup is
+indexed by the exact pointer spelling rather than its checked equality class.
+Trying to transport it explicitly with
+`rewrite(cb->call == (&table)->call)` fails with
+"`rewrite` pointer equality expects a condition goal".
 
-Restoring those two omitted cases alone did not discharge the obligation.
-A further experiment widening the observed-read recorder also did not suffice;
-no verifier fix is included. Investigate which checked binding reaches the
-proof context and equality graph before extending any rule. A fix must
-verify the public reproduction and rbtree dispatch, preserve branch scope and
-withdrawal, distinguish changed snapshots, and grant no read permission merely
-because the definition is retained. Remove this file when the fix and regressions
-land.
+The remaining issue is contract-fact lookup/transport, rather than missing read
+evidence. A solution must preserve contract state, signature, branch scope, and
+withdrawal, use selected equality evidence without scanning unrelated contracts,
+and verify the public callback call and rbtree dispatcher. The choice of how to
+extend this existing exact lookup needs discussion under AGENTS.md. Remove this
+file once that remaining reproduction and its regressions pass.
 
 ## Reproduction
 

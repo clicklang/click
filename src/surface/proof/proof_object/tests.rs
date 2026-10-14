@@ -14886,3 +14886,121 @@ fn completed_goal_retention_validates_current_source_after_stale_recording() {
         "retention walked unrelated locals: {work:?}"
     );
 }
+
+#[test]
+fn checked_callback_statement_publishes_its_typed_read_evidence() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let click_file = crate::surface::parse("void read(int32* cb) { ensures true; }").unwrap();
+    let function_block = &click_file.function_blocks()[0];
+    let parsed_function = syntax::parse_functions(
+        "struct callbacks { void (*call)(int *p); }; void read(struct callbacks *cb) { cb->call(0); }",
+    ).unwrap().pop().unwrap();
+    let function = parsed_function.to_kernel_function();
+    fn load_type(statement: &CStatement) -> Option<(CType, &str)> {
+        match statement {
+            CStatement::Seq(left, right) => load_type(left).or_else(|| load_type(right)),
+            CStatement::Assign {
+                name,
+                expression: CExpression::TypedLoad { value_type, .. },
+            } => Some((*value_type, name.as_str())),
+            _ => None,
+        }
+    }
+    let (c_type, read_local) = load_type(function.body()).expect("callback field is a typed load");
+    let argument = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Int32Scaled {
+            value: Box::new(Bitvector32Term::Variable(Variable(210_520))),
+            byte_width: 4,
+        },
+    };
+    let table = Pointer {
+        block: "global:callback-table".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let target = Pointer::function("callback");
+    let memory = CMemory::new().store(table.clone(), CValue::typed_pointer(target.clone(), c_type));
+    let source = crate::kernel::intern_c_memory_ref(&memory);
+    let memory = memory.with_seeded_cells(argument.clone(), 4, c_type, 0, 2, source);
+    let state = CState::new().with_memory(memory).with_resource_context(
+        ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
+            CMemoryRange::new_with_element_width(
+                argument.clone(),
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(1),
+                8,
+            ),
+        )),
+    );
+    let arguments = vec![CExpression::Value(CValue::pointer(argument.clone()))];
+    let function_environment = CExecutionEnvironment::new();
+    let predicate_environment = PredicateEnvironment::new(&[]);
+    let click_function_environment =
+        ClickFunctionEnvironment::new(click_file.click_function_definitions());
+    let theorem_environment = TheoremEnvironment::new(click_file.theorem_definitions());
+    let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
+    let mut proof = Proof::for_execution_frontier(
+        "callback read publication",
+        0,
+        ExecutionProofState::at_entry(
+            state,
+            ExecutionFrontier::default(),
+            RecordedSnapshots::new(),
+            SurfacePropositionMap::default(),
+            PersistentSequence::default(),
+        ),
+        vec![Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(argument, table),
+            true,
+        )],
+        ExecutionProofConstants {
+            source_layout: SourceExecutionLayout::new(parsed_function.body()),
+            ..ExecutionProofConstants::default()
+        },
+        function_block,
+        &function,
+        &parsed_function,
+        &arguments,
+        &function_environment,
+        &resource_environment,
+        SpecDefinitions::new(&predicate_environment, &click_function_environment),
+        &theorem_environment,
+    );
+    proof = proof
+        .apply_step(ProofStep::Step)
+        .expect("declare callback local");
+    proof = proof
+        .apply_step(ProofStep::Step)
+        .expect("read callback field");
+    let execution = proof.execution().unwrap();
+    let value = execution
+        .core
+        .state
+        .scalar_local_value(read_local)
+        .expect("callback local has a value");
+    let CValue::Pointer(read) = value else {
+        panic!("callback local is a pointer")
+    };
+    assert!(
+        execution.core.effect_facts.iter().any(|fact| matches!(
+            fact.generated_load_binding(),
+            Some(crate::kernel::GeneratedLoadBinding::Exact {
+                typed_pointer_value: Some(_),
+                ..
+            })
+        )),
+        "no typed read evidence: {:?}",
+        execution.core.effect_facts
+    );
+    assert!(
+        proof
+            .facts()
+            .assumptions()
+            .contains_known(&Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(read.pointer().clone(), target),
+                true
+            )),
+        "typed read did not reach proof facts: {:?}",
+        execution.core.effect_facts
+    );
+}

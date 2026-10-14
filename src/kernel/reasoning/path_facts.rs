@@ -1579,6 +1579,22 @@ fn merge_facts_with_changes(
                     .position(|existing| existing.proposition() == fact.proposition())
             })
             .flatten();
+        // A redundant proposition can still carry new checked producer
+        // evidence. In particular, a load variable's defining equation is
+        // intrinsically true, but its typed pointer binding must survive
+        // composition into an assignment or call's fact stream.
+        if existing_index.is_none()
+            && fact.is_certified()
+            && matches!(
+                fact.generated_load_binding(),
+                Some(GeneratedLoadBinding::Exact {
+                    typed_pointer_value: Some(_),
+                    ..
+                })
+            )
+        {
+            facts.push(fact.clone());
+        }
         if let Some(index) = existing_index
             && &facts[index] != fact
         {

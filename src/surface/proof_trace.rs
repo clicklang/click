@@ -314,14 +314,6 @@ impl ChildArgumentTrace {
 }
 
 pub(super) fn pointer_definition(pointer: &Pointer) -> Option<Bitvector32Term> {
-    // Function-pointer cells use a load variable as their address
-    // identity. It has the same registered read provenance as scalar cells.
-    if let crate::kernel::PointerBlock::FunctionSymbolic(variable) = &pointer.block
-        && pointer.offset == crate::kernel::PointerOffsetTerm::Constant(0)
-        && let Some(definition) = crate::kernel::registered_load_term_for_variable(variable)
-    {
-        return Some(definition);
-    }
     crate::kernel::logical_pointer_read_term(pointer).or_else(|| {
         let read = pointer.as_loaded_value()?;
         (read.displacement == crate::kernel::PointerOffsetTerm::Constant(0)).then(|| {
