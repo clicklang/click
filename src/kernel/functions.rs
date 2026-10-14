@@ -21809,17 +21809,18 @@ fn lower_selected_resource_body_clauses(
         .map_err(|limit| match limit {
             // A deadline is the budget, not a property of the body: say so
             // rather than suggest the fact cannot be evaluated at all.
-            ExecutionLimit::Deadline => {
-                "evaluating an instance body fact exhausted the verification budget"
-            }
+            ExecutionLimit::Deadline => ResourceRewriteRefusal::Message(
+                "evaluating an instance body fact exhausted the verification budget",
+            ),
             // A worker-held or worker-changed total is the cause, not the body.
-            ExecutionLimit::AuthorityCountPendingLockedWorker => {
-                "count(...) is unknown until pthread_join returns the workers that change this population under its mutex"
+            ExecutionLimit::AuthorityCountPendingLockedWorker
+            | ExecutionLimit::AuthorityCountLentToWorker => {
+                ResourceRewriteRefusal::OwnedMessage(limit.describe())
             }
-            ExecutionLimit::AuthorityCountLentToWorker => {
-                "count(...) requires owning authority for that population, which an outstanding worker holds until its pthread_join"
-            }
-            _ => "could not evaluate instance body fact",
+            limit => ResourceRewriteRefusal::OwnedMessage(format!(
+                "could not evaluate instance body fact: evaluation stopped at {}",
+                limit.describe()
+            )),
         })?;
         let path = crate::kernel::api::exactly_selected_spec_proposition_path(&paths, &context)
             .ok_or("instance body fact needs an unsupported conditional proof")?;
@@ -22222,7 +22223,12 @@ fn check_instance_resource_arguments(
         }
         let fact = evaluate_function_resource_spec(evaluation, &spec, assumptions, &mut budget)
             .map_err(|_| "resource reference type evaluation exceeded its budget")?
-            .map_err(|_| "could not evaluate resource reference parameter type")?;
+            .map_err(|error| {
+                ResourceRewriteRefusal::OwnedMessage(format!(
+                    "could not evaluate resource reference parameter type: {}",
+                    super::api::describe_certification_runtime_error(&error)
+                ))
+            })?;
         let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = fact else {
             return Err("resource reference parameter requires an exclusive resource type".into());
         };
@@ -22531,8 +22537,12 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                 &mut budget,
             )
             .map_err(|_| "instance quantity guard evaluation exceeded its budget")?
-            .map_err(|_| "instance quantity requires a proved clause guard case")?
-            {
+            .map_err(|error| {
+                ResourceRewriteRefusal::OwnedMessage(format!(
+                    "instance quantity requires a proved clause guard case: {}",
+                    super::api::describe_certification_runtime_error(&error)
+                ))
+            })? {
                 continue;
             }
             let value = evaluate_loop_effect_segment_value(
@@ -22543,7 +22553,11 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                 &mut budget,
             )
             .map_err(|_| "instance body quantity evaluation exceeded its budget")?
-            .map_err(|_| "could not evaluate instance body quantity")?;
+            .map_err(|message| {
+                ResourceRewriteRefusal::OwnedMessage(format!(
+                    "could not evaluate instance body quantity: {message}"
+                ))
+            })?;
             let CValue::Int32(quantity) = value else {
                 return Err("instance body quantity must have type int32".into());
             };
@@ -22635,9 +22649,14 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             &mut budget,
         )
         .map_err(|_| "instance body authority evaluation exceeded its budget")?
-        .map_err(|_| "could not evaluate instance body authority")?;
+        .map_err(|error| {
+            ResourceRewriteRefusal::OwnedMessage(format!(
+                "could not evaluate instance body authority: {}",
+                super::api::describe_certification_runtime_error(&error)
+            ))
+        })?;
         let CResource::PopulationAuthority(description) = authority.resource() else {
-            return Err("could not evaluate instance body authority".into());
+            return Err("instance body authority is not a population authority".into());
         };
         if !state.recognizes_population_authority(description) {
             return Err(ResourceRewriteRefusal::OwnedMessage(format!(
@@ -22661,11 +22680,11 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     )
     .map_err(|_| "instance body evaluation exceeded its budget")?
     .map(|(context, _)| context)
-    .map_err(|error| match error {
-        CRuntimeError::FunctionContract(message) => ResourceRewriteRefusal::OwnedMessage(format!(
-            "could not evaluate instance memory body: {message}"
-        )),
-        _ => ResourceRewriteRefusal::Message("could not evaluate instance memory body"),
+    .map_err(|error| {
+        ResourceRewriteRefusal::OwnedMessage(format!(
+            "could not evaluate instance memory body: {}",
+            super::api::describe_certification_runtime_error(&error)
+        ))
     })?;
     if !authorities.is_empty() {
         body = body
@@ -22869,7 +22888,14 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                 body.facts().iter().cloned(),
                 assumptions,
             )
-            .map_err(|_| "instance body overlaps existing ownership")?;
+            .map_err(|error| {
+                ResourceRewriteRefusal::OwnedMessage(format!(
+                    "instance body overlaps existing ownership: {}",
+                    super::api::describe_certification_runtime_error(
+                        &resource_context_runtime_error(error)
+                    )
+                ))
+            })?;
     } else {
         // The immediate body was consumed before evaluating child arguments;
         // only the selected children remain to be consumed.
@@ -24087,7 +24113,12 @@ pub(super) fn loop_instance_guard(
         assumptions,
         &mut budget,
     )
-    .map_err(|_| "could not evaluate loop guard condition")?;
+    .map_err(|limit| {
+        format!(
+            "evaluating the loop guard condition stopped at {}",
+            limit.describe()
+        )
+    })?;
     let [path] = paths.as_slice() else {
         return Err("conditional loop guard requires one model condition".into());
     };
@@ -24108,9 +24139,16 @@ pub(super) fn loop_instance_guard(
         "loop guard mutex",
         &mut budget,
     )
-    .map_err(|_| "could not evaluate loop guard mutex")?;
-    let Ok(CValue::Pointer(pointer)) = pointer else {
-        return Err("loop guard requires a mutex pointer".into());
+    .map_err(|limit| {
+        format!(
+            "evaluating the loop guard mutex stopped at {}",
+            limit.describe()
+        )
+    })?;
+    let pointer = match pointer {
+        Ok(CValue::Pointer(pointer)) => pointer,
+        Ok(_) => return Err("loop guard requires a mutex pointer".into()),
+        Err(message) => return Err(message),
     };
     Ok(Some((pointer.pointer().clone(), held.clone())))
 }
@@ -29124,19 +29162,14 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                     assumptions,
                     budget,
                 )?;
-                let quantity = match evaluate_loop_effect_segment_value(
+                let quantity = match evaluate_declared_quantity(
                     quantity_state,
                     &quantity,
                     assumptions,
-                    "declared resource quantity",
                     budget,
                 )? {
-                    Ok(CValue::Int32(quantity)) => quantity,
-                    Ok(_) | Err(_) => {
-                        return Ok(Err(CRuntimeError::FunctionContract(
-                            "declared resource quantity must evaluate to int32".to_string(),
-                        )));
-                    }
+                    Ok(quantity) => quantity,
+                    Err(error) => return Ok(Err(error)),
                 };
                 if !quantity_condition_holds(
                     assumptions,
@@ -29231,6 +29264,49 @@ pub(super) fn evaluate_iterated_resource_spec(
     }))
 }
 
+/// A clause's declared resource quantity as an int32 term, or the reason it
+/// has none. A read the quantity has no authority for is reported as the
+/// resource it needed, the way a resource argument's is. The diagnostic
+/// carries no memory snapshot: a quantity's failure is its own, and a
+/// snapshot would mark it as waiting for a later clause to supply the cell.
+fn evaluate_declared_quantity(
+    state: &CState,
+    quantity: &CExpression,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Result<Bitvector32Term, CRuntimeError>> {
+    let mut diagnostic = None;
+    Ok(
+        match super::loops::evaluate_resource_argument_value(
+            state,
+            quantity,
+            assumptions,
+            "declared resource quantity",
+            budget,
+            &mut diagnostic,
+        )? {
+            Ok(CValue::Int32(quantity)) => Ok(quantity),
+            Ok(_) => Err(CRuntimeError::FunctionContract(
+                "declared resource quantity must evaluate to int32".to_string(),
+            )),
+            Err(message) => Err(match diagnostic {
+                Some(CRuntimeError::ContractResourceDiagnostic {
+                    reason,
+                    held,
+                    required,
+                    memory: _,
+                }) => CRuntimeError::ContractResourceDiagnostic {
+                    reason,
+                    held,
+                    required,
+                    memory: None,
+                },
+                _ => CRuntimeError::FunctionContract(message),
+            }),
+        },
+    )
+}
+
 /// Lowers the nonnegativity conditions implicit in quantified resource
 /// requirements. A function may assume these at its own entry just as it may
 /// assume its ordinary `requires`; call sites still use
@@ -29248,11 +29324,10 @@ pub(crate) fn quantified_resource_requirement_assumptions(
         let CResourceQuantity::Count(quantity) = resource.quantity() else {
             continue;
         };
-        let mut evaluated = evaluate_loop_effect_segment_value(
+        let mut evaluated = evaluate_declared_quantity(
             quantity_read_state.as_ref().unwrap_or(state),
             quantity,
             assumptions,
-            "declared resource quantity",
             budget,
         )?;
         if evaluated.is_err() && quantity_read_state.is_none() {
@@ -29290,23 +29365,18 @@ pub(crate) fn quantified_resource_requirement_assumptions(
                 Err(_) => state.resources().clone(),
             };
             quantity_read_state = Some(state.clone().with_resource_context(read_resources));
-            evaluated = evaluate_loop_effect_segment_value(
+            evaluated = evaluate_declared_quantity(
                 quantity_read_state
                     .as_ref()
                     .expect("quantity read frame established"),
                 quantity,
                 assumptions,
-                "declared resource quantity",
                 budget,
             )?;
         }
         let quantity = match evaluated {
-            Ok(CValue::Int32(quantity)) => quantity,
-            Ok(_) | Err(_) => {
-                return Ok(Err(CRuntimeError::FunctionContract(
-                    "declared resource quantity must evaluate to int32".to_string(),
-                )));
-            }
+            Ok(quantity) => quantity,
+            Err(error) => return Ok(Err(error)),
         };
         propositions.push(Proposition::ConditionIs(
             ConditionTerm::Bitvector32SignedGreaterEqual(
