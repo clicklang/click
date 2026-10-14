@@ -276,13 +276,6 @@ const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] 
         ),
         4,
     ),
-    (
-        (
-            HiddenPrerequisiteRoute::TacticSearch,
-            "transport quantified frame",
-        ),
-        18,
-    ),
 ];
 
 #[test]

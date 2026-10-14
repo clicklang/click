@@ -301,7 +301,7 @@ now checked to re-lower (a debug assertion), and a written `requires` entry
 matches an `assert`'s truthiness obligation by its asserted condition
 (`mdtests/step_requires_states_an_asserted_condition.md`).
 
-**5b, `fold` (in progress).** `fold` no longer searches for a body fact. One
+**5b, `fold` (landed).** `fold` no longer searches for a body fact. One
 the exact checks miss is a requirement spelled where it is created: the
 definition's fact with the fold's arguments as written and each witness as a
 synthesized source expression. The driver `step` uses runs a bare `fold`'s
@@ -326,7 +326,7 @@ carried by `transport` from the cell's reflexive equality at a recorded point
   search used to find, which `auto` proves alone but not inside the body
   fact.
 
-**5c, outcome `if` and the step's atomic derivation (in progress).** Every
+**5c, outcome `if` and the step's atomic derivation (landed).** Every
 outcome `if` condition the census counted was `not (v == c)` with `v` decided
 by the path; a simple tactic's premise is now first offered to the kernel's
 condition decision, the same one a step's fast path makes, so none is
@@ -336,7 +336,7 @@ it and the implicit `auto` proves it, so
 `mdtests/an_unsigned_index_that_wraps_below_zero_is_refused.md` is now refused
 at the read's bounds rather than at the pointer arithmetic after them.
 
-**5d, `transport`'s load-variable chain (in progress).** The chain that
+**5d, `transport` (landed).** The chain that
 decides two load variables name one unchanged cell read every available
 condition fact. It now reads only the listed premises, the certified effect
 facts, and the implicit frame facts (loadability, store permission,
@@ -344,8 +344,13 @@ separation) the transport always carried, and the corpus needed nothing more:
 restricting it changed no verdict. Some targets the chain used to reach now
 fall to the quantified frame, which still reads the proof context and is
 counted (`transport quantified frame`). Restricting that frame the same way
-fails 9 more mdtests and `examples/arena` and `examples/owned-vector`, so it
-needs the frame to report the facts it used, for the smart callers to cite.
+failed 9 more mdtests and `examples/arena` and `examples/owned-vector`: its
+reads consult the context through the kernel's checked load equality, a
+bounded walk over recorded memory history that looks up separation and order
+facts. That is the fast path's kind of decision, like the condition decision
+a step makes, not a search, so it is no longer counted. The rule: a simple
+tactic may consult the context through the kernel's indexed, bounded
+decisions, never through a `PropositionSearch`.
 
 ## Acceptance criteria
 

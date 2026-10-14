@@ -56,13 +56,6 @@ const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] 
     (
         (
             HiddenPrerequisiteRoute::TacticSearch,
-            "transport quantified frame",
-        ),
-        2,
-    ),
-    (
-        (
-            HiddenPrerequisiteRoute::TacticSearch,
             "have separation away from the frontier",
         ),
         1,
