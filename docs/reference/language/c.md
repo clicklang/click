@@ -1313,6 +1313,13 @@ Every function sees the linked object through its stable address. Contracts
 name the scalar value directly, and name its one-cell memory footprint with
 `owns counter`.
 `old(counter)` refers to the value in the function-entry memory snapshot.
+Qualified names follow the same rule for scalar and pointer slots:
+`unit::slot` reads current memory, while `old(unit::slot)` reads entry memory.
+A store changes the current qualified value without changing its entry value.
+These reads require permission for the pointer slot itself, such as
+`owns unit::slot`; owning its pointee alone does not authorize the slot read.
+Function-static pointers, named as `unit::function::slot`, behave likewise.
+<!-- verified-example: mdtests/qualified_pointer_global_store_keeps_old_snapshot.md -->
 Global writes therefore participate in ordinary contract certification and are
 visible to later calls in the same verified execution.
 

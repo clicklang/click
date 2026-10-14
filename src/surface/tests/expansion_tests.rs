@@ -17915,3 +17915,48 @@ fn without_first_step_obligation_proofs(expanded: &str) -> String {
     let close = close.expect("the proofs close their block");
     format!("{}step();{}", &expanded[..start], &expanded[close + 1..])
 }
+
+/// Qualified pointer slots must select the same memory in fresh, expanded,
+/// and retained proofs, including entry reads after a store.
+#[test]
+#[ignore = "nightly: checks global and static pointer snapshots across proof modes"]
+fn qualified_pointer_slots_keep_selected_memory_in_all_proof_modes() {
+    for (fixture, functions) in [
+        (
+            "mdtests/qualified_pointer_global_store_reads_current_value.md",
+            &["clear_slot"][..],
+        ),
+        (
+            "mdtests/qualified_pointer_global_store_keeps_old_snapshot.md",
+            &["exchange_global", "exchange_static"][..],
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        verify_c0_sources(&source, &sources).unwrap();
+        for function in functions {
+            let expanded =
+                expand_c0_claim_source(&source, &sources, function, CProofClaim::Grouped).unwrap();
+            verify_c0_sources(&expanded, &sources).unwrap();
+            let offset = expanded.find(&format!("{function}(")).unwrap();
+            let claim = offset + expanded[offset..].find("ensures ").unwrap();
+            let position = expansion::position_at_offset(&expanded, claim);
+            let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+            session
+                .verify_at(&expanded, position.line, position.column)
+                .unwrap();
+        }
+        let without_slot = source
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("owns "))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            verify_c0_sources(&without_slot, &sources).is_err(),
+            "a pointer read requires its slot permission"
+        );
+    }
+}
