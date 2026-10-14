@@ -150,3 +150,39 @@ the original loop still fails at that fold. The counter-only loop and the
 non-loop descriptor unfold/fold round trip both pass fresh checking, expansion,
 verification of the rewritten proof and retained-session rechecking. These
 controls bound the reduction; they are not a repaired original loop.
+
+## Checked endpoint repair
+
+The memory-query repair resolves only the selected producer read through at
+most 64 existing cell-history hops, checks every retained hop under live facts,
+and adds the resulting address equality only to that query's cloned graph.
+The supplier still needs the ordinary ownership and coverage checks. Only a
+certified supplying write yields a stored pointer value. If the walk stops at
+an unproved/affecting edge, its endpoint is the opaque read at that snapshot;
+the snapshot's cached old cell cannot justify transport across the edge.
+
+The frame witness also exposes a signed-order certificate mismatch: the
+producer can prove `1 < n` from a path beginning with `2 <= n`, while the checker
+previously allowed an intrinsic constant connection only at the path's end.
+Check forward constant connections at the start and between retained steps as
+well, carrying their strictness and still checking every recorded premise.
+Reversed connections, unsupported symbolic gaps, missing strictness and withdrawn
+premises must reject.
+
+The deterministic lookup regression selects one owner beside 16, 64, 256 and
+1,024 unrelated loaded-pointer ranges with work below 2,000 at every size.
+It checks consumption, removal of the selected owner, withdrawal of frame
+separation, partial pointer-cell writes and isolation of the caller's graph.
+The original C and proof are preserved in
+[`loop_resource_backing_range_fold_after_write.md`](../mdtests/loop_resource_backing_range_fold_after_write.md).
+
+The final safe recovery candidate passes all 84 selected memory-index,
+pointer-designation, native-span and loop-carrier controls, but the original
+archive loop still rejects its post-store fold. An earlier local prototype
+passed that loop by taking a cached pointer value at an unproved stopping write;
+the withdrawal control rejects that approach, and it is removed. Do not credit
+that apparent success. The master extraction passes all 59 selected memory-index
+and order-certificate controls, the original loop and both existing partial-write
+fixtures. Its loop passes fresh, expansion, rewritten and retained checks.
+The remaining archive read-chain gap still needs attribution; no new full
+example-stage or activation verdict is claimed.
