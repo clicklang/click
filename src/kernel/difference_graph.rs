@@ -14,7 +14,8 @@
 //! is the component the edge joins, not the graph. A query compares stored
 //! intervals and, between two nodes, reads the shortest path inside the
 //! source's component. Every answer follows from the inserted facts by
-//! difference logic; a contradictory graph answers nothing.
+//! difference logic; a contradictory graph answers only that an overflow is
+//! absent, which holds vacuously on a dead path.
 //!
 //! See `issues/difference-logic.md`.
 
@@ -70,6 +71,8 @@ pub(crate) struct DifferenceGraph {
     /// value steps past it, so `x != INT_MIN` beside `INT_MIN <= x` is
     /// `INT_MIN + 1 <= x`.
     excluded: PersistentMap<NodeId, crate::persistent::PersistentSet<i128>>,
+    /// Overflow conditions recorded false (`OverflowKey`).
+    no_overflow: crate::persistent::PersistentSet<OverflowKey>,
     contradictory: bool,
     next: NodeId,
 }
@@ -121,6 +124,17 @@ impl DifferenceGraph {
                 condition
             && self.alias_equality(condition, a, b)
         {
+            return;
+        }
+        if let Some((operation, domain, a, b, commutative)) = overflow_parts(condition) {
+            if !value {
+                let a = self.affine(domain, a);
+                let b = self.affine(domain, b);
+                charge();
+                self.no_overflow =
+                    self.no_overflow
+                        .with_value(overflow_key(operation, a, b, commutative));
+            }
             return;
         }
         if !value
@@ -477,11 +491,25 @@ impl DifferenceGraph {
     /// contradictory.
     pub(crate) fn decide(&self, condition: &ConditionTerm) -> Option<bool> {
         use ConditionTerm as C;
-        if self.contradictory {
-            return None;
-        }
         if let C::Constant(value) = condition {
             return Some(*value);
+        }
+        if self.contradictory {
+            // No model satisfies the facts, so the path is dead and every
+            // answer holds. Only the absence of overflow is given, the one
+            // overflow answer this graph ever gives (see `decide_overflow`).
+            return matches!(
+                condition,
+                C::Bitvector32SignedAddOverflows(..)
+                    | C::Bitvector32SignedSubtractOverflows(..)
+                    | C::Bitvector32SignedMultiplyOverflows(..)
+                    | C::Bitvector32SignedDivideOverflows(..)
+                    | C::Bitvector64SignedAddOverflows(..)
+                    | C::Bitvector64SignedSubtractOverflows(..)
+                    | C::Bitvector64SignedMultiplyOverflows(..)
+                    | C::Bitvector64SignedDivideOverflows(..)
+            )
+            .then_some(false);
         }
         let overflow = match condition {
             C::Bitvector32SignedAddOverflows(a, b) => Some((Domain::Int32, a, b, Operation::Add)),
@@ -500,8 +528,26 @@ impl DifferenceGraph {
             }
             _ => None,
         };
+        if let Some((operation, domain, a, b, commutative)) = overflow_parts(condition)
+            && let (Some(a), Some(b)) = (self.resolve(domain, a), self.resolve(domain, b))
+            && self
+                .no_overflow
+                .contains(&overflow_key(operation, a, b, commutative))
+        {
+            return Some(false);
+        }
         if let Some((domain, a, b, operation)) = overflow {
             return self.decide_overflow(domain, a, b, operation);
+        }
+        if let C::Bitvector32SignedShiftLeftOverflows(a, count) = condition {
+            // As the general decision reads it: a shift by a constant count
+            // does not overflow a value in `[0, INT_MAX >> count]`.
+            let count = constant(Domain::Int32, count)?;
+            if !(0..32).contains(&count) {
+                return None;
+            }
+            let (low, high) = self.term_interval(Domain::Int32, a);
+            return (low >= 0 && high <= i128::from(i32::MAX >> count)).then_some(false);
         }
         if let C::Bitvector32SignedDivideOverflows(a, b)
         | C::Bitvector64SignedDivideOverflows(a, b) = condition
@@ -570,16 +616,25 @@ impl DifferenceGraph {
     }
 
     /// An interval holding `term`'s value in `domain`: a resolved term's
-    /// stored bounds, or for a sum or difference the exact interval of its
-    /// operands' mathematical result when that stays in `domain` (so the
-    /// bitvector operation does not wrap). Anything else ranges over
+    /// stored bounds, narrowed for a sum or difference by the exact interval
+    /// of its operands' mathematical result when that stays in `domain` (so
+    /// the bitvector operation does not wrap). Anything else ranges over
     /// `domain`. Work is the term's size, plus the difference reads of
     /// `difference_interval`.
     fn term_interval(&self, domain: Domain, term: &Bitvector32Term) -> (i128, i128) {
+        // A compound term a fact mentioned has a node of its own, whose
+        // interval holds only what facts about the term said; its operands'
+        // intervals may say more, so both are read.
+        let (node_low, node_high) = self
+            .resolve(domain, term)
+            .map_or_else(|| domain.range(), |affine| self.affine_interval(affine));
+        let (low, high) = self.structural_interval(domain, term);
+        (node_low.max(low), node_high.min(high))
+    }
+
+    /// `term_interval` from `term`'s operands alone.
+    fn structural_interval(&self, domain: Domain, term: &Bitvector32Term) -> (i128, i128) {
         use Bitvector32Term as T;
-        if let Some(affine) = self.resolve(domain, term) {
-            return self.affine_interval(affine);
-        }
         charge();
         let (low, high) = match (domain, term) {
             (Domain::Int32, T::Add(a, b))
@@ -592,6 +647,19 @@ impl DifferenceGraph {
             (Domain::Int32, T::Subtract(a, b))
             | (Domain::Int64, T::Int64Subtract(a, b))
             | (Domain::UInt64, T::UInt64Subtract(a, b)) => self.difference_interval(domain, a, b),
+            (Domain::Int32, T::Multiply(a, b)) | (Domain::Int64, T::Int64Multiply(a, b)) => {
+                let (a_low, a_high) = self.term_interval(domain, a);
+                let (b_low, b_high) = self.term_interval(domain, b);
+                let products = [
+                    a_low * b_low,
+                    a_low * b_high,
+                    a_high * b_low,
+                    a_high * b_high,
+                ];
+                let low = products.iter().min().copied().unwrap_or(i128::MIN);
+                let high = products.iter().max().copied().unwrap_or(i128::MAX);
+                (low, high)
+            }
             (Domain::Int64, T::Int64From32(inner)) => self.term_interval(Domain::Int32, inner),
             _ => return domain.range(),
         };
@@ -723,23 +791,24 @@ impl ContextDifferenceGraph {
 /// Whether difference logic reads anything from a fact about `condition`.
 fn expresses(condition: &ConditionTerm) -> bool {
     use ConditionTerm as C;
-    matches!(
-        condition,
-        C::Bitvector32SignedLessThan(..)
-            | C::Bitvector32SignedLessEqual(..)
-            | C::Bitvector32SignedGreaterThan(..)
-            | C::Bitvector32SignedGreaterEqual(..)
-            | C::Bitvector32Equal(..)
-            | C::Bitvector64SignedLessThan(..)
-            | C::Bitvector64SignedLessEqual(..)
-            | C::Bitvector64SignedGreaterThan(..)
-            | C::Bitvector64SignedGreaterEqual(..)
-            | C::Bitvector64UnsignedLessThan(..)
-            | C::Bitvector64UnsignedLessEqual(..)
-            | C::Bitvector64UnsignedGreaterThan(..)
-            | C::Bitvector64UnsignedGreaterEqual(..)
-            | C::Bitvector64Equal(..)
-    )
+    overflow_parts(condition).is_some()
+        || matches!(
+            condition,
+            C::Bitvector32SignedLessThan(..)
+                | C::Bitvector32SignedLessEqual(..)
+                | C::Bitvector32SignedGreaterThan(..)
+                | C::Bitvector32SignedGreaterEqual(..)
+                | C::Bitvector32Equal(..)
+                | C::Bitvector64SignedLessThan(..)
+                | C::Bitvector64SignedLessEqual(..)
+                | C::Bitvector64SignedGreaterThan(..)
+                | C::Bitvector64SignedGreaterEqual(..)
+                | C::Bitvector64UnsignedLessThan(..)
+                | C::Bitvector64UnsignedLessEqual(..)
+                | C::Bitvector64UnsignedGreaterThan(..)
+                | C::Bitvector64UnsignedGreaterEqual(..)
+                | C::Bitvector64Equal(..)
+        )
 }
 
 #[derive(Clone, Copy)]
@@ -749,7 +818,39 @@ enum Operation {
     Multiply,
 }
 
-/// `term`'s value in `domain` when it is a constant there.
+/// The parts of an overflow condition: its operation, the operands'
+/// domain, the operands, and whether the operation is commutative.
+fn overflow_parts(
+    condition: &ConditionTerm,
+) -> Option<(u8, Domain, &Bitvector32Term, &Bitvector32Term, bool)> {
+    use ConditionTerm as C;
+    Some(match condition {
+        C::Bitvector32SignedAddOverflows(a, b) => (0, Domain::Int32, a, b, true),
+        C::Bitvector32SignedSubtractOverflows(a, b) => (1, Domain::Int32, a, b, false),
+        C::Bitvector32SignedMultiplyOverflows(a, b) => (2, Domain::Int32, a, b, true),
+        C::Bitvector32SignedDivideOverflows(a, b) => (3, Domain::Int32, a, b, false),
+        C::Bitvector32SignedShiftLeftOverflows(a, b) => (4, Domain::Int32, a, b, false),
+        C::Bitvector64SignedAddOverflows(a, b) => (5, Domain::Int64, a, b, true),
+        C::Bitvector64SignedSubtractOverflows(a, b) => (6, Domain::Int64, a, b, false),
+        C::Bitvector64SignedMultiplyOverflows(a, b) => (7, Domain::Int64, a, b, true),
+        C::Bitvector64SignedDivideOverflows(a, b) => (8, Domain::Int64, a, b, false),
+        _ => return None,
+    })
+}
+
+/// A recorded overflow condition: its operation and its operands' values
+/// in the graph, a commutative operation's in one order, so another name
+/// for an operand, or the operands swapped, finds it.
+type OverflowKey = (u8, Affine, Affine);
+
+fn overflow_key(operation: u8, a: Affine, b: Affine, commutative: bool) -> OverflowKey {
+    if commutative && b < a {
+        (operation, b, a)
+    } else {
+        (operation, a, b)
+    }
+}
+
 /// Whether a value in `(low, high)` plus `offset` stays in `domain` (and,
 /// for a conversion that keeps only non-negative values, is non-negative).
 fn link_fits((low, high): (i128, i128), offset: i128, domain: Domain, nonnegative: bool) -> bool {
@@ -761,6 +862,7 @@ fn link_fits((low, high): (i128, i128), offset: i128, domain: Domain, nonnegativ
     }
 }
 
+/// `term`'s value in `domain` when it is a constant there.
 fn constant(domain: Domain, term: &Bitvector32Term) -> Option<i128> {
     use Bitvector32Term as T;
     match (domain, term) {

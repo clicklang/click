@@ -124,7 +124,7 @@ fn unsigned_conversion_keeps_a_nonnegative_value() {
 }
 
 #[test]
-fn contradictions_are_detected_and_decide_nothing() {
+fn contradictions_are_detected_and_decide_no_order() {
     let (x, y) = (variable(0), variable(1));
     let cycle = graph(&[(lt(&x, &y), true), (lt(&y, &x), true)]);
     assert!(cycle.is_contradictory());
@@ -400,6 +400,9 @@ fn arithmetic_decisions_hold_in_every_model() {
             T::Subtract(a, b) => {
                 value(a, variables, model).wrapping_sub(value(b, variables, model))
             }
+            T::Multiply(a, b) => {
+                value(a, variables, model).wrapping_mul(value(b, variables, model))
+            }
             _ => model[variables.iter().position(|v| v == term).unwrap()],
         }
     }
@@ -412,6 +415,7 @@ fn arithmetic_decisions_hold_in_every_model() {
     pool.push(T::Subtract(boxed(&constant(0)), boxed(&variables[2])));
     pool.push(T::Subtract(boxed(&variables[0]), boxed(&variables[1])));
     pool.push(T::Add(boxed(&variables[1]), boxed(&variables[2])));
+    pool.push(T::Multiply(boxed(&variables[0]), boxed(&constant(2))));
     let constants = [i32::MIN, -1, 0, 1, i32::MAX].map(constant);
     let holds = |condition: &ConditionTerm, model: &[i32]| -> bool {
         let v = |term: &Bitvector32Term| value(term, &variables, model);
@@ -423,6 +427,15 @@ fn arithmetic_decisions_hold_in_every_model() {
             ConditionTerm::Bitvector32SignedAddOverflows(a, b) => v(a).overflowing_add(v(b)).1,
             ConditionTerm::Bitvector32SignedSubtractOverflows(a, b) => v(a).overflowing_sub(v(b)).1,
             ConditionTerm::Bitvector32SignedDivideOverflows(a, b) => v(a) == i32::MIN && v(b) == -1,
+            ConditionTerm::Bitvector32SignedMultiplyOverflows(a, b) => v(a).overflowing_mul(v(b)).1,
+            // As `ConditionTerm::signed_shift_left_overflows` folds
+            // constants; the graph answers only counts in `0..32`.
+            ConditionTerm::Bitvector32SignedShiftLeftOverflows(a, b) => {
+                let count = v(b);
+                (0..32).contains(&count)
+                    && v(a) >= 0
+                    && (i64::from(v(a)) << count) > i64::from(i32::MAX)
+            }
             other => unreachable!("{other:?}"),
         }
     };
@@ -445,10 +458,14 @@ fn arithmetic_decisions_hold_in_every_model() {
         let mut facts = Vec::new();
         for _ in 0..(1 + next(4)) {
             let a = &pool[next(pool.len())];
-            let fact = match next(3) {
+            let fact = match next(4) {
                 0 => lt(a, &constants[next(constants.len())]),
                 1 => le(&constants[next(constants.len())], a),
-                _ => ConditionTerm::equal(variables[next(3)].clone(), constants[next(5)].clone()),
+                2 => ConditionTerm::equal(variables[next(3)].clone(), constants[next(5)].clone()),
+                _ => ConditionTerm::Bitvector32SignedAddOverflows(
+                    boxed(a),
+                    boxed(&pool[next(pool.len())]),
+                ),
             };
             facts.push((fact, next(3) != 0));
         }
@@ -464,6 +481,10 @@ fn arithmetic_decisions_hold_in_every_model() {
         if satisfying.is_empty() {
             continue;
         }
+        assert!(
+            !graph.is_contradictory(),
+            "satisfiable facts reported contradictory: {facts:?}"
+        );
         let operands = pool.iter().chain(&constants).collect::<Vec<_>>();
         for a in &operands {
             for b in &operands {
@@ -472,6 +493,8 @@ fn arithmetic_decisions_hold_in_every_model() {
                     ConditionTerm::Bitvector32SignedAddOverflows(a.clone(), b.clone()),
                     ConditionTerm::Bitvector32SignedSubtractOverflows(a.clone(), b.clone()),
                     ConditionTerm::Bitvector32SignedDivideOverflows(a.clone(), b.clone()),
+                    ConditionTerm::Bitvector32SignedMultiplyOverflows(a.clone(), b.clone()),
+                    ConditionTerm::Bitvector32SignedShiftLeftOverflows(a.clone(), b.clone()),
                     ConditionTerm::Bitvector32Equal(a.clone(), b.clone()),
                     ConditionTerm::Bitvector32SignedLessThan(a.clone(), b.clone()),
                 ] {
@@ -524,4 +547,82 @@ fn a_disequality_at_a_range_end_tightens_it() {
         (ConditionTerm::equal(x.clone(), constant(3)), false),
     ]);
     assert!(pinned.is_contradictory());
+    // A dead path answers only that an overflow is absent.
+    assert_eq!(pinned.decide(&divide), Some(false));
+    assert_eq!(pinned.decide(&lt(&x, &y)), None);
+}
+
+/// A compound term a fact mentions gets a node of its own; its operands'
+/// bounds still bound it. Here `y - x` is named by `0 <= (y - x) - 1`
+/// before the question, and `x < y`, `0 <= x` keep `(y - x) - 1` from
+/// overflowing.
+#[test]
+fn a_named_compound_term_keeps_its_operands_bounds() {
+    let (x, y) = (variable(0), variable(1));
+    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let difference = Bitvector32Term::Subtract(boxed(&y), boxed(&x));
+    let less_one = Bitvector32Term::Subtract(boxed(&difference), boxed(&constant(1)));
+    let graph = graph(&[
+        (le(&constant(0), &less_one), true),
+        (lt(&x, &y), true),
+        (le(&constant(0), &x), true),
+    ]);
+    assert_eq!(
+        graph.decide(&ConditionTerm::Bitvector32SignedSubtractOverflows(
+            boxed(&difference),
+            boxed(&constant(1))
+        )),
+        Some(false)
+    );
+}
+
+/// A recorded `!(a + b overflows)` answers `b + a`, and the same sum under
+/// another name for an operand; a shift by a constant count and a product
+/// by a constant are bounded by their operand.
+#[test]
+fn overflow_facts_shifts_and_products_are_read() {
+    let (x, y) = (variable(0), variable(1));
+    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let recorded = graph(&[(
+        ConditionTerm::Bitvector32SignedAddOverflows(boxed(&x), boxed(&y)),
+        false,
+    )]);
+    assert_eq!(
+        recorded.decide(&ConditionTerm::Bitvector32SignedAddOverflows(
+            boxed(&y),
+            boxed(&x)
+        )),
+        Some(false)
+    );
+    let alias = variable(2);
+    let renamed = graph(&[
+        (
+            ConditionTerm::Bitvector32SignedAddOverflows(boxed(&x), boxed(&y)),
+            false,
+        ),
+        (ConditionTerm::equal(alias.clone(), x.clone()), true),
+    ]);
+    assert_eq!(
+        renamed.decide(&ConditionTerm::Bitvector32SignedAddOverflows(
+            boxed(&alias),
+            boxed(&y)
+        )),
+        Some(false)
+    );
+    let byte = graph(&[(le(&constant(0), &x), true), (le(&x, &constant(255)), true)]);
+    assert_eq!(
+        byte.decide(&ConditionTerm::Bitvector32SignedShiftLeftOverflows(
+            boxed(&x),
+            boxed(&constant(1))
+        )),
+        Some(false)
+    );
+    let doubled = Bitvector32Term::Multiply(boxed(&x), boxed(&constant(2)));
+    assert_eq!(
+        byte.decide(&ConditionTerm::Bitvector32SignedSubtractOverflows(
+            boxed(&doubled),
+            boxed(&constant(1))
+        )),
+        Some(false)
+    );
 }
