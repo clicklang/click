@@ -141,8 +141,10 @@ that writes `int32` for such a source already writes the source's spelling.
   passing `&twice` shows `Doubling(&twice)`. A function-pointer local holds
   `&f` or another pointer, and a pointer can be passed on; reassignment and
   pointers in memory are refused. A lambda that captures nothing can be
-  passed for a function pointer, named `caller::(lambda#0)`; capturing
-  lambdas and `std::function` are not imported. Diagnostics and proof steps (`executes`,
+  passed for a function pointer, named `caller::(lambda#0)`, and a
+  `std::function` parameter holds a lambda capturing scalars by copy, a
+  function, or another `std::function`; its contract implies it is not
+  empty. Diagnostics and proof steps (`executes`,
   `step(callee(...))`) still name functions by the importer's names.
 - **Rust.** Verified functions in native form, including `impl Drop for Guard`
   and module paths. A named contract is `contract fn Doubling(x: i32) -> i32`,
@@ -179,9 +181,9 @@ that writes `int32` for such a source already writes the source's spelling.
    `caller::{closure#0}`, and capturing closures and function items
    passed for `&dyn Fn` and `impl Fn` parameters, and C++ lambdas that
    capture nothing passed for a function pointer, named
-   `caller::(lambda#0)`. Remaining: capturing lambdas and `std::function` in
-   C++, whose contract is decided to imply it is not empty, so its call
-   cannot throw `std::bad_function_call`. Decided 2026-10-14: a capturing closure's contract
+   `caller::(lambda#0)`, and `std::function` parameters holding lambdas
+   that capture by copy, functions, or other `std::function`s, whose
+   contract implies they are not empty. Decided 2026-10-14: a capturing closure's contract
    names its captures as the body does (`ensures result == y + k;`), and a
    callee states what it needs of the closure with a parameterized named
    contract, whose value parameters are body clauses `let amount: i32;`

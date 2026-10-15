@@ -101,6 +101,7 @@ fn graph_reference_checks_index_growing_caller_places_once() {
                 .map(|index| place(format!("parameter-{index}"), reference_type.clone()))
                 .collect(),
             declared_noexcept: true,
+            closure_captures: 0,
             span: cleanup_span(),
             body: Vec::new(),
         };
@@ -142,6 +143,7 @@ fn graph_reference_checks_index_growing_caller_places_once() {
             return_type: signed_integer(32, false),
             parameters: vec![place("parameter-0".into(), reference_type)],
             declared_noexcept: true,
+            closure_captures: 0,
             span: cleanup_span(),
             body: vec![],
         };
@@ -188,6 +190,7 @@ fn call_depth_budget_accounts_for_previously_checked_subgraphs() {
                 return_type: signed_integer(32, false),
                 parameters: vec![],
                 declared_noexcept: true,
+                closure_captures: 0,
                 span: cleanup_span(),
                 body: if index == 0 {
                     vec![]
@@ -327,6 +330,7 @@ fn record_inventory_reachability_rejects_unused_layouts() {
         function_kind: CppFunctionKind::Free,
         return_type: signed_integer(32, false),
         declared_noexcept: true,
+        closure_captures: 0,
         span: cleanup_span(),
         body: vec![],
         parameters: vec![CppPlace {
@@ -664,6 +668,7 @@ fn cross_header_call_origins_have_linear_graph_work() {
         return_type: CppType::Void,
         parameters: vec![],
         declared_noexcept: true,
+        closure_captures: 0,
         span: span_in(source),
         body,
     };

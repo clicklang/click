@@ -251,6 +251,18 @@ impl Metadata<'_> {
                 self.callee(function)?;
                 span
             }
+            CppExpression::ClosureInstance {
+                function,
+                captures,
+                span,
+                ..
+            } => {
+                self.callee(function)?;
+                for capture in captures {
+                    self.expression(capture)?;
+                }
+                span
+            }
             CppExpression::Dereference { pointer, span, .. }
             | CppExpression::ReferenceBinding {
                 address: pointer,
