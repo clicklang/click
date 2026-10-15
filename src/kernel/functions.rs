@@ -7363,6 +7363,39 @@ fn execute_verified_function_applications_with_suspension(
         };
         return_state.next_local_frame = post_state.next_local_frame;
         return_state.next_local_lifetime = post_state.next_local_lifetime;
+        // A named callback contract has no checked source return summary.
+        // Its numeric postconditions cannot give an opaque result a wider
+        // domain. An explicit, address-consistent origin promise can supply
+        // the complete value; otherwise keep a non-accessible result.
+        let result = match result {
+            CValue::Pointer(pointer)
+                if application.pointer_result_domain.is_none()
+                    && pointer.c_type().is_object_pointer()
+                    && interface.return_aggregate_layout().is_none() =>
+            {
+                let result_assumptions =
+                    assumptions_with_path_context(&effective_assumptions, &facts, &obligations);
+                let promised = result_assumptions
+                    .promised_pointer_input_origin(&pointer)
+                    .filter(|origin| {
+                        result_assumptions.decide(&ConditionTerm::pointer_equal(
+                            pointer.pointer().clone(),
+                            origin.pointer().clone(),
+                        )) == Some(true)
+                    });
+                CValue::Pointer(match promised {
+                    Some(origin) => origin
+                        .with_type(pointer.c_type())
+                        .with_pointee_constant(pointer.pointee_constant())
+                        .with_pointee_volatile(pointer.pointee_volatile()),
+                    None => pointer.with_domain(Some(CPointerDomain {
+                        bytes: 0,
+                        position: IntegerTerm::constant_i64(0).into(),
+                    })),
+                })
+            }
+            value => value,
+        };
         let outcome = CFunctionOutcome::Return {
             value: result,
             state: Box::new(return_state),
@@ -14262,6 +14295,7 @@ fn spec_expression_parameter_offset(
             pointer,
             elements,
             byte_width,
+            ..
         } => spec_expression_parameter_offset(pointer, parameter_name)?
             .checked_add(spec_expression_constant(elements)?.checked_mul(*byte_width)?),
         _ => None,
@@ -16139,42 +16173,43 @@ fn instantiate_result_domain_meet(
     let mut lower = i64::MIN;
     let mut upper = i64::MAX;
     let mut bounded = false;
-    let mut meet = |domain: &CPointerDomain, low: i64, high: i64| -> Option<()> {
-        let position = domain.position.as_const()?.to_i64()?;
-        lower = lower.max(position.checked_neg()?.checked_sub(low)?);
-        upper = upper.min(
-            i64::from(domain.bytes)
-                .checked_sub(position)?
-                .checked_sub(high)?,
-        );
-        bounded = true;
-        Some(())
-    };
-    if let Some(domain) = fixed {
-        meet(domain, 0, 0)?;
-    }
-    for (index, low, high) in sources {
-        let CValue::Pointer(pointer) = arguments.get(*index)? else {
-            return None;
+    {
+        let mut meet = |domain: &CPointerDomain, low: i64, high: i64| -> Option<()> {
+            let position = domain.position.as_const()?.to_i64()?;
+            lower = lower.max(position.checked_neg()?.checked_sub(low)?);
+            upper = upper.min(
+                i64::from(domain.bytes)
+                    .checked_sub(position)?
+                    .checked_sub(high)?,
+            );
+            bounded = true;
+            Some(())
         };
-        if assumptions.decide(&super::eval::pointer_is_null_condition(
-            pointer.pointer().clone(),
-        )) == Some(true)
-        {
-            continue;
+        if let Some(domain) = fixed {
+            meet(domain, 0, 0)?;
         }
-        let fallback = pointer
-            .domain()
-            .is_none()
-            .then(|| argument_input_span(interface, *index))
-            .flatten()
-            .map(|bytes| CPointerDomain {
-                bytes,
-                position: IntegerTerm::constant_i64(0).into(),
-            });
-        meet(pointer.domain().or(fallback.as_ref())?, *low, *high)?;
+        for (index, low, high) in sources {
+            let CValue::Pointer(pointer) = arguments.get(*index)? else {
+                return None;
+            };
+            if assumptions.decide(&super::eval::pointer_is_null_condition(
+                pointer.pointer().clone(),
+            )) == Some(true)
+            {
+                continue;
+            }
+            let fallback = pointer
+                .domain()
+                .is_none()
+                .then(|| argument_input_span(interface, *index))
+                .flatten()
+                .map(|bytes| CPointerDomain {
+                    bytes,
+                    position: IntegerTerm::constant_i64(0).into(),
+                });
+            meet(pointer.domain().or(fallback.as_ref())?, *low, *high)?;
+        }
     }
-    drop(meet);
     if !bounded {
         return None;
     }
@@ -29511,11 +29546,16 @@ fn resolve_retained_aggregate_fields(
             CExpression::Variable(name) => {
                 Some((name, SpecExpression::CExpression(expression.clone())))
             }
-            CExpression::PointerOffsetBytes { pointer, bytes, .. } => {
+            CExpression::PointerOffsetBytes {
+                pointer,
+                bytes,
+                object_bytes,
+            } => {
                 let (name, pointer) = projection(pointer)?;
                 Some((
                     name,
                     SpecExpression::PointerOffset {
+                        object_bytes: *object_bytes,
                         pointer: Box::new(pointer),
                         elements: Box::new(SpecExpression::Value(int32(*bytes))),
                         byte_width: 1,
@@ -32900,6 +32940,7 @@ mod provisional_ensure_obligation_tests {
             left: SpecExpression::MemoryLoad {
                 memory: SpecMemory::Current,
                 pointer: Box::new(SpecExpression::PointerOffset {
+                    object_bytes: None,
                     pointer: Box::new(SpecExpression::CExpression(c_variable("data"))),
                     elements: Box::new(SpecExpression::CExpression(c_int32_literal(1))),
                     byte_width: 4,

@@ -10938,7 +10938,10 @@ impl Parser {
                 return Ok(crate::surface::lowering::contract_c_unary(
                     source_base,
                     CExpression::PointerOffsetBytes {
-                        object_bytes: None,
+                        object_bytes: match lowered {
+                            CExpression::PointerOffsetBytes { object_bytes, .. } => *object_bytes,
+                            _ => None,
+                        },
                         pointer: Box::new(base),
                         bytes: *offset_bytes,
                     },
@@ -13027,6 +13030,7 @@ fn row_major_index_path(flat_index: u32, shape: &[u32]) -> String {
 }
 
 fn lowered_field_expression(pointer: CExpression, field: &ResolvedField) -> CExpression {
+    let pointer = crate::kernel::c_selected_object_pointer(pointer, field.byte_width);
     if field.c_type == C0Type::Int32 && (field.struct_name.is_some() || field.union_name.is_some())
     {
         pointer

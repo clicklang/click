@@ -301,3 +301,43 @@ fn scalar_domains_survive_expansion_and_retained_proof_edits() {
             .is_err()
     );
 }
+
+#[test]
+fn opaque_callback_returns_require_an_origin_to_move_within_a_domain() {
+    let c = "struct Pair { int32 first; int32 second; }; int32* probe(struct Pair* p, int32* (*f)(int32*)) { return f(&p->first) + 1; }";
+    let proof = r#"verifying "callback.c";
+        contract int32* End(int32* p) { views *p; ensures result == p + 1; }
+        int32* probe(struct Pair* p, int32* (*f)(int32*)) {
+            requires End(f); views p->first; views p->second;
+            ensures result == &p->second + 1;
+        } by { execute(); simp(); }"#;
+    let error = verify_c0_sources(proof, &[("callback.c", c)]).unwrap_err();
+    assert!(error.to_string().contains("undefined behavior"), "{error}");
+    let promised = proof.replace(
+        "ensures result == p + 1;",
+        "ensures result == p + 1; ensures pointer_origin(result, p + 1);",
+    );
+    let error = verify_c0_sources(&promised, &[("callback.c", c)]).unwrap_err();
+    assert!(error.to_string().contains("undefined behavior"), "{error}");
+    verify_c0_sources(
+        &promised.replace(
+            "ensures result == &p->second + 1;",
+            "ensures result == &p->first;",
+        ),
+        &[(
+            "callback.c",
+            c.replace("f(&p->first) + 1", "f(&p->first) - 1").as_str(),
+        )],
+    )
+    .unwrap();
+}
+
+#[test]
+fn inferred_member_returns_do_not_authenticate_callee_automatic_storage() {
+    let c = "struct Pair { int32 first; int32 second; }; int32* leak(void) { struct Pair local; return &local.first; } int32 probe(int32* p) { int32* q = leak(); if (q == p) return *q; return 0; }";
+    let proof = r#"verifying "local.c";
+        int32* leak() { ensures result == result; } by { execute(); simp(); }
+        int32 probe(int32* p) { views *p; ensures result == result; } by { execute(); simp(); }"#;
+    let error = verify_c0_sources(proof, &[("local.c", c)]).unwrap_err();
+    assert!(error.to_string().contains("undefined behavior"), "{error}");
+}

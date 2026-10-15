@@ -1157,10 +1157,12 @@ impl<'a> TermRewrite<'a> {
                 SpecExpression::LoopEntrySnapshot(Box::new(self.rewrite_spec_expression(value)?))
             }
             SpecExpression::PointerOffset {
+                object_bytes,
                 pointer,
                 elements,
                 byte_width,
             } => SpecExpression::PointerOffset {
+                object_bytes: *object_bytes,
                 pointer: Box::new(self.rewrite_spec_expression(pointer)?),
                 elements: Box::new(self.rewrite_spec_expression(elements)?),
                 byte_width: *byte_width,

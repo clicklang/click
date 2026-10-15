@@ -8938,18 +8938,18 @@ pub(super) fn evaluate_loop_effect_segment(
         "segment end",
         budget,
     )?;
-    if let (Some(domain), Ok(start), Ok(end)) = (base.domain(), &start_value, &end_value) {
-        if !super::eval::pointer_domain_range_within(
+    if let (Some(domain), Ok(start), Ok(end)) = (base.domain(), &start_value, &end_value)
+        && !super::eval::pointer_domain_range_within(
             domain,
             start,
             end,
             segment.element_width,
             assumptions,
-        ) {
-            return Ok(Err(
-                "memory range leaves the pointer's selected object domain".into(),
-            ));
-        }
+        )
+    {
+        return Ok(Err(
+            "memory range leaves the pointer's selected object domain".into(),
+        ));
     }
     let base = base.into_pointer();
     // A range with a 64-bit bound retains that bound's width.
@@ -9141,6 +9141,7 @@ fn evaluate_loop_effect_segment_value_with_facts(
     label: &str,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<(CValue, ExecutionFacts), String>> {
+    let _logical_reads = super::eval::SpecificationReadScope::enter();
     evaluate_loop_effect_segment_value_capturing(
         state,
         expression,

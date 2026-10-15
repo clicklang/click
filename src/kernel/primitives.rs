@@ -1170,6 +1170,23 @@ impl CPointerValue {
     }
 
     pub(crate) fn with_extent(mut self, extent: Option<SubobjectExtent>) -> Self {
+        // Authenticate the absolute carrier through the same displacement
+        // bounds as source-selected objects. Clearing presentation metadata
+        // never clears an already selected domain.
+        if self.domain.is_none()
+            && let Some(extent) = &extent
+        {
+            let bounds = u32::try_from(extent.width).ok().zip(
+                self.pointer
+                    .offset_from_base(&extent.start)
+                    .and_then(|offset| offset.as_const()),
+            );
+            let (bytes, position) = bounds.unwrap_or((0, -1));
+            self.domain = Some(Arc::new(CPointerDomain {
+                bytes,
+                position: IntegerTerm::constant_i64(position).into(),
+            }));
+        }
         self.extent = extent.map(Arc::new);
         self
     }
@@ -2242,6 +2259,7 @@ pub enum SpecExpression {
     },
     LoopEntrySnapshot(Box<SpecExpression>),
     PointerOffset {
+        object_bytes: Option<u32>,
         pointer: Box<SpecExpression>,
         elements: Box<SpecExpression>,
         byte_width: u32,

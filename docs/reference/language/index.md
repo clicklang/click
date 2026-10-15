@@ -1403,7 +1403,10 @@ A pointer copied to an integer retains its origin without a new promise.
 Known scalar and one-past domains cannot be upgraded through this predicate,
 equality rewriting, or an equal sibling address. Source-function return domains
 are inferred from verified return paths; address-only postconditions do not
-create them. See [the memory model](../../concepts/memory-model.md).
+create them. An opaque callback can state `ensures pointer_origin(result, p)`
+together with `ensures result == p` to supply its return origin explicitly.
+Without a checked return summary or such a promise, its result cannot supply
+access or nonzero displacement. See [the memory model](../../concepts/memory-model.md).
 
 `aligned(pointer, n)` states that the pointer's address is a multiple of `n`,
 a power of two. It is sugar for `(address(pointer) & (n - 1)) == 0`. Click

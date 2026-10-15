@@ -6387,10 +6387,12 @@ fn aggregate_projection_pointer(
             Some(SpecExpression::Value(CValue::pointer(slot.clone())))
         }
         SpecExpression::PointerOffset {
+            object_bytes,
             pointer,
             elements,
             byte_width,
         } => Some(SpecExpression::PointerOffset {
+            object_bytes: *object_bytes,
             pointer: Box::new(aggregate_projection_pointer(pointer, parameter, slot)?),
             elements: elements.clone(),
             byte_width: *byte_width,
@@ -7484,6 +7486,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             }
         }
         SpecExpression::PointerOffset {
+            object_bytes,
             pointer,
             elements,
             byte_width,
@@ -7492,6 +7495,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             pointer,
             elements,
             *byte_width,
+            *object_bytes,
             assumptions,
             budget,
         )?,
@@ -7835,6 +7839,7 @@ fn evaluate_spec_pointer_offset_paths_in(
     pointer: &SpecExpression,
     elements: &SpecExpression,
     byte_width: u32,
+    object_bytes: Option<u32>,
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
@@ -7869,14 +7874,16 @@ fn evaluate_spec_pointer_offset_paths_in(
                 CValue::UInt64(elements) => (elements, true, true),
                 _ => continue,
             };
-            let Some((mut facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
-                &pointer_path.facts,
-                &pointer_path.obligations,
-                &element_path.facts,
-                &element_path.obligations,
-                assumptions,
-                &element_assumptions,
-            ) else {
+            let Some((mut facts, mut obligations)) =
+                merge_execution_pure_facts_and_obligations_under(
+                    &pointer_path.facts,
+                    &pointer_path.obligations,
+                    &element_path.facts,
+                    &element_path.obligations,
+                    assumptions,
+                    &element_assumptions,
+                )
+            else {
                 continue;
             };
             let elements = if wide {
@@ -7913,6 +7920,20 @@ fn evaluate_spec_pointer_offset_paths_in(
                     .pointer()
                     .offset_by_typed_elements(elements, byte_width, unsigned, wide),
             );
+            if let Some(bytes) = object_bytes {
+                obligations.extend(
+                    super::eval::pointer_domain_conditions(result.domain(), bytes)
+                        .into_iter()
+                        .filter(|condition| *condition != ConditionTerm::Constant(true))
+                        .map(|condition| {
+                            ProofObligation::new(Proposition::ConditionIs(condition, true))
+                        }),
+                );
+                result = result.with_domain(Some(CPointerDomain {
+                    bytes,
+                    position: IntegerTerm::constant_i64(0).into(),
+                }));
+            }
             paths.push(SpecExpressionPath {
                 value: CValue::Pointer(result),
                 facts,
@@ -9697,6 +9718,7 @@ mod integer_budget_tests {
     fn nonempty_integer_fold_is_logical_but_checked_reads_remain_scoped() {
         let item = Variable(71_103);
         let pointer = SpecExpression::PointerOffset {
+            object_bytes: None,
             pointer: Box::new(SpecExpression::Value(CValue::Pointer(CPointerValue::new(
                 Pointer {
                     block: PointerBlock::Symbolic(Variable(71_104)),

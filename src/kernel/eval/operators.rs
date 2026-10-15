@@ -2423,7 +2423,7 @@ fn pointer_offset_by_elements_paths(
                 value: true,
             }),
     );
-    value.replace_pointer(result);
+    value = value.with_address(result);
     let form = |facts, obligations| {
         apply_pointer_formation_guards(value, guards, facts, obligations, assumptions)
     };
@@ -2528,7 +2528,7 @@ pub(in crate::kernel) fn pointer_offset_by_bytes_paths(
                 value: true,
             }),
     );
-    value.replace_pointer(result);
+    value = value.with_address(result);
     apply_pointer_formation_guards(value, guards, facts, obligations, assumptions)
 }
 

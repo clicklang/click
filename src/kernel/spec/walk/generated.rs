@@ -120,6 +120,7 @@ impl Gen {
         match self.pick(3) {
             0 => parameter,
             1 => SpecExpression::PointerOffset {
+                object_bytes: None,
                 pointer: Box::new(parameter),
                 elements: Box::new(SpecExpression::Value(CValue::Int32(
                     Bitvector32Term::Constant(2),
@@ -170,6 +171,7 @@ impl Gen {
                 result_type: CType::Int32,
             },
             11 => SpecExpression::PointerOffset {
+                object_bytes: None,
                 pointer: Box::new(self.expr(d)),
                 elements: Box::new(self.expr(d)),
                 byte_width: 4,

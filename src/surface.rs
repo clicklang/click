@@ -293,6 +293,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "implies",
     "arithmetic_certificate",
     "peel",
+    "pointer_origin",
     "signed_int32",
     "rules",
     "in",

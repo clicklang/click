@@ -83,6 +83,7 @@ fn old_collect_spec_expression_bitvector_variables(
             old_collect_spec_expression_bitvector_variables(expression, variables);
         }
         SpecExpression::PointerOffset {
+            object_bytes: _,
             pointer,
             elements,
             byte_width: _,

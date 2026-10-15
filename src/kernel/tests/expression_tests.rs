@@ -4008,3 +4008,20 @@ fn substitution_maps_the_extent_start_with_the_address() {
         })
     );
 }
+
+#[test]
+fn absolute_subobject_carriers_enforce_the_selected_domain() {
+    let first = subobject_pointer(0, 0, 4);
+    let state = CState::new()
+        .with_memory(CMemory::new().with_block("pair", 8))
+        .with_local("p", CValue::Pointer(first));
+    let theorem =
+        prove_c_expression_evaluation(state, c_add(c_variable("p"), c_int32_literal(2))).unwrap();
+    assert!(matches!(
+        theorem.proposition(),
+        Proposition::CExpressionEvaluates {
+            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic),
+            ..
+        }
+    ));
+}

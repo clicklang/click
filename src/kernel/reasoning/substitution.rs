@@ -6300,10 +6300,12 @@ fn substitute_pointer_variable_in_spec_expression(
             ))
         }
         SpecExpression::PointerOffset {
+            object_bytes,
             pointer,
             elements,
             byte_width,
         } => SpecExpression::PointerOffset {
+            object_bytes: *object_bytes,
             pointer: Box::new(substitute_pointer_variable_in_spec_expression(
                 pointer, from, to,
             )),

@@ -3,7 +3,8 @@ resource marked_list(node: struct node*) {
         owns allocation(node, sizeof(struct node));
         owns *node;
         fact aligned(node, 8);
-        let next: struct node* where pointer_origin(node->word, next) and aligned(next, 8) and node->word == address(next) + (node->word & 1);
+        let next: struct node* where aligned(next, 8) and node->word == address(next) + (node->word & 1);
+        fact pointer_origin(node->word, next);
         owns marked_list(next);
     }
 }
@@ -24,7 +25,7 @@ struct node* list_empty() {
     ensures aligned(result, 8);
 } by {
     execute();
-    fold(marked_list(result)) by { simp(); }
+    fold(marked_list(result));
     simp();
 }
 
@@ -40,7 +41,7 @@ struct node* list_prepend(int32 value, struct node* tail) {
     if result == tail {
         simp();
     } else {
-        fold(marked_list(result)) by { simp(); }
+        fold(marked_list(result));
         simp();
     }
 }

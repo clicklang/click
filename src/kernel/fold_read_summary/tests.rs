@@ -24,6 +24,7 @@ fn read_at(elements: SpecExpression) -> SpecExpression {
     SpecExpression::MemoryLoad {
         memory: SpecMemory::Current,
         pointer: Box::new(SpecExpression::PointerOffset {
+            object_bytes: None,
             pointer: Box::new(name("v")),
             elements: Box::new(elements),
             byte_width: 4,
@@ -248,6 +249,7 @@ fn each_unsupported_read_pattern_declines_the_whole_definition() {
                     SpecExpression::MemoryLoad {
                         memory: SpecMemory::FunctionEntry,
                         pointer: Box::new(SpecExpression::PointerOffset {
+                            object_bytes: None,
                             pointer: Box::new(name("v")),
                             elements: Box::new(item()),
                             byte_width: 4,
@@ -270,6 +272,7 @@ fn each_unsupported_read_pattern_declines_the_whole_definition() {
                     SpecExpression::MemoryLoad {
                         memory: SpecMemory::Current,
                         pointer: Box::new(SpecExpression::PointerOffset {
+                            object_bytes: None,
                             pointer: Box::new(name("v")),
                             elements: Box::new(item()),
                             byte_width: 1,
@@ -1081,6 +1084,7 @@ fn byte_fold_summary_checks_the_read_type_and_stride() {
     let read = |width, value_type| SpecExpression::MemoryLoad {
         memory: SpecMemory::Current,
         pointer: Box::new(SpecExpression::PointerOffset {
+            object_bytes: None,
             pointer: Box::new(name("v")),
             elements: Box::new(item()),
             byte_width: width,
@@ -1121,6 +1125,7 @@ fn byte_fold_framing_refuses_overlap_and_counts_byte_endpoints() {
     let read = SpecExpression::MemoryLoad {
         memory: SpecMemory::Current,
         pointer: Box::new(SpecExpression::PointerOffset {
+            object_bytes: None,
             pointer: Box::new(name("v")),
             elements: Box::new(item()),
             byte_width: 1,

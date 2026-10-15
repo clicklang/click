@@ -4889,10 +4889,29 @@ impl AnnotationLowerer<'_> {
             pointer
         } else {
             SpecExpression::PointerOffset {
+                object_bytes: None,
                 pointer: Box::new(pointer),
                 elements: Box::new(SpecExpression::Value(int32(offset_bytes))),
                 byte_width: 1,
             }
+        };
+        let selected = match lowered {
+            CExpression::TypedLoad { pointer, .. } => match pointer.as_ref() {
+                CExpression::PointerOffsetBytes { object_bytes, .. } => *object_bytes,
+                _ => None,
+            },
+            CExpression::PointerOffsetBytes { object_bytes, .. } => *object_bytes,
+            _ => None,
+        };
+        let pointer = if let Some(bytes) = selected {
+            SpecExpression::PointerOffset {
+                object_bytes: Some(bytes),
+                pointer: Box::new(pointer),
+                elements: Box::new(SpecExpression::Value(int32(0))),
+                byte_width: 1,
+            }
+        } else {
+            pointer
         };
         match lowered {
             CExpression::TypedLoad {
@@ -4984,13 +5003,16 @@ impl AnnotationLowerer<'_> {
                         }
                         Ok(SpecExpression::Cast(Box::new(value), *target_type))
                     }
-                    CExpression::PointerOffsetBytes { bytes, .. } => {
-                        Ok(SpecExpression::PointerOffset {
-                            pointer: Box::new(value),
-                            elements: Box::new(SpecExpression::Value(int32(*bytes))),
-                            byte_width: 1,
-                        })
-                    }
+                    CExpression::PointerOffsetBytes {
+                        bytes,
+                        object_bytes,
+                        ..
+                    } => Ok(SpecExpression::PointerOffset {
+                        object_bytes: *object_bytes,
+                        pointer: Box::new(value),
+                        elements: Box::new(SpecExpression::Value(int32(*bytes))),
+                        byte_width: 1,
+                    }),
                     CExpression::TypedLoad { value_type, .. } => Ok(SpecExpression::MemoryLoad {
                         memory: environment.current_memory.clone(),
                         pointer: Box::new(value),
@@ -5211,6 +5233,7 @@ impl AnnotationLowerer<'_> {
                         Ok(SpecExpression::MemoryLoad {
                             memory: environment.current_memory.clone(),
                             pointer: Box::new(SpecExpression::PointerOffset {
+                                object_bytes: None,
                                 pointer: Box::new(pointer),
                                 elements: Box::new(offset),
                                 byte_width: value_type.byte_width(),
@@ -5223,6 +5246,7 @@ impl AnnotationLowerer<'_> {
                             return Err("invalid struct array stride".to_string());
                         };
                         Ok(SpecExpression::PointerOffset {
+                            object_bytes: None,
                             pointer: Box::new(pointer),
                             elements: Box::new(SpecExpression::Multiply(
                                 Box::new(offset),
@@ -5350,6 +5374,7 @@ impl AnnotationLowerer<'_> {
             ContractExpression::Add(left, right) => {
                 if let Some(element_type) = self.contract_pointer_element_type(left, environment) {
                     return Ok(SpecExpression::PointerOffset {
+                        object_bytes: None,
                         pointer: Box::new(
                             self.lower_contract_expression_to_spec(left, environment)?,
                         ),
@@ -5361,6 +5386,7 @@ impl AnnotationLowerer<'_> {
                 }
                 if let Some(element_type) = self.contract_pointer_element_type(right, environment) {
                     return Ok(SpecExpression::PointerOffset {
+                        object_bytes: None,
                         pointer: Box::new(
                             self.lower_contract_expression_to_spec(right, environment)?,
                         ),
@@ -5382,6 +5408,7 @@ impl AnnotationLowerer<'_> {
                         .is_none()
                 {
                     return Ok(SpecExpression::PointerOffset {
+                        object_bytes: None,
                         pointer: Box::new(
                             self.lower_contract_expression_to_spec(left, environment)?,
                         ),
@@ -5459,6 +5486,7 @@ impl AnnotationLowerer<'_> {
                 let array_ref = self.lower_array_ref_to_spec(base, &projection_environment)?;
                 let index = self.lower_contract_expression_to_spec(index, environment)?;
                 let pointer = Box::new(SpecExpression::PointerOffset {
+                    object_bytes: None,
                     pointer: Box::new(array_ref.pointer),
                     elements: Box::new(index),
                     byte_width: array_ref.element_type.byte_width(),
@@ -6655,19 +6683,23 @@ impl AnnotationLowerer<'_> {
                 },
                 environment,
             ),
-            CExpression::PointerOffsetBytes { pointer, bytes, .. } => {
-                Ok(SpecExpression::PointerOffset {
-                    pointer: Box::new(self.lower_c_fragment_to_spec(pointer, environment)?),
-                    elements: Box::new(SpecExpression::Value(int32(*bytes))),
-                    byte_width: 1,
-                })
-            }
+            CExpression::PointerOffsetBytes {
+                pointer,
+                bytes,
+                object_bytes,
+            } => Ok(SpecExpression::PointerOffset {
+                object_bytes: *object_bytes,
+                pointer: Box::new(self.lower_c_fragment_to_spec(pointer, environment)?),
+                elements: Box::new(SpecExpression::Value(int32(*bytes))),
+                byte_width: 1,
+            }),
             // Arithmetic on a pointer offsets it by whole elements, as C does.
             CExpression::Add(left, right) => {
                 if let Some(element_width) =
                     self.c_expression_array_element_width(left, environment)
                 {
                     return Ok(SpecExpression::PointerOffset {
+                        object_bytes: None,
                         pointer: Box::new(self.lower_c_fragment_to_spec(left, environment)?),
                         elements: Box::new(self.lower_c_fragment_to_spec(right, environment)?),
                         byte_width: element_width,
@@ -6677,6 +6709,7 @@ impl AnnotationLowerer<'_> {
                     self.c_expression_array_element_width(right, environment)
                 {
                     return Ok(SpecExpression::PointerOffset {
+                        object_bytes: None,
                         pointer: Box::new(self.lower_c_fragment_to_spec(right, environment)?),
                         elements: Box::new(self.lower_c_fragment_to_spec(left, environment)?),
                         byte_width: element_width,
@@ -6695,6 +6728,7 @@ impl AnnotationLowerer<'_> {
                         .is_none()
                 {
                     return Ok(SpecExpression::PointerOffset {
+                        object_bytes: None,
                         pointer: Box::new(self.lower_c_fragment_to_spec(left, environment)?),
                         elements: Box::new(SpecExpression::Subtract(
                             Box::new(SpecExpression::Value(int32(0))),
@@ -6770,6 +6804,7 @@ impl AnnotationLowerer<'_> {
                     .c_expression_array_element_type(base, environment)
                     .unwrap_or(CType::Int32);
                 let pointer = SpecExpression::PointerOffset {
+                    object_bytes: None,
                     pointer: Box::new(self.lower_c_fragment_to_spec(base, environment)?),
                     elements: Box::new(self.lower_c_fragment_to_spec(index, environment)?),
                     byte_width: element_type.byte_width(),
@@ -6933,6 +6968,7 @@ impl AnnotationLowerer<'_> {
                     return Ok(SpecArrayRef {
                         memory: array_ref.memory,
                         pointer: SpecExpression::PointerOffset {
+                            object_bytes: None,
                             pointer: Box::new(array_ref.pointer),
                             elements: Box::new(offset),
                             byte_width: element_type.byte_width(),
@@ -6946,6 +6982,7 @@ impl AnnotationLowerer<'_> {
                     return Ok(SpecArrayRef {
                         memory: array_ref.memory,
                         pointer: SpecExpression::PointerOffset {
+                            object_bytes: None,
                             pointer: Box::new(array_ref.pointer),
                             elements: Box::new(offset),
                             byte_width: element_type.byte_width(),
@@ -6972,6 +7009,7 @@ impl AnnotationLowerer<'_> {
                     return Ok(SpecArrayRef {
                         memory: array_ref.memory,
                         pointer: SpecExpression::PointerOffset {
+                            object_bytes: None,
                             pointer: Box::new(array_ref.pointer),
                             elements: Box::new(negative_offset),
                             byte_width: element_type.byte_width(),

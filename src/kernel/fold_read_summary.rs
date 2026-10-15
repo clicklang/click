@@ -468,6 +468,7 @@ impl BodyChecker<'_> {
             pointer,
             elements,
             byte_width,
+            ..
         } = pointer
         else {
             return false;

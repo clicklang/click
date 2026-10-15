@@ -168,16 +168,20 @@ pub(super) fn expression(value: &CExpression, locals: &Domains) -> CPointerResul
             bytes,
             object_bytes,
         } => {
+            let parent = expression(pointer, locals);
+            if parent == CPointerResultDomain::Unknown {
+                return CPointerResultDomain::Unknown;
+            }
             if let Some(bytes) = object_bytes {
                 CPointerResultDomain::Selected {
                     domain: CPointerDomain {
                         bytes: *bytes,
                         position: IntegerTerm::constant_i64(0).into(),
                     },
-                    argument: argument(&expression(pointer, locals)),
+                    argument: argument(&parent),
                 }
             } else {
-                displace(expression(pointer, locals), i64::from(*bytes))
+                displace(parent, i64::from(*bytes))
             }
         }
         E::BitwiseAnd(left, right) | E::BitwiseOr(left, right) | E::BitwiseXor(left, right) => {

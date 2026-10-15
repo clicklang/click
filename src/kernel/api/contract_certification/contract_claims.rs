@@ -2909,6 +2909,11 @@ fn infer_return_pointer_origin(
     path: &CertifiedFunctionClaimPath,
     pointer: &CPointerValue,
 ) -> CPointerResultDomain {
+    // The callee's automatic storage ends at this boundary. Its selected
+    // member bounds cannot certify a live object in the caller.
+    if pointer.origin().block.starts_with("local:") {
+        return CPointerResultDomain::Unknown;
+    }
     let argument = function
         .parameters()
         .iter()

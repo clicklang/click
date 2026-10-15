@@ -7333,6 +7333,7 @@ impl CState {
                     // lowers to a load at the struct base, not an array offset.
                     direct if is_parameter(direct) => true,
                     SpecExpression::PointerOffset {
+                        object_bytes: None,
                         pointer,
                         elements,
                         byte_width: 4,

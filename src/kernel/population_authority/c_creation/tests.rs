@@ -1665,6 +1665,7 @@ fn two_authority_control_import_checks_each_custody_and_scope() {
     let cell = SpecExpression::MemoryLoad {
         memory: SpecMemory::Current,
         pointer: Box::new(SpecExpression::PointerOffset {
+            object_bytes: None,
             pointer: Box::new(SpecExpression::CExpression(c_variable("p"))),
             elements: Box::new(SpecExpression::Value(int32(0))),
             byte_width: 4,
@@ -1890,6 +1891,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     let cell = SpecExpression::MemoryLoad {
         memory: SpecMemory::Current,
         pointer: Box::new(SpecExpression::PointerOffset {
+            object_bytes: None,
             pointer: Box::new(SpecExpression::CExpression(c_variable("p"))),
             elements: Box::new(SpecExpression::Value(int32(0))),
             byte_width: 4,

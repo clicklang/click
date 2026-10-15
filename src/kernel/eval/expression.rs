@@ -2295,20 +2295,19 @@ pub(in crate::kernel) fn read_c_lvalue_paths(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CExpressionPath>> {
-    if let CLValueOutcome::LValue(lvalue) = &outcome {
-        if pointer_domain_conditions(
+    if let CLValueOutcome::LValue(lvalue) = &outcome
+        && pointer_domain_conditions(
             lvalue.pointer_domain.as_deref(),
             lvalue.value_type.byte_width(),
         )
         .iter()
         .any(|condition| decide_with_facts(assumptions, &facts, condition) != Some(true))
-        {
-            return Ok(vec![CExpressionPath {
-                outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
-                facts,
-                obligations,
-            }]);
-        }
+    {
+        return Ok(vec![CExpressionPath {
+            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
+            facts,
+            obligations,
+        }]);
     }
     let input_domain_valid = specification_read_active()
         || match &outcome {

@@ -13,7 +13,7 @@ Kernel memory is a map of named byte-sized blocks plus known cells. A
 pointer is a semantic object:
 
 ```text
-CPointerValue { pointer: { block, offset }, type, qualifiers, domain, origin }
+CPointerValue { pointer: { block, offset }, type, qualifiers, domain, origin, extent }
 ```
 
 The pointer block carries allocation provenance. A selected object also carries
@@ -22,6 +22,8 @@ designation independently of address-only rewrites. Real arithmetic moves that
 designation; comparing or rewriting equal addresses does not select another
 object. Pointer offsets are separate terms, not raw integers. C pointer arithmetic is scaled by the pointee type: `int32*`
 adds four bytes per element, while `uint8*` adds one byte per element.
+The absolute `extent` carrier is preserved by value transport and authenticates
+these same domain bounds; unsupported extent coordinates are refused.
 
 Click's integer constant `0` converts to a single canonical null pointer in
 pointer-valued return, initialization, assignment, argument, and comparison
@@ -95,6 +97,14 @@ An array member selects its complete array extent, permitting real traversal.
 These bounds survive pointer locals, stored values, integer round trips, and
 inferred modular return and pointer-cell effects. Effects come from complete
 checked returns and final cells, never from numeric address postconditions.
+A helper with several possible pointer returns exports only the displacement
+window common to all checked paths. An unknown return cannot supply a wider
+window. Contracts and proof expressions retain member selection just as C
+execution does, including inside origin propositions and snapshots.
+
+An opaque pointer input may use `pointer_origin(p, q)` together with `p == q`
+when its authority is held through `q`. Numeric equality alone cannot issue
+that input's object domain, including when a modular reader is called.
 
 Pointer arithmetic stays inside the pointed-to object (C11 6.5.6p8): the
 result must designate an element of the object or the position one past its

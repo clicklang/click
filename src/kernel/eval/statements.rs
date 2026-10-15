@@ -2217,17 +2217,16 @@ pub(crate) fn resolve_pending_heap_allocations(
                 {
                     *pointer = rebase_resolved_allocation(pointer, &base, &resolved_base)
                         .with_origin(resolved_base.clone());
-                    if !is_null {
-                        if let Some(bytes) = bytes
+                    if !is_null
+                        && let Some(bytes) = bytes
                             .bitvector64_as_const()
                             .or_else(|| bytes.as_const().map(u64::from))
                             .and_then(|bytes| u32::try_from(bytes).ok())
-                        {
-                            *pointer = pointer.clone().with_domain(Some(CPointerDomain {
-                                bytes,
-                                position: IntegerTerm::constant_i64(0).into(),
-                            }));
-                        }
+                    {
+                        *pointer = pointer.clone().with_domain(Some(CPointerDomain {
+                            bytes,
+                            position: IntegerTerm::constant_i64(0).into(),
+                        }));
                     }
                     pointer.replace_pointer(resolved_base.clone());
                 }
@@ -2291,17 +2290,16 @@ pub(crate) fn resolve_pending_heap_allocations(
             {
                 *pointer = rebase_resolved_allocation(pointer, &base, &resolved_base)
                     .with_origin(resolved_base.clone());
-                if !is_null {
-                    if let Some(bytes) = bytes
+                if !is_null
+                    && let Some(bytes) = bytes
                         .bitvector64_as_const()
                         .or_else(|| bytes.as_const().map(u64::from))
                         .and_then(|bytes| u32::try_from(bytes).ok())
-                    {
-                        *pointer = pointer.clone().with_domain(Some(CPointerDomain {
-                            bytes,
-                            position: IntegerTerm::constant_i64(0).into(),
-                        }));
-                    }
+                {
+                    *pointer = pointer.clone().with_domain(Some(CPointerDomain {
+                        bytes,
+                        position: IntegerTerm::constant_i64(0).into(),
+                    }));
                 }
                 pointer.replace_pointer(resolved_base.clone());
             }
