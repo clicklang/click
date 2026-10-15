@@ -87,6 +87,14 @@ Decided with the user (2026-10-15):
   never writes inside them.
 - **No layout or naming requirement on code under verification.** Any naming
   convention, such as sidecar-sibling files, applies only on the Click side.
+- **Click's own build description.** The project configuration describes how
+  each unit is built: per-source arguments for C and C++, and the crate
+  description for Rust. Click does not read Makefiles, CMake or other build
+  systems, which cannot be interpreted in general, and does not run them.
+  This replaces hand-copied C `args`, templated C++ compilation databases
+  (`prepare.py`, `.json.in` files) and per-sidecar Rust crate lists.
+- **Locks and artifacts are committed** with the project, so anyone can
+  verify without the toolchains.
 
 Proposed structure, to be confirmed while implementing:
 
@@ -95,18 +103,40 @@ Proposed structure, to be confirmed while implementing:
 - **The root file declares units.** Each unit gives:
   - a language: C, C++ or Rust,
   - a source root: the project itself or an external path,
-  - a source of build information,
-  - a toolchain,
-  - a target.
+  - its build description,
+  - a target,
+  - for C compiler imports, the compiler to run at lock time.
+
+  The C++ and Rust front ends are not named in project files. They are
+  located by the resolution order in
+  [cpp-support.md](cpp-support.md#shared-front-end-design).
 - **Shared settings are stated once per project or unit,** not per sidecar:
-  the toolchain, target, C++ standard and profile, and the C option profile.
-- **Sidecars only select:** a sidecar names the sources (and, for C++, the
-  functions) it verifies, resolved through the units. Per-sidecar import
+  the target, C++ standard and profile, and the C option profile.
+- **Sidecars only select:** a sidecar names the sources and functions it
+  verifies, resolved through the units. Several functions from one
+  translation unit need no per-function configuration. Per-sidecar import
   configs are retired or reduced to selection.
 - **One target spelling scheme** covers all three languages.
 - **Locking:** `click import lock` with no argument locks the whole project.
   There is one lock naming scheme, and lock files and artifacts live on the
   Click side. Verification stays offline.
+- **One lock envelope for all languages:** the lock schema, each front end's
+  release identity and semantic profile, input hashes, the artifact hash and
+  size, and the import identity, with language-specific fields in a language
+  section. One shared implementation covers bounded reading, hashing, stable
+  re-reads, atomic writes, and output-collision and path-containment checks.
+  Today C, C++ and Rust each have their own.
+- **Portable locks:**
+  - project files, including those in external source roots, are identified
+    by paths relative to their unit's root;
+  - toolchain, sysroot and front-end resource files are identified by content
+    and front-end identity, not by absolute path.
+
+  A committed lock verifies offline on a fresh clone at another path. Today
+  C++ locks record absolute paths, so `examples/basic-cpp` keeps its locks
+  out of Git and is excluded from the nightly audit.
+- **Diagnostics:** an unsupported flag in a build description is named,
+  and a stale lock names the changed file.
 - **Zero-config path stays:** a lone C sidecar with no root file keeps
   working in direct mode with the default target.
 
@@ -114,14 +144,23 @@ Proposed structure, to be confirmed while implementing:
 
 Each has a recommended default, used unless the user decides otherwise.
 
-1. **Build information for a unit we do not control.** Default: read the
-   unit's own build description. That is `compile_commands.json` for C and C++
-   (which replaces hand-copied C `args` and needs one flag policy for both),
-   and Cargo metadata for Rust (which replaces hand-listed crate `files`).
-   An explicit description in the root file is the fallback. Click does not
-   run the external build system.
-2. **Committed locks and artifacts.** Default: commit them, so anyone can
-   verify without the toolchains, as today.
+1. **Flag policy and optimized builds.** Today C accepts only preprocessor
+   flags unless a named option profile admits more, while C++ accepts any
+   flag the command carries. Click does not check the assumptions an
+   optimizer makes (`restrict`, `nonnull`, strict aliasing, signed overflow,
+   null-check deletion). Default: one policy for C and C++. A build
+   description states the real build's flags, and each flag is classified as
+   one of:
+   - a preprocessor input,
+   - a checked semantic setting,
+   - an optimization accepted only with its safety counterparts, as the
+     kernel profile requires `-fno-strict-aliasing`, `-fno-strict-overflow`
+     and `-fno-delete-null-pointer-checks` with `-O2`,
+   - refused.
+2. **Existing compilation databases.** Default: not an input. A project
+   writes its build description once. For example, the Bitcoin fixture's
+   CMake command line is translated into the description. A converter can be
+   added later if needed.
 3. **Languages within a unit.** Default: one language per unit. Proofs may
    share specifications across units. Calls across units, such as Rust calling
    C through FFI, are out of scope initially.
@@ -141,6 +180,9 @@ Each has a recommended default, used unless the user decides otherwise.
   It verifies with no file added inside the tree.
 - **Stale external input:** changing a byte in an external source refuses the
   stale lock and names the file.
+- **Portable C++ lock:** `examples/basic-cpp` with committed locks, copied to
+  another path, verifies offline from the same locks without `prepare.py` or a
+  compilation database template.
 - **Conflicting targets:** a sidecar or unit that disagrees with the project
   target is refused, with a diagnostic naming both.
 
@@ -154,9 +196,15 @@ Each has a recommended default, used unless the user decides otherwise.
   settings are stated once.
 - `click import lock` locks a whole project, and `click verify` needs no
   toolchain.
+- Build descriptions live in the project configuration. `prepare.py` and the
+  `compile_commands.json.in` template are gone from `examples/basic-cpp`, and
+  unsupported flags are refused with a diagnostic naming them.
+- All three languages use the shared lock envelope and input-handling code.
+  Locks are portable and committed. `examples/basic-cpp` checks in its locks
+  and rejoins the nightly audit.
 - External source roots are never written, need no particular layout or
   names, and a changed input is detected through the lock.
-- The four intended regressions are checked, the first two as examples or
+- The five intended regressions are checked, the first two as examples or
   integrations.
 - Existing import configs and `click.project.json` files are migrated, or
   refused with a diagnostic that names the replacement.

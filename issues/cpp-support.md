@@ -30,9 +30,9 @@ design in [Shared front-end design](#shared-front-end-design) below.
 
 ## Goal
 
-A user with a C++ project and its `compile_commands.json` installs Click with
-`install.sh` or `install.ps1`, writes a sidecar and import configuration, and
-runs `click import lock` and `click verify`. No Click repository checkout, no
+A user with a C++ project installs Click with `install.sh` or `install.ps1`,
+describes the project in its [project configuration](project-config.md),
+writes a sidecar, and runs `click import lock` and `click verify`. No Click repository checkout, no
 LLVM development install, and no custom build are needed. The same lock then
 verifies offline on a fresh clone of the user's project on another machine.
 
@@ -69,57 +69,24 @@ Audit of the current path, from a user's point of view:
    reports about itself (see Soundness). The lock's `exporter_sha256` is the
    hash of the local build, so the same inputs locked on two machines give
    two different import identities.
-4. **The user's compilation database is not used as it is.** The command
-   must name `clang++` or `clang++-19` as its driver (`main.cpp` and
-   `schema.rs`), so a GCC-built project must regenerate its database. The
-   Bitcoin integration needs a custom CMake toolchain file
-   (`linux-x86_64-clang19.cmake`) and a sysroot made of extracted Debian
-   packages. Three ad hoc templating schemes produce databases:
-   - `examples/basic-cpp/compile_commands.json.in` with `@PROJECT_ROOT@`,
-     filled in by a per-example `prepare.py`, which `tests/examples.rs` runs.
-   - The Bitcoin `feerate-command.json.in`, whose `@ROOT@`, `@CLANGXX@` and
-     `@RESOURCE_DIR@` are substituted by `tests/bitcoin_core_money_range.rs`.
-   - `make-fixture.py` for the hermetic archive.
-5. **The configuration repeats facts and is one per function.** A schema-6
-   import config (`src/languages/cpp/import.rs`) restates the standard,
-   target, exceptions and RTTI, which the compile command already
-   determines. It selects exactly one `function`, so each verified function
-   needs its own config: the Bitcoin integration has 12 checked-in
-   `.click.import.json` files. The C, C++ and Rust config and lock formats
-   are unrelated, as are their implementations of bounded reading, hashing,
-   atomic writes and path containment:
-   - C (`src/languages/c/compiler_import.rs`): config schema 1, lock
-     version 3.
-   - C++: config and lock schema 6, fields named `config_sha256`, ….
-   - Rust (`src/languages/rust/import.rs`): config schema 3 or 4, lock
-     schema 8, fields named `config`, `source`, ….
-6. **C++ locks only load where they were made.** The artifact and lock
-   record the absolute canonical path of every file Clang opened, including
-   sysroot and Clang resource headers. Offline loading resolves and rehashes
-   each of those paths (`read_preprocessor_files` in `cpp/import.rs`). C
-   locks behave differently: [`click import`](../docs/reference/cli/import.md)
-   documents that they can move to another host, and that system headers
-   need not be installed there. A C++ lock therefore loads only on the
-   machine and at the checkout path that created it. That is why:
-   - `examples/basic-cpp` keeps its artifacts and locks out of Git as "local
-     outputs";
-   - the nightly audit excludes `examples/basic-cpp` (`scripts/check.sh
-     --audit`);
-   - the Bitcoin README says a different checkout location requires a
-     refresh.
-
-   Rust locks, by contrast, are checked in.
-7. **The demonstration is reproducible only inside the repository.** Every
+4. **The demonstration is reproducible only inside the repository.** Every
    README starts with `scripts/build-cpp-exporter.sh` and `cargo run --bin
    click` from the repository root. The Bitcoin fee proofs exist as
    `.click.in` templates that only `tests/bitcoin_core_money_range.rs`
    instantiates. The full-checkout `MoneyRange` workflow assumes Homebrew
    Clang 19.1.7, CMake, and the extracted packages.
-8. **Setup errors name paths, not causes.** A missing exporter surfaces as
+5. **Setup errors name paths, not causes.** A missing exporter surfaces as
    `resolve C++ exporter `…`: No such file or directory`. A mismatched
    exporter surfaces as a schema or profile error after it has run.
    Diagnostics for unsupported constructs are good: the exporter's `fail`
    reports a source location and the construct.
+
+Three further problems belong to [project-config.md](project-config.md):
+- build information comes from templated compilation databases (`prepare.py`,
+  `.json.in` files);
+- there is one import config per function, with facts repeated across them;
+- C++ locks record absolute paths, so they load only on the machine and at
+  the checkout path that created them.
 
 What already works and should be kept:
 
@@ -150,39 +117,21 @@ What already works and should be kept:
    both sides use. Locks record the front end's release identity, so equal
    inputs give equal identities on every machine. Changing the schema stays
    an explicit refresh, as today.
-4. **Take the project's compilation database.** The config names the
-   project's own `compile_commands.json`, such as one CMake or Bear
-   generated. Users need no `prepare.py`, `.json.in` template or placeholder
-   substitution. Commands from other drivers are either translated into the
-   pinned Clang under a documented, checked mapping of flags, or refused with
-   a diagnostic that names the flag and says how to produce a Clang database.
-   The standard, target, exception and RTTI profile come from the command;
-   the config may state an expectation, and Click checks it.
-5. **Portable locks.** A lock identifies project files by paths relative to
-   a project root. It identifies files from the toolchain, the sysroot and
-   the bundled resource headers by content and front-end identity, not by
-   absolute path, matching what C locks already document. A lock committed
-   with the project verifies offline on a fresh clone at another path.
-   `examples/basic-cpp` checks in its locks and rejoins the nightly audit.
-6. **Lean configuration.** A config states only what verification selects:
-   the translation unit, the logical source, any locked dependencies,
-   library contracts, and the selected functions. Selecting several functions
-   from one translation unit does not need one config per function, unless
-   the design records why it must.
-7. **Clear errors.** One diagnostic, naming the cause and the fix, for each
+4. **Clear errors.** One diagnostic, naming the cause and the fix, for each
    of these:
    - no exporter installed for this Click version or platform;
-   - a front end with the wrong version;
-   - a missing or ambiguous database entry;
-   - an unsupported driver or flag;
-   - a stale lock.
+   - a front end with the wrong version.
 
    Unsupported constructs keep their source location and the name of the
    construct.
-8. **Reproducible demonstration.** `examples/basic-cpp` and the hermetic
+5. **Reproducible demonstration.** `examples/basic-cpp` and the hermetic
    `MoneyRange` fixture verify from an installed Click, with commands
    documented in their READMEs that do not use `cargo run`. Turning the
    `.click.in` fee templates into plain sidecars is not required.
+
+The build description, lean per-project configuration, portable locks, and
+diagnostics for unsupported flags and stale locks are requirements of
+[project-config.md](project-config.md).
 
 Documentation: [Language coverage](../docs/reference/coverage.md),
 [`click import`](../docs/reference/cli/import.md) and the
@@ -194,8 +143,8 @@ this lands.
 
 This section is the shared design for the C++ and
 [Rust](rust-support.md) front ends. Rust's file references it rather than
-repeating it. C compiler imports may adopt the same conventions, but
-changing C's lock format is not required.
+repeating it. [project-config.md](project-config.md) covers project
+configuration and the lock format for all three languages.
 
 - **Install layout and versioning.** Each Click version pins exactly one
   version of each front end. Front ends install beside that version of
@@ -215,15 +164,11 @@ changing C's lock format is not required.
   `src/languages/rust/charon-profile.json` is the model: it pins the
   extractor revision and version, the compiler commit, the toolchain, the
   flags, and the named semantic versions. C++ gets an equivalent profile.
-- **Lock files.** Both languages use one lock envelope: the lock schema, the
-  front end's release identity and semantic profile, input hashes keyed by
-  root-relative path, the artifact hash and size, and the import identity.
-  One shared implementation covers bounded reading, hashing, stable
-  re-reads, atomic writes, and output-collision and path-containment checks.
-  Language-specific fields stay in a language section.
+- **Lock files.** The lock envelope and its shared input-handling code
+  belong to [project-config.md](project-config.md). Each front end
+  contributes its release identity and semantic profile to that envelope.
 - **Errors.** Both languages share the same diagnostic categories and wording
-  for a missing front end, a version mismatch, stale locks and changed
-  inputs.
+  for a missing front end and a version mismatch.
 - **Regression shape.** Each front end has an installed-layout test that
   runs without the repository's `target/` directory, as described under each
   issue's intended regression.
@@ -235,13 +180,10 @@ layout into a temporary `CLICK_HOME`: `click`, plus the C++ front end as the
 installer would place it. It then:
 
 1. copies `examples/basic-cpp` to a temporary directory outside the
-   repository, with the project's own `compile_commands.json` and no
-   `prepare.py` step;
+   repository;
 2. runs, with no LLVM on `PATH` and no repository `target/` directory, the
    installed `click import lock` and `click verify` for all three sidecars;
-3. moves the project to another path and verifies again offline from the
-   same locks;
-4. checks the refusals: a front end with the wrong version identity is
+3. checks the refusals: a front end with the wrong version identity is
    refused with the named diagnostic, and a missing front end reports how to
    install it.
 
@@ -265,14 +207,6 @@ machine that wrote it.
 - The exporter reports its identity, Click checks it before export, and the
   artifact schema has a single definition. Locks record release identities
   and are byte-identical across machines for equal inputs.
-- `click import lock` consumes a project's own compilation database. The
-  per-example `prepare.py` and the `compile_commands.json.in` template are
-  gone from `examples/basic-cpp`, and non-Clang commands are translated or
-  refused with a named diagnostic.
-- C++ locks are portable and checked in for `examples/basic-cpp`, which
-  rejoins the nightly audit.
-- C++ and Rust share the lock envelope and input-handling code described
-  above.
 - The installed-layout regression and its negative cases pass. The C++
   documentation describes the installed workflow.
 
