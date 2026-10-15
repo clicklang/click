@@ -18258,3 +18258,49 @@ fn known_unsigned_byte_decides_signed_comparison_in_all_proof_modes() {
             .unwrap();
     }
 }
+
+#[test]
+#[ignore = "nightly: modular buffer ranges across fresh, expanded, and retained proofs"]
+fn modular_buffer_ranges_rejoin_in_all_proof_modes() {
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let (source, sources) =
+        mdtest_sources("mdtests/modular_buffer_ranges_rejoin_after_field_preserving_calls.md");
+    let mut cases = vec![(source, sources, "probe")];
+    for (project, sidecar, function) in [
+        (
+            "owned-segmented-buffer",
+            "owned_segmented_buffer.click",
+            "owned_segmented_buffer_pipeline",
+        ),
+        (
+            "owned-split-buffer",
+            "owned_split_buffer.click",
+            "owned_split_buffer_pipeline",
+        ),
+    ] {
+        let path = manifest.join("examples").join(project).join(sidecar);
+        let source = std::fs::read_to_string(&path).unwrap();
+        let sources = crate::cli::read_verifying_sources(&path, &source).unwrap();
+        cases.push((source, sources, function));
+    }
+    for (source, sources, function) in cases {
+        let sources = crate::cli::source_refs(&sources);
+        verify_c0_sources(&source, &sources)
+            .unwrap_or_else(|error| panic!("{function}: {}", error.report()));
+        let expanded = expand_c0_claim_source(&source, &sources, function, CProofClaim::Grouped)
+            .unwrap_or_else(|error| panic!("{function}: {}", error.report()));
+        verify_c0_sources(&expanded, &sources)
+            .unwrap_or_else(|error| panic!("expanded {function}: {}", error.report()));
+        let position = expansion::c0_tactic_source_position(
+            &expanded,
+            &sources,
+            &format!("{function}.contract"),
+            0,
+        )
+        .unwrap();
+        let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+        session
+            .verify_at(&expanded, position.line, position.column)
+            .unwrap_or_else(|error| panic!("retained {function}: {}", error.report()));
+    }
+}

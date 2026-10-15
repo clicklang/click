@@ -159,6 +159,7 @@ const NIGHTLY: &[&str] = &[
     "loop_semantically_duplicate_invariants.md",                               // 1.2s
     "loop_symbolic_disjoint_array_store_frame.md",                             // 0.6s
     "loop_three_invariant_initialization.md",                                  // 1.0s
+    "modular_buffer_ranges_rejoin_after_field_preserving_calls.md",            // 6.2s
     "mutex_population_missing_value_relation.md",                              // 0.6s
     "mutex_population_separate_body.md",                                       // 0.6s
     "named_root_call_preserves_aliased_pointer_field.md",                      // 6.8s
