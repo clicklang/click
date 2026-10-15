@@ -791,7 +791,11 @@ where it had cost 2,294 to 408,974
 `src/scaling_tests/surface/tests/scaling_tests.rs`). The difference
 graph's bounded propagation now adds a fixed cost per store once more than
 its `EDGE_LIMIT` (32) indices share the bound, so the test checks
-near-linear growth at 4 to 32 stores and at 64 to 256 separately.
+near-linear growth at 4 to 32 stores and at 64 to 256 separately. The unsigned
+64-bit companion uses the same regimes, beginning the second at 33 stores and
+checking through 256, with the same growth-ratio limit. A focused run measured store work of
+`273*N - 107` below the cap and `369*N - 139` above it: the single cost jump is
+bounded propagation overhead, while each regime remains linear.
 
 A term's constant after equality normalization is a lookup in
 `ConstantClasses` (`src/kernel/assumptions/constant_classes.rs`), which the
@@ -888,8 +892,16 @@ Insertion propagates bounds, follows waiting links, and checks for cycles
 along at most `EDGE_LIMIT` edges, and a read pulls one hop from a node whose
 push was cut short. A value many others are bounded by, such as an array
 length, then costs the same however many there are. Past the limit the graph
-answers less, never something false. Queries read stored bounds or a bounded
-path between the two values. Pointer classes and disequalities, known low
+answers less, never something false. Order queries first look up the selected
+edge by its two endpoints, then fall back to stored bounds and the bounded
+path search. A written `ck < n` therefore remains usable when `n` bounds more
+than 32 unrelated indices; it does not depend on where that edge falls in the
+hub's traversal order. The nightly
+`written_order_queries_are_flat_beside_a_high_degree_bound`
+pins selected query work at 16/33/64/256/1024 neighbours for signed 32-bit,
+signed 64-bit, and unsigned 64-bit comparisons, including strict and non-strict
+bounds and their negations. `direct_order_fact_survives_a_high_degree_source`
+keeps the 33-edge correctness case in the normal gate. Pointer classes and disequalities, known low
 bits, and no-overflow facts are keyed by their own values (an overflow fact
 by its operands' nodes and offsets modulo the word size, so `(1 + a) + b`
 finds `defined(1 + a + b)`). The same field of two bases (`b + k == c + k`)
