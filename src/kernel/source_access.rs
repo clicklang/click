@@ -1,5 +1,6 @@
 //! Producer observations connecting locked MIR operations to completed
-//! reference assignments and checked memory accesses. They grant no permission.
+//! reference assignments and checked memory accesses. Observation labels grant
+//! no permission; optional checked lease plans are separate semantic operations.
 use super::*;
 use std::sync::Arc;
 
@@ -13,12 +14,26 @@ pub(crate) struct ReferenceBorrowSourceId {
     pub(crate) child: Arc<str>,
 }
 
-/// Optional source provenance for a reference assignment; never a permission.
+/// Source observations compare neutrally. A checked lease plan participates in
+/// statement identity and executes an actual checked birth.
 #[derive(Clone, Debug, Default)]
-pub struct CStatementAssignSource(Option<Arc<ReferenceBorrowSourceId>>);
+pub struct CStatementAssignSource(
+    Option<Arc<ReferenceBorrowSourceId>>,
+    Option<Arc<ScalarReferenceSourcePlan>>,
+);
 impl CStatementAssignSource {
     pub(crate) fn new(source: ReferenceBorrowSourceId) -> Self {
-        Self(Some(Arc::new(source)))
+        Self(Some(Arc::new(source)), None)
+    }
+    pub(crate) fn as_ref(&self) -> Option<&ReferenceBorrowSourceId> {
+        self.0.as_deref()
+    }
+    pub(crate) fn with_lease_plan(mut self, plan: Arc<ScalarReferenceSourcePlan>) -> Self {
+        self.1 = Some(plan);
+        self
+    }
+    pub(super) fn lease_plan(&self) -> Option<&Arc<ScalarReferenceSourcePlan>> {
+        self.1.as_ref()
     }
     pub(super) fn completed(
         &self,
@@ -58,17 +73,22 @@ impl CStatementAssignSource {
     }
 }
 impl PartialEq for CStatementAssignSource {
-    fn eq(&self, _: &Self) -> bool {
-        true
+    fn eq(&self, other: &Self) -> bool {
+        self.1.as_ref().map(|plan| plan.key()) == other.1.as_ref().map(|plan| plan.key())
     }
 }
 impl Eq for CStatementAssignSource {}
 impl std::hash::Hash for CStatementAssignSource {
-    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(&self.1.as_ref().map(|plan| plan.key()), state);
+    }
 }
 impl Ord for CStatementAssignSource {
-    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
-        std::cmp::Ordering::Equal
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.1
+            .as_ref()
+            .map(|plan| plan.key())
+            .cmp(&other.1.as_ref().map(|plan| plan.key()))
     }
 }
 impl PartialOrd for CStatementAssignSource {
@@ -99,30 +119,45 @@ pub(crate) struct ReferenceAccessSourceId {
     pub(crate) kind: ReferenceAccessKind,
 }
 
-/// Optional producer provenance. It is not part of statement semantics or
-/// proof identity, and is not an authorization to perform the store.
+/// Observations compare neutrally and never authorize a store. A checked
+/// ending plan participates in statement identity and consumes actual custody.
 #[derive(Clone, Debug, Default)]
-pub struct CStatementStoreSource(Option<Arc<ReferenceAccessSourceId>>);
+pub struct CStatementStoreSource(
+    Option<Arc<ReferenceAccessSourceId>>,
+    Option<Arc<ScalarReferenceSourcePlan>>,
+);
 impl CStatementStoreSource {
     pub(crate) fn new(source: ReferenceAccessSourceId) -> Self {
-        Self(Some(Arc::new(source)))
+        Self(Some(Arc::new(source)), None)
+    }
+    pub(crate) fn with_lease_plan(mut self, plan: Arc<ScalarReferenceSourcePlan>) -> Self {
+        self.1 = Some(plan);
+        self
+    }
+    pub(super) fn lease_plan(&self) -> Option<&Arc<ScalarReferenceSourcePlan>> {
+        self.1.as_ref()
     }
     pub(crate) fn as_ref(&self) -> Option<&ReferenceAccessSourceId> {
         self.0.as_deref()
     }
 }
 impl PartialEq for CStatementStoreSource {
-    fn eq(&self, _: &Self) -> bool {
-        true
+    fn eq(&self, other: &Self) -> bool {
+        self.1.as_ref().map(|plan| plan.key()) == other.1.as_ref().map(|plan| plan.key())
     }
 }
 impl Eq for CStatementStoreSource {}
 impl std::hash::Hash for CStatementStoreSource {
-    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(&self.1.as_ref().map(|plan| plan.key()), state);
+    }
 }
 impl Ord for CStatementStoreSource {
-    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
-        std::cmp::Ordering::Equal
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.1
+            .as_ref()
+            .map(|plan| plan.key())
+            .cmp(&other.1.as_ref().map(|plan| plan.key()))
     }
 }
 impl PartialOrd for CStatementStoreSource {

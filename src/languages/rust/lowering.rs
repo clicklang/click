@@ -8,6 +8,7 @@ mod move_regressions;
 mod moves;
 #[cfg(test)]
 mod owned_parameter_regressions;
+mod scalar_leases;
 mod shared_arrays;
 use crate::kernel::*;
 use crate::languages::c::syntax::{
@@ -381,11 +382,12 @@ fn lower_function(
         records,
         functions,
     };
-    let body = match &f.mir {
+    let mut body = match &f.mir {
         Some(mir) if f.body.is_empty() => moves::lower(&mut cx, f, mir)?,
         Some(_) => return Err("Rust function must select exactly one body representation".into()),
         None => cx.body(&f.body)?,
     };
+    scalar_leases::activate(f, identity, &mut body)?;
     let mut kernel = c_function(
         return_type.to_kernel_type(),
         &f.name,

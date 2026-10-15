@@ -5646,6 +5646,42 @@ impl ResourceContext {
         None
     }
 
+    /// Select only a unique direct whole scalar owner from the indexed access
+    /// candidates. Larger ranges and cached projections require another protocol.
+    pub(in crate::kernel) fn exact_scalar_owner_occurrence(
+        &self,
+        pointer: &Pointer,
+        bytes: u32,
+        assumptions: &PureFactContext,
+    ) -> Option<ResourceOccurrenceId> {
+        let entries = self.write_access_entries(pointer, bytes, assumptions)?;
+        let mut selected = None;
+        for entry in entries {
+            crate::instrumentation::record_deterministic_work(1);
+            let fact = self.fact(entry);
+            let Some(range) = fact.memory_own_range() else {
+                continue;
+            };
+            if self.storage.supported_by.contains_key(&entry)
+                || range.start_pointer() != *pointer
+                || range
+                    .signed_constant_end()
+                    .zip(range.signed_constant_start())
+                    .and_then(|(end, start)| end.checked_sub(start))
+                    .and_then(|count| count.checked_mul(i64::from(range.element_width())))
+                    != Some(i64::from(bytes))
+                || fact.owned_quantity_term().and_then(|q| q.as_const()) != Some(1)
+            {
+                continue;
+            }
+            if selected.is_some() {
+                return None;
+            }
+            selected = Some(self.occurrence(entry));
+        }
+        selected
+    }
+
     pub(in crate::kernel) fn memory_write_range(
         &self,
         pointer: &Pointer,
@@ -10485,6 +10521,34 @@ impl ReservedLocalScalarOwner {
         fact: &CResourceFact,
     ) -> bool {
         self.occurrence == occurrence && self.fact == *fact
+    }
+
+    /// Return the withheld occurrence, preserving call-receipt support identity.
+    pub(in crate::kernel) fn restore_into(
+        &self,
+        resources: ResourceContext,
+        assumptions: &PureFactContext,
+    ) -> Option<ResourceContext> {
+        if resources
+            .storage
+            .entry_by_occurrence
+            .contains_key(&self.occurrence)
+        {
+            return None;
+        }
+        let (resources, mut inserted) = resources
+            .try_compose_into_valid_context_with_occurrences([self.fact.clone()], assumptions)
+            .ok()?;
+        let mut resources =
+            resources.without_exact_representation_for_occurrence(inserted.pop()?.1)?;
+        resources.insert_fact_with_support_occurrence_and_metadata_at(
+            self.fact.clone(),
+            None,
+            None,
+            None,
+            Some(self.occurrence),
+        );
+        Some(resources)
     }
 
     /// Materialize only the selected owner for an ordinary memory producer.
