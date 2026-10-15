@@ -930,17 +930,21 @@ impl DifferenceGraph {
         // fails when upper - lower <= -(not strict).
         let (holds, fails) = match (self.resolve(domain, lower), self.resolve(domain, upper)) {
             (Some(lower), Some(upper)) => {
-                if self
-                    .direct_difference_bound(upper, lower)
-                    .is_some_and(|bound| bound <= -i128::from(strict))
-                {
-                    return Some(true);
-                }
-                if self
-                    .direct_difference_bound(lower, upper)
-                    .is_some_and(|bound| bound <= -i128::from(!strict))
-                {
-                    return Some(false);
+                // Constants have no edge endpoints. Keep their existing
+                // interval route without two fruitless direct-edge queries.
+                if lower.0.is_some() && upper.0.is_some() {
+                    if self
+                        .direct_difference_bound(upper, lower)
+                        .is_some_and(|bound| bound <= -i128::from(strict))
+                    {
+                        return Some(true);
+                    }
+                    if self
+                        .direct_difference_bound(lower, upper)
+                        .is_some_and(|bound| bound <= -i128::from(!strict))
+                    {
+                        return Some(false);
+                    }
                 }
                 (
                     self.difference_bound(upper, lower),
