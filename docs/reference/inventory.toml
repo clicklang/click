@@ -2394,12 +2394,12 @@ id = "library.theorem.list::contains_append"
 path = "reference/library/index.md#listcontains_append"
 
 [[item]]
-id = "library.function.count"
-path = "reference/library/index.md#count"
+id = "library.function.permutation::count"
+path = "reference/library/index.md#permutationcount"
 
 [[item]]
-id = "library.predicate.permutation"
-path = "reference/library/index.md#permutation"
+id = "library.predicate.permutation::permutation"
+path = "reference/library/index.md#permutationpermutation"
 
 [[item]]
 id = "library.function.bytes::count"

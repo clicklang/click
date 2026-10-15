@@ -403,9 +403,9 @@ When an array parameter is passed to a pure Click function or predicate,
 
 <!-- verified-example: mdtests/compare_swap2_permutation.md -->
 ```click
-ensures pair_permutation: permutation(p, old(p), 0, 2) by {
+ensures pair_permutation: permutation::permutation(p, old(p), 0, 2) by {
     execute();
-    unfold(permutation);
+    unfold(permutation::permutation);
     simp();
 }
 ```
@@ -496,7 +496,7 @@ receives pure array refs for `a` and `b`. Each ref carries:
 Indexing `a[k]` inside the predicate loads from `a`'s carried memory, not from
 some global ambient predicate memory. The element type decides pointer scaling
 and whether the load yields an `int32` or `uint8` value. This lets
-`same_first(p, old(p))`, or the standard `permutation(p, old(p), lo, hi)`,
+`same_first(p, old(p))`, or the standard `permutation::permutation(p, old(p), lo, hi)`,
 compare post-state `p` to entry-state `p` without copying a snapshot array.
 
 See [Surface Click and Kernel Click](surface-and-kernel.md) for the full C-pointer versus Click-array-ref
