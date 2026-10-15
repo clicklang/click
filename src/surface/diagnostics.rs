@@ -4793,10 +4793,15 @@ pub(in crate::surface) fn describe_callback_source(expression: &syntax::C0Expres
             source: Some(source),
             ..
         } => {
-            let base = match pointer.as_ref() {
-                syntax::C0Expression::PointerOffsetBytes { pointer, .. } => pointer.as_ref(),
-                pointer => pointer,
-            };
+            // Member lowering narrows the field after adding its offset.
+            // Neither operation belongs in the source-level field spelling.
+            let mut base = pointer.as_ref();
+            while let syntax::C0Expression::Subobject { pointer, .. } = base {
+                base = pointer;
+            }
+            if let syntax::C0Expression::PointerOffsetBytes { pointer, .. } = base {
+                base = pointer;
+            }
             match base {
                 syntax::C0Expression::AddressOf(object) => {
                     format!(

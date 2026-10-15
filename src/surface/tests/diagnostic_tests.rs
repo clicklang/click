@@ -1,6 +1,38 @@
 use super::*;
 
 #[test]
+fn callback_sources_keep_field_names_through_subobject_lowering() {
+    let functions = syntax::parse_functions_for_source(
+        r#"
+        struct callbacks {
+            void (*propagate)(int32* p);
+            void (*copy)(int32* p);
+        };
+        struct owner { struct callbacks* callbacks; };
+        void first(struct callbacks* cb, int32* p) { cb->propagate(p); }
+        void later(struct callbacks* cb, int32* p) { cb->copy(p); }
+        void nested(struct owner* owner, int32* p) { owner->callbacks->copy(p); }
+        "#,
+        "callback-names.c",
+    )
+    .unwrap();
+    for (function, expected) in
+        functions
+            .iter()
+            .zip(["cb->propagate", "cb->copy", "owner->callbacks->copy"])
+    {
+        let sources = function.callback_statement_sources();
+        assert_eq!(sources.len(), 1, "{}", function.name());
+        let source = sources.values().next().unwrap();
+        assert_eq!(
+            crate::surface::diagnostics::describe_callback_source(source),
+            expected
+        );
+    }
+    assert_eq!(functions.len(), 3);
+}
+
+#[test]
 fn implicit_loop_closure_is_smart_while_written_closure_is_simple() {
     use crate::instrumentation::{VerificationEvent, collect};
     let c = "int f(int n) { while (n > 0) { n = n - 1; } return n; }";
