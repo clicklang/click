@@ -169,6 +169,20 @@ rest are the recommended defaults.
    The format must leave room for a unit verified under several targets.
 5. **File format.** JSON, extending `click.project.json`.
 
+## Progress
+
+- **C units (first increment).** `click.project.json` is found as the nearest
+  ancestor of a sidecar and declares `"language": "c"` compiler-import units
+  with external roots, unit-wide and per-source arguments, and the
+  environment. A sidecar selects unit sources with ordinary relative
+  `verifying` paths. `click import lock` on a project writes
+  `click.project.lock.json` and `.click/<unit>/<source>.i`; external unit
+  roots are rechecked relative to the unit root, so a moved checkout still
+  loads and a changed input is refused. Per-sidecar configs still work and
+  are refused when a unit also lists the same sources. Remaining: the module
+  root still comes from imports rather than the project file; C++ and Rust
+  units; the shared lock envelope; migrating existing configs; the flag policy.
+
 ## Intended regressions
 
 - **Cross-language project:** the Adler-32 correspondence as one project with
