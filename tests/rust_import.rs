@@ -4242,9 +4242,11 @@ fn rust_integer_from_rejects_other_conversions_and_shadowed_methods() {
         ),
         ("pub fn bad(x: u32) -> u16 { u16::from(x) }", "From<u32>"),
         ("pub fn bad(x: u8) -> u64 { u64::from(x) }", "integer width"),
+        // `into` is the std `Into` trait's generic method; its trait bound is
+        // refused before the call itself.
         (
             "pub fn bad(x: u8) -> u32 { x.into() }",
-            "unsafe or generic call",
+            "trait bound other than Fn or a crate trait",
         ),
         (
             "pub struct Word { x: u32 } impl Word { pub fn from(x: u8) -> u32 { 99 } } pub fn bad(x: u8) -> u32 { Word::from(x) }",
