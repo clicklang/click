@@ -91,10 +91,12 @@ requires no layout or file names in it, and never writes into it.
   exactly as a per-sidecar config's `args`. The target is the project's
   `target`, or the default target.
 
-A Rust unit is one crate. Its `crate` object has the fields of a schema-4
-per-sidecar config's `crate` (see the [Rust reference](../rust.md)), and
-`sources` lists exactly the crate root, with no arguments; it takes no
-`compiler`, `environment`, `option_profile` or `args`:
+A Rust unit is one crate or one single-file program; it takes no `compiler`,
+`environment`, `option_profile` or `args`, and `sources` lists exactly one
+source with no arguments. Without a `crate` object the source is a lone Rust
+2024 file read from its own directory, as `examples/basic-rust` does. With
+one, the source is the crate root and `crate` gives the crate description (see
+the [Rust reference](../rust.md#locked-crates-and-qualified-declarations)):
 
 ```json
 "adler2": {

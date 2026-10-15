@@ -3,30 +3,8 @@ use super::*;
 const SIDECAR: &str = include_str!("../../design/charon-trial/extern-functions/ffi.click");
 
 fn extern_function_project() -> Project {
-    let p = Project::new("");
-    for (name, bytes) in [
-        (
-            "ffi.rs",
-            include_bytes!("../../design/charon-trial/extern-functions/ffi.rs").as_slice(),
-        ),
-        ("borrow.click", SIDECAR.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!("../../design/charon-trial/extern-functions/ffi.click.import.json")
-                .as_slice(),
-        ),
-        (
-            "ffi.ullbc",
-            include_bytes!("../../design/charon-trial/extern-functions/ffi.ullbc").as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!("../../design/charon-trial/extern-functions/ffi.click.import.json.lock")
-                .as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/extern-functions");
+    fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
     p
 }
 
@@ -38,7 +16,7 @@ fn extern_function_project() -> Project {
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn charon_extern_block_calls_meet_their_extern_contract() {
     let p = extern_function_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     let head = "extern fn extern_functions::clamp_reading(raw: i32) -> i32 {";

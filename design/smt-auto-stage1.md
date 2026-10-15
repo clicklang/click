@@ -1,6 +1,7 @@
 # SMT auto, stage 1: in-house arithmetic and equality
 
-Design for stage 1 of [smt-auto](../issues/smt-auto.md). Click gets its own
+Design for stage 1 of the SMT-backed `auto`, which has landed; the results
+are at the end. Click gets its own
 SMT-style decision procedure for linear integer arithmetic, machine-integer
 bridging and equality with constructors. A proof calls it through `auto`.
 Every success is turned into ordinary checked proof steps, which
@@ -310,13 +311,11 @@ Each milestone is one PR, green and useful on its own.
    one arm of `rbtree_erase_color_flips_red_all.click` and record its size
    and time. The first step, landed, is a bounded search for a chain of
    checked `rewrite` steps over the connected equalities, closed by
-   `assumption`, `normalize` or a budgeted `simp`; the numbers are in
-   [smt-auto](../issues/smt-auto.md). Congruence closure, injectivity and
+   `assumption`, `normalize` or a budgeted `simp`; the numbers are under
+   Results. Congruence closure, injectivity and
    disjointness, and the combination with the simplex remain.
 5. **`auto` integration.** Make the solver the first closer in `auto`.
-   Rewrite `bounded-pool` and record the numbers. Report the stage-1
-   measurements in [smt-auto](../issues/smt-auto.md) and decide on stages
-   2–4 and on `simp`.
+   Rewrite `bounded-pool` and record the numbers under Results.
 
 ## Risks
 
@@ -332,3 +331,47 @@ Each milestone is one PR, green and useful on its own.
   as the code evolves, which makes expansions less stable. Stage 1's
   measurements decide whether the ladder's `Integer` and signed planners
   can be retired.
+
+## Results
+
+Recorded when the issue that tracked this work was closed, 2026-10-15.
+
+Baseline at `52a77c2d`, release build, `click verify` on one sidecar, and
+after:
+
+| Case | Before | After | What remains explicit |
+|---|---|---|---|
+| `examples/bounded-pool/bounded_pool.click` | 845 lines, 2.1 s | 455 lines, about 2 s | resource folds and authority steps; every arithmetic lemma is `by auto` |
+| `examples/rust-byte-sum/sum.click` | 184 lines, 0.29 s | 68 lines, about 1.4 s | memory transport for the read, fold laws (`peel`), loop control, and one invariant conjunct restated to cite it |
+| one arm of `examples/rbtree-erase/rbtree_erase_color_flips_red_all.click` | 23 one-line rewrite `have`s | 18 of them `by auto` | three-rewrite chains past the attempt budget, `unfold` after a rewrite, `plug` equalities over whole contexts |
+
+Equality reasoning is a bounded search for a chain of checked `rewrite`
+steps, tried after a single rewrite to an available fact, not the congruence
+closure designed above; its certificate would be `rewrite` steps either way.
+
+A one-line `have` proved `by auto` saves nothing; lines go away only when
+`auto` runs where obligations are discharged and the `have` is deleted. After
+the stage-1 solver, these steps did that, each judged by deleting `have`s
+from the examples:
+
+1. `auto` closes contracts: `by auto;`, an omitted proof, and a script that
+   ends with a claim open.
+2. An `apply` that leaves its goal open spells its conclusions, so `auto`
+   can rewrite by them.
+3. `auto` reads a condition out of a fact about a definition:
+   `is_rb(Node(.., left, right)) == 1` gives `is_rb(left) == 1`, also through
+   a constructor equation such as a `match` arm's `up.model ==
+   Context::Left(..)`. 56 hand proofs, about 650 lines, became `by auto;`.
+4. A bare `apply` proves a missing premise by `auto`, and `step`, `fold` and
+   `open` leave open requirements to the implicit `auto`
+   ([issues/simplify-step.md](../issues/simplify-step.md)). 379 `have`s that
+   restated an `apply` premise were deleted, about 820 lines, each file
+   within 10% of its verification time once `auto` tried a single rewrite
+   before its solvers.
+
+The issue's later stages were settled as follows. Premise selection (stage 2)
+is what step 4 does: `auto` and `apply` choose their premises and expansion
+writes the `using` list. A certificate cache (stage 3) was ruled out;
+expansion is the fix ([proof-language-rulings.md](proof-language-rulings.md)).
+`Integer` by default in specifications (stage 4) is a language decision,
+[issues/design-review.md](../issues/design-review.md) P2.

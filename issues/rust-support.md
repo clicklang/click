@@ -92,7 +92,12 @@ installed frontend. Rust project units resolve a development override followed
 by that installed bundle. Explicit manifest paths and runtime version checks
 remove rustup and the user's toolchain from installed extraction. A relocated
 installed-layout regression covers extraction, verification, repeated locks,
-version refusal and offline verification after removing the bundle.
+version refusal and offline verification after removing the bundle. The
+release archive now has a separate installer-driven regression: release-built
+Charon is packaged once, the real installer consumes that archive/checksum,
+and the relocated installation locks/verifies the basic example and adler2
+outside the checkout. Packaging pull requests and tagged releases run this
+check before publication.
 
 Other host bundles, release identity contributions to the shared project lock,
 removing historical trial names, and richer crate-closure diagnostics remain.
@@ -119,13 +124,10 @@ Audit of the current path, from a user's point of view:
    `charon-driver` beside the configured exporter (`refresh_import` in
    `src/languages/rust/import.rs`). Neither requirement is documented to
    users, beyond "run `scripts/build-charon.sh`".
-3. **There is no single way to locate Charon.** Configs name the exporter
-   by a path into the repository's build output: `../../target/charon/debug/charon`
-   in `examples/basic-rust/borrow.click.import.json`, and
-   `../../../target/charon/debug/charon` in the schema-4 example in the
-   [Rust reference](../docs/reference/rust.md). Tests and design notes use
-   `CLICK_CHARON` (`tests/rust_import.rs`, `design/charon-trial/README.md`),
-   which the `click` binary never reads.
+3. **There is no single way to locate Charon.** Legacy per-sidecar configs
+   may name the exporter by a path into the repository's build output; the
+   committed fixtures no longer do, since they are project units, which
+   resolve Charon through `CLICK_CHARON` or the installed bundle.
 4. **Pinning is good, but the identity is per machine.**
    `src/languages/rust/charon-profile.json` is compiled in. It pins the
    extractor revision and version, the rustc commit, the toolchain, the

@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "units": {
+    "copies": {
+      "language": "rust",
+      "lock": {
+        "artifact": "a51c060873f7d90bbd0cb15ff3f9b170fe05435d3f4276ed7c5eab8aac8ab4a2",
+        "charon_driver": "645ab4b0456083642cafa05da8b1d58aca0c6d3349c2b7921b0820cbb465fb72",
+        "config": "0deeb80580f7482b7887e1c482540250b2d2f6f746afb579fb6e42920cde7538",
+        "exporter": "c6cc5acf5bb7e4d4bb6bef5265639d1b05b0138e3072767825cc2aa62a5040e4",
+        "identity": "f67589a761f15708e5c67d6a39b52832e58a00fab2bbab3c88e0a3b8d2b45c61",
+        "schema": 8,
+        "source": "5bd9c68a1828650d102163e5f1b7d16537faeabf630b4c3d429d366b000d8604",
+        "source_files": {
+          "copies.rs": "5bd9c68a1828650d102163e5f1b7d16537faeabf630b4c3d429d366b000d8604"
+        }
+      }
+    },
+    "split": {
+      "language": "rust",
+      "lock": {
+        "artifact": "389fa22785121f7a3f076052c6e4f3f9b0ebbc5f86b7929a9737baf89beceb7c",
+        "charon_driver": "645ab4b0456083642cafa05da8b1d58aca0c6d3349c2b7921b0820cbb465fb72",
+        "config": "8b7c6eec1c9665f966b500277915ec2b939e1829545bb54b5d45722e0e3e7aef",
+        "exporter": "c6cc5acf5bb7e4d4bb6bef5265639d1b05b0138e3072767825cc2aa62a5040e4",
+        "identity": "f33831354dc1ee306623b107262f5297b03f90b0165b19ad11fb7b4bc4887c8c",
+        "schema": 8,
+        "source": "ee4d1e1be97add652cf9f7afe320b9c7623cc4e8e0c316ad73ba9ca938d1b76d",
+        "source_files": {
+          "split.rs": "ee4d1e1be97add652cf9f7afe320b9c7623cc4e8e0c316ad73ba9ca938d1b76d"
+        }
+      }
+    }
+  }
+}

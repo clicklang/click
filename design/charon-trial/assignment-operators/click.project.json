@@ -1,0 +1,10 @@
+{
+  "units": {
+    "operators": {
+      "language": "rust",
+      "sources": {
+        "operators.rs": {}
+      }
+    }
+  }
+}

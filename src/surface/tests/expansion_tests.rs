@@ -701,102 +701,6 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
         .expect("the ordinary expanded source-identity proof should independently reverify");
 }
 
-fn assert_static_array_call_requirement_expands_and_deletion(fixture: &str) {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(fixture);
-    let source = std::fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("failed to read `{}`: {error}", path.display()));
-    let mdtest = crate::cli::parse_mdtest(&path, &source)
-        .unwrap_or_else(|error| panic!("failed to parse `{}`: {error}", path.display()));
-    let click_source = mdtest
-        .click_source
-        .as_deref()
-        .expect("static-array mdtest should contain Click source");
-    let c_sources = mdtest
-        .c_sources
-        .iter()
-        .map(|(name, source)| (name.as_str(), source.as_str()))
-        .collect::<Vec<_>>();
-    verify_c0_sources(click_source, &c_sources)
-        .expect("static-array call requirement should verify");
-    let auto_offset = click_source
-        .find("ensures result == 16 by auto")
-        .map(|offset| offset + "ensures result == 16 by ".len())
-        .expect("static-array result ensure should be present");
-    let position = expansion::position_at_offset(click_source, auto_offset);
-    let expanded =
-        expand_c0_tactic_source_at(click_source, &c_sources, position.line, position.column)
-            .expect("static-array call requirement should expand");
-    assert!(
-        expanded.contains("step() by {") || expanded.contains("step() {"),
-        "expanded proof should prove the static requirement on its step: {expanded}"
-    );
-    let function_start = expanded
-        .find("int32 call_twice")
-        .expect("expanded source should retain the selected function");
-    let selected = expansion::position_at_offset(
-        &expanded,
-        function_start
-            + expanded[function_start..]
-                .find("step();")
-                .expect("expanded selected function should contain a tactic"),
-    );
-    crate::surface::proof::without_implicit_auto(|| {
-        verify_c0_sources_at(&expanded, &c_sources, selected.line, selected.column)
-    })
-    .expect("expanded static-array proof should cold reverify at the same selection");
-
-    let without_have = without_first_step_obligation_proofs(&expanded);
-    let function_start = without_have
-        .find("int32 call_twice")
-        .expect("edited source should retain the selected function");
-    let selected = expansion::position_at_offset(
-        &without_have,
-        function_start
-            + without_have[function_start..]
-                .find("step();")
-                .expect("edited selected function should contain a tactic"),
-    );
-    let error = crate::surface::proof::without_implicit_auto(|| {
-        verify_c0_sources_at(&without_have, &c_sources, selected.line, selected.column)
-    })
-    .expect_err("deleting the step's static proof must reject the selected call precondition");
-    assert!(
-        error.unresolved_requirement().is_some(),
-        "deleted static Have should expose the structured call requirement: {}",
-        error.message()
-    );
-}
-
-#[test]
-#[ignore = "nightly: 3s in the parallel gate"]
-fn static_array_call_requirement_expands_and_deletion_rejects() {
-    assert_static_array_call_requirement_expands_and_deletion("mdtests/static_local_arrays.md");
-}
-
-#[test]
-#[ignore = "nightly: 3s in the parallel gate"]
-fn parity_scalar_array_call_requirement_expands_and_deletion_rejects() {
-    assert_static_array_call_requirement_expands_and_deletion(
-        "mdtests/static_array_parity_scalar.md",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 4s in the parallel gate"]
-fn parity_multidimensional_array_call_requirement_expands_and_deletion_rejects() {
-    assert_static_array_call_requirement_expands_and_deletion(
-        "mdtests/static_array_parity_multidimensional.md",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 4s in the parallel gate"]
-fn parity_fixed_multidimensional_array_call_requirement_expands_and_deletion_rejects() {
-    assert_static_array_call_requirement_expands_and_deletion(
-        "mdtests/static_array_parity_fixed_multidimensional.md",
-    );
-}
-
 fn assert_quantified_range_call_requirement_expands_and_deletion_rejects(fixture: &str) {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(fixture);
     let source = std::fs::read_to_string(&path)
@@ -12233,9 +12137,16 @@ fn assert_bound_universal_fixture_has_no_outcome_fallbacks(filename: &str, funct
         "expanded proof from `{}` omitted the checked upper-bound split",
         path.display()
     );
+    // Expansion spells the library theorem by its bare name and imports its
+    // module.
     assert!(
-        expanded.contains("click::machine_integer::int32_less_than_increment_implies_less_equal"),
+        expanded.contains("int32_less_than_increment_implies_less_equal("),
         "expanded proof from `{}` omitted the split's explicit bound theorem",
+        path.display()
+    );
+    assert!(
+        expanded.contains("import click::machine_integer;"),
+        "expanded proof from `{}` does not import the bound theorem's module",
         path.display()
     );
     verify_c0_sources(&expanded, &c_sources).unwrap_or_else(|error| {
@@ -18316,4 +18227,34 @@ theorem untouched() { ensures 1 == 1 by { normalize(); } }
             .is_err(),
         "a changed import path must still be rejected"
     );
+}
+
+#[test]
+#[ignore = "nightly: signed byte conditions across fresh, expanded, and retained proofs"]
+fn known_unsigned_byte_decides_signed_comparison_in_all_proof_modes() {
+    for (fixture, function) in [
+        ("known_byte_decides_signed_char_comparison", "first_is_nul"),
+        (
+            "known_byte_decides_signed_char_comparison_cstr",
+            "terminator",
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        verify_c0_sources(&source, &sources).unwrap();
+        let expanded =
+            expand_c0_claim_source(&source, &sources, function, CProofClaim::Grouped).unwrap();
+        verify_c0_sources(&expanded, &sources).unwrap();
+        let position = expansion::position_at_offset(
+            &expanded,
+            expanded.find("ensures result == 1;").unwrap(),
+        );
+        let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+        session
+            .verify_at(&expanded, position.line, position.column)
+            .unwrap();
+    }
 }

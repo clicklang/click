@@ -1,0 +1,10 @@
+{
+  "units": {
+    "sum": {
+      "language": "rust",
+      "sources": {
+        "sum.rs": {}
+      }
+    }
+  }
+}

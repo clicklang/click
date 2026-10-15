@@ -1,0 +1,22 @@
+{
+  "units": {
+    "function_pointers": {
+      "language": "rust",
+      "sources": {
+        "callback.rs": {}
+      },
+      "crate": {
+        "name": "function_pointers",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "function_pointers::caller",
+          "function_pointers::forward"
+        ],
+        "files": [
+          "callback.rs"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "units": {
+    "adds": {
+      "language": "rust",
+      "sources": {
+        "adds.rs": {}
+      },
+      "crate": {
+        "name": "adds",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "adds::caller"
+        ],
+        "files": [
+          "adds.rs"
+        ]
+      }
+    }
+  }
+}

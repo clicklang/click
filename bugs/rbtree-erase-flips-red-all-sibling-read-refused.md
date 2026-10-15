@@ -20,6 +20,8 @@ target/release/click verify examples/rbtree-erase/rbtree_erase_color_flips_red_a
 ```
 
 The whole example project is nightly-only, so the gate did not catch this.
+`click audit examples/rbtree-erase` reports this file as a session failure for
+the same refusal, on master `26caef84b`.
 Four nightly refusal tests that run this sidecar now fail with the same
 unexpected refusal instead of their intended one:
 

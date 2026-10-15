@@ -835,6 +835,14 @@ pub(super) fn c_layouts(
     Ok(tables)
 }
 
+fn c_parse_error_kind(error: &syntax::C0SyntaxError) -> ClickErrorKind {
+    if error.limit_exceeded() {
+        ClickErrorKind::Limit
+    } else {
+        ClickErrorKind::Syntax
+    }
+}
+
 pub(super) fn parse_c_source_unit(
     source_path: &str,
     c_sources: &CSourceContext<'_>,
@@ -877,7 +885,7 @@ pub(super) fn parse_c_source_unit(
             syntax::validate_header_for_target(header.source(), &header_line_map, target).map_err(
                 |error| {
                     ClickError::new(format!("failed to parse C header `{header_path}`: {error}"))
-                        .with_kind(ClickErrorKind::Syntax)
+                        .with_kind(c_parse_error_kind(&error))
                 },
             )?;
         }
@@ -887,7 +895,7 @@ pub(super) fn parse_c_source_unit(
         syntax::parse_translation_unit_for_target(expanded.source(), source_path, &line_map, target)
             .map_err(|error| {
                 ClickError::new(format!("failed to parse C source `{source_path}`: {error}"))
-                    .with_kind(ClickErrorKind::Syntax)
+                    .with_kind(c_parse_error_kind(&error))
             })?
     } else {
         #[cfg(test)]
@@ -910,7 +918,7 @@ pub(super) fn parse_c_source_unit(
             ClickError::new(format!(
                 "failed to parse compiler-prepared C source `{source_path}`: {error}"
             ))
-            .with_kind(ClickErrorKind::Syntax)
+            .with_kind(c_parse_error_kind(&error))
         })?
     };
     c_sources

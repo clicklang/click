@@ -148,7 +148,7 @@ fn charon_nonuniform_sparse_snapshots_have_bounded_work_at_large_extents() {
     for length in [4u32, 1024, 1_000_000] {
         let _session = crate::kernel::VerificationSession::enter();
         let mut export = decode(
-            include_bytes!("../../../../../design/charon-trial/array-snapshots/snapshots.ullbc"),
+            include_bytes!("../../../../../design/charon-trial/array-snapshots/.click/snapshots/snapshots.rs.ullbc"),
             "snapshots.rs",
             include_bytes!("../../../../../design/charon-trial/array-snapshots/snapshots.rs"),
         )
