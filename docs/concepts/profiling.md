@@ -15,6 +15,13 @@ remove its planning and search. A slow simple tactic is already direct checked
 work and is therefore a verifier performance defect, not another expansion
 candidate.
 
+The implicit `auto` that proves a simple tactic's open requirement, such as a
+bare `step()`'s obligation or a bare `fold`'s body fact, is reported as its own
+smart row named `implicit auto` at that tactic's site and charged to the smart
+budget. A bare simple tactic is not a selectable expansion site, so the row's
+expansion command expands its claim (`click expand --claim`), which writes the
+proof as the tactic's `by`.
+
 Interpret high work counts before comparing small wall-clock differences.
 Deterministic work exposes repeatable algorithmic cost, while elapsed time is
 affected by machine load and warm caches. For performance-sensitive changes,

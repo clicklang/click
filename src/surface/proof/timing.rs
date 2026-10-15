@@ -127,6 +127,50 @@ impl TacticTiming {
         )
     }
 
+    /// Times the implicit `auto` proving a simple tactic's open requirement
+    /// as a smart tactic of its own at that tactic's site, so its search is
+    /// charged to a smart budget and profiled as `implicit auto`, not as the
+    /// simple tactic's certificate check (`issues/simplify-step.md`).
+    pub(super) fn implicit_auto() -> Option<Self> {
+        let enclosing = current_timing_tactic()?;
+        crate::instrumentation::enabled().then(|| {
+            let tactic_name = crate::instrumentation::IMPLICIT_AUTO_TACTIC.to_string();
+            let tactic_class = SourceSiteKind::ExpandableAutomation.profiling_label();
+            if crate::instrumentation::starts_enabled() {
+                crate::instrumentation::emit(
+                    crate::instrumentation::VerificationEvent::TacticStarted(
+                        crate::instrumentation::TacticEvent {
+                            source_tactic_path: enclosing.source_tactic_path.clone(),
+                            claim: enclosing.claim_label.clone(),
+                            tactic_index: enclosing.tactic_index,
+                            tactic_name: tactic_name.clone(),
+                            class: tactic_class.to_string(),
+                            statement_index: enclosing.statement_index,
+                            source_index: enclosing.source_index,
+                        },
+                    ),
+                );
+            }
+            let context = TimingTacticContext {
+                tactic_name: tactic_name.clone(),
+                tactic_class: tactic_class.to_string(),
+                ..enclosing
+            };
+            push_timing_tactic(context.clone());
+            Self {
+                claim_label: context.claim_label.clone(),
+                tactic_index: context.tactic_index,
+                source_index: context.source_index,
+                source_tactic_path: context.source_tactic_path.clone(),
+                tactic_name,
+                tactic_class,
+                statement_index: context.statement_index,
+                start: std::time::Instant::now(),
+                context,
+            }
+        })
+    }
+
     pub(super) fn pure_source(
         claim_label: &str,
         path: Vec<usize>,
