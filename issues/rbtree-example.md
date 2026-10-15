@@ -1576,3 +1576,16 @@ callback table in the augmented entry points remains unfinished.
 `CopySizedStructure` additionally certifies that the unchanged size-copy
 callback preserves separately owned structural trees while updating its
 metadata cells; its execution theorem and expansion audit pass.
+
+`rbtree_size_insert.click` checks the no-parent branch of the unchanged insertion
+body and both augmented insertion wrappers with full sized-tree ownership.
+It recolors a red root black while preserving the child models and cached sizes,
+and accepts any typed callback because this branch makes no callback call.
+This is a root-case boundary, not the ancestor/rotation integration or a new
+balancing theorem. The constructor validation paths now agree with lowering
+that literal `0` can initialize a known pointer-valued model field.
+
+The complementary black-parent exit and both wrappers now verify in
+`rbtree_size_insert_black_parent.click`. They preserve the focused sized model
+and the full ancestor tag, with no callback premise. This proves both immediate
+insertion exits; continuing ancestor/color-flip and rotation paths remain.

@@ -193,10 +193,10 @@ fn recursive_child_resources_reject_nonstructural_definitions() {
 }
 
 #[test]
-fn algebraic_pointer_constructor_null_literal_is_explicitly_unsupported() {
-    let error =
-        parser::parse("spec enum Ptr { At(int32*) } function null_ptr() -> Ptr { Ptr::At(0) }")
-            .unwrap_err();
+fn algebraic_pointer_constructor_accepts_only_null_integer_literal() {
+    let source = "spec enum Ptr { At(int32*) } function null_ptr() -> Ptr { Ptr::At(0) }";
+    parser::parse(source).expect("literal zero is a typed null constructor field");
+    let error = parser::parse(&source.replace("Ptr::At(0)", "Ptr::At(1)")).unwrap_err();
     assert!(
         error.message().contains("expects int32*, got int32"),
         "{}",
