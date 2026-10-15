@@ -1510,6 +1510,7 @@ impl BodyAdapter<'_, '_> {
                     }
                     if call.safety == a::CallSafety::Unsafe
                         || callee.signature.is_unsafe
+                        || ptr.generics.types.len() != callee_parameters.len()
                         || !ptr.generics.types.iter().zip(&callee_parameters).all(
                             |(ty, parameter)| match ty.kind() {
                                 a::TyKind::Adt(r) if self.adapter.closure_state(r.id) => true,

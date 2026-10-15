@@ -5822,7 +5822,7 @@ pub(in crate::surface) fn build_function_environment(
             .with_function(function)
             .with_external_function_rule(rule);
     }
-    check_trait_method_implementations(&environment, parsed_sources)?;
+    check_trait_method_implementations(&environment, parsed_sources, function_blocks)?;
     Ok(environment)
 }
 
@@ -5833,6 +5833,7 @@ pub(in crate::surface) fn build_function_environment(
 fn check_trait_method_implementations(
     environment: &CExecutionEnvironment,
     parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    function_blocks: &[FunctionBlock],
 ) -> Result<(), ClickError> {
     for (_, function) in parsed_sources.values() {
         let Some(interface) = function.trait_interface() else {
@@ -5840,6 +5841,19 @@ fn check_trait_method_implementations(
         };
         if environment.get_function_contract(interface).is_none() {
             continue;
+        }
+        // An implementation without its own contract is never verified, so
+        // no interface may stand for it.
+        if !function_blocks
+            .iter()
+            .any(|block| !block.is_external() && block.signature().name() == function.source_name())
+        {
+            return Err(ClickError::new(format!(
+                "`{}` implements the trait method interface `{interface}` but has no contract; \
+                 write it in the `impl` block, with its proof",
+                function.name()
+            ))
+            .at_declaration(function.name()));
         }
         let Some(implementation) = environment.get_function(function.name()) else {
             continue;

@@ -79,6 +79,12 @@ fn charon_trait_method_implementations_refine_their_interface() {
             "        views self.side;\n        ensures scale < result and result <= 3001;\n    }\n}",
             "a trait method's interface holds no resources",
         ),
+        // An implementation must be verified against its own contract.
+        (
+            "impl trait_methods::Shape for trait_methods::Circle {\n    fn area(&self, scale: i32) -> i32 {\n        requires 0 <= scale and scale <= 1000;\n        ensures result == scale + scale + 1;\n        ensures scale < result and result <= 3001;\n    } by { execute(); simp(); }\n}\n",
+            "",
+            "`<trait_methods::Circle as trait_methods::Shape>::area` implements the trait method interface `trait_methods::Shape::area` but has no contract",
+        ),
         // A trait-bound parameter is a reference to a value of unknown type,
         // not to one implementation's.
         (
