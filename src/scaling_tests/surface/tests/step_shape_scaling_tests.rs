@@ -570,9 +570,11 @@ fn run(shape: fn(usize) -> (String, String), n: usize) -> Run {
 }
 
 /// Work differences this small are not drift: a logarithmic index lookup
-/// or a one-off change in spelling.
+/// changes by at most a unit or two between adjacent positions, and a
+/// one-off change in spelling does not repeat. A cost linear in earlier
+/// statements, even four units per position on a step of 150, exceeds it.
 fn band(work: usize) -> usize {
-    4 + work / 100
+    2 + work / 256
 }
 
 /// Whether work along successive positions drifts: its last changes (three,

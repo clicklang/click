@@ -7134,3 +7134,40 @@ fn a_parameter_partition_follows_transitive_interior_address_aliases() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/tests/memory_reasoning_tests.rs");
 }
+
+/// Store separation reads the writer's current ownership: the observable
+/// composition and any composition the store opened from a held folded
+/// instance. A composition stated earlier on the path, and not held now,
+/// separates nothing once the writer has stated its owners.
+#[test]
+fn store_separation_reads_the_store_owners_and_not_earlier_compositions() {
+    let written = Pointer::symbolic(Variable(98_401));
+    let other = Pointer::symbolic(Variable(98_402));
+    let both = [
+        own_memory_fact(written.clone(), 0, 1),
+        own_memory_fact(other.clone(), 0, 1),
+    ]
+    .into_iter()
+    .fold(ResourceContext::new(), ResourceContext::unchecked_with_fact);
+    let writer_alone =
+        ResourceContext::new().unchecked_with_fact(own_memory_fact(written.clone(), 0, 1));
+    let separated = |context: &PureFactContext| {
+        let footprint = context.owned_store_footprint(&written, 4);
+        context.access_owned_apart_from_store(&footprint, &written, &other, 4)
+    };
+    let earlier =
+        PureFactContext::new().assume_proposition(Proposition::CResourceComposition(both.clone()));
+    assert!(
+        separated(&earlier),
+        "without owners every stated composition counts"
+    );
+    let owned_now = earlier.clone().with_store_owner(Some(writer_alone));
+    assert!(
+        !separated(&owned_now),
+        "an earlier composition does not separate a store whose writer stated its owners"
+    );
+    assert!(
+        separated(&owned_now.with_additional_store_owner(both)),
+        "a composition the store opened from what it holds now separates"
+    );
+}

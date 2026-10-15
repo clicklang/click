@@ -1635,7 +1635,7 @@ impl PureFactContext {
         // the containment proof depends only on the range: prove each
         // distinct range once.
         let mut decided = BTreeMap::<&CMemoryRange, bool>::new();
-        for resources in self.resource_compositions.iter() {
+        for resources in self.store_compositions() {
             crate::instrumentation::record_deterministic_work(1);
             for base in &spellings {
                 for (entry, range) in resources.owned_memory_members_with_base(base) {
