@@ -767,6 +767,98 @@ fn instance_rewrite_certificate_rejects_unrelated_state_and_fact_changes() {
 }
 
 #[test]
+fn resource_read_alias_uses_only_a_checked_complete_pointer_cell_frame() {
+    let mut samples = Vec::new();
+    for size in [0, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let cell = Pointer {
+            block: "descriptor".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let before = CMemory::new().with_block("descriptor", 24);
+        let after = before.clone().store(cell.offset_by_bytes(16), int32(7));
+        let range = |memory: &CMemory, kind, width| {
+            let name = crate::kernel::eval::load_variable_for_exact_cell(
+                &crate::kernel::intern_c_memory_ref(memory),
+                &cell,
+                kind,
+                width,
+            );
+            Proposition::CMemoryLoadable {
+                memory: after.clone(),
+                base: Pointer {
+                    block: PointerBlock::ExternalArgument,
+                    offset: PointerOffsetTerm::Int32Scaled {
+                        value: Box::new(Bitvector32Term::Variable(name)),
+                        byte_width: 4,
+                    },
+                },
+                bytes: Bitvector32Term::Constant(4),
+                wide: false,
+            }
+        };
+        let source = range(&before, crate::kernel::LoadKind::Bits32, 8);
+        let goal = range(&after, crate::kernel::LoadKind::Bits32, 8);
+        let index = ResourceDeltaPremises::new(std::slice::from_ref(&source));
+        let mut facts = PureFactContext::new();
+        for i in 0..size {
+            facts = facts.assume_proposition(Proposition::ConditionIs(
+                crate::kernel::ConditionTerm::Bitvector32Equal(
+                    Box::new(Bitvector32Term::Variable(Variable(991_000 + i))),
+                    Box::new(Bitvector32Term::Constant(i as u32)),
+                ),
+                true,
+            ));
+        }
+        let (proof, work) = crate::instrumentation::measure_deterministic_work(|| {
+            index.prove_with_facts(&goal, &facts)
+        });
+        assert!(proof.unwrap().matches_completed_goal());
+        samples.push(work);
+        let changed = before.clone().store(
+            cell.clone(),
+            CValue::pointer(Pointer {
+                block: "replacement".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            }),
+        );
+        assert!(
+            index
+                .prove_with_facts(&range(&changed, crate::kernel::LoadKind::Bits32, 8), &facts)
+                .is_none()
+        );
+        let upper_partial = before.clone().store(cell.offset_by_bytes(4), int32(9));
+        assert!(
+            index
+                .prove_with_facts(
+                    &range(&upper_partial, crate::kernel::LoadKind::Bits32, 8),
+                    &facts
+                )
+                .is_none()
+        );
+        let partial = before.clone().store(cell.clone(), int32(9));
+        assert!(
+            index
+                .prove_with_facts(&range(&partial, crate::kernel::LoadKind::Bits32, 8), &facts)
+                .is_none()
+        );
+        // Legacy Bits32 names retain the widest observation of one exact cell.
+        // A fresh snapshot makes this a distinct, narrow-only observation.
+        let narrow = after.clone().store(cell.offset_by_bytes(20), int32(3));
+        assert!(
+            index
+                .prove_with_facts(&range(&narrow, crate::kernel::LoadKind::Bits32, 4), &facts)
+                .is_none()
+        );
+    }
+    assert!(samples.iter().all(|work| *work > 0));
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 16),
+        "selected read frame inspected unrelated facts: {samples:?}"
+    );
+}
+
+#[test]
 fn resource_read_alias_retains_only_an_exact_named_equality() {
     let pointer = |i| Pointer {
         block: PointerBlock::ExternalArgument,

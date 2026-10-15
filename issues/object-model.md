@@ -446,3 +446,10 @@ before considering any new contract surface. The graph-lock follow-up passes
 all 5,415 current-upstream normal library tests and 168 C++ import/span tests.
 Keep the original C, split-field resources and contracts intact; the separate
 returned-resource performance report is not closed by the fold repair.
+
+
+PR #1054 has merged; both pushed trace-fix commits `7350af8a0` and `09c1cf285`
+are verified upstream. The latest archive audit after the selected read-frame
+repair remains 42/52 with no new failures. Continue the
+[selected resource-delta extraction](../design/object-model-recovery-audit.md#selected-complete-read-bridge-for-resource-deltas)
+and the separate full-pointer evidence gap at the vector allocation fold.
