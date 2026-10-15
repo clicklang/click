@@ -15,6 +15,42 @@ fn indexed_fact(index: u32) -> Proposition {
     )
 }
 
+/// Typed simp cites only premises it can spell as Click source, and a bare
+/// kernel value prints as no source name. The typed-rule fixtures therefore
+/// state their int32 premises over named parameters `x0`, `x1`, ..., bound
+/// to the kernel `terms` in order; any other term stays a literal value.
+fn named_int32(terms: &[Bitvector32Term], term: &Bitvector32Term) -> ContractExpression {
+    match terms.iter().position(|named| named == term) {
+        Some(index) => ContractExpression::CFragment(CExpression::Variable(format!("x{index}"))),
+        None => ContractExpression::CFragment(CExpression::Value(CValue::Int32(term.clone()))),
+    }
+}
+
+/// A C function whose int32 parameters are [`named_int32`]'s names, and the
+/// arguments that bind them to `terms`.
+fn named_int32_function(terms: &[Bitvector32Term]) -> (syntax::C0Function, Vec<CExpression>) {
+    let parameters = (0..terms.len())
+        .map(|index| format!("int32 x{index}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let function = syntax::parse_function(&format!("void noop({parameters}) {{}}"))
+        .expect("test C function should parse");
+    let arguments = terms
+        .iter()
+        .map(|term| CExpression::Value(CValue::Int32(term.clone())))
+        .collect();
+    (function, arguments)
+}
+
+/// [`named_int32`]'s names as a pure theorem's values.
+fn named_int32_values(terms: &[Bitvector32Term]) -> BTreeMap<String, CValue> {
+    terms
+        .iter()
+        .enumerate()
+        .map(|(index, term)| (format!("x{index}"), CValue::Int32(term.clone())))
+        .collect()
+}
+
 #[test]
 fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
     // Loop-closure subproofs have a fixed-state context, not an execution
@@ -5703,9 +5739,9 @@ fn pure_signed_order_simp_builds_its_theorem_path_with_logarithmic_local_updates
         Bitvector32Term::Variable(Variable(8_150_002)),
         Bitvector32Term::Variable(Variable(8_150_003)),
     ];
-    let expression = |term: &Bitvector32Term| {
-        ContractExpression::CFragment(CExpression::Value(CValue::Int32(term.clone())))
-    };
+    let named = terms.clone();
+    let named_values = named_int32_values(&named);
+    let expression = |term: &Bitvector32Term| named_int32(&named, term);
     let comparison = |left: usize, operator, right: usize| ClickProposition::Comparison {
         left: expression(&terms[left]),
         operator,
@@ -5721,7 +5757,7 @@ fn pure_signed_order_simp_builds_its_theorem_path_with_logarithmic_local_updates
         lower_pure_theorem_proposition(
             "persistent signed-order simp",
             surface,
-            ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+            ContractEnvironment::new(&named_values, &BTreeMap::new()),
             &memory,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
@@ -5745,7 +5781,7 @@ fn pure_signed_order_simp_builds_its_theorem_path_with_logarithmic_local_updates
             declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
             memory: memory.clone(),
-            values: BTreeMap::new(),
+            values: named_values.clone(),
             array_refs: BTreeMap::new(),
             requires: requires.clone(),
             surface_requirements: surface_requirements.clone(),
@@ -5793,7 +5829,7 @@ fn pure_signed_order_simp_builds_its_theorem_path_with_logarithmic_local_updates
             declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
             memory: memory.clone(),
-            values: BTreeMap::new(),
+            values: named_values.clone(),
             array_refs: BTreeMap::new(),
             requires: exact_requires.clone(),
             surface_requirements: surface_requirements.clone(),
@@ -5840,9 +5876,9 @@ fn pure_equality_refinement_simp_applies_one_rewrite_with_logarithmic_local_upda
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let memory = CMemory::new();
     let value = Bitvector32Term::Variable(Variable(8_174_000));
-    let expression = |term: Bitvector32Term| {
-        ContractExpression::CFragment(CExpression::Value(CValue::Int32(term)))
-    };
+    let named = [value.clone()];
+    let named_values = named_int32_values(&named);
+    let expression = |term: Bitvector32Term| named_int32(&named, &term);
     let equality = ClickProposition::Comparison {
         left: expression(value.clone()),
         operator: ComparisonOperator::Equal,
@@ -5860,7 +5896,7 @@ fn pure_equality_refinement_simp_applies_one_rewrite_with_logarithmic_local_upda
         lower_pure_theorem_proposition(
             "persistent equality-refinement simp",
             surface,
-            ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+            ContractEnvironment::new(&named_values, &BTreeMap::new()),
             &memory,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
@@ -5881,7 +5917,7 @@ fn pure_equality_refinement_simp_applies_one_rewrite_with_logarithmic_local_upda
             declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
             memory: memory.clone(),
-            values: BTreeMap::new(),
+            values: named_values.clone(),
             array_refs: BTreeMap::new(),
             requires: requires.clone(),
             surface_requirements: surface_requirements.clone(),
@@ -5929,6 +5965,8 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let memory = CMemory::new();
     let selected_term = Bitvector32Term::Variable(Variable(8_174_050));
+    let named = [selected_term.clone()];
+    let named_values = named_int32_values(&named);
     let equality_fact = Proposition::ConditionIs(
         ConditionTerm::Bitvector32Equal(
             Box::new(selected_term.clone()),
@@ -5947,17 +5985,13 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
         true,
     );
     let equality_surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-            selected_term.clone(),
-        ))),
+        left: named_int32(&named, &selected_term),
         operator: ComparisonOperator::Equal,
         right: ContractExpression::CFragment(CExpression::Value(int32(2))),
     };
     let goal_surface = ClickProposition::Comparison {
         left: ContractExpression::Subtract(
-            Box::new(ContractExpression::CFragment(CExpression::Value(
-                CValue::Int32(selected_term.clone()),
-            ))),
+            Box::new(named_int32(&named, &selected_term)),
             Box::new(ContractExpression::CFragment(CExpression::Value(int32(1)))),
         ),
         operator: ComparisonOperator::Equal,
@@ -5988,7 +6022,7 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
             declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
             memory: memory.clone(),
-            values: BTreeMap::new(),
+            values: named_values.clone(),
             array_refs: BTreeMap::new(),
             requires: facts.clone(),
             surface_requirements,
@@ -6036,6 +6070,8 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
     let memory = CMemory::new();
     let left = Bitvector32Term::Variable(Variable(8_174_060));
     let right = Bitvector32Term::Variable(Variable(8_174_061));
+    let named = [left.clone(), right.clone()];
+    let named_values = named_int32_values(&named);
     let zero = Bitvector32Term::Constant(0);
     let equality = |term: &Bitvector32Term| {
         Proposition::ConditionIs(
@@ -6044,7 +6080,7 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
         )
     };
     let surface_equality = |term: &Bitvector32Term| ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(CValue::Int32(term.clone()))),
+        left: named_int32(&named, term),
         operator: ComparisonOperator::Equal,
         right: ContractExpression::CFragment(CExpression::Value(int32(0))),
     };
@@ -6060,12 +6096,8 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
     );
     let goal_surface = ClickProposition::Comparison {
         left: ContractExpression::Add(
-            Box::new(ContractExpression::CFragment(CExpression::Value(
-                CValue::Int32(left.clone()),
-            ))),
-            Box::new(ContractExpression::CFragment(CExpression::Value(
-                CValue::Int32(right.clone()),
-            ))),
+            Box::new(named_int32(&named, &left)),
+            Box::new(named_int32(&named, &right)),
         ),
         operator: ComparisonOperator::Equal,
         right: ContractExpression::CFragment(CExpression::Value(int32(0))),
@@ -6099,7 +6131,7 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
             declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
             memory: memory.clone(),
-            values: BTreeMap::new(),
+            values: named_values.clone(),
             array_refs: BTreeMap::new(),
             requires: facts.clone(),
             surface_requirements,
@@ -6150,16 +6182,13 @@ fn fixed_state_predecessor_simp_builds_checked_scope_with_logarithmic_local_upda
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let parsed_function =
-        syntax::parse_function("void noop() {}").expect("test C function should parse");
     let state = CState::new();
-    let arguments = Vec::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let value = Bitvector32Term::Variable(Variable(8_174_100));
     let upper = Bitvector32Term::Variable(Variable(8_174_101));
-    let expression = |term: Bitvector32Term| {
-        ContractExpression::CFragment(CExpression::Value(CValue::Int32(term)))
-    };
+    let named = [value.clone(), upper.clone()];
+    let (parsed_function, arguments) = named_int32_function(&named);
+    let expression = |term: Bitvector32Term| named_int32(&named, &term);
     let equality = ClickProposition::Comparison {
         left: expression(value.clone()),
         operator: ComparisonOperator::Equal,
@@ -6437,10 +6466,7 @@ fn fixed_state_order_simp_builds_its_theorem_path_with_logarithmic_local_updates
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard order theorems should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let parsed_function =
-        syntax::parse_function("void noop() {}").expect("test C function should parse");
     let state = CState::new();
-    let arguments = Vec::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let terms = [
         Bitvector32Term::Variable(Variable(8_176_000)),
@@ -6448,9 +6474,9 @@ fn fixed_state_order_simp_builds_its_theorem_path_with_logarithmic_local_updates
         Bitvector32Term::Variable(Variable(8_176_002)),
         Bitvector32Term::Variable(Variable(8_176_003)),
     ];
-    let expression = |term: &Bitvector32Term| {
-        ContractExpression::CFragment(CExpression::Value(CValue::Int32(term.clone())))
-    };
+    let named = terms.clone();
+    let (parsed_function, arguments) = named_int32_function(&named);
+    let expression = |term: &Bitvector32Term| named_int32(&named, term);
     let comparison = |left: usize, operator, right: usize| ClickProposition::Comparison {
         left: expression(&terms[left]),
         operator,
@@ -6545,16 +6571,14 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("the standard increment theorem should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let parsed_function =
-        syntax::parse_function("void noop() {}").expect("test C function should parse");
     let state = CState::new();
-    let arguments = Vec::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let value = Bitvector32Term::Variable(Variable(8_177_000));
     let upper = Bitvector32Term::Variable(Variable(8_177_001));
-    let expression = |term: Bitvector32Term| {
-        ContractExpression::CFragment(CExpression::Value(CValue::Int32(term)))
-    };
+    let named = [value.clone(), upper.clone()];
+    let (parsed_function, arguments) = named_int32_function(&named);
+    let named_values = named_int32_values(&named);
+    let expression = |term: Bitvector32Term| named_int32(&named, &term);
     let premise = ClickProposition::Comparison {
         left: expression(value.clone()),
         operator: ComparisonOperator::LessThan,
@@ -6873,7 +6897,7 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
                 declaration_bindings: BTreeMap::new(),
                 integer_values: crate::persistent::PersistentMap::default(),
                 memory: state.memory().clone(),
-                values: BTreeMap::new(),
+                values: named_values.clone(),
                 array_refs: BTreeMap::new(),
                 requires: facts.clone(),
                 surface_requirements: surface_propositions.clone(),
@@ -7063,18 +7087,16 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("the standard increment theorem should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let parsed_function =
-        syntax::parse_function("void noop() {}").expect("test C function should parse");
     let state = CState::new();
-    let arguments = Vec::new();
-    let parameter_binding = ParameterBinding::new(parsed_function.parameters(), &arguments);
     let recorded_snapshots = RecordedSnapshots::new();
     let lower = Bitvector32Term::Variable(Variable(8_178_000));
     let value = Bitvector32Term::Variable(Variable(8_178_001));
     let upper = Bitvector32Term::Variable(Variable(8_178_002));
-    let expression = |term: Bitvector32Term| {
-        ContractExpression::CFragment(CExpression::Value(CValue::Int32(term)))
-    };
+    let named = [lower.clone(), value.clone(), upper.clone()];
+    let (parsed_function, arguments) = named_int32_function(&named);
+    let parameter_binding = ParameterBinding::new(parsed_function.parameters(), &arguments);
+    let named_values = named_int32_values(&named);
+    let expression = |term: Bitvector32Term| named_int32(&named, &term);
     let lower_premise = ClickProposition::Comparison {
         left: expression(lower.clone()),
         operator: ComparisonOperator::LessEqual,
@@ -7201,7 +7223,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
                 declaration_bindings: BTreeMap::new(),
                 integer_values: crate::persistent::PersistentMap::default(),
                 memory: state.memory().clone(),
-                values: BTreeMap::new(),
+                values: named_values.clone(),
                 array_refs: BTreeMap::new(),
                 requires: facts.clone(),
                 surface_requirements: surface_propositions.clone(),
@@ -7318,7 +7340,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
             declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
             memory: state.memory().clone(),
-            values: BTreeMap::new(),
+            values: named_values.clone(),
             array_refs: BTreeMap::new(),
             requires: facts.clone(),
             surface_requirements: strict_surface_propositions.clone(),
@@ -7372,16 +7394,14 @@ fn le_and_not_lt_equality_simp_retains_one_indexed_theorem_application() {
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("the standard equality theorem should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let parsed_function =
-        syntax::parse_function("void noop() {}").expect("test C function should parse");
     let state = CState::new();
-    let arguments = Vec::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let left = Bitvector32Term::Variable(Variable(8_178_100));
     let right = Bitvector32Term::Variable(Variable(8_178_101));
-    let expression = |term: Bitvector32Term| {
-        ContractExpression::CFragment(CExpression::Value(CValue::Int32(term)))
-    };
+    let named = [left.clone(), right.clone()];
+    let (parsed_function, arguments) = named_int32_function(&named);
+    let named_values = named_int32_values(&named);
+    let expression = |term: Bitvector32Term| named_int32(&named, &term);
     let less_equal = ClickProposition::Comparison {
         left: expression(left.clone()),
         operator: ComparisonOperator::LessEqual,
@@ -7466,7 +7486,7 @@ fn le_and_not_lt_equality_simp_retains_one_indexed_theorem_application() {
                 lower_pure_theorem_proposition(
                     "persistent restricted <=/not-< equality simp",
                     surface,
-                    ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+                    ContractEnvironment::new(&named_values, &BTreeMap::new()),
                     state.memory(),
                     SpecDefinitions::new(&predicate_environment, &click_function_environment),
                 )
@@ -7485,7 +7505,7 @@ fn le_and_not_lt_equality_simp_retains_one_indexed_theorem_application() {
             declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
             memory: state.memory().clone(),
-            values: BTreeMap::new(),
+            values: named_values.clone(),
             array_refs: BTreeMap::new(),
             requires: pure_facts.clone(),
             surface_requirements: surface_propositions.clone(),
@@ -7565,16 +7585,13 @@ fn ge_and_not_gt_equality_simp_retains_one_indexed_theorem_application() {
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("the standard equality theorem should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let parsed_function =
-        syntax::parse_function("void noop() {}").expect("test C function should parse");
     let state = CState::new();
-    let arguments = Vec::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let left = Bitvector32Term::Variable(Variable(8_178_102));
     let right = Bitvector32Term::Variable(Variable(8_178_103));
-    let expression = |term: Bitvector32Term| {
-        ContractExpression::CFragment(CExpression::Value(CValue::Int32(term)))
-    };
+    let named = [left.clone(), right.clone()];
+    let (parsed_function, arguments) = named_int32_function(&named);
+    let expression = |term: Bitvector32Term| named_int32(&named, &term);
     let greater_equal = ClickProposition::Comparison {
         left: expression(left.clone()),
         operator: ComparisonOperator::GreaterEqual,
@@ -7668,16 +7685,13 @@ fn le_and_neq_strict_simp_retains_one_indexed_theorem_application() {
     let theorem_definitions = proof_theorem_definitions(&click_file)
         .expect("the standard strict-order theorem should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let parsed_function =
-        syntax::parse_function("void noop() {}").expect("test C function should parse");
     let state = CState::new();
-    let arguments = Vec::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let left = Bitvector32Term::Variable(Variable(8_178_104));
     let right = Bitvector32Term::Variable(Variable(8_178_105));
-    let expression = |term: Bitvector32Term| {
-        ContractExpression::CFragment(CExpression::Value(CValue::Int32(term)))
-    };
+    let named = [left.clone(), right.clone()];
+    let (parsed_function, arguments) = named_int32_function(&named);
+    let expression = |term: Bitvector32Term| named_int32(&named, &term);
     let less_equal = ClickProposition::Comparison {
         left: expression(left.clone()),
         operator: ComparisonOperator::LessEqual,
@@ -7768,16 +7782,14 @@ fn symbolic_arithmetic_definedness_retains_two_indexed_theorem_premises() {
     let theorem_definitions = proof_theorem_definitions(&click_file)
         .expect("the standard symbolic-add theorem should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let parsed_function =
-        syntax::parse_function("void noop() {}").expect("test C function should parse");
     let state = CState::new();
-    let arguments = Vec::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let value = Bitvector32Term::Variable(Variable(8_178_100));
     let amount = Bitvector32Term::Variable(Variable(8_178_101));
-    let expression = |term: Bitvector32Term| {
-        ContractExpression::CFragment(CExpression::Value(CValue::Int32(term)))
-    };
+    let named = [value.clone(), amount.clone()];
+    let (parsed_function, arguments) = named_int32_function(&named);
+    let named_values = named_int32_values(&named);
+    let expression = |term: Bitvector32Term| named_int32(&named, &term);
     let amount_nonnegative = ClickProposition::Comparison {
         left: expression(amount.clone()),
         operator: ComparisonOperator::GreaterEqual,
@@ -7898,7 +7910,7 @@ fn symbolic_arithmetic_definedness_retains_two_indexed_theorem_premises() {
                 declaration_bindings: BTreeMap::new(),
                 integer_values: crate::persistent::PersistentMap::default(),
                 memory: state.memory().clone(),
-                values: BTreeMap::new(),
+                values: named_values.clone(),
                 array_refs: BTreeMap::new(),
                 requires: facts.clone(),
                 surface_requirements: surface_propositions.clone(),
@@ -7950,15 +7962,12 @@ fn selected_disjunction_simp_retains_checked_cases_and_scales() {
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("the standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let parsed_function =
-        syntax::parse_function("void noop() {}").expect("test C function should parse");
     let state = CState::new();
-    let arguments = Vec::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let value = Bitvector32Term::Variable(Variable(8_178_900));
-    let expression = |term: Bitvector32Term| {
-        ContractExpression::CFragment(CExpression::Value(CValue::Int32(term)))
-    };
+    let named = [value.clone()];
+    let (parsed_function, arguments) = named_int32_function(&named);
+    let expression = |term: Bitvector32Term| named_int32(&named, &term);
     let equal_zero = ClickProposition::Comparison {
         left: expression(value.clone()),
         operator: ComparisonOperator::Equal,
@@ -8063,16 +8072,13 @@ fn surface_structural_simp_retains_recursive_child_proofs_and_scales() {
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("the standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let parsed_function =
-        syntax::parse_function("void noop() {}").expect("test C function should parse");
     let state = CState::new();
-    let arguments = Vec::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let left_value = Bitvector32Term::Variable(Variable(8_178_910));
     let right_value = Bitvector32Term::Variable(Variable(8_178_911));
-    let expression = |term: Bitvector32Term| {
-        ContractExpression::CFragment(CExpression::Value(CValue::Int32(term)))
-    };
+    let named = [left_value.clone(), right_value.clone()];
+    let (parsed_function, arguments) = named_int32_function(&named);
+    let expression = |term: Bitvector32Term| named_int32(&named, &term);
     let left_positive = ClickProposition::Comparison {
         left: expression(Bitvector32Term::Constant(1)),
         operator: ComparisonOperator::LessEqual,
@@ -8267,16 +8273,14 @@ fn predecessor_simps_retain_indexed_named_rule_premises() {
     let theorem_definitions = proof_theorem_definitions(&click_file)
         .expect("the standard predecessor theorems should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let parsed_function =
-        syntax::parse_function("void noop() {}").expect("test C function should parse");
     let state = CState::new();
-    let arguments = Vec::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let value = Bitvector32Term::Variable(Variable(8_179_000));
     let bound = Bitvector32Term::Variable(Variable(8_179_001));
-    let expression = |term: Bitvector32Term| {
-        ContractExpression::CFragment(CExpression::Value(CValue::Int32(term)))
-    };
+    let named = [value.clone(), bound.clone()];
+    let (parsed_function, arguments) = named_int32_function(&named);
+    let named_values = named_int32_values(&named);
+    let expression = |term: Bitvector32Term| named_int32(&named, &term);
     let predecessor = || {
         ContractExpression::Subtract(
             Box::new(expression(value.clone())),
@@ -8455,7 +8459,7 @@ fn predecessor_simps_retain_indexed_named_rule_premises() {
                 declaration_bindings: BTreeMap::new(),
                 integer_values: crate::persistent::PersistentMap::default(),
                 memory: state.memory().clone(),
-                values: BTreeMap::new(),
+                values: named_values.clone(),
                 array_refs: BTreeMap::new(),
                 requires: facts.clone(),
                 surface_requirements: surface_propositions.clone(),
