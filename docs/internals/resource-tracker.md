@@ -974,6 +974,17 @@ cost work in the length of the path at every store (`issues/scaling.md`).
 regression and `store_separation_reads_the_store_owners_and_not_earlier_compositions`
 (`src/kernel/tests/memory_reasoning_tests.rs`) the attack set.
 
+A store through a `Symbolic` pointer asks only the cells a pointer value can
+reach. Every block admits a `Symbolic` address, so its `AliasCandidates`
+narrow nothing, but no pointer value designates the slot of a local whose
+address is never taken (`never_address_taken_local_versus_pointer_value`).
+The cell store keeps the keys of every other concrete cell
+(`CellStore::pointer_reachable_cells`), caught up by diffing the concrete map
+since its lineage last asked, and the store visits those alone, unless a
+stated exact equality places the pointer in such a local.
+`a_symbolic_store_skips_locals_whose_address_is_never_taken`
+(`src/scaling_tests/kernel/tests/memory_scaling_tests.rs`) is the regression.
+
 `CMemory::without_possible_aliasing_cells` also asks the same law *first*, in
 an indexed form. Every pointer parameter shares the one `ExternalArgument`
 block, so neither `AliasCandidates` nor the block-pair separation index

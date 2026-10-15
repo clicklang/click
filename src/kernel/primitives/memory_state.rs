@@ -5927,6 +5927,21 @@ impl CMemory {
                     &gap_kept,
                     assumptions,
                 )
+            })
+            .or_else(|| {
+                // A pointer value reaches no local whose address is never
+                // taken (`never_address_taken_local_versus_pointer_value`),
+                // so a store through one asks only the cells a pointer can
+                // reach, unless a stated equality places it in such a local.
+                (matches!(normalized_pointer.block, PointerBlock::Symbolic(_))
+                    && !assumptions
+                        .exact_pointer_aliases(&normalized_pointer)
+                        .any(|alias| {
+                            crate::kernel::primitives::block_is_never_address_taken_local(
+                                &alias.block,
+                            )
+                        }))
+                .then(|| memory.cells.pointer_reachable_cells())
             });
         let scope = match ordered.as_deref() {
             Some(selected) => ForgetScope::Ordered {
