@@ -53,6 +53,17 @@ Rust example with crate-qualified sidecar names and the existing adler2
 saved-checksum proof, repeats locking byte-for-byte,
 checks mismatched identity refusal, then verifies after removing the frontend.
 
+A separate release-packaging check consumes the exact archive and checksum
+produced by `scripts/package-rust-frontend-archive.sh`. It starts with only a
+Click launcher, invokes the real `click install VERSION --rust` command using
+local release assets through its ordinary curl subprocess, relocates the
+installed home, and verifies both examples with an empty PATH and no user
+Rust toolchain. It checks repeated installation and locking, then offline
+verification after removing the frontend. The release workflow runs this check
+before attaching assets to a release and on pull requests touching packaging.
+The dedicated integration target stays outside the normal ten-minute gate;
+there is no development-binary fallback for its release archive.
+
 ## Reproduce the example
 
 Run `scripts/setup-environment.sh` once for Click's pinned stable toolchain.

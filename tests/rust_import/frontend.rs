@@ -1,49 +1,9 @@
 //! Installed Rust frontend selection and extraction, outside the repository.
 use std::{fs, path::Path, process::Command};
 
-fn project(root: &Path) {
-    fs::create_dir_all(root).unwrap();
-    fs::write(
-        root.join("borrow.rs"),
-        include_bytes!("../../examples/basic-rust/borrow.rs"),
-    )
-    .unwrap();
-    fs::write(
-        root.join("borrow.click"),
-        include_str!("../../examples/basic-rust/borrow.click")
-            .replace("fn ", "fn basic::")
-            .replace("Pair", "basic::Pair"),
-    )
-    .unwrap();
-    fs::write(root.join("click.project.json"), serde_json::json!({"units": {"basic": {
-        "language": "rust", "sources": {"borrow.rs": {}},
-        "crate": {"name": "basic", "edition": "2024", "features": [], "roots": ["basic::choose", "basic::set_seven", "basic::update", "basic::shared_field"], "files": ["borrow.rs"]}
-    }}}).to_string()).unwrap();
-}
-
-fn cli(binary: &Path, home: &Path, project: &Path, args: &[&str]) -> std::process::Output {
-    Command::new(binary)
-        .args(args)
-        .current_dir(project)
-        .env("CLICK_HOME", home)
-        .env("CLICK_NO_VERSION_DISPATCH", "1")
-        .env("PATH", "")
-        .env("HOME", home.join("empty-home"))
-        .env_remove("CLICK_CHARON")
-        .env_remove("RUSTUP_HOME")
-        .env_remove("CARGO_HOME")
-        .env_remove("LD_LIBRARY_PATH")
-        .output()
-        .unwrap()
-}
-
-fn success(output: std::process::Output) {
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
+#[path = "../support/rust_frontend.rs"]
+mod examples;
+use examples::{cli, project, success};
 
 #[test]
 fn missing_installed_rust_frontend_names_the_version_and_install_location() {
@@ -119,36 +79,9 @@ fn installed_rust_frontend_extracts_and_verifies_without_rustup() {
         lock
     );
 
-    // The existing launch proof also works with the bundled runtime and the
-    // project task's external-crate configuration, without editing Rust.
+    // The existing launch proof also uses the external-crate configuration.
     let adler = t.path().join("adler-proof");
-    let vendor = t.path().join("vendor/adler2");
-    fs::create_dir_all(&adler).unwrap();
-    fs::create_dir_all(vendor.join("src")).unwrap();
-    let trial = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/adler2");
-    for file in ["src/lib.rs", "src/algo.rs"] {
-        fs::copy(trial.join(file), vendor.join(file)).unwrap();
-    }
-    fs::write(
-        adler.join("restoration.click"),
-        fs::read_to_string(trial.join("restoration.click"))
-            .unwrap()
-            .replace(
-                "verifying \"src/lib.rs\";",
-                "verifying \"../vendor/adler2/src/lib.rs\";",
-            ),
-    )
-    .unwrap();
-    fs::write(
-        adler.join("click.project.json"),
-        serde_json::json!({"units": {"adler2": {
-            "language": "rust", "root": "../vendor/adler2", "sources": {"src/lib.rs": {}},
-            "crate": {"name": "adler2", "edition": "2021", "features": ["std"],
-                "roots": ["adler2::Adler32::from_checksum"], "files": ["src/lib.rs", "src/algo.rs"]}
-        }}})
-        .to_string(),
-    )
-    .unwrap();
+    examples::adler_project(&adler);
     success(cli(&binary, &home, &adler, &["import", "lock"]));
     success(cli(
         &binary,
