@@ -169,3 +169,51 @@ fn a_zero_filled_automatic_array_costs_the_same_whatever_its_length() {
          work, load work, cell entries): {samples:?}"
     );
 }
+
+/// A statement theorem names its own path facts and obligations, not the
+/// context it executed under: that context is recorded beside it. Copying
+/// every context fact into the theorem as a premise made each step clone the
+/// path's whole context and the recorder look each one up again
+/// (`issues/scaling.md` cause 4), so the theorem's size must not grow with
+/// unrelated facts in scope.
+#[test]
+fn statement_theorems_do_not_list_the_context_they_executed_under() {
+    let state = CState::new().with_local("i", int32(0));
+    let statement = c_assign("i", c_add(c_variable("i"), c_int32_literal(1)));
+    let mut premise_counts = Vec::new();
+    for size in [16u32, 64, 256] {
+        let mut assumptions = PureFactContext::new();
+        for index in 0..size {
+            assumptions = assumptions.assume_condition(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(Variable(1_910_000 + u64::from(index))),
+                    Bitvector32Term::Constant(index),
+                ),
+                true,
+            );
+        }
+        let execution = prove_symbolic_c_statement_verification_paths_with_environment(
+            state.clone(),
+            statement.clone(),
+            assumptions,
+            CExecutionEnvironment::new(),
+            CExecutionSemantics::EXECUTE_BODIES,
+        );
+        let path = &execution.paths()[0];
+        let mut premises = 0;
+        let mut proposition = path.theorem().proposition();
+        while let Proposition::Implies(_, body) = proposition {
+            premises += 1;
+            proposition = body;
+        }
+        assert!(matches!(
+            proposition,
+            Proposition::CStatementVerifies { .. }
+        ));
+        premise_counts.push(premises);
+    }
+    assert!(
+        premise_counts.windows(2).all(|pair| pair[0] == pair[1]),
+        "a statement theorem lists its context: {premise_counts:?}"
+    );
+}
