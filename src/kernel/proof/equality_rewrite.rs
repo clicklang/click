@@ -759,7 +759,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
         return Ok(rewritten);
     }
 
-    if let Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(left, right), true) = equality
+    if let Proposition::ConditionIs(condition, true) = equality
+        && let Some((left, right)) = condition.pointer_offset_sides()
     {
         fn rewrite_offset(
             offset: &PointerOffsetTerm,

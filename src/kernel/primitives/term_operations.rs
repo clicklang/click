@@ -2236,13 +2236,8 @@ impl ConditionTerm {
                 _ => None,
             }
         }
-        let Self::PointerOffsetEqual(left, right) = self else {
-            return None;
-        };
-        for (expanded, indexed) in [
-            (left.as_ref(), right.as_ref()),
-            (right.as_ref(), left.as_ref()),
-        ] {
+        let (left, right) = self.pointer_offset_sides()?;
+        for (expanded, indexed) in [(left, right), (right, left)] {
             let PointerOffsetTerm::Add(left, right) = expanded else {
                 continue;
             };
@@ -2750,14 +2745,32 @@ impl ConditionTerm {
         }
     }
 
+    /// A common-base comparison's offset view, retaining the original
+    /// condition as the supporting premise in callers' indexes.
+    pub(crate) fn pointer_offset_sides(&self) -> Option<(&PointerOffsetTerm, &PointerOffsetTerm)> {
+        match self {
+            Self::PointerOffsetEqual(a, b) => Some((a, b)),
+            Self::PointerEqual(a, b) if a.block == b.block => Some((&a.offset, &b.offset)),
+            _ => None,
+        }
+    }
+
     pub fn pointer_equal(left: Pointer, right: Pointer) -> Self {
-        if left == right {
-            Self::Constant(true)
-        } else if left.blocks_proven_distinct(&right) {
+        if left.blocks_proven_distinct(&right) {
             Self::Constant(false)
-        } else if left.block == right.block {
-            Self::pointer_offset_equal(left.offset, right.offset)
         } else {
+            // Keep the common base as evidence: a later equal pointer may use
+            // another base spelling. The graph derives the offset comparison
+            // without discarding the original address comparison.
+            // Preserve symbolic reflexive comparisons as well: exact fact
+            // checking must still see the comparison after a stored pointer
+            // resolves to the same symbolic value on both sides.
+            if left.block == right.block
+                && let Self::Constant(value) =
+                    Self::pointer_offset_equal(left.offset.clone(), right.offset.clone())
+            {
+                return Self::Constant(value);
+            }
             Self::PointerEqual(Box::new(left), Box::new(right))
         }
     }

@@ -1719,7 +1719,7 @@ fn symbolic_pointer_equality_reports_branch_facts() {
         block: "array".into(),
         offset: PointerOffsetTerm::Variable(offset),
     };
-    let condition = ConditionTerm::pointer_offset_equal(left.offset.clone(), right.offset.clone());
+    let condition = ConditionTerm::pointer_equal(left.clone(), right.clone());
     let state = CState::new()
         .with_local("p", CValue::pointer(left))
         .with_local("q", CValue::pointer(right));

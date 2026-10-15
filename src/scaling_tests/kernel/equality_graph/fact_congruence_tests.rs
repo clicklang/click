@@ -143,3 +143,43 @@ fn pointer_disequality_projection_ignores_unrelated_pointer_predicates() {
         assert!(pair[1].1 <= pair[0].1 * 2, "{costs:?}");
     }
 }
+
+#[test]
+fn pointer_comparison_evidence_work_ignores_unrelated_facts() {
+    let mut costs = Vec::new();
+    for size in [16, 64, 256] {
+        let mut facts = PureFactContext::new();
+        for i in 0..size {
+            facts = facts.assume_condition(
+                ConditionTerm::pointer_equal(
+                    coordinate_pointer(PointerBlock::ExternalArgument, 79000 + i * 2),
+                    coordinate_pointer(PointerBlock::ExternalArgument, 79001 + i * 2),
+                ),
+                false,
+            );
+        }
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                let left = coordinate_pointer(PointerBlock::ExternalArgument, 78001);
+                let right = coordinate_pointer(PointerBlock::ExternalArgument, 78002);
+                let alias = Pointer::symbolic(Variable(78003));
+                // Registering the query before the premise must not choose a
+                // canonical base that later loses the admitted comparison.
+                let goal = Proposition::ConditionIs(
+                    ConditionTerm::pointer_equal(left.clone(), alias.clone()),
+                    false,
+                );
+                assert!(!facts.contains_known(&goal));
+                facts = facts
+                    .assume_condition(ConditionTerm::pointer_equal(left, right.clone()), false)
+                    .assume_condition(ConditionTerm::pointer_equal(right, alias), true);
+                assert!(facts.contains_known(&goal));
+            })
+        });
+        costs.push((work, map_work));
+    }
+    for pair in costs.windows(2) {
+        assert!(pair[1].0 <= pair[0].0 * 2, "{costs:?}");
+        assert!(pair[1].1 <= pair[0].1 * 2, "{costs:?}");
+    }
+}

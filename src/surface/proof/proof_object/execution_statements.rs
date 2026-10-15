@@ -2576,6 +2576,8 @@ impl<'a> Proof<'a> {
         surface_target: &ClickProposition,
         tactic_index: usize,
     ) -> Result<Self, ClickError> {
+        let resolved_source = self.substitute_fixed_state_locals_in_proposition(surface_source)?;
+        let resolved_target = self.substitute_fixed_state_locals_in_proposition(surface_target)?;
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("`transport` requires an execution-frontier proof"));
         };
@@ -2591,7 +2593,7 @@ impl<'a> Proof<'a> {
             let assumptions = assumptions_from_propositions(facts);
             let pre_state = view.context.old_reference_state(frontier, state);
             let source = lower_fixed_state_proposition(
-                surface_source,
+                &resolved_source,
                 facts,
                 context.parameter_binding(),
                 FixedStateFrame::new(pre_state, state, None, &view.execution.presentation.recorded_snapshots),
@@ -2618,7 +2620,7 @@ impl<'a> Proof<'a> {
                 )));
             }
             let target = lower_fixed_state_proposition(
-                surface_target,
+                &resolved_target,
                 facts,
                 context.parameter_binding(),
                 FixedStateFrame::new(pre_state, state, None, &view.execution.presentation.recorded_snapshots),

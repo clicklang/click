@@ -22261,9 +22261,8 @@ fn pointer_spelling_rank(pointer: &Pointer) -> (bool, &Pointer) {
 /// Soundness rests on the equality being exact and on it being a genuine
 /// cross-block one. `exact_pointer_aliases` reads the index of assumed
 /// `PointerEqual` facts: never a derived, heuristic, or disjunctive
-/// conclusion, and never a `!=`. An equality between two offsets of one block
-/// is not a `PointerEqual` at all -- `ConditionTerm::pointer_equal` folds it
-/// to a `PointerOffsetEqual` -- so an entry can only ever exchange two
+/// conclusion, and never a `!=`. Same-block entries are explicitly excluded
+/// by `arm_pointer_program_spelling`; an entry can only exchange two
 /// spellings of one address, at the offset the fact states and no other. Which
 /// equal spelling is chosen changes nothing logically, since they are all the
 /// same address; `pointer_spelling_rank` fixes it so that the choice is
@@ -22323,6 +22322,7 @@ pub(in crate::kernel) fn arm_pointer_program_spelling(
     crate::instrumentation::record_deterministic_work(1);
     assumptions
         .exact_pointer_aliases(pointer)
+        .filter(|alias| alias.block != pointer.block)
         .filter(|alias| pointer_spelling_rank(alias) < pointer_spelling_rank(pointer))
         .min_by_key(|alias| pointer_spelling_rank(alias))
         .cloned()
