@@ -10,23 +10,21 @@ trait trait_methods::Shape {
     }
 }
 
-// Each implementation refines the interface: it accepts every call the
-// interface allows, here a wider range, and states the interface's
-// guarantee, which its own proof establishes.
+// Each implementation inherits the interface's guarantees, which its own
+// proof establishes with what it states itself. It may accept more calls
+// than the interface, here a wider range; one that writes no `requires`
+// takes the interface's.
 impl trait_methods::Shape for trait_methods::Square {
     fn area(&self, scale: i32) -> i32 {
         requires 0 <= scale;
         requires scale <= 2000;
         ensures result == scale + 1;
-        ensures scale < result and result <= 3001;
     } by { execute(); simp(); }
 }
 
 impl trait_methods::Shape for trait_methods::Circle {
     fn area(&self, scale: i32) -> i32 {
-        requires 0 <= scale and scale <= 1000;
         ensures result == scale + scale + 1;
-        ensures scale < result and result <= 3001;
     } by { execute(); simp(); }
 }
 

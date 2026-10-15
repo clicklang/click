@@ -685,6 +685,9 @@ struct Parser {
     /// trait bounds, `T` of `<T: traits::Shape>`: a reference to one is a
     /// reference to a value of a type the function does not know.
     rust_trait_type_parameters: BTreeSet<String>,
+    /// Each crate trait method implementation read, by name, with the
+    /// interface it inherits.
+    rust_trait_implementations: Vec<(String, String)>,
     match_nesting: usize,
     proposition_nesting: usize,
     proof_nesting: usize,
@@ -1103,6 +1106,7 @@ impl Parser {
             rust_impl_trait: None,
             rust_trait_interface: None,
             rust_trait_type_parameters: BTreeSet::new(),
+            rust_trait_implementations: Vec::new(),
             tokens,
             positions,
             matching_parentheses,
@@ -1358,6 +1362,29 @@ impl Parser {
                     "C source alias `{}` conflicts with a specification datatype",
                     definition.name
                 )));
+            }
+        }
+        // A crate trait method's implementation inherits its interface,
+        // which the sidecar may declare before or after it.
+        for (implementation, interface) in std::mem::take(&mut self.rust_trait_implementations) {
+            let Some(interface) = function_blocks
+                .iter()
+                .find(|block| block.is_external() && block.signature().name() == interface)
+                .cloned()
+            else {
+                continue;
+            };
+            if let Some(block) = function_blocks
+                .iter_mut()
+                .find(|block| !block.is_external() && block.signature().name() == implementation)
+            {
+                block.inherit_interface(&interface).map_err(|message| {
+                    ClickError::new(format!(
+                        "`{}` cannot inherit its trait's interface: {message}",
+                        crate::languages::rust::names::display_rust_names(&implementation)
+                    ))
+                    .at_declaration(&implementation)
+                })?;
             }
         }
         let end = self.position;

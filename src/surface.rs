@@ -7716,6 +7716,64 @@ impl FunctionBlock {
         &self.signature
     }
 
+    /// Adds a crate trait method's interface to this implementation's
+    /// contract: its `ensures`, which the implementation's proof establishes
+    /// with its own, each named `interface_ensures_<i>`, and its `requires`
+    /// when the implementation writes none. A clause the implementation
+    /// already states is not repeated. The implementation names its
+    /// parameters as the interface does, so the clauses read the same.
+    pub(in crate::surface) fn inherit_interface(
+        &mut self,
+        interface: &FunctionBlock,
+    ) -> Result<(), String> {
+        let names = |block: &FunctionBlock| {
+            block
+                .signature
+                .parameters()
+                .iter()
+                .map(|parameter| parameter.name().to_string())
+                .collect::<Vec<_>>()
+        };
+        if names(self) != names(interface) {
+            return Err(format!(
+                "an implementation names its parameters as the trait's interface does, ({}), \
+                 so the interface's clauses read the same in it",
+                names(interface).join(", ")
+            ));
+        }
+        if self.requires.is_empty() {
+            self.requires = interface.requires.clone();
+            self.requirement_source_clauses = interface.requirement_source_clauses.clone();
+        }
+        let written = self.ensures.len();
+        let mut next_source = (0..written)
+            .map(|index| self.ensure_source_clause(index) + 1)
+            .max()
+            .unwrap_or(0);
+        for (index, clause) in interface.ensures.iter().enumerate() {
+            if self.ensures[..written]
+                .iter()
+                .any(|own| own.ensure() == clause.ensure() && own.condition() == clause.condition())
+            {
+                continue;
+            }
+            if self.ensure_claim_ids.len() == self.ensures.len() {
+                self.ensure_claim_ids.push(claim_labels::ClaimClauseId {
+                    kind: claim_labels::ClaimClauseKind::Ensures,
+                    index: self.ensures.len(),
+                });
+            }
+            if self.ensure_source_clauses.len() == self.ensures.len() {
+                self.ensure_source_clauses.push(next_source);
+                next_source += 1;
+            }
+            let mut inherited = clause.clone();
+            inherited.name = Some(format!("interface_ensures_{index}"));
+            self.ensures.push(inherited);
+        }
+        Ok(())
+    }
+
     pub fn parameter_struct_casts(&self) -> &BTreeMap<String, String> {
         &self.parameter_struct_casts
     }
