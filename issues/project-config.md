@@ -179,9 +179,16 @@ rest are the recommended defaults.
   `click.project.lock.json` and `.click/<unit>/<source>.i`; external unit
   roots are rechecked relative to the unit root, so a moved checkout still
   loads and a changed input is refused. Per-sidecar configs still work and
-  are refused when a unit also lists the same sources. Remaining: the module
-  root still comes from imports rather than the project file; C++ and Rust
-  units; the shared lock envelope; migrating existing configs; the flag policy.
+  are refused when a unit also lists the same sources.
+- **Rust units.** A `"language": "rust"` unit is one crate with a `crate`
+  description and its root in `sources`; its `roots` are the union of what the
+  project's sidecars verify (the adler2 `helpers` and `restoration` sidecars,
+  separately locked today, both verify against one extraction). Charon comes
+  from `CLICK_CHARON` at lock time only. Crate files are recorded per file so a
+  changed one is named.
+- **Remaining:** the module root still comes from imports rather than the
+  project file; C++ units; the shared lock envelope; migrating existing
+  configs; the flag policy.
 
 ## Intended regressions
 
