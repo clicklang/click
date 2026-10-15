@@ -62,7 +62,7 @@ constexpr std::size_t kMaxPreprocessorFiles = 4096;
 struct Options {
   std::string logical_source;
   std::string logical_source_path;
-  std::string function;
+  std::vector<std::string> functions;
   std::string source;
   std::string dependency_root;
   std::string compilation_database;
@@ -93,7 +93,13 @@ std::optional<Options> parse_options(int argc, const char **argv) {
     } else if (option == "--logical-source-path") {
       result.logical_source_path = value;
     } else if (option == "--function") {
-      result.function = value;
+      if (value.empty() || result.functions.size() >= 64 ||
+          std::find(result.functions.begin(), result.functions.end(), value) !=
+              result.functions.end()) {
+        llvm::errs() << "error: --function names must be unique and at most 64\n";
+        return std::nullopt;
+      }
+      result.functions.push_back(value);
     } else if (option == "--source") {
       result.source = value;
     } else if (option == "--dependency-root") {
@@ -131,7 +137,7 @@ std::optional<Options> parse_options(int argc, const char **argv) {
     }
   }
   if (result.logical_source.empty() || result.logical_source_path.empty() ||
-      result.function.empty() || result.source.empty() ||
+      result.functions.empty() || result.source.empty() ||
       result.dependency_root.empty() ||
       result.compilation_database.empty()) {
     llvm::errs()
@@ -161,7 +167,7 @@ class SemanticExporter : public clang::RecursiveASTVisitor<SemanticExporter> {
 public:
   SemanticExporter(clang::CompilerInstance &compiler, std::string logical_source,
                    std::string logical_source_path,
-                   std::string selected_name,
+                   std::vector<std::string> selected_names,
                    std::string dependency_root,
                    std::string compilation_directory,
                    std::string compilation_file,
@@ -173,7 +179,7 @@ public:
         source_manager_(context_.getSourceManager()),
         logical_source_(std::move(logical_source)),
         logical_source_path_(std::move(logical_source_path)),
-        selected_name_(std::move(selected_name)),
+        selected_names_(std::move(selected_names)),
         dependency_root_(std::move(dependency_root)),
         compilation_directory_(std::move(compilation_directory)),
         compilation_file_(std::move(compilation_file)),
@@ -183,9 +189,12 @@ public:
 
   bool VisitFunctionDecl(clang::FunctionDecl *declaration) {
     if (declaration->isThisDeclarationADefinition() &&
-        declaration->getQualifiedNameAsString() == selected_name_ &&
         is_in_logical_source(declaration->getLocation())) {
-      matches_.push_back(declaration);
+      const std::string name = declaration->getQualifiedNameAsString();
+      if (std::find(selected_names_.begin(), selected_names_.end(), name) !=
+          selected_names_.end()) {
+        matches_[name].push_back(declaration);
+      }
     }
     return true;
   }
@@ -196,25 +205,36 @@ public:
       fail({}, "scalar int32 exception profile requires C++ exceptions enabled");
       return;
     }
-    if (matches_.empty()) {
-      fail({}, "selected function `" + selected_name_ + "` was not found");
-      return;
+    // Every selected function is known before any is lowered, so a selected
+    // function that another one calls is exported once, as selected.
+    std::vector<const clang::FunctionDecl *> selected;
+    for (const std::string &name : selected_names_) {
+      const auto found = matches_.find(name);
+      if (found == matches_.end()) {
+        fail({}, "selected function `" + name + "` was not found");
+        return;
+      }
+      if (found->second.size() != 1) {
+        fail(found->second.front()->getLocation(),
+             "selected function `" + name + "` is overloaded");
+        return;
+      }
+      const clang::FunctionDecl *definition = found->second.front()->getDefinition();
+      if (definition == nullptr) {
+        fail(found->second.front()->getLocation(),
+             "selected function has no reachable definition");
+        return;
+      }
+      known_functions_.insert(definition->getCanonicalDecl());
+      selected.push_back(definition);
     }
-    if (matches_.size() != 1) {
-      fail(matches_.front()->getLocation(),
-           "selected function `" + selected_name_ + "` is overloaded");
-      return;
-    }
-    const clang::FunctionDecl *selected = matches_.front()->getDefinition();
-    if (selected == nullptr) {
-      fail(matches_.front()->getLocation(),
-           "selected function has no reachable definition");
-      return;
-    }
-    known_functions_.insert(selected->getCanonicalDecl());
-    auto function = lower_function(selected);
-    if (!function) {
-      return;
+    llvm::json::Array functions;
+    for (const clang::FunctionDecl *definition : selected) {
+      auto function = lower_function(definition);
+      if (!function) {
+        return;
+      }
+      functions.push_back(std::move(*function));
     }
     llvm::json::Array reachable_functions;
     for (std::size_t index = 0; index < reachable_definitions_.size(); ++index) {
@@ -239,7 +259,7 @@ public:
         });
     llvm::json::Array constants;
     for (const clang::VarDecl *constant : constant_definitions_) {
-      auto lowered = lower_constant(constant, selected);
+      auto lowered = lower_constant(constant, selected.front());
       if (!lowered) {
         return;
       }
@@ -273,7 +293,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 59;
+    artifact["schema"] = 60;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -294,7 +314,7 @@ public:
     artifact["preprocessor_files"] = std::move(preprocessor_files);
     artifact["constants"] = std::move(constants);
     artifact["records"] = std::move(records);
-    artifact["function"] = std::move(*function);
+    artifact["functions"] = std::move(functions);
     artifact["reachable_functions"] = std::move(reachable_functions);
     state_.artifact.emplace(std::move(artifact));
   }
@@ -4980,7 +5000,7 @@ private:
   std::string logical_source_;
   std::string function_source_;
   std::string logical_source_path_;
-  std::string selected_name_;
+  std::vector<std::string> selected_names_;
   std::string dependency_root_;
   std::string compilation_directory_;
   std::string compilation_file_;
@@ -4991,7 +5011,7 @@ private:
   std::unordered_map<const clang::FunctionDecl *, unsigned> local_declaration_counts_;
   const clang::VarDecl *active_catch_binding_ = nullptr;
   ExportState &state_;
-  std::vector<clang::FunctionDecl *> matches_;
+  std::map<std::string, std::vector<clang::FunctionDecl *>> matches_;
   std::unordered_set<const clang::FunctionDecl *> known_functions_;
   std::vector<const clang::FunctionDecl *> reachable_definitions_;
   std::unordered_set<const clang::CXXRecordDecl *> known_records_;
@@ -5016,7 +5036,7 @@ public:
   ExportConsumer(clang::CompilerInstance &compiler, const Options &options,
                  ExportState &state)
       : exporter_(compiler, options.logical_source, options.logical_source_path,
-                  options.function, options.dependency_root,
+                  options.functions, options.dependency_root,
                   options.compilation_directory, options.compilation_file,
                   options.compilation_command, options.exception_behavior,
                   options.library_assertions, state) {}
