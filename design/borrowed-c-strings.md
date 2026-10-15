@@ -3,10 +3,10 @@
 Status: approved 2026-10-15, with an owning `cstr_at` body. The owning body,
 the contract's choice of `views`, `owns`, or `consumes`/`produces`, and
 call-site assembly from owned bytes are implemented. The binder form (c) and
-the resource-term call map are not: binding a fieldless composite's argument
-needs a kernel concept the proposal below assumed exists (see
-[Kernel mechanism for (c)](#kernel-mechanism-for-c)). Assembly from viewed
-bytes is not implemented either (see [(d)](#d-call-site-assembly-of-a-viewed-composite)).
+the resource-term call map are being built on per-call contract value
+parameters (see [Kernel mechanism for (c)](#kernel-mechanism-for-c)), a
+kernel concept the original proposal assumed already existed. Assembly from
+viewed bytes is deferred (see [(d)](#d-call-site-assembly-of-a-viewed-composite)).
 
 `click::cstr` declares the C string:
 
@@ -169,8 +169,8 @@ own contract. `CFunctionContractInterface` already has one,
 This changes the kernel's call rule (per-call value arguments for a direct
 call, today only fixed by a function-value fact) and the function entry
 (fresh values for value parameters), and it touches certification, the
-contract interface identity, expansion, and the import summary. It needs
-maintainer approval before it is built.
+contract interface identity, expansion, and the import summary. The
+maintainer approved this mechanism on 2026-10-15.
 
 ## (d) Call-site assembly of a viewed composite
 
@@ -188,7 +188,8 @@ callee as before (`mdtests/cstr_at_owner_lends_its_string_to_a_viewing_callee.md
 With the owning body this is the answer to "should assembly lend a body's
 `owns` clauses as views": it does, from owned bytes.
 
-Assembly from bytes the caller only views is not implemented. The adapter
+Assembly from bytes the caller only views is deferred (maintainer decision,
+2026-10-15) until a real proof needs it. The adapter
 escrows an owned head; a caller holding `views src[0..n + 1u64]` has nothing
 to escrow, and lending it `views cstr_at(src, n)` needs a ledger transition
 that derives a composite description from a live view binding whose
@@ -312,13 +313,10 @@ the viewed-bytes half of 2 wait on the kernel decisions above.
 
 Decided on 2026-10-15: B (the instance binder, `s.len`); the resource-term
 map entry `{ s: cstr_at(src, n) }` is accepted; an owner lends its body's
-`owns` clauses as views; the body owns its bytes.
+`owns` clauses as views; the body owns its bytes. (c) is built on per-call
+value parameters of a C function's contract, as sketched in
+[Kernel mechanism for (c)](#kernel-mechanism-for-c). Assembly from viewed
+bytes is deferred until a real proof needs it.
 
-- (c) needs a kernel concept: per-call value parameters of a C function's
-  contract, as sketched in [Kernel mechanism for (c)](#kernel-mechanism-for-c).
-  Build that, or another representation?
-- (d) from viewed bytes needs a ledger transition that derives a composite
-  description from a covering view binding. Build it, or require callers
-  that only view the bytes to hold a `views cstr_at` instead?
 - Should `strlen` keep its `cstr::readable`-based guarantees beside the new
   ones during the migration, or switch in one step?
