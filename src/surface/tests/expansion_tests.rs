@@ -18317,3 +18317,33 @@ theorem untouched() { ensures 1 == 1 by { normalize(); } }
         "a changed import path must still be rejected"
     );
 }
+
+#[test]
+#[ignore = "nightly: signed byte conditions across fresh, expanded, and retained proofs"]
+fn known_unsigned_byte_decides_signed_comparison_in_all_proof_modes() {
+    for (fixture, function) in [
+        ("known_byte_decides_signed_char_comparison", "first_is_nul"),
+        (
+            "known_byte_decides_signed_char_comparison_cstr",
+            "terminator",
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        verify_c0_sources(&source, &sources).unwrap();
+        let expanded =
+            expand_c0_claim_source(&source, &sources, function, CProofClaim::Grouped).unwrap();
+        verify_c0_sources(&expanded, &sources).unwrap();
+        let position = expansion::position_at_offset(
+            &expanded,
+            expanded.find("ensures result == 1;").unwrap(),
+        );
+        let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+        session
+            .verify_at(&expanded, position.line, position.column)
+            .unwrap();
+    }
+}
