@@ -732,3 +732,37 @@ in their original full sidecars. The two reduced projects pass all four modes,
 and both wrong-value controls reject. mdBook, docs lint and whitespace checks
 pass; Vale is unavailable, so its advisory prose lint is skipped. No full gate
 or nightly suite was run locally.
+
+
+### String push proof and full upstream project checks
+
+PR #1027 merged, and its final pushed commit `bd36007a1` is verified in upstream
+history. The next proof-only adjustment explicitly checks string push's unchanged
+backing pointer and proves the unfolded zero terminator with `simp` instead of
+requiring it to be an exact available fact. No C, contract, resource or kernel
+changes are involved.
+
+On the current upstream kernel, the complete owned-string sidecar verifies all
+15 proofs and the complete owned-vector sidecar verifies all 13 proofs. The
+whole string project also passes fresh verification, expansion of
+`owned_string_push.contract`, rewritten-project verification and retained
+rechecking. Controls with a wrong terminator or wrong appended value are rejected
+at their final postconditions.
+
+This corrects the earlier attribution: string/vector failures described in the
+previous checkpoint are recovery-archive results, not current-upstream results.
+At archive `d6caff076`, the same explicit backing-pointer proof still fails
+after the zero store, with distinct projected pointer-read snapshots in the
+trace. The archive's later vector allocation fold also remains open. The
+[bug report](../bugs/c-pointer-field-postconditions-lose-frame-evidence.md) records
+that distinction. Its activation work and the last full archive count of 41/52
+remain unchanged. No new full example-stage or nightly verdict is claimed.
+
+The entire vector project also passes fresh verification, expansion of
+`vector_push.contract`, rewritten-project verification and retained rechecking.
+The production kernel sources are unchanged between the explicitly rebuilt
+`42315e69f` and this slice's upstream base `8fc1b58a7`; intervening changes are
+coverage prose, #1027's proof adaptations and recovery records. Recovery
+checkpoint `87ad14e1b` preserves the comparative failure evidence without keeping
+the unsuccessful archive proof edit. mdBook, docs lint and whitespace checks
+pass (Vale unavailable; advisory prose lint skipped).
