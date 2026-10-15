@@ -2744,10 +2744,11 @@ fn execute_c_statement_leaf_paths(
                 }
                 return Ok(paths);
             }
-            CStatement::Assign { name, expression }
-                if matches!(expression, CExpression::Value(_) | CExpression::Variable(_))
-                    && state.locals.slot(name).is_some()
-                    && !pending.protects_local(state, name) =>
+            CStatement::Assign {
+                name, expression, ..
+            } if matches!(expression, CExpression::Value(_) | CExpression::Variable(_))
+                && state.locals.slot(name).is_some()
+                && !pending.protects_local(state, name) =>
             {
                 let mut bare = state.clone();
                 bare.pending_thread_create = None;
@@ -3052,13 +3053,27 @@ fn execute_c_statement_leaf_paths(
             assumptions,
             budget,
         )?,
-        CStatement::Assign { name, expression } => execute_c_lvalue_assignment_paths(
-            state,
-            &c_variable(name.clone()),
+        CStatement::Assign {
+            name,
             expression,
-            assumptions,
-            budget,
-        )?,
+            source,
+        } => {
+            let mut paths = execute_c_lvalue_assignment_paths(
+                state,
+                &c_variable(name.clone()),
+                expression,
+                assumptions,
+                budget,
+            )?;
+            for path in &mut paths {
+                if let CStatementOutcome::Normal(after) = &path.outcome
+                    && let Some(fact) = source.completed(state, after, name)
+                {
+                    path.facts.push(fact);
+                }
+            }
+            paths
+        }
         CStatement::CallAssign {
             target,
             function_name,

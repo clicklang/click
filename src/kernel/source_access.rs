@@ -1,8 +1,87 @@
-//! Producer observations connecting a locked MIR operation to an actual
-//! checked memory access. These observations grant no memory permission.
+//! Producer observations connecting locked MIR operations to completed
+//! reference assignments and checked memory accesses. They grant no permission.
 use super::*;
 use std::sync::Arc;
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReferenceBorrowSourceId {
+    pub(crate) import_identity: Arc<str>,
+    pub(crate) function: Arc<str>,
+    pub(crate) block: usize,
+    pub(crate) statement: usize,
+    pub(crate) parent: Arc<str>,
+    pub(crate) child: Arc<str>,
+}
+
+/// Optional source provenance for a reference assignment; never a permission.
+#[derive(Clone, Debug, Default)]
+pub struct CStatementAssignSource(Option<Arc<ReferenceBorrowSourceId>>);
+impl CStatementAssignSource {
+    pub(crate) fn new(source: ReferenceBorrowSourceId) -> Self {
+        Self(Some(Arc::new(source)))
+    }
+    pub(super) fn completed(
+        &self,
+        before: &CState,
+        after: &CState,
+        assigned: &str,
+    ) -> Option<ExecutionPureFact> {
+        let source = self.0.as_ref()?;
+        if assigned != source.child.as_ref() {
+            return None;
+        }
+        let CValue::Pointer(parent) = before.locals.get(&source.parent)? else {
+            return None;
+        };
+        let CValue::Pointer(child) = after.locals.get(&source.child)? else {
+            return None;
+        };
+        if parent.pointer() != child.pointer() || parent.c_type() != child.c_type() {
+            return None;
+        }
+        let mut fact = ExecutionPureFact::certified(Proposition::ConditionIs(
+            ConditionTerm::PointerEqual(
+                Box::new(parent.pointer().clone()),
+                Box::new(child.pointer().clone()),
+            ),
+            true,
+        ));
+        fact.public = false;
+        fact.logical_read_equation = true;
+        fact.reference_observation = ReferenceObservationSource(Some(Arc::new(
+            ReferenceObservation::Borrow(ReferenceBorrowObservation {
+                source: source.clone(),
+                pointer: child.pointer().clone(),
+            }),
+        )));
+        Some(fact)
+    }
+}
+impl PartialEq for CStatementAssignSource {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+impl Eq for CStatementAssignSource {}
+impl std::hash::Hash for CStatementAssignSource {
+    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
+}
+impl Ord for CStatementAssignSource {
+    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
+    }
+}
+impl PartialOrd for CStatementAssignSource {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+#[derive(Debug)]
+struct ReferenceBorrowObservation {
+    source: Arc<ReferenceBorrowSourceId>,
+    pointer: Pointer,
+}
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(crate) enum ReferenceAccessKind {
     Read,
@@ -60,25 +139,38 @@ pub(crate) struct ExecutedReferenceAccess<'a> {
     pointer: &'a Pointer,
 }
 
-/// Private provenance for any completed source read, including cached values
-/// that do not mint a new load variable. Comparison ignores this metadata.
-#[derive(Clone, Debug, Default)]
-pub(crate) struct ReferenceReadSource(Option<Arc<ReferenceReadObservation>>);
 #[derive(Debug)]
-struct ReferenceReadObservation {
-    source: Arc<ReferenceAccessSourceId>,
-    pointer: Pointer,
-    snapshot: CMemorySnapshotIdentity,
-    value_type: CType,
+pub(crate) enum ExecutedReferenceBoundary<'a> {
+    Borrow {
+        source: &'a ReferenceBorrowSourceId,
+        pointer: &'a Pointer,
+    },
+    Store(ExecutedReferenceAccess<'a>),
 }
-impl ReferenceReadSource {
+
+/// One optional provenance slot for completed reads and reference births.
+/// Payloads are shared and allocated only for observed producers; comparison
+/// ignores metadata. Pure facts do not pay for an extra slot for each kind.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ReferenceObservationSource(Option<Arc<ReferenceObservation>>);
+#[derive(Debug)]
+enum ReferenceObservation {
+    Read {
+        source: Arc<ReferenceAccessSourceId>,
+        pointer: Pointer,
+        snapshot: CMemorySnapshotIdentity,
+        value_type: CType,
+    },
+    Borrow(ReferenceBorrowObservation),
+}
+impl ReferenceObservationSource {
     pub(super) fn new(
         source: Arc<ReferenceAccessSourceId>,
         pointer: Pointer,
         memory: &CMemory,
         value_type: CType,
     ) -> Self {
-        Self(Some(Arc::new(ReferenceReadObservation {
+        Self(Some(Arc::new(ReferenceObservation::Read {
             source,
             pointer,
             snapshot: CMemorySnapshotIdentity::of(memory),
@@ -88,27 +180,36 @@ impl ReferenceReadSource {
     pub(super) fn is_some(&self) -> bool {
         self.0.is_some()
     }
+    #[cfg(test)]
+    fn is_borrow(&self) -> bool {
+        matches!(self.0.as_deref(), Some(ReferenceObservation::Borrow(_)))
+    }
     pub(super) fn matches_proposition(&self, proposition: &Proposition) -> bool {
-        self.0.as_ref().is_none_or(|read| matches!(proposition,
-            Proposition::CMemoryReadDefined { memory, pointer, value_type }
-            if read.snapshot == CMemorySnapshotIdentity::of(memory) && read.pointer == *pointer && read.value_type == *value_type))
+        self.0.as_deref().is_none_or(|observation| match observation {
+            ReferenceObservation::Read { source: _, pointer: expected, snapshot, value_type: expected_type } => matches!(proposition,
+                Proposition::CMemoryReadDefined { memory, pointer, value_type }
+                if *snapshot == CMemorySnapshotIdentity::of(memory) && expected == pointer && expected_type == value_type),
+            ReferenceObservation::Borrow(birth) => matches!(proposition,
+                Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true)
+                if left.as_ref() == &birth.pointer && right.as_ref() == &birth.pointer),
+        })
     }
 }
-impl PartialEq for ReferenceReadSource {
+impl PartialEq for ReferenceObservationSource {
     fn eq(&self, _: &Self) -> bool {
         true
     }
 }
-impl Eq for ReferenceReadSource {}
-impl std::hash::Hash for ReferenceReadSource {
+impl Eq for ReferenceObservationSource {}
+impl std::hash::Hash for ReferenceObservationSource {
     fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
 }
-impl Ord for ReferenceReadSource {
+impl Ord for ReferenceObservationSource {
     fn cmp(&self, _: &Self) -> std::cmp::Ordering {
         std::cmp::Ordering::Equal
     }
 }
-impl PartialOrd for ReferenceReadSource {
+impl PartialOrd for ReferenceObservationSource {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
@@ -123,6 +224,45 @@ impl ExecutedReferenceAccess<'_> {
 }
 
 impl SymbolicCExecution {
+    /// Selected producer order, grouped by the execution path that actually
+    /// completed each operation. A label alone cannot construct a boundary.
+    pub(crate) fn executed_reference_boundaries(
+        &self,
+    ) -> impl Iterator<Item = (usize, ExecutedReferenceBoundary<'_>)> {
+        self.paths
+            .iter()
+            .enumerate()
+            .flat_map(|(path_index, path)| {
+                path.effect_facts
+                    .iter()
+                    .chain(path.facts.iter())
+                    .filter_map(move |fact| {
+                        if !fact.certified {
+                            return None;
+                        }
+                        if let Some(ReferenceObservation::Borrow(birth)) =
+                            fact.reference_observation.0.as_deref()
+                        {
+                            return Some((
+                                path_index,
+                                ExecutedReferenceBoundary::Borrow {
+                                    source: &birth.source,
+                                    pointer: &birth.pointer,
+                                },
+                            ));
+                        }
+                        let store = fact.certified_store.as_ref()?;
+                        let source = store.source.as_ref()?;
+                        (source.kind == ReferenceAccessKind::Write).then_some((
+                            path_index,
+                            ExecutedReferenceBoundary::Store(ExecutedReferenceAccess {
+                                source,
+                                pointer: &store.pointer,
+                            }),
+                        ))
+                    })
+            })
+    }
     /// Walk this selected execution's actual effects, without consulting
     /// ambient proof facts or scanning an environment/history.
     pub(crate) fn executed_reference_accesses(
@@ -141,14 +281,20 @@ impl SymbolicCExecution {
                         },
                     )
                 });
-                let read = fact.reference_read.0.as_deref().and_then(|read| {
-                    (fact.certified && read.source.kind == ReferenceAccessKind::Read).then_some(
-                        ExecutedReferenceAccess {
-                            source: &read.source,
-                            pointer: &read.pointer,
-                        },
-                    )
-                });
+                let read = fact
+                    .reference_observation
+                    .0
+                    .as_deref()
+                    .and_then(|observation| {
+                        let ReferenceObservation::Read {
+                            source, pointer, ..
+                        } = observation
+                        else {
+                            return None;
+                        };
+                        (fact.certified && source.kind == ReferenceAccessKind::Read)
+                            .then_some(ExecutedReferenceAccess { source, pointer })
+                    });
                 store.into_iter().chain(read)
             })
     }
@@ -157,6 +303,93 @@ impl SymbolicCExecution {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn borrow_fact() -> ExecutionPureFact {
+        let pointer = Pointer {
+            block: "birth".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let before = CState::new().with_local(
+            "parent",
+            CValue::typed_pointer(pointer.clone(), CType::Int32Pointer),
+        );
+        let after = before
+            .clone()
+            .with_local("child", CValue::typed_pointer(pointer, CType::Int32Pointer));
+        CStatementAssignSource::new(ReferenceBorrowSourceId {
+            import_identity: "locked".into(),
+            function: "borrow".into(),
+            block: 0,
+            statement: 0,
+            parent: "parent".into(),
+            child: "child".into(),
+        })
+        .completed(&before, &after, "child")
+        .unwrap()
+    }
+    #[test]
+    fn source_reference_rewritten_birth_discards_its_observation() {
+        let fact = borrow_fact();
+        assert!(
+            fact.clone()
+                .with_proposition(fact.proposition().clone())
+                .reference_observation
+                .is_borrow()
+        );
+        assert!(
+            !fact
+                .with_proposition(Proposition::ConditionIs(
+                    ConditionTerm::Bitvector32Equal(
+                        Box::new(Bitvector32Term::Constant(0)),
+                        Box::new(Bitvector32Term::Constant(0))
+                    ),
+                    true
+                ))
+                .reference_observation
+                .is_borrow()
+        );
+    }
+    #[test]
+    fn source_reference_birth_requires_the_completed_parent_pointer_and_type() {
+        let pointer = Pointer {
+            block: "birth".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let before = CState::new().with_local(
+            "parent",
+            CValue::typed_pointer(pointer.clone(), CType::Int32Pointer),
+        );
+        let source = CStatementAssignSource::new(ReferenceBorrowSourceId {
+            import_identity: "locked".into(),
+            function: "borrow".into(),
+            block: 0,
+            statement: 0,
+            parent: "parent".into(),
+            child: "child".into(),
+        });
+        let different_pointer = before.clone().with_local(
+            "child",
+            CValue::typed_pointer(pointer.offset_by_bytes(4), CType::Int32Pointer),
+        );
+        assert!(
+            source
+                .completed(&before, &different_pointer, "child")
+                .is_none()
+        );
+        let different_type = before.clone().with_local(
+            "child",
+            CValue::typed_pointer(pointer.clone(), CType::UInt8Pointer),
+        );
+        assert!(
+            source
+                .completed(&before, &different_type, "child")
+                .is_none()
+        );
+        let after = before
+            .clone()
+            .with_local("child", CValue::typed_pointer(pointer, CType::Int32Pointer));
+        assert!(source.completed(&before, &after, "other").is_none());
+        assert!(source.completed(&CState::new(), &after, "child").is_none());
+    }
     fn read_fact() -> ExecutionPureFact {
         let pointer = Pointer {
             block: "source-read".into(),
@@ -181,20 +414,26 @@ mod tests {
         });
         fact.public = false;
         fact.logical_read_equation = true;
-        fact.reference_read = ReferenceReadSource::new(source, pointer, &memory, CType::Int32);
+        fact.reference_observation =
+            ReferenceObservationSource::new(source, pointer, &memory, CType::Int32);
         fact
     }
     #[test]
     fn source_reference_rewritten_fact_discards_its_read_observation() {
         let fact = read_fact();
         let unchanged = fact.clone().with_proposition(fact.proposition().clone());
-        assert!(unchanged.reference_read.is_some());
+        assert!(unchanged.reference_observation.is_some());
         let mut changed = fact.proposition().clone();
         let Proposition::CMemoryReadDefined { pointer, .. } = &mut changed else {
             panic!()
         };
         *pointer = pointer.offset_by_bytes(4);
-        assert!(!fact.with_proposition(changed).reference_read.is_some());
+        assert!(
+            !fact
+                .with_proposition(changed)
+                .reference_observation
+                .is_some()
+        );
     }
     #[test]
     fn source_reference_selected_observation_merge_does_not_scan_ambient_facts() {
@@ -220,11 +459,38 @@ mod tests {
                 .unwrap()
             });
             assert_eq!(merged.len(), size as usize + 1);
-            assert!(merged.iter().last().unwrap().reference_read.is_some());
+            assert!(
+                merged
+                    .iter()
+                    .last()
+                    .unwrap()
+                    .reference_observation
+                    .is_some()
+            );
             assert!(
                 work <= 64,
                 "selected source delta scanned {size} old facts: {work}"
             );
+            let mut births = ExecutionFacts::new();
+            births.push(borrow_fact());
+            let (merged, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::reasoning::path_facts::merge_facts(
+                    &prefix,
+                    &births,
+                    &PureFactContext::new(),
+                )
+                .unwrap()
+            });
+            assert_eq!(merged.len(), size as usize + 1);
+            assert!(
+                merged
+                    .iter()
+                    .last()
+                    .unwrap()
+                    .reference_observation
+                    .is_borrow()
+            );
+            assert!(work <= 64, "birth delta scanned {size} old facts: {work}");
         }
     }
 }

@@ -996,7 +996,37 @@ impl Context<'_> {
             }
             _ => {
                 let (checks, value) = self.prepared_expr(e)?;
-                Ok(c_seq(checks, c_assign(name, value)))
+                let mut assignment = c_assign(name, value);
+                if let (
+                    Some(import_identity),
+                    Some(point),
+                    E::Borrow {
+                        place,
+                        value_type:
+                            Type::Reference {
+                                mutable: true,
+                                pointee,
+                            },
+                    },
+                ) = (&self.import_identity, self.mir_point, e)
+                    && matches!(
+                        pointee.as_ref(),
+                        Type::I32 | Type::U8 | Type::U16 | Type::U32
+                    )
+                    && let E::Deref { reference, .. } = place.as_ref()
+                    && let E::Local { name: parent } = reference.as_ref()
+                    && let CStatement::Assign { source, .. } = &mut assignment
+                {
+                    *source = CStatementAssignSource::new(ReferenceBorrowSourceId {
+                        import_identity: import_identity.clone(),
+                        function: self.function.into(),
+                        block: point.block,
+                        statement: point.statement,
+                        parent: parent.as_str().into(),
+                        child: name.into(),
+                    });
+                }
+                Ok(c_seq(checks, assignment))
             }
         }
     }

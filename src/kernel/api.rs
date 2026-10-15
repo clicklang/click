@@ -2277,6 +2277,7 @@ pub fn c_assign(name: impl Into<String>, expression: CExpression) -> CStatement 
     CStatement::Assign {
         name: name.into(),
         expression,
+        source: Default::default(),
     }
 }
 

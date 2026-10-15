@@ -211,7 +211,7 @@ pub(in crate::kernel) fn memory_effect_execution_facts(
     // the corresponding explicit transport step.
     facts.persistent_facts().filtered(|fact| {
         fact.transport_theorem().is_some()
-            || fact.reference_read.is_some()
+            || fact.reference_observation.is_some()
             || matches!(
                 fact.proposition(),
                 Proposition::CMemoryMutatesOnly { .. }
@@ -1572,7 +1572,7 @@ fn merge_facts_with_changes(
         // a source observation that must not be deduplicated.
         if fact.is_certified()
             && !fact.is_public()
-            && (fact.reference_read.is_some()
+            && (fact.reference_observation.is_some()
                 || fact
                     .certified_store_data()
                     .is_some_and(|store| store.source.as_ref().is_some()))

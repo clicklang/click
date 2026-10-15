@@ -5503,10 +5503,14 @@ pub(super) fn describe_c_statement_head(statement: &CStatement) -> String {
             describe_c_expression(target),
             describe_c_expression(source)
         ),
-        CStatement::Assign { name, expression } if is_call_result_temporary(name) => {
+        CStatement::Assign {
+            name, expression, ..
+        } if is_call_result_temporary(name) => {
             format!("{};", describe_c_expression(expression))
         }
-        CStatement::Assign { name, expression } => {
+        CStatement::Assign {
+            name, expression, ..
+        } => {
             format!("{name} = {};", describe_c_expression(expression))
         }
         CStatement::CallAssign {
