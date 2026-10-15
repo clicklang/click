@@ -35,6 +35,16 @@ The two files in `src/` are byte-for-byte copies of adler2 2.0.1, revision
 [source manifest](../../rust-checksum-sources.json). The original 0BSD license
 is included. Neither modules, derives, methods, operators, nor loops were edited.
 
+## Installed demonstration
+
+The [C/Rust checksum demonstration](../checksum-correspondence.md#reproduce)
+copies the locked fixtures and assembles these canonical proof fragments into
+ordinary CLI sidecars. Its installed workflow checks the complete computation,
+public API, two-update client, saved-state client, C producers and correspondence
+outside the checkout, without a compiler. The fragment files below are shared
+proof inputs; files such as `public-general.click` need their helper declarations
+and are not standalone CLI entries.
+
 ## Current checked boundary
 
 The `adler2` crate unit locks the Rust-2021 crate root, `std` feature, selected entry point,

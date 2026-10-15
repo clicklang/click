@@ -65,7 +65,11 @@ Click launcher, invokes the real `click install VERSION --rust` command using
 local release assets through its ordinary curl subprocess, relocates the
 installed home, and verifies both examples with an empty PATH and no user
 Rust toolchain. It checks repeated installation and locking, then offline
-verification after removing the frontend. The release workflow runs this check
+verification after removing the frontend. It also runs the
+[C/Rust checksum demonstration](https://github.com/clicklang/click/blob/master/design/charon-trial/checksum-correspondence.md#reproduce)
+from a relocated prepared directory, checking the complete C/Rust producer and
+helper bodies, real incremental/saved-state clients and correspondence theorem
+through locked imports after removing the frontend. The release workflow runs this check
 before attaching assets to a release and on pull requests touching packaging.
 The dedicated integration target stays outside the normal ten-minute gate;
 there is no development-binary fallback for its release archive.
