@@ -1043,3 +1043,27 @@ verification and retained rechecking pass on current upstream. The same control
 passes all four modes in recovery checkpoint `417678854`. This is a shared C
 compatibility baseline, not activation of the recovery model. The archive's
 grow-then-push proof and ten-failure audit remain open.
+
+### Retain checked spellings in nested proposition proofs
+
+PR #1070 merged; final head `2939473e5` is verified upstream. The next
+independent extraction retains the source-to-kernel spelling of checked
+`transport` and `instantiate` conclusions inside immutable fixed-state and
+return-outcome proposition scopes. These scopes lack the frontier/outcome
+carrier that already retained the spellings for outer proofs. A later rewrite
+can otherwise repeat the C expression's memory reasoning.
+
+The existing persistent proof-local index now carries those spellings. Rewrites
+substitute proof binders before indexed lookup and still require an available
+checked fact. Instantiation freezes its evaluated argument so historical
+expressions cannot evaluate it at a different point. Unsupported spellings
+remain optional, and new goals still lower against their actual state. No
+resource, pointer-origin or object authority is introduced.
+
+Both new deterministic controls pass at 0/16/64/256 unrelated-fact sizes;
+retained lookup costs less than re-lowering. They reject a spelling without
+its fact, a missing instantiation guard, and reuse after rebinding a proof name.
+All 107 selected logical/expansion/index controls pass on current upstream.
+The normal Markdown audit is running separately. The recovery return-frontier
+repair is checkpointed at `3712a8fb2`; the original vector remains incomplete,
+and the last archive audit remains 42/52.
