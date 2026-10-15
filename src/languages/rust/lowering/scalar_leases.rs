@@ -1,15 +1,36 @@
 //! Emit explicit checked births and source-frontier ends while lowering each
 //! selected MIR statement. The forest analysis is indexed once per function.
+use super::super::borrow_frontiers::MirPoint;
 use super::super::borrow_frontiers::lease_forest::{CheckedForest, certify};
 use super::*;
 
-pub(super) fn prepare(function: &Function, identity: Option<&str>) -> Option<CheckedForest> {
-    certify(function, identity)
+pub(super) fn prepare(
+    function: &Function,
+    identity: Option<&str>,
+    joins: Option<&[usize]>,
+) -> Option<CheckedForest> {
+    certify(function, identity, joins?)
+}
+
+pub(super) fn endings(forest: &CheckedForest, point: MirPoint) -> CStatement {
+    forest
+        .endings
+        .get(&point)
+        .into_iter()
+        .flatten()
+        .fold(c_skip(), |prefix, key| {
+            c_seq(
+                prefix,
+                CStatement::EndScalarReference(crate::kernel::CScalarReferenceEnd::new(
+                    key.clone(),
+                )),
+            )
+        })
 }
 
 pub(super) fn decorate(
     forest: &CheckedForest,
-    point: usize,
+    point: MirPoint,
     statement: &mut CStatement,
 ) -> Result<(), String> {
     if let Some(birth) = forest.births.get(&point) {
@@ -30,8 +51,8 @@ pub(super) fn decorate(
                     && source.as_ref().is_some_and(|source| {
                         source.import_identity == birth.key.import_identity
                             && source.function == birth.key.function
-                            && source.block == 0
-                            && source.statement == point
+                            && source.block == birth.key.block
+                            && source.statement == point.statement
                             && source.parent.as_ref() == birth.parent
                             && source.child.as_ref() == birth.child
                     }) =>
@@ -55,18 +76,17 @@ pub(super) fn decorate(
             );
         }
     }
-    if let Some(endings) = forest.endings.get(&(point + 1)) {
-        let original = std::mem::replace(statement, c_skip());
-        let ends = endings.iter().fold(c_skip(), |prefix, key| {
-            c_seq(
-                prefix,
-                CStatement::EndScalarReference(crate::kernel::CScalarReferenceEnd::new(
-                    key.clone(),
-                )),
-            )
-        });
-        *statement = c_seq(original, ends);
-    }
+    let original = std::mem::replace(statement, c_skip());
+    *statement = c_seq(
+        original,
+        endings(
+            forest,
+            MirPoint {
+                block: point.block,
+                statement: point.statement + 1,
+            },
+        ),
+    );
     Ok(())
 }
 
@@ -122,6 +142,26 @@ mod tests {
                 "separate_frontiers",
                 2,
             ),
+            (
+                include_bytes!(
+                    "../../../../design/charon-trial/gate-fixtures/scalar-branches/borrow.ullbc"
+                ),
+                include_bytes!(
+                    "../../../../design/charon-trial/gate-fixtures/scalar-branches/borrow.rs"
+                ),
+                "branch_update",
+                1,
+            ),
+            (
+                include_bytes!(
+                    "../../../../design/charon-trial/gate-fixtures/scalar-branches/borrow.ullbc"
+                ),
+                include_bytes!(
+                    "../../../../design/charon-trial/gate-fixtures/scalar-branches/borrow.rs"
+                ),
+                "nested_branch_update",
+                2,
+            ),
         ];
         for &(artifact, source, function, expected) in fixtures {
             let export =
@@ -141,6 +181,14 @@ mod tests {
                     CStatement::Seq(first, second) => {
                         pending.push(first);
                         pending.push(second);
+                    }
+                    CStatement::If {
+                        then_branch,
+                        else_branch,
+                        ..
+                    } => {
+                        pending.push(then_branch);
+                        pending.push(else_branch);
                     }
                     CStatement::Assign { source, .. } => {
                         births += usize::from(*source != CStatementAssignSource::default())

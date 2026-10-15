@@ -666,3 +666,338 @@ fn source_scalar_lease_explicit_end_handles_scalar_expressions_and_unused_childr
         assert!(!state.has_local_scalar_references());
     }
 }
+
+// Each diamond preserves the reference aliases and ledger. Only scalar data
+// differs on its arms; the final continuation resumes ordinary parent access.
+fn branch_export(depth: usize, diamonds: usize) -> r::RustExport {
+    assert!(diamonds > 0);
+    let mut source = nested_export(depth);
+    source.functions[0]
+        .parameters
+        .push(place("choose", Type::Bool));
+    let mir = source.functions[0].mir.as_mut().unwrap();
+    let mut births = mir.blocks[0].statements.clone();
+    births.truncate(depth);
+    let child = if depth == 1 {
+        "child".into()
+    } else {
+        format!("nested_{}", depth - 1)
+    };
+    let mut blocks = vec![];
+    for index in 0..diamonds {
+        let first = index * 3;
+        blocks.push(r::MirBlock {
+            statements: if index == 0 { births.clone() } else { vec![] },
+            terminator: r::MirTerminator::If {
+                condition: local("choose"),
+                then_target: first + 1,
+                else_target: first + 2,
+            },
+        });
+        for value in [7, 9] {
+            blocks.push(r::MirBlock {
+                statements: vec![assign(deref(&child), E::Integer { value })],
+                terminator: r::MirTerminator::Goto { target: first + 3 },
+            });
+        }
+    }
+    blocks.push(r::MirBlock {
+        statements: vec![assign(deref("parent"), E::Integer { value: 8 })],
+        terminator: r::MirTerminator::Return,
+    });
+    mir.blocks = blocks;
+    source
+}
+
+#[test]
+fn source_scalar_lease_branches_keep_identical_live_ledger_until_common_end() {
+    for depth in [1, 2, 4] {
+        let (program, _scope) = alias_body(&branch_export(depth, 1));
+        let statements = leaves(&program);
+        let (entry, support) = initial();
+        let mut active = entry.with_local("choose", bool_value(1));
+        let branches = statements
+            .iter()
+            .find_map(|statement| {
+                if let CStatement::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } = statement
+                {
+                    Some((then_branch.as_ref(), else_branch.as_ref()))
+                } else {
+                    active = normal(execute(&active, statement));
+                    None
+                }
+            })
+            .unwrap();
+        let left = normal(execute(&active, branches.0));
+        let right = normal(execute(&active, branches.1));
+        assert_eq!(left.loan_ledger(), active.loan_ledger());
+        assert_eq!(right.loan_ledger(), active.loan_ledger());
+        for state in [&left, &right] {
+            assert!(state.has_local_scalar_references());
+            assert!(matches!(
+                read(state, c_load(c_variable("parent"))),
+                CExpressionOutcome::RuntimeError(_)
+            ));
+            assert!(matches!(
+                execute(state, &c_store(c_variable("parent"), c_int32_literal(6))),
+                CStatementOutcome::RuntimeError(_)
+            ));
+        }
+        // Match the production interface join: all equal arm locals retain
+        // their exact values, including the private reference identities.
+        let mut common = left
+            .locals()
+            .object_values()
+            .map(|(name, value)| (name.to_string(), value.clone()))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        common.retain(|name, value| right.locals().get(name) == Some(value));
+        let joined =
+            abstract_c_state_for_interface_join_across(&left, &[&left, &right], &common, 0)
+                .unwrap();
+        assert_eq!(joined.state.loan_ledger(), active.loan_ledger());
+        let endings = ends(&program);
+        assert_eq!(endings.len(), depth);
+        // The raw abstraction is a placeholder with no resources. Publish
+        // only the frame already held on both checked arms, as the production
+        // branch interface does after validating its exports.
+        assert_eq!(left.resources(), right.resources());
+        let mut recovered = joined.state.with_resource_context(left.resources().clone());
+        for end in &endings {
+            recovered = normal(execute(&recovered, end));
+        }
+        assert!(!recovered.has_local_scalar_references());
+        assert!(recovered.loan_ledger().unwrap().invariant_holds());
+        assert!(
+            recovered
+                .resources()
+                .owned_fact_for_occurrence(support)
+                .is_some()
+        );
+        assert!(matches!(
+            read(&recovered, c_load(c_variable("parent"))),
+            CExpressionOutcome::Value(_)
+        ));
+        let stale = read(&recovered, c_load(c_variable("child")));
+        assert!(
+            matches!(
+                stale,
+                CExpressionOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+            ),
+            "stale result: {stale:?}; before join: {:?}; after recovery: {:?}",
+            active.locals().get("child"),
+            recovered.locals().get("child")
+        );
+        assert!(matches!(
+            execute(&recovered, &endings[0]),
+            CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+        ));
+        for flag in [0, 1] {
+            let (initial, support) = initial();
+            let CStatementOutcome::Return { state, .. } =
+                execute(&initial.with_local("choose", bool_value(flag)), &program)
+            else {
+                panic!("branch return");
+            };
+            assert!(!state.has_local_scalar_references());
+            assert!(
+                state
+                    .resources()
+                    .owned_fact_for_occurrence(support)
+                    .is_some()
+            );
+            assert_eq!(
+                read(&state, c_load(c_variable("parent"))),
+                CExpressionOutcome::Value(int32(8))
+            );
+        }
+    }
+}
+
+#[test]
+fn source_scalar_lease_branches_refuse_reference_mutations_early_returns_and_loops() {
+    let base = branch_export(1, 1);
+    for variation in 0..5 {
+        let mut source = base.clone();
+        let mir = source.functions[0].mir.as_mut().unwrap();
+        match variation {
+            0 => mir.blocks[1]
+                .statements
+                .push(assign(local("child"), local("parent"))),
+            1 => mir.blocks[1].statements.push(assign(
+                local("child"),
+                E::Borrow {
+                    place: Box::new(deref("parent")),
+                    value_type: reference_type(),
+                },
+            )),
+            2 => mir.blocks[1].terminator = r::MirTerminator::Return,
+            3 => mir.blocks[1].terminator = r::MirTerminator::Goto { target: 0 },
+            _ => {
+                mir.blocks[1].terminator = r::MirTerminator::Call {
+                    function: "opaque".into(),
+                    arguments: vec![],
+                    owned_arguments: vec![],
+                    destination: "x".into(),
+                    target: 3,
+                    through_pointer: false,
+                }
+            }
+        }
+        if let Ok((functions, _)) =
+            crate::languages::rust::lowering::lower_with_identity(&source, Some("locked"))
+        {
+            let program = functions[0].to_kernel_function().body().clone();
+            assert!(ends(&program).is_empty(), "variation {variation}");
+            assert!(!leaves(&program).iter().any(|statement| matches!(statement, CStatement::Assign { source, .. } if source.lease_plan().is_some())), "variation {variation}");
+        }
+    }
+}
+
+#[test]
+fn source_scalar_lease_branch_conditions_and_later_join_reads_extend_the_frontier() {
+    for late_read in [false, true] {
+        let mut source = branch_export(1, 1);
+        let mir = source.functions[0].mir.as_mut().unwrap();
+        let r::MirTerminator::If { condition, .. } = &mut mir.blocks[0].terminator else {
+            unreachable!()
+        };
+        *condition = E::Binary {
+            operator: "eq".into(),
+            left_type: Type::I32,
+            right_type: Type::I32,
+            left: Box::new(deref("child")),
+            right: Box::new(E::Integer { value: 4 }),
+        };
+        for block in [1, 2] {
+            mir.blocks[block].statements = vec![assign(
+                local("x"),
+                E::Integer {
+                    value: block as i32,
+                },
+            )];
+        }
+        if late_read {
+            mir.blocks[3]
+                .statements
+                .insert(0, assign(local("x"), deref("child")));
+        }
+        let (program, _scope) = alias_body(&source);
+        let ending = ends(&program).pop().unwrap();
+        let CStatement::EndScalarReference(identity) = &ending else {
+            unreachable!()
+        };
+        assert_eq!(
+            (identity.0.end_block, identity.0.end),
+            (3, usize::from(late_read))
+        );
+        let (active, _) = boundary(&initial().0, &program);
+        assert!(active.has_local_scalar_references());
+        assert_eq!(
+            read(&active, c_load(c_variable("child"))),
+            CExpressionOutcome::Value(int32(4))
+        );
+        let recovered = normal(execute(&active, &ending));
+        assert!(!recovered.has_local_scalar_references());
+        if late_read {
+            assert_eq!(recovered.locals.get("x"), Some(&int32(4)));
+        }
+    }
+}
+
+#[test]
+fn source_scalar_lease_nested_branch_regions_end_only_at_outer_continuation() {
+    let mut source = branch_export(2, 1);
+    let mir = source.functions[0].mir.as_mut().unwrap();
+    mir.blocks[1] = r::MirBlock {
+        statements: vec![],
+        terminator: r::MirTerminator::If {
+            condition: local("choose"),
+            then_target: 4,
+            else_target: 5,
+        },
+    };
+    for value in [5, 6] {
+        mir.blocks.push(r::MirBlock {
+            statements: vec![assign(deref("nested_1"), E::Integer { value })],
+            terminator: r::MirTerminator::Goto { target: 3 },
+        });
+    }
+    let (program, _scope) = alias_body(&source);
+    let endings = ends(&program);
+    assert_eq!(endings.len(), 2);
+    for end in &endings {
+        let CStatement::EndScalarReference(identity) = end else {
+            unreachable!()
+        };
+        assert_eq!((identity.0.end_block, identity.0.end), (3, 0));
+    }
+    for (flag, expected) in [(1, 5), (0, 9)] {
+        let (active, _) = boundary(
+            &initial().0.with_local("choose", bool_value(flag)),
+            &program,
+        );
+        assert_eq!(
+            read(&active, c_load(c_variable("nested_1"))),
+            CExpressionOutcome::Value(int32(expected))
+        );
+        let mut recovered = active;
+        for end in &endings {
+            recovered = normal(execute(&recovered, end));
+        }
+        assert_eq!(
+            read(&recovered, c_load(c_variable("parent"))),
+            CExpressionOutcome::Value(int32(expected))
+        );
+    }
+}
+
+#[test]
+fn source_scalar_lease_birth_after_join_binds_actual_nonentry_source_point() {
+    let mut source = branch_export(1, 2);
+    let mir = source.functions[0].mir.as_mut().unwrap();
+    mir.locals.push(place("grandchild", reference_type()));
+    mir.blocks[3].statements.push(assign(
+        local("grandchild"),
+        E::Borrow {
+            place: Box::new(deref("child")),
+            value_type: reference_type(),
+        },
+    ));
+    for block in [4, 5] {
+        let M::Assign { target, .. } = &mut mir.blocks[block].statements[0] else {
+            unreachable!()
+        };
+        *target = deref("grandchild");
+    }
+    let (program, _scope) = alias_body(&source);
+    let endings = ends(&program);
+    assert_eq!(endings.len(), 2);
+    let blocks = endings
+        .iter()
+        .map(|end| {
+            let CStatement::EndScalarReference(identity) = end else {
+                unreachable!()
+            };
+            assert_eq!((identity.0.end_block, identity.0.end), (6, 0));
+            identity.0.block
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(blocks, vec![3, 0]);
+    for flag in [0, 1] {
+        let CStatementOutcome::Return { state, .. } = execute(
+            &initial().0.with_local("choose", bool_value(flag)),
+            &program,
+        ) else {
+            panic!("nonentry birth return");
+        };
+        assert!(!state.has_local_scalar_references());
+        assert_eq!(
+            read(&state, c_load(c_variable("parent"))),
+            CExpressionOutcome::Value(int32(8))
+        );
+    }
+}

@@ -103,6 +103,7 @@ fn source_scalar_lease_selected_end_is_indexed_across_live_nested_handles() {
                 family: family.clone(),
                 block: 0,
                 borrow: birth,
+                end_block: 0,
                 end: depth + 1,
             };
             let (next, child) = state
@@ -132,4 +133,23 @@ fn source_scalar_lease_selected_end_is_indexed_across_live_nested_handles() {
         measurements[3].1 < measurements[0].1 * 4,
         "{measurements:?}"
     );
+}
+
+#[test]
+fn source_scalar_lease_branch_preparation_scales_with_shared_diamonds() {
+    for depth in [1, 8] {
+        let mut measurements = vec![];
+        for count in [16, 64, 256, 1024] {
+            let source = branch_export(depth, count);
+            let (program, work) = crate::instrumentation::measure_deterministic_work(|| {
+                body(&source, "locked-source")
+            });
+            assert_eq!(ends(&program).len(), depth);
+            measurements.push((count, work));
+        }
+        eprintln!("common-frontier preparation depth {depth}: {measurements:?}");
+        for pair in measurements.windows(2) {
+            assert!(pair[1].1 <= pair[0].1 * 5 + 100, "{measurements:?}");
+        }
+    }
 }

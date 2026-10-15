@@ -4525,3 +4525,37 @@ fn rust_nested_scalar_borrows_end_explicitly_at_shared_and_separate_frontiers() 
         source
     );
 }
+
+#[test]
+#[ignore = "nightly: scalar leases across branches with checked expansion"]
+fn rust_scalar_borrow_stays_live_through_both_branch_arms_and_ends_at_join() {
+    let source = include_str!("../design/charon-trial/gate-fixtures/scalar-branches/borrow.rs");
+    let p = gate_fixtures::project("scalar-branches", source);
+    let proof = "verifying \"borrow.rs\";\nfn branch_update(parent: &mut i32, choose: bool) { owns *parent; ensures *parent == (if choose { 8 } else { 10 }); } by { execute(); simp(); }\nfn nested_branch_update(parent: &mut i32, choose: bool) { owns *parent; ensures *parent == (if choose { 9 } else { 11 }); } by { execute(); simp(); }\nfn branch_caller(parent: &mut i32, choose: bool) { owns *parent; ensures *parent == (if choose { 8 } else { 10 }); } by { execute(); simp(); }\n";
+    fs::write(p.root.join("borrow.click"), proof).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(proof, &prepared).unwrap();
+    for invalid in [
+        proof.replacen(
+            "if choose { 8 } else { 10 }",
+            "if choose { 7 } else { 9 }",
+            1,
+        ),
+        proof.replace("if choose { 9 } else { 11 }", "if choose { 8 } else { 10 }"),
+        proof.replacen("owns *parent;", "views *parent;", 1),
+    ] {
+        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+    }
+    for claim in [
+        "branch_update.contract",
+        "nested_branch_update.contract",
+        "branch_caller.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+    }
+    assert_cli(&p, &["verify"]);
+    assert_eq!(
+        fs::read_to_string(p.root.join("borrow.rs")).unwrap(),
+        source
+    );
+}
