@@ -4393,6 +4393,7 @@ fn call_separation_requirements_ignore_unrelated_owned_objects() {
     let unproved = "requires separate(memory(a->left), memory(b->left));";
     let mut separated_work = Vec::new();
     let mut guarded_work = Vec::new();
+    let mut refused_work = Vec::new();
     for size in [2, 4, 8, 16] {
         let parameters = (0..size)
             .map(|i| format!(", struct node* q{i}"))
@@ -4434,11 +4435,22 @@ fn call_separation_requirements_ignore_unrelated_owned_objects() {
         guarded_work.push(run(guarded, guard) - run(guard, guard));
         // `b->left` is neither owned nor separated from `a->left` by
         // anything the caller knows: the requirement stays unproved.
+        let (refused, work) = checking(unproved, "");
+        refused_work.push(work);
         assert!(
-            checking(unproved, "").0.is_err(),
+            refused.is_err(),
             "an unestablished separation passed beside {size} owned objects"
         );
     }
+    eprintln!(
+        "call separation work: proved {separated_work:?}, guarded {guarded_work:?}, refused {refused_work:?}"
+    );
+    assert!(
+        refused_work
+            .iter()
+            .all(|work| *work > 0 && *work == refused_work[0]),
+        "refused requirement checking grows with unrelated owners: {refused_work:?}"
+    );
     assert!(
         separated_work.iter().all(|work| *work == separated_work[0]),
         "separation requirement checking grows with unrelated owned objects: {separated_work:?}"
