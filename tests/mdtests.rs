@@ -267,7 +267,7 @@ const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] 
             HiddenPrerequisiteRoute::KernelCondition,
             "decide_with_facts",
         ),
-        32,
+        22,
     ),
     // `issues/simplify-step.md` step 5 drives these to zero.
     (

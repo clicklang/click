@@ -85,6 +85,9 @@ pub(crate) struct DifferenceGraph {
     cast_links: PersistentMap<NodeId, CastLink>,
     /// The casts waiting on each operand node.
     casts_of: PersistentMap<NodeId, crate::persistent::PersistentSet<NodeId>>,
+    /// Known low bits of 64-bit values (`Residues`): alignment and tag
+    /// facts such as `addr & 7 == 0`.
+    residues: Residues,
     /// Pointer equality facts: a union-find over the pointer terms they
     /// name (`pointer_ids`, `pointer_parent`, `pointer_size`), with each
     /// class root's known-unequal pointers, so `p == null` and `q != null`
@@ -175,6 +178,9 @@ impl DifferenceGraph {
     /// Records a true or false condition fact. A fact difference logic does
     /// not express is ignored.
     pub(crate) fn assume_condition(&mut self, condition: &ConditionTerm, value: bool) {
+        if value && let ConditionTerm::Bitvector64Equal(a, b) = condition {
+            self.residues.assume_equal(a, b);
+        }
         if let ConditionTerm::PointerEqual(a, b) = condition {
             if !self.pointers.assume(a, b, value) {
                 self.contradictory = true;
@@ -845,6 +851,9 @@ impl DifferenceGraph {
                     return Some(false);
                 }
             }
+            if let C::Bitvector64Equal(a, b) = condition {
+                return self.residues.decide_equal(a, b);
+            }
             return None;
         }
         let [(domain, ref lower, ref upper, strict)] = condition_orders(condition, true)[..] else {
@@ -1307,6 +1316,212 @@ fn offset_mismatch(
             let count = bytes / width;
             (bytes % width != 0 || i32::try_from(count).is_err()).then_some(false)
         }
+        _ => None,
+    }
+}
+
+/// Known low bits of 64-bit values: `term ≡ r (mod 2^k)`, from facts
+/// `x & (2^k - 1) == c` and from 64-bit equalities, which define one side's
+/// residue through the other's. Residues survive wrapping, so they relate
+/// `addr + 1` to `addr` where a difference link (which needs no wrap) does
+/// not: an 8-aligned `addr` gives `(addr + 1) & 3 == 1`.
+#[derive(Clone, Debug, Default)]
+struct Residues {
+    known: PersistentMap<Bitvector32Term, Residue>,
+    /// The terms each term was stated equal to, at most `EDGE_LIMIT` each.
+    equal_to: PersistentMap<Bitvector32Term, crate::persistent::PersistentSet<Bitvector32Term>>,
+}
+
+/// `value mod 2^bits`, with `bits == 64` the exact value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Residue {
+    bits: u32,
+    value: u64,
+}
+
+impl Residue {
+    fn new(bits: u32, value: u64) -> Self {
+        let bits = bits.min(64);
+        Self {
+            bits,
+            value: value & low_mask(bits),
+        }
+    }
+
+    fn exact(value: u64) -> Self {
+        Self::new(64, value)
+    }
+
+    fn combine(self, other: Self, op: impl Fn(u64, u64) -> u64) -> Self {
+        Self::new(self.bits.min(other.bits), op(self.value, other.value))
+    }
+
+    fn better(a: Option<Self>, b: Option<Self>) -> Option<Self> {
+        match (a, b) {
+            (Some(a), Some(b)) => Some(if b.bits > a.bits { b } else { a }),
+            (a, b) => a.or(b),
+        }
+    }
+}
+
+fn low_mask(bits: u32) -> u64 {
+    if bits >= 64 {
+        u64::MAX
+    } else {
+        (1u64 << bits) - 1
+    }
+}
+
+/// A 64-bit constant's bits.
+fn constant64(term: &Bitvector32Term) -> Option<u64> {
+    match term {
+        Bitvector32Term::UInt64Constant(value) => Some(*value),
+        Bitvector32Term::Int64Constant(value) => Some(*value as u64),
+        _ => None,
+    }
+}
+
+impl Residues {
+    /// How far a residue follows stated equalities and term structure.
+    const DEPTH: u32 = 6;
+
+    fn assume_equal(&mut self, a: &Bitvector32Term, b: &Bitvector32Term) {
+        charge();
+        for (side, other) in [(a, b), (b, a)] {
+            // `x & (2^k - 1) == c` gives `x ≡ c (mod 2^k)`.
+            if let Bitvector32Term::UInt64BitwiseAnd(x, mask)
+            | Bitvector32Term::Int64BitwiseAnd(x, mask) = side
+                && let (Some(mask), Some(c)) = (constant64(mask), constant64(other))
+                && mask != 0
+                && mask & mask.wrapping_add(1) == 0
+                && c & !mask == 0
+            {
+                let bits = 64 - mask.leading_zeros();
+                self.known.insert(x.as_ref().clone(), Residue::new(bits, c));
+            }
+            if constant64(side).is_none() {
+                let set = self.equal_to.get(side).cloned().unwrap_or_default();
+                if set.len() < EDGE_LIMIT {
+                    self.equal_to
+                        .insert(side.clone(), set.with_value(other.clone()));
+                }
+            }
+        }
+    }
+
+    fn decide_equal(&self, a: &Bitvector32Term, b: &Bitvector32Term) -> Option<bool> {
+        let (a, b) = (self.residue(a, Self::DEPTH)?, self.residue(b, Self::DEPTH)?);
+        let bits = a.bits.min(b.bits);
+        if (a.value ^ b.value) & low_mask(bits) != 0 {
+            return Some(false);
+        }
+        (a.bits == 64 && b.bits == 64).then_some(true)
+    }
+
+    fn residue(&self, term: &Bitvector32Term, depth: u32) -> Option<Residue> {
+        use Bitvector32Term as T;
+        charge();
+        if let Some(value) = constant64(term) {
+            return Some(Residue::exact(value));
+        }
+        let mut best = self.known.get(term).copied();
+        if depth == 0 {
+            return best;
+        }
+        if let Some(equal) = self.equal_to.get(term) {
+            for other in equal.iter().take(EDGE_LIMIT) {
+                best = Residue::better(best, self.residue(other, depth - 1));
+            }
+        }
+        let structural = match term {
+            T::UInt64Add(a, b) | T::Int64Add(a, b) => self
+                .residue(a, depth - 1)
+                .zip(self.residue(b, depth - 1))
+                .map(|(a, b)| a.combine(b, u64::wrapping_add)),
+            T::UInt64Subtract(a, b) | T::Int64Subtract(a, b) => self
+                .residue(a, depth - 1)
+                .zip(self.residue(b, depth - 1))
+                .map(|(a, b)| a.combine(b, u64::wrapping_sub)),
+            T::UInt64BitwiseAnd(a, b)
+            | T::Int64BitwiseAnd(a, b)
+            | T::UInt64BitwiseOr(a, b)
+            | T::Int64BitwiseOr(a, b)
+            | T::UInt64BitwiseXor(a, b)
+            | T::Int64BitwiseXor(a, b) => {
+                let (operand, c) = match (constant64(a), constant64(b)) {
+                    (_, Some(c)) => (a.as_ref(), c),
+                    (Some(c), _) => (b.as_ref(), c),
+                    _ => return best,
+                };
+                let x = self.residue(operand, depth - 1);
+                match term {
+                    T::UInt64BitwiseAnd(..) | T::Int64BitwiseAnd(..) => {
+                        // A mask within the known bits gives the exact
+                        // value; a mask with zero low bits clears them.
+                        let cleared = Residue::new(c.trailing_zeros(), 0);
+                        let known = x.map(|x| {
+                            if c & !low_mask(x.bits) == 0 {
+                                Residue::exact(x.value & c)
+                            } else {
+                                Residue::new(x.bits, x.value & c)
+                            }
+                        });
+                        Residue::better(known, (cleared.bits > 0).then_some(cleared))
+                    }
+                    T::UInt64BitwiseOr(..) | T::Int64BitwiseOr(..) => {
+                        x.map(|x| Residue::new(x.bits, x.value | c))
+                    }
+                    _ => x.map(|x| Residue::new(x.bits, x.value ^ c)),
+                }
+            }
+            T::PointerAddress(pointer) => self.address_residue(pointer, depth - 1),
+            _ => None,
+        };
+        Residue::better(best, structural)
+    }
+
+    /// `addr(p + o)` is `addr(p) + o`: the address of a pointer whose
+    /// offset is a sum, read through the address of one summand's pointer.
+    fn address_residue(&self, pointer: &Pointer, depth: u32) -> Option<Residue> {
+        use crate::kernel::PointerOffsetTerm as O;
+        let O::Add(left, right) = &pointer.offset else {
+            return None;
+        };
+        let mut best = None;
+        for (base, offset) in [(left, right), (right, left)] {
+            let base = Bitvector32Term::PointerAddress(Box::new(Pointer {
+                block: pointer.block.clone(),
+                offset: base.as_ref().clone(),
+            }));
+            let found = self
+                .residue(&base, depth)
+                .zip(offset_residue(offset))
+                .map(|(a, b)| a.combine(b, u64::wrapping_add));
+            best = Residue::better(best, found);
+        }
+        best
+    }
+}
+
+/// The residue of a pointer offset's byte count: exact for constants, and
+/// `0 mod 2^tz(w)` for `w` times an unknown index.
+fn offset_residue(offset: &PointerOffsetTerm) -> Option<Residue> {
+    use crate::kernel::PointerOffsetTerm as O;
+    charge();
+    match offset {
+        O::Constant(bytes) => Some(Residue::exact(*bytes as u64)),
+        O::Int32Scaled { value, byte_width } => match value.as_ref() {
+            Bitvector32Term::Constant(index) => Some(Residue::exact(
+                i64::from(*index as i32).wrapping_mul(*byte_width) as u64,
+            )),
+            _ => (*byte_width != 0).then(|| Residue::new(byte_width.trailing_zeros(), 0)),
+        },
+        O::Int64Scaled { byte_width, .. } => {
+            (*byte_width != 0).then(|| Residue::new(byte_width.trailing_zeros(), 0))
+        }
+        O::Add(a, b) => offset_residue(a)
+            .zip(offset_residue(b))
+            .map(|(a, b)| a.combine(b, u64::wrapping_add)),
         _ => None,
     }
 }
