@@ -1,7 +1,7 @@
 use super::*;
 use crate::kernel::ExecutionFactSource;
 use crate::kernel::ResourceInstance;
-use crate::surface::planning::proposition_search::proves_by_tactic_search;
+use crate::surface::planning::proposition_search::decided_without_search;
 use crate::surface::proof::execution_planning::refuse_or_record_open_obligation;
 use crate::surface::proof_diagnostics::render::{
     render_resource_fact_diagnostic, render_resource_facts_diagnostic,
@@ -1636,7 +1636,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             .owned_quantity_term()
             .expect("an explicitly quantified observation lowers to owned authority");
         let positive = quantity.as_const().is_some_and(|value| value > 0)
-            || proves_by_tactic_search(
+            || decided_without_search(
                 &assumptions,
                 &Proposition::ConditionIs(
                     ConditionTerm::Bitvector32SignedGreaterThan(
@@ -1645,7 +1645,6 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
                     ),
                     true,
                 ),
-                "observe quantity positive",
             );
         if !positive {
             // The count lower bound remains valid for zero or an undecided
@@ -2217,7 +2216,7 @@ fn try_select_composite_resource_body(
             }
             _ => false,
         },
-        _ => proves_by_tactic_search(assumptions, proposition, "resource body selection"),
+        _ => decided_without_search(assumptions, proposition),
     };
     if proves_condition(&lowered) {
         return Ok(Some(true));
@@ -3156,9 +3155,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             ConditionTerm::Bitvector32Equal(Box::new(count), Box::new(quantity)),
             true,
         );
-        if !final_by_constant
-            && !proves_by_tactic_search(&assumptions, &final_unit, "unfold population final unit")
-        {
+        if !final_by_constant && !decided_without_search(&assumptions, &final_unit) {
             return Err(ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `unfold({})` Requires count({}) == {}",
                 describe_resource_clause(resource),
@@ -3782,7 +3779,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             };
             let assumptions = pure_facts.assumptions();
             let quantity_is_zero = quantity.as_const() == Some(0)
-                || proves_by_tactic_search(
+                || decided_without_search(
                     assumptions,
                     &Proposition::ConditionIs(
                         ConditionTerm::Bitvector32Equal(
@@ -3791,7 +3788,6 @@ fn fold_composite_resources_on_outcome_with_facts(
                         ),
                         true,
                     ),
-                    "fold quantity zero",
                 );
             // A resource quantity is a signed `int32`, and `as_const` answers
             // `u32`, so `-1` read here as `4294967295` was both "positive"
@@ -3799,7 +3795,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             // beside it always asked the signed question; reading the
             // constant signed is what makes the two agree.
             let quantity_is_positive = quantity.as_const().is_some_and(|value| (value as i32) > 0)
-                || proves_by_tactic_search(
+                || decided_without_search(
                     assumptions,
                     &Proposition::ConditionIs(
                         ConditionTerm::Bitvector32SignedGreaterThan(
@@ -3808,7 +3804,6 @@ fn fold_composite_resources_on_outcome_with_facts(
                         ),
                         true,
                     ),
-                    "fold quantity positive",
                 );
             if !quantity_is_zero && !quantity_is_positive {
                 return Err(ClickError::new(format!(

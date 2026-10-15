@@ -2141,7 +2141,7 @@ pub(super) fn c_ranking_measure_term(
 /// the constant `true`: it keeps the bundle's one-member-per-component shape
 /// without asking a proof for anything. The Integer image `to_integer(n)` of
 /// a `Nat` is the same case: the checked conversion law
-/// `nat_integer_nonnegative` states exactly this member.
+/// `nat::to_integer_nonnegative` states exactly this member.
 pub(super) fn ranking_nonnegative_proposition(value: &CRankingMeasureValue) -> Proposition {
     Proposition::ConditionIs(
         match value {
@@ -6564,97 +6564,6 @@ mod local_descent_tests {
         }
     }
 
-    /// Each sequential `if` used to double the list of path bounds the
-    /// recursion checker carried, so a recursive function with a few dozen
-    /// of them before its ranked call could not be checked at all. The list
-    /// now holds one bound per join, which decides every edge the same way.
-    #[test]
-    fn a_recursion_check_is_linear_in_sequential_branches() {
-        let n = || crate::kernel::c_variable("n");
-        let literal = |value: u32| crate::kernel::c_int32_literal(value);
-        let guarded_call = |argument: CExpression| {
-            crate::kernel::c_if(
-                crate::kernel::c_greater_than(n(), literal(0)),
-                crate::kernel::c_call("countdown", vec![argument]),
-                CStatement::Skip,
-            )
-        };
-        // A balanced sequence, so the walk's depth is logarithmic and the
-        // test measures the branch count and not the nesting.
-        fn sequence(statements: &[CStatement]) -> CStatement {
-            match statements {
-                [] => CStatement::Skip,
-                [only] => only.clone(),
-                _ => {
-                    let (left, right) = statements.split_at(statements.len() / 2);
-                    CStatement::Seq(Arc::new(sequence(left)), Arc::new(sequence(right)))
-                }
-            }
-        }
-        let build = |branches: usize, descends: bool| {
-            // Branches on the measure that establish nothing about it.
-            let branches = (0..branches)
-                .map(|index| {
-                    crate::kernel::c_if(
-                        crate::kernel::c_less_than(n(), literal(index as u32 + 1_000)),
-                        CStatement::Skip,
-                        CStatement::Skip,
-                    )
-                })
-                .collect::<Vec<_>>();
-            let mut body = sequence(&branches);
-            let argument = if descends {
-                crate::kernel::c_subtract(n(), literal(1))
-            } else {
-                n()
-            };
-            body = CStatement::Seq(Arc::new(body), Arc::new(guarded_call(argument)));
-            [CVerifiedFunctionRule {
-                loop_semantics: CLoopSemantics::ApplyVerifiedRules,
-                checked_callees: None,
-                applied_tactics: Default::default(),
-                function: CFunction::new(
-                    CType::Void,
-                    "countdown",
-                    vec![crate::kernel::c_parameter("n", CType::Int32)],
-                    body,
-                ),
-            }]
-        };
-        let plan = CFunctionTerminationPlan {
-            function_name: "countdown".to_string(),
-            recursive_measure: Some(CFunctionTerminationMeasure::NumericParameter(0)),
-            loop_measures: BTreeMap::new(),
-        };
-        // Judged by the checker's deterministic work, not the host clock:
-        // each 8x step in branches may cost at most 16x the work, which a
-        // linear checker meets and a doubling path list cannot.
-        let mut previous: Option<(usize, usize)> = None;
-        for branches in [8, 64, 512] {
-            let rules = build(branches, true);
-            let heights = c_termination_height_plan(&rules, &[]);
-            let (verdicts, work) = crate::instrumentation::measure_deterministic_work(|| {
-                check(&rules, std::slice::from_ref(&plan), &heights, &[])
-                    .expect("a descending call checks")
-            });
-            assert_eq!(terminating(&verdicts), BTreeSet::from(["countdown"]));
-            assert!(work >= branches, "the check charges each branch it walks");
-            if let Some((smaller, smaller_work)) = previous {
-                assert!(
-                    work <= smaller_work * 16,
-                    "{branches} sequential branches took {work} work units, \
-                     over 16x the {smaller_work} units of {smaller}"
-                );
-            }
-            previous = Some((branches, work));
-        }
-        let rules = build(64, false);
-        let heights = c_termination_height_plan(&rules, &[]);
-        let error = check(&rules, std::slice::from_ref(&plan), &heights, &[])
-            .expect_err("a call that passes the measure unchanged does not descend");
-        assert!(error.message.contains("must pass"), "{error}");
-    }
-
     /// `realloc` is modeled by execution itself, so it is no node of the call
     /// graph and needs no assumption to return.
     #[test]
@@ -7129,6 +7038,11 @@ mod local_descent_tests {
             "{error}"
         );
     }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/termination/local_descent_tests.rs");
+    }
 }
 
 /// Deterministic scaling regressions for the termination check and its height
@@ -7247,170 +7161,6 @@ mod termination_scaling_tests {
         }
     }
 
-    /// The deepest graph: height equals the node count, so every level holds
-    /// one function and the check settles `n` levels in ascending order.
-    #[test]
-    fn one_long_call_chain_costs_linear_termination_work() {
-        let name = |index: usize| format!("chain{index:06}");
-        let mut samples = Vec::new();
-        for size in SIZES {
-            let rules = (0..size)
-                .map(|index| {
-                    let callees = if index + 1 < size {
-                        vec![name(index + 1)]
-                    } else {
-                        Vec::new()
-                    };
-                    rule(&name(index), &callees)
-                })
-                .collect::<Vec<_>>();
-            samples.push(sample(size, &rules, |heights, verdicts| {
-                assert_eq!(heights[&name(0)], size - 1);
-                assert_eq!(heights[&name(size - 1)], 0);
-                assert_eq!(verdicts.rules.len(), size, "a call chain all terminates");
-                assert!(verdicts.refusals.is_empty());
-            }));
-        }
-        report("call chain", &samples);
-        assert_near_linear("call chain", &samples);
-    }
-
-    /// The widest graph: one level of `n` leaves, and a root whose own call
-    /// list is the whole edge set.
-    #[test]
-    fn wide_fan_out_costs_linear_termination_work() {
-        let leaf = |index: usize| format!("leaf{index:06}");
-        let mut samples = Vec::new();
-        for size in SIZES {
-            let leaves = (0..size).map(leaf).collect::<Vec<_>>();
-            let mut rules = vec![rule("root", &leaves)];
-            rules.extend(leaves.iter().map(|name| rule(name, &[])));
-            samples.push(sample(size, &rules, |heights, verdicts| {
-                assert_eq!(heights["root"], 1);
-                assert_eq!(heights[&leaf(0)], 0);
-                assert_eq!(
-                    verdicts.rules.len(),
-                    size + 1,
-                    "a root over terminating leaves terminates"
-                );
-                assert!(verdicts.refusals.is_empty());
-            }));
-        }
-        report("wide fan-out", &samples);
-        assert_near_linear("wide fan-out", &samples);
-    }
-
-    /// Many two-member cycles, each with its own caller. Every cycle member is
-    /// refused for unmeasured recursion, every refusal is pushed through the
-    /// level worklist, and every caller then reads a refused callee.
-    #[test]
-    fn many_small_unmeasured_cycles_cost_linear_termination_work() {
-        let ping = |index: usize| format!("ping{index:06}");
-        let pong = |index: usize| format!("pong{index:06}");
-        let caller = |index: usize| format!("caller{index:06}");
-        let mut samples = Vec::new();
-        for size in SIZES {
-            let groups = size / 2;
-            let mut rules = Vec::new();
-            for index in 0..groups {
-                rules.push(rule(&ping(index), &[pong(index)]));
-                rules.push(rule(&pong(index), &[ping(index)]));
-                rules.push(rule(&caller(index), &[ping(index)]));
-            }
-            samples.push(sample(size, &rules, |heights, verdicts| {
-                assert_eq!(heights[&ping(0)], 0, "a cycle's members share a height");
-                assert_eq!(heights[&pong(0)], 0);
-                assert_eq!(heights[&caller(0)], 1);
-                assert!(verdicts.rules.is_empty(), "nothing here terminates");
-                for index in [0, groups - 1] {
-                    assert!(matches!(
-                        verdicts.refusals[&ping(index)],
-                        CTerminationRefusal::UnmeasuredRecursion { .. }
-                    ));
-                    assert!(matches!(
-                        verdicts.refusals[&pong(index)],
-                        CTerminationRefusal::UnmeasuredRecursion { .. }
-                    ));
-                    assert_eq!(
-                        verdicts.refusals[&caller(index)],
-                        CTerminationRefusal::Callee {
-                            callee: ping(index)
-                        }
-                    );
-                }
-            }));
-        }
-        report("many small unmeasured cycles", &samples);
-        assert_near_linear("many small unmeasured cycles", &samples);
-    }
-
-    /// One strongly connected component of `n` functions: the planner's
-    /// explicit stack holds every member at once, and the check settles them
-    /// as a single level.
-    #[test]
-    fn one_large_cycle_costs_linear_termination_work() {
-        let name = |index: usize| format!("ring{index:06}");
-        let mut samples = Vec::new();
-        for size in SIZES {
-            let rules = (0..size)
-                .map(|index| rule(&name(index), &[name((index + 1) % size)]))
-                .collect::<Vec<_>>();
-            samples.push(sample(size, &rules, |heights, verdicts| {
-                assert!(
-                    (0..size).all(|index| heights[&name(index)] == 0),
-                    "one cycle is one level"
-                );
-                assert!(verdicts.rules.is_empty());
-                assert!(
-                    (0..size).all(|index| matches!(
-                        verdicts.refusals[&name(index)],
-                        CTerminationRefusal::UnmeasuredRecursion { .. }
-                    )),
-                    "every member of an unmeasured cycle is refused for it"
-                );
-            }));
-        }
-        report("one large cycle", &samples);
-        assert_near_linear("one large cycle", &samples);
-    }
-
-    /// A layered DAG whose edges outnumber its nodes four to one, so a check
-    /// linear in edges and one linear only in nodes are distinguishable.
-    #[test]
-    #[ignore = "nightly: 0.6s in the parallel gate"]
-    fn a_layered_dag_costs_linear_termination_work() {
-        const WIDTH: usize = 8;
-        const FAN_OUT: usize = 4;
-        let name = |layer: usize, index: usize| format!("dag{layer:06}_{index}");
-        let mut samples = Vec::new();
-        for size in SIZES {
-            let layers = size.div_ceil(WIDTH);
-            let nodes = layers * WIDTH;
-            let mut rules = Vec::new();
-            for layer in 0..layers {
-                for index in 0..WIDTH {
-                    let callees = if layer + 1 < layers {
-                        (0..FAN_OUT)
-                            .map(|step| name(layer + 1, (index + step) % WIDTH))
-                            .collect::<Vec<_>>()
-                    } else {
-                        Vec::new()
-                    };
-                    rules.push(rule(&name(layer, index), &callees));
-                }
-            }
-            assert_eq!(rules.len(), nodes);
-            samples.push(sample(size, &rules, |heights, verdicts| {
-                assert_eq!(heights[&name(0, 0)], layers - 1, "the top layer is deepest");
-                assert_eq!(heights[&name(layers - 1, 0)], 0);
-                assert_eq!(verdicts.rules.len(), nodes, "a DAG all terminates");
-                assert!(verdicts.refusals.is_empty());
-            }));
-        }
-        report("layered DAG", &samples);
-        assert_near_linear("layered DAG", &samples);
-    }
-
     /// The measured curve, so the numbers quoted in
     /// `docs/internals/verification-efficiency.md` can be reproduced with
     /// `cargo test termination_scaling -- --nocapture`.
@@ -7421,6 +7171,11 @@ mod termination_scaling_tests {
                 measured.size, measured.nodes, measured.plan_work, measured.check_work
             );
         }
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/termination/termination_scaling_tests.rs");
     }
 }
 
@@ -7457,39 +7212,9 @@ mod checked_callee_certification_tests {
         );
     }
 
-    #[test]
-    fn checked_callee_claim_reuse_shares_the_dependency_set() {
-        let mut previous = None;
-        for size in [16, 64, 256, 1024] {
-            let calls = Arc::new(
-                (0..size)
-                    .map(|n| format!("callee_{n}"))
-                    .collect::<BTreeSet<_>>(),
-            );
-            let (merged, work) = crate::instrumentation::measure_deterministic_work(|| {
-                merge_checked_callees(std::iter::repeat_n(Some(&calls), size)).unwrap()
-            });
-            eprintln!("claim reuse size={size}, dependency work={work}");
-            assert!(Arc::ptr_eq(&calls, &merged));
-            assert_eq!(merged.len(), size);
-            if let Some(before) = previous {
-                assert!(
-                    work <= 5 * before,
-                    "superlinear claim reuse: {before} -> {work}"
-                );
-            }
-            previous = Some(work);
-        }
-        let empty = Arc::new(BTreeSet::new());
-        assert!(merge_checked_callees([Some(&empty), None]).is_none());
-        assert!(merge_checked_callees([]).is_none());
-        assert!(merge_checked_callees([Some(&empty)]).unwrap().is_empty());
-        let left = Arc::new(BTreeSet::from(["left".into()]));
-        let right = Arc::new(BTreeSet::from(["right".into()]));
-        assert_eq!(
-            *merge_checked_callees([Some(&left), Some(&right)]).unwrap(),
-            BTreeSet::from(["left".into(), "right".into()])
-        );
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/termination/checked_callee_certification_tests.rs");
     }
 }
 

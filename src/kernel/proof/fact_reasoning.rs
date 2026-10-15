@@ -1340,49 +1340,6 @@ mod tests {
     }
 
     #[test]
-    fn quantified_single_match_does_not_check_the_whole_alpha_bucket() {
-        let quantified = |name: String| Proposition::ForAll {
-            var: Variable(1),
-            sort: Sort::CInt32,
-            body: Box::new(Proposition::Exists {
-                name,
-                var: Variable(2),
-                sort: Sort::CInt32,
-                body: Box::new(Proposition::ConditionIs(
-                    ConditionTerm::equal(
-                        Bitvector32Term::Variable(Variable(1)),
-                        Bitvector32Term::Variable(Variable(2)),
-                    ),
-                    true,
-                )),
-            }),
-        };
-        let goal = quantified("goal".into());
-        let mut curve = Vec::new();
-        for size in [8, 16, 32, 64] {
-            let facts = ProofFacts::from_ordered(
-                &(0..size)
-                    .map(|i| quantified(format!("witness{i}")))
-                    .collect::<Vec<_>>(),
-            );
-            assert_eq!(
-                facts.quantified_bucket_len(&quantified_equivalence_index_key(&goal).unwrap()),
-                Some(size)
-            );
-            let (matched, work) = crate::instrumentation::measure_deterministic_work(|| {
-                facts.matching_quantified_fact(&goal)
-            });
-            assert!(matched.is_some());
-            curve.push(work);
-        }
-        assert!(curve[0] > 0);
-        assert!(
-            curve.iter().all(|work| *work == curve[0]),
-            "single-match bucket work: {curve:?}"
-        );
-    }
-
-    #[test]
     fn quantified_memory_free_key_rejects_raw_and_registered_loads() {
         let pointer = Pointer {
             block: "p".into(),
@@ -1495,66 +1452,6 @@ mod tests {
             &requested,
             &quantified(&changed, Variable(3_200_000)),
         ));
-    }
-
-    #[test]
-    fn quantified_nested_matching_work_is_linear_and_context_indexed() {
-        let nested = |depth: usize, base: u64| {
-            let mut p = Proposition::ConditionIs(
-                ConditionTerm::equal(
-                    Bitvector32Term::Variable(Variable(base)),
-                    Bitvector32Term::Constant(0),
-                ),
-                true,
-            );
-            for index in (0..depth).rev() {
-                p = Proposition::ForAll {
-                    var: Variable(base + index as u64),
-                    sort: Sort::CInt32,
-                    body: Box::new(p),
-                };
-            }
-            p
-        };
-        let mut depths = Vec::new();
-        let mut contexts = Vec::new();
-        for size in [8, 16, 32, 64] {
-            let left = nested(size, 100);
-            let right = nested(size, 1000);
-            let (matches, work) = crate::instrumentation::measure_deterministic_work(|| {
-                quantified_binder_equivalent(&left, &right)
-            });
-            assert!(matches);
-            depths.push(work);
-            let mut facts = ProofFacts::from_ordered(&[nested(2, 100)]);
-            for index in 0..size {
-                facts = facts.with_fact(Proposition::ForAll {
-                    var: Variable(9000),
-                    sort: Sort::CInt32,
-                    body: Box::new(Proposition::ConditionIs(
-                        ConditionTerm::equal(
-                            Bitvector32Term::Variable(Variable(9000)),
-                            Bitvector32Term::Constant(index as u32 + 1),
-                        ),
-                        true,
-                    )),
-                });
-            }
-            let goal = nested(2, 1000);
-            let (matches, work) = crate::instrumentation::measure_deterministic_work(|| {
-                facts.matching_quantified_fact(&goal).is_some()
-            });
-            assert!(matches);
-            contexts.push(work);
-        }
-        assert!(depths[0] > 0);
-        for pair in depths.windows(2) {
-            assert!(pair[1] <= pair[0] * 2, "binder work: {depths:?}");
-        }
-        assert!(
-            contexts.iter().all(|work| *work == contexts[0]),
-            "unrelated context work: {contexts:?}"
-        );
     }
 
     #[test]
@@ -1997,6 +1894,11 @@ mod tests {
             Some(available.clone()),
             "the bounded separation matcher must transport the unfold form to the fold state"
         );
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/proof/fact_reasoning/tests.rs");
     }
 }
 
@@ -2669,38 +2571,6 @@ mod integer_reflexivity_tests {
     }
 
     #[test]
-    fn normalize_using_graph_work_ignores_unrelated_ambient_equalities() {
-        let a = Pointer::symbolic(Variable(96_120));
-        let b = Pointer::symbolic(Variable(96_121));
-        let c = Pointer::symbolic(Variable(96_122));
-        let goal = normalization_pointer_equality(&a, &c);
-        let mut curve = Vec::new();
-        for size in [16, 64, 256, 1024] {
-            let _session = crate::kernel::VerificationSession::enter();
-            let mut facts = ProofFacts::from_ordered(&[
-                normalization_pointer_equality(&a, &b),
-                normalization_pointer_equality(&b, &c),
-            ]);
-            for i in 0..size {
-                facts = facts.with_fact(normalization_pointer_equality(
-                    &Pointer::symbolic(Variable(100_000 + i * 2)),
-                    &Pointer::symbolic(Variable(100_001 + i * 2)),
-                ));
-            }
-            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-                normalize_using_conditions(&goal, &[], &facts)
-            });
-            assert!(result.is_ok());
-            curve.push(work);
-        }
-        assert!(curve[0] > 0);
-        assert!(
-            curve.iter().all(|work| *work == curve[0]),
-            "ambient equality work: {curve:?}"
-        );
-    }
-
-    #[test]
     fn normalize_using_accepts_reversed_alpha_renamed_integer_fold_equality() {
         let source = integer_fold(
             integer_index(),
@@ -2905,161 +2775,17 @@ mod integer_reflexivity_tests {
         );
         assert!(!normalizes_context_free(&equality));
     }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/proof/fact_reasoning/integer_reflexivity_tests.rs");
+    }
 }
 
 #[cfg(test)]
 mod uint64_loop_tests {
     use super::*;
     use crate::kernel::{Bitvector32Term, ConditionTerm, Proposition, Variable};
-
-    #[test]
-    #[ignore = "nightly: 0.6s in the parallel gate"]
-    fn uint64_successor_certificates_require_the_strict_guard_and_ignore_unrelated_facts() {
-        let i = Bitvector32Term::Variable(Variable(980001));
-        let n = Bitvector32Term::Variable(Variable(980002));
-        let next = Bitvector32Term::uint64_add(i.clone(), Bitvector32Term::UInt64Constant(1));
-        let guard =
-            Proposition::ConditionIs(ConditionTerm::uint64_less_than(i.clone(), n.clone()), true);
-        let successor = Proposition::ConditionIs(
-            ConditionTerm::uint64_less_equal(next.clone(), n.clone()),
-            true,
-        );
-        let descent = Proposition::ConditionIs(
-            ConditionTerm::uint64_less_than(
-                Bitvector32Term::uint64_subtract(n.clone(), next),
-                Bitvector32Term::uint64_subtract(n.clone(), i.clone()),
-            ),
-            true,
-        );
-        let mut samples = Vec::new();
-        for size in [8, 32, 128, 512] {
-            let mut premises = vec![guard.clone()];
-            premises.extend((0..size).map(|k| {
-                Proposition::ConditionIs(
-                    ConditionTerm::uint64_less_than(
-                        Bitvector32Term::Variable(Variable(990000 + k)),
-                        Bitvector32Term::UInt64Constant(17),
-                    ),
-                    true,
-                )
-            }));
-            let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
-            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-                normalize_using_conditions(&successor, std::slice::from_ref(&guard), &facts)?;
-                normalize_using_conditions(&descent, std::slice::from_ref(&guard), &facts)
-            });
-            result.unwrap();
-            samples.push(work);
-            // Ambient facts do not substitute for explicit certificate inputs.
-            assert!(normalize_using_conditions(&successor, &[], &facts).is_err());
-            assert!(normalize_using_conditions(&descent, &[], &facts).is_err());
-        }
-        assert!(samples[0] > 0);
-        assert!(
-            samples.iter().all(|work| *work == samples[0]),
-            "{samples:?}"
-        );
-        let weak =
-            Proposition::ConditionIs(ConditionTerm::uint64_less_equal(i.clone(), n.clone()), true);
-        let facts = crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&weak));
-        assert!(
-            normalize_using_conditions(&successor, std::slice::from_ref(&weak), &facts).is_err()
-        );
-        assert!(normalize_using_conditions(&descent, std::slice::from_ref(&weak), &facts).is_err());
-        let missing = crate::kernel::proof::ProofFacts::from_ordered(&[]);
-        assert!(matches!(
-            normalize_using_conditions(&successor, &[guard], &missing),
-            Err(ConditionalNormalizationError::UnavailablePremise(0))
-        ));
-    }
-
-    #[test]
-    #[ignore = "nightly: 0.6s in the parallel gate"]
-    fn uint64_truncation_certificates_require_full_width_bounds() {
-        let i = Bitvector32Term::Variable(Variable(981011));
-        let n = Bitvector32Term::Variable(Variable(981012));
-        let low_i = Bitvector32Term::uint32_from_64(i.clone());
-        let low_n = Bitvector32Term::uint32_from_64(n.clone());
-        let guard =
-            Proposition::ConditionIs(ConditionTerm::uint64_less_than(i.clone(), n.clone()), true);
-        let bound = Proposition::ConditionIs(
-            ConditionTerm::uint64_less_equal(
-                n.clone(),
-                Bitvector32Term::UInt64Constant(i32::MAX as u64),
-            ),
-            true,
-        );
-        let goal = Proposition::ConditionIs(
-            ConditionTerm::signed_less_than(low_i.clone(), low_n.clone()),
-            true,
-        );
-        let mut samples = Vec::new();
-        for size in [8, 32, 128, 512] {
-            let mut available = vec![guard.clone(), bound.clone()];
-            available.extend((0..size).map(|k| {
-                Proposition::ConditionIs(
-                    ConditionTerm::uint64_less_equal(
-                        Bitvector32Term::Variable(Variable(982000 + k)),
-                        Bitvector32Term::UInt64Constant(1000),
-                    ),
-                    true,
-                )
-            }));
-            let facts = crate::kernel::proof::ProofFacts::from_ordered(&available);
-            let premises = [guard.clone(), bound.clone()];
-            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-                normalize_using_conditions(&goal, &premises, &facts)
-            });
-            result.unwrap();
-            samples.push(work);
-            assert!(normalize_using_conditions(&goal, &premises[..1], &facts).is_err());
-            assert!(normalize_using_conditions(&goal, &premises[1..], &facts).is_err());
-        }
-        assert!(
-            samples[0] > 0 && samples.iter().all(|work| *work == samples[0]),
-            "{samples:?}"
-        );
-        let too_wide = Proposition::ConditionIs(
-            ConditionTerm::uint64_less_equal(
-                n.clone(),
-                Bitvector32Term::UInt64Constant(1u64 << 32),
-            ),
-            true,
-        );
-        let facts =
-            crate::kernel::proof::ProofFacts::from_ordered(&[guard.clone(), too_wide.clone()]);
-        assert!(normalize_using_conditions(&goal, &[guard, too_wide], &facts).is_err());
-
-        let full_equal = Proposition::ConditionIs(ConditionTerm::int64_equal(i.clone(), n), true);
-        let low_equal = Proposition::ConditionIs(ConditionTerm::equal(low_i.clone(), low_n), true);
-        let facts =
-            crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&full_equal));
-        normalize_using_conditions(&low_equal, &[full_equal], &facts).unwrap();
-        let bound = Proposition::ConditionIs(
-            ConditionTerm::uint64_less_equal(i.clone(), Bitvector32Term::UInt64Constant(1000)),
-            true,
-        );
-        let facts = crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&bound));
-        for goal in [
-            ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), low_i.clone()),
-            ConditionTerm::signed_less_equal(low_i, Bitvector32Term::Constant(1000)),
-        ] {
-            // Lower-bound certificates need the explicit signed-range guard.
-            let signed_bound = Proposition::ConditionIs(
-                ConditionTerm::uint64_less_equal(
-                    i.clone(),
-                    Bitvector32Term::UInt64Constant(i32::MAX as u64),
-                ),
-                true,
-            );
-            normalize_using_conditions(&signed_bound, std::slice::from_ref(&bound), &facts)
-                .unwrap();
-            let premises = [bound.clone(), signed_bound];
-            let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
-            normalize_using_conditions(&Proposition::ConditionIs(goal, true), &premises, &facts)
-                .unwrap();
-        }
-    }
 
     #[test]
     fn uint64_equality_certificate_requires_both_order_premises() {
@@ -3075,6 +2801,11 @@ mod uint64_loop_tests {
         for selection in [&premises[..1], &premises[1..], &premises[..0]] {
             assert!(normalize_using_conditions(&goal, selection, &facts).is_err());
         }
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/proof/fact_reasoning/uint64_loop_tests.rs");
     }
 }
 

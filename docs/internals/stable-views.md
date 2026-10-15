@@ -366,5 +366,5 @@ between compiler-checked borrow legality and Click's functional claims.
 | Loops and branches | `loop_havoc_requires_a_checked_set_disjoint_from_active_loans`, `loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root`, `abstract_join_rejects_a_loan_ended_on_only_one_arm` |
 | Suspended workers | `src/kernel/tests/thread_transition_tests.rs` (both join orders, linear completion rights, refusal paths, scoped termination, withheld guarantees, backing lifetime, and four-size recovery scaling) |
 | Evidence | `hostile_transition_payload_is_rechecked`, `transitions_are_bound_to_their_exact_predecessor`, `session_rejects_a_stale_identity_before_reverification` |
-| Scaling | `local_view_work_tracks_the_explicit_delta_not_ambient_local_storage`, the four-size curves in `src/kernel/loans.rs`, `interface_binding_inheritance_is_near_linear_in_the_binding_count`, `loop_head_havoc_work_over_cells_and_symbolic_loans` |
+| Scaling | `local_view_work_tracks_the_explicit_delta_not_ambient_local_storage`, the four-size curves in `src/scaling_tests/kernel/loans/`, `interface_binding_inheritance_is_near_linear_in_the_binding_count`, `loop_head_havoc_work_over_cells_and_symbolic_loans` |
 | Model | the `r27_`, `r28_`, `r29_`, and `r30_` tests in `loan_model_tests.rs` |

@@ -1273,24 +1273,6 @@ impl<'a> Proof<'a> {
             {
                 body_facts = body_facts.with_selected_load_equality_bridge(&body_kernel);
             }
-            let selected_surface_separation = match &structural_proposition {
-                ClickProposition::Separate { .. } => true,
-                ClickProposition::At { proposition, .. } => {
-                    matches!(proposition.as_ref(), ClickProposition::Separate { .. })
-                }
-                _ => false,
-            };
-            if !at_frontier
-                && selected_surface_separation
-                && !body_facts.contains(&body_kernel)
-                && crate::surface::planning::proposition_search::proves_by_tactic_search(
-                    body_facts.assumptions(),
-                    &body_kernel,
-                    "have separation away from the frontier",
-                )
-            {
-                body_facts = body_facts.with_kernel_checked_fact(body_kernel.clone());
-            }
         }
         for name in self.focused_branch_unfolds().iter() {
             let recorded_bodies = match self.context.as_ref() {

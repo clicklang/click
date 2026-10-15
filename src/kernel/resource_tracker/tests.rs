@@ -870,50 +870,6 @@ mod saved_states {
         assert!(resource.lives_in_a_saved_state());
     }
 
-    /// A question costs one keyed lookup per point, whatever the two states
-    /// hold. Growing the states by unrelated instances — what a question's
-    /// key is *not* — leaves the work
-    /// at two units, which is what would fail if this enumerated a resource
-    /// context instead of indexing it.
-    ///
-    /// The deterministic work is measured, not estimated, and the question is
-    /// answered at every size so the curve cannot be flattened by a run that
-    /// decides nothing.
-    #[test]
-    fn a_saved_state_version_costs_one_lookup_per_point() {
-        let unrelated = |size: u64, rank: u32| {
-            let mut state = holding(1, rank, 0);
-            for other in 0..size {
-                state =
-                    state.clone().with_resource_context(
-                        state
-                            .resources()
-                            .clone()
-                            .unchecked_with_fact(CResourceFact::own(CResource::Instance(
-                                instance(100 + other, 7, 7),
-                            ))),
-                    );
-            }
-            state
-        };
-        for size in [8u64, 16, 32, 64] {
-            let entry = unrelated(size, 3);
-            let after = unrelated(size, 4);
-            let (outcome, work) = crate::instrumentation::measure_deterministic_work(|| {
-                same_at_states(rank(), StatePoint::at(&after), StatePoint::at(&entry))
-            });
-            assert_eq!(
-                outcome,
-                replaced(None),
-                "size {size} must still be answered, or the curve measures nothing"
-            );
-            assert_eq!(
-                work, 2,
-                "size {size} cost {work} units; a question is one keyed lookup per point"
-            );
-        }
-    }
-
     /// The explanation a refusal is built from carries the answer and no
     /// program point, and nothing of the states themselves.
     #[test]
@@ -930,6 +886,11 @@ mod saved_states {
             format!("{:?}", StatePoint::at(&entry)),
             "StatePoint(<saved state>)"
         );
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/resource_tracker/tests/saved_states.rs");
     }
 }
 
@@ -1078,23 +1039,6 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
 }
 
 #[test]
-fn truncating_integer_read_collection_is_linear_in_shared_nodes() {
-    use crate::kernel::{IntegerTerm, SharedIntegerTerm, Variable};
-    for depth in [2usize, 8, 32, 128] {
-        let mut term: SharedIntegerTerm = IntegerTerm::var(Variable(91004)).into();
-        for _ in 0..depth {
-            term = IntegerTerm::TruncatingQuotient(term.clone(), term).into();
-        }
-        let mut reads = Vec::new();
-        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            super::collect_integer_reads(&term, &mut reads);
-        });
-        assert!(reads.is_empty());
-        assert!(work <= depth + 2, "depth={depth}, work={work}");
-    }
-}
-
-#[test]
 fn branch_join_preserves_uncached_reads_only_when_every_arm_agrees() {
     for bytes in [4, 8] {
         let cell = at(block("global:g"), 0);
@@ -1142,51 +1086,6 @@ fn branch_join_preserves_uncached_reads_only_when_every_arm_agrees() {
             Sameness::Same
         );
     }
-}
-
-#[test]
-fn branch_join_read_query_does_not_scan_unrelated_cached_cells() {
-    let mut samples = Vec::new();
-    for size in [16, 64, 256, 1024] {
-        let cell = at(block("global:g"), 0);
-        let mut before = entry_memory();
-        for index in 0..size {
-            before = before.store(at(block("global:unrelated"), index * 4), one());
-        }
-        let first = before.clone().store(at(block("global:h"), 0), one());
-        let second = before.clone().store(
-            at(block("global:h"), 0),
-            CValue::Int32(Bitvector32Term::Constant(2)),
-        );
-        let joined = first
-            .clone()
-            .with_interface_memory_havoc(Variable(981003), &Default::default(), &[&first, &second])
-            .unwrap();
-        // Warm only the common prefix. The query below must inspect the
-        // new branch delta, not repeat all of that prefix's work.
-        let expected = last_same_point(
-            Resource::Cell {
-                pointer: &cell,
-                bytes: 8,
-            },
-            &point(&before),
-        );
-        let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
-            last_same_point(
-                Resource::Cell {
-                    pointer: &cell,
-                    bytes: 8,
-                },
-                &point(&joined),
-            )
-        });
-        assert_eq!(answer, expected);
-        samples.push(work);
-    }
-    assert!(
-        samples.iter().all(|work| *work == samples[0]),
-        "selected read work: {samples:?}"
-    );
 }
 
 #[test]
@@ -1275,53 +1174,6 @@ fn branch_join_typed_agreement_checks_alias_premises_and_access_width() {
     );
 }
 
-#[test]
-fn branch_join_nested_naming_work_tracks_new_branches() {
-    let cell = at(block("global:g"), 0);
-    let mut memory = entry_memory();
-    let expected = last_same_point(
-        Resource::Cell {
-            pointer: &cell,
-            bytes: 8,
-        },
-        &point(&memory),
-    );
-    let mut samples = Vec::new();
-    for index in 0..32 {
-        let left = memory.clone().store(
-            at(block("global:h"), 0),
-            CValue::Int32(Bitvector32Term::Constant(index * 2)),
-        );
-        let right = memory.clone().store(
-            at(block("global:h"), 0),
-            CValue::Int32(Bitvector32Term::Constant(index * 2 + 1)),
-        );
-        memory = left
-            .clone()
-            .with_interface_memory_havoc(
-                Variable(981030 + u64::from(index)),
-                &Default::default(),
-                &[&left, &right],
-            )
-            .unwrap();
-        let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
-            last_same_point(
-                Resource::Cell {
-                    pointer: &cell,
-                    bytes: 8,
-                },
-                &point(&memory),
-            )
-        });
-        assert_eq!(answer, expected);
-        samples.push(work);
-    }
-    assert!(
-        samples.iter().all(|work| *work == samples[0]),
-        "each new branch should pay only for its own two arms: {samples:?}"
-    );
-}
-
 /// Naming walks share one empty context for the session, but a context built
 /// against a replaced logical-read table would miss every read registered
 /// after the replacement, so it is rebuilt then.
@@ -1332,4 +1184,9 @@ fn naming_walks_share_one_context_until_the_read_table_is_replaced() {
     assert!(std::rc::Rc::ptr_eq(&first, &naming_context()));
     crate::kernel::equality_graph::clear_logical_pointer_reads();
     assert!(!std::rc::Rc::ptr_eq(&first, &naming_context()));
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/kernel/resource_tracker/tests.rs");
 }

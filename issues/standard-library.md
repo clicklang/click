@@ -208,8 +208,12 @@ Each step is a separate PR that leaves every example verifying:
      a path or a selective import; `List` and its constructors stay bare.
      Qualifying predicates and functions with each module's rename made a
      separate identities step unnecessary.
-   - Next: the remaining renames, one module per PR (`nat`, `bytes`,
-     `cstr`, `permutation`), each joining `QUALIFIED_MODULES` in
+   - Done: the `nat` rename. `nat_add` is `nat::add`, and the conversion
+     laws are named for the composition they state: `nat::to_integer_zero`,
+     `nat::to_integer_add`, `nat::to_nat_to_integer` and so on. `Nat` and
+     the primitive `to_nat` stay bare.
+   - Next: the remaining renames, one module per PR (`bytes`, `cstr`,
+     `permutation`), each joining `QUALIFIED_MODULES` in
      `src/surface/parser/library_paths.rs`; `machine_integer` and
      `integer` wait on the Integer-default arithmetic decision.
 6. Document the primitives in the language reference, and describe the

@@ -3753,7 +3753,7 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                         );
                         let required = Proposition::ConditionIs(nonnegative, true);
                         if super::check_nat_integer_law(
-                            "click::nat::nat_integer_nonnegative",
+                            "click::nat::to_integer_nonnegative",
                             &required,
                         )
                         .is_none()
@@ -4576,98 +4576,6 @@ mod algebraic_term_tests {
         ));
     }
 
-    #[test]
-    fn algebraic_integer_match_scales_with_nested_depth() {
-        let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
-            name: "Box".into(),
-            fields: vec![AlgebraicValueType::Integer],
-        }]
-        .into();
-        let ty = AlgebraicType {
-            rigid: false,
-            name: "Box".into(),
-            arguments: vec![],
-            variants: variants.clone(),
-            schemas: std::sync::Arc::new(AlgebraicSchemas::new(BTreeMap::from([(
-                AlgebraicValueType::Algebraic {
-                    name: "Box".into(),
-                    arguments: vec![],
-                },
-                variants,
-            )]))),
-        };
-        let mut previous = None;
-        for depth in [8, 16, 32, 64] {
-            let mut expression = SpecAlgebraicExpression {
-                algebraic_type: ty.clone(),
-                node: SpecAlgebraicExpressionNode::Constructor {
-                    variant: "Box".into(),
-                    fields: vec![SpecAlgebraicValue::Integer(SpecIntegerExpression::Term(
-                        IntegerTerm::var(Variable(100_000 + depth as u64 - 1)),
-                    ))],
-                },
-            };
-            for level in (0..depth).rev() {
-                expression = SpecAlgebraicExpression {
-                    algebraic_type: ty.clone(),
-                    node: SpecAlgebraicExpressionNode::Match {
-                        scrutinee: Box::new(SpecAlgebraicExpression {
-                            algebraic_type: ty.clone(),
-                            node: SpecAlgebraicExpressionNode::Variable(Variable(
-                                200_000 + level as u64,
-                            )),
-                        }),
-                        arms: vec![SpecAlgebraicResultMatchArm {
-                            variant: "Box".into(),
-                            bindings: vec![format!("n{level}")],
-                            binding_types: vec![AlgebraicValueType::Integer],
-                            binding_variables: vec![Some(Variable(100_000 + level as u64))],
-                            body: Box::new(expression),
-                        }],
-                    },
-                };
-            }
-            let mut execution = ExecutionBudget::new();
-            let mut budget = SpecEvaluation::logical(&mut execution);
-            let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
-                evaluate_spec_algebraic_at_state_in(
-                    &CState::new(),
-                    &expression,
-                    None,
-                    &PureFactContext::new(),
-                    &mut budget,
-                )
-                .unwrap()
-            });
-            assert!(
-                budget.integer_bindings.is_empty(),
-                "arm scopes must be restored"
-            );
-            assert_eq!(paths.len(), 1);
-            let mut value = &paths[0].value;
-            let mut last_binding = None;
-            for _ in 0..depth {
-                let AlgebraicTermNode::Match { arms, .. } = &value.node else {
-                    panic!("expected nested match");
-                };
-                last_binding = Some(arms[0].bindings[0].clone());
-                value = &arms[0].body;
-            }
-            let AlgebraicTermNode::Constructor { fields, .. } = &value.node else {
-                panic!("expected payload constructor");
-            };
-            assert_eq!(fields, &vec![last_binding.unwrap()]);
-            assert!(work <= 256 * depth + 128, "depth {depth}: {work}");
-            if let Some(previous) = previous {
-                assert!(
-                    work <= previous * 5 / 2 + 64,
-                    "nested match work must remain linear: {previous} -> {work}"
-                );
-            }
-            previous = Some(work);
-        }
-    }
-
     fn value_or_match(scrutinee: SpecAlgebraicExpression) -> SpecExpression {
         SpecExpression::AlgebraicMatch {
             scrutinee: Box::new(scrutinee),
@@ -5287,6 +5195,11 @@ mod algebraic_term_tests {
             )
             .is_err()
         );
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/spec/algebraic_term_tests.rs");
     }
 }
 
@@ -6352,81 +6265,6 @@ mod aggregate_value_tests {
     use super::*;
 
     #[test]
-    fn logical_fields_are_bounded_and_do_not_grant_pointer_access() {
-        use crate::kernel::{CAggregateField, CAggregateLayout};
-        let slot = Pointer {
-            block: "local:frame:0:input".into(),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let layout =
-            CAggregateLayout::new(4, 4, vec![CAggregateField::new("value", 0, CType::Int32)]);
-        let projection = SpecExpression::AggregateFieldValue {
-            parameter: "input".to_string(),
-            pointer: Box::new(SpecExpression::CExpression(CExpression::Variable(
-                "input".to_string(),
-            ))),
-            value_type: CType::Int32,
-        };
-        let mut samples = Vec::new();
-        for size in [8, 32, 128, 512] {
-            let mut entry = CState::new().with_memory(
-                CMemory::new()
-                    .with_block(slot.block.clone(), 4)
-                    .store(slot.clone(), int32(7)),
-            );
-            entry
-                .locals
-                .set_aggregate_object_at("input".to_string(), layout.clone(), slot.clone());
-            for i in 0..size {
-                entry = entry.with_local(format!("unrelated_{i}"), int32(i));
-            }
-            let state = entry
-                .clone()
-                .with_memory(entry.memory.clone().without_local_block(&slot.block));
-            let evaluate = |expression: &SpecExpression| {
-                evaluate_spec_expression_paths_with_loop_entry_in(
-                    &state,
-                    expression,
-                    Some(&entry),
-                    &PureFactContext::new(),
-                    &mut SpecEvaluation::logical(&mut ExecutionBudget::beside_live_state()),
-                )
-                .unwrap()
-            };
-            let (values, work) =
-                crate::instrumentation::measure_deterministic_work(|| evaluate(&projection));
-            assert_eq!(values.len(), 1);
-            assert_eq!(values[0].value, int32(7));
-            assert!(values[0].obligations.is_empty());
-            samples.push(work);
-            let ordinary = SpecExpression::MemoryLoad {
-                memory: SpecMemory::Current,
-                pointer: Box::new(SpecExpression::Value(CValue::pointer(slot.clone()))),
-                value_type: CType::Int32,
-            };
-            let paths = evaluate(&ordinary);
-            assert_eq!(paths.len(), 1);
-            assert!(paths[0].obligations.is_empty());
-            assert!(!PureFactContext::new().proves_memory_read_defined(
-                state.memory(),
-                &slot,
-                CType::Int32,
-            ));
-            let forged = SpecExpression::AggregateFieldValue {
-                parameter: "input".to_string(),
-                pointer: Box::new(SpecExpression::Value(CValue::pointer(slot.clone()))),
-                value_type: CType::Int32,
-            };
-            assert!(evaluate(&forged).is_empty());
-        }
-        assert!(samples[0] > 0);
-        assert!(
-            samples.iter().all(|work| *work == samples[0]),
-            "{samples:?}"
-        );
-    }
-
-    #[test]
     fn logical_pointer_field_uses_current_pointee_memory() {
         use crate::kernel::{CAggregateField, CAggregateLayout};
         let slot = Pointer {
@@ -6496,6 +6334,11 @@ mod aggregate_value_tests {
             &pointee,
             CType::Int32,
         ));
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/spec/aggregate_value_tests.rs");
     }
 }
 
@@ -10549,37 +10392,8 @@ mod integer_truncation_tests {
         }
     }
 
-    #[test]
-    fn integer_truncation_guard_lookup_ignores_unrelated_facts() {
-        let left = IntegerTerm::Variable(Variable(150_093));
-        let right = IntegerTerm::Variable(Variable(150_094));
-        for remainder in [false, true] {
-            let expression = truncation(remainder, left.clone(), right.clone());
-            let mut measured = Vec::new();
-            for count in [16, 64, 256, 1024] {
-                let mut assumptions = PureFactContext::new().assume_condition(
-                    ConditionTerm::integer_not_equal(right.clone(), IntegerTerm::constant_i64(0)),
-                    true,
-                );
-                for index in 0..count {
-                    assumptions = assumptions.assume_condition(
-                        ConditionTerm::integer_not_equal(
-                            IntegerTerm::Variable(Variable(151_000 + index)),
-                            IntegerTerm::constant_i64(0),
-                        ),
-                        true,
-                    );
-                }
-                let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    capture_spec_integer_value(&CState::new(), &expression, None, &assumptions)
-                });
-                value.unwrap();
-                measured.push(work);
-            }
-            assert!(
-                measured.iter().all(|work| *work == measured[0]),
-                "{measured:?}"
-            );
-        }
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/spec/integer_truncation_tests.rs");
     }
 }

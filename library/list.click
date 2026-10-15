@@ -163,12 +163,12 @@ theorem length_cons<T>(head: T, tail: List<T>) {
 }
 
 theorem length_append<T>(xs: List<T>, ys: List<T>) {
-    ensures list::length(list::append(xs, ys)) == nat_add(list::length(xs), list::length(ys)) by {
+    ensures list::length(list::append(xs, ys)) == nat::add(list::length(xs), list::length(ys)) by {
         induct(xs) as ih {
             List::Nil => {
                 unfold(list::append(List<T>::Nil, ys));
                 unfold(list::length(List<T>::Nil));
-                unfold(nat_add(Nat::Zero, list::length(ys)));
+                unfold(nat::add(Nat::Zero, list::length(ys)));
                 simp();
             }
             List::Cons(head, tail) => {
@@ -181,10 +181,10 @@ theorem length_append<T>(xs: List<T>, ys: List<T>) {
                     == Nat::Succ(list::length(list::append(tail, ys))));
                 apply(list::length_cons(head, tail));
                 rewrite(list::length(List<T>::Cons(head, tail)) == Nat::Succ(list::length(tail)));
-                apply(nat_add_succ_left(list::length(tail), list::length(ys)));
-                rewrite(nat_add(Nat::Succ(list::length(tail)), list::length(ys))
-                    == Nat::Succ(nat_add(list::length(tail), list::length(ys))));
-                rewrite(list::length(list::append(tail, ys)) == nat_add(list::length(tail), list::length(ys)));
+                apply(nat::add_succ_left(list::length(tail), list::length(ys)));
+                rewrite(nat::add(Nat::Succ(list::length(tail)), list::length(ys))
+                    == Nat::Succ(nat::add(list::length(tail), list::length(ys))));
+                rewrite(list::length(list::append(tail, ys)) == nat::add(list::length(tail), list::length(ys)));
                 normalize();
             }
         }

@@ -843,52 +843,6 @@ mod call_havoc_local_retention_tests {
     }
 
     #[test]
-    fn local_initialization_havoc_checks_scale_with_changed_cells() {
-        let target = Pointer {
-            block: "local:target".into(),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let range =
-            CMemoryRange::new_with_element_width(target.clone(), 0u32.into(), 4u32.into(), 1);
-        let facts = PureFactContext::new();
-        let mut samples = Vec::new();
-        for count in [16, 64, 256, 1024] {
-            let mut before = CMemory::new()
-                .with_block(target.block.clone(), 8)
-                .store(target.clone(), CValue::Int32(Bitvector32Term::Constant(7)));
-            for index in 0..count {
-                let pointer = Pointer {
-                    block: format!("local:ambient-{index}").into(),
-                    offset: PointerOffsetTerm::Constant(0),
-                };
-                std::sync::Arc::make_mut(&mut before.heap)
-                    .initialized
-                    .record(&pointer, 4);
-            }
-            let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
-                let after = before.clone().with_call_memory_havoc(
-                    Variable(944_017),
-                    std::slice::from_ref(&range),
-                    &facts,
-                    None,
-                );
-                after.matches_call_memory_havoc_result(
-                    &before,
-                    std::slice::from_ref(&range),
-                    &facts,
-                    None,
-                )
-            });
-            assert!(checked);
-            samples.push(work);
-        }
-        assert!(
-            samples.iter().all(|work| *work <= samples[0] * 4 + 128),
-            "ambient initialization scan: {samples:?}"
-        );
-    }
-
-    #[test]
     fn call_havoc_drops_explicitly_written_local_union_views() {
         let pointer = Pointer {
             block: "local:borrowed-union".into(),
@@ -1021,6 +975,13 @@ mod call_havoc_local_retention_tests {
             &assumptions,
             None,
         ));
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/primitives/memory_state/call_havoc_local_retention_tests.rs"
+        );
     }
 }
 
@@ -1308,26 +1269,9 @@ mod havoc_identity_tests {
         ));
     }
 
-    #[test]
-    fn havoc_write_set_identity_scales_near_linearly_with_term_size() {
-        let samples = [32, 64, 128, 256]
-            .into_iter()
-            .map(|depth| {
-                let range = range(depth, 1);
-                let (identity, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    memory_havoc_write_set_identity(std::slice::from_ref(&range))
-                });
-                assert!(!identity.is_empty());
-                assert!(work > 0);
-                (depth, work)
-            })
-            .collect::<Vec<_>>();
-        assert!(
-            samples
-                .windows(2)
-                .all(|pair| pair[1].1 <= pair[0].1.saturating_mul(3)),
-            "havoc identity work grew faster than near-linearly: {samples:?}"
-        );
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/primitives/memory_state/havoc_identity_tests.rs");
     }
 }
 
@@ -9144,26 +9088,6 @@ mod initialization_record_tests {
     }
 
     #[test]
-    fn a_declared_object_makes_dropping_its_runs_one_query() {
-        // With the declaration's object recorded, a havoc dropping its runs
-        // costs the runs, not their slots, whatever the struct count.
-        let mut works = Vec::new();
-        for count in [1_000u32, 10_000, 100_000] {
-            let block = format!("local:record-declared-{count}");
-            let memory =
-                zero_runs(&block, count, 8).with_initialized_object(&element(&block, 0), count * 8);
-            let (havoc, work) =
-                crate::instrumentation::measure_deterministic_work(|| loop_havoc(memory, 924_006));
-            assert!(havoc.has_initialized_bytes_at(&element(&block, 0), count * 8));
-            works.push(work);
-        }
-        assert!(
-            works.windows(2).all(|pair| pair[0] == pair[1]),
-            "dropping declared runs cost {works:?} work units"
-        );
-    }
-
-    #[test]
     fn an_ended_lifetime_forgets_its_initialization() {
         let block = "local:record-lifetime";
         let forgotten = forgotten_pair(block);
@@ -9241,36 +9165,10 @@ mod initialization_record_tests {
         assert!(gap.has_initialized_bytes_under(&read, 4, &index_between(&index, 2, 2)));
     }
 
-    #[test]
-    fn a_covering_query_scales_with_the_cells_it_crosses() {
-        // A read bounded to two elements of an array whose every element is
-        // a cached cell costs those two cells, whatever the array's size.
-        let mut works = Vec::new();
-        for count in [64i64, 512, 4096] {
-            let block = format!("local:record-cells-{count}");
-            let mut memory =
-                CMemory::new().with_block(block.as_str(), u32::try_from(4 * count).unwrap());
-            for index in 0..count {
-                memory = memory.store(
-                    element(&block, index),
-                    CValue::Int32(Bitvector32Term::Constant(1)),
-                );
-            }
-            let index = Bitvector32Term::Variable(Variable(924_008));
-            let read = Pointer {
-                block: PointerBlock::from(block.as_str()),
-                offset: PointerOffsetTerm::scale_int32(index.clone(), 4),
-            };
-            let assumptions = index_between(&index, 7, 8);
-            let (covered, work) = crate::instrumentation::measure_deterministic_work(|| {
-                memory.has_initialized_bytes_under(&read, 4, &assumptions)
-            });
-            assert!(covered);
-            works.push(work);
-        }
-        assert!(
-            works.windows(2).all(|pair| pair[0] == pair[1]),
-            "covering queries cost {works:?} work units"
+    #[cfg(test)]
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/primitives/memory_state/initialization_record_tests.rs"
         );
     }
 }
@@ -9321,60 +9219,11 @@ mod local_variable_spelling_tests {
         assert_eq!(state.local_name_holding_bitvector_variable(variable), None);
     }
 
-    #[test]
-    fn local_variable_spelling_work_is_linear_in_declared_slots() {
-        for size in [4usize, 16, 64, 256, 1024] {
-            let state = (0..size).fold(CState::new(), |state, index| {
-                scalar(
-                    state,
-                    &format!("noise_{index:04}"),
-                    CValue::Int32(Bitvector32Term::Constant(0)),
-                )
-            });
-            let (name, work) = crate::instrumentation::measure_deterministic_work(|| {
-                state.local_name_holding_bitvector_variable(Variable(971_011))
-            });
-            assert_eq!(name, None);
-            assert!(
-                work >= size && work <= 3 * size,
-                "size {size}: {work} work must scale with inspected slots"
-            );
-        }
-    }
-
-    #[test]
-    fn local_variable_spelling_does_not_traverse_unrelated_symbolic_values_or_heap_runs() {
-        let variable = Variable(971_012);
-        for depth in [4usize, 16, 64, 256, 1024] {
-            let nested = (0..depth).fold(Bitvector32Term::Variable(variable), |term, _| {
-                Bitvector32Term::Add(Box::new(Bitvector32Term::Constant(0)), Box::new(term))
-            });
-            let state = scalar(CState::new(), "noise", CValue::Int32(nested));
-            let base = Pointer {
-                block: "unrelated-heap".into(),
-                offset: PointerOffsetTerm::Constant(0),
-            };
-            let memory = state.memory().clone().with_seeded_cells(
-                base,
-                4,
-                CType::Int32,
-                0,
-                1_000_000,
-                CMemory::new().into(),
-            );
-            let state = state.with_memory(memory);
-            let (name, work) = crate::instrumentation::measure_deterministic_work(|| {
-                state.local_name_holding_bitvector_variable(variable)
-            });
-            assert_eq!(
-                name, None,
-                "a variable inside an expression is not the held scalar atom"
-            );
-            assert_eq!(
-                work, 2,
-                "depth {depth}: only the slot inspection and budget check participate"
-            );
-        }
+    #[cfg(test)]
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/primitives/memory_state/local_variable_spelling_tests.rs"
+        );
     }
 }
 

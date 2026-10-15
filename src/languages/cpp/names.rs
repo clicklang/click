@@ -85,29 +85,8 @@ mod tests {
         assert!(ResolvedNames::new([("a", "one"), ("a", "two")]).is_err());
     }
 
-    #[test]
-    fn collision_resolution_work_scales_with_declarations_and_identity_bytes() {
-        for size in [8, 32, 128, 512] {
-            let ids = (0..size)
-                .map(|i| format!("scope_{i:04}"))
-                .collect::<Vec<_>>();
-            let (names, work) = crate::instrumentation::measure_deterministic_work(|| {
-                ResolvedNames::new(ids.iter().map(|id| (id.as_str(), "same")))
-            });
-            let names = names.unwrap();
-            assert_eq!(
-                names
-                    .0
-                    .values()
-                    .collect::<std::collections::BTreeSet<_>>()
-                    .len(),
-                size
-            );
-            let bytes = ids.iter().map(String::len).sum::<usize>();
-            assert!(
-                work >= bytes && work <= bytes + 3 * size,
-                "size {size}: {work}"
-            );
-        }
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../../scaling_tests/languages/cpp/names/tests.rs");
     }
 }

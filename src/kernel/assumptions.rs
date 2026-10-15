@@ -1381,26 +1381,9 @@ mod exact_materialization_tests {
         ));
     }
 
-    #[test]
-    fn exact_materialization_work_scales_near_linearly_with_chain_length() {
-        let samples = [16, 32, 64, 128]
-            .into_iter()
-            .map(|length| {
-                let chain = load_chain(length, 23);
-                let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    exact_materialized_load_fixed_point(&chain)
-                });
-                assert_eq!(result, Bitvector32Term::Constant(23));
-                assert!(work > 0);
-                (length, work)
-            })
-            .collect::<Vec<_>>();
-        assert!(
-            samples
-                .windows(2)
-                .all(|pair| pair[1].1 <= pair[0].1.saturating_mul(3)),
-            "exact materialization grew faster than near-linearly: {samples:?}"
-        );
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/assumptions/exact_materialization_tests.rs");
     }
 }
 
@@ -6736,32 +6719,6 @@ mod contained_range_endpoint_graph_tests {
     }
 
     #[test]
-    fn signed_containment_order_graph_queries_scale_without_fact_index() {
-        for size in [16u64, 64, 256, 1024] {
-            let mut context = PureFactContext::new();
-            for index in 0..size {
-                context = context.assume_condition(
-                    ConditionTerm::equal(variable(index), variable(index + 1)),
-                    true,
-                );
-            }
-            let _scope = context.enter_id_scope();
-            PureFactContext::reset_bitvector_equality_index_fact_visits();
-            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
-                for index in 1..=size {
-                    assert!(exact_less_equal_for_memory_resolution(
-                        &endpoint(0),
-                        &endpoint(index),
-                        &context,
-                    ));
-                }
-            });
-            assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
-            assert!(work < 200 * size as usize, "size={size}, work={work}");
-        }
-    }
-
-    #[test]
     fn recorded_order_fact_matches_graph_equal_lower_or_upper_endpoint() {
         let lower = variable(9_330_010);
         let upper = variable(9_330_011);
@@ -6809,46 +6766,9 @@ mod contained_range_endpoint_graph_tests {
         ));
     }
 
-    #[test]
-    #[ignore = "nightly: 0.7s in the parallel gate"]
-    fn recorded_order_fact_graph_matches_scale_without_fact_index() {
-        for size in [16u64, 64, 256, 1024] {
-            let lower = variable(9_330_010);
-            let upper = variable(9_330_011);
-            let mut context = PureFactContext::new()
-                .assume_condition(
-                    ConditionTerm::signed_less_equal(endpoint(0), upper.clone()),
-                    true,
-                )
-                .assume_condition(
-                    ConditionTerm::signed_less_than(lower.clone(), endpoint(0)),
-                    true,
-                );
-            for index in 0..size {
-                context = context.assume_condition(
-                    ConditionTerm::equal(variable(index), variable(index + 1)),
-                    true,
-                );
-            }
-            let _scope = context.enter_id_scope();
-            PureFactContext::reset_bitvector_equality_index_fact_visits();
-            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
-                for index in 1..=size {
-                    assert!(exact_less_equal_for_memory_resolution(
-                        &endpoint(index),
-                        &upper,
-                        &context,
-                    ));
-                    assert!(exact_less_equal_for_memory_resolution(
-                        &lower,
-                        &endpoint(index),
-                        &context,
-                    ));
-                }
-            });
-            assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
-            assert!(work < 400 * size as usize, "size={size}, work={work}");
-        }
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/assumptions/contained_range_endpoint_graph_tests.rs");
     }
 }
 
@@ -8369,107 +8289,6 @@ mod stated_requirement_tests {
     }
 
     #[test]
-    fn stated_query_work_is_independent_of_unrelated_facts() {
-        let goal = Proposition::Exists {
-            name: "goal".into(),
-            var: Variable(300),
-            sort: Sort::Bitvector32,
-            body: Box::new(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(Bitvector32Term::Variable(Variable(300))),
-                    Box::new(Bitvector32Term::Constant(5)),
-                ),
-                true,
-            )),
-        };
-        let small = PureFactContext::new().assume_proposition(requirement(301, "fact"));
-        let mut large = small.clone();
-        for index in 0..128 {
-            large = large.assume_proposition(requirement(10_000 + index, "unrelated"));
-            large = large.assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(Bitvector32Term::Variable(Variable(20_000 + index))),
-                    Box::new(Bitvector32Term::Constant(index as u32)),
-                ),
-                true,
-            ));
-        }
-        small.build_stated_proposition_index();
-        large.build_stated_proposition_index();
-        let (_, small_work) = crate::instrumentation::measure_deterministic_work(|| {
-            small.states_required_goal(&goal)
-        });
-        let (_, large_work) = crate::instrumentation::measure_deterministic_work(|| {
-            large.states_required_goal(&goal)
-        });
-        assert_eq!(small_work, large_work);
-        // Keep the branch alive to pin persistent sibling independence.
-        assert!(!small.states_required_goal(&goal));
-    }
-
-    #[test]
-    fn stated_query_scaling_ignores_unrelated_same_sort_quantifiers() {
-        let goal = requirement(40_000, "goal");
-        let mut work = Vec::new();
-        for size in [4usize, 8, 16, 32] {
-            let mut context = PureFactContext::new().assume_proposition(goal.clone());
-            for index in 0..size {
-                context = context
-                    .assume_proposition(requirement(50_000 + index as u64, "same-sort-unrelated"));
-            }
-            context.build_stated_proposition_index();
-            let (available, measured) = crate::instrumentation::measure_deterministic_work(|| {
-                context.states_required_goal(&goal)
-            });
-            assert!(available);
-            work.push(measured);
-        }
-        assert!(
-            work.windows(2).all(|pair| pair[0] == pair[1]),
-            "stated-query work scanned same-sort facts: {work:?}"
-        );
-    }
-
-    /// The stated index keys each fact change once, when a query first
-    /// needs it: never for a context nobody asks, and only its own suffix for
-    /// a sibling that shares an already built prefix.
-    #[test]
-    fn stated_index_keys_each_fact_once_and_only_when_asked() {
-        let goal = requirement(45_000, "goal");
-        let mut base = PureFactContext::new().assume_proposition(goal.clone());
-        for index in 0..64 {
-            base = base.assume_proposition(requirement(46_000 + index, "unrelated"));
-        }
-        let key_work = |context: &PureFactContext| {
-            crate::instrumentation::measure_deterministic_work(|| {
-                context.build_stated_proposition_index()
-            })
-            .1
-        };
-        let left = base.clone().assume_proposition(requirement(47_000, "left"));
-        let right = base
-            .clone()
-            .assume_proposition(requirement(47_001, "right"));
-        let (_, unasked) = crate::instrumentation::measure_deterministic_work(|| {
-            base.clone()
-                .assume_proposition(requirement(47_002, "unasked"))
-        });
-        let first = key_work(&left);
-        let sibling = key_work(&right);
-        let again = key_work(&left);
-        assert!(
-            unasked < sibling,
-            "assuming a fact computed a key: {unasked} vs one key {sibling}"
-        );
-        assert!(
-            first > 32 * sibling,
-            "the first query keys the shared prefix: {first} vs {sibling}"
-        );
-        assert_eq!(again, 0, "a built index is not rebuilt");
-        assert!(left.states_required_goal(&goal) && right.states_required_goal(&goal));
-    }
-
-    #[test]
     fn exhausted_identity_maintenance_fails_closed_after_fact_removal() {
         let fact = requirement(60_000, "fact");
         let renamed = requirement(60_001, "goal");
@@ -8502,6 +8321,11 @@ mod stated_requirement_tests {
             })
         });
         assert!(!weakened.states_required_goal(&renamed));
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/assumptions/stated_requirement_tests.rs");
     }
 }
 

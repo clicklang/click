@@ -19,6 +19,10 @@ fi
 
 run_quality_checks() {
     cargo fmt --check
+    # `cargo fmt` follows `mod` declarations but not `include!`, and each
+    # module's scaling tests are included from `src/scaling_tests/`
+    # (`docs/internals/testing.md`, "Scaling tests").
+    find src/scaling_tests -name '*.rs' -print0 | xargs -0 rustfmt --edition 2024 --check
     scripts/test-setup-environment.sh
     cargo clippy --all-targets -- -D warnings
     scripts/mdbook-build.sh

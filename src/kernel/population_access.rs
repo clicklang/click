@@ -146,23 +146,9 @@ mod tests {
         assert!(closed.checks_rewrite(&outer, &key(1)));
         assert!(outer.checks_rewrite(&closed, &key(1)));
     }
-    #[test]
-    fn selected_scope_work_is_logarithmic_and_close_restores_the_same_root() {
-        for size in [8usize, 32, 128, 512] {
-            let mut access = PopulationAccess::default();
-            for index in 0..size {
-                access = access.open(key(index)).unwrap();
-            }
-            let (next, work) =
-                crate::persistent::measure_persistent_work(|| access.open(key(size)).unwrap());
-            assert!(
-                work > 0 && work < 20 * (size.ilog2() as usize + 1),
-                "size {size}: {work}"
-            );
-            let (restored, work) =
-                crate::persistent::measure_persistent_work(|| next.close(&key(size)).unwrap());
-            assert_eq!(restored, access);
-            assert_eq!(work, 0);
-        }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/population_access/tests.rs");
     }
 }

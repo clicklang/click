@@ -248,16 +248,14 @@ fn partition_outcome_cases(
     let positive = crate::kernel::canonical_condition_fact(&lowered);
     let negative =
         crate::kernel::canonical_condition_fact(&Proposition::Not(Box::new(lowered.clone())));
-    let known = if crate::surface::planning::proposition_search::proves_by_tactic_search(
+    let known = if crate::surface::planning::proposition_search::decided_without_search(
         query.assumptions(),
         &positive,
-        "outcome if condition",
     ) {
         Some(true)
-    } else if crate::surface::planning::proposition_search::proves_by_tactic_search(
+    } else if crate::surface::planning::proposition_search::decided_without_search(
         query.assumptions(),
         &negative,
-        "outcome if condition",
     ) {
         Some(false)
     } else {
@@ -2886,16 +2884,14 @@ impl<'a> Proof<'a> {
             self.lower_surface_proposition(&negative_surface, "post-execution `if` negation")?;
         let assumptions = self.facts().assumptions();
         let positive_holds = self.facts().contains(&positive)
-            || crate::surface::planning::proposition_search::proves_by_tactic_search(
+            || crate::surface::planning::proposition_search::decided_without_search(
                 assumptions,
                 &positive,
-                "outcome cases condition",
             );
         let negative_holds = self.facts().contains(&negative)
-            || crate::surface::planning::proposition_search::proves_by_tactic_search(
+            || crate::surface::planning::proposition_search::decided_without_search(
                 assumptions,
                 &negative,
-                "outcome cases condition",
             )
             || fact_conflicts_with_assumptions(&positive, assumptions);
         match (positive_holds, negative_holds) {
@@ -3588,74 +3584,6 @@ mod outcome_case_tests {
     }
 
     #[test]
-    fn nested_case_partition_reuses_decisions_without_relowering_or_forking() {
-        for size in [4, 8, 16, 32] {
-            let conditions = (0..size)
-                .map(|index| ClickProposition::PredicateCall {
-                    name: format!("case_{index}"),
-                    arguments: Vec::new(),
-                })
-                .collect::<Vec<_>>();
-            let nodes = conditions
-                .iter()
-                .enumerate()
-                .map(|(index, condition)| OutcomeCase {
-                    fingerprint: ExecutionBranchDecisions::key(condition),
-                    condition,
-                    execution_route: None,
-                    arms: [None, (index + 1 < size).then_some(index + 1)],
-                })
-                .collect::<Vec<_>>();
-            let mut decisions = ExecutionBranchDecisions::default();
-            // Execution can record inner C decisions before an enclosing
-            // proof case is joined. Lookup must not depend on history order.
-            for condition in conditions.iter().rev() {
-                decisions.push(ExecutionBranchDecision {
-                    fingerprint: std::sync::OnceLock::new(),
-                    condition: condition.clone(),
-                    value: false,
-                });
-            }
-            let provenance = OutcomeProvenance {
-                checked_leaf_facts: None,
-                loop_return: None,
-                call_routes: Vec::new(),
-                branch_decisions: decisions,
-                surface_propositions: SurfacePropositionMap::default(),
-                recorded_snapshots: RecordedSnapshots::default(),
-                generated_load_bindings: PersistentMap::default(),
-                generated_load_source_resolutions: PersistentMap::default(),
-                generated_load_source_events: PersistentSequence::default(),
-            };
-            let root = ProofFacts::default();
-            let mut leaves = 0;
-            let (fork, work) = crate::instrumentation::measure_deterministic_work(|| {
-                partition_outcome_cases(
-                    &nodes,
-                    Some(0),
-                    &root,
-                    &root,
-                    &mut Vec::new(),
-                    provenance,
-                    &|_, _| panic!("a recorded case must not be lowered again"),
-                    &mut |facts, provenance| {
-                        assert!(facts.is_empty(), "no invented case facts");
-                        assert_eq!(provenance.branch_decisions.iter().count(), size);
-                        leaves += 1;
-                    },
-                )
-                .unwrap()
-            });
-            assert!(matches!(fork, OutcomeEvidenceFork::Keep));
-            assert_eq!(leaves, 1, "only the checked false path is retained");
-            assert!(
-                work <= size * 128,
-                "linear case work at size {size}: {work}"
-            );
-        }
-    }
-
-    #[test]
     fn branch_decision_fingerprint_collisions_do_not_select_an_unrelated_case() {
         let selected = ClickProposition::PredicateCall {
             name: "selected".to_string(),
@@ -3689,50 +3617,6 @@ mod outcome_case_tests {
             ],
         );
         assert_eq!(decisions.value(&selected).unwrap(), Some(true));
-    }
-
-    #[test]
-    fn branch_decision_lookup_does_not_scan_history_and_refuses_conflicts() {
-        let selected = ClickProposition::PredicateCall {
-            name: "selected".to_string(),
-            arguments: Vec::new(),
-        };
-        let mut previous_work = None;
-        for size in [8, 32, 128, 512] {
-            let mut decisions = ExecutionBranchDecisions::default();
-            decisions.push(ExecutionBranchDecision {
-                fingerprint: std::sync::OnceLock::new(),
-                condition: selected.clone(),
-                value: false,
-            });
-            for index in 0..size {
-                decisions.push(ExecutionBranchDecision {
-                    fingerprint: std::sync::OnceLock::new(),
-                    condition: ClickProposition::PredicateCall {
-                        name: format!("unrelated_{index}"),
-                        arguments: Vec::new(),
-                    },
-                    value: true,
-                });
-            }
-            let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
-                decisions.value(&selected).unwrap()
-            });
-            assert_eq!(value, Some(false));
-            if let Some(previous) = previous_work {
-                assert!(
-                    work <= previous * 2,
-                    "lookup grew with history: {previous} -> {work}"
-                );
-            }
-            previous_work = Some(work);
-            decisions.push(ExecutionBranchDecision {
-                fingerprint: std::sync::OnceLock::new(),
-                condition: selected.clone(),
-                value: true,
-            });
-            assert!(decisions.value(&selected).is_err());
-        }
     }
 
     #[test]
@@ -3803,6 +3687,13 @@ mod outcome_case_tests {
             );
             assert!(facts.is_empty(), "each arm restores the shared fact cursor");
         }
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!(
+            "../../../scaling_tests/surface/proof/proof_object/fixed_state_steps/outcome_case_tests.rs"
+        );
     }
 }
 
