@@ -5267,10 +5267,15 @@ fn bounded_size_t_index_stores(stores: usize) -> (String, String) {
 /// lookups, and drops the earlier cells it may alias, none of which is
 /// ordered against it. Neither may scan the other indices' bounds.
 #[test]
-#[ignore = "nightly: 1.1s in the parallel gate"]
+#[ignore = "nightly: wide-index store scaling through 256 indices"]
 fn stores_to_bounded_unordered_size_t_indices_are_near_linear() {
     const STORE_WORK: &str = "operation `verification statement: store`";
-    let samples = [4, 8, 16, 32, 64]
+    // Like the int32 companion, separate the bounded graph's fixed
+    // propagation overhead at EDGE_LIMIT from growth within each regime.
+    // Include the first index beyond the cap and several larger sizes.
+    const REGIMES: [&[usize]; 2] = [&[4, 8, 16, 32], &[33, 64, 128, 256]];
+    let samples = REGIMES
+        .concat()
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = bounded_size_t_index_stores(size);
@@ -5296,23 +5301,23 @@ fn stores_to_bounded_unordered_size_t_indices_are_near_linear() {
         .collect::<Vec<_>>();
     // A linear curve doubles per doubling; a quadratic one quadruples.
     let within = |low: usize, high: usize| high.saturating_mul(4) <= low.saturating_mul(9);
-    assert!(
-        store_work
-            .windows(2)
-            .skip(1)
-            .all(|pair| within(pair[0], pair[1])),
-        "the store rule's work over bounded unordered size_t indices is not near linear: {store_work:?}; named work: {}",
-        named_growth_diagnostic(&samples)
-    );
-    assert!(
-        samples
-            .windows(2)
-            .skip(1)
-            .all(|pair| within(pair[0].work, pair[1].work)),
-        "stores to bounded unordered size_t indices are not near linear: {:?}; named work: {}",
-        samples.iter().map(|sample| sample.work).collect::<Vec<_>>(),
-        named_growth_diagnostic(&samples)
-    );
+    for range in [1..REGIMES[0].len(), REGIMES[0].len()..samples.len()] {
+        assert!(
+            store_work[range.clone()]
+                .windows(2)
+                .all(|pair| within(pair[0], pair[1])),
+            "the store rule's work over bounded unordered size_t indices is not near linear: {store_work:?}; named work: {}",
+            named_growth_diagnostic(&samples)
+        );
+        assert!(
+            samples[range]
+                .windows(2)
+                .all(|pair| within(pair[0].work, pair[1].work)),
+            "stores to bounded unordered size_t indices are not near linear: {:?}; named work: {}",
+            samples.iter().map(|sample| sample.work).collect::<Vec<_>>(),
+            named_growth_diagnostic(&samples)
+        );
+    }
 }
 
 /// `N` calls that each hand the callee the owned window `bytes + index` of

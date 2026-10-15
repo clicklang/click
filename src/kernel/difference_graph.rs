@@ -730,6 +730,21 @@ impl DifferenceGraph {
         }
     }
 
+    /// A stated edge is a keyed lookup even when its source has more
+    /// neighbours than the bounded path search may visit.
+    fn direct_difference_bound(&self, from: Affine, to: Affine) -> Option<i128> {
+        charge();
+        let (Some(from_node), Some(to_node)) = (from.0, to.0) else {
+            return None;
+        };
+        let weight = if from_node == to_node {
+            0
+        } else {
+            *self.out_edges.get(&from_node)?.get(&to_node)?
+        };
+        Some(weight + to.1 - from.1)
+    }
+
     /// The least known upper bound on `to - from`, from intervals and from
     /// the shortest path inside `from`'s component.
     fn difference_bound(&self, from: Affine, to: Affine) -> i128 {
@@ -914,10 +929,24 @@ impl DifferenceGraph {
         // lower < upper (or <=) holds when lower - upper <= -strict, and
         // fails when upper - lower <= -(not strict).
         let (holds, fails) = match (self.resolve(domain, lower), self.resolve(domain, upper)) {
-            (Some(lower), Some(upper)) => (
-                self.difference_bound(upper, lower),
-                self.difference_bound(lower, upper),
-            ),
+            (Some(lower), Some(upper)) => {
+                if self
+                    .direct_difference_bound(upper, lower)
+                    .is_some_and(|bound| bound <= -i128::from(strict))
+                {
+                    return Some(true);
+                }
+                if self
+                    .direct_difference_bound(lower, upper)
+                    .is_some_and(|bound| bound <= -i128::from(!strict))
+                {
+                    return Some(false);
+                }
+                (
+                    self.difference_bound(upper, lower),
+                    self.difference_bound(lower, upper),
+                )
+            }
             // A side the graph has no node for is compared by interval.
             _ => {
                 let (lower_low, lower_high) = self.term_interval(domain, lower);

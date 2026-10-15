@@ -1350,3 +1350,18 @@ fn a_no_overflow_fact_answers_its_operands_under_other_names() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/difference_graph/tests.rs");
 }
+
+#[test]
+fn direct_order_fact_survives_a_high_degree_source() {
+    let n = variable(0);
+    let less = |left: Bitvector32Term, right: Bitvector32Term| {
+        ConditionTerm::Bitvector64UnsignedLessThan(Box::new(left), Box::new(right))
+    };
+    let last = EDGE_LIMIT as u64 + 1;
+    let mut graph = DifferenceGraph::new();
+    for index in 1..=last {
+        graph.assume_condition(&less(variable(index), n.clone()), true);
+    }
+    assert_eq!(graph.decide(&less(variable(last), n.clone())), Some(true));
+    assert_eq!(graph.decide(&less(n, variable(last))), Some(false));
+}
