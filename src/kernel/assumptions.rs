@@ -3095,7 +3095,7 @@ impl PureFactContext {
         else {
             return self;
         };
-        if *kind != LoadKind::Pointer
+        if Some(*kind) != LoadKind::of_type(CType::Int32Pointer)
             || crate::kernel::registered_load_bytes_for_variable(variable)
                 != Some(C_POINTER_BYTE_WIDTH)
             || !generated_load_binding_matches_proposition(binding, fact.proposition())

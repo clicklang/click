@@ -2528,7 +2528,7 @@ pub(in crate::kernel) fn checked_pointer_read_endpoint(
             Some(Bitvector32Term::MemoryLoad(
                 definition.defining_memory,
                 Box::new(definition.defining_address),
-                LoadKind::Pointer,
+                LoadKind::of_type(CType::Int32Pointer)?,
             ))
         })?
     else {

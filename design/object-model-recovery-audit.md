@@ -644,7 +644,7 @@ owners. The regression rejects weakened separation, removed ownership, partial
 pointer overwrites and a write past the owned extent.
 
 This does not yet restore owned-string or owned-vector. Fresh verification still
-rejects their original postconditions. The [two-store C reduction](../bugs/pointer-field-reload-loses-backing-write-authority.md)
+rejects their original postconditions. The [two-store C reduction](../mdtests/pointer_field_reloaded_backing_writes.md)
 also still rejects its second write, so execution-side pointer reload/authority
 tracking remains the next reduced investigation. No C, contract, proof, tactic
 budget or language-profile change is included in this checkpoint. No new full
@@ -655,3 +655,42 @@ current-upstream controls (8.33s harness). It uses upstream's existing typed-loa
 API and omits the archive-only frame-context adapter. Formatting, book rendering
 and structural documentation lint pass. The full gate and nightly suite were not
 run locally; required CI supplies the integration verdict.
+
+## Scoped program-read endpoints
+
+Recovery checkpoint `a1cf07a24` repairs the execution-side two-write reduction.
+A complete program read retained its certified binding in `PureFactContext`,
+but endpoint lookup recognized only shared logical-read registrations. Publishing
+that binding globally made an existing sibling-context rejection fail; the
+repair instead selects its exact raw value from one unambiguous retained source
+in the current context. The existing endpoint checker then checks the full
+pointer cell and frame, and only the selected query graph receives the address
+relation. Import rejects non-pointer or non-eight-byte producer bindings.
+
+Retained rechecking exposed a second dependency: the live load-name registry can
+name a different source from the binding saved with the proof. Lookup therefore
+uses the retained source directly, without a registry round trip or source
+search. Ambiguous source sets refuse. No object representation, designation,
+lifetime rule, native validity promise or public keyword changes.
+
+All 133 selected recovery load/index/designation/span/loop/borrow controls pass
+(9.77s harness), including plain-proposition and missing-ownership rejection,
+sibling isolation, and a test restoring an older naming registry. The unchanged
+C reduction now admits both writes. Its regression proof adds one explicit
+`have owner->data[0] == value by { simp(); }` for the stored-value postcondition;
+C and claims remain unchanged. This positive passes fresh, expansion, rewritten
+and retained checking, with a freshly rebuilt/relinked library. A wrong-value
+postcondition is rejected. Temporary instrumentation is removed.
+
+The execution-gap bug is replaced by
+[`pointer_field_reloaded_backing_writes.md`](../mdtests/pointer_field_reloaded_backing_writes.md).
+The original string/vector postconditions remain under the
+[separate report](../bugs/c-pointer-field-postconditions-lose-frame-evidence.md).
+The last full recovery example count remains 41/52; no new full-stage or nightly
+verdict is claimed. PR #1016 merged and its pushed head `863de60ed` is verified
+in upstream history.
+
+The current-upstream extraction passes all 102 selected load/index/span/loop/borrow
+controls (9.04s harness), including the scoped-binding and restored-registry
+regression. It uses upstream's existing pointer-load kind and checks its complete
+eight-byte width; no new scalar kind is introduced by this extraction.
