@@ -299,8 +299,23 @@ fn a_context_graph_follows_its_facts() {
 /// question about compound terms (`x - y`, `0 - x`, `x + 1`, ...) the graph
 /// answers holds in every model, with the terms read as wrapping int32
 /// arithmetic.
+///
+/// The gate checks the first 50 generated fact sets, about 100,000 graph
+/// decisions; `arithmetic_decisions_hold_in_every_model_over_every_case`
+/// checks all 200 in nightly (1.7 s in the parallel gate, nearly all of it
+/// in the decisions themselves).
 #[test]
 fn arithmetic_decisions_hold_in_every_model() {
+    check_arithmetic_decisions_in_every_model(50);
+}
+
+#[test]
+#[ignore = "nightly: 1.7s in the parallel gate"]
+fn arithmetic_decisions_hold_in_every_model_over_every_case() {
+    check_arithmetic_decisions_in_every_model(200);
+}
+
+fn check_arithmetic_decisions_in_every_model(cases: usize) {
     use Bitvector32Term as T;
     fn value(term: &Bitvector32Term, variables: &[Bitvector32Term], model: &[i32]) -> i32 {
         match term {
@@ -362,6 +377,22 @@ fn arithmetic_decisions_hold_in_every_model() {
             other => unreachable!("{other:?}"),
         }
     };
+    // `holds` for a two-operand query whose operands have the values `a`
+    // and `b`.
+    let holds_between = |condition: &ConditionTerm, a: i32, b: i32| -> bool {
+        match condition {
+            ConditionTerm::Bitvector32SignedLessThan(..) => a < b,
+            ConditionTerm::Bitvector32Equal(..) => a == b,
+            ConditionTerm::Bitvector32SignedAddOverflows(..) => a.overflowing_add(b).1,
+            ConditionTerm::Bitvector32SignedSubtractOverflows(..) => a.overflowing_sub(b).1,
+            ConditionTerm::Bitvector32SignedDivideOverflows(..) => a == i32::MIN && b == -1,
+            ConditionTerm::Bitvector32SignedMultiplyOverflows(..) => a.overflowing_mul(b).1,
+            ConditionTerm::Bitvector32SignedShiftLeftOverflows(..) => {
+                (0..32).contains(&b) && a >= 0 && (i64::from(a) << b) > i64::from(i32::MAX)
+            }
+            other => unreachable!("{other:?}"),
+        }
+    };
     let models = (0..values.len().pow(3))
         .map(|index| {
             (0..3)
@@ -377,7 +408,7 @@ fn arithmetic_decisions_hold_in_every_model() {
         (state % bound as u64) as usize
     };
     let mut decided = 0;
-    for _ in 0..200 {
+    for _ in 0..cases {
         let mut facts = Vec::new();
         for _ in 0..(1 + next(4)) {
             let a = &pool[next(pool.len())];
@@ -409,8 +440,20 @@ fn arithmetic_decisions_hold_in_every_model() {
             "satisfiable facts reported contradictory: {facts:?}"
         );
         let operands = pool.iter().chain(&constants).collect::<Vec<_>>();
-        for a in &operands {
-            for b in &operands {
+        // Each operand's value in each satisfying model, computed once: a
+        // query compares two operands, so `holds` on the query is the same
+        // comparison of these two values.
+        let operand_values = satisfying
+            .iter()
+            .map(|model| {
+                operands
+                    .iter()
+                    .map(|operand| value(operand, &variables, model))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        for (a_index, a) in operands.iter().enumerate() {
+            for (b_index, b) in operands.iter().enumerate() {
                 let (a, b) = (boxed(a), boxed(b));
                 for query in [
                     ConditionTerm::Bitvector32SignedAddOverflows(a.clone(), b.clone()),
@@ -426,9 +469,11 @@ fn arithmetic_decisions_hold_in_every_model() {
                     };
                     decided += 1;
                     assert!(
-                        satisfying
-                            .iter()
-                            .all(|model| holds(&query, model) == answer),
+                        operand_values.iter().all(|values| holds_between(
+                            &query,
+                            values[a_index],
+                            values[b_index]
+                        ) == answer),
                         "{query:?} decided {answer} but a model disagrees under {facts:?}"
                     );
                 }
@@ -1386,4 +1431,19 @@ fn a_no_overflow_fact_answers_its_operands_under_other_names() {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/difference_graph/tests.rs");
+}
+
+#[test]
+fn direct_order_fact_survives_a_high_degree_source() {
+    let n = variable(0);
+    let less = |left: Bitvector32Term, right: Bitvector32Term| {
+        ConditionTerm::Bitvector64UnsignedLessThan(Box::new(left), Box::new(right))
+    };
+    let last = EDGE_LIMIT as u64 + 1;
+    let mut graph = DifferenceGraph::new();
+    for index in 1..=last {
+        graph.assume_condition(&less(variable(index), n.clone()), true);
+    }
+    assert_eq!(graph.decide(&less(variable(last), n.clone())), Some(true));
+    assert_eq!(graph.decide(&less(n, variable(last))), Some(false));
 }
