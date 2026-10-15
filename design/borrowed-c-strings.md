@@ -185,14 +185,14 @@ structure; assembly for `owns` or `consumes` requirements.
    `views s: cstr_at(bytes, _); ensures result == s.len;`. It now needs read
    authority, not only `viewable`. This deliberately strengthens the
    precondition, as M3 does for `memcpy`/`memcmp`. 29 mdtest files mention
-   `strlen`, and 26 of them use `cstr_readable`:
+   `strlen`, and 26 of them use `cstr::readable`:
    - Declaration and binding tests (redeclarations, kernel-target refusals,
      `<string.h>` binding, about 8) keep their shape. Their callers change
      only where they verify a call.
    - The `cstr_dynamic_*` (8) and plain-, signed-char caller-requirement
      tests (about 8) state `views s: cstr_at(src, _)`, or
      `views src[0..n + 1u64]` with the facts, so that the call assembles.
-     The tests whose subject was `cstr_readable` transport (epochs, offset
+     The tests whose subject was `cstr::readable` transport (epochs, offset
      copies, writes) keep a variant that holds the predicate and refuses
      the call. That shows `viewable` alone no longer suffices.
    - `stdlib_every_symbol.md` and
@@ -206,12 +206,12 @@ structure; assembly for `owns` or `consumes` requirements.
    and `ensures bytes::equal(dst, 0u64, src, 0u64, result);`. The
    obtain-and-transport proof becomes `execute()` plus arithmetic.
 5. In `src/surface/tests/expansion_tests.rs`, the `read_terminator` fixture
-   tests the source identity of a reordered `cstr_readable` requirement.
+   tests the source identity of a reordered `cstr::readable` requirement.
    It becomes an assembly fixture: `views haystack[0..known_len + 1u64]`,
    the facts, and `{ s: cstr_at(haystack, known_len) }` in the expanded
    proof. It still asserts that no hidden planning transitions occur.
 6. In `src/surface/proof/surface_synthesis/tests.rs`, the strlen-shaped tests
-   synthesize the guarded quantified `loadable` carrier that `cstr_readable`
+   synthesize the guarded quantified `loadable` carrier that `cstr::readable`
    produced. If `memcmp`'s guarded `defined` range still produces that
    carrier after M3, they are renamed to C-string shapes. Otherwise they are
    retired with the shape.
@@ -224,5 +224,5 @@ structure; assembly for `owns` or `consumes` requirements.
   the caller to name a held instance and rely on assembly only when the
   arguments follow from the callee's clause?
 - Should assembly also lend a body's `owns` clauses as views?
-- Should `strlen` keep its `cstr_readable`-based guarantees beside the new
+- Should `strlen` keep its `cstr::readable`-based guarantees beside the new
   ones during the migration, or switch in one step?

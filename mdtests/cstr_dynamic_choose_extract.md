@@ -12,9 +12,9 @@ uint64 read_terminator(uint8 bytes[]) {
 verifying "cstr_dynamic_choose_extract.c";
 
 uint64 read_terminator(uint8 bytes[]) {
-    requires cstr_readable(bytes);
+    requires click::cstr::readable(bytes);
     ensures result < 18446744073709551615u64 by {
-        unfold(cstr_readable);
+        unfold(click::cstr::readable);
         execute_until(statement(1));
         have exists (len: uint64) {
             len < 18446744073709551615u64 and

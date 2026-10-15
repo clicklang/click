@@ -1054,19 +1054,19 @@ predicate docs_use_bytes_all_not_equal(bytes: uint8[], lo: int32, hi: int32, val
 }
 
 predicate docs_use_cstr_prefix(bytes: uint8[], len: uint64) {
-    cstr_prefix(bytes, len)
+    cstr::prefix(bytes, len)
 }
 
 predicate docs_use_cstr_len(bytes: uint8[], len: uint64) {
-    cstr_len(bytes, len)
+    cstr::len(bytes, len)
 }
 
 predicate docs_use_cstr(bytes: uint8[]) {
-    cstr(bytes)
+    cstr::cstr(bytes)
 }
 
 predicate docs_use_cstr_readable_len(bytes: uint8[], len: uint64) {
-    cstr_readable_len(bytes, len)
+    cstr::readable_len(bytes, len)
 }
 
 theorem docs_use_cstr_readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
@@ -1080,39 +1080,39 @@ theorem docs_use_cstr_readable_len_unique(bytes: uint8[], left: uint64, right: u
     requires bytes[right] == '\0';
 
     ensures left == right by {
-        apply(cstr_readable_len_unique(bytes, left, right));
+        apply(cstr::readable_len_unique(bytes, left, right));
     }
 }
 
 predicate docs_use_cstr_readable(bytes: uint8[]) {
-    cstr_readable(bytes)
+    cstr::readable(bytes)
 }
 
 predicate docs_use_cstr_bounded(bytes: uint8[], max: uint64) {
-    cstr_bounded(bytes, max)
+    cstr::bounded(bytes, max)
 }
 
 theorem docs_use_cstr_len_has_prefix(bytes: uint8[], len: uint64) {
-    requires cstr_len(bytes, len);
+    requires cstr::len(bytes, len);
 
-    ensures cstr_prefix(bytes, len) by {
-        apply(cstr_len_has_prefix(bytes, len));
+    ensures cstr::prefix(bytes, len) by {
+        apply(cstr::len_has_prefix(bytes, len));
     }
 }
 
 theorem docs_use_cstr_len_has_terminator(bytes: uint8[], len: uint64) {
-    requires cstr_len(bytes, len);
+    requires cstr::len(bytes, len);
 
     ensures bytes[len] == '\0' by {
-        apply(cstr_len_has_terminator(bytes, len));
+        apply(cstr::len_has_terminator(bytes, len));
     }
 }
 
 theorem docs_use_cstr_len_is_viewable(bytes: uint8[], len: uint64) {
-    requires cstr_len(bytes, len);
+    requires cstr::len(bytes, len);
 
     ensures viewable(bytes[0..len + 1u64]) by {
-        apply(cstr_len_is_viewable(bytes, len));
+        apply(cstr::len_is_viewable(bytes, len));
     }
 }
 theorem use_integer_to_int8_round_trip(z: Integer) {

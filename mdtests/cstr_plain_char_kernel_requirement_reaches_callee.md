@@ -14,11 +14,11 @@ import click::cstr;
 target "x86_64-linux-kernel";
 verifying "cstr_plain_char_kernel_requirement_reaches_callee.c";
 int32 check(const char* src) {
-    requires cstr_readable(src);
+    requires cstr::readable(src);
     ensures result == 0;
 } by { execute(); simp(); }
 int32 outer(const char* src) {
-    requires cstr_readable(src);
+    requires cstr::readable(src);
     ensures result == 0;
 } by { execute(); simp(); }
 ```

@@ -4,7 +4,7 @@
 resource argument follows the predicate rule: a `char`, `signed char`, or
 `unsigned char` pointer is passed as `uint8` bytes. A signed character
 pointer is read through its explicit byte view `(uint8*)src`, as
-`cstr_readable(src)` is, so the resource's facts state the string's unsigned
+`cstr::readable(src)` is, so the resource's facts state the string's unsigned
 bytes. `measure` lends the borrowed
 string to a callee whose parameter has the same character type, and
 `copy_prefix` opens it and lends a prefix of its bytes to a `memcpy`-style copy
