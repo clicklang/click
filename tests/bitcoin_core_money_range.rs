@@ -45,6 +45,22 @@ fn check_upstream_cpp(
     check_upstream_cpp_rounding_phase(selected, name, source, logical_source, integer_header, None);
 }
 
+/// A sidecar fixture's leading `import` lines and its text after its
+/// `verifying` clause. A composed sidecar keeps one `verifying` clause, and
+/// every fixture's library imports go at its head, before that clause.
+fn fixture_imports_and_body(fixture: &str) -> (&str, &str) {
+    let clause = fixture.find("verifying \"").unwrap();
+    let imports = &fixture[..clause];
+    assert!(
+        imports
+            .lines()
+            .all(|line| line.is_empty() || line.starts_with("import click::")),
+        "a fixture's verifying clause follows only its library imports: {imports}"
+    );
+    let body = fixture[clause..].split_once(';').unwrap().1;
+    (imports.trim(), body)
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum RoundingPhase {
     Tools,
@@ -1856,12 +1872,12 @@ fn check_upstream_fee_evaluation_fast(mode: &str, expected: i64, phase: Rounding
     let contract = format!(
         "views this->fee; views this->size; requires this->fee == 7i64; requires this->size == 3; requires at_size == 2; ensures result == {expected}i64; ensures this->fee == old(this->fee); ensures this->size == old(this->size);"
     );
-    let div = include_str!("../integrations/bitcoin-core-money-range/FeeFracDivBounded.click")
-        .split_once(';')
-        .unwrap()
-        .1;
+    let (imports, div) = fixture_imports_and_body(include_str!(
+        "../integrations/bitcoin-core-money-range/FeeFracDivBounded.click"
+    ));
     let source = format!(
-        r#"{}
+        r#"{imports}
+{}
 {div}
 int64 FeeFrac::EvaluateFee<{instance}>(int32 at_size) const {{ {contract} }} by {{ execute(); simp(); }}
 int64 FeeFrac::EvaluateFee{mode}(int32 at_size) const {{ {contract} }} by {{ execute(); simp(); }}
@@ -1916,9 +1932,9 @@ fn check_upstream_result_fit_fast_fee_evaluation(mode: &str, phase: RoundingPhas
         ),
         _ => unreachable!(),
     };
-    let div = div.split_once(';').unwrap().1;
+    let (imports, div) = fixture_imports_and_body(div);
     let source = format!(
-        "{}\n{div}\n{caller}",
+        "{imports}\n{}\n{div}\n{caller}",
         include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click")
     );
     check_upstream_cpp_rounding_phase(
@@ -2004,10 +2020,9 @@ fn upstream_fast_result_fit_up_rejects_missing_bridges_and_forged_numerator() {
 }
 
 fn check_upstream_symbolic_fast_fee_evaluation(mode: &str, phase: RoundingPhase) {
-    let div = include_str!("../integrations/bitcoin-core-money-range/FeeFracDivBounded.click")
-        .split_once(';')
-        .unwrap()
-        .1;
+    let (imports, div) = fixture_imports_and_body(include_str!(
+        "../integrations/bitcoin-core-money-range/FeeFracDivBounded.click"
+    ));
     let caller = if mode == "Down" {
         include_str!("../integrations/bitcoin-core-money-range/FeeFracEvaluateFastDown.click.in")
     } else {
@@ -2015,7 +2030,7 @@ fn check_upstream_symbolic_fast_fee_evaluation(mode: &str, phase: RoundingPhase)
         include_str!("../integrations/bitcoin-core-money-range/FeeFracEvaluateFastUp.click.in")
     };
     let source = format!(
-        "{}\n{div}\n{caller}",
+        "{imports}\n{}\n{div}\n{caller}",
         include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click")
     );
     check_upstream_cpp_rounding_phase(
@@ -2155,18 +2170,15 @@ fn wide_fee_evaluation_source_with_profile(mode: &str, positive: bool, result_fi
             },
         );
     assert!(!fragment.contains('@'));
-    let div = if !result_fit {
+    let (imports, div) = fixture_imports_and_body(if !result_fit {
         include_str!("../integrations/bitcoin-core-money-range/FeeFracDivBounded.click")
     } else if down {
         include_str!("../integrations/bitcoin-core-money-range/FeeFracDivResultFitDown.click")
     } else {
         include_str!("../integrations/bitcoin-core-money-range/FeeFracDivResultFitUp.click")
-    }
-    .split_once(';')
-    .unwrap()
-    .1;
+    });
     format!(
-        "{}\n{div}\n{fragment}",
+        "{imports}\n{}\n{div}\n{fragment}",
         include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click")
     )
 }
@@ -2299,9 +2311,16 @@ fn unified_fee_evaluation_source_with_profile(mode: &str, result_fit: bool) -> S
         .split_once("\n}\nint64")
         .unwrap()
         .0;
+    assert!(
+        wide_body.contains("let { result: product } ="),
+        "{wide_body}"
+    );
     let negative = wide_body
         .replace("denominator", "negative_denominator")
-        .replace("let product =", "let negative_product =")
+        .replace(
+            "let { result: product } =",
+            "let { result: negative_product } =",
+        )
         .replace("to_integer(product)", "to_integer(negative_product)")
         .replace("FeeFrac_Div(product,", "FeeFrac_Div(negative_product,")
         .replace("rounded", "negative_rounded");
@@ -2672,10 +2691,10 @@ fn getfee_source() -> String {
             "verifying \"bitcoin-src/src/util/feefrac.h\";",
             "verifying \"bitcoin-src/src/policy/feerate.cpp\";",
         );
-    let empty = include_str!("../integrations/bitcoin-core-money-range/FeeFracIsEmpty.click")
-        .split_once(';')
-        .unwrap()
-        .1;
+    let (imports, empty) = fixture_imports_and_body(include_str!(
+        "../integrations/bitcoin-core-money-range/FeeFracIsEmpty.click"
+    ));
+    assert!(imports.is_empty());
     format!(
         "{helpers}\n{empty}\n{}",
         include_str!("../integrations/bitcoin-core-money-range/CFeeRateGetFee.click.in")

@@ -101,7 +101,7 @@ fn machine_integer_order_bridge_applications_scale_with_steps_and_unused_bounds(
         let mut samples = Vec::new();
         for size in [4usize, 16, 64, 256] {
             let mut source = format!(
-                "theorem bridge(x: {ty}, y: {ty}, z: {ty}) {{ requires to_integer(x) <= to_integer(y); "
+                "import click::integer; theorem bridge(x: {ty}, y: {ty}, z: {ty}) {{ requires to_integer(x) <= to_integer(y); "
             );
             for i in 0..size {
                 source.push_str(&format!("requires to_integer(z) <= {i}; "));
@@ -196,8 +196,9 @@ fn integer_multiply_add_applications_scale_with_steps_and_unused_bounds() {
     let goal = "(a + b) * c == a * c + b * c";
     let mut samples = Vec::new();
     for size in [4usize, 16, 64, 256] {
-        let mut source =
-            String::from("theorem distribute(a: Integer, b: Integer, c: Integer, z: Integer) { ");
+        let mut source = String::from(
+            "import click::integer; theorem distribute(a: Integer, b: Integer, c: Integer, z: Integer) { ",
+        );
         for i in 0..size {
             source.push_str(&format!("requires z <= {i}; "));
         }
@@ -224,8 +225,9 @@ fn integer_truncation_applications_scale_with_steps_and_unused_bounds() {
     let goal = "n == truncating_quotient(n, d) * d + truncating_remainder(n, d)";
     let mut samples = Vec::new();
     for size in [4usize, 16, 64, 256] {
-        let mut source =
-            String::from("theorem law(n: Integer, d: Integer, z: Integer) { requires d != 0; ");
+        let mut source = String::from(
+            "import click::integer; theorem law(n: Integer, d: Integer, z: Integer) { requires d != 0; ",
+        );
         for i in 0..size {
             source.push_str(&format!("requires z <= {i}; "));
         }
@@ -252,7 +254,7 @@ fn multiply_order_applications_scale_with_explicit_inputs() {
     let mut samples = Vec::new();
     for size in [4usize, 16, 64, 256] {
         let mut source = String::from(
-            "theorem order(a: Integer,b: Integer,c: Integer,z: Integer) { requires a <= b; requires 0 <= c; ",
+            "import click::integer; theorem order(a: Integer,b: Integer,c: Integer,z: Integer) { requires a <= b; requires 0 <= c; ",
         );
         for i in 0..size {
             source.push_str(&format!("requires z <= {i}; "));
@@ -278,7 +280,7 @@ fn scaled_quotient_applications_scale_with_steps_and_unused_bounds() {
     let mut samples = Vec::new();
     for size in [4usize, 16, 64, 256] {
         let mut source = String::from(
-            "theorem lower(n: Integer, d: Integer, b: Integer, z: Integer) { requires d != 0; requires 1 <= d; requires b * d <= n; ",
+            "import click::integer; theorem lower(n: Integer, d: Integer, b: Integer, z: Integer) { requires d != 0; requires 1 <= d; requires b * d <= n; ",
         );
         for i in 0..size {
             source.push_str(&format!("requires z <= {i}; "));
@@ -304,7 +306,7 @@ fn correction_endpoint_applications_scale_with_steps_and_unused_bounds() {
     let mut samples = Vec::new();
     for size in [4usize, 16, 64, 256] {
         let mut source = String::from(
-            "theorem correction(n: Integer, d: Integer, q: Integer, r: Integer, b: Integer, z: Integer) { requires b <= q; requires b * d <= n; requires n == q * d + r; requires r < 0; ",
+            "import click::integer; theorem correction(n: Integer, d: Integer, q: Integer, r: Integer, b: Integer, z: Integer) { requires b <= q; requires b * d <= n; requires n == q * d + r; requires r < 0; ",
         );
         for i in 0..size {
             source.push_str(&format!("requires z <= {i}; "));
