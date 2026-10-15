@@ -1388,6 +1388,26 @@ fn memory_dag_cell_source_walk(
     cross_loop_havoc: bool,
     max_hops: Option<usize>,
 ) -> (MemoryDagCell, CellWalkStop) {
+    let result = memory_dag_cell_source_walk_inner(
+        memory,
+        pointer,
+        bytes,
+        assumptions,
+        cross_loop_havoc,
+        max_hops,
+    );
+    record_transport_cell_walk(memory, pointer, bytes, &result.0, result.1, max_hops);
+    result
+}
+
+fn memory_dag_cell_source_walk_inner(
+    memory: &SharedCMemory,
+    pointer: &Pointer,
+    bytes: u32,
+    assumptions: &PureFactContext,
+    cross_loop_havoc: bool,
+    max_hops: Option<usize>,
+) -> (MemoryDagCell, CellWalkStop) {
     let evidence = super::step_effect::Evidence {
         assumptions,
         cross_loop_havoc,

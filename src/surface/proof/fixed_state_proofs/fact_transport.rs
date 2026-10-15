@@ -213,20 +213,22 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
     // One explicit transport can ask the same failed alias/frame question
     // through several proof routes. Share their existing, fully keyed failure
     // memo within this check, just as the smart closure does.
-    crate::kernel::with_closure_failure_memo(|| {
-        check_fixed_state_fact_transport_using_facts_inner(
-            surface_source,
-            surface_target,
-            surface_premises,
-            claim_label,
-            tactic_index,
-            available,
-            effect_facts,
-            parameter_binding,
-            fixed_state,
-            surface_propositions,
-            spec_definitions,
-        )
+    crate::kernel::with_transport_cell_walk_diagnostics(|| {
+        crate::kernel::with_closure_failure_memo(|| {
+            check_fixed_state_fact_transport_using_facts_inner(
+                surface_source,
+                surface_target,
+                surface_premises,
+                claim_label,
+                tactic_index,
+                available,
+                effect_facts,
+                parameter_binding,
+                fixed_state,
+                surface_propositions,
+                spec_definitions,
+            )
+        })
     })
 }
 
@@ -730,6 +732,15 @@ fn describe_unreachable_fact_transport(
     rendered.push_str(&format!(
         "\n  checked source (holds): {checked_source}\n  checked target (wanted): {checked_target}"
     ));
+    let walks = crate::kernel::take_transport_cell_walk_diagnostics();
+    if !walks.is_empty() {
+        rendered.push_str("\n  cell walks performed while checking transport (identical observations shown once):");
+        for walk in &walks {
+            rendered.push_str("\n    ");
+            rendered.push_str(&render::render_transport_cell_walk(walk, labels));
+        }
+    }
+
     if transition_facts.is_empty() {
         rendered.push_str(&labels.trace_legend());
         rendered.push_str(
@@ -771,10 +782,8 @@ fn describe_unreachable_fact_transport(
         "label definitions (recorded constructions, not additional facts):",
         "transport label definitions (shared by checked source, target, and effects):",
     ));
-    rendered.push_str(
-        "\n  none of them justifies the target: a store's effect summary carries a fact about a \
-         cell the store did not write, and a call's havoc needs a separation for the cell",
-    );
+    rendered
+        .push_str("\n  no checked route established the target from these premises and effects");
     rendered
 }
 

@@ -39,6 +39,94 @@ pub(crate) fn capture_read_resolutions<T>(
     (result, diagnostics)
 }
 
+/// A walk actually performed during an explicit transport check. These records
+/// describe queries, not additional premises or a guess at a missing fact.
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub(crate) struct TransportCellWalkDiagnostic {
+    pub start: SharedCMemory,
+    pub pointer: Pointer,
+    pub bytes: u32,
+    pub stopped_at: SharedCMemory,
+    pub reason: &'static str,
+    pub crossed: usize,
+    pub extended: bool,
+    pub explicit: bool,
+}
+
+#[derive(Default)]
+struct TransportCellWalkDiagnostics {
+    seen: std::collections::HashSet<TransportCellWalkDiagnostic>,
+    walks: Vec<TransportCellWalkDiagnostic>,
+}
+
+thread_local! {
+    static TRANSPORT_CELL_WALKS: std::cell::RefCell<Option<TransportCellWalkDiagnostics>> = const { std::cell::RefCell::new(None) };
+}
+
+pub(crate) fn with_transport_cell_walk_diagnostics<T>(run: impl FnOnce() -> T) -> T {
+    struct Restore(Option<TransportCellWalkDiagnostics>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            TRANSPORT_CELL_WALKS.with(|slot| *slot.borrow_mut() = self.0.take());
+        }
+    }
+    let _restore =
+        Restore(TRANSPORT_CELL_WALKS.with(|slot| slot.replace(Some(Default::default()))));
+    run()
+}
+
+pub(crate) fn take_transport_cell_walk_diagnostics() -> Vec<TransportCellWalkDiagnostic> {
+    TRANSPORT_CELL_WALKS.with(|slot| {
+        slot.borrow_mut()
+            .take()
+            .map(|capture| capture.walks)
+            .unwrap_or_default()
+    })
+}
+
+pub(in crate::kernel) fn record_transport_cell_walk(
+    memory: &SharedCMemory,
+    pointer: &Pointer,
+    bytes: u32,
+    cell: &MemoryDagCell,
+    stop: CellWalkStop,
+    max_hops: Option<usize>,
+) {
+    TRANSPORT_CELL_WALKS.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let Some(capture) = slot.as_mut() else {
+            return;
+        };
+        let crossed = match cell {
+            MemoryDagCell::Stored { path, .. } | MemoryDagCell::Unwritten { path, .. } => {
+                path.len()
+            }
+        };
+        let reason = if max_hops.is_some_and(|limit| crossed >= limit) {
+            "hop limit reached"
+        } else {
+            match stop {
+                CellWalkStop::OldestRecorded => "oldest recorded snapshot reached",
+                CellWalkStop::Affected => "step affects the queried bytes",
+                CellWalkStop::NotShownSeparate => "step not proved separate from the queried bytes",
+            }
+        };
+        let diagnostic = TransportCellWalkDiagnostic {
+            start: memory.clone(),
+            pointer: pointer.clone(),
+            bytes,
+            stopped_at: cell.node().clone(),
+            reason,
+            crossed,
+            extended: extended_dag_bridging_active(),
+            explicit: explicit_dag_check_active(),
+        };
+        if capture.seen.insert(diagnostic.clone()) {
+            capture.walks.push(diagnostic);
+        }
+    });
+}
+
 /// Resource indices are logical values. ADT indices can only be exchanged
 /// using equality evidence of the same algebraic type; they are never cast
 /// to C scalars or interpreted as memory authority.

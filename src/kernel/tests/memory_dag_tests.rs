@@ -3815,3 +3815,45 @@ fn a_failed_kept_base_equality_is_reused_across_cell_lookups() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/tests/memory_dag_tests.rs");
 }
+
+/// Caching a scalar read of the predecessor is not a write, including when
+/// the access exactly matches the seeded slot's address and width.
+#[test]
+fn seeded_scalar_read_keeps_its_predecessor_cell_version() {
+    use crate::kernel::memory_provenance::{LoadHistory, recorded_load_history};
+    let assumptions = PureFactContext::new();
+    for (ty, bytes, kind) in [
+        (CType::Int32, 4, crate::kernel::LoadKind::Bits32),
+        (CType::UInt64, 8, crate::kernel::LoadKind::Bits64),
+    ] {
+        let pointer = Pointer::symbolic(Variable(98_610 + u64::from(bytes)));
+        crate::kernel::eval::declare_load_access_width(&pointer, bytes);
+        let original = intern_c_memory(CMemory::new());
+        let cached = intern_c_memory(original.memory().clone().with_seeded_cells(
+            pointer.clone(),
+            bytes,
+            ty,
+            0,
+            1,
+            original.clone(),
+        ));
+        let history = with_extended_dag_bridging(|| {
+            recorded_load_history(&original, &cached, &pointer, kind, &assumptions)
+        });
+        assert!(
+            matches!(history, LoadHistory::OneVersion(_)),
+            "{ty:?}: {history:?}"
+        );
+        let overwritten = intern_c_memory(cached.memory().clone().store(
+            pointer.offset_by_bytes(bytes - 1),
+            CValue::UInt8(Bitvector32Term::Constant(9)),
+        ));
+        let history = with_extended_dag_bridging(|| {
+            recorded_load_history(&original, &overwritten, &pointer, kind, &assumptions)
+        });
+        assert!(
+            matches!(history, LoadHistory::DifferentVersions),
+            "{ty:?}: {history:?}"
+        );
+    }
+}
