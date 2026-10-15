@@ -5586,12 +5586,16 @@ pub(in crate::surface) fn build_function_environment(
                 ))
                 .at_declaration(definition.name())
         })?;
-        let contract = CFunctionContract::new(definition.name(), function).ok_or_else(|| {
-            ClickError::new(format!(
-                "named contract `{}` cannot be applied opaquely",
-                definition.name()
-            ))
-        })?;
+        let contract = CFunctionContract::new(definition.name(), function)
+            .and_then(|contract| {
+                contract.with_value_parameters(definition.value_parameters().len())
+            })
+            .ok_or_else(|| {
+                ClickError::new(format!(
+                    "named contract `{}` cannot be applied opaquely",
+                    definition.name()
+                ))
+            })?;
         let proof_parameters = definition
             .proof_parameters()
             .unwrap_or(&[])

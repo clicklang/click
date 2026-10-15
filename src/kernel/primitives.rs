@@ -3615,6 +3615,11 @@ pub struct CFunctionContractInterface {
     /// Explicit resource-instance binders introduced by a named contract.
     /// These are part of the application interface, not a body assumption.
     pub(crate) proof_parameters: std::sync::Arc<[CResourceSpec]>,
+    /// A named contract's value parameters, `let amount: int32;`. A fact
+    /// attaching the contract to a function value fixes them; a call binds
+    /// them beside the call's arguments. They are not part of the function
+    /// type the contract applies to.
+    pub(crate) value_parameters: Vec<CParameter>,
     pub(crate) resource_requires: Vec<CResourceSpec>,
     pub(crate) resource_ensures: Vec<CResourceSpec>,
     pub(crate) resource_constructors: Vec<CResourceSpec>,
@@ -4136,11 +4141,16 @@ pub struct CFunctionContract {
     /// of the contract identity and cannot alter callback behavior.
     pub(super) callee_name: String,
     pub(super) interface: CFunctionContractInterface,
+    /// The values a fact fixed for the interface's value parameters, when
+    /// this contract was found through one; empty for the declaration.
+    pub(super) value_arguments: Vec<CValue>,
 }
 
 impl PartialEq for CFunctionContract {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name && self.interface == other.interface
+        self.name == other.name
+            && self.interface == other.interface
+            && self.value_arguments == other.value_arguments
     }
 }
 
@@ -4150,6 +4160,7 @@ impl std::hash::Hash for CFunctionContract {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.name.hash(state);
         self.interface.hash(state);
+        self.value_arguments.hash(state);
     }
 }
 
@@ -4164,6 +4175,7 @@ impl Ord for CFunctionContract {
         self.name
             .cmp(&other.name)
             .then_with(|| self.interface.cmp(&other.interface))
+            .then_with(|| self.value_arguments.cmp(&other.value_arguments))
     }
 }
 
