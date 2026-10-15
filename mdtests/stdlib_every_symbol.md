@@ -1025,27 +1025,27 @@ predicate docs_use_permutation(a: int32[], b: int32[], lo: int32, hi: int32) {
 }
 
 predicate docs_use_byte_count(bytes: uint8[], lo: int32, hi: int32, value: uint8) {
-    byte_count(bytes, lo, hi, value) == byte_count(bytes, lo, hi, value)
+    bytes::count(bytes, lo, hi, value) == bytes::count(bytes, lo, hi, value)
 }
 
 predicate docs_use_bytes_equal(left: uint8[], left_lo: int32, right: uint8[], right_lo: int32, len: int32) {
-    bytes_equal(left, left_lo, right, right_lo, len)
+    bytes::equal(left, left_lo, right, right_lo, len)
 }
 
 predicate docs_use_bytes_equal_range(left: uint8[], right: uint8[], lo: int32, hi: int32) {
-    bytes_equal_range(left, right, lo, hi)
+    bytes::equal_range(left, right, lo, hi)
 }
 
 predicate docs_use_bytes_all_equal(bytes: uint8[], lo: int32, hi: int32, value: uint8) {
-    bytes_all_equal(bytes, lo, hi, value)
+    bytes::all_equal(bytes, lo, hi, value)
 }
 
 predicate docs_use_bytes_contains(bytes: uint8[], lo: int32, hi: int32, value: uint8) {
-    bytes_contains(bytes, lo, hi, value)
+    bytes::contains(bytes, lo, hi, value)
 }
 
 predicate docs_use_bytes_all_not_equal(bytes: uint8[], lo: int32, hi: int32, value: uint8) {
-    bytes_all_not_equal(bytes, lo, hi, value)
+    bytes::all_not_equal(bytes, lo, hi, value)
 }
 
 predicate docs_use_cstr_prefix(bytes: uint8[], len: uint64) {

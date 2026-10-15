@@ -384,10 +384,10 @@ first:
 
 <!-- verified-example: mdtests/byte_slice_range_predicates.md -->
 ```click
-requires bytes_contains(p, 0, n, 'x');
-ensures opened_contains: bytes_contains(p, 0, n, 'x') by {
+requires bytes::contains(p, 0, n, 'x');
+ensures opened_contains: bytes::contains(p, 0, n, 'x') by {
     execute();
-    unfold(bytes_contains);
+    unfold(bytes::contains);
     obtain (found: int32) {
         0 <= found and found < n and p[found] == 'x'
     }

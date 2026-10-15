@@ -11,7 +11,7 @@ imports with `import click::...;`, and the modules those import:
 | `list.click` | implicit | `List<T>`, `list::append`, `list::contains`, `list::length` and their laws |
 | `machine_integer.click` | `import click::machine_integer;` | Order, increment and definedness lemmas over native integer widths |
 | `permutation.click` | `import click::permutation;` | `count` and `permutation` over `int32[]` |
-| `bytes.click` | `import click::bytes;`, or with `c/string` | Byte-range predicates over `uint8[]` |
+| `bytes.click` | `import click::bytes;`, or with `c/string` | `bytes::count`, `bytes::equal` and the other byte-range predicates over `uint8[]` |
 | `cstr.click` | `import click::cstr;`, or with `c/string` | C-string predicates and theorems |
 | `c/builtins.click` | implicit | `__click_constant_p_unknown`, the value of `__builtin_constant_p` |
 | `c/string.click` | when the C declares or calls one of its functions | `memcpy`, `memcmp`, `memset` and `strlen` contracts |
@@ -59,7 +59,9 @@ For a library addition:
   in `stdlib_list*.md` and should use the implicit library, not redeclare it.
 - Add a checked use to `mdtests/stdlib_every_symbol.md`.
 - Copy the exact declaration into `docs/reference/library/index.md` and add
-  its entry to `docs/reference/inventory.toml`. The documentation gate checks
+  its entry to `docs/reference/inventory.toml`. A module in
+  `QUALIFIED_MODULES` lists its functions, predicates and theorems by
+  in-scope path, `library.function.bytes::count`. The documentation gate checks
   these against the source.
 - Run a focused fixture check, then the full `scripts/check.sh` gate. Add
   expansion coverage when exercising a new proof path.
