@@ -326,14 +326,12 @@ run. The same workflow has a
 second job, `scripts/check.sh --audit`, which runs `click audit` over the
 whole repository on a release build: every smart tactic in the examples and
 mdtests must expand to a proof that verifies. It takes about twenty minutes.
-Before inventory, this entry point refreshes the native C import lock and
-preprocessed sources for `examples/label-build-flags`, which are not checked
-in. Rust examples retain their checked-in offline imports.
+Every example's import lock and prepared artifacts are checked in, so the
+examples need no compiler or front end; only the C++ mdtests use the pinned
+exporter.
 A proof container with a known audit failure is left out with `--exclude` in
 that script, each beside the issue that tracks it; remove the exclusion with
-the issue. `examples/basic-cpp` is also left out: its import lock and
-compilation database are generated per machine by the test harness, so a
-fresh checkout cannot load it, and `tests/cpp_import.rs` audits the C++ path.
+the issue.
 When a new test would
 push the gate past ten minutes, put it in the nightly gate; do not raise the
 budget. Before 2026-10-06 the local gate had grown to 41 minutes and CI to 23
