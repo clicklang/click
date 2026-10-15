@@ -6431,6 +6431,9 @@ pub(in crate::surface) fn composite_resource_definitions(
             )
             .with_facts_read_counts(facts_read_counts)
             .with_authorized(definition.is_authorized())
+            // A field-bearing abstract resource's body is empty, and no proof
+            // folds or unfolds it: only trusted contracts move its instances.
+            .with_sealed(definition.is_sealed())
             .with_resource_parameters(
                 definition
                     .resource_parameters()

@@ -1870,3 +1870,74 @@ fn expanded_loop_claims_stay_within_checking_work_bounds() {
 mod scaling_tests {
     include!("../../scaling_tests/bin/click-audit/tests.rs");
 }
+
+/// A selected `simp` leaves the earlier steps' implicit automation intact.
+/// A whole-claim candidate that omits that automation must be refused instead.
+#[test]
+#[ignore = "nightly: partial and whole claim cold-verification policy"]
+fn partial_claim_audit_keeps_auto_but_whole_claim_requires_its_certificate() {
+    let directory = tempfile::tempdir().unwrap();
+    let c_source = "int32 compare(uint8 bytes[]) { return memcmp(bytes, bytes, 2); }";
+    let click_source = r#"verifying "compare.c";
+int32 compare(uint8 bytes[]) {
+    requires viewable(bytes[0..2]);
+    ensures 1 == 1 by {
+        step();
+        step();
+        simp();
+    }
+}
+"#;
+    let path = directory.path().join("compare.click");
+    fs::write(directory.path().join("compare.c"), c_source).unwrap();
+    fs::write(&path, click_source).unwrap();
+    verify_c0_sources(click_source, &[("compare.c", c_source)]).unwrap();
+    let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
+    assert_eq!(sites.len(), 1);
+    let limits = AuditLimits::default();
+    let deadline = Instant::now() + limits.session.time;
+    let mut worker = AuditSessionWorker::start(&path, limits.session).unwrap();
+    audit_selected_claim_rewrite(&sites, &mut worker, &limits, deadline)
+        .expect("a partial rewrite must preserve the unselected steps' implicit auto");
+    drop(worker);
+
+    // Supply an incomplete expansion at the session boundary. It is valid
+    // with implicit auto and has no smart sites, so only the whole-claim
+    // cold check can detect the omitted evidence.
+    let incomplete =
+        click_source.replace("simp();", "have 1 == 1 by { normalize(); } assumption();");
+    verify_c0_sources(&incomplete, &[("compare.c", c_source)]).unwrap();
+    let source = load_audit_source(&path).unwrap();
+    let expected_error = click::surface::without_implicit_auto(|| {
+        verify_rewritten_with_inputs(&source, &sites[0].claim, &incomplete)
+    })
+    .expect_err("the incomplete expansion needs implicit auto");
+    let (requests, receiver) = mpsc::channel::<SessionRequest>();
+    let (responses, response_receiver) = mpsc::channel();
+    let thread = thread::spawn(move || {
+        for request in receiver {
+            responses
+                .send(Ok(SessionResponse {
+                    cost: PhaseCost {
+                        work: 0,
+                        elapsed: Duration::ZERO,
+                    },
+                    expansion: request.expansion_claim.map(|_| incomplete.clone()),
+                }))
+                .unwrap();
+        }
+    });
+    let mut worker = AuditSessionWorker {
+        source,
+        requests: Some(requests),
+        responses: response_receiver,
+        thread: Some(thread),
+        initialization: PhaseCost {
+            work: 0,
+            elapsed: Duration::ZERO,
+        },
+    };
+    let error = audit_claim_rewrite(&sites[0], &mut worker, &limits, deadline)
+        .expect_err("a whole-claim rewrite must include the implicit auto's evidence");
+    assert_eq!(error, expected_error);
+}

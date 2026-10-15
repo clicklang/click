@@ -1522,6 +1522,28 @@ post-execution `construct(open_fd(result));` step to create exactly one owned
 abstract token without consuming an input resource. The constructed token must
 also be named by the function's `produces` contract.
 
+An abstract resource may declare fields, and nothing else:
+`abstract resource obj(p: int32*) { field size: int32; }`. Its instances are
+named and carry their fields, as a declared resource's do, but it has no body:
+no proof folds, unfolds, or observes one. Only a contract produces or consumes
+an instance, so its fields are what the contracts that move it say
+(`mdtests/abstract_resource_fields_pass_through_calls.md`,
+`mdtests/abstract_resource_fields_cannot_be_folded.md`). A trusted `extern`
+contract can turn memory into such an instance and back, and a function that
+holds one sees only its fields.
+
+<!-- verified-example: mdtests/abstract_resource_fields_pass_through_calls.md -->
+```click
+abstract resource obj(p: int32*) {
+    field size: int32;
+}
+extern void pack(int32* p) {
+    consumes p[0..1];
+    produces o: obj(p);
+    ensures o.size == old(p[0]);
+}
+```
+
 Repeated owned clauses denote a quantity rather than a duplicate-ownership
 error. Omitting a coefficient transfers one unit. An owned user-declared
 token may instead transfer an `int32` quantity explicitly:

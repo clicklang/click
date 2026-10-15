@@ -1350,6 +1350,16 @@ impl CFunction {
         self.contract_interface.composite_resource_definition(name)
     }
 
+    /// The definition a proof step may fold, unfold, or observe: none for a
+    /// sealed family, whose instances only trusted contracts move.
+    pub(crate) fn proof_composite_resource_definition(
+        &self,
+        name: &str,
+    ) -> Option<&CCompositeResourceDefinition> {
+        self.composite_resource_definition(name)
+            .filter(|definition| !definition.is_sealed())
+    }
+
     /// Records the abstract families declared without `authorized`.
     pub fn with_ordinary_abstract_families(mut self, mut families: Vec<String>) -> Self {
         families.sort();
@@ -1635,6 +1645,7 @@ impl CCompositeResourceDefinition {
             facts,
             fact_source_indices,
             fact_source_spellings: Vec::new(),
+            sealed: false,
         };
         // An authority control is confined to its creating thread
         // (`thread_confinement`); computing it here keeps every copy of the
@@ -1821,6 +1832,17 @@ impl CCompositeResourceDefinition {
                     .flat_map(|arm| arm.contains.iter()),
             )
             .any(|spec| matches!(spec.term(), CResourceTerm::PopulationAuthority { .. }))
+    }
+
+    /// Marks a field-bearing abstract family, which no proof step folds,
+    /// unfolds, or observes.
+    pub fn with_sealed(mut self, sealed: bool) -> Self {
+        self.sealed = sealed;
+        self
+    }
+
+    pub fn is_sealed(&self) -> bool {
+        self.sealed
     }
 
     pub fn with_authorized(mut self, authorized: bool) -> Self {

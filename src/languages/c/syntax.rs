@@ -3187,6 +3187,7 @@ pub(crate) use c0_comparison;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct C0SyntaxError {
+    limit_exceeded: bool,
     message: String,
     position: Option<SourcePosition>,
 }
@@ -5536,6 +5537,7 @@ impl C0Expression {
 impl C0SyntaxError {
     fn new(message: impl Into<String>) -> Self {
         Self {
+            limit_exceeded: false,
             message: message.into(),
             position: None,
         }
@@ -5543,6 +5545,7 @@ impl C0SyntaxError {
 
     fn at(position: SourcePosition, message: impl Into<String>) -> Self {
         Self {
+            limit_exceeded: false,
             message: message.into(),
             position: Some(position),
         }
@@ -5552,6 +5555,11 @@ impl C0SyntaxError {
     fn with_position(mut self, position: SourcePosition) -> Self {
         self.position.get_or_insert(position);
         self
+    }
+
+    /// The parser stopped at a run limit rather than rejecting C syntax.
+    pub(crate) fn limit_exceeded(&self) -> bool {
+        self.limit_exceeded
     }
 
     pub fn message(&self) -> &str {
@@ -9242,10 +9250,12 @@ impl Parser {
     /// parsing to its end first.
     fn checkpoint(&self) -> Result<(), C0SyntaxError> {
         if crate::instrumentation::deadline_exceeded() {
-            Err(self.error_here(format!(
+            let mut error = self.error_here(format!(
                 "C parsing stopped: {}",
                 crate::instrumentation::deadline_context()
-            )))
+            ));
+            error.limit_exceeded = true;
+            Err(error)
         } else {
             Ok(())
         }

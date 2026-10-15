@@ -436,6 +436,7 @@ fn walk_c_function<S: VariableSubstitution + ?Sized>(function: &CFunction, s: &S
             thread_confined: definition.thread_confined,
             contains_mutex_authority: definition.contains_mutex_authority,
             authorized: definition.authorized,
+            sealed: definition.sealed,
             reaches_population: definition.reaches_population,
             owned_footprint_unnamed: definition.owned_footprint_unnamed,
             fact_source_indices: definition.fact_source_indices.clone(),

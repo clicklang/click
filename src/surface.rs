@@ -858,6 +858,10 @@ pub struct ResourceDefinition {
     /// Declared `authorized resource`: the family takes part in population
     /// accounting, so `authority(...)` and `count(...)` may name it.
     authorized: bool,
+    /// An `abstract resource` that declares fields: its instances carry
+    /// fields, but it has no body, so no proof folds, unfolds, or observes
+    /// one. Only a trusted contract produces or consumes an instance.
+    sealed: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -7255,11 +7259,12 @@ pub struct ClickError {
     timing_tactic: Option<Box<TimingTacticContext>>,
 }
 
-/// The phase that rejected input or a checked proof operation. `Proof` means
+/// The cause of a refused input or checked proof operation. `Proof` means
 /// evidence was unavailable to this check; it is not a claim that C is unsafe.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ClickErrorKind {
     Syntax,
+    Limit,
     Type,
     Proof,
     Internal,
@@ -7269,6 +7274,7 @@ impl ClickErrorKind {
     fn label(self) -> &'static str {
         match self {
             Self::Syntax => "syntax error",
+            Self::Limit => "limit error",
             Self::Type => "type error",
             Self::Proof => "proof error",
             Self::Internal => "internal error",
@@ -7528,6 +7534,12 @@ impl ClickFunctionDefinition {
 }
 
 impl ResourceDefinition {
+    /// Whether this is a field-bearing `abstract resource`, which no proof
+    /// may fold, unfold, or observe.
+    pub fn is_sealed(&self) -> bool {
+        self.sealed
+    }
+
     pub fn fields(&self) -> &[ResourceFieldDefinition] {
         self.composite_body
             .as_ref()
