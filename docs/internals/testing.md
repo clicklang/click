@@ -350,7 +350,10 @@ sent 672 tests, about 860 CPU-seconds of the 1,265 in the unit run, and 208
 mdtests, about 340 of the corpus's 710, to nightly. A gate run without the
 nightly fixtures is partial, as a CI partition is: the hidden prerequisite
 ratchet checks only for a rise there, and the nightly run checks both
-ratchets over the whole corpus.
+ratchets over the whole corpus. On 2026-10-15 the warm local gate took 11.7
+minutes on four cores, from one example: `examples/rbtree-augmented` grew
+from 259 to 5,467 proof lines in a day and verified in 261 seconds of the
+examples harness's 317, so it joined the other rbtree examples in nightly.
 
 CI uses these internal modes for code-affecting changes:
 
