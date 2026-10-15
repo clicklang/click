@@ -1099,6 +1099,12 @@ pub(in crate::kernel) fn cast_c_value_to_type(
         }
     }
     if let CValue::Pointer(pointer) = &value {
+        if pointer.local_reference().is_some() {
+            return Err(CRuntimeError::LoanRefusal(Box::new(
+                crate::kernel::loans::LoanRefusal::UnsupportedResource
+                    .diagnostic(crate::kernel::LoanRefusalOperation::MemoryAccess),
+            )));
+        }
         // Pointer-to-integer conversion under LP64: the integer is the
         // pointer's address term, which keeps the exact source pointer. Null
         // is the integer zero; function addresses are not modeled.
@@ -2016,7 +2022,8 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
                                 value_type,
                                 pointer.pointee_volatile(),
                             )
-                            .with_constant(pointer.pointee_constant()),
+                            .with_constant(pointer.pointee_constant())
+                            .with_local_reference(pointer.local_reference().copied()),
                         ),
                         facts: pointer_path.facts,
                         obligations: pointer_path.obligations,
@@ -2060,6 +2067,7 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
                                 *volatile || pointer.pointee_volatile(),
                             )
                             .with_constant(pointer.pointee_constant())
+                            .with_local_reference(pointer.local_reference().copied())
                             .with_pointee_constant(*pointee_constant),
                         ),
                         facts: pointer_path.facts,
@@ -2102,7 +2110,8 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
                                 value_type,
                                 pointer.pointee_volatile(),
                             )
-                            .with_constant(pointer.pointee_constant()),
+                            .with_constant(pointer.pointee_constant())
+                            .with_local_reference(pointer.local_reference().copied()),
                         ),
                         facts: pointer_path.facts,
                         obligations: pointer_path.obligations,
@@ -2182,8 +2191,77 @@ pub(in crate::kernel) fn read_c_lvalue_paths(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CExpressionPath>> {
+    let mut access_state = None;
+    if let CLValueOutcome::LValue(lvalue) = &outcome {
+        if let Some(reference) = &lvalue.local_reference {
+            let effective_assumptions =
+                assumptions_with_path_context(assumptions, &facts, &obligations);
+            let result = lvalue
+                .pointer(state)
+                .ok_or(crate::kernel::loans::LoanRefusal::InvalidEvidence)
+                .and_then(|pointer| {
+                    state.local_scalar_access_resources(
+                        reference,
+                        &pointer,
+                        lvalue.value_type,
+                        &effective_assumptions,
+                    )
+                });
+            match result {
+                Ok((resources, _)) => {
+                    access_state = Some(state.clone().with_resource_context(resources))
+                }
+                Err(error) => {
+                    return Ok(vec![CExpressionPath {
+                        outcome: CExpressionOutcome::RuntimeError(CRuntimeError::LoanRefusal(
+                            Box::new(
+                                error.diagnostic(crate::kernel::LoanRefusalOperation::MemoryAccess),
+                            ),
+                        )),
+                        facts,
+                        obligations,
+                    }]);
+                }
+            }
+        } else if state.has_local_scalar_references() {
+            let effective_assumptions =
+                assumptions_with_path_context(assumptions, &facts, &obligations);
+            let pointer = match &lvalue.storage {
+                CLValueStorage::Memory { pointer } => Some(pointer),
+                CLValueStorage::Local { name } => state
+                    .locals
+                    .slot(name)
+                    .filter(|pointer| state.memory.requires_explicit_scalar_ownership(pointer)),
+            };
+            if let Some(pointer) = pointer
+                && state
+                    .resources()
+                    .memory_write_range(
+                        pointer,
+                        lvalue.value_type.byte_width(),
+                        &effective_assumptions,
+                    )
+                    .is_none()
+            {
+                return Ok(vec![CExpressionPath {
+                    outcome: CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource {
+                        resource: Box::new(CResourceFact::own_memory(
+                            CMemoryRange::new_with_element_width(
+                                pointer.clone(),
+                                0u32.into(),
+                                1u32.into(),
+                                lvalue.value_type.byte_width(),
+                            ),
+                        )),
+                    }),
+                    facts,
+                    obligations,
+                }]);
+            }
+        }
+    }
     let mut paths = read_c_lvalue_paths_without_ranges(
-        state,
+        access_state.as_ref().unwrap_or(state),
         outcome,
         facts,
         obligations,
@@ -2454,15 +2532,19 @@ pub(in crate::kernel) fn address_of_lvalue_paths(
                     match pointer_type {
                         Some(pointer_type) => {
                             let facts = lvalue_path.facts;
+                            let mut value = CValue::typed_pointer_with_pointee_volatile(
+                                pointer,
+                                pointer_type,
+                                lvalue.is_volatile(),
+                            )
+                            .with_pointer_pointee_constant(lvalue.is_constant());
+                            if let (CValue::Pointer(pointer), Some(reference)) =
+                                (&mut value, &lvalue.local_reference)
+                            {
+                                *pointer = pointer.clone().with_local_reference(*reference);
+                            }
                             CExpressionPath {
-                                outcome: CExpressionOutcome::Value(
-                                    CValue::typed_pointer_with_pointee_volatile(
-                                        pointer,
-                                        pointer_type,
-                                        lvalue.is_volatile(),
-                                    )
-                                    .with_pointer_pointee_constant(lvalue.is_constant()),
-                                ),
+                                outcome: CExpressionOutcome::Value(value),
                                 facts,
                                 obligations: lvalue_path.obligations,
                             }

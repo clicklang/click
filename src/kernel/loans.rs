@@ -11,7 +11,8 @@ mod local_references;
 pub(crate) mod mutex_calls;
 
 use exclusive_calls::{ExclusiveCallBinding, ExclusiveCallId, ExclusiveCallRecord};
-use local_references::{LocalReferenceBinding, LocalReferenceId, LocalReferenceRecord};
+use local_references::{LocalReferenceBinding, LocalReferenceRecord};
+pub(in crate::kernel) use local_references::{LocalReferenceId, LocalScalarReference};
 
 use super::functions::CCheckedResourceFact;
 use super::primitives::{
@@ -880,6 +881,7 @@ struct LoanLedgerData {
     exclusive_holders: PersistentMap<LoanParticipantId, ExclusiveCallId>,
     local_references: PersistentMap<LocalReferenceId, LocalReferenceRecord>,
     local_reference_roots: PersistentMap<ResourceOccurrenceId, LocalReferenceId>,
+    local_reference_holders: PersistentMap<LoanParticipantId, u64>,
     next_scope: u64,
     next_loan: u64,
     next_share: u64,
@@ -2723,6 +2725,9 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
     split_reborrowed_views: bool,
     same_thread_protocol_effect: bool,
 ) -> Result<StableViewTransferPlan, StableViewPlanError> {
+    if ledger.holder_has_local_references(caller) {
+        return Err(StableViewPlanError::InvalidRequirement);
+    }
     if same_thread_protocol_effect && split_reborrowed_views {
         return Err(StableViewPlanError::InvalidRequirement);
     }
@@ -4296,6 +4301,7 @@ impl LoanLedger {
                     exclusive_holders: PersistentMap::default(),
                     local_references: PersistentMap::default(),
                     local_reference_roots: PersistentMap::default(),
+                    local_reference_holders: PersistentMap::default(),
                     next_scope: 0,
                     next_loan: 0,
                     next_share: 0,
@@ -4330,6 +4336,7 @@ impl LoanLedger {
             || !data.exclusive_holders.is_empty()
             || !data.local_references.is_empty()
             || !data.local_reference_roots.is_empty()
+            || !data.local_reference_holders.is_empty()
         {
             return false;
         }

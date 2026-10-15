@@ -4559,6 +4559,16 @@ pub(super) fn execute_c_function_call_paths(
     execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CFunctionPath>> {
+    if caller_state.has_local_scalar_references() {
+        return Ok(vec![CFunctionPath::new(
+            CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(Box::new(
+                crate::kernel::loans::LoanRefusal::UnsupportedResource
+                    .diagnostic(crate::kernel::LoanRefusalOperation::Plan),
+            ))),
+            Vec::new().into(),
+            Vec::new(),
+        )]);
+    }
     if contract_reaches_population(function.contract_interface())
         && execution_context
             .environment

@@ -976,9 +976,15 @@ pub(crate) struct LoadedPointerView {
 pub struct CPointerValue {
     pointer: Pointer,
     c_type: CType,
-    pointee_volatile: bool,
-    pointee_constant: bool,
-    extent: Option<Arc<SubobjectExtent>>,
+    qualifiers: Option<Arc<CPointerQualifiers>>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct CPointerQualifiers {
+    volatile: bool,
+    constant: bool,
+    extent: Option<SubobjectExtent>,
+    local_reference: Option<super::loans::LocalScalarReference>,
 }
 
 /// The subobject a pointer was formed from, narrower than its complete
@@ -1007,9 +1013,7 @@ impl CPointerValue {
         Self {
             pointer,
             c_type,
-            pointee_volatile: false,
-            pointee_constant: false,
-            extent: None,
+            qualifiers: None,
         }
     }
 
@@ -1026,30 +1030,47 @@ impl CPointerValue {
     }
 
     pub(crate) fn pointee_volatile(&self) -> bool {
-        self.pointee_volatile
+        self.qualifiers.as_ref().is_some_and(|q| q.volatile)
     }
 
     pub(crate) fn pointee_constant(&self) -> bool {
-        self.pointee_constant
+        self.qualifiers.as_ref().is_some_and(|q| q.constant)
     }
 
     pub(crate) fn with_type(self, c_type: CType) -> Self {
         Self {
             pointer: self.pointer,
             c_type,
-            pointee_volatile: self.pointee_volatile,
-            pointee_constant: self.pointee_constant,
-            extent: self.extent,
+            qualifiers: self.qualifiers,
         }
     }
 
     pub(crate) fn with_pointee_volatile(mut self, pointee_volatile: bool) -> Self {
-        self.pointee_volatile = pointee_volatile;
+        if self.pointee_volatile() != pointee_volatile {
+            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).volatile =
+                pointee_volatile;
+        }
         self
     }
 
     pub(crate) fn with_pointee_constant(mut self, pointee_constant: bool) -> Self {
-        self.pointee_constant = pointee_constant;
+        if self.pointee_constant() != pointee_constant {
+            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).constant =
+                pointee_constant;
+        }
+        self
+    }
+
+    pub(in crate::kernel) fn local_reference(&self) -> Option<&super::loans::LocalScalarReference> {
+        self.qualifiers.as_ref()?.local_reference.as_ref()
+    }
+
+    pub(in crate::kernel) fn with_local_reference(
+        mut self,
+        reference: super::loans::LocalScalarReference,
+    ) -> Self {
+        Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).local_reference =
+            Some(reference);
         self
     }
 
@@ -1068,11 +1089,13 @@ impl CPointerValue {
     }
 
     pub(crate) fn extent(&self) -> Option<&SubobjectExtent> {
-        self.extent.as_deref()
+        self.qualifiers.as_ref()?.extent.as_ref()
     }
 
     pub(crate) fn with_extent(mut self, extent: Option<SubobjectExtent>) -> Self {
-        self.extent = extent.map(Arc::new);
+        if extent.is_some() || self.extent().is_some() {
+            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).extent = extent;
+        }
         self
     }
 
@@ -1082,8 +1105,8 @@ impl CPointerValue {
     pub(crate) fn map_pointers(&self, mut map: impl FnMut(&Pointer) -> Pointer) -> Self {
         let mut result = self.clone();
         result.pointer = map(&self.pointer);
-        if let Some(extent) = &self.extent {
-            result.extent = Some(Arc::new(SubobjectExtent {
+        if let Some(extent) = self.extent() {
+            result = result.with_extent(Some(SubobjectExtent {
                 start: map(&extent.start),
                 width: extent.width,
             }));
@@ -1093,7 +1116,7 @@ impl CPointerValue {
 
     /// Every address the value mentions, for variable collection.
     pub(crate) fn pointers(&self) -> impl Iterator<Item = &Pointer> {
-        std::iter::once(&self.pointer).chain(self.extent.as_deref().map(|extent| &extent.start))
+        std::iter::once(&self.pointer).chain(self.extent().map(|extent| &extent.start))
     }
 
     pub(crate) fn is_null(&self) -> bool {
@@ -1105,15 +1128,26 @@ impl CPointerValue {
 impl CPointerValue {
     /// Everything that is the value's identity: the address, the type it is
     /// viewed through, whether the pointee is volatile, and the subobject it
-    /// designates. Two values at one address with different extents are
+    /// designates, plus its opaque local-reference custody. A lease key is a
+    /// fresh scalar id, never a structural resource or ledger key.
+    /// Two values at one address with different extents are
     /// different values: address equality does not make a one-past pointer
     /// designate the object that follows it.
-    fn identity(&self) -> (&Pointer, &CType, bool, Option<&SubobjectExtent>) {
+    fn identity(
+        &self,
+    ) -> (
+        &Pointer,
+        &CType,
+        bool,
+        Option<&SubobjectExtent>,
+        Option<super::loans::LocalReferenceId>,
+    ) {
         (
             &self.pointer,
             &self.c_type,
-            self.pointee_volatile,
-            self.extent.as_deref(),
+            self.pointee_volatile(),
+            self.extent(),
+            self.local_reference().map(|reference| reference.id()),
         )
     }
 }
@@ -1671,6 +1705,7 @@ impl CExceptionalSignature {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CLValue {
+    pub(super) local_reference: Option<super::loans::LocalScalarReference>,
     pub(super) storage: CLValueStorage,
     pub(super) value_type: CType,
     pub(super) volatile: bool,
@@ -6867,6 +6902,15 @@ impl ResourceOccurrenceId {
             Self { arena, ordinal }
         })
     }
+}
+
+/// Exact ownership withheld by a scalar-reference birth. Only the resource
+/// partition constructor can create this reservation; pointer values carry
+/// its reference id, never this payload or a resource context.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::kernel) struct ReservedLocalScalarOwner {
+    fact: CResourceFact,
+    occurrence: ResourceOccurrenceId,
 }
 
 /// An immutable resource composition snapshot.

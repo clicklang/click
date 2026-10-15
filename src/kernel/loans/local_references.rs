@@ -1,15 +1,15 @@
 //! Checked lifecycle for one exclusive scalar reference and its reborrows.
 //!
-//! This is the local-reference protocol, not a memory producer. Registration
-//! checks an existing owned occurrence; no transition creates or returns an
-//! owned fact. A frontend must still bind birth, accesses and ending to an
-//! actual execution before using these transitions to enforce local borrows.
+//! Registration checks an existing owned occurrence; no lifecycle transition
+//! creates or returns an owned fact. The private memory adapter reserves that
+//! occurrence and checks leases at ordinary scalar loads/stores. A frontend
+//! must still bind birth and ending to a checked source plan and invocation.
 
 use super::*;
 use crate::kernel::{CType, Pointer};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub(super) struct LocalReferenceId(u64);
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(in crate::kernel) struct LocalReferenceId(u64);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct LocalReferenceBacking {
@@ -17,6 +17,7 @@ struct LocalReferenceBacking {
     support: ResourceOccurrenceId,
     owned: CResourceFact,
     value_type: CType,
+    reservation: Option<Arc<crate::kernel::primitives::ReservedLocalScalarOwner>>,
 }
 
 /// A reference instance, rather than a variable name or raw pointer value.
@@ -52,6 +53,20 @@ impl LocalReferenceId {
 impl LoanLedger {
     pub(super) fn local_references_invariant(&self) -> bool {
         let data = &self.storage.data;
+        let mut holders = BTreeMap::<LoanParticipantId, u64>::new();
+        for (_, id) in data.local_reference_roots.iter() {
+            let Some(record) = data.local_references.get(id) else {
+                return false;
+            };
+            *holders.entry(record.binding.backing.holder).or_default() += 1;
+        }
+        if holders.len() != data.local_reference_holders.len()
+            || holders
+                .iter()
+                .any(|(holder, count)| data.local_reference_holders.get(holder) != Some(count))
+        {
+            return false;
+        }
         data.local_references.iter().all(|(id, record)| {
             let binding = &record.binding;
             if binding.id != *id
@@ -110,6 +125,7 @@ impl LoanLedger {
                 support,
                 owned: owned.clone(),
                 value_type,
+                reservation: None,
             }),
         };
         let transition = self.issue(LoanTransitionEvidence::RegisterLocalReference(
@@ -234,6 +250,10 @@ impl LoanLedger {
             || data.local_references.contains_key(&binding.id)
             || data.local_reference_roots.contains_key(&backing.support)
             || backing.support == ResourceOccurrenceId::default()
+            || backing
+                .reservation
+                .as_ref()
+                .is_some_and(|reservation| !reservation.matches(backing.support, &backing.owned))
             || !matches!(
                 backing.value_type,
                 CType::Int32 | CType::UInt8 | CType::UInt16 | CType::UInt32
@@ -264,6 +284,17 @@ impl LoanLedger {
         data.local_reference_roots = data
             .local_reference_roots
             .with_inserted(backing.support, binding.id);
+        let count = data
+            .local_reference_holders
+            .get(&backing.holder)
+            .copied()
+            .unwrap_or(0);
+        data.local_reference_holders = data.local_reference_holders.with_inserted(
+            backing.holder,
+            count
+                .checked_add(1)
+                .ok_or(LoanRefusal::IdentitySpaceExhausted)?,
+        );
         Ok(())
     }
 
@@ -343,9 +374,24 @@ impl LoanLedger {
         data.local_reference_roots = data
             .local_reference_roots
             .without_key(&root.backing.support);
+        let count = data
+            .local_reference_holders
+            .get(&root.backing.holder)
+            .copied()
+            .ok_or(LoanRefusal::InvalidEvidence)?;
+        data.local_reference_holders = if count == 1 {
+            data.local_reference_holders
+                .without_key(&root.backing.holder)
+        } else {
+            data.local_reference_holders
+                .with_inserted(root.backing.holder, count - 1)
+        };
         Ok(())
     }
 }
+
+mod memory;
+pub(in crate::kernel) use memory::LocalScalarReference;
 
 #[cfg(test)]
 mod tests;
