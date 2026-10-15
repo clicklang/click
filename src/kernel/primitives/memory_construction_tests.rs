@@ -97,29 +97,6 @@ fn construction_metadata_does_not_change_memory_identity_or_proof_edges() {
 }
 
 #[test]
-fn construction_recording_cost_is_independent_of_snapshot_size() {
-    let _session = crate::kernel::VerificationSession::enter();
-    let mut costs = Vec::new();
-    for size in [16, 64, 256, 1024] {
-        let mut memory = CMemory::new();
-        for i in 0..size {
-            memory = memory.store(
-                Pointer {
-                    block: "local:scale".into(),
-                    offset: PointerOffsetTerm::Constant(i * 4),
-                },
-                CValue::Int32((i as u32).into()),
-            );
-        }
-        let (_, cost) = crate::instrumentation::measure_deterministic_work(|| {
-            memory.record_diagnostic_transform("diagnostic test", vec![CMemory::new()], Vec::new());
-        });
-        costs.push(cost);
-    }
-    assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
-}
-
-#[test]
 fn unrecorded_mutation_cannot_inherit_an_incorrect_origin() {
     let original = CMemory::new().with_block("local:changed", 4);
     let mut changed = original.clone();
@@ -180,4 +157,9 @@ fn allocation_lifetimes_up_to_ended_admit_only_new_tombstones() {
     let mut allocated = head.clone();
     allocated.live_allocations.insert(freed, size);
     assert!(!head.has_same_allocation_lifetimes_up_to_ended(&allocated));
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/kernel/primitives/memory_construction_tests.rs");
 }

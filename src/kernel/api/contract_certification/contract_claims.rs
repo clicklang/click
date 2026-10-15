@@ -280,23 +280,11 @@ mod cached_read_completion_tests {
         assert!(check_completion(cache(&after, &after, 8, 4), after).is_ok());
     }
 
-    #[test]
-    fn cached_read_completion_work_ignores_ambient_cells_and_range_length() {
-        for size in [32, 128, 512, 2048] {
-            let memory = (0..size).fold(CMemory::new(), |memory, index| {
-                memory.store(
-                    pointer("ambient", index * 4),
-                    int32(u32::try_from(index).unwrap()),
-                )
-            });
-            let first = cache(&memory, &memory, 2, 4);
-            let second = cache(&first, &first, 10_000_000, 4);
-            let (matches, work) = crate::instrumentation::measure_deterministic_work(|| {
-                memories_match_up_to_cached_reads(&second, &memory)
-            });
-            assert!(matches);
-            assert!(work <= 4, "size={size}, work={work}");
-        }
+    #[cfg(test)]
+    mod scaling_tests {
+        include!(
+            "../../../scaling_tests/kernel/api/contract_certification/contract_claims/cached_read_completion_tests.rs"
+        );
     }
 }
 
@@ -759,39 +747,11 @@ mod range_list_equality_graph_tests {
         ));
     }
 
-    #[test]
-    fn certified_range_list_graph_queries_scale_without_fact_index() {
-        for size in [16u64, 64, 256, 1024] {
-            let _session = crate::kernel::VerificationSession::enter();
-            let base = Pointer::symbolic(Variable(9200));
-            let range = |value| {
-                CMemoryRange::new(
-                    base.clone(),
-                    Bitvector32Term::add(value, Bitvector32Term::Constant(1)),
-                    Bitvector32Term::Constant(16),
-                )
-            };
-            let left = range(var(0));
-            let mut context = PureFactContext::new();
-            for index in 0..size {
-                context = context
-                    .assume_condition(ConditionTerm::equal(var(index), var(index + 1)), true);
-            }
-            let _scope = context.enter_id_scope();
-            PureFactContext::reset_bitvector_equality_index_fact_visits();
-            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
-                for index in 1..=size {
-                    let right = range(var(index));
-                    assert!(memory_range_lists_definitionally_equal(
-                        std::slice::from_ref(&left),
-                        std::slice::from_ref(&right),
-                        &context,
-                    ));
-                }
-            });
-            assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
-            assert!(work < 300 * size as usize, "size={size}, work={work}");
-        }
+    #[cfg(test)]
+    mod scaling_tests {
+        include!(
+            "../../../scaling_tests/kernel/api/contract_certification/contract_claims/range_list_equality_graph_tests.rs"
+        );
     }
 }
 

@@ -4906,30 +4906,11 @@ mod condition_fact_graph_equivalence_tests {
         ));
     }
 
-    #[test]
-    fn condition_fact_graph_queries_scale_without_fact_index() {
-        for size in [16u64, 64, 256, 1024] {
-            let _session = crate::kernel::VerificationSession::enter();
-            let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
-            let source = less_than(sum(var(0)), var(9000));
-            let mut context = PureFactContext::new();
-            for index in 0..size {
-                context = context
-                    .assume_condition(ConditionTerm::equal(var(index), var(index + 1)), true);
-            }
-            let _scope = context.enter_id_scope();
-            PureFactContext::reset_bitvector_equality_index_fact_visits();
-            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
-                for index in 1..=size {
-                    let target = less_than(sum(var(index)), var(9000));
-                    assert!(c_condition_facts_equivalent_for_memory_resolution(
-                        &source, &target, &context,
-                    ));
-                }
-            });
-            assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
-            assert!(work < 300 * size as usize, "size={size}, work={work}");
-        }
+    #[cfg(test)]
+    mod scaling_tests {
+        include!(
+            "../scaling_tests/kernel/memory_provenance/condition_fact_graph_equivalence_tests.rs"
+        );
     }
 }
 
@@ -6262,87 +6243,6 @@ mod canonical_numeric_run_tests {
     use crate::kernel::primitives::{CellRun, IndexIntervals, RunValueMode};
 
     #[test]
-    fn deep_canonicalization_preserves_numeric_load_and_copy_runs() {
-        let _session = crate::kernel::VerificationSession::enter();
-        let base = Pointer::symbolic(crate::kernel::Variable(7_629_000));
-        for element_type in [
-            CType::Int8,
-            CType::UInt8,
-            CType::Int16,
-            CType::UInt16,
-            CType::Int32,
-            CType::UInt32,
-            CType::Int64,
-            CType::UInt64,
-            CType::Int128,
-            CType::UInt128,
-            CType::Float32,
-            CType::Float64,
-        ] {
-            let width = element_type.byte_width();
-            // A retained observable cell deliberately defeats the generic
-            // uniform-source representative argument, even though every
-            // minted numeric run value remains an atomic load variable.
-            let source = intern_c_memory(
-                CMemory::new().store(base.clone(), CValue::UInt8(Bitvector32Term::Constant(7))),
-            );
-            for mode in [
-                RunValueMode::Load,
-                RunValueMode::Copy {
-                    source_base: base.offset_by_bytes(width),
-                },
-            ] {
-                let mut costs = Vec::new();
-                for size in [16, 64, 4096, 22208, 1048576] {
-                    let mut holes = IndexIntervals::default();
-                    holes.insert(3);
-                    let run = CellRun::new_with_mode(
-                        base.clone(),
-                        width,
-                        element_type,
-                        size,
-                        source.clone(),
-                        mode.clone(),
-                        holes,
-                    );
-                    let mut memory = CMemory::new();
-                    std::sync::Arc::make_mut(&mut memory.cells).add_run(run.clone());
-                    let (canonical, work) =
-                        crate::instrumentation::measure_deterministic_work(|| {
-                            canonical_c_memory_deep(&memory)
-                        });
-                    assert_eq!(canonical, memory);
-                    for index in [0, 1, size - 1] {
-                        let value = run.value(index);
-                        let bits = match &value {
-                            CValue::Int8(bits)
-                            | CValue::UInt8(bits)
-                            | CValue::Int16(bits)
-                            | CValue::UInt16(bits)
-                            | CValue::Int32(bits)
-                            | CValue::UInt32(bits)
-                            | CValue::Int64(bits)
-                            | CValue::UInt64(bits)
-                            | CValue::Int128(bits)
-                            | CValue::UInt128(bits)
-                            | CValue::Float32(bits)
-                            | CValue::Float64(bits) => bits,
-                            _ => unreachable!("numeric cell"),
-                        };
-                        assert_eq!(canonicalize_atomic_loads(bits), *bits);
-                        assert_eq!(canonical.cells.get(&run.slot_pointer(index)), Some(value));
-                    }
-                    assert!(canonical.cells.get(&run.slot_pointer(3)).is_none());
-                    costs.push((size, work));
-                }
-                assert!(
-                    costs.iter().all(|(_, work)| *work <= costs[0].1 + 128),
-                    "{costs:?}"
-                );
-            }
-        }
-    }
-    #[test]
     fn deep_canonicalization_rewrites_noncanonical_numeric_run_addresses() {
         let _session = crate::kernel::VerificationSession::enter();
         let index_cell = Pointer {
@@ -6381,145 +6281,20 @@ mod canonical_numeric_run_tests {
             }
         }
     }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/memory_provenance/canonical_numeric_run_tests.rs");
+    }
 }
 
 #[cfg(test)]
 mod pointer_store_endpoint_tests {
     use super::*;
 
-    /// The endpoint rule checks a full typed pointer and its exact address;
-    /// it cannot answer from an older store, missing alias, or partial bytes.
-    #[test]
-    fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
-        let _session = crate::kernel::VerificationSession::enter();
-        let base = |id| {
-            Pointer::loaded(
-                PointerBlock::ExternalArgument,
-                Bitvector32Term::Variable(Variable(id)),
-                4,
-            )
-        };
-        let written = base(160_001).offset_by_bytes(8);
-        let address = base(160_002).offset_by_bytes(8);
-        let alias = Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(base(160_001), base(160_002)),
-            true,
-        );
-        let endpoint = |memory: CMemory| MemoryDagCell::Unwritten {
-            node: intern_c_memory(memory),
-            path: Vec::new(),
-        };
-        let mut samples = Vec::new();
-        for count in [16u64, 64, 256, 1024] {
-            let mut context = PureFactContext::new().assume_proposition(alias.clone());
-            let mut memory = CMemory::new();
-            for index in 0..count {
-                context = context.assume_condition(
-                    ConditionTerm::pointer_equal(
-                        Pointer::symbolic(Variable(170_000 + index * 2)),
-                        Pointer::symbolic(Variable(170_001 + index * 2)),
-                    ),
-                    true,
-                );
-                memory = memory.store(
-                    written.offset_by_bytes(32 + index as u32 * 8),
-                    CValue::UInt64(Bitvector32Term::UInt64Constant(index)),
-                );
-            }
-            let stored = Pointer::symbolic(Variable(180_000 + count));
-            memory = memory.store(
-                written.clone(),
-                CValue::typed_pointer(stored.clone(), CType::Int32Pointer),
-            );
-            let cell = endpoint(memory.clone());
-            let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
-                pointer_value_at_stopping_store(&cell, &address, LoadKind::Bits32, 8, &context)
-            });
-            assert_eq!(value, Some(stored.clone()));
-            samples.push(work);
-            for (kind, bytes) in [
-                (LoadKind::Bits32, 4),
-                (LoadKind::Bits32, 16),
-                (LoadKind::Bits64, 8),
-            ] {
-                assert!(
-                    pointer_value_at_stopping_store(&cell, &address, kind, bytes, &context)
-                        .is_none()
-                );
-            }
-            assert!(
-                pointer_value_at_stopping_store(
-                    &cell,
-                    &address,
-                    LoadKind::Bits32,
-                    8,
-                    &context.without_exact_fact(&alias)
-                )
-                .is_none()
-            );
-            assert!(
-                pointer_value_at_stopping_store(
-                    &cell,
-                    &address.offset_by_bytes(4),
-                    LoadKind::Bits32,
-                    8,
-                    &context
-                )
-                .is_none()
-            );
-            // Same offset in another object is not the stored address.
-            assert!(
-                pointer_value_at_stopping_store(
-                    &cell,
-                    &Pointer::symbolic(Variable(190_000 + count)).offset_by_bytes(8),
-                    LoadKind::Bits32,
-                    8,
-                    &context
-                )
-                .is_none()
-            );
-            let overwritten = endpoint(memory.clone().store(
-                written.clone(),
-                CValue::typed_pointer(Pointer::null(), CType::Int32Pointer),
-            ));
-            assert_eq!(
-                pointer_value_at_stopping_store(
-                    &overwritten,
-                    &address,
-                    LoadKind::Bits32,
-                    8,
-                    &context
-                ),
-                Some(Pointer::null())
-            );
-            assert_ne!(
-                pointer_value_at_stopping_store(
-                    &overwritten,
-                    &address,
-                    LoadKind::Bits32,
-                    8,
-                    &context
-                ),
-                Some(stored)
-            );
-            for offset in [0, 4, 32] {
-                let changed = endpoint(memory.clone().store(
-                    written.offset_by_bytes(offset),
-                    CValue::Int32(Bitvector32Term::Constant(1)),
-                ));
-                assert!(
-                    pointer_value_at_stopping_store(
-                        &changed,
-                        &address,
-                        LoadKind::Bits32,
-                        8,
-                        &context
-                    )
-                    .is_none()
-                );
-            }
-        }
-        assert!(samples[3] <= samples[0] * 4 + 64, "{samples:?}");
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/memory_provenance/pointer_store_endpoint_tests.rs");
     }
 }
 
@@ -6700,52 +6475,8 @@ mod borrow_partition_tests {
         );
     }
 
-    #[test]
-    #[ignore = "nightly: 3.1s in the parallel gate"]
-    fn borrow_partition_query_does_not_scan_unrelated_resources_or_history() {
-        let mut samples = Vec::new();
-        let mut admission_samples = Vec::new();
-        for size in [16u64, 64, 256, 1024] {
-            let (_, mut source, write, read) = resources();
-            let mut context = PureFactContext::new()
-                .assume_proposition(Proposition::CResourceComposition(source.clone()));
-            let (_, admission) = crate::instrumentation::measure_deterministic_work(|| {
-                for index in 0..size {
-                    source = source
-                        .clone()
-                        .unchecked_with_fact(CResourceFact::own_memory(range(910_000 + index)));
-                    context = context
-                        .clone()
-                        .assume_proposition(Proposition::CResourceComposition(source.clone()));
-                }
-            });
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                for _ in 0..16 {
-                    assert!(
-                        typed_store_separated_ranges_evidence(
-                            write.base(),
-                            4,
-                            read.base(),
-                            4,
-                            &context
-                        )
-                        .is_some()
-                    );
-                }
-            });
-            eprintln!("borrow partition size={size}, admission={admission}, queries={work}");
-            samples.push(work);
-            admission_samples.push(admission);
-        }
-        assert!(
-            samples.windows(2).all(|pair| pair[0] == pair[1]),
-            "unrelated history changed lookup work: {samples:?}"
-        );
-        assert!(
-            admission_samples
-                .windows(2)
-                .all(|pair| pair[1] <= 5 * pair[0]),
-            "superlinear admission: {admission_samples:?}"
-        );
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/memory_provenance/borrow_partition_tests.rs");
     }
 }

@@ -636,7 +636,42 @@ the option; it goes on the short list of
 `--work-limit` or `instrumentation::with_run_work_limit` instead, which is
 deterministic.
 
-### Scaling regressions
+### Scaling tests
+
+A scaling test measures deterministic work at several input sizes and asserts
+how it grows. Every one lives under `src/scaling_tests/`, whose tree mirrors
+`src/`: the scaling tests at the top level of
+`src/kernel/tests/resource_tests.rs` are in
+`src/scaling_tests/kernel/tests/resource_tests.rs`, and those of an inline
+module are in a file named after it, so the scaling tests of
+`mod held_separation_tests` in `src/kernel/proof/facts.rs` are in
+`src/scaling_tests/kernel/proof/facts/held_separation_tests.rs`. The module
+whose behavior a file measures includes it in a child module named
+`scaling_tests`:
+
+```rust
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/kernel/proof/facts/held_separation_tests.rs");
+}
+```
+
+so the tests keep their module's private access through `use super::*`. A
+whole file of scaling tests is declared with `#[path]` instead, keeping its
+module name, which ends in `scaling_tests`. `include!` rather than `#[path]`
+is needed because a path inside an inline module is resolved through
+directories that need not exist. Every scaling test's path therefore contains
+`scaling_tests`, and one filter runs the whole set:
+
+```sh
+cargo nextest run --lib -E 'test(/scaling_tests/)'
+```
+
+`cargo fmt` does not follow `include!`, so `scripts/check.sh` formats
+`src/scaling_tests/` with `rustfmt` directly, and the documentation test
+`every_scaling_test_file_is_included_by_its_module` fails on a file no module
+includes. Before changing a hot path, read the scaling tests of the modules it
+touches; add new ones beside them.
 
 The built-in standard library is parsed and resource-expanded once per process.
 Only immutable surface declarations are shared; each verification constructs
@@ -659,7 +694,7 @@ paths, quantified instances, premises, and definition members count as input
 or output and may be charged accordingly.
 
 Kernel memory snapshots have such regressions in
-`src/kernel/tests/memory_scaling_tests.rs`: sequential stores into one block,
+`src/scaling_tests/kernel/tests/memory_scaling_tests.rs`: sequential stores into one block,
 one store beside a growing number of unrelated cells, interning a one-store
 derivative of an interned snapshot, and deduplication of equal content reached
 by different routes. The same file bounds by a constant plus a logarithm the
@@ -671,7 +706,7 @@ the first derivation's storage. Normalizing allocation tokens in distinct heap
 blocks must stay linear in the tokens.
 
 Resource-context validity has its own in
-`src/kernel/tests/resource_scaling_tests.rs`. Validity of a caller frame, and
+`src/scaling_tests/kernel/tests/resource_scaling_tests.rs`. Validity of a caller frame, and
 composing one ensured range into it (a verified call's return), must cost
 work that does not grow with unrelated owned allocations and instances beside
 the target, nor with unrelated pointer equalities in the assumptions: the
@@ -682,7 +717,7 @@ violation kind beside many unrelated resources from either side of the alias
 walk.
 
 End to end, `roundtrip_extra_copy_stays_nearly_flat_beside_unrelated_allocations`
-in `src/surface/tests/scaling_tests.rs` verifies the frozen byte-representation
+in `src/scaling_tests/surface/tests/scaling_tests.rs` verifies the frozen byte-representation
 round trip beside 2, 4, 8, and 16 unrelated live heap allocations, with and
 without one extra fixed `memcpy`, and bounds the extra copy's marginal work by
 an eighth above its smallest value. It guards the collapse of the quadratic

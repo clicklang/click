@@ -1,0 +1,207 @@
+// Scaling tests of `src/surface/planning/proposition_search.rs` (module `condition_premise_tests`): deterministic work measured at several
+// input sizes. Included into its `scaling_tests` module; see "Scaling
+// tests" in `docs/internals/testing.md`.
+
+use super::*;
+
+#[test]
+fn wide_condition_index_construction_charges_its_variable_entries() {
+    let mut samples = Vec::new();
+    for size in [4, 8, 16, 32] {
+        let mut terms = (0..size)
+            .map(|index| term(40_000 + (size * 100 + index) as u64))
+            .collect::<Vec<_>>();
+        while terms.len() > 1 {
+            terms = terms
+                .chunks(2)
+                .map(|pair| {
+                    if pair.len() == 1 {
+                        pair[0].clone()
+                    } else {
+                        Bitvector32Term::Add(Box::new(pair[0].clone()), Box::new(pair[1].clone()))
+                    }
+                })
+                .collect();
+        }
+        let condition = ConditionTerm::Bitvector32Equal(
+            Box::new(terms.pop().unwrap()),
+            Box::new(Bitvector32Term::Constant(0)),
+        );
+        let ((context, work), events) = crate::instrumentation::collect(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                PureFactContext::new().assume_condition(condition, true)
+            })
+        });
+        assert_eq!(context.condition_fact_pairs().count(), 1);
+        let index_work = events
+            .into_iter()
+            .filter_map(|event| {
+                if let crate::instrumentation::VerificationEvent::OperationFinished {
+                    name,
+                    work,
+                    ..
+                } = event
+                {
+                    (name == "condition variable indexing").then_some(work)
+                } else {
+                    None
+                }
+            })
+            .sum::<usize>();
+        // The existing context-entry charge covers the first variable.
+        assert_eq!(index_work, size - 1);
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= pair[0] * 3),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn snapshot_condition_index_builds_once_and_survives_scalar_updates() {
+    let mut cold_samples = Vec::new();
+    let mut warm_samples = Vec::new();
+    for size in [8, 16, 32, 64] {
+        let (mut context, goal) = chain(8, 0);
+        let memory = intern_c_memory(CMemory::new().with_block("other", size as u32 * 4));
+        let mut snapshot_facts = Vec::new();
+        for index in 0..size {
+            let condition = ConditionTerm::Bitvector32Equal(
+                Box::new(term(20_000 + index as u64)),
+                Box::new(Bitvector32Term::MemoryLoad(
+                    memory.clone(),
+                    Box::new(Pointer {
+                        block: "other".into(),
+                        offset: PointerOffsetTerm::Constant(index as i64 * 4),
+                    }),
+                    crate::kernel::LoadKind::Bits32,
+                )),
+            );
+            context = context.assume_condition(condition.clone(), true);
+            snapshot_facts.push(Proposition::ConditionIs(condition, true));
+        }
+        let (selected, cold) = crate::instrumentation::measure_deterministic_work(|| {
+            connected_condition_premises(&context, &goal, false).unwrap()
+        });
+        assert_eq!(selected.len(), 8);
+        let (_, warm) = crate::instrumentation::measure_deterministic_work(|| {
+            connected_condition_premises(&context, &goal, false).unwrap()
+        });
+        assert!(
+            cold >= warm + size,
+            "snapshot construction must be charged: {cold}, {warm}"
+        );
+        cold_samples.push(cold);
+        warm_samples.push(warm);
+        let scalar_branch = context
+            .clone()
+            .assume_condition(order(30_000, 30_001), true);
+        let (_, branch_work) = crate::instrumentation::measure_deterministic_work(|| {
+            connected_condition_premises(&scalar_branch, &goal, false).unwrap()
+        });
+        assert_eq!(
+            branch_work, warm,
+            "scalar insertion must share the completed snapshot index"
+        );
+        let withdrawn = context.without_exact_fact(&snapshot_facts[0]);
+        let (selected, rebuilt) = crate::instrumentation::measure_deterministic_work(|| {
+            connected_condition_premises(&withdrawn, &goal, false).unwrap()
+        });
+        assert_eq!(selected, scanned_component(&withdrawn, &goal).0);
+        assert!(
+            rebuilt > warm && rebuilt <= warm + 8,
+            "snapshot withdrawal must apply only its delta: {rebuilt}, {warm}"
+        );
+        let extra = ConditionTerm::Bitvector32Equal(
+            Box::new(term(90_000)),
+            Box::new(Bitvector32Term::MemoryLoad(
+                memory.clone(),
+                Box::new(Pointer {
+                    block: "other".into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                }),
+                crate::kernel::LoadKind::Bits32,
+            )),
+        );
+        let extended = scalar_branch.assume_condition(extra, true);
+        let (selected, extended_work) = crate::instrumentation::measure_deterministic_work(|| {
+            connected_condition_premises(&extended, &goal, false).unwrap()
+        });
+        assert_eq!(selected.len(), 8);
+        assert!(
+            extended_work > warm && extended_work <= warm + 8,
+            "snapshot insertion must apply only its delta: {extended_work}, {warm}"
+        );
+        eprintln!("snapshot bucket {size}: cold {cold}, warm {warm}");
+    }
+    assert!(
+        warm_samples.iter().all(|work| *work == warm_samples[0]),
+        "{warm_samples:?}"
+    );
+    assert!(
+        cold_samples.windows(2).all(|pair| pair[1] <= pair[0] * 3),
+        "{cold_samples:?}"
+    );
+}
+
+#[test]
+#[ignore = "nightly: 4.8s in the parallel gate"]
+fn connected_condition_selection_scales_linearly_in_chain_and_context() {
+    for grow_chain in [false, true] {
+        let mut samples = Vec::new();
+        let mut complete = Vec::new();
+        for size in [8, 16, 32, 64] {
+            let length = if grow_chain { size } else { 8 };
+            let (context, goal) = chain(length, size * 4);
+            let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
+                connected_condition_premises(&context, &goal, false).unwrap()
+            });
+            assert_eq!(selected.len(), length);
+            assert!(
+                work >= length && work <= 16 * (length + size * 4),
+                "{length}: {work}"
+            );
+            samples.push(work);
+            let (proof, total) = crate::instrumentation::measure_deterministic_work(|| {
+                context
+                    .derive_atomic_proposition(&goal)
+                    .expect("connected order chain proves goal")
+            });
+            complete.push(total);
+            assert!(proof.check(&context));
+            assert_eq!(proof.context_premises().len(), length);
+            eprintln!(
+                "chain {length}, unrelated {}: selection {work}, complete {total}",
+                size * 4
+            );
+            // Every link is necessary, and withdrawing it must also
+            // change the selected component and invalidate the certificate.
+            for index in 1..=length as u64 {
+                let weakened =
+                    context.without_exact_fact(&Proposition::ConditionIs(chain_fact(index), true));
+                assert!(!proof.check(&weakened));
+            }
+            let broken = context.without_exact_fact(&Proposition::ConditionIs(
+                chain_fact(length as u64 / 2),
+                true,
+            ));
+            assert!(broken.derive_atomic_proposition(&goal).is_none());
+        }
+        if !grow_chain {
+            assert!(
+                samples.iter().all(|work| *work == samples[0]),
+                "{samples:?}"
+            );
+            assert!(
+                complete.iter().all(|work| *work == complete[0]),
+                "{complete:?}"
+            );
+        }
+        for curve in [&samples, &complete] {
+            for pair in curve.windows(2) {
+                assert!(pair[1] <= pair[0] * 3, "{curve:?}");
+            }
+        }
+    }
+}

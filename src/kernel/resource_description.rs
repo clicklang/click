@@ -329,37 +329,6 @@ mod tests {
     }
 
     #[test]
-    fn cloning_a_description_shares_storage_independently_of_argument_count() {
-        let mut work = Vec::new();
-        for size in [16, 64, 256] {
-            let instance = ResourceInstance::new(
-                Variable(1),
-                "state".into(),
-                (0..size)
-                    .map(|index| int32(index).into())
-                    .collect::<Vec<_>>()
-                    .into(),
-                ResourceFieldSchema::new(vec![(
-                    "value".into(),
-                    ResourceFieldType::C(CType::Int32),
-                )])
-                .unwrap(),
-                vec![int32(1).into()].into(),
-            )
-            .unwrap();
-            let description = ResourceDescription::from_instance(&instance);
-            let ((clone, deterministic), persistent) =
-                crate::persistent::measure_persistent_work(|| {
-                    crate::instrumentation::measure_deterministic_work(|| description.clone())
-                });
-            assert!(Arc::ptr_eq(&description.0, &clone.0));
-            assert_eq!(clone.arguments().len(), size as usize);
-            work.push((deterministic, persistent));
-        }
-        assert!(work.windows(2).all(|pair| pair[1] == pair[0]), "{work:?}");
-    }
-
-    #[test]
     fn resource_reference_keeps_identity_but_forgets_observed_fields() {
         let before = instance(1, "cell", 7, 10);
         let after = instance(1, "cell", 7, 20);
@@ -452,5 +421,10 @@ mod tests {
                 )
                 .is_none()
         );
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/resource_description/tests.rs");
     }
 }

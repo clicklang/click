@@ -10944,110 +10944,6 @@ mod counted_membership_framing_tests {
     use crate::kernel::*;
 
     #[test]
-    fn independent_body_expansion_indexes_definitions_and_walks_depth_once() {
-        let pointer = Pointer {
-            block: "counter".into(),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let assumptions = PureFactContext::new();
-        let memory = CMemory::new().with_block("counter", 4);
-        let ordinary = |name: String, next: Option<String>| {
-            CCompositeResourceDefinition::new(
-                name,
-                vec![c_parameter("p", CType::Int32Pointer)],
-                None,
-                false,
-                next.into_iter()
-                    .map(|next| {
-                        CResourceSpec::composite(
-                            CResourceAccessMode::Own,
-                            next,
-                            vec![c_variable("p")],
-                            vec![CType::Int32Pointer],
-                        )
-                    })
-                    .collect(),
-                vec![],
-            )
-        };
-        let population = || {
-            CCompositeResourceDefinition::authority_control(
-                "z-count",
-                vec![c_parameter("p", CType::Int32Pointer)],
-                None,
-                vec![CResourceSpec::owned_memory(CMemorySegment::new(
-                    c_variable("p"),
-                    c_int32_literal(0),
-                    c_int32_literal(1),
-                ))],
-                vec![],
-            )
-        };
-        let root = |name: &str| {
-            ResourceContext::new().unchecked_with_fact(CResourceFact::own_composite(
-                name.into(),
-                vec![CValue::pointer(pointer.clone())],
-            ))
-        };
-        let mut depth_samples = Vec::new();
-        for depth in [16, 32, 64] {
-            let mut definitions = (0..depth)
-                .map(|index| {
-                    ordinary(
-                        format!("wrapper-{index:04}"),
-                        Some(if index + 1 == depth {
-                            "z-count".into()
-                        } else {
-                            format!("wrapper-{:04}", index + 1)
-                        }),
-                    )
-                })
-                .collect::<Vec<_>>();
-            definitions.push(population());
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                let expanded = expand_composites_for_frame(
-                    &root("wrapper-0000"),
-                    &definitions,
-                    &memory,
-                    &assumptions,
-                )
-                .unwrap();
-                assert!(owned_memory_ranges_of(&expanded).is_empty());
-                assert_eq!(expanded.facts().len(), 1);
-            });
-            depth_samples.push(work);
-        }
-        assert!(
-            depth_samples[2] <= depth_samples[0] * 7 + 128,
-            "nested expansion rescans its ancestors: {depth_samples:?}"
-        );
-        let mut frame_samples = Vec::new();
-        for size in [16, 64, 256] {
-            let mut definitions = (0..size)
-                .map(|index| ordinary(format!("unrelated-{index:04}"), None))
-                .collect::<Vec<_>>();
-            definitions.push(population());
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                let expanded = expand_composites_for_frame(
-                    &root("z-count"),
-                    &definitions,
-                    &memory,
-                    &assumptions,
-                )
-                .unwrap();
-                assert!(owned_memory_ranges_of(&expanded).is_empty());
-            });
-            frame_samples.push(work);
-        }
-        for pair in frame_samples.windows(2) {
-            assert!(
-                pair[1] <= pair[0] * 2 + 16,
-                "selected body scans unrelated definitions: {frame_samples:?}"
-            );
-        }
-    }
-
-    #[test]
     fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
         let _session = VerificationSession::enter();
         for wrapper_kind in 0..3 {
@@ -11217,6 +11113,11 @@ mod counted_membership_framing_tests {
                 "the old and new invariants must not imply zero equals one"
             );
         }
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/functions/counted_membership_framing_tests.rs");
     }
 }
 
@@ -14996,79 +14897,6 @@ mod allocation_continuity_tests {
         }
     }
 
-    /// An allocating call beside N live objects the caller keeps folded
-    /// (`boxed(p_j)`, one heap block each) must not expand them: none can
-    /// expose, continue or be left stale by an allocation the call did not
-    /// consume (`bugs/heap-object-steps-grow-with-live-allocations.md`).
-    #[test]
-    fn allocating_call_does_not_expand_the_callers_kept_objects() {
-        let boxed = c_function(CType::Void, "unused", vec![], c_return(c_void_value()))
-            .with_composite_resource_definitions(vec![CCompositeResourceDefinition::new(
-                "boxed",
-                vec![c_parameter("p", CType::Int32Pointer)],
-                None,
-                false,
-                vec![CResourceSpec::owned_memory(CMemorySegment::new(
-                    c_variable("p"),
-                    c_int32_literal(0),
-                    c_int32_literal(1),
-                ))],
-                vec![],
-            )]);
-        let interface = boxed.contract_interface();
-        let heap = |id: u64| Pointer {
-            block: PointerBlock::Heap(id),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let bytes = Bitvector32Term::Constant(4);
-        let samples = [16, 64, 256]
-            .into_iter()
-            .map(|size| {
-                let mut memory = CMemory::new();
-                let mut kept = ResourceContext::new();
-                for index in 0..size {
-                    let object = heap(931_000 + index as u64);
-                    memory = memory
-                        .with_heap_allocation_claim(object.clone(), bytes.clone())
-                        .expect("a fresh live object");
-                    kept = kept.unchecked_with_fact(CResourceFact::own_composite(
-                        "boxed".into(),
-                        vec![CValue::pointer(object)],
-                    ));
-                }
-                let created = heap(932_000);
-                let output = ResourceContext::new().unchecked_with_fact(
-                    CResourceFact::own_allocation(created.clone(), bytes.clone()),
-                );
-                let state = CState::new().with_memory(memory.clone());
-                let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    apply_verified_heap_allocation_delta(
-                        memory.clone(),
-                        &memory,
-                        &ResourceContext::new(),
-                        &kept,
-                        &output,
-                        interface,
-                        &PureFactContext::new(),
-                        None,
-                        &state,
-                        &state,
-                    )
-                });
-                let (after, _, retired) = result.expect("an allocating call");
-                assert!(retired.is_empty());
-                assert!(after.live_heap_block_size(&created).is_some());
-                (size, work)
-            })
-            .collect::<Vec<_>>();
-        assert!(
-            samples
-                .windows(2)
-                .all(|pair| pair[1].1 <= pair[0].1.saturating_mul(2)),
-            "an allocating call's delta grows with the caller's kept objects: {samples:?}"
-        );
-    }
-
     fn external_pointer(variable: u64) -> Pointer {
         Pointer {
             block: PointerBlock::ExternalArgument,
@@ -15260,33 +15088,9 @@ mod allocation_continuity_tests {
         );
     }
 
-    #[test]
-    fn allocation_size_graph_queries_scale_without_fact_index() {
-        for size in [16u64, 64, 256, 1024] {
-            let _session = crate::kernel::VerificationSession::enter();
-            let var = |id| Bitvector32Term::Variable(Variable(id));
-            let offset = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
-            let base = external_pointer(930_020);
-            let input_size = offset(var(0));
-            let mut context = PureFactContext::new();
-            for index in 0..size {
-                context = context
-                    .assume_condition(ConditionTerm::equal(var(index), var(index + 1)), true);
-            }
-            let _scope = context.enter_id_scope();
-            PureFactContext::reset_bitvector_equality_index_fact_visits();
-            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
-                for index in 1..=size {
-                    let output_size = offset(var(index));
-                    assert_eq!(
-                        allocation_continuity(&base, &input_size, &base, &output_size, &context,),
-                        AllocationContinuity::Same,
-                    );
-                }
-            });
-            assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
-            assert!(work < 300 * size as usize, "size={size}, work={work}");
-        }
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/functions/allocation_continuity_tests.rs");
     }
 }
 
@@ -18687,74 +18491,6 @@ fn copy_aggregate_union_member(
 mod aggregate_union_copy_tests {
     use super::*;
 
-    // A private argument copy must not manufacture read permission or turn
-    // an unwritten source object into an initialized parameter.
-    #[test]
-    fn aggregate_argument_reads_require_authority_and_initialization_and_scale() {
-        for count in [4u32, 16, 64, 256] {
-            let _session = crate::kernel::VerificationSession::enter();
-            let source = Pointer {
-                block: "aggregate-argument-source".into(),
-                offset: PointerOffsetTerm::Constant(0),
-            };
-            let layout = CAggregateLayout::new(
-                count * 4,
-                4,
-                (0..count)
-                    .map(|i| CAggregateField::new(format!("field_{i}"), i * 4, CType::Int32))
-                    .collect(),
-            );
-            let parameters =
-                [CParameter::new("input", CType::Int32Pointer).with_aggregate_layout(layout)];
-            let values = [CValue::pointer(source.clone())];
-            let assumptions = PureFactContext::new();
-            let empty = CMemory::new().with_uninitialized_block(source.block.clone(), count * 4);
-            let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
-                CMemoryRange::new_with_element_width(
-                    source.clone(),
-                    0.into(),
-                    (count * 4).into(),
-                    1,
-                ),
-            ));
-            let unwritten = CState::new()
-                .with_memory(empty.clone())
-                .with_resource_context(resources.clone());
-            assert!(matches!(
-                aggregate_argument_read_refusal(&unwritten, &parameters, &values, &assumptions),
-                Some(CFunctionOutcome::UndefinedBehavior(
-                    CUndefinedBehavior::UninitializedRead
-                ))
-            ));
-            let mut memory = empty;
-            for i in 0..count {
-                memory = memory.store(source.offset_by_bytes(i * 4), int32(i));
-            }
-            let unreadable = CState::new().with_memory(memory);
-            assert!(matches!(
-                aggregate_argument_read_refusal(&unreadable, &parameters, &values, &assumptions),
-                Some(CFunctionOutcome::RuntimeError(
-                    CRuntimeError::MissingResource { .. }
-                ))
-            ));
-            let readable = unreadable.with_resource_context(resources);
-            // Warm the resource index outside the measurement. The measured
-            // field walk must grow with the selected aggregate, not its square.
-            assert!(
-                aggregate_argument_read_refusal(&readable, &parameters, &values, &assumptions)
-                    .is_none()
-            );
-            let (refusal, work) = crate::instrumentation::measure_deterministic_work(|| {
-                aggregate_argument_read_refusal(&readable, &parameters, &values, &assumptions)
-            });
-            assert!(refusal.is_none());
-            assert!(
-                work <= count as usize * 128 + 128,
-                "{count} fields: {work} work"
-            );
-        }
-    }
-
     #[test]
     fn copying_a_union_drops_destination_views_absent_from_source() {
         let source = Pointer {
@@ -18858,90 +18594,6 @@ mod aggregate_union_copy_tests {
     }
 
     #[test]
-    fn unsigned_aggregate_array_copies_preserve_values_and_scale() {
-        let mut samples = Vec::new();
-        for count in [4u32, 1024, 1_000_000] {
-            let _session = crate::kernel::VerificationSession::enter();
-            let source = Pointer {
-                block: "local:aggregate-array-source".into(),
-                offset: PointerOffsetTerm::Constant(0),
-            };
-            let destination = Pointer {
-                block: "local:aggregate-array-target".into(),
-                offset: PointerOffsetTerm::Constant(0),
-            };
-            let layout = CAggregateLayout::new(
-                count * 4,
-                4,
-                vec![CAggregateField::new("words", 0, CType::UInt32Array(count))],
-            );
-            let memory = CMemory::new()
-                .with_block(source.block.clone(), count * 4)
-                .with_block(destination.block.clone(), count * 4)
-                .write_scalar_array_region(
-                    &source,
-                    CType::UInt32,
-                    count,
-                    CValue::UInt32(7u32.into()),
-                    false,
-                    false,
-                    &PureFactContext::new(),
-                )
-                .unwrap();
-            let (copied, work) = crate::instrumentation::measure_deterministic_work(|| {
-                copy_aggregate_fields_checked(memory, &source, &destination, &layout).unwrap()
-            });
-            let last = destination.offset_by_bytes((count - 1) * 4);
-            assert_eq!(copied.known_value(&last), Some(CValue::UInt32(7u32.into())));
-            let changed = copied.store(
-                source.offset_by_bytes((count - 1) * 4),
-                CValue::UInt32(9u32.into()),
-            );
-            assert_eq!(
-                changed.known_value(&last),
-                Some(CValue::UInt32(7u32.into()))
-            );
-            samples.push(work);
-            // An unplaced store invalidates the compact source run and its
-            // concrete last-lane override. The immutable copy is disjoint,
-            // and every forgotten source byte remains initialized.
-            let unplaced =
-                source.offset_by_elements(Bitvector32Term::Variable(Variable(925_002)), 4);
-            let (forgotten, work) = crate::instrumentation::measure_deterministic_work(|| {
-                changed.without_possible_aliasing_cells(&unplaced, 4, &PureFactContext::new())
-            });
-            assert_eq!(forgotten.known_value(&source), None);
-            assert_eq!(
-                forgotten.known_value(&source.offset_by_bytes((count - 1) * 4)),
-                None
-            );
-            assert!(forgotten.has_initialized_bytes_at(&source, count * 4));
-            assert_eq!(
-                forgotten.known_value(&last),
-                Some(CValue::UInt32(7u32.into()))
-            );
-            samples.push(work);
-            let (unknown, work) = crate::instrumentation::measure_deterministic_work(|| {
-                copy_aggregate_fields_checked(forgotten, &source, &destination, &layout).unwrap()
-            });
-            assert!(unknown.known_value(&last).is_some());
-            assert!(unknown.has_initialized_bytes_at(&destination, count * 4));
-            samples.push(work);
-            let uninitialized = CMemory::new()
-                .with_block(source.block.clone(), count * 4)
-                .with_block(destination.block.clone(), count * 4);
-            assert_eq!(
-                copy_aggregate_fields_checked(uninitialized, &source, &destination, &layout).err(),
-                Some(CUndefinedBehavior::UninitializedRead)
-            );
-        }
-        assert!(
-            samples.iter().all(|work| *work <= samples[0] * 2 + 64),
-            "{samples:?}"
-        );
-    }
-
-    #[test]
     fn copying_forgotten_initialized_fields_carries_unknown_values() {
         let (memory, source, destination, layout) = forgotten_local_packet(true);
         let copied = copy_aggregate_fields_checked(memory, &source, &destination, &layout)
@@ -18963,6 +18615,11 @@ mod aggregate_union_copy_tests {
             copy_aggregate_fields_checked(memory, &source, &destination, &layout).err(),
             Some(CUndefinedBehavior::UninitializedRead),
         );
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/functions/aggregate_union_copy_tests.rs");
     }
 }
 
@@ -32428,50 +32085,6 @@ mod population_creation_frame_tests {
     }
 
     #[test]
-    fn automatic_lifetime_reuse_tracks_exact_memory_and_retired_blocks() {
-        for size in [16usize, 32, 64, 128] {
-            let _session = crate::kernel::VerificationSession::enter();
-            let blocks = (0..size)
-                .map(|i| PointerBlock::from(format!("local:lifetime:memo_{i}")))
-                .collect::<Vec<_>>();
-            let before = blocks.iter().fold(CMemory::new(), |memory, block| {
-                memory.with_block(block.clone(), 4)
-            });
-            let after = retire_automatic_lifetime_blocks(&before, &blocks);
-            let (repeated, work) = crate::instrumentation::measure_deterministic_work(|| {
-                retire_automatic_lifetime_blocks(&before, &blocks)
-            });
-            assert_eq!(after, repeated);
-            assert!(
-                work <= size + 1,
-                "retiring {size} exact blocks again rebuilt memory: {work}"
-            );
-            for block in &blocks {
-                assert!(!after.has_block(block));
-                assert!(after.is_ended_local_block(block));
-            }
-            // A sibling input must not evict the result needed when checking
-            // this branch again after execution has visited other outcomes.
-            let sibling = before.clone().with_block("caller:sibling", 4);
-            retire_automatic_lifetime_blocks(&sibling, &blocks);
-            let (interleaved, work) = crate::instrumentation::measure_deterministic_work(|| {
-                retire_automatic_lifetime_blocks(&before, &blocks)
-            });
-            assert_eq!(interleaved, after);
-            assert!(
-                work <= size + 1,
-                "interleaved retirement rebuilt {size} blocks: {work}"
-            );
-            let partial = retire_automatic_lifetime_blocks(&before, &blocks[..size - 1]);
-            assert!(partial.has_block(&blocks[size - 1]));
-            let changed = before.clone().with_block("caller:preserved", 8);
-            let changed_after = retire_automatic_lifetime_blocks(&changed, &blocks);
-            assert!(changed_after.has_block(&PointerBlock::from("caller:preserved")));
-            assert!(!after.has_block(&PointerBlock::from("caller:preserved")));
-        }
-    }
-
-    #[test]
     fn ended_automatic_storage_retires_creation_evidence() {
         let function = c_function(CType::Int32, "scope", vec![], c_return(c_int32_literal(0)));
         for name in ["frame:holder", "lifetime:holder"] {
@@ -32511,92 +32124,20 @@ mod population_creation_frame_tests {
             }
         }
     }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/functions/population_creation_frame_tests.rs");
+    }
 }
 
 #[cfg(test)]
 mod provisional_ensure_obligation_tests {
     use super::*;
 
-    #[test]
-    fn provisional_ensure_loadability_work_ignores_unrelated_facts() {
-        let memory = CMemory::new();
-        let data = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let state = CState::new()
-            .with_local("data", CValue::pointer(data.clone()))
-            .with_memory(memory.clone());
-        let ensure = SpecProposition::Comparison {
-            left: SpecExpression::MemoryLoad {
-                memory: SpecMemory::Current,
-                pointer: Box::new(SpecExpression::PointerOffset {
-                    pointer: Box::new(SpecExpression::CExpression(c_variable("data"))),
-                    elements: Box::new(SpecExpression::CExpression(c_int32_literal(1))),
-                    byte_width: 4,
-                }),
-                value_type: CType::Int32,
-            },
-            operator: CComparisonOperator::Equal,
-            right: SpecExpression::CExpression(c_int32_literal(0)),
-        };
-        let function = c_function(
-            CType::Int32,
-            "provisional_loadability_probe",
-            vec![c_parameter("data", CType::Int32Pointer)],
-            c_return(c_int32_literal(0)),
-        )
-        .with_contract(Vec::new(), vec![ensure], Vec::new(), Vec::new(), true);
-        let base_assumptions =
-            PureFactContext::new().assume_proposition(Proposition::CMemoryLoadable {
-                memory: memory.clone(),
-                base: data.clone(),
-                bytes: Bitvector32Term::Constant(8),
-                wide: false,
-            });
-        let element_loadable = Proposition::CMemoryLoadable {
-            memory,
-            base: data.offset_by_int32_elements(Bitvector32Term::Constant(1)),
-            bytes: Bitvector32Term::Constant(4),
-            wide: false,
-        };
-        let mut work_by_size = Vec::new();
-        for unrelated_count in [16, 64, 256, 1024] {
-            let mut assumptions = base_assumptions.clone();
-            for index in 0..unrelated_count {
-                assumptions = assumptions.assume_proposition(Proposition::Predicate {
-                    name: format!("unrelated_{index}"),
-                    arguments: Vec::new(),
-                });
-            }
-            let mut facts = crate::kernel::ExecutionFacts::new();
-            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-                add_verified_function_ensure_facts(
-                    &mut facts,
-                    &[],
-                    &state,
-                    &state,
-                    &function,
-                    &assumptions,
-                    &mut ExecutionBudget::new(),
-                )
-            });
-            result.expect("the provisional ensure should lower");
-            assert!(
-                !facts
-                    .iter()
-                    .any(|fact| fact.proposition() == &element_loadable),
-                "a value postcondition must not publish viewability"
-            );
-            work_by_size.push((unrelated_count, work));
-        }
-
-        let baseline = work_by_size[0].1.max(1);
-        let largest = work_by_size.last().unwrap().1;
-        assert!(
-            largest <= baseline * 2,
-            "provisional ensure work should be independent of unrelated facts: {work_by_size:?}"
-        );
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/functions/provisional_ensure_obligation_tests.rs");
     }
 }
 
@@ -35378,81 +34919,9 @@ mod stable_view_call_tests {
 mod retained_aggregate_resource_values_tests {
     use super::*;
 
-    #[test]
-    fn retained_resource_fields_preserve_lvalues_and_scale_with_expression() {
-        let slot = Pointer {
-            block: "local:frame:0:input".into(),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let pointee = Pointer {
-            block: "pointee".into(),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let value = CValue::typed_pointer(pointee, CType::Int32Pointer);
-        let layout = CAggregateLayout::new(
-            8,
-            8,
-            vec![CAggregateField::new("data", 0, CType::Int32Pointer)],
-        );
-        let field = CExpression::TypedLoad {
-            pointer: Box::new(CExpression::Variable("input".into())),
-            value_type: CType::Int32Pointer,
-            volatile: false,
-            pointee_constant: false,
-            source: Default::default(),
-        };
-        let mut work = Vec::new();
-        for size in [8, 32, 128, 512] {
-            // Compare cold sessions at every size; retained pointer reads
-            // otherwise reuse observations recorded by the first sample.
-            let _session = crate::kernel::VerificationSession::enter();
-            let mut entry = CState::new().with_memory(
-                CMemory::new()
-                    .with_block(slot.block.clone(), 8)
-                    .store(slot.clone(), value.clone()),
-            );
-            entry
-                .locals
-                .set_aggregate_object_at("input".to_string(), layout.clone(), slot.clone());
-            for i in 0..size {
-                entry = entry.with_local(format!("unrelated_{i}"), int32(i));
-            }
-            let state = entry
-                .clone()
-                .with_memory(entry.memory.clone().without_local_block(&slot.block));
-            let resolve = |expression: &mut CExpression| {
-                resolve_retained_aggregate_fields(
-                    &entry,
-                    &state,
-                    expression,
-                    true,
-                    &PureFactContext::new(),
-                    &mut ExecutionBudget::beside_live_state(),
-                )
-                .unwrap();
-            };
-            let mut expression = field.clone();
-            let (_, measured) =
-                crate::instrumentation::measure_deterministic_work(|| resolve(&mut expression));
-            work.push(measured);
-            assert_eq!(expression, CExpression::Value(value.clone()));
-            let address = CExpression::AddressOf(Box::new(field.clone()));
-            let mut expression = address.clone();
-            resolve(&mut expression);
-            assert_eq!(
-                expression, address,
-                "an address must not become a retained value"
-            );
-            let mut expression = CExpression::Load(Box::new(field.clone()));
-            resolve(&mut expression);
-            assert_eq!(
-                expression,
-                CExpression::Load(Box::new(CExpression::Value(value.clone())))
-            );
-            assert!(!state.memory.has_block(&slot.block));
-            assert!(state.resources().facts().is_empty());
-        }
-        assert!(work.windows(2).all(|pair| pair[0] == pair[1]), "{work:?}");
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/functions/retained_aggregate_resource_values_tests.rs");
     }
 }
 
@@ -35550,31 +35019,6 @@ mod inline_loop_boundary_tests {
     }
 
     #[test]
-    fn symbolic_inline_loop_refusal_work_is_independent_of_unroll_allowance() {
-        let _session = crate::kernel::VerificationSession::enter();
-        let mut samples = Vec::new();
-        for limit in [4usize, 64, 1024] {
-            let mut budget = ExecutionBudget::new();
-            budget.loop_unrolls = limit;
-            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-                call(int32(Bitvector32Term::Variable(Variable(7))), &mut budget)
-            });
-            let paths = result.unwrap();
-            assert!(matches!(paths.as_slice(), [CFunctionPath {
-                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message)), ..
-            }] if message.contains("drain_to_zero") && message.contains("loop guard cannot be decided at the call site")));
-            assert_eq!(budget.loop_unrolls, limit - 1);
-            assert!(budget.inline_call_name.is_none());
-            samples.push(work);
-        }
-        assert!(
-            samples[0] > 0 && samples.iter().all(|work| *work == samples[0]),
-            "{samples:?}"
-        );
-        eprintln!("symbolic inline-loop work at 4/64/1024 unrolls: {samples:?}");
-    }
-
-    #[test]
     fn concrete_inline_loops_still_unroll_and_restore_the_call_context_on_error() {
         let _session = crate::kernel::VerificationSession::enter();
         for count in [0, 4, 16, 64] {
@@ -35594,94 +35038,16 @@ mod inline_loop_boundary_tests {
         );
         assert_eq!(budget.inline_call_name.as_deref(), Some("outer"));
     }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/functions/inline_loop_boundary_tests.rs");
+    }
 }
 
 #[cfg(test)]
 mod composite_pointer_body_fact_tests {
     use super::*;
-
-    // A fold's packed-word equation can use a new name for a checked copy.
-    // Rewriting that name must remain scoped, full-width, and independent
-    // of unrelated facts. No memory observation or ownership is invented.
-    #[test]
-    fn fold_copied_wide_word_preserves_scope_width_and_scales() {
-        let _session = crate::kernel::VerificationSession::enter();
-        let word = Bitvector32Term::Variable(Variable(710_000));
-        let copied = Bitvector32Term::Variable(Variable(710_001));
-        let changed = Bitvector32Term::Variable(Variable(710_002));
-        let address =
-            Bitvector32Term::PointerAddress(Box::new(Pointer::symbolic(Variable(710_003))));
-        let packed = |word: &Bitvector32Term| {
-            Proposition::ConditionIs(
-                ConditionTerm::Bitvector64Equal(
-                    Box::new(word.clone()),
-                    Box::new(Bitvector32Term::UInt64Add(
-                        Box::new(address.clone()),
-                        Box::new(Bitvector32Term::UInt64BitwiseAnd(
-                            Box::new(word.clone()),
-                            Box::new(Bitvector32Term::UInt64Constant(1)),
-                        )),
-                    )),
-                ),
-                true,
-            )
-        };
-        let alias = Proposition::ConditionIs(
-            ConditionTerm::Bitvector64Equal(Box::new(copied.clone()), Box::new(word.clone())),
-            true,
-        );
-        // Force the selected-alias route rather than general condition reasoning.
-        let parent = PureFactContext::new()
-            .defer_non_exact_condition_reasoning()
-            .assume_proposition(packed(&word));
-        let context = parent.clone().assume_proposition(alias.clone());
-        assert!(resource_body_fact_is_established(
-            &context,
-            &packed(&copied)
-        ));
-        assert!(!resource_body_fact_is_established(
-            &parent,
-            &packed(&copied)
-        ));
-        assert!(!resource_body_fact_is_established(
-            &context,
-            &packed(&changed)
-        ));
-        assert!(!resource_body_fact_is_established(
-            &PureFactContext::new().assume_proposition(alias),
-            &packed(&copied),
-        ));
-        let narrow = parent.clone().assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(copied.clone()), Box::new(word.clone())),
-            true,
-        ));
-        assert!(!resource_body_fact_is_established(
-            &narrow,
-            &packed(&copied)
-        ));
-        let mut previous = None;
-        for count in [16_u64, 64, 256, 1024] {
-            let mut padded = context.clone();
-            for index in 0..count {
-                padded = padded.assume_proposition(Proposition::ConditionIs(
-                    ConditionTerm::Bitvector64Equal(
-                        Box::new(Bitvector32Term::Variable(Variable(720_000 + index))),
-                        Box::new(Bitvector32Term::UInt64Constant(index)),
-                    ),
-                    true,
-                ));
-            }
-            padded.build_stated_proposition_index();
-            let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-                resource_body_fact_is_established(&padded, &packed(&copied))
-            });
-            assert!(proved);
-            if let Some(previous) = previous {
-                assert!(work <= previous + 64, "{count}: {work} after {previous}");
-            }
-            previous = Some(work);
-        }
-    }
 
     fn pointer_fact(left: &Pointer, right: &Pointer, equal: bool) -> Proposition {
         Proposition::ConditionIs(
@@ -35690,103 +35056,9 @@ mod composite_pointer_body_fact_tests {
         )
     }
 
-    #[test]
-    fn fold_nonnull_fact_uses_an_exact_composite_pointer_alias() {
-        let model = Pointer::symbolic(Variable(700));
-        let program = Pointer {
-            block: PointerBlock::Symbolic(Variable(701)),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(Bitvector32Term::Variable(Variable(702))),
-                byte_width: 4,
-            },
-        };
-        let null = Pointer::null();
-        let alias = pointer_fact(&model, &program, true);
-        let nonnull = pointer_fact(&model, &null, false);
-        let needed = pointer_fact(&program, &null, false);
-        let context = PureFactContext::new()
-            .assume_proposition(alias.clone())
-            .assume_proposition(nonnull.clone());
-        assert!(resource_body_fact_is_established(&context, &needed));
-        assert!(!resource_body_fact_is_established(
-            &context,
-            &pointer_fact(&program, &null, true),
-        ));
-        assert!(!resource_body_fact_is_established(
-            &PureFactContext::new().assume_proposition(alias.clone()),
-            &needed,
-        ));
-        assert!(!resource_body_fact_is_established(
-            &PureFactContext::new().assume_proposition(nonnull.clone()),
-            &needed,
-        ));
-        let parent_fact = |pointer: &Pointer, value: u32| {
-            Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(Bitvector32Term::ClickFunctionApplication {
-                        name: "parent_is".into(),
-                        arguments: vec![PureFunctionArgument::Value(CValue::typed_pointer(
-                            pointer.clone(),
-                            CType::Int32Pointer,
-                        ))],
-                    }),
-                    Box::new(Bitvector32Term::Constant(value)),
-                ),
-                true,
-            )
-        };
-        let model_parent = parent_fact(&model, 1);
-        let needed_parent = parent_fact(&program, 1);
-        let context = context.assume_proposition(model_parent.clone());
-        assert!(resource_body_fact_is_established(&context, &needed_parent));
-        assert!(!resource_body_fact_is_established(
-            &context,
-            &parent_fact(&program, 0)
-        ));
-        assert!(!resource_body_fact_is_established(
-            &PureFactContext::new().assume_proposition(model_parent),
-            &needed_parent,
-        ));
-        let mut work = Vec::new();
-        for count in [16, 64, 256] {
-            let mut padded = context.clone();
-            for index in 0..count {
-                padded = padded.assume_proposition(pointer_fact(
-                    &Pointer::symbolic(Variable(10_000 + index)),
-                    &Pointer::symbolic(Variable(20_000 + index)),
-                    true,
-                ));
-                padded = padded.assume_proposition(pointer_fact(
-                    &Pointer::symbolic(Variable(30_000 + index)),
-                    &null,
-                    true,
-                ));
-            }
-            // Charge the deferred insertion of these new facts to building
-            // the context, then measure only the fold's indexed query.
-            padded.build_stated_proposition_index();
-            let (proved, units) = crate::instrumentation::measure_deterministic_work(|| {
-                let proved = resource_body_fact_is_established(&padded, &needed);
-                assert!(resource_body_fact_is_established(&padded, &needed_parent));
-                assert!(!resource_body_fact_is_established(
-                    &padded,
-                    &parent_fact(&program, 0)
-                ));
-                assert!(!resource_body_fact_is_established(
-                    &padded,
-                    &pointer_fact(&program, &null, true),
-                ));
-                proved
-            });
-            assert!(proved);
-            work.push(units);
-        }
-        for pair in work.windows(2) {
-            assert!(
-                pair[1] <= pair[0] * 2 + 8,
-                "unrelated aliases increased fold work: {work:?}"
-            );
-        }
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/functions/composite_pointer_body_fact_tests.rs");
     }
 }
 

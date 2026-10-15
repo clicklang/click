@@ -329,37 +329,9 @@ mod tests {
         );
     }
 
-    #[test]
-    #[ignore = "nightly: 0.7s in the parallel gate"]
-    fn loop_abstraction_and_selected_join_scale_with_index_paths() {
-        let mut samples = Vec::new();
-        for size in [16usize, 64, 256, 1024] {
-            let mut context = MutexContext::new(CState::new());
-            for index in 0..size {
-                context = context.initialize_empty(mutex(index), 40).unwrap();
-            }
-            let address = mutex(size / 2);
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                let head = abstracted(&context, &address, false);
-                let next = head
-                    .acquire_current(&address, &PureFactContext::new())
-                    .unwrap();
-                head.state()
-                    .mutex_ledger
-                    .as_ref()
-                    .unwrap()
-                    .check_loop_protocol_state_since(
-                        next.state().mutex_ledger.as_ref().unwrap(),
-                        std::slice::from_ref(&address),
-                    )
-                    .unwrap();
-            });
-            samples.push(work);
-        }
-        assert!(samples[0] > 0);
-        for pair in samples.windows(2) {
-            assert!(pair[1] <= pair[0] + 512, "{samples:?}");
-        }
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/mutexes/loop_protocol/tests.rs");
     }
 }
 
@@ -563,52 +535,6 @@ mod loop_rule_tests {
     }
 
     #[test]
-    fn loop_guard_projection_uses_indexed_definition_lookup() {
-        let (top, _, definition) = top_and_next();
-        let mut samples = Vec::new();
-        for size in [16usize, 64, 256, 1024] {
-            let mut definitions = (0..size)
-                .map(|index| {
-                    CCompositeResourceDefinition::new(
-                        format!("unrelated-{index:05}"),
-                        vec![],
-                        None,
-                        false,
-                        vec![],
-                        vec![],
-                    )
-                })
-                .collect::<Vec<_>>();
-            definitions.push(definition.clone());
-            definitions.sort_by(|left, right| left.name().cmp(right.name()));
-            let mut state = top.clone();
-            for index in 0..size {
-                state.resources = state
-                    .resources
-                    .clone()
-                    .unchecked_with_fact(CResourceFact::own(CResource::Token {
-                        name: format!("unrelated-token-{index}"),
-                        arguments: vec![].into(),
-                    }));
-            }
-            let (projection, work) = crate::instrumentation::measure_deterministic_work(|| {
-                loop_instance_guard(&state, &instance(0), &definitions, &PureFactContext::new())
-                    .unwrap()
-            });
-            let (mutex, condition) = projection.unwrap();
-            assert_eq!(mutex, address());
-            assert_eq!(
-                crate::kernel::loops::condition_is_decided(&PureFactContext::new(), &condition),
-                Some(false)
-            );
-            samples.push(work);
-        }
-        assert!(samples[0] > 0, "projection must charge its work");
-        for pair in samples.windows(2) {
-            assert!(pair[1] <= pair[0] + 32, "{samples:?}");
-        }
-    }
-    #[test]
     fn loop_guard_projection_rejects_unsupported_body_metadata() {
         let (state, _, definition) = top_and_next();
         let mut invalid = Vec::new();
@@ -666,5 +592,10 @@ mod loop_rule_tests {
                     .is_err()
             );
         }
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/mutexes/loop_protocol/loop_rule_tests.rs");
     }
 }

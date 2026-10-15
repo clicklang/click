@@ -226,7 +226,7 @@ charged to visible semantic output rather than hidden ambient state:
   havoc must produce, so this is a known violation of the contract rather
   than an exception, pinned as a measurement
   (`loop_head_havoc_work_over_cells_and_symbolic_loans` in
-  `src/kernel/proof/execution.rs`: 65, 257, 1025, and 4097 units for 8, 16,
+  `src/scaling_tests/kernel/proof/execution/loan_scaling_tests.rs`: 65, 257, 1025, and 4097 units for 8, 16,
   32, and 64 of each). Removing it needs a secondary index over symbolic base
   terms, or a havoc narrowed to a checked write set so most cells are never
   queried. The fixed dyadic walk the query used to pay per cell is gone: with
@@ -484,7 +484,7 @@ The complexity contract implies several design constraints:
   Validation borrows its theorem declarations and a theorem environment looks
   them up through a process-wide name index, so a verification copies only
   its own file's theorems; `verification_copies_only_its_own_theorem_declarations`
-  (`src/surface/tests/scaling_tests.rs`) counts the copies at 4, 8, 16, and
+  (`src/scaling_tests/surface/tests/scaling_tests.rs`) counts the copies at 4, 8, 16, and
   32 file theorems.
 
 These constraints are semantic-neutral. They must preserve independent kernel
@@ -529,7 +529,7 @@ block, is gone. The `ExternalArgument` block makes that cost real: every
 object a pointer parameter reaches shares it
 (`holding_a_parameter_composition_states_no_pairs` and
 `one_parameter_separation_query_is_linear_in_the_owned_objects` in
-`src/kernel/tests/resource_scaling_tests.rs`: 37, 137, 529, and 2,081 units
+`src/scaling_tests/kernel/tests/resource_scaling_tests.rs`: 37, 137, 529, and 2,081 units
 to hold 8, 16, 32, and 64 owned parameter objects, now 0; a refused
 separation query 985 to 68,801 units, now 321 to 2,617). Consumers that need
 a separation *proposition* — an explicit premise, a have-proof `assumption`
@@ -543,7 +543,7 @@ identity held twice or with invalid access, a block owning two or more
 ranges, or a base that an exact pointer equality joins to another block can
 hold a violation, so a call composing its ensured resources into a caller
 frame never visits the caller's unrelated allocations
-(`src/kernel/tests/resource_scaling_tests.rs`).
+(`src/scaling_tests/kernel/tests/resource_scaling_tests.rs`).
 
 Within one block, an owned range selects the smaller of the complete owned
 block and the candidates its same-block aliases nominate, retaining the
@@ -712,7 +712,7 @@ that matches modulo canonical load atoms is the query's own canonical key,
 and the symbolic-block hop of range membership reads the exact pointer
 equalities filed under its pointer. With 64 to 512 unrelated atomic facts,
 the five queries of `condition_fact_queries_ignore_unrelated_facts`
-(`src/kernel/tests/memory_scaling_tests.rs`) examine 3 facts in all; they
+(`src/scaling_tests/kernel/tests/memory_scaling_tests.rs`) examine 3 facts in all; they
 examined 265 to 2,057 before.
 
 The memory-resolution order walk
@@ -740,7 +740,7 @@ walks), and a refusal beside 64 to 512 other bounded indices costs a flat
 A line of 4 to 64 such stores costs 990 to 18,570 units of store work,
 where it cost 2,294 to 408,974
 (`stores_to_bounded_unordered_indices_are_near_linear` in
-`src/surface/tests/scaling_tests.rs`).
+`src/scaling_tests/surface/tests/scaling_tests.rs`).
 
 A term's constant after equality normalization is a lookup in
 `ConstantClasses` (`src/kernel/assumptions/constant_classes.rs`), which the
@@ -761,7 +761,7 @@ the `N`th call cost `O(N^2)`. Only an `Unknown` class does query-time work:
 its conditional members are decided, and its loads are compared with the
 loads of settled classes at the same memory-blind address. The regression
 is `counter_call_chain_ensure_lowering_stays_flat_per_call`
-(`src/surface/tests/scaling_tests.rs`).
+(`src/scaling_tests/surface/tests/scaling_tests.rs`).
 
 The complete condition-premise test oracle follows a persistent variable-to-fact
 adjacency index. Facts whose variables can be read without inspecting a

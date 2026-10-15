@@ -347,40 +347,6 @@ fn scalar_lease_contract_load_bypass_and_view_only_parent_do_not_restore_authori
 }
 
 #[test]
-fn scalar_lease_selected_adapter_work_is_indexed_across_unrelated_owners() {
-    let mut measurements = Vec::new();
-    for size in [16, 64, 256, 1024] {
-        let (state, parent, support) = fixture(size);
-        let ((), work) = crate::persistent::measure_persistent_work(|| {
-            let (active, child) = begin(&state, &parent, Some(support));
-            let (resources, _) = active
-                .local_scalar_access_resources(
-                    child.local_reference().unwrap(),
-                    child.pointer(),
-                    CType::Int32,
-                    &PureFactContext::new(),
-                )
-                .unwrap();
-            assert!(
-                resources
-                    .memory_write_range(child.pointer(), 4, &PureFactContext::new())
-                    .is_some()
-            );
-            let recovered = active
-                .end_local_scalar_reference(&child, &PureFactContext::new())
-                .unwrap();
-            assert!(!recovered.has_local_scalar_references());
-        });
-        measurements.push((size, work));
-    }
-    eprintln!("scalar lease adapter work: {measurements:?}");
-    assert!(
-        measurements[3].1 < measurements[0].1 * 4,
-        "{measurements:?}"
-    );
-}
-
-#[test]
 fn scalar_lease_unsupported_boundaries_refuse_before_custody_can_escape() {
     let (state, parent, support) = fixture(1);
     let (active, child) = begin(&state, &parent, Some(support));
@@ -582,4 +548,9 @@ fn scalar_lease_supported_unsigned_widths_execute_and_recover_current_contents()
             CExpressionOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
         ));
     }
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../../../scaling_tests/kernel/loans/local_references/memory/tests.rs");
 }

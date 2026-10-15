@@ -223,13 +223,13 @@ named.
    zero and ends at a `uint64`; under it an index is not cast. Scaling:
    wide copies of `symbolic_range_membership_ignores_unrelated_index_bounds`
    and `unsigned_order_walk_ignores_unsigned_bounds_of_other_indices`
-   (`src/kernel/tests/memory_scaling_tests.rs`).
+   (`src/scaling_tests/kernel/tests/memory_scaling_tests.rs`).
 2. Calls: a wide range covered by a wide range, and by a constant `Int32`
    one (`uint8 buf[16]; read(buf, 16, 3)`).
 3. Writes through `owns`. Scaling:
    `stores_beside_many_owned_ranges_scale_near_linearly`,
    `stores_to_bounded_unordered_indices_are_near_linear`
-   (`src/surface/tests/scaling_tests.rs`) with `size_t`.
+   (`src/scaling_tests/surface/tests/scaling_tests.rs`) with `size_t`.
 4. Loops: `evaluate_loop_effect_segment` and
    `loop_effect_segment_contains_range` in `src/kernel/loops.rs` carry the
    kind and compare without a modular add.
@@ -344,9 +344,9 @@ of its rules bear on this one: ranges are indexed by the root of their base,
 `Pointer` orders every `S + c` of one anchor by `c`, and terms used as cache
 keys need stable identities. The kind field has to keep all three. The
 existing regressions to extend are the symbolic-index, stores-beside-ranges
-and range-membership tests in `src/surface/tests/scaling_tests.rs`,
-`src/kernel/tests/memory_scaling_tests.rs` and
-`src/kernel/tests/resource_scaling_tests.rs`.
+and range-membership tests in `src/scaling_tests/surface/tests/scaling_tests.rs`,
+`src/scaling_tests/kernel/tests/memory_scaling_tests.rs` and
+`src/scaling_tests/kernel/tests/resource_scaling_tests.rs`.
 
 ## Order of work
 

@@ -4638,29 +4638,11 @@ mod spec_carrier_substitution_binder_tests {
 mod machine_integer_substitution_tests {
     use super::*;
 
-    #[test]
-    fn machine_backed_integer_substitution_scales_with_shared_dag() {
-        for depth in [8, 16, 32, 64] {
-            let source = SharedMachineIntegerTerm::intern(
-                MachineIntegerType::Int32,
-                Bitvector32Term::Variable(Variable(7)),
-            );
-            let mut term = IntegerTerm::Machine(source);
-            for _ in 0..depth {
-                term = IntegerTerm::add(term.clone(), term.clone());
-            }
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                substitute_bitvector_variable_in_integer(
-                    &term,
-                    Variable(7),
-                    &Bitvector32Term::Constant(7),
-                )
-            });
-            assert!(
-                work <= (depth + 1) * 32,
-                "unexpected shared DAG work at depth {depth}: {work}"
-            );
-        }
+    #[cfg(test)]
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/reasoning/substitution/machine_integer_substitution_tests.rs"
+        );
     }
 }
 
@@ -6979,116 +6961,11 @@ mod integer_function_traversal_tests {
         );
     }
 
-    #[test]
-    fn shared_integer_application_substitution_scales_with_dag_size() {
-        let from = Variable(831);
-        let mut samples = Vec::new();
-        for depth in [8, 16, 32, 64] {
-            let mut term: SharedIntegerTerm = IntegerTerm::from_machine(
-                MachineIntegerType::Int32,
-                Bitvector32Term::Variable(from),
-            )
-            .unwrap()
-            .into();
-            for _ in 0..depth {
-                term = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
-                    "pair".into(),
-                    vec![
-                        PureFunctionArgument::Integer(term.clone()),
-                        PureFunctionArgument::Integer(term),
-                    ],
-                ))
-                .into();
-            }
-            let (changed, work) = crate::instrumentation::measure_deterministic_work(|| {
-                substitute_bitvector_variable_in_integer(
-                    &term,
-                    from,
-                    &Bitvector32Term::Variable(Variable(832)),
-                )
-            });
-            assert_ne!(&changed, term.as_ref());
-            assert!(work > 0);
-            samples.push(work);
-        }
-        for pair in samples.windows(2) {
-            assert!(
-                pair[1] <= pair[0] * 3,
-                "application substitution expanded the DAG: {samples:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn public_integer_substitution_keeps_array_ref_snapshots_opaque() {
-        let source = Variable(840);
-        let pointer = CValue::Pointer(CPointerValue::new(
-            Pointer {
-                block: PointerBlock::Symbolic(Variable(841)),
-                offset: PointerOffsetTerm::Constant(0),
-            },
-            CType::VoidPointer,
-        ));
-        let make_memory = |count: u64| {
-            let mut memory = CMemory::new().with_block("array", 8);
-            for index in 0..count {
-                memory = memory.with_block(PointerBlock::Heap(index + 1), 8);
-            }
-            memory
-        };
-        let make = |memory: CMemory| {
-            Proposition::Equal(
-                Term::Integer(IntegerTerm::PureFunctionApplication(
-                    SharedPureApplication::intern(
-                        "observe_array".into(),
-                        vec![
-                            PureFunctionArgument::Integer(IntegerTerm::var(source).into()),
-                            PureFunctionArgument::ArrayRef {
-                                memory,
-                                pointer: pointer.clone(),
-                                element_type: CType::UInt8,
-                            },
-                        ],
-                    ),
-                )),
-                Term::Integer(IntegerTerm::constant_i64(0)),
-            )
-        };
-        let snapshot = |proposition: Proposition| {
-            let Proposition::Equal(Term::Integer(value), _) = proposition else {
-                panic!("expected Integer equality")
-            };
-            let IntegerTerm::PureFunctionApplication(application) = value else {
-                panic!("expected pure Integer application")
-            };
-            let [
-                PureFunctionArgument::Integer(integer),
-                PureFunctionArgument::ArrayRef { memory, .. },
-            ] = application.arguments()
-            else {
-                panic!("expected Integer and ArrayRef arguments")
-            };
-            assert!(matches!(integer.as_ref(), IntegerTerm::Constant(_)));
-            memory.clone()
-        };
-        // Construct the selected term before measuring its substitution. Pin
-        // a constant ceiling across snapshot sizes rather than exact equality
-        // between two totals: fixed interning/bookkeeping costs can differ,
-        // but traversing even the 256-block snapshot would exceed this bound.
-        for count in [0, 16, 256, 4096] {
-            let memory = make_memory(count);
-            let input = make(memory.clone());
-            let replacement = IntegerTerm::constant_i64(7);
-            let (changed, work) = crate::instrumentation::measure_deterministic_work(|| {
-                substitute_integer_variable_in_pure_proposition(&input, source, &replacement)
-                    .expect("snapshot substitution should be supported")
-            });
-            assert!(std::sync::Arc::ptr_eq(
-                &snapshot(changed).blocks,
-                &memory.blocks
-            ));
-            assert!(work > 0 && work <= 128, "{count} unrelated blocks: {work}");
-        }
+    #[cfg(test)]
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/reasoning/substitution/integer_function_traversal_tests.rs"
+        );
     }
 }
 
@@ -7306,38 +7183,6 @@ mod integer_match_substitution_scope_tests {
     }
 
     #[test]
-    fn match_substitution_shared_function_dag_scales_linearly() {
-        let mut work = Vec::new();
-        for depth in [8usize, 16, 32, 64] {
-            let mut body = IntegerTerm::from_machine(
-                MachineIntegerType::Int32,
-                Bitvector32Term::Variable(Variable(9050)),
-            )
-            .unwrap();
-            for _ in 0..depth {
-                body = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
-                    "pair".into(),
-                    vec![
-                        PureFunctionArgument::Integer(body.clone().into()),
-                        PureFunctionArgument::Integer(body.into()),
-                    ],
-                ));
-            }
-            let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
-                substitute_bitvector_variable_in_integer(
-                    &symbolic_match(body, Variable(9051)),
-                    Variable(9050),
-                    &Bitvector32Term::Variable(Variable(9052)),
-                )
-            });
-            work.push(measured);
-        }
-        for pair in work.windows(2) {
-            assert!(pair[1] <= pair[0] * 3, "function DAG expanded: {work:?}");
-        }
-    }
-
-    #[test]
     fn nested_match_construction_and_diagnostics_preserve_sharing() {
         for depth in [8usize, 16, 32, 64] {
             let mut body = IntegerTerm::constant_i64(1);
@@ -7358,33 +7203,11 @@ mod integer_match_substitution_scope_tests {
         }
     }
 
-    #[test]
-    fn match_substitution_shared_bodies_scale_linearly() {
-        let mut work = Vec::new();
-        for depth in [8usize, 16, 32, 64] {
-            let mut body = IntegerTerm::from_machine(
-                MachineIntegerType::Int32,
-                Bitvector32Term::Variable(Variable(9020)),
-            )
-            .unwrap();
-            for _ in 0..depth {
-                body = shared_symbolic_match(body, Variable(9021));
-            }
-            let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
-                substitute_bitvector_variable_in_integer(
-                    &symbolic_match(body, Variable(9021)),
-                    Variable(9020),
-                    &Bitvector32Term::Variable(Variable(9022)),
-                )
-            });
-            work.push(measured);
-        }
-        for pair in work.windows(2) {
-            assert!(
-                pair[1] <= pair[0] * 3,
-                "match substitution expanded: {work:?}"
-            );
-        }
+    #[cfg(test)]
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/reasoning/substitution/integer_match_substitution_scope_tests.rs"
+        );
     }
 }
 
@@ -7472,59 +7295,6 @@ mod integer_mixed_quantifier_tests {
                 Term::Integer(IntegerTerm::var(fresh)),
             )
         );
-    }
-
-    #[test]
-    fn integer_function_quantifier_substitution_preserves_shared_dags() {
-        let from = Variable(90);
-        let mut work = Vec::new();
-        for depth in [8, 16, 32, 64] {
-            let mut value = IntegerTerm::var(from);
-            for _ in 0..depth {
-                let child: SharedIntegerTerm = value.into();
-                value = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
-                    "pair".into(),
-                    vec![
-                        PureFunctionArgument::Integer(child.clone()),
-                        PureFunctionArgument::Integer(child),
-                    ],
-                ));
-            }
-            let source = Proposition::Equal(
-                Term::Integer(value),
-                Term::Integer(IntegerTerm::constant_i64(0)),
-            );
-            let (result, measured) = crate::instrumentation::measure_deterministic_work(|| {
-                substitute_integer_variable_in_pure_proposition(
-                    &source,
-                    from,
-                    &IntegerTerm::constant_i64(2),
-                )
-                .unwrap()
-            });
-            let Proposition::Equal(Term::Integer(mut value), _) = result else {
-                panic!("equality lost")
-            };
-            for _ in 0..depth {
-                let IntegerTerm::PureFunctionApplication(application) = value else {
-                    panic!("application lost")
-                };
-                let [
-                    PureFunctionArgument::Integer(left),
-                    PureFunctionArgument::Integer(right),
-                ] = application.arguments()
-                else {
-                    panic!("arguments lost")
-                };
-                assert_eq!(left.id(), right.id());
-                value = left.as_ref().clone();
-            }
-            assert_eq!(value, IntegerTerm::constant_i64(2));
-            work.push(measured);
-        }
-        for pair in work.windows(2) {
-            assert!(pair[1] <= pair[0] * 3, "{work:?}");
-        }
     }
 
     #[test]
@@ -7789,48 +7559,11 @@ mod integer_mixed_quantifier_tests {
         );
     }
 
-    #[test]
-    fn integer_substitution_nested_carrier_scopes_scale_with_shared_body() {
-        let source = Variable(9_240);
-        let mut work = Vec::new();
-        for depth in [8, 16, 32, 64] {
-            let mut body = Proposition::Equal(
-                Term::Integer(IntegerTerm::var(source)),
-                Term::Integer(IntegerTerm::constant_i64(0)),
-            );
-            for index in (0..depth).rev() {
-                let variable = Variable(9_300 + (index / 2) as u64);
-                body = if index % 2 == 0 {
-                    Proposition::ForAll {
-                        var: variable,
-                        sort: Sort::CInt32,
-                        body: Box::new(body),
-                    }
-                } else {
-                    Proposition::Exists {
-                        name: format!("integer{index}"),
-                        var: variable,
-                        sort: Sort::Integer,
-                        body: Box::new(body),
-                    }
-                };
-            }
-            let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
-                substitute_integer_variable_in_pure_proposition(
-                    &body,
-                    source,
-                    &IntegerTerm::constant_i64(3),
-                )
-                .expect("nested carrier scopes should remain bounded")
-            });
-            work.push(measured);
-        }
-        for pair in work.windows(2) {
-            assert!(
-                pair[1] <= pair[0] * 3,
-                "nested scope rewrite expanded: {work:?}"
-            );
-        }
+    #[cfg(test)]
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/reasoning/substitution/integer_mixed_quantifier_tests.rs"
+        );
     }
 }
 
@@ -8431,29 +8164,6 @@ mod checked_singleton_substitution_tests {
     }
 
     #[test]
-    fn checked_singleton_substitution_scales_with_shared_integer_dags() {
-        let variable = Variable(70_102);
-        let samples = [8, 16, 32, 64].map(|depth| {
-            let mut value = observed(variable);
-            for _ in 0..depth {
-                value = IntegerTerm::add(value.clone(), value.clone());
-            }
-            let source =
-                Proposition::Equal(Term::Integer(value), Term::Integer(observed(variable)));
-            let (result, work) = instrumentation::measure_deterministic_work(|| {
-                substitute_machine_constant_in_pure_proposition(&source, variable, 7)
-            });
-            assert!(result.is_ok());
-            assert!(
-                work <= 128 * (depth + 1),
-                "depth {depth}: {work} work units"
-            );
-            work
-        });
-        assert!(samples[3] <= samples[0] * 10, "{samples:?}");
-    }
-
-    #[test]
     fn checked_singleton_substitution_refuses_unsupported_carriers() {
         let source = Proposition::Predicate {
             name: "opaque".into(),
@@ -8540,5 +8250,12 @@ mod checked_singleton_substitution_tests {
                 .join()
                 .unwrap();
         });
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/reasoning/substitution/checked_singleton_substitution_tests.rs"
+        );
     }
 }

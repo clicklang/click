@@ -408,33 +408,6 @@ fn selected_tactic_batch_retains_the_unselected_prefix_and_suffix() {
 }
 
 #[test]
-#[ignore = "nightly: 0.5s in the parallel gate"]
-fn partial_tactic_capture_runs_once_as_selected_sites_grow() {
-    let c = [("identity.c", "int32 identity(int32 x) { return x; }")];
-    let samples = [4, 8, 16, 32].map(|size| {
-        let source = format!("verifying \"identity.c\";\nint32 identity(int32 x) {{ ensures result == x; }} by {{\nexecute();\n{}{}simp();\n}}\n",
-            "have x + 0 == x by simp;\n".repeat(8), "have x == x by simp;\n".repeat(size));
-        let sites = c0_smart_tactic_source_sites(&source, &c).unwrap();
-        let positions = sites[9..9+size].iter().map(|s| s.position.clone()).collect::<Vec<_>>();
-        let (_, ordinary_views) = proof::count_finalization_view_constructions(|| verify_c0_sources(&source, &c).unwrap());
-        let ((expanded, work), runs) = proof::count_finalization_view_constructions(|| {
-            crate::instrumentation::measure_deterministic_work(|| expand_c0_tactics_source_at(&source, &c, &positions))
-        });
-        let expanded = expanded.unwrap_or_else(|error| panic!("{size} selected sites: {error:?}"));
-        assert_eq!(runs, ordinary_views, "{size} sites must cost one ordinary claim verification");
-        assert_eq!(expanded.source.matches("have x + 0 == x by simp;").count(), 8);
-        verify_c0_sources(&expanded.source, &c).unwrap();
-        work
-    });
-    for pair in samples.windows(2) {
-        assert!(
-            pair[1] * 4 <= pair[0] * 9,
-            "selected capture work grew too quickly: {samples:?}"
-        );
-    }
-}
-
-#[test]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn post_execution_have_expansion_preserves_later_smart_proofs() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -17286,41 +17259,6 @@ fn padded_struct_field_loop_expansion_reverifies() {
         expand_c0_claim_source_by_label(&source, &sources, "probe_contract.contract").unwrap();
     verify_c0_sources(&expanded, &sources).unwrap();
 }
-#[test]
-fn smart_inventory_positions_are_compatible_and_scale() {
-    use crate::surface::{c0_smart_tactic_source_sites, c0_tactic_source_position};
-    let source = "// Unicode: λ\ntheorem named() { ensures 0 == 0 by { have 1 == 1 by { simp(); } simp(); } }\ntheorem implicit() { ensures 0 == 0; }\ntheorem short() { ensures 0 == 0 by simp; }\n";
-    for site in c0_smart_tactic_source_sites(source, &[]).unwrap() {
-        assert_eq!(
-            site.position,
-            c0_tactic_source_position(source, &[], &site.claim_label, site.source_index).unwrap()
-        );
-    }
-    for separate_claims in [false, true] {
-        let mut measurements = Vec::new();
-        for count in [8, 16, 32, 64] {
-            let source = if separate_claims {
-                (0..count)
-                    .map(|i| format!("theorem item_{i}() {{ ensures 0 == 0 by {{ simp(); }} }}\n"))
-                    .collect::<String>()
-            } else {
-                format!(
-                    "theorem item() {{ ensures 0 == 0 by {{ {} }} }}",
-                    "simp(); ".repeat(count)
-                )
-            };
-            let (sites, work) = crate::instrumentation::measure_deterministic_work(|| {
-                c0_smart_tactic_source_sites(&source, &[]).unwrap()
-            });
-            assert_eq!(sites.len(), count);
-            measurements.push(work);
-        }
-        assert!(
-            measurements[3] <= 10 * measurements[0],
-            "separate claims: {separate_claims}, work: {measurements:?}"
-        );
-    }
-}
 
 #[test]
 fn c_style_click_comments_preserve_loading_and_expansion_offsets() {
@@ -18332,4 +18270,9 @@ fn rejoined_model_match_in_open_expands_without_moving_the_continuation_inside()
         expanded.contains("ensuring"),
         "the nonterminal match must retain its interface: {expanded}"
     );
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/surface/tests/expansion_tests.rs");
 }

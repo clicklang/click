@@ -1321,35 +1321,6 @@ mod source_execution_layout_tests {
     }
 
     #[test]
-    #[ignore = "nightly: 0.9s in the parallel gate"]
-    fn read_frontiers_have_linear_expression_work_and_indexed_lookups() {
-        for count in [8, 128, 1024] {
-            let mut source = String::from("int32 f(const int32* p) {int32 x; int32 other;");
-            for _ in 0..count {
-                source.push_str("other=1;x=*p+other;");
-            }
-            source.push_str("return x;}");
-            let function = syntax::parse_function(&source).unwrap();
-            let typed = function
-                .clone()
-                .with_prelowered_kernel_function(function.to_kernel_function());
-            for function in [&function, &typed] {
-                let (layout, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    SourceExecutionLayout::for_function(function).unwrap()
-                });
-                assert_eq!(layout.data.reads.len(), count);
-                assert!(work < 16 * count, "{count} reads: {work}");
-                let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    for n in 0..count {
-                        layout.read_entry(n).unwrap();
-                    }
-                });
-                assert_eq!(work, count);
-            }
-        }
-    }
-
-    #[test]
     fn assignment_frontiers_index_static_stores_in_both_layouts() {
         let function = syntax::parse_function("int32 f(int32 n) { int32 x; x=0; if(n==0) {x=1;} else {x=2;} while(x<3) {x=3;} x+=1; x++; return x; }").unwrap();
         let kernel = function.to_kernel_function();
@@ -1362,34 +1333,6 @@ mod source_execution_layout_tests {
             assert!(indices.windows(2).all(|pair| pair[0] < pair[1]));
             assert!(layout.assignment_entry("x", 6).is_err());
             assert!(layout.assignment_entry("absent", 0).is_err());
-        }
-    }
-
-    #[test]
-    #[ignore = "nightly: 1.2s in the parallel gate"]
-    fn assignment_frontiers_build_and_resolve_without_scanning_unrelated_stores() {
-        for count in [8, 128, 1024] {
-            let mut source = String::from("int32 f() {int32 marker; int32 unrelated;");
-            for i in 0..count {
-                source.push_str(&format!("unrelated={i};marker={i};"));
-            }
-            source.push_str("return marker;}");
-            let function = syntax::parse_function(&source).unwrap();
-            let kernel = function.to_kernel_function();
-            let typed = function.clone().with_prelowered_kernel_function(kernel);
-            for function in [&function, &typed] {
-                let (layout, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    SourceExecutionLayout::for_function(function).unwrap()
-                });
-                assert!(work <= 8 * count, "{count} stores: {work}");
-                assert_eq!(layout.data.assignments["marker"].len(), count);
-                let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    for occurrence in 0..count {
-                        layout.assignment_entry("marker", occurrence).unwrap();
-                    }
-                });
-                assert_eq!(work, count);
-            }
         }
     }
 
@@ -1434,6 +1377,13 @@ mod source_execution_layout_tests {
                 .statement(4095)
                 .map(|region| region.continuation_node),
             Some(4096)
+        );
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/surface/lowering/source_layout/source_execution_layout_tests.rs"
         );
     }
 }

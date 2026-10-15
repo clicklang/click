@@ -115,5 +115,8 @@ Smart-tactic expansion does not repair an expensive simple checker.
 
 Performance-sensitive representation changes require deterministic scaling
 regressions across multiple sizes; faster corpus timing alone is insufficient.
+Scaling tests live in `src/scaling_tests/`, mirroring `src/`; read the ones
+for the modules you touch, and run them all with
+`cargo nextest run --lib -E 'test(/scaling_tests/)'`.
 Follow the [verification efficiency contract](docs/internals/verification-efficiency.md)
 for complexity requirements and review criteria.

@@ -142,7 +142,7 @@ The semantic regressions are `mdtests/cpp_two_guard_unwind.md`,
 in `tests/cpp_import.rs`. The deterministic
 scaling regression
 `exceptional_cleanup_edges_scale_near_linearly_with_unrelated_context` in
-`src/surface/tests/scaling_tests.rs` covers cleanup-edge counts 2, 4, 8, and
+`src/scaling_tests/surface/tests/scaling_tests.rs` covers cleanup-edge counts 2, 4, 8, and
 16 while unrelated functions and facts grow; it checks both total work and
 the named call/edge operation rather than wall time.
 
