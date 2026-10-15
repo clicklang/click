@@ -9429,12 +9429,12 @@ fn static_helpers_reject_object_dispatch_reference_parameters_and_recursion() {
         (
             "struct H { static int echo(int x) noexcept { return x; } }; int relay(int x) noexcept { return H{}.echo(x); }",
             "relay",
-            "unsupported expression",
+            "class-qualified or unqualified",
         ),
         (
             "struct H { static int echo(int x) noexcept { return x; } }; int relay(int x) noexcept { return ((void)++x, H{}).echo(x); }",
             "relay",
-            "unsupported expression",
+            "class-qualified or unqualified",
         ),
         (
             "struct H { static int read(const int& x) noexcept { return x; } };",
