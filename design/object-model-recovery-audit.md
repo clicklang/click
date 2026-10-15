@@ -1016,3 +1016,14 @@ comparison). Formatting, mdBook, structural documentation lint and whitespace
 checks pass. Advisory Vale is unavailable; the full gate and nightly were not
 run locally. The initial extraction referenced an archive-only type helper;
 this delivery uses master's existing array variants.
+
+The first CI run exposed a guarded recursive-view unfold regression. The
+rewrite compared read descriptions using actual supplier merging, which correctly
+refuses to merge separately bound loans. Description equivalence now checks
+coverage of the existing read cores without changing any supplier or loan binding.
+Owned resources and before/after loan consistency still require their existing
+checks. A real-loan regression covers contiguous coverage, gaps, excess extent,
+absence of ownership grants, unchanged bindings, and unrelated ranges at
+0/16/64/256 sizes. All 413 selected kernel controls and all 3,979 normal Markdown
+fixtures pass. Clippy with warnings denied also passes. These checks follow the
+earlier 52-example run; the full gate and nightly were not run locally.

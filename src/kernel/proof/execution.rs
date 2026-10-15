@@ -3648,12 +3648,12 @@ fn resource_contexts_match_modulo_redundant_views(
             .facts()
             .iter()
             .filter(|fact| fact.is_view())
-            .all(|fact| right.satisfies_fact(fact, assumptions))
+            .all(|fact| right.read_core_description_entails(fact, assumptions))
         && right
             .facts()
             .iter()
             .filter(|fact| fact.is_view())
-            .all(|fact| left.satisfies_fact(fact, assumptions))
+            .all(|fact| left.read_core_description_entails(fact, assumptions))
 }
 
 /// Kernel-issued evidence for the exact contract-entry state from which a
