@@ -776,10 +776,11 @@ original boundary. Explicitly establishing the nonnegative append index lets
 the complete-width frame prove the unchanged pointer. Stored-value and zero
 terminator facts also check. This needs no new object rule or keyword.
 
-The next simple fold exhausts its unchanged 750,000-unit budget. The
-[fold defect](../bugs/split-descriptor-fold-exhausts-simple-budget.md) records a
-single-function reproduction, the incomplete diagnostic profile and acceptance
-criteria. Repeated offset/range reasoning dominates the failed fold; a specific
+At checkpoint `ee9b29f87`, the next simple fold exhausts its unchanged
+750,000-unit budget. The archived
+[fold defect](https://github.com/lacker/click/blob/ee9b29f87822302f753f53eeb1c505bcc06f21ea/bugs/split-descriptor-fold-exhausts-simple-budget.md)
+records its reproduction and incomplete diagnostic profile. The
+[repair below](#preliminary-byte-gap-query-repair) supersedes this blocker. Repeated offset/range reasoning dominates the failed fold; a specific
 performance repair has not yet been established. Failed proof edits and private
 probes are removed from production sources. Keep the original 41/52 archive
 audit and the separate vector allocation-fold failure open.
@@ -819,3 +820,70 @@ The cleanup's rebuilt upstream CLI/library also pass the split-field fixture's
 fresh, expanded, rewritten and retained checks. Its filtered nightly-fixture
 harness passes (3.14s). Formatting, mdBook, docs lint and whitespace checks pass;
 Vale is unavailable, so advisory prose lint is skipped.
+
+### Preliminary byte-gap query repair
+
+PR #1042 merged; its final pushed commit `f3f71a8d7` is verified in upstream
+history. The next archive repair targets the split-field fold itself. A private
+stack sample identifies general signed-order reasoning inside the preliminary
+byte-gap check: resolving its load operands reenters the same memory histories.
+Use exact recorded order and indexed traversal of written order edges for that
+directional check. The traversal retains only its successful path's exact
+premises, handles order withdrawal, and performs no memory equality queries.
+Unknown geometry falls through to complete range-separation evidence; constant-gap
+and direction-free stride checks retain their behavior. The experiment moving
+frame discovery out of read registration is excluded from this repair.
+
+The archive's focused original-source proof now verifies at unchanged limits;
+a completed profile measures its fold at 0.40s. Other expensive simple steps
+remain and this is not a whole-proof performance claim. All 227 selected archive
+memory-history, pointer-frame, designation, span, loop, loan and resource-query
+controls pass. The new query regression checks 0, 16, 64 and 256 unrelated facts,
+order withdrawal, absent/reversed order and overlapping access widths. The final
+extraction also checks a two-edge order chain over memory-load atoms, preserving
+the existing derived-order store-hop control. Wrong
+stored-value and wrong-terminator claims reject, and missing backing ownership
+is refused while checking the resource's read authority.
+
+The initial exact-order variant's rebuilt probe-free archive CLI/library passes
+fresh verification, expansion, rewritten verification and retained rechecking.
+Archive checkpoint `be001cb2f` contains that initial repair; `3279dd7b0` preserves the separately checked push/pop proof
+adaptations and the missing final-assumption trace reproduction.
+The final indexed-order variant passes the split-field fixture and full original
+owned-string project in fresh, expanded, rewritten and retained modes on both
+the recovery archive and current-upstream extraction. Wrong stored-value and
+wrong-terminator claims reject, and missing backing ownership is refused. These
+checks close the fold-budget defect; its historical reproduction remains in
+archive history. The separate returned-resource performance report remains open.
+
+### CI graph-lock boundary follow-up
+
+PR #1051's bounded order checks expose an existing graph reentry path in
+`equivalent_field_derived_bases_frame_symbolic_index_store`. The failed library
+partition reproduces locally: 944 of 945 tests pass and that case times out.
+A debugger shows the graph mutex held by address registration while term
+canonicalization starts a cell-epoch walk that queries the same mutex.
+
+The repair keeps term interning and affine decomposition structural. Scalar and
+offset query adapters perform selected normalization before locking; internal
+raw-read names retain their exact snapshot, kind and access width. A new
+multi-size raw-read registration regression complements the existing
+snapshot/support and complete-width controls. The selected offset adapter
+preserves expression shape while normalizing scalar indices before locking.
+
+After integrating upstream `c819a273e`, all 5,415 normal library tests pass
+(115.1s; 572 skipped), as do all 168 selected C++ import/span integration tests
+(32.4s). All 534 selected archive graph, memory, designation, span, loop/loan and
+diagnostic controls pass. Freshly rebuilt libraries and CLIs pass the positive
+four-mode checks above; all three negative controls reject. Formatting, mdBook,
+docs lint and whitespace checks pass. The full gate and nightly remain CI work.
+
+The recovery archive's full original string project and focused original pop
+and clear reductions now pass all four proof modes. Checkpoint `5570f876c`
+preserves the one-line clear predicate elimination and the completed normal
+example audit: **42/52 pass**, 10 fail, exit 100, 176.3s harness. Remaining projects
+are arena, binary-tree, input-cursor, multifile-registry, owned-vector,
+rbtree-augmented, refcount, ring-buffer, rust-byte-sum and rust-chunks-exact.
+This is not a green archive verdict. The expensive first returned-resource
+assumption has a separate preserved report at that checkpoint; the fold budget
+failure itself no longer reproduces on the final indexed-order archive variant.
