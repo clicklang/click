@@ -6816,7 +6816,8 @@ impl Parser {
                 result.push((slot, name, identity));
                 continue;
             }
-            let identity = if let Some((identity, _)) = self.current_resource_bindings.get(&name) {
+            let existing = self.current_resource_bindings.get(&name).cloned();
+            let identity = if let Some((identity, _)) = &existing {
                 // A child slot's resource comes from the parent's matched
                 // arm, which the parser cannot resolve; declaration
                 // expansion checks the supplied instance against it.
@@ -6830,8 +6831,15 @@ impl Parser {
             };
             if introduce {
                 self.child_slot_identities.insert(identity);
+                // A name already bound, such as the contract's `produces
+                // whole: ...` that the unfold's child becomes, keeps the
+                // resource it was declared with: its fields are that
+                // resource's, not the parent's, when a later `have` reads
+                // `whole.model`. Only a new binder records the parent, which
+                // declaration expansion replaces with the slot's resource.
+                let recorded = existing.map_or_else(|| family.clone(), |(_, family)| family);
                 self.current_resource_bindings
-                    .insert(name.clone(), (identity, family.clone()));
+                    .insert(name.clone(), (identity, recorded));
                 self.current_resource_targets.insert(
                     name.clone(),
                     ResourceClause::Named {
