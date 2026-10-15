@@ -114,10 +114,10 @@ int32 probe() { ensures result == 11; } by { execute(); simp(); }
             let mut artifact: serde_json::Value =
                 serde_json::from_slice(&original_artifact).unwrap();
             if mutation == 0 {
-                artifact["function"]["body"][0]["initializer"] =
+                artifact["functions"][0]["body"][0]["initializer"] =
                     serde_json::json!({"kind":"uninitialized"});
             } else {
-                let declaration = &mut artifact["function"]["body"][1];
+                let declaration = &mut artifact["functions"][0]["body"][1];
                 let ty = declaration["initializer"]["value"]["value_type"].clone();
                 let span = declaration["span"].clone();
                 declaration["initializer"]["value"] = serde_json::json!({
@@ -232,12 +232,12 @@ int32 probe(struct View& input) {
     let lock: serde_json::Value =
         serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
     assert_eq!(
-        artifact["function"]["body"][0]["initializer"]["arguments"][0]["kind"],
+        artifact["functions"][0]["body"][0]["initializer"]["arguments"][0]["kind"],
         "record_copy"
     );
     for mutation in 0..4 {
         let mut forged = artifact.clone();
-        let argument = &mut forged["function"]["body"][0]["initializer"]["arguments"][0];
+        let argument = &mut forged["functions"][0]["body"][0]["initializer"]["arguments"][0];
         match mutation {
             0 => {
                 argument["kind"] = "reference".into();
@@ -279,7 +279,7 @@ fn trivial_record_return_preserves_nested_descriptor_values_offline() {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     assert!(matches!(
-        import.export().function.body[0],
+        import.export().functions[0].body[0],
         CppStatement::ReturnRecord { .. }
     ));
     let proof = r#"verifying "copy.cpp";
@@ -323,9 +323,12 @@ struct View copy(const struct View& input) {
     for mutation in 0..4 {
         let mut forged = artifact.clone();
         match mutation {
-            0 => forged["function"]["body"][0]["value_type"]["name"] = "Other".into(),
-            1 => forged["function"]["body"][0]["source"]["declaration_id"] = "expired_local".into(),
-            2 => forged["function"]["body"][0]["span"]["file"] = "unlocked.cpp".into(),
+            0 => forged["functions"][0]["body"][0]["value_type"]["name"] = "Other".into(),
+            1 => {
+                forged["functions"][0]["body"][0]["source"]["declaration_id"] =
+                    "expired_local".into()
+            }
+            2 => forged["functions"][0]["body"][0]["span"]["file"] = "unlocked.cpp".into(),
             3 => {
                 let record = artifact["records"]
                     .as_array()
@@ -334,7 +337,7 @@ struct View copy(const struct View& input) {
                     .find(|record| record["name"] == "View")
                     .unwrap();
                 let field = &record["fields"][0];
-                forged["function"]["body"][0]["source"]["projections"] = serde_json::json!([{
+                forged["functions"][0]["body"][0]["source"]["projections"] = serde_json::json!([{
                     "record_declaration_id":record["declaration_id"], "declaration_id":field["declaration_id"], "name":field["name"], "span":field["span"]
                 }]);
             }
@@ -478,7 +481,7 @@ const int32& probe(const struct Node& input) {
     use sha2::{Digest, Sha256};
     let mut artifact: serde_json::Value =
         serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
-    artifact["function"]["body"][0]["value"]["address"]["value_type"]["pointee"]["is_const"] =
+    artifact["functions"][0]["body"][0]["value"]["address"]["value_type"]["pointee"]["is_const"] =
         false.into();
     let bytes = serde_json::to_vec_pretty(&artifact).unwrap();
     let mut lock: serde_json::Value =
@@ -539,7 +542,7 @@ fn trivial_record_copy_assignment_preserves_self_and_projected_values() {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     assert!(matches!(
-        import.export().function.body[0],
+        import.export().functions[0].body[0],
         CppStatement::TrivialCopy { .. }
     ));
     let source = r#"verifying "copy.cpp";
@@ -566,11 +569,11 @@ int32 probe(struct View& target, const struct View& source) {
         let mut forged = artifact.clone();
         match mutation {
             0 => {
-                forged["function"]["parameters"][0]["value_type"]["pointee"]["is_const"] =
+                forged["functions"][0]["parameters"][0]["value_type"]["pointee"]["is_const"] =
                     true.into()
             }
-            1 => forged["function"]["body"][0]["source"]["projections"] = serde_json::json!([]),
-            2 => forged["function"]["body"][0]["span"]["file"] = "unlocked.cpp".into(),
+            1 => forged["functions"][0]["body"][0]["source"]["projections"] = serde_json::json!([]),
+            2 => forged["functions"][0]["body"][0]["span"]["file"] = "unlocked.cpp".into(),
             _ => unreachable!(),
         }
         let bytes = serde_json::to_vec_pretty(&forged).unwrap();
@@ -1202,7 +1205,7 @@ uint64 probe(const struct Count& count) {
         serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
     for mutation in 0..4 {
         let mut forged = artifact.clone();
-        let call = &mut forged["function"]["body"][0]["value"]["right"];
+        let call = &mut forged["functions"][0]["body"][0]["value"]["right"];
         match mutation {
             0 => call["callee"]["declaration_id"] = "missing".into(),
             1 => call["value_type"]["bits"] = 32.into(),
@@ -1543,7 +1546,7 @@ fn boolean_primitive_artifacts_refuse_forged_types_contexts_and_locations() {
             serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
         for mutation in 0..3 {
             let mut forged = artifact.clone();
-            let expression = &mut forged["function"]["body"][0]["value"];
+            let expression = &mut forged["functions"][0]["body"][0]["value"];
             match mutation {
                 0 => expression["value_type"]["bits"] = 64.into(),
                 1 => expression["constant_context"] = true.into(),
@@ -1674,7 +1677,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
 
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
     let prepared = load_import(&project.config()).expect("locked loading must not execute Clang");
-    assert_eq!(prepared.export().schema, 59);
+    assert_eq!(prepared.export().schema, 60);
     assert!(prepared.export().reachable_functions.is_empty());
     assert_eq!(prepared.logical_source(), "increment.cpp");
     assert_eq!(prepared.identity().len(), 64);
@@ -1690,7 +1693,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
         prepared.export().profile.compilation_command,
         project.compilation_arguments()
     );
-    let function = &prepared.export().function;
+    let function = &prepared.export().functions[0];
     assert_eq!(function.name, "increment");
     assert!(function.declaration_id.starts_with("c:@F@increment#"));
     assert_eq!(
@@ -1977,8 +1980,8 @@ fn included_header_definition_is_selected_locked_and_validated() {
     assert_eq!(prepared.logical_source(), "selected.h");
     assert_eq!(prepared.export().logical_source, "selected.h");
     assert_eq!(prepared.export().profile.compilation_file, "driver.cpp");
-    assert_eq!(prepared.export().function.name, "header_increment");
-    assert_eq!(prepared.export().function.span.file, "selected.h");
+    assert_eq!(prepared.export().functions[0].name, "header_increment");
+    assert_eq!(prepared.export().functions[0].span.file, "selected.h");
 
     let sidecar = project.directory.join("demo.click");
     let sidecar_source = SIDECAR
@@ -2042,7 +2045,7 @@ fn exception_enabled_profile_verifies_a_checked_normal_only_header_graph() {
         prepared.export().exception_behavior,
         CppExceptionBehavior::NormalOnly
     );
-    assert!(!prepared.export().function.declared_noexcept);
+    assert!(!prepared.export().functions[0].declared_noexcept);
     assert!(prepared.export().records.is_empty());
 
     let sidecar = project.directory.join("demo.click");
@@ -2070,7 +2073,7 @@ fn exception_enabled_profile_verifies_a_checked_normal_only_header_graph() {
     graph.write_config_with_profile("call_set_seven", "call_set_seven.cpp", true);
     refresh_import(&graph.config()).expect("export a closed normal-only direct-call graph");
     let graph = load_import(&graph.config()).unwrap();
-    assert!(!graph.export().function.declared_noexcept);
+    assert!(!graph.export().functions[0].declared_noexcept);
     assert_eq!(graph.export().reachable_functions.len(), 1);
     assert!(!graph.export().reachable_functions[0].declared_noexcept);
 }
@@ -2093,7 +2096,7 @@ fn scalar_int32_profile_verifies_a_typed_throw_and_keeps_its_lock_identity() {
         CppExceptionBehavior::ScalarInt32
     );
     assert!(matches!(
-        prepared.export().function.body.as_slice(),
+        prepared.export().functions[0].body.as_slice(),
         [CppStatement::Throw { .. }]
     ));
 
@@ -2215,7 +2218,7 @@ fn scalar_int32_profile_catches_a_modular_throw_with_a_typed_payload() {
             ..
         },
         CppStatement::Return { .. },
-    ] = prepared.export().function.body.as_slice()
+    ] = prepared.export().functions[0].body.as_slice()
     else {
         panic!("the source try/catch was not retained as a typed handler");
     };
@@ -2332,7 +2335,7 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
     refresh_import(&project.config()).expect("export conditional cleanup and catch");
     let prepared = load_import(&project.config()).expect("load the conditional cleanup artifact");
     assert!(matches!(
-        prepared.export().function.body.as_slice(),
+        prepared.export().functions[0].body.as_slice(),
         [CppStatement::If { then_branch, else_branch, .. }, CppStatement::Return { .. }]
             if matches!(then_branch.as_slice(), [CppStatement::TryCatchInt32 { .. }])
                 && else_branch.is_empty()
@@ -2578,7 +2581,7 @@ fn scalar_int32_profile_unwinds_one_guard_on_both_paths() {
     let [
         CppStatement::TryCatchInt32 { try_body, .. },
         CppStatement::Return { .. },
-    ] = prepared.export().function.body.as_slice()
+    ] = prepared.export().functions[0].body.as_slice()
     else {
         panic!("the source try/catch was not retained");
     };
@@ -2924,17 +2927,18 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the predicate artifact offline");
-    assert_eq!(import.export().schema, 59);
+    assert_eq!(import.export().schema, 60);
     assert!(import.export().profile.exceptions);
-    assert!(!import.export().function.declared_noexcept);
+    assert!(!import.export().functions[0].declared_noexcept);
     assert!(matches!(
-        import.export().function.return_type,
+        import.export().functions[0].return_type,
         CppType::Boolean {
             bits: 8,
             is_const: false
         }
     ));
-    let CppType::LvalueReference { pointee } = &import.export().function.parameters[0].value_type
+    let CppType::LvalueReference { pointee } =
+        &import.export().functions[0].parameters[0].value_type
     else {
         panic!("CAmount parameter did not retain reference type")
     };
@@ -2955,7 +2959,7 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     assert_eq!(alias.span.file, "money_nonnegative.cpp");
     assert_eq!(alias.span.start_line, 1);
     assert!(matches!(
-        import.export().function.body.as_slice(),
+        import.export().functions[0].body.as_slice(),
         [CppStatement::Return {
             value: CppExpression::Binary {
                 operator: CppBinaryOperator::GreaterEqual,
@@ -3042,9 +3046,10 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constexpr artifact offline");
-    assert_eq!(import.export().schema, 59);
+    assert_eq!(import.export().schema, 60);
     assert_eq!(import.export().dependencies, ["cstdint"]);
-    let CppType::LvalueReference { pointee } = &import.export().function.parameters[0].value_type
+    let CppType::LvalueReference { pointee } =
+        &import.export().functions[0].parameters[0].value_type
     else {
         panic!("CAmount parameter did not retain reference type")
     };
@@ -3079,7 +3084,7 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
                 if value == "100000000")
     ));
     assert!(matches!(
-        import.export().function.body.as_slice(),
+        import.export().functions[0].body.as_slice(),
         [CppStatement::Return {
             value: CppExpression::Binary {
                 operator: CppBinaryOperator::GreaterEqual,
@@ -3153,7 +3158,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the dependent artifact offline");
-    assert_eq!(import.export().schema, 59);
+    assert_eq!(import.export().schema, 60);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("COIN and MAX_MONEY were not captured as one ordered dependency")
     };
@@ -3175,7 +3180,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
                 if constant.declaration_id == coin.declaration_id && constant.name == "COIN")
     ));
     assert!(matches!(
-        import.export().function.body.as_slice(),
+        import.export().functions[0].body.as_slice(),
         [CppStatement::Return {
             value: CppExpression::Binary {
                 operator: CppBinaryOperator::GreaterEqual,
@@ -3214,14 +3219,14 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the upper-bound artifact offline");
-    assert_eq!(import.export().schema, 59);
+    assert_eq!(import.export().schema, 60);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the upper-bound artifact lost the MAX_MONEY dependency graph")
     };
     assert_eq!(coin.name, "COIN");
     assert_eq!(max_money.name, "MAX_MONEY");
     assert!(matches!(
-        import.export().function.body.as_slice(),
+        import.export().functions[0].body.as_slice(),
         [CppStatement::Return {
             value: CppExpression::Binary {
                 operator: CppBinaryOperator::LessEqual,
@@ -3260,7 +3265,7 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the range artifact offline");
-    assert_eq!(import.export().schema, 59);
+    assert_eq!(import.export().schema, 60);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the range artifact lost the ordered MAX_MONEY dependency graph")
     };
@@ -3282,7 +3287,7 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
                 },
             ..
         },
-    ] = import.export().function.body.as_slice()
+    ] = import.export().functions[0].body.as_slice()
     else {
         panic!("the range return did not retain Clang's built-in logical-and node")
     };
@@ -3480,7 +3485,7 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load branching artifact offline");
-    let source = &import.export().function;
+    let source = &import.export().functions[0];
     assert_eq!(source.parameters.len(), 2);
     assert!(matches!(
         source.parameters[0].value_type,
@@ -3581,7 +3586,7 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load const-reference artifact offline");
-    let source = &import.export().function;
+    let source = &import.export().functions[0];
     assert_eq!(source.parameters.len(), 2);
     assert_eq!(
         source.parameters[0].value_type,
@@ -3900,14 +3905,14 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the call graph artifact offline");
-    assert_eq!(import.export().schema, 59);
-    assert_eq!(import.export().function.name, "call_set_seven");
+    assert_eq!(import.export().schema, 60);
+    assert_eq!(import.export().functions[0].name, "call_set_seven");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
     assert_eq!(reachable.name, "set_seven");
     let CppStatement::Call {
         callee, arguments, ..
-    } = &import.export().function.body[0]
+    } = &import.export().functions[0].body[0]
     else {
         panic!("first caller operation was not a resolved call")
     };
@@ -3915,7 +3920,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     assert!(matches!(
         arguments.as_slice(),
         [CppCallArgument::Reference { place }]
-            if place.declaration_id == import.export().function.parameters[0].declaration_id
+            if place.declaration_id == import.export().functions[0].parameters[0].declaration_id
     ));
 
     let lowered = lower_import(&import).expect("lower both C++ functions directly");
@@ -3979,8 +3984,8 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the scalar-local artifact offline");
-    assert_eq!(import.export().schema, 59);
-    assert_eq!(import.export().function.name, "relay_value");
+    assert_eq!(import.export().schema, 60);
+    assert_eq!(import.export().functions[0].name, "relay_value");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
     assert_eq!(reachable.name, "read_value");
@@ -4001,7 +4006,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
         CppStatement::Return {
             value: returned, ..
         },
-    ] = import.export().function.body.as_slice()
+    ] = import.export().functions[0].body.as_slice()
     else {
         panic!("caller did not retain declaration, local assignment, and return")
     };
@@ -4098,8 +4103,8 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the pointer artifact offline");
-    assert_eq!(import.export().schema, 59);
-    let caller = &import.export().function;
+    assert_eq!(import.export().schema, 60);
+    let caller = &import.export().functions[0];
     assert_eq!(caller.name, "bump_reference");
     assert!(matches!(
         caller.parameters[0].value_type,
@@ -4237,7 +4242,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the record artifact offline");
-    assert_eq!(import.export().schema, 59);
+    assert_eq!(import.export().schema, 60);
     let [record] = import.export().records.as_slice() else {
         panic!("the referenced record layout was not captured")
     };
@@ -4261,7 +4266,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     );
     assert!(matches!(saved.value_type, CppType::Integer { .. }));
 
-    let function = &import.export().function;
+    let function = &import.export().functions[0];
     assert!(matches!(
         &function.parameters[0].value_type,
         CppType::LvalueReference { pointee }
@@ -4340,7 +4345,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the aggregate artifact offline");
-    assert_eq!(import.export().schema, 59);
+    assert_eq!(import.export().schema, 60);
     let [record] = import.export().records.as_slice() else {
         panic!("the local aggregate record layout was not captured")
     };
@@ -4366,7 +4371,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
                 },
             ..
         },
-    ] = import.export().function.body.as_slice()
+    ] = import.export().functions[0].body.as_slice()
     else {
         panic!("the local object did not retain initialization and member use")
     };
@@ -4441,7 +4446,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constructor artifact offline");
-    assert_eq!(import.export().schema, 59);
+    assert_eq!(import.export().schema, 60);
     let [record] = import.export().records.as_slice() else {
         panic!("the constructed record layout was not captured")
     };
@@ -4496,7 +4501,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
             ..
         },
         CppStatement::Return { .. },
-    ] = import.export().function.body.as_slice()
+    ] = import.export().functions[0].body.as_slice()
     else {
         panic!("the direct object construction was not retained")
     };
@@ -4588,7 +4593,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 59);
+    assert_eq!(import.export().schema, 60);
     let [record] = import.export().records.as_slice() else {
         panic!("the destructible record layout was not captured")
     };
@@ -4646,7 +4651,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
             value: CppExpression::Load { .. },
             ..
         },
-    ] = import.export().function.body.as_slice()
+    ] = import.export().functions[0].body.as_slice()
     else {
         panic!("the terminal cleanup edge was not retained")
     };
@@ -4739,7 +4744,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 59);
+    assert_eq!(import.export().schema, 60);
     let destructor = import
         .export()
         .reachable_functions
@@ -4754,7 +4759,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
             cleanups: final_cleanups,
             ..
         },
-    ] = import.export().function.body.as_slice()
+    ] = import.export().functions[0].body.as_slice()
     else {
         panic!("the two cleanup-bearing return paths were not retained")
     };
@@ -4847,7 +4852,7 @@ fn modular_caller_observes_captured_result_and_restored_entry_value() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the caller artifact offline");
-    assert_eq!(import.export().function.name, "call_with_restore");
+    assert_eq!(import.export().functions[0].name, "call_with_restore");
     assert!(
         import
             .export()
@@ -4859,7 +4864,7 @@ fn modular_caller_observes_captured_result_and_restored_entry_value() {
     let CppStatement::Declare {
         initializer: CppInitializer::Call { callee, .. },
         ..
-    } = &import.export().function.body[0]
+    } = &import.export().functions[0].body[0]
     else {
         panic!("the caller must capture a resolved call result")
     };
@@ -4928,7 +4933,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the ordered cleanup artifact offline");
-    assert_eq!(import.export().schema, 59);
+    assert_eq!(import.export().schema, 60);
     let [
         CppStatement::Declare { local: first, .. },
         CppStatement::Declare { local: second, .. },
@@ -4938,7 +4943,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
             cleanups: final_cleanups,
             ..
         },
-    ] = import.export().function.body.as_slice()
+    ] = import.export().functions[0].body.as_slice()
     else {
         panic!("the two constructed objects and return edges were not retained")
     };
@@ -5032,7 +5037,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the nested-scope artifact offline");
-    assert_eq!(import.export().schema, 59);
+    assert_eq!(import.export().schema, 60);
     let destructor = import
         .export()
         .reachable_functions
@@ -5049,7 +5054,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
             cleanups: outer_cleanups,
             ..
         },
-    ] = import.export().function.body.as_slice()
+    ] = import.export().functions[0].body.as_slice()
     else {
         panic!("the lexical cleanup boundary was not retained")
     };
@@ -5146,7 +5151,7 @@ fn sibling_scopes_reuse_a_local_name_with_independent_cleanup() {
             cleanups: outer_cleanups,
             ..
         },
-    ] = import.export().function.body.as_slice()
+    ] = import.export().functions[0].body.as_slice()
     else {
         panic!("the two sibling lifetime boundaries were not retained")
     };
@@ -5264,9 +5269,7 @@ fn third_sibling_scope_preserves_independent_cleanup_and_frames() {
     refresh_import(&growing.config()).expect("a third sibling scope is supported");
     let growing_import = load_import(&growing.config()).unwrap();
     assert_eq!(
-        growing_import
-            .export()
-            .function
+        growing_import.export().functions[0]
             .body
             .iter()
             .filter(|statement| matches!(statement, CppStatement::Scope { .. }))
@@ -5316,7 +5319,7 @@ fn overlapping_scope_destroys_inner_before_outer_on_every_exit() {
             cleanups: final_cleanups,
             ..
         },
-    ] = import.export().function.body.as_slice()
+    ] = import.export().functions[0].body.as_slice()
     else {
         panic!("the overlapping lexical cleanup boundary was not retained")
     };
@@ -5446,7 +5449,7 @@ fn conditional_construction_cleans_up_only_the_constructed_arm() {
             cleanups: final_cleanups,
             ..
         },
-    ] = import.export().function.body.as_slice()
+    ] = import.export().functions[0].body.as_slice()
     else {
         panic!("the conditional lifetime boundary was not retained")
     };
@@ -6081,8 +6084,8 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     refresh_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let prepared = load_import(&project.config()).expect("load the locked artifact offline");
-    let declaration_id = prepared.export().function.declaration_id.clone();
-    let function_span = prepared.export().function.span.clone();
+    let declaration_id = prepared.export().functions[0].declaration_id.clone();
+    let function_span = prepared.export().functions[0].span.clone();
     let lowered = lower_import(&prepared).expect("lower the typed artifact directly");
 
     assert_eq!(lowered.source().identity(), prepared.identity());
@@ -6265,7 +6268,7 @@ fn cpp_fixed_byte_enum_forwarding_verifies_and_retains_nominal_identity_offline(
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     assert!(matches!(
-        import.export().function.return_type,
+        import.export().functions[0].return_type,
         CppType::Enumeration {
             is_scoped: true,
             is_fixed: true,
@@ -6339,7 +6342,7 @@ fn cpp_fixed_byte_enum_call_conversions_cannot_erase_nominal_identity() {
         serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
     for mutation in 0..4 {
         let mut forged = artifact.clone();
-        let cast = &mut forged["function"]["body"][0]["conversions"][0];
+        let cast = &mut forged["functions"][0]["body"][0]["conversions"][0];
         match mutation {
             0 => cast["cast_kind"] = "no_op".into(),
             1 => cast["cast_kind"] = "integral_cast".into(),
@@ -6377,7 +6380,7 @@ fn cpp_fixed_byte_enum_artifacts_reject_identity_backing_and_source_forgery() {
         serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
     for mutation in 0..8 {
         let mut forged = artifact.clone();
-        let ty = &mut forged["function"]["body"][0]["value"]["value_type"];
+        let ty = &mut forged["functions"][0]["body"][0]["value"]["value_type"];
         match mutation {
             0 => ty["declaration_id"] = "c:@E@Other".into(),
             1 => ty["name"] = "Other".into(),
@@ -6531,7 +6534,7 @@ fn cpp_uninitialized_integer_local_verifies_only_after_assignment_offline() {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     assert!(matches!(
-        import.export().function.body[0],
+        import.export().functions[0].body[0],
         CppStatement::Declare {
             initializer: CppInitializer::Uninitialized,
             ..
@@ -6584,7 +6587,7 @@ fn cpp_uninitialized_initializer_rejects_record_and_reference_artifact_forgery()
         fs::remove_file(&project.exporter).unwrap();
         let mut artifact: serde_json::Value =
             serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
-        artifact["function"]["body"][0]["initializer"] =
+        artifact["functions"][0]["body"][0]["initializer"] =
             serde_json::json!({"kind":"uninitialized"});
         let bytes = serde_json::to_vec_pretty(&artifact).unwrap();
         let mut lock: serde_json::Value =
@@ -6817,7 +6820,7 @@ fn check_return_call_sidecar(
     import: &click::languages::cpp::PreparedCppImport,
     source: &str,
 ) {
-    let prefix = format!("{}.", import.export().function.name);
+    let prefix = format!("{}.", import.export().functions[0].name);
     check_sidecar_tactic(project, import, source, Some(&prefix));
 }
 
@@ -7173,7 +7176,7 @@ fn signed_scalar_return_and_parameters_retain_locked_header_aliases() {
     project.write_config_with_profile("quotient", "arithmetic.cpp", true);
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let CppType::Integer { source_aliases, .. } = &import.export().function.return_type else {
+    let CppType::Integer { source_aliases, .. } = &import.export().functions[0].return_type else {
         panic!("missing signed return type")
     };
     assert_eq!(source_aliases[0].name, "int64_t");
@@ -7991,8 +7994,8 @@ fn class_template_instances_reject_cross_instance_bindings_even_with_equal_layou
     check_return_call_sidecar(&project, &import, sidecar);
     let mut artifact: serde_json::Value =
         serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
-    let right = artifact["function"]["parameters"][1].clone();
-    let place = &mut artifact["function"]["body"][0]["arguments"][0]["place"];
+    let right = artifact["functions"][0]["parameters"][1].clone();
+    let place = &mut artifact["functions"][0]["body"][0]["arguments"][0]["place"];
     place["declaration_id"] = right["declaration_id"].clone();
     place["name"] = right["name"].clone();
     let bytes = serde_json::to_vec(&artifact).unwrap();
@@ -8360,7 +8363,7 @@ fn inherited_calls_reject_forged_nominal_paths_and_const_roots() {
             .unwrap();
         for mutation in 0..8 {
             let mut hostile = artifact.clone();
-            let place = &mut hostile["function"]["body"][0]["arguments"][0]["place"];
+            let place = &mut hostile["functions"][0]["body"][0]["arguments"][0]["place"];
             let path = place["projections"].as_array_mut().unwrap();
             let last = path.len() - 1;
             match mutation {
@@ -8379,7 +8382,7 @@ fn inherited_calls_reject_forged_nominal_paths_and_const_roots() {
                     path[last]["unexpected"] = true.into();
                 }
                 7 if selected == "change" => {
-                    hostile["function"]["parameters"][0]["value_type"]["pointee"]["is_const"] =
+                    hostile["functions"][0]["parameters"][0]["value_type"]["pointee"]["is_const"] =
                         true.into();
                 }
                 7 => {
@@ -8576,7 +8579,7 @@ fn direct_return_calls_verify_modular_contracts_and_frame_memory() {
             span,
             conversions,
         },
-    ] = import.export().function.body.as_slice()
+    ] = import.export().functions[0].body.as_slice()
     else {
         panic!("retain a typed direct return call");
     };
@@ -8901,7 +8904,8 @@ fn nested_return_calls_verify_scalar_types_and_fresh_captures() {
         let project = Project::with_fixture("nested.cpp", selected, cpp);
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let [CppStatement::ReturnCall { arguments, .. }] = import.export().function.body.as_slice()
+        let [CppStatement::ReturnCall { arguments, .. }] =
+            import.export().functions[0].body.as_slice()
         else {
             panic!("retain return call");
         };
@@ -8918,7 +8922,7 @@ fn nested_return_calls_verify_scalar_types_and_fresh_captures() {
         };
         assert_eq!(callee.name, helper);
         assert_eq!(span.file, "nested.cpp");
-        assert_eq!(capture_type, &import.export().function.return_type);
+        assert_eq!(capture_type, &import.export().functions[0].return_type);
         let source = format!(
             "verifying \"nested.cpp\"; {value_type} {helper}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }} {value_type} {selected}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }}"
         );
@@ -9073,7 +9077,8 @@ fn nested_calls_with_stable_siblings_preserve_each_argument_position_and_casts()
             "verifying \"arguments.cpp\"; int32 echo(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }} int32 {outer}(int32 a, int32 b, int32 c) {{ ensures result == {slot}; }} by {{ execute(); simp(); }} int32 {selected}(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}"
         );
         check_return_call_sidecar(&project, &import, &source);
-        let [CppStatement::ReturnCall { arguments, .. }] = import.export().function.body.as_slice()
+        let [CppStatement::ReturnCall { arguments, .. }] =
+            import.export().functions[0].body.as_slice()
         else {
             panic!("retain return call");
         };
@@ -9310,7 +9315,8 @@ fn nested_stable_siblings_preserve_concrete_boolean_template_rounding_wrappers()
         let project = Project::with_fixture("arguments.cpp", selected, MULTIPLE_ARGUMENTS_SOURCE);
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let [CppStatement::ReturnCall { callee, .. }] = import.export().function.body.as_slice()
+        let [CppStatement::ReturnCall { callee, .. }] =
+            import.export().functions[0].body.as_slice()
         else {
             panic!("retain template return call");
         };
@@ -9348,10 +9354,10 @@ fn static_helpers_preserve_scalar_types_class_identity_and_no_receiver() {
         );
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
-        assert!(matches!(&import.export().function.function_kind,
+        assert!(matches!(&import.export().functions[0].function_kind,
             CppFunctionKind::StaticMethod { record_name, record_declaration_id }
             if record_name == "Scalar" && !record_declaration_id.is_empty()));
-        assert_eq!(import.export().function.parameters.len(), 1);
+        assert_eq!(import.export().functions[0].parameters.len(), 1);
         assert!(import.export().records.is_empty());
         let source = format!(
             "verifying \"static.cpp\"; {value_type} Scalar_{member}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }}"
@@ -9400,7 +9406,8 @@ fn static_helpers_preserve_nested_fee_rounding_template_shape() {
         let project = Project::with_fixture("static.cpp", selected, STATIC_HELPERS_SOURCE);
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let [CppStatement::ReturnCall { callee, .. }] = import.export().function.body.as_slice()
+        let [CppStatement::ReturnCall { callee, .. }] =
+            import.export().functions[0].body.as_slice()
         else {
             panic!("static template call");
         };
@@ -9577,7 +9584,7 @@ fn normalized_initializer_calls_preserve_scalar_types_and_static_helpers() {
             Project::with_fixture("evaluation.cpp", selected, NORMALIZED_EVALUATION_SOURCE);
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let caller = &import.export().function.name;
+        let caller = &import.export().functions[0].name;
         let source = format!(
             "verifying \"evaluation.cpp\"; {value_type} {helper}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }} {value_type} {caller}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }}"
         );
@@ -9737,7 +9744,7 @@ fn lifetime_returns_destroy_only_the_objects_constructed_on_that_path() {
             cleanups: final_cleanups,
             ..
         },
-    ] = import.export().function.body.as_slice()
+    ] = import.export().functions[0].body.as_slice()
     else {
         panic!("construction events must retain their source order");
     };
@@ -9780,7 +9787,7 @@ fn lifetime_return_before_any_construction_has_no_cleanup() {
             cleanups: final_cleanups,
             ..
         },
-    ] = import.export().function.body.as_slice()
+    ] = import.export().functions[0].body.as_slice()
     else {
         panic!("source construction order");
     };
@@ -9893,7 +9900,7 @@ fn selected_function_collision_uses_the_same_identity_binding_as_its_helper() {
     let import = load_import(&project.config()).unwrap();
     let lowered = lower_import(&import).unwrap();
     let selected = lowered
-        .contract_name(&import.export().function.declaration_id)
+        .contract_name(&import.export().functions[0].declaration_id)
         .unwrap();
     let helper = lowered
         .contract_name(&import.export().reachable_functions[0].declaration_id)
@@ -10313,7 +10320,7 @@ fn compiler_assumptions_require_proof_and_keep_normal_cleanup() {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     assert!(matches!(
-        import.export().function.body[1],
+        import.export().functions[0].body[1],
         CppStatement::Assume { .. }
     ));
     let contracts = r#"verifying "assume.cpp";
@@ -10403,7 +10410,7 @@ fn user_named_assume_calls_are_not_compiler_assumptions() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     assert!(matches!(
-        import.export().function.body[0],
+        import.export().functions[0].body[0],
         CppStatement::Call { .. }
     ));
     let proof = "verifying \"assume.cpp\"; void Assume(bool condition) { ensures condition == condition; } by { execute(); simp(); } int32 guarded(int32 n) { ensures result == n; } by { execute(); simp(); }";
@@ -10513,7 +10520,8 @@ fn check_field_sibling_rounding(direction: &str) {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let [CppStatement::ReturnCall { callee, .. }] = import.export().function.body.as_slice()
+        let [CppStatement::ReturnCall { callee, .. }] =
+            import.export().functions[0].body.as_slice()
         else {
             panic!("retain method template call");
         };
@@ -10755,7 +10763,7 @@ fn wide_intermediates_compiler_constants_keep_full_payloads() {
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
         let artifact = serde_json::to_value(import.export()).unwrap();
-        let initializer = &artifact["function"]["body"][0]["initializer"]["value"];
+        let initializer = &artifact["functions"][0]["body"][0]["initializer"]["value"];
         assert_eq!(initializer["kind"], "compiler_constant");
         assert_eq!(initializer["value"], payload);
         assert_eq!(initializer["value_type"]["bits"], 128);
@@ -11066,7 +11074,7 @@ fn wide_division_symbolic_contracts_verify_expand_and_audit_offline() {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        assert_eq!(import.export().schema, 59);
+        assert_eq!(import.export().schema, 60);
         let source = format!(
             "verifying \"wide.cpp\"; {ty} {name}({ty} a, {ty} b) {{ {domain} ensures to_integer(result) == {helper}(to_integer(a), to_integer(b)); }} by {{ execute(); simp(); }}"
         );
@@ -11163,7 +11171,7 @@ fn wide_division_preserves_clang_promotions_and_concrete_modulo_casts() {
                     },
                 ..
             },
-        ] = import.export().function.body.as_slice()
+        ] = import.export().functions[0].body.as_slice()
         else {
             panic!("division must retain its explicit expression");
         };
@@ -11254,7 +11262,7 @@ fn wide_comparisons_symbolic_results_verify_expand_and_audit_offline() {
             refresh_import(&project.config()).unwrap();
             fs::remove_file(&project.exporter).unwrap();
             let import = load_import(&project.config()).unwrap();
-            assert_eq!(import.export().schema, 59);
+            assert_eq!(import.export().schema, 60);
             let relation = format!("to_integer(a) {op} to_integer(b)");
             let proof = format!(
                 "verifying \"wide.cpp\"; bool {name}({ty} a, {ty} b) {{ ensures result == 1 implies ({relation}); ensures result == 0 implies not ({relation}); }} by {{ execute(); simp(); }}"
@@ -11718,7 +11726,7 @@ fn assumed_library_assertions_require_proof_and_preserve_cleanup() {
             .iter()
             .all(|f| f.name != "library_check")
     );
-    let CppStatement::LibraryAssert { contract, span, .. } = &import.export().function.body[1]
+    let CppStatement::LibraryAssert { contract, span, .. } = &import.export().functions[0].body[1]
     else {
         panic!("explicit library assertion node")
     };
@@ -12144,7 +12152,7 @@ fn consteval_library_metadata_keeps_proof_obligations_and_compiler_provenance() 
         metadata,
         specialization,
         ..
-    } = &import.export().function.body[0]
+    } = &import.export().functions[0].body[0]
     else {
         panic!("explicit library statement")
     };
@@ -12268,7 +12276,7 @@ fn consteval_library_metadata_offline_checker_rejects_forged_provenance_and_kind
         refresh_import(&project.config()).unwrap();
         let mut artifact: serde_json::Value =
             serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
-        let statement = &mut artifact["function"]["body"][0];
+        let statement = &mut artifact["functions"][0]["body"][0];
         match change {
             "file" => statement["metadata"][0]["declaration_file"] = "/outside/closure.h".into(),
             "function" => statement["metadata"][0]["function"] = "factory()".into(),
@@ -12368,7 +12376,7 @@ fn literal_library_metadata_proves_conditions_and_retains_both_assumptions() {
         let import = load_import(&project.config()).unwrap();
         let CppStatement::LibraryAssert {
             metadata, contract, ..
-        } = &import.export().function.body[0]
+        } = &import.export().functions[0].body[0]
         else {
             panic!("library statement")
         };
@@ -12501,7 +12509,7 @@ fn literal_library_metadata_offline_checker_rejects_forged_constructor_and_liter
         fs::remove_file(&project.exporter).unwrap();
         let mut artifact: serde_json::Value =
             serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
-        let literal = &mut artifact["function"]["body"][0]["metadata"][1];
+        let literal = &mut artifact["functions"][0]["body"][0]["metadata"][1];
         match change {
             "header" => literal["constructor"]["header"] = "gate.h".into(),
             "hash" => literal["constructor"]["sha256"] = "0".repeat(64).into(),
@@ -13246,7 +13254,7 @@ fn locked_header_records_preserve_declaration_sources_and_verify_offline() {
             assert_eq!(field.span.file, "state.h");
         }
         assert_eq!(import.export().dependencies, ["state.h"]);
-        assert_eq!(import.export().function.span.file, "header_record.cpp");
+        assert_eq!(import.export().functions[0].span.file, "header_record.cpp");
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
         check_return_call_sidecar(
@@ -13307,7 +13315,7 @@ fn header_record_artifacts_reject_forged_declaration_and_executable_sources() {
             "field_owner" => {
                 artifact["records"][0]["fields"][0]["span"]["file"] = "header_record.cpp".into()
             }
-            "function" => artifact["function"]["span"]["file"] = "state.h".into(),
+            "function" => artifact["functions"][0]["span"]["file"] = "state.h".into(),
             _ => unreachable!(),
         }
         let bytes = serde_json::to_vec(&artifact).unwrap();
@@ -13617,7 +13625,7 @@ fn nested_source_fields_read_write_and_update_with_exact_authority_offline() {
         let project = nested_record_project(selected);
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let body = &import.export().function.body;
+        let body = &import.export().functions[0].body;
         let object = match &body[0] {
             CppStatement::MemberStore { object, .. } => object,
             CppStatement::Return {
@@ -13733,7 +13741,7 @@ fn nested_source_field_artifacts_reject_forged_paths_readonly_roots_and_unimplem
         "plain_load",
     ] {
         let mut artifact = original.clone();
-        let object = &mut artifact["function"]["body"][0]["object"];
+        let object = &mut artifact["functions"][0]["body"][0]["object"];
         match change {
             "owner" => object["projections"][0]["record_declaration_id"] = "unknown".into(),
             "field" => object["projections"][1]["declaration_id"] = "unknown".into(),
@@ -13744,8 +13752,8 @@ fn nested_source_field_artifacts_reject_forged_paths_readonly_roots_and_unimplem
                 object["projections"].as_array_mut().unwrap().pop();
             }
             "scalar" => {
-                let leaf = artifact["function"]["body"][0]["field"].clone();
-                artifact["function"]["body"][0]["object"]["projections"]
+                let leaf = artifact["functions"][0]["body"][0]["field"].clone();
+                artifact["functions"][0]["body"][0]["object"]["projections"]
                     .as_array_mut()
                     .unwrap()
                     .push(leaf);
@@ -13755,14 +13763,14 @@ fn nested_source_field_artifacts_reject_forged_paths_readonly_roots_and_unimplem
                 object["projections"] = vec![step; 257].into();
             }
             "readonly" => {
-                artifact["function"]["function_kind"]["is_const"] = true.into();
-                artifact["function"]["parameters"][0]["value_type"]["pointee"]["is_const"] =
+                artifact["functions"][0]["function_kind"]["is_const"] = true.into();
+                artifact["functions"][0]["parameters"][0]["value_type"]["pointee"]["is_const"] =
                     true.into();
             }
             "plain_load" => {
-                let parameter = artifact["function"]["parameters"][1].clone();
-                let span = artifact["function"]["body"][0]["span"].clone();
-                artifact["function"]["body"][0]["value"] = serde_json::json!({"kind":"load", "place":{"declaration_id":parameter["declaration_id"], "name":parameter["name"], "span":span, "projections":original["function"]["body"][0]["object"]["projections"]}, "value_type":parameter["value_type"], "span":span});
+                let parameter = artifact["functions"][0]["parameters"][1].clone();
+                let span = artifact["functions"][0]["body"][0]["span"].clone();
+                artifact["functions"][0]["body"][0]["value"] = serde_json::json!({"kind":"load", "place":{"declaration_id":parameter["declaration_id"], "name":parameter["name"], "span":span, "projections":original["functions"][0]["body"][0]["object"]["projections"]}, "value_type":parameter["value_type"], "span":span});
             }
             _ => unreachable!(),
         }
@@ -13865,7 +13873,7 @@ fn projected_record_calls_and_reference_arguments_verify_offline() {
         let project = nested_record_project(selected);
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let arguments = match &import.export().function.body[0] {
+        let arguments = match &import.export().functions[0].body[0] {
             CppStatement::ReturnCall { arguments, .. } | CppStatement::Call { arguments, .. } => {
                 arguments
             }
@@ -13919,11 +13927,11 @@ fn projected_call_artifacts_check_target_identity_and_root_constness() {
             "root_name",
         ] {
             let mut artifact = original.clone();
-            let place = &mut artifact["function"]["body"][0]["arguments"][0]["place"];
+            let place = &mut artifact["functions"][0]["body"][0]["arguments"][0]["place"];
             match change {
                 "readonly" => {
-                    artifact["function"]["function_kind"]["is_const"] = true.into();
-                    artifact["function"]["parameters"][0]["value_type"]["pointee"]["is_const"] =
+                    artifact["functions"][0]["function_kind"]["is_const"] = true.into();
+                    artifact["functions"][0]["parameters"][0]["value_type"]["pointee"]["is_const"] =
                         true.into();
                 }
                 "owner" => place["projections"][0]["record_declaration_id"] = "unknown".into(),
@@ -14090,7 +14098,7 @@ fn condition_calls_evaluate_once_before_branch_and_verify_offline() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     assert!(matches!(
-        import.export().function.body[0],
+        import.export().functions[0].body[0],
         click::languages::cpp::CppStatement::If {
             condition: click::languages::cpp::CppCondition::Call { .. },
             ..
@@ -14146,7 +14154,7 @@ fn condition_calls_validate_target_result_arguments_and_metadata() {
         serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
     for mutation in 0..8 {
         let mut forged = artifact.clone();
-        let call = &mut forged["function"]["body"][0]["condition"]["call"];
+        let call = &mut forged["functions"][0]["body"][0]["condition"]["call"];
         match mutation {
             0 => call["callee"]["declaration_id"] = "missing".into(),
             1 => {
@@ -14347,9 +14355,9 @@ int choose(bool fail) { predicate(fail); try { if (fail) { Guard guard(0); } } c
         serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
     let mut lock: serde_json::Value =
         serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
-    let operation = artifact["function"]["body"][0].clone();
-    let span = artifact["function"]["body"][1]["condition"]["span"].clone();
-    artifact["function"]["body"][1]["condition"] = serde_json::json!({"call": {
+    let operation = artifact["functions"][0]["body"][0].clone();
+    let span = artifact["functions"][0]["body"][1]["condition"]["span"].clone();
+    artifact["functions"][0]["body"][1]["condition"] = serde_json::json!({"call": {
         "callee": operation["callee"], "arguments": operation["arguments"],
         "value_type": {"kind":"boolean","bits":8,"is_const":false}, "span":span
     }});
@@ -14418,7 +14426,7 @@ fn locked_header_graph_conditions_verify_offline_with_inherited_frames() {
     let project = header_graph_project("choose");
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
-    assert_eq!(import.export().function.span.file, "graph.cpp");
+    assert_eq!(import.export().functions[0].span.file, "graph.cpp");
     for function in &import.export().reachable_functions {
         let source = if function.name.starts_with("Base_") {
             "types.h"
@@ -14513,7 +14521,7 @@ fn locked_header_graph_rejects_forged_body_call_and_alias_origins() {
     for mutation in 0..8 {
         let mut forged = artifact.clone();
         match mutation {
-            0 => forged["function"]["span"]["file"] = "helpers.h".into(),
+            0 => forged["functions"][0]["span"]["file"] = "helpers.h".into(),
             1 => forged["reachable_functions"][predicate]["span"]["file"] = "types.h".into(),
             2 => {
                 forged["reachable_functions"][predicate]["parameters"][0]["span"]["file"] =
@@ -14761,7 +14769,7 @@ fn converted_call_initializers_preserve_aliases_and_header_contracts_offline() {
     let import = load_import(&project.config()).unwrap();
     let artifact: serde_json::Value =
         serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
-    let cast = &artifact["function"]["body"][0]["initializer"]["conversions"][0];
+    let cast = &artifact["functions"][0]["body"][0]["initializer"]["conversions"][0];
     assert_eq!(cast["cast_kind"], "no_op");
     assert_eq!(cast["explicit"], true);
     assert_eq!(cast["span"]["file"], "converted.cpp");
@@ -14833,7 +14841,7 @@ fn converted_call_initializers_keep_implicit_and_boolean_conversion_order() {
         let import = load_import(&project.config()).unwrap();
         let artifact: serde_json::Value =
             serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
-        let conversions = artifact["function"]["body"][0]["initializer"]["conversions"]
+        let conversions = artifact["functions"][0]["body"][0]["initializer"]["conversions"]
             .as_array()
             .unwrap();
         assert_eq!(
@@ -14899,7 +14907,7 @@ fn converted_call_initializers_reject_forged_conversion_types_kinds_and_origins(
         serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
     for mutation in 0..8 {
         let mut forged = artifact.clone();
-        let cast = &mut forged["function"]["body"][0]["initializer"]["conversions"][0];
+        let cast = &mut forged["functions"][0]["body"][0]["initializer"]["conversions"][0];
         match mutation {
             0 => cast["source_type"]["bits"] = 32.into(),
             1 => cast["value_type"]["bits"] = 64.into(),
@@ -15164,7 +15172,7 @@ using Amount = long; inline Amount echo(Amount value) noexcept { return value; }
     let import = load_import(&project.config()).unwrap();
     let artifact: serde_json::Value =
         serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
-    let cast = &artifact["function"]["body"][0]["conversions"][0];
+    let cast = &artifact["functions"][0]["body"][0]["conversions"][0];
     assert_eq!(cast["cast_kind"], "no_op");
     assert_eq!(cast["explicit"], true);
     assert_eq!(cast["span"]["file"], "relay.cpp");
@@ -15311,7 +15319,7 @@ using Amount = long; inline Amount echo(Amount value) noexcept { return value; }
         serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
     for mutation in 0..9 {
         let mut forged = artifact.clone();
-        let returned = &mut forged["function"]["body"][0];
+        let returned = &mut forged["functions"][0]["body"][0];
         match mutation {
             0 => returned["conversions"][0]["source_type"]["bits"] = 32.into(),
             1 => returned["conversions"][0]["value_type"]["bits"] = 64.into(),
@@ -15767,9 +15775,9 @@ int32* run(int32* data) { ensures result == data; } by { execute(); simp(); }
     for mutation in 0..4 {
         let mut forged = artifact.clone();
         match mutation {
-            0 => forged["function"]["return_type"]["pointee"]["bits"] = 64.into(),
-            1 => forged["function"]["return_type"]["pointee"]["is_const"] = true.into(),
-            2 => forged["function"]["body"][0]["value_type"]["pointee"]["bits"] = 64.into(),
+            0 => forged["functions"][0]["return_type"]["pointee"]["bits"] = 64.into(),
+            1 => forged["functions"][0]["return_type"]["pointee"]["is_const"] = true.into(),
+            2 => forged["functions"][0]["body"][0]["value_type"]["pointee"]["bits"] = 64.into(),
             3 => forged["reachable_functions"][0]["return_type"]["pointee"]["bits"] = 64.into(),
             _ => unreachable!(),
         }
@@ -15846,8 +15854,8 @@ int32& run(int32& value) { ensures &result == &value; } by { execute(); simp(); 
     for mutation in 0..5 {
         let mut forged = artifact.clone();
         match mutation {
-            0 => forged["function"]["return_type"]["kind"] = "pointer".into(),
-            1 => forged["function"]["body"][0]["value_type"]["pointee"]["bits"] = 64.into(),
+            0 => forged["functions"][0]["return_type"]["kind"] = "pointer".into(),
+            1 => forged["functions"][0]["body"][0]["value_type"]["pointee"]["bits"] = 64.into(),
             2 => {
                 forged["reachable_functions"][0]["body"][0]["value"]["address"]["kind"] =
                     "load".into()
@@ -16271,8 +16279,8 @@ int32& Cell::operator[](uint64 index) {
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
         assert!(
-            import.export().function.name == "Cell_operator_index"
-                || import.export().function.name == "probe"
+            import.export().functions[0].name == "Cell_operator_index"
+                || import.export().functions[0].name == "probe"
         );
         let source = if selector == "probe" {
             format!("{method}{caller}")
@@ -16878,7 +16886,7 @@ fn check_construction_return_descriptor_factories(expand_and_retain: bool) {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     assert!(matches!(
-        import.export().function.body[0],
+        import.export().functions[0].body[0],
         CppStatement::Declare {
             initializer: CppInitializer::ConstructionCall { .. },
             ..
@@ -16969,17 +16977,17 @@ fn construction_return_refuses_address_and_memory_sensitive_constructors_offline
     for mutation in 0..4 {
         let mut forged = artifact.clone();
         match mutation {
-            0 => forged["function"]["body"][0]["value_type"]["name"] = "Other".into(),
-            1 => forged["function"]["body"][0]["callee"]["declaration_id"] = "missing".into(),
-            2 => forged["function"]["body"][0]["arguments"] = serde_json::json!([]),
+            0 => forged["functions"][0]["body"][0]["value_type"]["name"] = "Other".into(),
+            1 => forged["functions"][0]["body"][0]["callee"]["declaration_id"] = "missing".into(),
+            2 => forged["functions"][0]["body"][0]["arguments"] = serde_json::json!([]),
             3 => {
-                forged["function"]["body"][0]["cleanups"] = serde_json::json!([{
+                forged["functions"][0]["body"][0]["cleanups"] = serde_json::json!([{
                     "kind": "destructor",
-                "object": {"declaration_id":artifact["function"]["parameters"][0]["declaration_id"],
-                           "name":artifact["function"]["parameters"][0]["name"],
-                           "span":artifact["function"]["parameters"][0]["span"]},
-                "callee":artifact["function"]["body"][0]["callee"],
-                "span":artifact["function"]["body"][0]["span"]
+                "object": {"declaration_id":artifact["functions"][0]["parameters"][0]["declaration_id"],
+                           "name":artifact["functions"][0]["parameters"][0]["name"],
+                           "span":artifact["functions"][0]["parameters"][0]["span"]},
+                "callee":artifact["functions"][0]["body"][0]["callee"],
+                "span":artifact["functions"][0]["body"][0]["span"]
                 }])
             }
             _ => unreachable!(),
@@ -17054,7 +17062,7 @@ unsigned long probe(View& view, unsigned long n) noexcept {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     assert!(matches!(
-        import.export().function.body[1],
+        import.export().functions[0].body[1],
         click::languages::cpp::CppStatement::AssignConstructionCall { .. }
     ));
     let proof = r#"verifying "construct-assignment.cpp";
@@ -17141,7 +17149,7 @@ int& probe(View& view, unsigned long n) noexcept {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     assert!(matches!(
-        import.export().function.body[1],
+        import.export().functions[0].body[1],
         click::languages::cpp::CppStatement::AssignConstructionCall { .. }
     ));
     let proof = r#"verifying "construct-assignment.cpp";
@@ -17208,7 +17216,7 @@ int& probe(View& view, int n) noexcept {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     assert!(matches!(
-        import.export().function.body[2],
+        import.export().functions[0].body[2],
         click::languages::cpp::CppStatement::AssignConstructionCall { .. }
     ));
     let proof = r#"verifying "construct-assignment.cpp";
@@ -17517,8 +17525,9 @@ fn cpp_native_pointer_artifacts_reject_pointee_substitution_offline() {
                     ["bits"] = 32.into()
             }
             "call" => {
-                artifact["function"]["parameters"][0]["value_type"]["pointee"]["bits"] = 32.into();
-                artifact["function"]["body"][0]["arguments"][0]["value"]["value_type"]["pointee"]
+                artifact["functions"][0]["parameters"][0]["value_type"]["pointee"]["bits"] =
+                    32.into();
+                artifact["functions"][0]["body"][0]["arguments"][0]["value"]["value_type"]["pointee"]
                     ["bits"] = 32.into();
             }
             _ => unreachable!(),
@@ -18016,7 +18025,7 @@ fn forged_cpp_function_pointer_artifacts_are_refused() {
             .position(|function| function["name"] == "apply")
             .unwrap();
         let apply = artifact["reachable_functions"][apply_index].clone();
-        let address = &mut artifact["function"]["body"][0]["arguments"][0]["value"];
+        let address = &mut artifact["functions"][0]["body"][0]["arguments"][0]["value"];
         assert_eq!(address["kind"], "function_address");
         match change {
             "address_type" => address["value_type"]["parameters"][0]["bits"] = 64.into(),
@@ -18194,4 +18203,87 @@ int caller(int x) noexcept { R r{1}; return r.m(x); }\n";
         error.contains("a C++ lambda is supported only in the body of a free function"),
         "{error}"
     );
+}
+
+/// A C++ unit of a project reads an external tree in place, exports two
+/// functions of one file into one artifact for one sidecar, and its
+/// committed lock still loads after the whole checkout moves.
+#[test]
+#[ignore = "nightly: 1.3s in the parallel gate"]
+fn cpp_project_unit_exports_several_functions_from_an_external_tree() {
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let base = std::env::temp_dir().join(format!(
+        "click-cpp-unit-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let root = base.join("checkout");
+    let source = root.join("vendor/basic/src/pair.cpp");
+    fs::create_dir_all(source.parent().unwrap()).unwrap();
+    fs::create_dir_all(root.join("proofs/checks")).unwrap();
+    let text = "int increment(int& value) noexcept {\n    value = value + 1;\n    return value;\n}\n\nint add_two(int& value) noexcept {\n    increment(value);\n    return increment(value);\n}\n";
+    fs::write(&source, text).unwrap();
+    fs::write(
+        root.join("proofs/checks/pair.click"),
+        "verifying \"../../vendor/basic/src/pair.cpp\";\n\
+         int32 increment(int32& value) { requires value < 2147483647; owns value; ensures value == old(value) + 1; ensures result == value; } by { execute(); simp(); }\n\
+         int32 add_two(int32& value) { requires value < 2147483646; owns value; ensures value == old(value) + 2; ensures result == value; } by { execute(); simp(); }\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("proofs/click.project.json"),
+        serde_json::json!({"units": {"basic": {
+            "language": "c++",
+            "root": "../vendor/basic",
+            "exceptions": false,
+            "rtti": false,
+            "args": ["-ffreestanding", "-nostdinc", "-nostdinc++", "-funsigned-char"],
+            "sources": {"src/pair.cpp": {"functions": ["increment", "add_two"]}}
+        }}})
+        .to_string(),
+    )
+    .unwrap();
+    let click = |args: &[&Path]| {
+        Command::new(env!("CARGO_BIN_EXE_click"))
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    let output = click(&[Path::new("import"), Path::new("lock"), &root.join("proofs")]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read_dir(source.parent().unwrap()).unwrap().count(), 1);
+    let output = click(&[Path::new("verify"), &root.join("proofs/checks/pair.click")]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("2 selected proofs verified"));
+
+    let moved = base.join("moved");
+    fs::rename(&root, &moved).unwrap();
+    let sidecar = moved.join("proofs/checks/pair.click");
+    let output = click(&[Path::new("verify"), &sidecar]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    fs::write(
+        moved.join("vendor/basic/src/pair.cpp"),
+        text.replace("+ 1", "+ 2"),
+    )
+    .unwrap();
+    let output = click(&[Path::new("verify"), &sidecar]);
+    let error = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success() && error.contains("pair.cpp") && error.contains("differs"),
+        "{error}"
+    );
+    let _ = fs::remove_dir_all(&base);
 }

@@ -49,8 +49,8 @@ system headers, or frontend toolchain.
 
 ## Project units
 
-A project's root `click.project.json` can declare C compiler-import units and
-Rust crate units. The
+A project's root `click.project.json` can declare C compiler-import units, C++
+units and Rust crate units. The
 project file is found from a sidecar as the nearest ancestor directory that
 contains one, so sidecars may live in any subdirectory beneath it. A unit names
 a source root, which may be the project directory or any external tree the user
@@ -78,7 +78,7 @@ requires no layout or file names in it, and never writes into it.
 ```
 
 - A unit name is 1 to 64 ASCII letters, digits, `_` or `-`. `"language"` is
-  `"c"` or `"rust"`; C++ still uses per-sidecar import configs.
+  `"c"`, `"c++"` or `"rust"`.
 - `root` is relative to the project directory and defaults to `.`. It is the
   compiler's working directory, so `-I` paths and source keys are relative to
   it. Source keys are relative paths inside the root, without `..`.
@@ -113,6 +113,34 @@ no other source. `click import lock` runs the pinned Charon named by the
 `CLICK_CHARON` environment variable, writes `.click/<unit>/<crate root>.ullbc`,
 and records each crate file's digest so that a changed file is refused by name.
 Verification needs neither Charon nor `CLICK_CHARON`.
+
+A C++ unit gives `exceptions` and `rtti` (both default `false`) and `args`, the
+Clang arguments of its build, which Click writes into a compilation database of
+its own at lock time; the standard is C++20 and the target
+`x86_64-unknown-linux-gnu`. It takes no `compiler`, `environment` or
+`option_profile`. Each source is a logical source, a `.cpp` file or a header,
+and lists the `functions` its sidecars verify; it may also give the
+`translation_unit` that includes a header (by default the source itself), its
+own `args`, `dependencies`, `library_assertions` and `exception_behavior`, as a
+per-sidecar config does:
+
+```json
+"basic": {
+  "language": "c++",
+  "root": "../vendor/basic",
+  "args": ["-ffreestanding", "-nostdinc", "-nostdinc++", "-funsigned-char"],
+  "sources": {"src/pair.cpp": {"functions": ["increment", "add_two"]}}
+}
+```
+
+`click import lock` runs the pinned exporter named by `CLICK_CPP_EXPORTER`,
+which exports every listed function of a source into one artifact,
+`.click/<unit>/<source>.click-cpp.json`; a sidecar that verifies the source
+sees all of them, and verifies no other source. Preprocessor inputs under the
+unit root or the project directory are rechecked relative to those roots;
+inputs outside them, such as system, sysroot and Clang resource headers, are
+pinned by the digest the lock records and are not read when loading, so the
+lock verifies on another machine and after the checkout moves.
 
 A sidecar selects a unit source with an ordinary `verifying` path, relative to
 the sidecar, that resolves to a file the unit lists; for example a sidecar in

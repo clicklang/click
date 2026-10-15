@@ -208,7 +208,7 @@ fn check_upstream_cpp_rounding_phase(
     if fee_rate_import {
         refreshed.expect("GetFee must import its unchanged converted-call graph");
         let import = load_import(&config_path).unwrap();
-        assert_eq!(import.export().function.name, "CFeeRate_GetFee");
+        assert_eq!(import.export().functions[0].name, "CFeeRate_GetFee");
         assert!(
             import
                 .export()
@@ -220,7 +220,7 @@ fn check_upstream_cpp_rounding_phase(
         let artifact: serde_json::Value =
             serde_json::from_slice(&fs::read(root.join(format!("{name}.click-cpp.json"))).unwrap())
                 .unwrap();
-        let initializer = &artifact["function"]["body"]
+        let initializer = &artifact["functions"][0]["body"]
             .as_array()
             .unwrap()
             .iter()
@@ -274,7 +274,8 @@ fn check_upstream_cpp_rounding_phase(
     }
     if selected == "FeeFrac::Div" && !bounded_div {
         use click::languages::cpp::{CppLibraryMetadata, CppLiteralMetadataBinding, CppStatement};
-        let CppStatement::LibraryAssert { metadata, .. } = &import.export().function.body[0] else {
+        let CppStatement::LibraryAssert { metadata, .. } = &import.export().functions[0].body[0]
+        else {
             panic!("retained upstream annotation")
         };
         assert!(matches!(metadata[0], CppLibraryMetadata::Consteval(_)));
@@ -981,7 +982,7 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
     }
     if selected == "FeeFrac::Mul" {
         assert!(import.export().records.is_empty());
-        assert_eq!(import.export().function.parameters.len(), 2);
+        assert_eq!(import.export().functions[0].parameters.len(), 2);
         for omitted in [
             "requires -9223372036854775808 <= to_integer(a);",
             "requires to_integer(a) <= 9223372036854775807;",
@@ -1175,7 +1176,7 @@ fn pinned_std_byte_values_verify_with_native_integer_contracts_offline() {
         is_fixed,
         span,
         ..
-    } = &import.export().function.return_type
+    } = &import.export().functions[0].return_type
     else {
         panic!("std::byte lost its nominal enum declaration");
     };
@@ -3788,7 +3789,7 @@ fn defaulted_span_arguments_import_as_compiler_constants() {
         "#include <span>\nstd::span<int> probe(std::span<int>& s) noexcept { return s.subspan(1); }\n",
         SPAN_DEPENDENCIES,
     );
-    let body = serde_json::to_value(&import.export().function.body).unwrap();
+    let body = serde_json::to_value(&import.export().functions[0].body).unwrap();
     let arguments = &body[0]["arguments"];
     assert_eq!(arguments[2]["value"]["kind"], "compiler_constant", "{body}");
     assert_eq!(
@@ -4267,7 +4268,7 @@ fn pinned_std_byte_reinterpreted_call_result_preserves_pointer_identity_offline(
     let lock: serde_json::Value = serde_json::from_slice(&fs::read(&lock_path).unwrap()).unwrap();
     for change in 0..4 {
         let mut forged = artifact.clone();
-        let conversion = &mut forged["function"]["body"][0]["conversions"][0];
+        let conversion = &mut forged["functions"][0]["body"][0]["conversions"][0];
         match change {
             0 => conversion["cast_kind"] = "no_op".into(),
             1 => conversion["explicit"] = false.into(),
