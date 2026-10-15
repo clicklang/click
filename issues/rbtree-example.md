@@ -1642,3 +1642,15 @@ All cached sizes and links are preserved, and the returned resource describes
 the exact recolored sized tree. This path invokes no callback and accepts any
 correctly typed rotation pointer. These are root-reaching flips; continuing
 through arbitrary ancestors and writable erase integration remain unfinished.
+
+
+`rbtree_size_insert_context_color_flip.click` and its mirrored counterpart
+extend the four-node flip beneath a nonnull black parent with an arbitrary
+owned outer ancestor context and arbitrary sibling trees. The loop moves past
+the two inner frames, stops at the black parent, and uses the previously
+proved `restore_sized_context` to return the whole root tree. The postcondition
+states its exact model as the unchanged outer context filled with the recolored
+subtree; cached counts and links are preserved throughout. The ranking measure
+is the actual context depth, reduced by two on the continuing path. This covers
+a single flip followed by a black-parent exit, not repeated flips through red
+ancestors or non-root rotations.
