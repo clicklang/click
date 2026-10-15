@@ -40,3 +40,7 @@ int32 probe(struct owner* owner, int32 index, int32 value) {
     assumption();
 }
 ```
+
+```expect
+pass
+```

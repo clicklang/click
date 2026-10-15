@@ -694,3 +694,12 @@ The current-upstream extraction passes all 102 selected load/index/span/loop/bor
 controls (9.04s harness), including the scoped-binding and restored-registry
 regression. It uses upstream's existing pointer-load kind and checks its complete
 eight-byte width; no new scalar kind is introduced by this extraction.
+
+The filtered upstream Markdown fixture passes (0.79s fixture time). It is in the
+nightly list to preserve the normal gate's half-second fixture threshold; the
+fast scoped-binding kernel regression remains in the normal suite. The focused
+fixture was run explicitly; the full nightly suite was not run.
+
+The current-upstream fixture also passes fresh verification, expansion, rewritten
+verification and retained rechecking after an explicit `cargo build --lib` and
+helper relink. The final filtered nightly-fixture rerun passes (1.02s harness).
