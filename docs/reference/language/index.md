@@ -1906,6 +1906,8 @@ let root = fold(tree(p), { model: old(root.model) }, { left: l, right: r });
 and introduces folded children. It is the one form that names what an unfold
 opens; the trailing `unfold(root) as { ... }` spelling is refused with that
 advice (`mdtests/unfold_names_its_pieces_on_the_left.md`). No parent handle or `root.left` path remains.
+Child-field equations and the aliases they establish are local to each match
+arm; another arm may reuse the child name with different parent fields.
 Each selected-arm child must be named exactly once. An introduced name must
 not already own a resource. `unfold(l)` exposes the child's immediate body;
 an arm with no children needs no bindings (an empty output pattern is also
@@ -3207,7 +3209,9 @@ functions and predicates, not built-in kernel concepts.
 In pointer-valued C contexts, the integer constant `0` is the null pointer
 constant. It may initialize or assign a pointer, be returned from a pointer
 function, be passed to a pointer parameter, or be compared with a pointer.
-Nonzero integers do not implicitly convert to pointers.
+Pointer-typed datatype constructor fields use the same rule in function
+contracts and pure expressions: a field declared `int32*` accepts `0` as its
+typed null pointer. Nonzero integers do not implicitly convert to pointers.
 
 Supported C accepts the struct shapes listed in
 [struct subset](c.md#struct-subset). The C side lowers chained `obj->child->field` loads and stores at
