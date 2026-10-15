@@ -91,7 +91,7 @@ fn is_preexisting_write_pointer<'a>(
     pre_state: &CState,
     assumptions: &impl Fn() -> &'a PureFactContext,
 ) -> bool {
-    if pointer.block.starts_with("local:") || pointer.block.starts_with("havoc:") {
+    if pointer.block.is_local_block() || pointer.block.is_havoc_block() {
         return false;
     }
     if !matches!(
@@ -120,8 +120,8 @@ fn is_preexisting_write_pointer<'a>(
         if !seen.insert(candidate.clone()) {
             continue;
         }
-        if !candidate.block.starts_with("local:")
-            && !candidate.block.starts_with("havoc:")
+        if !candidate.block.is_local_block()
+            && !candidate.block.is_havoc_block()
             && (memory.has_block(&candidate.block)
                 || memory.is_live_heap_address(&candidate, assumptions))
         {

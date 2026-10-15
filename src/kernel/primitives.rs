@@ -1335,7 +1335,63 @@ impl std::hash::Hash for PointerBlock {
     }
 }
 
+/// The storage class a concrete block's name records, as its prefix: an
+/// automatic object of the current frames, a file-scope object with external
+/// or internal linkage, or storage a havoc introduced. Test a block with the
+/// `is_*_block` methods below, never by spelling a prefix at the use site.
+pub(crate) const LOCAL_BLOCK_PREFIX: &str = "local:";
+pub(crate) const GLOBAL_BLOCK_PREFIX: &str = "global:";
+pub(crate) const STATIC_BLOCK_PREFIX: &str = "static:";
+pub(crate) const HAVOC_BLOCK_PREFIX: &str = "havoc:";
+pub(crate) const CALL_HAVOC_BLOCK_PREFIX: &str = "call-havoc:";
+
 impl PointerBlock {
+    /// Whether a concrete block name records automatic storage.
+    pub(crate) fn is_local_name(name: &str) -> bool {
+        name.starts_with(LOCAL_BLOCK_PREFIX)
+    }
+
+    /// Whether a concrete block name records a file-scope object with
+    /// external linkage.
+    pub(crate) fn is_global_name(name: &str) -> bool {
+        name.starts_with(GLOBAL_BLOCK_PREFIX)
+    }
+
+    /// Whether a concrete block name records a `static` object.
+    pub(crate) fn is_static_name(name: &str) -> bool {
+        name.starts_with(STATIC_BLOCK_PREFIX)
+    }
+
+    /// Automatic storage: a local, parameter, frame or lifetime object.
+    pub(crate) fn is_local_block(&self) -> bool {
+        self.starts_with(LOCAL_BLOCK_PREFIX)
+    }
+
+    /// A file-scope object with external linkage.
+    pub(crate) fn is_global_block(&self) -> bool {
+        self.starts_with(GLOBAL_BLOCK_PREFIX)
+    }
+
+    /// A file-scope or function-scope `static` object.
+    pub(crate) fn is_static_block(&self) -> bool {
+        self.starts_with(STATIC_BLOCK_PREFIX)
+    }
+
+    /// Static storage of either linkage.
+    pub(crate) fn is_static_storage_block(&self) -> bool {
+        self.is_global_block() || self.is_static_block()
+    }
+
+    /// Storage a loop or statement havoc introduced.
+    pub(crate) fn is_havoc_block(&self) -> bool {
+        self.starts_with(HAVOC_BLOCK_PREFIX)
+    }
+
+    /// Storage a havoc at a call introduced.
+    pub(crate) fn is_call_havoc_block(&self) -> bool {
+        self.starts_with(CALL_HAVOC_BLOCK_PREFIX)
+    }
+
     pub(crate) fn is_function(&self) -> bool {
         matches!(self, Self::Function(_) | Self::FunctionSymbolic(_))
     }
@@ -1429,7 +1485,7 @@ impl PointerBlock {
         // (`ExternalArgument`) existed before the call and cannot be one of
         // them.
         let local_versus_argument = |left: &Self, right: &Self| {
-            left.starts_with("local:")
+            left.is_local_block()
                 && matches!(right, Self::ExternalArgument | Self::ExternalObject(_))
         };
         self != other

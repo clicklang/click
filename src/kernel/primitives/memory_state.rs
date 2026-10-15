@@ -2270,7 +2270,7 @@ fn call_havoc_keeps_cell(
     preserve_local_slots: bool,
 ) -> CallHavocCellRule {
     if preserve_local_slots
-        && pointer.block.starts_with("local:")
+        && pointer.block.is_local_block()
         // An opaque pointer may reach a local even when no exact alias has
         // yet been stated. Absence of an alias is not separation evidence.
         && mutable_ranges.iter().all(|range| !matches!(range.base().block, PointerBlock::Symbolic(_)))
@@ -2547,7 +2547,7 @@ impl CMemory {
         // evidence`). The havoc producers insert their markers directly,
         // but tests and any future caller may write them through this
         // constructor, so the refusal lives here.
-        if block.starts_with("havoc:") || block.starts_with("call-havoc:") {
+        if block.is_havoc_block() || block.is_call_havoc_block() {
             let diagnostic_base = self.clone();
             std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), CBlock::new(size));
             self.record_diagnostic_transform(
@@ -4045,7 +4045,7 @@ impl CMemory {
         }
         let Some((marker, marker_block)) = added_blocks
             .iter()
-            .find(|(block, _)| block.starts_with("call-havoc:"))
+            .find(|(block, _)| block.is_call_havoc_block())
         else {
             return false;
         };
@@ -4212,7 +4212,7 @@ impl CMemory {
         if first >= count {
             return Ok(self);
         }
-        if base.block.starts_with("local:")
+        if base.block.is_local_block()
             || matches!(base.block, PointerBlock::Heap(_))
             || !self.run_can_stand_for_cells_at(&base)
         {
@@ -4246,7 +4246,7 @@ impl CMemory {
         if count == 0 {
             return Ok(self);
         }
-        if base.block.starts_with("local:")
+        if base.block.is_local_block()
             || matches!(base.block, PointerBlock::Heap(_))
             || !self.run_can_stand_for_cells_at(&base)
         {
@@ -4279,7 +4279,7 @@ impl CMemory {
         fields: &[(u32, CType)],
         source: SharedCMemory,
     ) -> Result<Self, Self> {
-        if base.block.starts_with("local:")
+        if base.block.is_local_block()
             || matches!(base.block, PointerBlock::Heap(_))
             || !self.run_can_stand_for_cells_at(base)
             || self.cells.runs_in_block(&base.block).next().is_some()
@@ -4347,7 +4347,7 @@ impl CMemory {
         if count == 0 {
             return Ok(self);
         }
-        if base.block.starts_with("local:")
+        if base.block.is_local_block()
             || matches!(base.block, PointerBlock::Heap(_))
             || value.c_type() != element_type
             || !self.run_can_stand_for_cells_at(&base)
@@ -4469,10 +4469,10 @@ impl CMemory {
             .ok_or(CRuntimeError::TypeMismatch)?;
         let snapshot_copy = copy
             && matches!(&value, CValue::Pointer(source) if
-            !source.pointer().block.starts_with("local:")
+            !source.pointer().block.is_local_block()
             || self.cells.runs_in_block(&source.pointer().block)
                 .any(|run| !matches!(run.value_mode(), RunValueMode::Constant(_))));
-        if !base.block.starts_with("local:") || snapshot_copy {
+        if !base.block.is_local_block() || snapshot_copy {
             return self.write_scalar_array_snapshot(
                 base,
                 element_type,
@@ -4484,7 +4484,7 @@ impl CMemory {
             );
         }
         let valid_region = |pointer: &Pointer| {
-            pointer.block.starts_with("local:")
+            pointer.block.is_local_block()
                 && pointer.offset.as_const().is_some_and(|offset| {
                     offset >= 0
                         && offset % i64::from(element_type.byte_width()) == 0
@@ -4748,7 +4748,7 @@ impl CMemory {
         };
         if !valid(base)
             || (fresh
-                && (!base.block.starts_with("local:")
+                && (!base.block.is_local_block()
                     || base.offset != PointerOffsetTerm::Constant(0)
                     || self
                         .block_size(&base.block)
@@ -4771,7 +4771,7 @@ impl CMemory {
             };
             let pointer = pointer.pointer();
             if !valid(pointer)
-                || (pointer.block.starts_with("local:")
+                || (pointer.block.is_local_block()
                     && !self.has_initialized_bytes_under(pointer, bytes, assumptions))
             {
                 return Err(CRuntimeError::FunctionContract(
@@ -5024,7 +5024,7 @@ impl CMemory {
         }
         // A logical name does not initialize an automatic object either.
         // A real local store has already materialized its cell above.
-        if pointer.block.starts_with("local:") && self.has_block(&pointer.block) {
+        if pointer.block.is_local_block() && self.has_block(&pointer.block) {
             return self;
         }
         // A named load must not turn fresh malloc storage into a value.  The
@@ -5533,7 +5533,7 @@ impl CMemory {
         let mut record = self.heap.initialized.clone();
         let mut changed = false;
         for (pointer, width) in dropped {
-            if pointer.block.starts_with("local:") {
+            if pointer.block.is_local_block() {
                 changed |= record.record(pointer, *width);
             }
         }
@@ -5698,7 +5698,7 @@ impl CMemory {
         let mut record = self.heap.initialized.clone();
         let mut changed = false;
         for DroppedRunSlots { run, elements } in dropped {
-            if !run.base().block.starts_with("local:") {
+            if !run.base().block.is_local_block() {
                 continue;
             }
             let width = run.value_width();
@@ -6182,7 +6182,7 @@ impl CMemory {
             || self
                 .blocks
                 .keys()
-                .any(|block| !block.starts_with("local:") && !block.starts_with("havoc:"))
+                .any(|block| !block.is_local_block() && !block.is_havoc_block())
     }
 
     pub(in crate::kernel) fn is_ended_local_block(&self, block: &PointerBlock) -> bool {
@@ -7561,7 +7561,7 @@ impl CState {
         pointer.offset == PointerOffsetTerm::Constant(0)
             && (matches!(&pointer.block, PointerBlock::Heap(_))
                 && self.memory.live_heap_block_size(pointer).is_some()
-                || pointer.block.starts_with("local:") && self.memory.has_block(&pointer.block))
+                || pointer.block.is_local_block() && self.memory.has_block(&pointer.block))
             && self
                 .population_effects
                 .creation
@@ -7618,7 +7618,7 @@ impl CState {
             && (anchor.offset != PointerOffsetTerm::Constant(0)
                 || !(matches!(&anchor.block, PointerBlock::Heap(_))
                     && self.memory.live_heap_block_size(anchor).is_some()
-                    || anchor.block.starts_with("local:") && self.memory.has_block(&anchor.block)))
+                    || anchor.block.is_local_block() && self.memory.has_block(&anchor.block)))
         {
             return Err("Requires live base storage for authority(R(p))".into());
         }
@@ -7750,7 +7750,7 @@ impl CState {
             && (anchor.offset != PointerOffsetTerm::Constant(0)
                 || !(matches!(&anchor.block, PointerBlock::Heap(_))
                     && self.memory.live_heap_block_size(anchor).is_some()
-                    || anchor.block.starts_with("local:") && self.memory.has_block(&anchor.block)))
+                    || anchor.block.is_local_block() && self.memory.has_block(&anchor.block)))
         {
             return Err("Requires live base storage for R(p)".into());
         }
@@ -9081,7 +9081,7 @@ fn local_block_entries<'a, K: BlockKeyed, V>(
     map: &'a SnapshotMap<K, V>,
 ) -> impl Iterator<Item = (&'a K, &'a V)> + 'a {
     map.range(K::first_key_of(&PointerBlock::from("local:"))..)
-        .take_while(|(key, _)| key.key_block().starts_with("local:"))
+        .take_while(|(key, _)| key.key_block().is_local_block())
 }
 
 #[cfg(test)]

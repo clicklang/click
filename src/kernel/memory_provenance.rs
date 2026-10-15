@@ -3582,7 +3582,7 @@ pub(in crate::kernel) fn memories_directly_match_for_pointer_load(
     // assumptions) to miss the cell. This is how a fact carried unchanged
     // through earlier steps, and so still named at its mint epoch, meets an
     // effect summary whose `before` is the later live snapshot.
-    if !pointer.block.starts_with("local:")
+    if !pointer.block.is_local_block()
         && let (Some(left_epoch), Some(right_epoch)) = (
             cell_version_point(
                 &crate::kernel::intern_c_memory(left.clone()),
@@ -3605,14 +3605,15 @@ pub(in crate::kernel) fn memories_directly_match_for_pointer_load(
     {
         return true;
     }
-    if pointer.block.starts_with("local:")
+    if pointer.block.is_local_block()
         || !left
             .blocks
             .iter()
-            .filter(|(block, _)| block.starts_with("havoc:") || block.starts_with("call-havoc:"))
-            .eq(right.blocks.iter().filter(|(block, _)| {
-                block.starts_with("havoc:") || block.starts_with("call-havoc:")
-            }))
+            .filter(|(block, _)| block.is_havoc_block() || block.is_call_havoc_block())
+            .eq(right
+                .blocks
+                .iter()
+                .filter(|(block, _)| block.is_havoc_block() || block.is_call_havoc_block()))
         || left.blocks.get(&pointer.block) != right.blocks.get(&pointer.block)
     {
         return false;

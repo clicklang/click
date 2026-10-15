@@ -39,7 +39,7 @@ thread_local! {
 pub(crate) fn enter_ambient_object_fields(function: &syntax::C0Function) {
     let mut objects = ObjectFields::new();
     for aggregate in function.global_aggregates().values() {
-        let block = if aggregate.kernel_name().starts_with("global:") {
+        let block = if PointerBlock::is_global_name(aggregate.kernel_name()) {
             aggregate.kernel_name().to_string()
         } else {
             format!("global:{}", aggregate.kernel_name())

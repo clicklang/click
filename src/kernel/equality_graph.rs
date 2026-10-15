@@ -1809,7 +1809,7 @@ impl EqualityGraph {
         let mut blocks = Vec::new();
         let mut push = |member: &PointerBlock, delta: &AffineOffset| {
             if member != &pointer.block
-                && member.starts_with("local:")
+                && member.is_local_block()
                 && own
                     .checked_sub(delta)
                     .and_then(|delta| offset.checked_add(&delta))
@@ -1827,7 +1827,7 @@ impl EqualityGraph {
                 .map(|value| (&first, value))
                 .or_else(|| members.get_greater_than(&first));
             while let Some((member, delta)) = next {
-                if !member.starts_with("local:") {
+                if !member.is_local_block() {
                     break;
                 }
                 push(member, delta);

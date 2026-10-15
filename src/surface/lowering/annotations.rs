@@ -6598,9 +6598,7 @@ impl AnnotationLowerer<'_> {
                     .entry_state
                     .locals()
                     .aggregate_object_pointer(name)
-                    .is_some_and(|pointer| {
-                        pointer.block.starts_with("global:") || pointer.block.starts_with("static:")
-                    }) =>
+                    .is_some_and(|pointer| pointer.block.is_static_storage_block()) =>
             {
                 let pointer = self
                     .entry_state

@@ -505,7 +505,7 @@ impl MemoryDagHopJustification {
                         Self::LocalLifetimeEndedSeparatedRanges { .. },
                         CMemoryDerivation::LocalLifetimeEnded { base, block },
                     ) => {
-                        if !block.starts_with("local:") || pointer.block == *block {
+                        if !block.is_local_block() || pointer.block == *block {
                             return false;
                         }
                         let Some(extent) = base.block_size(block).and_then(|size| size.as_const())

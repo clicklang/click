@@ -3024,17 +3024,13 @@ fn verify_c0_sources_in_context(
                 execution.paths().iter().any(|path| {
                     crate::kernel::memory_effect_write_pointers(path.effect_facts())
                         .iter()
-                        .any(|pointer| {
-                            pointer.block.starts_with("global:")
-                                || pointer.block.starts_with("static:")
-                        })
+                        .any(|pointer| pointer.block.is_static_storage_block())
                         || path.effect_facts().iter().any(|fact| {
                             matches!(
                                 fact.proposition(),
                                 Proposition::CMemoryEffectSummary { mutable_ranges, .. }
                                     if mutable_ranges.iter().any(|range| {
-                                        range.base().block.starts_with("global:")
-                                            || range.base().block.starts_with("static:")
+                                        range.base().block.is_static_storage_block()
                                     })
                             )
                         })

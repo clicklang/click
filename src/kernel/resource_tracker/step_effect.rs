@@ -383,7 +383,7 @@ fn cell_effect(
             } else if pointer.block == *block {
                 StepEffect::Affected
             } else if extended_dag_bridging_active()
-                && block.starts_with("local:")
+                && block.is_local_block()
                 && let Some(extent) = step
                     .base()
                     .block_size(block)

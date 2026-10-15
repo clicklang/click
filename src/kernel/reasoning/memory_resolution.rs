@@ -2344,7 +2344,7 @@ fn memory_snapshots_match_for_resolution(
     {
         return true;
     }
-    if pointer.block.starts_with("local:") {
+    if pointer.block.is_local_block() {
         return false;
     }
     let Some(_query) = ResolutionQueryGuard::enter(ResolutionQuery::SnapshotsMatch(
@@ -2464,7 +2464,7 @@ pub(in crate::kernel) fn differing_cell_bytes_miss_the_load(
 ///
 /// It is [`PointerBlock::observable_by_load`] — the same filter the rest of
 /// the load-framing routes use — and this note exists because it used to be
-/// `!cell.block.starts_with("local:")`, a block-name shortcut that dropped
+/// `!cell.block.is_local_block()`, a block-name shortcut that dropped
 /// every differing `local:` cell from the comparison without asking anything.
 ///
 /// The shortcut's implicit claim was that a load the caller cannot resolve to
@@ -2501,7 +2501,7 @@ fn cell_is_observable_by_load(cell_pointer: &Pointer, load: &Pointer) -> bool {
 ///
 /// The cell filter beside this one was corrected to
 /// [`cell_is_observable_by_load`]; this one was left as the same block-name
-/// shortcut, `!block.starts_with("local:")`, and it makes the same claim about
+/// shortcut, `!block.is_local_block()`, and it makes the same claim about
 /// a different map. A block's extent is what says the object is there and how
 /// big it is, so two snapshots that disagree about a local's extent or
 /// liveness disagree about the object a load through a pointer that may
@@ -2733,7 +2733,7 @@ pub(in crate::kernel) fn memories_match_for_pointer_load(
     if left == right {
         return true;
     }
-    if pointer.block.starts_with("local:") {
+    if pointer.block.is_local_block() {
         return false;
     }
 
@@ -4498,7 +4498,7 @@ pub(in crate::kernel) fn memories_match_for_pointer_load_bounded_alias(
     if memories_match_for_pointer_load(left, right, pointer) {
         return true;
     }
-    if pointer.block.starts_with("local:") {
+    if pointer.block.is_local_block() {
         return false;
     }
     if !snapshot_objects_agree(left, right, pointer) {
@@ -4554,7 +4554,7 @@ pub(in crate::kernel) fn memories_match_for_pointer_load_under_assumptions(
     if memories_match_for_pointer_load(left, right, pointer) {
         return true;
     }
-    if pointer.block.starts_with("local:") {
+    if pointer.block.is_local_block() {
         return false;
     }
     if !snapshot_objects_agree(left, right, pointer) {

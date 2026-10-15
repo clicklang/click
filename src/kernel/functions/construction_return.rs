@@ -94,7 +94,7 @@ fn destination<'a>(
                 return None;
             }
             end <= size
-                && (selected.pointer.block.starts_with("local:")
+                && (selected.pointer.block.is_local_block()
                     || exact_raw_object
                     || within_raw_parent)
         }

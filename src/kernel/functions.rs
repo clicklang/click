@@ -6686,7 +6686,7 @@ fn execute_verified_function_applications_with_suspension(
                     && (anchor.offset != PointerOffsetTerm::Constant(0)
                         || !(matches!(&anchor.block, PointerBlock::Heap(_))
                             && post_state.memory.live_heap_block_size(anchor).is_some()
-                            || anchor.block.starts_with("local:")
+                            || anchor.block.is_local_block()
                                 && post_state.memory.has_block(&anchor.block)))
                 {
                     paths.push(resource_call_failure("Requires live base storage for R(p)"));
@@ -10368,9 +10368,7 @@ pub(crate) fn storage_writes_outside_owned_footprint(
     transition_resources: Option<&[CCheckedResourceFact]>,
     prepared_projection: Option<&CFunctionMemoryEffectProjection>,
 ) -> ExecutionResult<Option<Vec<StorageWriteOutsideFootprint>>> {
-    let is_storage = |pointer: &Pointer| {
-        pointer.block.starts_with("global:") || pointer.block.starts_with("static:")
-    };
+    let is_storage = |pointer: &Pointer| pointer.block.is_static_storage_block();
     let storage_writes: Vec<(Pointer, u32)> =
         crate::kernel::reasoning::memory_effect_write_accesses(facts)
             .into_iter()
@@ -18187,7 +18185,7 @@ fn aggregate_copy_reads_uninitialized(
                     bytes,
                     &PureFactContext::new(),
                 )
-                || (source_field.block.starts_with("local:")
+                || (source_field.block.is_local_block()
                     && memory.access_in_bounds(&source_field, bytes))
             {
                 return true;
@@ -18301,7 +18299,7 @@ fn uninitialized_aggregate_copy_source_cell(
             element_type.byte_width(),
             &PureFactContext::new(),
         )
-        || (source_field.block.starts_with("local:")
+        || (source_field.block.is_local_block()
             && memory.access_in_bounds(source_field, element_type.byte_width()))
 }
 
@@ -19764,7 +19762,7 @@ fn prepare_contract_resource_transfer_unexplained(
         .iter()
         .filter(|requirement| {
             let unsupplied_local = |range: &CMemoryRange| {
-                range.base().block.starts_with("local:")
+                range.base().block.is_local_block()
                     && callee_state.memory().has_block(&range.base().block)
                     && !callee_state
                         .memory()
@@ -19790,7 +19788,7 @@ fn prepare_contract_resource_transfer_unexplained(
         .collect::<Vec<_>>();
     let (local_read_views, intrinsic_read_views): (Vec<_>, Vec<_>) = implicit_read_views.into_iter()
         .partition(|requirement| matches!(requirement.fact.resource(), CResource::Memory(range)
-            if range.base().block.starts_with("local:") && !callee_state.memory().is_read_only_block(&range.base().block)));
+            if range.base().block.is_local_block() && !callee_state.memory().is_read_only_block(&range.base().block)));
     // A composite view whose checked body is empty on this path protects no
     // bytes and holds no token, so there is nothing to lend and nothing a
     // loan could suspend (D6: an empty permission grants no dereference).
@@ -20352,7 +20350,7 @@ fn prepare_contract_resource_transfer_unexplained(
         if matches!(
             intrinsic_view.fact.resource(),
             CResource::Memory(range)
-                if range.base().block.starts_with("local:")
+                if range.base().block.is_local_block()
                     && !local_view_range_within_block(range, callee_state.memory())
         ) {
             return Ok(Err(CRuntimeError::MissingResource {
@@ -20439,7 +20437,7 @@ fn prepare_contract_resource_transfer_unexplained(
         // whatever the caller keeps beyond it: `views a[0..3]` on an
         // `int32 b[2]` used to be discharged by the block merely existing.
         if let CResourceFact::View(CResource::Memory(range)) = resource
-            && range.base().block.starts_with("local:")
+            && range.base().block.is_local_block()
             && callee_state.memory().has_block(&range.base().block)
             && !callee_state
                 .memory()
@@ -30574,7 +30572,7 @@ fn end_function_body_automatic_lifetimes(
     let mut selected = BTreeSet::new();
     for slot in state.locals.slots() {
         crate::instrumentation::record_deterministic_work(1);
-        if slot.block.starts_with("local:")
+        if slot.block.is_local_block()
             && !(function.return_aggregate_layout().is_some()
                 && matches!(returned, Some(CValue::Pointer(pointer)) if pointer.pointer().block == slot.block))
             && !caller.has_block(&slot.block)
@@ -30620,7 +30618,7 @@ pub(in crate::kernel) fn function_exit_memory(
     }
     match value {
         CValue::Pointer(pointer)
-            if pointer.pointer().block.starts_with("local:")
+            if pointer.pointer().block.is_local_block()
                 && !caller_state.memory.has_block(&pointer.pointer().block) =>
         {
             callee_state
