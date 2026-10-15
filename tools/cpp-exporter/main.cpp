@@ -351,7 +351,20 @@ private:
         llvm::dyn_cast<clang::CXXConstructorDecl>(declaration);
     const auto *destructor =
         llvm::dyn_cast<clang::CXXDestructorDecl>(declaration);
-    const auto *method = llvm::dyn_cast<clang::CXXMethodDecl>(declaration);
+    // A lambda's call operator is exported as a free function of its
+    // parameters; the lambdas admitted capture nothing, so it reads no state.
+    const auto *lambda_call = llvm::dyn_cast<clang::CXXMethodDecl>(declaration);
+    if (lambda_call != nullptr && !lambda_call->getParent()->isLambda())
+      lambda_call = nullptr;
+    std::optional<std::string> lambda_function_name;
+    if (lambda_call != nullptr) {
+      lambda_function_name = lambda_name(lambda_call);
+      if (!lambda_function_name)
+        return std::nullopt;
+    }
+    const auto *method = lambda_call != nullptr
+                             ? nullptr
+                             : llvm::dyn_cast<clang::CXXMethodDecl>(declaration);
     const bool ordinary_method =
         method != nullptr && constructor == nullptr && destructor == nullptr;
     if (ordinary_method && (method->isVirtual() || method->isVolatile() ||
@@ -546,7 +559,8 @@ private:
 
     llvm::json::Object result;
     result["declaration_id"] = declaration_id(declaration);
-    result["name"] = ordinary_method ? method_name(method)
+    result["name"] = lambda_function_name ? *lambda_function_name
+                     : ordinary_method       ? method_name(method)
                      : constructor == nullptr
                          ? (destructor == nullptr ? function_name(declaration)
                                                   : destructor_name(destructor))
@@ -3040,6 +3054,84 @@ private:
                                 : llvm::dyn_cast<clang::FunctionDecl>(reference->getDecl());
   }
 
+  // A lambda converted to a function pointer, `apply([](int y) noexcept {
+  // return y + y; }, x)`: Clang writes the conversion as a call of the
+  // closure type's conversion function on the lambda.
+  const clang::LambdaExpr *converted_lambda(const clang::Expr *expression) {
+    const auto *cast = llvm::dyn_cast<clang::ImplicitCastExpr>(expression->IgnoreParens());
+    if (cast == nullptr || cast->getCastKind() != clang::CK_UserDefinedConversion)
+      return nullptr;
+    const auto *call =
+        llvm::dyn_cast<clang::CXXMemberCallExpr>(cast->getSubExpr()->IgnoreParens());
+    if (call == nullptr || !llvm::isa<clang::CXXConversionDecl>(call->getMethodDecl()))
+      return nullptr;
+    return llvm::dyn_cast<clang::LambdaExpr>(
+        call->getImplicitObjectArgument()->IgnoreImplicit()->IgnoreParens());
+  }
+
+  // The name of a lambda's call operator: the enclosing function's, then the
+  // lambda's index among the lambdas written in that function's body, in
+  // source order. A sidecar spells it `caller::(lambda#0)`. The importer's
+  // own names never contain a double underscore, so no function has it.
+  std::optional<std::string> lambda_name(const clang::CXXMethodDecl *call) {
+    const clang::CXXRecordDecl *closure = call->getParent();
+    const auto *enclosing =
+        llvm::dyn_cast_or_null<clang::FunctionDecl>(closure->getDeclContext());
+    if (enclosing == nullptr || llvm::isa<clang::CXXMethodDecl>(enclosing) ||
+        enclosing->getBody() == nullptr) {
+      fail(call->getLocation(),
+           "a C++ lambda is supported only in the body of a free function");
+      return std::nullopt;
+    }
+    struct Collector : clang::RecursiveASTVisitor<Collector> {
+      std::vector<const clang::CXXRecordDecl *> closures;
+      bool VisitLambdaExpr(clang::LambdaExpr *lambda) {
+        closures.push_back(lambda->getLambdaClass());
+        return true;
+      }
+    } collector;
+    collector.TraverseStmt(enclosing->getBody());
+    const auto found =
+        std::find(collector.closures.begin(), collector.closures.end(), closure);
+    if (found == collector.closures.end()) {
+      fail(call->getLocation(), "a C++ lambda's enclosing body does not contain it");
+      return std::nullopt;
+    }
+    return function_name(enclosing) + "__lambda_" +
+           std::to_string(found - collector.closures.begin());
+  }
+
+  // A lambda that captures nothing, converted to a function pointer, is the
+  // address of its call operator, which is exported as a free function.
+  std::optional<Json> lower_lambda_address(const clang::Expr *expression,
+                                           const clang::LambdaExpr *lambda) {
+    const clang::CXXRecordDecl *closure = lambda->getLambdaClass();
+    const clang::CXXMethodDecl *call = lambda->getCallOperator();
+    if (lambda->capture_size() != 0 || !closure->field_empty() ||
+        call->getTemplatedKind() != clang::FunctionDecl::TK_NonTemplate) {
+      fail(expression->getExprLoc(),
+           "a C++ lambda converted to a function pointer must capture nothing "
+           "and must not be generic");
+      return std::nullopt;
+    }
+    auto name = lambda_name(call);
+    auto value_type = lower_type(expression->getType(), expression->getExprLoc());
+    if (!name || !value_type || !remember_function(call))
+      return std::nullopt;
+    llvm::json::Object reference;
+    reference["declaration_id"] = declaration_id(call);
+    reference["name"] = *name;
+    reference["span"] = span(lambda->getSourceRange());
+    llvm::json::Object result;
+    result["kind"] = "function_address";
+    result["function"] = std::move(reference);
+    result["value_type"] = std::move(*value_type);
+    result["span"] = span(expression->getSourceRange());
+    if (!state_.error.empty())
+      return std::nullopt;
+    return Json(std::move(result));
+  }
+
   // `&f` as a value: the address of a free function or static member
   // function of the program, which is exported so its contract can be
   // checked against the one a callee requires of the pointer.
@@ -3076,6 +3168,13 @@ private:
                                        const clang::FunctionDecl *function) {
     if (const auto *designated = designated_function(expression))
       return lower_function_address(expression, designated);
+    if (const auto *lambda = converted_lambda(expression))
+      return lower_lambda_address(expression, lambda);
+    // A full expression whose temporaries end without effects, as a lambda
+    // converted to a function pointer does, is its subexpression.
+    if (const auto *cleanups = llvm::dyn_cast<clang::ExprWithCleanups>(expression);
+        cleanups != nullptr && !cleanups->cleanupsHaveSideEffects())
+      return lower_expression(cleanups->getSubExpr(), function);
     if (const auto *throw_expression =
             llvm::dyn_cast<clang::CXXThrowExpr>(expression)) {
       fail(throw_expression->getThrowLoc(),

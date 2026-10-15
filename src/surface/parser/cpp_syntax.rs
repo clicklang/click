@@ -7,7 +7,8 @@ use super::*;
 /// A C++ head's declarator, resolved to the name the C++ importer gives the
 /// function: `Rec::m` is `Rec_m`, `Rec::Rec` is `Rec_constructor`,
 /// `Rec::~Rec` is `Rec_destructor`, `Rec::operator+=` is
-/// `Rec_operator_add_assign`, and a free `ns::f` is `ns_f`.
+/// `Rec_operator_add_assign`, a free `ns::f` is `ns_f`, and the first lambda
+/// in `caller`, `caller::(lambda#0)`, is `caller__lambda_0`.
 pub(super) struct CppDeclarator {
     pub(super) name: String,
     /// The record of a non-static member function, whose implicit `this`
@@ -124,6 +125,26 @@ impl Parser {
                 break;
             }
             path.push(self.expect_ident("function name")?);
+        }
+        // `caller::(lambda#0)`: the lambda the importer names after its
+        // enclosing function and its index there.
+        if special_member.is_none()
+            && let Some(index) = path.last().and_then(|segment| {
+                segment
+                    .strip_prefix("(lambda#")
+                    .and_then(|rest| rest.strip_suffix(')'))
+            })
+        {
+            if is_static || path.len() < 2 {
+                return Err(self.error(
+                    "a C++ lambda is named by its enclosing function, `caller::(lambda#0)`",
+                ));
+            }
+            return Ok(CppDeclarator {
+                name: format!("{}__lambda_{index}", path[..path.len() - 1].join("_")),
+                receiver: None,
+                returnless: false,
+            });
         }
         let suffix = if special_member.is_none() {
             self.parse_cpp_template_arguments()?
