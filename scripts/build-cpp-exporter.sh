@@ -125,8 +125,18 @@ fi
 rm -f "$stamp"
 trap 'rm -f "$temporary"' EXIT
 
+# The pinned Clang's own builtin headers (`<stddef.h>`, `<stdarg.h>`, ...).
+# The exporter supplies this resource directory to a command that names
+# none, so a build description never has to state a machine-specific path.
+resource_dir="$("$clangxx" -print-resource-dir)"
+if [[ ! -f "$resource_dir/include/stddef.h" ]]; then
+    echo "error: $clangxx reports resource directory $resource_dir, which has no include/stddef.h" >&2
+    exit 1
+fi
+
 "$clangxx" \
     "${llvm_cxxflags[@]}" \
+    "-DCLICK_CLANG_RESOURCE_DIR=\"$resource_dir\"" \
     -std=c++20 \
     -Wall \
     -Wextra \

@@ -136,7 +136,10 @@ per-sidecar config does:
 ```
 
 `click import lock` runs the pinned exporter named by `CLICK_CPP_EXPORTER`,
-which exports every listed function of a source into one artifact,
+which supplies its pinned Clang's resource directory (the builtin headers such
+as `<stddef.h>`) to a command that names none, so `args` never states a
+machine-specific `-resource-dir`. It exports every listed function of a
+source into one artifact,
 `.click/<unit>/<source>.click-cpp.json`; a sidecar that verifies the source
 sees all of them, and verifies no other source. Preprocessor inputs under the
 unit root or the project directory are rechecked relative to those roots;
