@@ -408,6 +408,15 @@ compatibility failures. Do not activate the archive as a whole.
 The supplier-coordinate extraction landed in PR #1011. Recovery checkpoint
 `c6d5c4200` additionally checks registered read prefixes during interior-write
 lookup (87 selected kernel controls passing). This is partial progress: the
-[two-store execution reduction](../bugs/pointer-field-reload-loses-backing-write-authority.md)
+[two-store execution reduction](../mdtests/pointer_field_reloaded_backing_writes.md)
 still fails, as do the original string/vector postconditions. Continue there;
 keep the 41/52 audit count until a new complete example run establishes otherwise.
+
+
+`a1cf07a24` closes that two-write execution gap using scoped certified read
+bindings, including retained-session checking, without publishing their value
+bridges to sibling contexts. The positive regression passes all four proof
+modes; 133 selected recovery controls pass. Continue with the
+[string/vector postcondition gap](../bugs/c-pointer-field-postconditions-lose-frame-evidence.md),
+keeping C and claims intact and distinguishing an explicit checked equality
+proof from `assumption`'s exact-fact lookup. The full example audit remains 41/52.
