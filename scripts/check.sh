@@ -50,7 +50,7 @@ fi
 fixture_targets=(--test mdtests --test examples)
 fixture_filter='binary(mdtests) | (binary(examples) & test(=example_projects))'
 unit_targets=(
-    --lib --bin click --test documentation --test condition_transport_api
+    --lib --bin click --test documentation --test condition_transport_api --test version_manager
     --test compiler_import --test cpp_import --test rust_import
     --test bitcoin_core_money_range --test libcxx_span --test libcxx_functional
     --test examples

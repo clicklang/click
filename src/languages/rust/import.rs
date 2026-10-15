@@ -110,6 +110,7 @@ struct Config {
     language: String,
     target: String,
     source: String,
+    #[serde(default)]
     exporter: String,
     artifact: String,
     #[serde(default)]
@@ -321,15 +322,16 @@ pub fn refresh_import(path: &Path) -> Result<(), String> {
     } else {
         local_file(&root, &c.source)?
     };
-    let exporter =
-        fs::canonicalize(root.join(&c.exporter)).map_err(|e| format!("Rust exporter: {e}"))?;
+    let legacy = (!c.exporter.is_empty()).then(|| root.join(&c.exporter));
+    let runtime = super::runtime::resolve(legacy.as_deref())?;
+    let exporter = &runtime.executable;
     let artifact_path = local_file(&root, &c.artifact)?;
     let lock_name = lock_path(path)?;
     let lock_output = root.join(lock_name.file_name().ok_or("invalid Rust lock filename")?);
-    if exporter == artifact_path
-        || exporter == lock_output
-        || exporter == source
-        || exporter == fs::canonicalize(path).map_err(|e| e.to_string())?
+    if exporter == &artifact_path
+        || exporter == &lock_output
+        || exporter == &source
+        || exporter == &fs::canonicalize(path).map_err(|e| e.to_string())?
     {
         return Err("Rust exporter must differ from source/config/artifact/lock".into());
     }
@@ -340,7 +342,7 @@ pub fn refresh_import(path: &Path) -> Result<(), String> {
         source: &source,
         outputs: [artifact_path.clone(), lock_output],
     };
-    let (lock, output_bytes) = extract(&inputs, &exporter, &|| Ok(digest(&read(path, 1 << 20)?)))?;
+    let (lock, output_bytes) = extract(&inputs, &runtime, &|| Ok(digest(&read(path, 1 << 20)?)))?;
     write_atomic(&artifact_path, &output_bytes)?;
     write_atomic(
         &lock_path(path)?,
@@ -365,31 +367,28 @@ struct Inputs<'a> {
 /// detect a change during extraction.
 fn extract(
     inputs: &Inputs<'_>,
-    exporter: &Path,
+    runtime: &super::runtime::Runtime,
     config_digest: &dyn Fn() -> Result<String, String>,
 ) -> Result<(Lock, Vec<u8>), String> {
     let c = inputs.config;
     let root = inputs.root;
+    let exporter = &runtime.executable;
     let source_files = sources(c, root)?;
     let exporter_bytes = read(exporter, 128 << 20)?;
-    let driver = exporter.with_file_name("charon-driver");
-    if inputs.outputs.contains(&driver) {
+    let driver = &runtime.driver;
+    if inputs.outputs.contains(driver) {
         return Err("Charon driver must differ from artifact/lock outputs".into());
     }
-    let driver_bytes = read(&driver, 128 << 20)?;
+    let driver_bytes = read(driver, 128 << 20)?;
     let driver_hash = digest(&driver_bytes);
-    let output_bytes = if c.crate_config.is_some() {
-        super::charon::extract_crate(
-            exporter,
-            inputs.source,
-            root,
-            c.crate_config.as_ref(),
-            Some(&source_files),
-        )?
-    } else {
-        super::charon::extract(exporter, inputs.source, root)?
-    };
-    if driver_bytes != read(&driver, 128 << 20)? {
+    let output_bytes = super::charon::extract_crate(
+        runtime,
+        inputs.source,
+        root,
+        c.crate_config.as_ref(),
+        c.crate_config.as_ref().map(|_| &source_files),
+    )?;
+    if driver_bytes != read(driver, 128 << 20)? {
         return Err("Charon driver changed during extraction".into());
     }
     decode(&output_bytes, c, &source_files)?;
@@ -526,17 +525,16 @@ impl UnitConfig {
     }
 }
 
-/// Extracts a project unit with the Charon at `exporter`: its lock entry and
+/// Extracts a project unit with the selected pinned Rust frontend: its lock entry and
 /// the artifact to write.
 pub(crate) fn prepare_unit(
     unit: &UnitConfig,
-    exporter: &Path,
 ) -> Result<(serde_json::Value, Vec<(PathBuf, Vec<u8>)>), String> {
     let (config, root) = unit.config()?;
     let source = super::crate_inputs::file(&root, &unit.source)?;
-    let exporter = fs::canonicalize(exporter)
-        .map_err(|e| format!("Rust exporter `{}`: {e}", exporter.display()))?;
-    if exporter == source || exporter == unit.artifact || exporter == unit.lock_path {
+    let runtime = super::runtime::resolve(None)?;
+    let exporter = &runtime.executable;
+    if exporter == &source || exporter == &unit.artifact || exporter == &unit.lock_path {
         return Err("Rust exporter must differ from source/artifact/lock".into());
     }
     let inputs = Inputs {
@@ -548,7 +546,7 @@ pub(crate) fn prepare_unit(
     };
     let project_file = unit.project_file.clone();
     let name = unit.unit_name.clone();
-    let (mut lock, artifact) = extract(&inputs, &exporter, &move || {
+    let (mut lock, artifact) = extract(&inputs, &runtime, &move || {
         crate::project::Project::load(&project_file)?.unit_digest(&name)
     })?;
     lock.source_files = sources(&config, &root)?

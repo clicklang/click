@@ -16,15 +16,20 @@ for key in ("extractor_revision", "toolchain", "compiler_commit"):
 PYPROFILE
 )
 check_only=""
-if [[ "${1:-}" == "--install-toolchain" ]]; then
+install_toolchain=""
+build_args=(build)
+build_profile=debug
+for argument in "$@"; do
+    case "$argument" in
+        --install-toolchain) install_toolchain=1 ;;
+        --check) check_only=1 ;;
+        --release) build_args+=(--release); build_profile=release ;;
+        *) echo "usage: scripts/build-charon.sh [--install-toolchain | --check] [--release]" >&2; exit 2 ;;
+    esac
+done
+if [[ -n "$install_toolchain" ]]; then
     rustup toolchain install "$toolchain" --profile minimal --component rustc-dev --component rust-src \
         --target x86_64-unknown-linux-gnu
-elif [[ "${1:-}" == "--check" ]]; then
-    # Only check that the pinned compiler is installed, without building.
-    check_only=1
-elif [[ -n "${1:-}" ]]; then
-    echo "usage: scripts/build-charon.sh [--install-toolchain | --check]" >&2
-    exit 2
 fi
 if [[ "$(rustc +"$toolchain" -vV 2>/dev/null | sed -n 's/^commit-hash: //p')" != "$compiler" ]]; then
     echo "error: install $toolchain with rustc-dev and rust-src for the Charon trial" >&2
@@ -49,5 +54,5 @@ git -C "$source_dir" checkout --detach "$revision" >&2
 sysroot="$(rustc +"$toolchain" --print sysroot)"
 export LIBRARY_PATH="$sysroot/lib${LIBRARY_PATH:+:$LIBRARY_PATH}"
 export CARGO_PROFILE_DEV_DEBUG=0
-cargo +"$toolchain" build --locked --manifest-path "$source_dir/charon/Cargo.toml" --target-dir "$PWD/target/charon" --bin charon --bin charon-driver >&2
-printf '%s\n' "$PWD/target/charon/debug/charon"
+cargo +"$toolchain" "${build_args[@]}" --locked --manifest-path "$source_dir/charon/Cargo.toml" --target-dir "$PWD/target/charon" --bin charon --bin charon-driver >&2
+printf '%s\n' "$PWD/target/charon/$build_profile/charon"

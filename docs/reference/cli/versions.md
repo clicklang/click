@@ -8,7 +8,7 @@ otherwise runs the launcher's own version.
 ## Synopsis
 
 ```text
-usage: click install <VERSION|latest>
+usage: click install <VERSION|latest> [--rust]
        click use [VERSION|--unset]
        click default [VERSION]
        click versions
@@ -39,6 +39,7 @@ set `CLICK_HOME`. The directory contains the following:
 - `bin/click`: the launcher, placed there by `install.sh` or `install.ps1`.
 - `versions/VERSION/bin/click`: one installed version. A version counts as
   installed only when this file exists.
+- `versions/VERSION/frontends/rust/`: the optional pinned Rust frontend and compiler runtime.
 - `default`: the global default version, written by `click default`.
 - `tmp/`: staging directories for `click install`, removed after each install.
 
@@ -68,6 +69,15 @@ completely. An already installed version prints
 `Click VERSION is already installed.` and succeeds. A `versions/VERSION`
 directory without its executable is reported as an incomplete installation;
 remove it before retrying.
+
+`click install VERSION --rust` also installs that release's pinned Rust frontend.
+The first bundle host is `x86_64-unknown-linux-gnu`; other hosts get an explicit
+unavailable-platform diagnostic. The command downloads
+`click-rust-frontend-TARGET.tar.gz` and its `.sha256`, verifies the checksum,
+checks the manifest's version and layout, and stages the bundle before making
+it visible under `versions/VERSION/frontends/rust`. An existing valid bundle
+is retained. `click versions` lists installed Rust frontends with their Charon versions.
+The normal install without `--rust` remains the Click executable alone.
 
 ## `click use`
 

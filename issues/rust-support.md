@@ -82,6 +82,23 @@ run nightly. Full smart audits of the original computation exceed the
 standard ten-minute bound and give no verdict; ordinary verification is the
 check that succeeds.
 
+## Front-end delivery progress
+
+The first installed frontend slice packages the pinned Charon, paired driver,
+rustc and runtime libraries for `x86_64-unknown-linux-gnu`. A release workflow
+builds the bundle and publishes its checksum; `click install VERSION --rust`
+checks and installs it beside that Click version. `click versions` lists the
+installed frontend. Rust project units resolve a development override followed
+by that installed bundle. Explicit manifest paths and runtime version checks
+remove rustup and the user's toolchain from installed extraction. A relocated
+installed-layout regression covers extraction, verification, repeated locks,
+version refusal and offline verification after removing the bundle.
+
+Other host bundles, release identity contributions to the shared project lock,
+removing historical trial names, and richer crate-closure diagnostics remain.
+The audit below records the original pipeline; legacy per-sidecar/source-build
+paths remain available during the project-config migration.
+
 ## Today's pipeline
 
 Audit of the current path, from a user's point of view:
