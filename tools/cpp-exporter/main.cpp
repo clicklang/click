@@ -39,6 +39,7 @@
 #include "clang/Lex/PPCallbacks.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Sema/Sema.h"
+#include "clang/Tooling/ArgumentsAdjusters.h"
 #include "clang/Tooling/CompilationDatabase.h"
 #include "clang/Tooling/JSONCompilationDatabase.h"
 #include "clang/Tooling/Tooling.h"
@@ -57,6 +58,11 @@ constexpr unsigned kMaxCleanupScopes = 256;
 constexpr std::size_t kMaxScalarConversions = 256;
 
 constexpr const char *kClangVersion = "19.1.7";
+#ifndef CLICK_CLANG_RESOURCE_DIR
+#error "build with scripts/build-cpp-exporter.sh, which defines CLICK_CLANG_RESOURCE_DIR"
+#endif
+// The pinned Clang's resource directory, recorded when the exporter is built.
+constexpr const char *kClangResourceDir = CLICK_CLANG_RESOURCE_DIR;
 constexpr std::size_t kMaxPreprocessorFiles = 4096;
 
 struct Options {
@@ -5193,6 +5199,19 @@ int main(int argc, const char **argv) {
   options->compilation_file = command.Filename;
   options->compilation_command = command.CommandLine;
   clang::tooling::ClangTool tool(*database, {options->source});
+  // A command that names no resource directory gets the pinned Clang's, not
+  // one derived from where this executable happens to be installed.
+  const bool names_resource_dir = std::any_of(
+      command.CommandLine.begin(), command.CommandLine.end(),
+      [](const std::string &argument) {
+        return argument == "-resource-dir" ||
+               argument.rfind("-resource-dir=", 0) == 0;
+      });
+  if (!names_resource_dir) {
+    tool.appendArgumentsAdjuster(clang::tooling::getInsertArgumentAdjuster(
+        (std::string("-resource-dir=") + kClangResourceDir).c_str(),
+        clang::tooling::ArgumentInsertPosition::END));
+  }
   ExportState state;
   ExportActionFactory factory(*options, state);
   const int status = tool.run(&factory);

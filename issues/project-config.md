@@ -225,9 +225,13 @@ C++ items were chosen explicitly; the rest are the recommended defaults.
 - **C++ migration.** `examples/basic-cpp` is a project with one C++ unit and
   committed, portable locks: `prepare.py` and the compilation-database
   template are gone, and it rejoins the nightly audit. The Bitcoin Core
-  integration still uses per-sidecar configs: its real command names the
-  machine's Clang resource directory, which a unit should not have to state.
-- **Remaining:** migrating the Bitcoin Core integration, then refusing per-sidecar
+  integration is a project whose `bitcoin` unit's arguments are the real
+  CMake command (a gate test checks it); the pinned exporter supplies its own
+  Clang resource directory, so no unit states a machine path. One lock serves
+  all fourteen sidecars. No per-sidecar import config remains in the
+  repository; `make-fixture.py` still reads the original full-checkout
+  per-sidecar lock.
+- **Remaining:** porting `make-fixture.py` to the project lock, then refusing per-sidecar
   configs in the command line and deleting their loaders; the module root still comes
   from imports rather than the project file; the shared lock envelope; the
   optimization level and flag policy.
