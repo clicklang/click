@@ -33,7 +33,7 @@
     "shared-byte-split-at-pair-v1",
     "borrowed-iterator-forwarding-v1",
     "stable-extraction-output-metadata-v1",
-    "checked-common-frontier-scalar-reference-leases-v5"
+    "checked-closed-arm-scalar-reference-scopes-v6"
   ],
   "extractor_version": "0.1.279"
 }

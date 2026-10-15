@@ -2437,7 +2437,7 @@ fn live_mutex_return_refusal() -> CStatementOutcome {
 
 /// The same authority obligations apply to explicit returns and void fallthrough.
 pub(in crate::kernel) fn return_authority_refusal(state: &CState) -> Option<CStatementOutcome> {
-    if state.has_local_scalar_references() {
+    if state.has_local_scalar_references() || state.has_local_reference_scope() {
         Some(CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(
             Box::new(
                 crate::kernel::loans::LoanRefusal::ActiveDependency
@@ -2621,6 +2621,7 @@ fn collect_scope_declared_names(statement: &CStatement, names: &mut Vec<String>)
         // Everything else declares nothing.
         | CStatement::Skip
         | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
@@ -2952,7 +2953,7 @@ fn execute_c_statement_leaf_paths(
     // The private scalar lease adapter supports direct scalar execution only.
     // Until transfer and havoc carry custody, refuse these paths before they
     // can publish a state or a call boundary without the reserved authority.
-    if state.has_local_scalar_references()
+    if (state.has_local_scalar_references() || state.has_local_reference_scope())
         && matches!(
             statement,
             CStatement::Call { .. }
@@ -2996,6 +2997,16 @@ fn execute_c_statement_leaf_paths(
         )]);
     }
     let paths = match statement {
+        CStatement::ScalarReferenceScope(source) => vec![CStatementExecutionPath::new(
+            match source.execute(state) {
+                Ok(next) => CStatementOutcome::Normal(Box::new(next)),
+                Err(error) => CStatementOutcome::RuntimeError(
+                    crate::kernel::source_loans::source_loan_error(error),
+                ),
+            },
+            Vec::new().into(),
+            Vec::new(),
+        )],
         CStatement::EndScalarReference(source) => vec![CStatementExecutionPath::new(
             match source.execute(state, assumptions) {
                 Ok(next) => CStatementOutcome::Normal(Box::new(next)),

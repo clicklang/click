@@ -6,6 +6,7 @@
 //! plans bind supported births and endings to actual executed custody.
 
 use super::*;
+pub(super) mod scopes;
 use crate::kernel::{CType, Pointer};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
