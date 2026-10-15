@@ -462,7 +462,7 @@ Reassigning a pointer, storing one in memory, and any other read of its value
 are refused (`tests/cpp_import.rs`, `*function_pointer*`).
 
 A lambda that captures nothing, passed for such a parameter,
-`apply([](int y) noexcept { return y + y; }, x)`, is its call operator's
+`apply([] (int y) noexcept { return y + y; }, x)`, is its call operator's
 address: the importer reads Clang's conversion of the closure to the pointer
 type as a `function_address` of the call operator, which it exports as a free
 function of the lambda's parameters. The sidecar names it by its enclosing
