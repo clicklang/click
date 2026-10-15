@@ -860,6 +860,226 @@ fn signed_and_unsigned_readings_of_a_word_bound_each_other() {
     assert_eq!(largest.decide(&increment_overflows(&x)), None);
 }
 
+/// Quotients, remainders, unsigned narrowing and conditional values are
+/// bounded by their operands, as C++'s rounded division needs: with `n == 7`
+/// and `d == 3`, `n % d` is `1`, so `(mod > 0 ? 1 : 0) == 0` is false and
+/// `n / d + 1` cannot overflow.
+#[test]
+fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
+    use Bitvector32Term as T;
+    let (n, d) = (variable(0), variable(1));
+    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let pinned = graph(&[
+        (
+            ConditionTerm::Bitvector64Equal(boxed(&n), Box::new(T::Int64Constant(7))),
+            true,
+        ),
+        (
+            ConditionTerm::Bitvector32Equal(boxed(&d), Box::new(T::Constant(3))),
+            true,
+        ),
+    ]);
+    let divisor = T::Int64From32(boxed(&d));
+    let remainder = T::UInt32From64(Box::new(T::Int64Remainder(
+        boxed(&n),
+        Box::new(divisor.clone()),
+    )));
+    let positive = ConditionTerm::Bitvector32SignedGreaterThan(
+        Box::new(remainder.clone()),
+        Box::new(T::Constant(0)),
+    );
+    assert_eq!(pinned.decide(&positive), Some(true));
+    let correction = T::If {
+        condition: Box::new(positive.clone()),
+        then_term: Box::new(T::Constant(1)),
+        else_term: Box::new(T::Constant(0)),
+    };
+    assert_eq!(
+        pinned.decide(&ConditionTerm::Bitvector32Equal(
+            Box::new(correction),
+            Box::new(T::Constant(0))
+        )),
+        Some(false)
+    );
+    let quotient = T::Int64Divide(boxed(&n), Box::new(divisor));
+    assert_eq!(
+        pinned.decide(&ConditionTerm::Bitvector64SignedAddOverflows(
+            Box::new(quotient),
+            Box::new(T::Int64Constant(1))
+        )),
+        Some(false)
+    );
+    // A divisor that may be zero bounds nothing, and an undecided condition
+    // leaves either branch.
+    let unknown = graph(&[]);
+    let any_quotient = T::Int64Divide(boxed(&n), Box::new(T::Int64From32(boxed(&d))));
+    assert_eq!(
+        unknown.decide(&ConditionTerm::Bitvector64SignedAddOverflows(
+            Box::new(any_quotient),
+            Box::new(T::Int64Constant(1))
+        )),
+        None
+    );
+    let either = T::If {
+        condition: Box::new(positive),
+        then_term: Box::new(T::Constant(1)),
+        else_term: Box::new(T::Constant(0)),
+    };
+    assert_eq!(
+        unknown.decide(&ConditionTerm::Bitvector32Equal(
+            Box::new(either.clone()),
+            Box::new(T::Constant(0))
+        )),
+        None
+    );
+    assert_eq!(
+        unknown.decide(&ConditionTerm::Bitvector32Equal(
+            Box::new(either),
+            Box::new(T::Constant(2))
+        )),
+        Some(false)
+    );
+}
+
+/// An unsigned remainder is at most its dividend, and `x - x % 4` rounds
+/// `x` down to a multiple of 4: with `x >= 4` it is at least 4.
+#[test]
+fn an_unsigned_value_rounded_down_to_a_multiple_stays_in_range() {
+    use Bitvector32Term as T;
+    let x = variable(0);
+    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let remainder = T::UInt64Remainder(boxed(&x), Box::new(T::UInt64Constant(4)));
+    let rounded = T::UInt64Subtract(boxed(&x), Box::new(remainder.clone()));
+    let unknown = graph(&[]);
+    assert_eq!(
+        unknown.decide(&ConditionTerm::Bitvector64UnsignedGreaterEqual(
+            boxed(&x),
+            Box::new(remainder)
+        )),
+        Some(true)
+    );
+    let at_least_four = |rounded: &Bitvector32Term| {
+        ConditionTerm::Bitvector64UnsignedLessEqual(
+            Box::new(T::UInt64Constant(4)),
+            Box::new(rounded.clone()),
+        )
+    };
+    assert_eq!(unknown.decide(&at_least_four(&rounded)), None);
+    let large = graph(&[(
+        ConditionTerm::Bitvector64UnsignedLessEqual(Box::new(T::UInt64Constant(4)), boxed(&x)),
+        true,
+    )]);
+    assert_eq!(large.decide(&at_least_four(&rounded)), Some(true));
+    // One less than the bound is not enough: `x == 3` rounds to 0.
+    let small = graph(&[(
+        ConditionTerm::Bitvector64UnsignedLessEqual(Box::new(T::UInt64Constant(3)), boxed(&x)),
+        true,
+    )]);
+    assert_eq!(small.decide(&at_least_four(&rounded)), None);
+}
+
+/// `x ^ MIN`, an unsigned order spelled as a signed one, is bounded once
+/// `x`'s sign is: `(a - b) ^ MIN <= -1` holds when `a - b >= 0`.
+#[test]
+fn a_sign_flip_of_known_sign_is_bounded() {
+    use Bitvector32Term as T;
+    let (a, b) = (variable(0), variable(1));
+    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let flipped = T::BitwiseXor(
+        Box::new(T::Constant(i32::MIN as u32)),
+        Box::new(T::Subtract(boxed(&a), boxed(&b))),
+    );
+    let below_zero = ConditionTerm::Bitvector32SignedLessEqual(
+        Box::new(flipped),
+        Box::new(T::Constant(u32::MAX)),
+    );
+    let ordered = graph(&[
+        (
+            ConditionTerm::Bitvector32SignedLessEqual(boxed(&b), boxed(&a)),
+            true,
+        ),
+        (
+            ConditionTerm::Bitvector32SignedLessEqual(Box::new(T::Constant(0)), boxed(&b)),
+            true,
+        ),
+    ]);
+    assert_eq!(ordered.decide(&below_zero), Some(true));
+    assert_eq!(graph(&[]).decide(&below_zero), None);
+}
+
+/// A 32-bit unsigned quotient is bounded by its operands' unsigned readings:
+/// Rust's checked `x * y` asks `x <= u32::MAX / y`, spelled as a signed
+/// order of sign-flipped words.
+#[test]
+fn an_unsigned_quotient_of_words_is_bounded() {
+    use Bitvector32Term as T;
+    let (x, y) = (variable(0), variable(1));
+    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let flip = |term: Bitvector32Term| {
+        T::BitwiseXor(Box::new(T::Constant(i32::MIN as u32)), Box::new(term))
+    };
+    let fits = ConditionTerm::Bitvector32SignedLessEqual(
+        Box::new(flip(x.clone())),
+        Box::new(flip(T::UnsignedDivide(
+            Box::new(T::Constant(u32::MAX)),
+            boxed(&y),
+        ))),
+    );
+    let pinned = |y_value: u32| {
+        graph(&[
+            (
+                ConditionTerm::Bitvector32Equal(boxed(&x), Box::new(T::Constant(u32::MAX))),
+                true,
+            ),
+            (
+                ConditionTerm::Bitvector32Equal(boxed(&y), Box::new(T::Constant(y_value))),
+                true,
+            ),
+        ])
+    };
+    assert_eq!(pinned(1).decide(&fits), Some(true));
+    assert_eq!(pinned(2).decide(&fits), Some(false));
+    // A divisor that may be zero bounds nothing.
+    assert_eq!(graph(&[]).decide(&fits), None);
+}
+
+/// Field offsets from equal bases are equal: with `i == j`, `&a[i].size`
+/// and `&a[j].size` (`4 * i + 8` and `4 * j + 8`) name one cell, and with
+/// `i < j` they do not.
+#[test]
+fn field_offsets_from_equal_bases_are_equal() {
+    use crate::kernel::PointerOffsetTerm as O;
+    let field = |index| {
+        O::Add(
+            Box::new(O::scale_int32(variable(index), 4)),
+            Box::new(O::Constant(8)),
+        )
+    };
+    let same_field = ConditionTerm::PointerOffsetEqual(Box::new(field(0)), Box::new(field(1)));
+    let equal = graph(&[(
+        ConditionTerm::PointerOffsetEqual(
+            Box::new(O::scale_int32(variable(0), 4)),
+            Box::new(O::scale_int32(variable(1), 4)),
+        ),
+        true,
+    )]);
+    assert_eq!(equal.decide(&same_field), Some(true));
+    let ordered = graph(&[(
+        ConditionTerm::Bitvector32SignedLessThan(Box::new(variable(0)), Box::new(variable(1))),
+        true,
+    )]);
+    assert_eq!(ordered.decide(&same_field), Some(false));
+    // Different fields of equal bases are not compared this way.
+    let other_field = ConditionTerm::PointerOffsetEqual(
+        Box::new(field(0)),
+        Box::new(O::Add(
+            Box::new(O::scale_int32(variable(1), 4)),
+            Box::new(O::Constant(12)),
+        )),
+    );
+    assert_eq!(graph(&[]).decide(&other_field), None);
+}
+
 /// Pointer equality facts form classes with known-unequal classes: `p` is
 /// null and `q` is not, so `p != q`, and two pointers of one block are
 /// equal exactly when their offsets are, so the offset question the kernel
