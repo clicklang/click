@@ -142,7 +142,9 @@ impl SnapshotLabels {
                 | crate::kernel::CValue::UInt16(term)
                 | crate::kernel::CValue::UInt32(term)
                 | crate::kernel::CValue::Int64(term)
-                | crate::kernel::CValue::UInt64(term) => term,
+                | crate::kernel::CValue::UInt64(term)
+                | crate::kernel::CValue::Float32(term)
+                | crate::kernel::CValue::Float64(term) => term,
                 _ => continue,
             };
             if let Bitvector32Term::Variable(variable) = term {
