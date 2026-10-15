@@ -5182,7 +5182,10 @@ fn a_rust_trait_implementation_inherits_its_interface() {
             .unwrap();
         assert_eq!(circle.requires(), interface.requires());
         assert_eq!(circle.ensures().len(), 2);
-        assert_eq!(circle.ensures()[1].ensure(), interface.ensures()[0].ensure());
+        assert_eq!(
+            circle.ensures()[1].ensure(),
+            interface.ensures()[0].ensure()
+        );
         assert_eq!(
             crate::languages::rust::names::display_rust_names(&circle.ensure_claim_label(1)),
             "<shapes::Circle as shapes::Shape>::area.interface_ensures_0"
@@ -5192,7 +5195,9 @@ fn a_rust_trait_implementation_inherits_its_interface() {
     let error = parser::parse(&format!("verifying \"shapes.rs\"; {interface} {renamed}"))
         .expect_err("an implementation renaming its parameters cannot inherit");
     assert!(
-        error.message().contains("names its parameters as the trait's interface does"),
+        error
+            .message()
+            .contains("names its parameters as the trait's interface does"),
         "{}",
         error.message()
     );
