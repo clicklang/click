@@ -837,10 +837,7 @@ fn load_variable_project(statement_count: usize, axis: LoadAxis) -> (String, Str
     };
     let (permission, statements) = match axis {
         LoadAxis::DistinctCells | LoadAxis::OneCell => ("views data[0..length];", statement_count),
-        LoadAxis::OneCellAcrossStores => (
-            "consumes data[0..length];\n    produces data[0..length];",
-            2 * statement_count,
-        ),
+        LoadAxis::OneCellAcrossStores => ("owns data[0..length];", 2 * statement_count),
     };
     let mut click_source = format!(
         "verifying \"load_line.c\";\n\nint32 load_line(int32 data[], int32 length) {{\n    requires {statement_count} <= length;\n    requires 2 <= length;\n    requires ((uint32)length) <= 1073741823u32;\n    {permission}\n    ensures result == data[{last}];\n}} by {{\n"
@@ -851,8 +848,8 @@ fn load_variable_project(statement_count: usize, axis: LoadAxis) -> (String, Str
     }
     click_source.push_str("    normalize();\n");
     if matches!(axis, LoadAxis::OneCellAcrossStores) {
-        // The `produces` claim has no simple closer and takes the one smart
-        // tactic in this fixture.
+        // The returned ownership of `owns` has no simple closer and takes the
+        // one smart tactic in this fixture.
         click_source.push_str("    simp();\n");
     }
     click_source.push_str("}\n");
@@ -2026,7 +2023,7 @@ fn recorded_snapshot_branch_merge_visits_only_fork_local_changes() {
 fn ranked_loop_with_unrelated_inequalities(fact_count: usize) -> (String, String) {
     let c_source = "int32 ranked_drain(int32 n) {\n    while (n > 0) {\n        n = n - 1;\n    }\n    return n;\n}\n".to_string();
     let mut click_source = String::from(
-        "verifying \"ranked_drain.c\";\n\nint32 ranked_drain(int32 n) {\n    requires n >= 0;\n",
+        "import click::machine_integer;\n\nverifying \"ranked_drain.c\";\n\nint32 ranked_drain(int32 n) {\n    requires n >= 0;\n",
     );
     for index in 0..fact_count {
         click_source.push_str(&format!("    requires n != 0 - {};\n", index + 1));
@@ -2275,7 +2272,7 @@ fn repeated_tactic_applications_scale_near_linearly() {
 fn smart_ranked_loop_with_unrelated_inequalities(fact_count: usize) -> (String, String) {
     let c_source = "int32 ranked_drain(int32 n) {\n    while (n > 0) {\n        n = n - 1;\n    }\n    return n;\n}\n".to_string();
     let mut click_source = String::from(
-        "verifying \"ranked_drain.c\";\n\nint32 ranked_drain(int32 n) {\n    requires n >= 0;\n",
+        "import click::machine_integer;\n\nverifying \"ranked_drain.c\";\n\nint32 ranked_drain(int32 n) {\n    requires n >= 0;\n",
     );
     for index in 0..fact_count {
         click_source.push_str(&format!("    requires n != 0 - {};\n", index + 1));
@@ -4440,7 +4437,8 @@ fn copy_loop_with_unrelated_requirements(fact_count: usize) -> String {
         .map(|index| format!("    requires length != {};\n", index + 100_000))
         .collect::<String>();
     format!(
-        "verifying \"transport_copy.c\";\n\
+        "import click::machine_integer;\n\n\
+         verifying \"transport_copy.c\";\n\
          \n\
          int32 transport_copy(int32 dst[], int32 src[], int32 length) {{\n    \
              requires 0 <= length;\n    \
@@ -5031,7 +5029,7 @@ fn an_unfolded_constant_composite_range_costs_the_same_whatever_its_length() {
     let c_source = "int32 put(int32 *a) {\n    a[3] = 5;\n    return a[3];\n}\n\nvoid put_pointer(int32 **p, int32 *q) {\n    p[1] = q;\n}\n";
     let click_source = |length: u64| {
         format!(
-            "verifying \"put.c\";\n\nresource block(p: int32*) {{ owns p[0..{length}]; }}\nresource pointers(p: int32**) {{ owns p[0..{length}]; }}\n\nint32 put(int32 *a) {{\n    consumes block(a);\n    produces block(a);\n    ensures result == 5;\n    ensures a[4] == old(a[4]);\n}} by {{\n    unfold(block(a));\n    execute();\n    fold(block(a));\n    simp();\n}}\n\nvoid put_pointer(int32 **p, int32 *q) {{\n    consumes pointers(p);\n    produces pointers(p);\n    ensures p[2] == old(p[2]);\n    ensures p[1] == q;\n}} by {{\n    unfold(pointers(p));\n    execute();\n    fold(pointers(p));\n    simp();\n}}\n"
+            "verifying \"put.c\";\n\nresource block(p: int32*) {{ owns p[0..{length}]; }}\nresource pointers(p: int32**) {{ owns p[0..{length}]; }}\n\nint32 put(int32 *a) {{\n    owns block(a);\n    ensures result == 5;\n    ensures a[4] == old(a[4]);\n}} by {{\n    unfold(block(a));\n    execute();\n    fold(block(a));\n    simp();\n}}\n\nvoid put_pointer(int32 **p, int32 *q) {{\n    owns pointers(p);\n    ensures p[2] == old(p[2]);\n    ensures p[1] == q;\n}} by {{\n    unfold(pointers(p));\n    execute();\n    fold(pointers(p));\n    simp();\n}}\n"
         )
     };
     verify_c0_sources(&click_source(8), &[("put.c", c_source)]).expect("warm-up verifies");
@@ -5095,8 +5093,8 @@ fn symbolic_read_refold_and_refusal_do_not_enumerate_range_elements() {
                 "verifying \"read.c\";\n\
                  resource block(p: int32*) {{ owns p[0..{length}]; }}\n\
                  int32 read_after_store(int32 *a, int32 k) {{\n\
-                   consumes block(a); requires 0 <= k; requires k < {length};\n\
-                   produces block(a); ensures result == {value};\n\
+                   owns block(a); requires 0 <= k; requires k < {length};\n\
+                   ensures result == {value};\n\
                  }} by {{ unfold(block(a)); execute(); fold(block(a)); simp(); }}"
             );
             let (result, sample) = scaling_sample(length, || {
@@ -8291,4 +8289,40 @@ ensures result == {expected};
             "a call visited unrelated owned objects: {calls:?}"
         );
     }
+}
+
+#[test]
+fn source_only_transport_does_not_reconstruct_unrelated_integer_facts() {
+    let mut work = Vec::new();
+    for size in [8, 32, 128] {
+        let (_, mut source) = function_with_unrelated_facts(
+            size,
+            "    step();\n    transport(target == 7, target == 7);\n    execute();\n    assumption();\n",
+        );
+        // Keep transport at a live statement frontier. A return would enter
+        // the distinct post-execution premise-search path.
+        let c = "int32 exact_fact_target(int32 target) { int32 copy = target; return copy; }";
+        for index in 0..size {
+            source = source.replace(
+                &format!("requires target != {};", index + 100),
+                &format!("requires to_integer(target) != {};", index + 100),
+            );
+        }
+        let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
+            verify_c0_sources(&source, &[("exact_fact_target.c", c)])
+        });
+        result.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
+        let selected = samples
+            .iter()
+            .filter(|sample| sample.tactic.tactic_name == "transport")
+            .collect::<Vec<_>>();
+        assert_eq!(selected.len(), 1);
+        assert!(!selected[0].failed);
+        work.push(selected[0].work);
+    }
+    assert!(work.iter().all(|count| *count > 0));
+    assert!(
+        work.windows(2).all(|pair| pair[1] <= pair[0] * 2),
+        "source-only transport must not reconstruct an ambient fact per input: {work:?}"
+    );
 }

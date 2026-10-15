@@ -94,6 +94,12 @@ struct SourceExecutionLayoutData {
     /// the first step that enters a statement scope.
     diagnostic_places:
         std::sync::OnceLock<std::sync::Arc<crate::surface::diagnostics::StatementPlaces>>,
+    /// The locals whose address the function takes anywhere, walked once
+    /// for every loop's `decreases` escape check rather than once per loop.
+    address_taken_locals: std::sync::OnceLock<BTreeSet<String>>,
+    /// The pointee type of each local pointer and array, indexed once for
+    /// every loop's re-annotation of the function rather than once per loop.
+    local_pointer_element_types: std::sync::OnceLock<BTreeMap<String, crate::kernel::CType>>,
 }
 
 #[derive(Clone, Copy)]
@@ -868,6 +874,22 @@ impl SourceExecutionLayout {
             .clone()
     }
 
+    /// The function's address-taken locals, built by `build` on first use.
+    pub(in crate::surface) fn address_taken_locals(
+        &self,
+        build: impl FnOnce() -> BTreeSet<String>,
+    ) -> &BTreeSet<String> {
+        self.data.address_taken_locals.get_or_init(build)
+    }
+
+    /// The function's local pointee types, built by `build` on first use.
+    pub(in crate::surface) fn local_pointer_element_types(
+        &self,
+        build: impl FnOnce() -> BTreeMap<String, crate::kernel::CType>,
+    ) -> &BTreeMap<String, crate::kernel::CType> {
+        self.data.local_pointer_element_types.get_or_init(build)
+    }
+
     pub(in crate::surface) fn site(
         &self,
         index: usize,
@@ -1366,6 +1388,8 @@ mod source_execution_layout_tests {
                 arm_lasts_by_exited_region: BTreeMap::new(),
                 sites: BTreeMap::new(),
                 diagnostic_places: std::sync::OnceLock::new(),
+                address_taken_locals: std::sync::OnceLock::new(),
+                local_pointer_element_types: std::sync::OnceLock::new(),
             }),
         };
         let cloned = layout.clone();

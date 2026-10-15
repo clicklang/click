@@ -5605,7 +5605,12 @@ impl ResourceContext {
             "resource satisfaction",
             "resource satisfaction: indexed direct entailment",
             || {
-                self.direct_match_candidates(fact)
+                // Only facts whose first pointer is related to the required
+                // one can entail it (`direct_match_candidates_for`); every
+                // held fact of the shape would make this linear in the
+                // objects held.
+                self.direct_match_candidates_for(fact, assumptions)
+                    .into_iter()
                     .any(|available| resource_fact_entails(available, fact, assumptions))
             },
         ) {

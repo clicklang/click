@@ -108,6 +108,7 @@ const QUALIFIED_MODULES: &[&str] = &[
     "library/nat.click",
     "library/list.click",
     "library/bytes.click",
+    "library/cstr.click",
 ];
 
 /// The qualified identity a bare theorem citation names: a library theorem
@@ -189,6 +190,14 @@ pub(super) fn module_declares(identity: &str, name: &str) -> bool {
         .is_some_and(|names| names.contains(name))
 }
 
+/// The identity of the Click library module whose source is `file`.
+fn module_identity_of_file(file: &str) -> Option<&'static str> {
+    super::super::CLICK_LIBRARY_MODULES
+        .iter()
+        .map(|(module, _)| *module)
+        .find(|module| *module == file)
+}
+
 /// The `library/` identity of a module path such as `["c", "string"]`.
 fn module_identity(segments: &[&str]) -> Option<&'static str> {
     let identity = format!("library/{}.click", segments.join("/"));
@@ -205,10 +214,12 @@ fn module_identity(segments: &[&str]) -> Option<&'static str> {
 /// imports. `m::name` names the same declaration when module `m` is in scope:
 /// an implicit module, or one the file imports. A path whose last segment is
 /// not a declaration of that module is left alone, so constructor paths such
-/// as `Nat::Zero` parse as before.
+/// as `Nat::Zero` parse as before. Inside library module `file`, the module
+/// is in scope by its own short name, and a path to it brings nothing.
 pub(super) fn resolve_library_paths(
     tokens: Vec<Token>,
     positions: Vec<SourcePosition>,
+    file: Option<&str>,
 ) -> Result<(Vec<Token>, Vec<SourcePosition>, BTreeSet<&'static str>), ClickError> {
     if !tokens.contains(&Token::ColonColon) {
         return Ok((tokens, positions, BTreeSet::new()));
@@ -217,7 +228,8 @@ pub(super) fn resolve_library_paths(
     // Modules in scope by their last path segment: the implicit modules and
     // the file's own `import click::...;` lines.
     let mut in_scope = BTreeMap::<String, &'static str>::new();
-    for identity in crate::surface::validation::implicit_library_modules() {
+    let own = file.and_then(module_identity_of_file);
+    for identity in crate::surface::validation::implicit_library_modules().chain(own) {
         in_scope.insert(short_module_name(identity).to_string(), identity);
     }
     // Names a selective import brings, and the token ranges of the import
@@ -307,7 +319,9 @@ pub(super) fn resolve_library_paths(
         if let Some((name, consumed, module)) =
             library_path_at(&tokens, index, names, &in_scope, &positions)?
         {
-            if let Some(module) = module {
+            if let Some(module) = module
+                && Some(module) != own
+            {
                 path_modules.insert(module);
             }
             resolved_tokens.push(Token::Ident(name));

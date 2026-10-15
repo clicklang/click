@@ -1621,6 +1621,17 @@ resource uncalled(flag: int32*) {
 }
 ```
 
+A Click library module may declare resources too, such as `click::cstr`'s
+borrowed C string `cstr_at(p, len)`. A file sees a library resource exactly
+when it sees that module's predicates and functions: the module is implicit,
+imported, or brought by the C program's library calls. Declaring a resource
+with the name of a visible library resource is a duplicate definition. A
+resource argument is typed as a predicate argument is: a `char`,
+`signed char`, or `unsigned char` pointer may be passed for a `uint8*`
+parameter, and a parameter of signed character pointer type passed there is
+read through its byte view `(uint8*)p`
+(`mdtests/cstr_at_borrows_a_char_string_from_the_library.md`).
+
 A resource may declare pure fields before its body clauses:
 
 <!-- verified-example: mdtests/resource_fields.md -->
@@ -3211,7 +3222,7 @@ pure helper over `uint8[]` can appear in an invariant or inside `old(...)`.
 The Click library provides byte-slice helpers over `uint8[]`: `bytes::count`,
 `bytes::equal`, `bytes::equal_range`, `bytes::all_equal`, `bytes::contains`, and
 `bytes::all_not_equal`. It also provides C-string predicates:
-`cstr_prefix`, `cstr_len`, `cstr`, and `cstr_bounded`, whose lengths and bounds
+`cstr::prefix`, `cstr::len`, `cstr::cstr`, and `cstr::bounded`, whose lengths and bounds
 are `size_t` (`uint64`) values as C measures them. These are ordinary Click
 functions and predicates, not built-in kernel concepts.
 

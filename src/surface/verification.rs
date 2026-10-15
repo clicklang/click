@@ -2967,6 +2967,7 @@ fn verify_c0_sources_in_context(
                 assumptions: &assumptions_from_propositions(&certification_facts),
                 checked_entry_state: None,
             }),
+            None,
         )?;
         if contract_function.resource_derived_mutable_frame() {
             let loop_assumptions = assumptions_from_propositions(&certification_facts);

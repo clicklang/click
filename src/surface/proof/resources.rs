@@ -2239,6 +2239,14 @@ fn project_held_resource_observable_facts(
     let Some(definition) = resource_environment.get(name) else {
         return Ok(state.memory().clone());
     };
+    // `amount of R(..)` holds `amount` instances of `R`'s body, so its body
+    // describes an instance only where `amount > 0` is known; with zero there
+    // is none, and its facts need not hold. `observe` makes the same check.
+    if let Some(quantity) = resource.owned_quantity_term()
+        && !owned_quantity_is_positive(quantity, available_pure_facts.assumptions())
+    {
+        return Ok(state.memory().clone());
+    }
     apply_composite_observation_law_with_facts(
         resource_environment,
         definition,
@@ -2253,6 +2261,23 @@ fn project_held_resource_observable_facts(
         None,
     )
     .map(|(memory, _, _)| memory)
+}
+
+/// Whether an owned resource's quantity is known to be positive: a constant
+/// read as a signed `int32`, as `fold` reads one, or one the kernel's
+/// condition decision settles.
+fn owned_quantity_is_positive(quantity: &Bitvector32Term, assumptions: &PureFactContext) -> bool {
+    quantity.as_const().is_some_and(|value| (value as i32) > 0)
+        || decided_without_search(
+            assumptions,
+            &Proposition::ConditionIs(
+                ConditionTerm::Bitvector32SignedGreaterThan(
+                    Box::new(quantity.clone()),
+                    Box::new(Bitvector32Term::Constant(0)),
+                ),
+                true,
+            ),
+        )
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -2532,7 +2532,7 @@ pub(crate) fn array_ref_elements_compatible(
 
 /// [`click_types_compatible`] for an argument of a predicate or pure
 /// function, which also passes a signed character pointer as `uint8` bytes, so a
-/// specification such as `cstr_readable(s)` reads a C string's bytes. Under
+/// specification such as `cstr::readable(s)` reads a C string's bytes. Under
 /// either signedness of `char` this reads the same objects: the kernel
 /// lets a character type read a one-byte cell of the other signedness as the
 /// same eight bits (C11 6.5p7), so `bytes[k] == '\0'` holds exactly when the
@@ -2602,6 +2602,10 @@ pub(in crate::surface) fn click_types_compatible(actual: C0Type, expected: C0Typ
     }
 }
 
+/// Whether `actual` may be passed for parameter `index` of resource `name`.
+/// A resource argument follows the predicate rule,
+/// [`click_argument_types_compatible`]: a character pointer is passed as
+/// `uint8` bytes, so `cstr_at(s, n)` takes a C `char *s`.
 fn resource_types_compatible(name: &str, index: usize, actual: C0Type, expected: C0Type) -> bool {
     if name == CResourceFact::ALLOCATION_RESOURCE_NAME
         && index == 0
@@ -2650,7 +2654,7 @@ fn resource_types_compatible(name: &str, index: usize, actual: C0Type, expected:
                 | C0Type::Float64Array(_)
         );
     }
-    click_types_compatible(actual, expected)
+    click_argument_types_compatible(actual, expected)
 }
 
 pub(super) fn infer_contract_expression_type(

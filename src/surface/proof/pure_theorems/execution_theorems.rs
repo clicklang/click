@@ -362,6 +362,7 @@ pub(super) fn verify_execution_theorem(
             assumptions: &assumptions_from_propositions(&facts),
             checked_entry_state: None,
         }),
+        None,
     )?;
     let artifacts = crate::surface::verification::distinct_checked_executions(&verified)
         .into_iter()

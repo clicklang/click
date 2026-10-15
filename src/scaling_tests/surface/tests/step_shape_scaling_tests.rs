@@ -504,12 +504,14 @@ int32 caller() {{
 
 /// One verified size of a shape: each `step()`'s work in proof order beside
 /// the statement it executes with digits blanked, so that steps doing the
-/// same thing at different positions share a role, and each `loop` clause's
-/// work. The steps execute `caller`'s statements in source order, one each.
+/// same thing at different positions share a role, each `loop` clause's
+/// work, and each other simple resource tactic's work in proof order by
+/// tactic. The steps execute `caller`'s statements in source order, one each.
 struct Run {
     statements: usize,
     steps: Vec<(String, usize)>,
     loops: Vec<usize>,
+    resource_tactics: Vec<(&'static str, Vec<usize>)>,
 }
 
 impl Run {
@@ -524,6 +526,10 @@ impl Run {
         &self.steps
     }
 }
+
+/// The simple tactics besides `step` a shape's proof repeats per object:
+/// each must cost the same at every position, as a step must.
+const RESOURCE_TACTICS: [&str; 2] = ["unfold", "fold"];
 
 fn run(shape: fn(usize) -> (String, String), n: usize) -> Run {
     let (c, click) = shape(n);
@@ -566,6 +572,10 @@ fn run(shape: fn(usize) -> (String, String), n: usize) -> Run {
             .map(|(index, work)| (roles.get(index).cloned().unwrap_or_default(), work))
             .collect(),
         loops: in_order("loop"),
+        resource_tactics: RESOURCE_TACTICS
+            .into_iter()
+            .map(|name| (name, in_order(name)))
+            .collect(),
     }
 }
 
@@ -602,11 +612,15 @@ fn drifts(work: &[usize]) -> bool {
             .all(|(change, at)| *change < 0 && large(*change, *at))
 }
 
-/// The roles of `run` whose steps drift, with their work.
+/// The roles of `run` whose steps or resource tactics drift, with their
+/// work.
 fn drifting_roles(name: &str, run: &Run) -> Vec<(String, Vec<usize>)> {
     let mut roles = BTreeMap::<String, Vec<usize>>::new();
     for (role, work) in run.statement_steps(name) {
         roles.entry(role.clone()).or_default().push(*work);
+    }
+    for (tactic, work) in &run.resource_tactics {
+        roles.insert(format!("{tactic} tactic"), work.clone());
     }
     roles.into_iter().filter(|(_, work)| drifts(work)).collect()
 }

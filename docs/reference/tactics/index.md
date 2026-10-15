@@ -116,7 +116,9 @@ connected fact `f(args) == k`, with `k` an integer constant: the arguments
 pick the definition's `match` arms, and when every way through its `if`s
 that fails the goal's condition ends in a constant other than `k`, the fact
 forces the goal, as `is_rb(Node(.., left, right)) == 1` forces
-`is_rb(left) == 1`. The proof is ordinary checked steps: `if` the goal
+`is_rb(left) == 1`. An argument that a connected equation names as a constructor,
+such as a `match` arm's `up.model == Context::Left(..)`, is replaced by it:
+the fact is first restated as a `have` by rewriting with that equation. The proof is ordinary checked steps: `if` the goal
 holds, `assumption`; otherwise a proof `if` on each condition met before the
 goal's, and at each end `have f(args) != k` by `unfold` and
 `normalize() using` the conditions taken, then `contradiction`. At most 16

@@ -208,10 +208,21 @@ fn helper_library() -> &'static str {
 }
 
 fn helper_proof(index: usize) -> String {
+    // The import paragraph, the verifying clause, and the shared theorem
+    // precede the four helper blocks; every helper proof keeps all three.
     let blocks: Vec<_> = helper_library().trim_end().split("\n\n").collect();
-    assert_eq!(blocks.len(), 6);
+    assert_eq!(blocks.len(), 7);
+    assert!(blocks[0].lines().all(|line| line.starts_with("import ")));
+    assert!(blocks[1].starts_with("verifying "));
+    assert!(blocks[2].starts_with("theorem "));
     assert!(index < 4);
-    format!("{}\n\n{}\n\n{}", blocks[0], blocks[1], blocks[index + 2])
+    format!(
+        "{}\n\n{}\n\n{}\n\n{}",
+        blocks[0],
+        blocks[1],
+        blocks[2],
+        blocks[index + 3]
+    )
 }
 
 fn reject_helper_contracts(index: usize, mutations: &[(&str, &str)]) {

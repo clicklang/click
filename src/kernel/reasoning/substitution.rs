@@ -1886,12 +1886,67 @@ pub fn resolve_load_variables_from_registry(proposition: &Proposition) -> Propos
     resolved
 }
 
+/// Bounded resolution for checked surface reconstruction. A refused walk
+/// returns no proposition; callers must never round-trip a partial rewrite.
+pub(crate) fn try_resolve_load_variables_from_registry(
+    proposition: &Proposition,
+) -> Result<Proposition, IntegerPureSubstitutionError> {
+    integer_work(1)?;
+    let mut variables = BTreeSet::new();
+    super::variable_collection::collect_proposition_bitvector_variables(
+        proposition,
+        &mut variables,
+    );
+    let mut resolved = proposition.clone();
+    for variable in variables {
+        integer_work(1)?;
+        if !crate::kernel::eval::is_load_variable(&variable) {
+            continue;
+        }
+        if let Some(load) = crate::kernel::eval::registered_load_origin_term_for_variable(&variable)
+        {
+            resolved = substitute_surface_load_binding(&resolved, variable, &load)?;
+        }
+    }
+    Ok(resolved)
+}
+
+fn substitute_surface_load_binding(
+    proposition: &Proposition,
+    from: Variable,
+    load: &Bitvector32Term,
+) -> Result<Proposition, IntegerPureSubstitutionError> {
+    use crate::kernel::proof::term_rewrite::{TermRewrite, TypedCReplacement};
+    let mut collector =
+        crate::kernel::proof::term_rewrite::IntegerSubstitutionVariableCollector::checked();
+    collector.collect(proposition);
+    collector.collect(&Proposition::ConditionIs(
+        ConditionTerm::equal(Bitvector32Term::Variable(from), load.clone()),
+        true,
+    ));
+    if collector.exhausted() {
+        return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
+    }
+    let mut reserved = BTreeSet::new();
+    collector.extend_into(&mut reserved);
+    reserved.insert(from);
+    let c = BTreeMap::from([(from, TypedCReplacement::Bitvector(load.clone()))]);
+    let integer = BTreeMap::new();
+    let algebraic = BTreeMap::new();
+    let mut walker = TermRewrite::for_typed_variables(&c, &integer, &algebraic);
+    walker.reserve_integer_substitution_variables(&reserved);
+    let result = substitute_pure_proposition_with_walker(proposition, from, false, &mut walker);
+    integer_substitution_refusal(walker.refusal())?;
+    result
+}
+
 pub fn resolve_minted_load_variables(
     proposition: &Proposition,
     facts: &(impl ExecutionFactSource + ?Sized),
-) -> Proposition {
+) -> Result<Proposition, IntegerPureSubstitutionError> {
     let mut resolved = proposition.clone();
     for fact in facts.fact_iter() {
+        integer_work(1)?;
         if !fact.certified {
             continue;
         }
@@ -1905,9 +1960,9 @@ pub fn resolve_minted_load_variables(
         else {
             continue;
         };
-        resolved = substitute_bitvector_variable_in_proposition(&resolved, *variable, load);
+        resolved = substitute_surface_load_binding(&resolved, *variable, load)?;
     }
-    resolved
+    Ok(resolved)
 }
 
 /// Capture-avoiding substitution for an algebraic quantifier variable.
@@ -8260,6 +8315,85 @@ mod checked_singleton_substitution_tests {
     mod scaling_tests {
         include!(
             "../../scaling_tests/kernel/reasoning/substitution/checked_singleton_substitution_tests.rs"
+        );
+    }
+}
+
+#[cfg(test)]
+mod checked_surface_load_resolution_tests {
+    use super::*;
+
+    fn observed(variable: Variable) -> IntegerTerm {
+        IntegerTerm::from_machine(
+            MachineIntegerType::Int32,
+            Bitvector32Term::Variable(variable),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn surface_load_binding_rewrites_machine_observations_without_integer_binder_capture() {
+        let variable = Variable(70_300);
+        let source = Proposition::Equal(
+            Term::Integer(observed(variable)),
+            Term::Integer(IntegerTerm::var(variable)),
+        );
+        let result =
+            substitute_surface_load_binding(&source, variable, &Bitvector32Term::Constant(7))
+                .unwrap();
+        assert_eq!(
+            result,
+            Proposition::Equal(
+                Term::Integer(IntegerTerm::constant_i64(7)),
+                Term::Integer(IntegerTerm::var(variable)),
+            )
+        );
+    }
+
+    #[test]
+    fn checked_surface_load_resolution_returns_work_refusal_without_a_partial_proposition() {
+        use crate::instrumentation::{self, TacticEvent, TacticWorkLimits, VerificationEvent};
+        let variable = Variable(70_301);
+        let source = Proposition::Equal(
+            Term::Integer(observed(variable)),
+            Term::Integer(IntegerTerm::constant_i64(0)),
+        );
+        let ((binding, registry), _) = instrumentation::with_tactic_work_limits(
+            TacticWorkLimits {
+                simple: 0,
+                smart: 0,
+                control: 0,
+            },
+            || {
+                instrumentation::collect(|| {
+                    let event = TacticEvent {
+                        source_tactic_path: None,
+                        claim: "checked surface load refusal".into(),
+                        tactic_index: 0,
+                        tactic_name: "checked_surface_load_resolution".into(),
+                        class: "simple".into(),
+                        statement_index: 0,
+                        source_index: 0,
+                    };
+                    instrumentation::emit(VerificationEvent::TacticStarted(event.clone()));
+                    let binding = substitute_surface_load_binding(
+                        &source,
+                        variable,
+                        &Bitvector32Term::Constant(7),
+                    );
+                    let registry = try_resolve_load_variables_from_registry(&source);
+                    instrumentation::emit(VerificationEvent::TacticFailed(event));
+                    (binding, registry)
+                })
+            },
+        );
+        assert_eq!(
+            binding,
+            Err(IntegerPureSubstitutionError::WorkLimitExceeded)
+        );
+        assert_eq!(
+            registry,
+            Err(IntegerPureSubstitutionError::WorkLimitExceeded)
         );
     }
 }

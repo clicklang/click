@@ -290,7 +290,8 @@ Each step is its own pull request.
      `src/kernel/termination.rs`, `expression_reads` in source layout, and
      `collect_local_pointer_element_types`. The first needs the path's facts
      about dead values retired or the loop's context extended rather than
-     rebuilt; the second needs those scans computed once per function.
+     rebuilt. The scans now run once per function, so the clause grows by
+     about 132 units per earlier loop instead of 160.
 
 ## Acceptance criteria
 

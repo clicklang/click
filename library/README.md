@@ -12,7 +12,7 @@ imports with `import click::...;`, and the modules those import:
 | `machine_integer.click` | `import click::machine_integer;` | Order, increment and definedness lemmas over native integer widths |
 | `permutation.click` | `import click::permutation;` | `count` and `permutation` over `int32[]` |
 | `bytes.click` | `import click::bytes;`, or with `c/string` | `bytes::count`, `bytes::equal` and the other byte-range predicates over `uint8[]` |
-| `cstr.click` | `import click::cstr;`, or with `c/string` | C-string predicates and theorems |
+| `cstr.click` | `import click::cstr;`, or with `c/string` | C-string predicates and theorems, and the borrowed-string resource `cstr_at` |
 | `c/builtins.click` | implicit | `__click_constant_p_unknown`, the value of `__builtin_constant_p` |
 | `c/string.click` | when the C declares or calls one of its functions | `memcpy`, `memcmp`, `memset` and `strlen` contracts |
 | `integer.click` | `import click::integer;` | `to_integer` bridges for native arithmetic, and `Integer` division laws |
@@ -37,7 +37,7 @@ trusted axioms. The `extern` contracts are assumptions, listed in
 A module is named by a `click::` path that mirrors its file:
 `import click::cstr;` is `cstr.click` and `import click::c::string;` is
 `c/string.click`. A declaration's qualified name adds its own name:
-`click::cstr::cstr_len`, or `cstr::cstr_len` once the module is in scope
+`click::cstr::len`, or `cstr::len` once the module is in scope
 (`src/surface/parser/library_paths.rs`). The remaining design steps are recorded in
 [`issues/standard-library.md`](../issues/standard-library.md).
 
