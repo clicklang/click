@@ -95,6 +95,145 @@ int32 identity(int32 x) { ensures result == x; } by {
     );
 }
 
+/// `rb_erase`'s general wrapper (`examples/rbtree-erase`): a file-static
+/// callbacks struct is folded and passed to a call whose outcome resource
+/// unfolds into a child named like the contract's own `produces whole`.
+/// `execute(); simp();` expands to `have whole.model == ...`, which reads
+/// the unfolded child through the contract binder's resource, not the
+/// outcome resource the unfold named it from.
+#[test]
+fn unfolded_child_named_like_a_produced_binder_expands_and_rechecks() {
+    let c = r#"
+struct root { int value; };
+struct callbacks { void (*rotate)(struct root *); };
+
+static void dummy_rotate(struct root *root) {}
+
+static const struct callbacks dummy_callbacks = {
+    .rotate = dummy_rotate
+};
+
+int produce(struct root *root, const struct callbacks *augment) {
+    return 0;
+}
+
+void use(struct root *root) {
+    int r;
+    r = produce(root, &dummy_callbacks);
+}
+"#;
+    let source = r#"
+verifying "callbacks_outcome.c";
+
+spec enum Out {
+    Done(int32),
+    Pending(int32),
+}
+
+function out_value(o: Out) -> int32 {
+    match o {
+        Out::Done(v) => v,
+        Out::Pending(v) => v,
+    }
+}
+
+resource cell_at(p: struct root*) {
+    field model: int32;
+    owns p->value;
+    fact p->value == model;
+}
+
+resource out_at(p: struct root*, r: int32) {
+    field model: Out;
+    match model {
+        Out::Done(v) => {
+            owns whole: cell_at(p);
+            fact whole.model == v;
+            fact r == 0;
+        },
+        Out::Pending(v) => {
+            owns pending: cell_at(p);
+            fact pending.model == v;
+            fact r != 0;
+        },
+    }
+}
+
+contract void Rotate(struct root* root) {
+    ensures 1 == 1;
+}
+
+resource callbacks_at(augment: const struct callbacks*) {
+    views augment->rotate;
+    fact Rotate(augment->rotate);
+}
+
+void dummy_rotate(struct root* root) {
+    ensures 1 == 1;
+} by { execute(); normalize(); }
+
+theorem dummy_rotate_contract() {
+    ensures Rotate(&dummy_rotate) by { unfold(Rotate); simp(); }
+}
+
+int produce(struct root* root, const struct callbacks* augment) {
+    consumes cell: cell_at(root);
+    views callbacks_at(augment);
+    produces out: out_at(root, result);
+    ensures out_value(out.model) == old(cell.model);
+} by {
+    execute();
+    let out = fold(out_at(root, 0), { model: Out::Done(cell.model) }, { whole: cell });
+    simp();
+}
+
+void use(struct root* root) {
+    consumes cell: cell_at(root);
+    views dummy_callbacks.rotate;
+    produces whole: cell_at(root);
+    ensures whole.model == old(cell.model);
+} by {
+    apply(dummy_rotate_contract());
+    fold(callbacks_at(&dummy_callbacks));
+    step();
+    let { out: out } = step(produce(root, &dummy_callbacks), { cell: cell });
+    match out.model {
+        Out::Done(v) => {
+            have out_value(Out::Done(v)) == old(cell.model) by { rewrite(Out::Done(v) == out.model); assumption(); }
+            have v == old(cell.model) by { unfold(out_value(Out::Done(v))); assumption(); }
+            let { whole: whole } = unfold(out);
+            execute(); simp();
+        },
+        Out::Pending(v) => {
+            have out_value(Out::Pending(v)) == old(cell.model) by { rewrite(Out::Pending(v) == out.model); assumption(); }
+            have v == old(cell.model) by { unfold(out_value(Out::Pending(v))); assumption(); }
+            let { pending: whole } = unfold(out);
+            execute(); simp();
+        },
+    }
+}
+"#;
+    let sources = [("callbacks_outcome.c", c)];
+    verify_c0_sources(source, &sources).unwrap();
+    let expanded = expand_c0_claim_source_by_label(source, &sources, "use.contract").unwrap();
+    assert!(
+        expanded.contains("have whole.model == old(cell.model) by"),
+        "the expansion should read the unfolded child through the produced binder: {expanded}"
+    );
+    crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .unwrap();
+    assert!(
+        crate::surface::proof::without_implicit_auto(|| verify_c0_sources(
+            &expanded.replace(
+                "ensures whole.model == old(cell.model);",
+                "ensures whole.model == old(cell.model) + 1;"
+            ),
+            &sources,
+        ))
+        .is_err()
+    );
+}
+
 #[test]
 fn tactic_expansion_can_name_an_outer_c_parameter_after_intro() {
     let c_source = "int32 shadowed_c(int32 x) { return 0; }";
