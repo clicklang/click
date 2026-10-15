@@ -7255,11 +7255,12 @@ pub struct ClickError {
     timing_tactic: Option<Box<TimingTacticContext>>,
 }
 
-/// The phase that rejected input or a checked proof operation. `Proof` means
+/// The cause of a refused input or checked proof operation. `Proof` means
 /// evidence was unavailable to this check; it is not a claim that C is unsafe.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ClickErrorKind {
     Syntax,
+    Limit,
     Type,
     Proof,
     Internal,
@@ -7269,6 +7270,7 @@ impl ClickErrorKind {
     fn label(self) -> &'static str {
         match self {
             Self::Syntax => "syntax error",
+            Self::Limit => "limit error",
             Self::Type => "type error",
             Self::Proof => "proof error",
             Self::Internal => "internal error",

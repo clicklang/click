@@ -2643,6 +2643,44 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
         assert_eq!(resolutions, 1);
     }
 
+    #[test]
+    fn a_c_parsing_work_stop_is_a_limit_error() {
+        let c_source = "int identity(int x) { return x; }";
+        let click_source = "verifying \"program.c\";\n\
+            int identity(int x) { ensures result == x; } by { execute(); simp(); }\n";
+        let (root, click_path) = temporary_project("parsing-work-limit", c_source, click_source);
+        let error = entry_with([
+            "--work-limit".to_string(),
+            "1".to_string(),
+            click_path.display().to_string(),
+        ])
+        .expect_err("one work unit stops while parsing valid C");
+        fs::remove_dir_all(&root).unwrap();
+        assert!(error.starts_with("limit error:"), "{error}");
+        assert!(!error.contains("syntax error"), "{error}");
+        assert!(error.contains("C parsing stopped"), "{error}");
+        assert!(
+            error.contains("deterministic whole-run work budget"),
+            "{error}"
+        );
+        assert!(
+            error.contains("external dependency summary > source resolution phase"),
+            "{error}"
+        );
+
+        let error = click::instrumentation::with_run_work_limit(1, || {
+            verify_c0_sources(click_source, &[("program.c", c_source)])
+        })
+        .expect_err("the API preserves the parser's stop kind too");
+        assert_eq!(error.kind(), ClickErrorKind::Limit);
+        assert!(error.report().contains("error kind: limit error"));
+
+        let syntax_error = verify_c0_sources(click_source, &[("program.c", "int identity( {")])
+            .expect_err("malformed C still reports a syntax error");
+        assert_eq!(syntax_error.kind(), ClickErrorKind::Syntax);
+        assert!(syntax_error.concise_report().starts_with("syntax error:"));
+    }
+
     /// The crash-containment bound is installed before the run loads its
     /// sources, so even the first C parse, for the external-dependency
     /// summary, stops at a checkpoint once the bound has expired.
