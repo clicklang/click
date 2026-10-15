@@ -2150,3 +2150,192 @@ fn footprint_composition_does_not_decide_every_alias_pair() {
         );
     }
 }
+
+/// A heap allocation of `bytes` bytes at `identity`, its first word written,
+/// as a `malloc` that succeeded leaves it: the allocation token and complete
+/// byte access, both owned.
+fn with_live_allocation(
+    (memory, resources): (CMemory, ResourceContext),
+    identity: u64,
+    bytes: u32,
+) -> (CMemory, ResourceContext) {
+    let pending = symbolic_base(identity);
+    let (memory, _, base) = memory
+        .with_pending_heap_allocation(pending.clone(), Bitvector32Term::Constant(bytes), false)
+        .resolve_pending_heap_allocation(&pending, true)
+        .expect("the pending allocation resolves");
+    assert_eq!(base, heap_base(identity));
+    let memory = memory.store(base.clone(), int32(identity as u32));
+    let resources = resources.unchecked_with_facts([
+        CResourceFact::own_allocation(base.clone(), bytes),
+        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            base,
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(bytes),
+            1,
+        )),
+    ]);
+    (memory, resources)
+}
+
+/// The allocation the caller has written an `int` into before the call,
+/// beside the lent one.
+const WRITTEN_INT_HEAP: u64 = TARGET_HEAP + 1;
+
+/// A caller holding `unrelated` live heap allocations beside the target,
+/// each reached from its own never-address-taken pointer local, whose
+/// automatic storage the caller owns, as C lowering leaves `int *u = malloc(..)`.
+fn caller_beside_unrelated_allocations(unrelated: usize) -> CState {
+    let locals = (0..unrelated)
+        .map(|index| (format!("u{index}"), index as u64 + 1))
+        .chain([("p".to_owned(), TARGET_HEAP)])
+        .collect::<Vec<_>>();
+    crate::kernel::set_never_address_taken_locals(
+        locals.iter().map(|(name, _)| name.clone()).collect(),
+    );
+    let (mut memory, mut resources) = locals.iter().fold(
+        (CMemory::new(), ResourceContext::new()),
+        |caller, (_, identity)| with_live_allocation(caller, *identity, 16),
+    );
+    // Writing the `int` retyped its bytes: the caller owns them as one
+    // `int` cell and holds the cell's view, supported by that owner, with
+    // the owner's cached identity expansion. A lending call's recovery
+    // normalizes the caller's resources, dropping and restoring both.
+    let written = CMemoryRange::new(
+        heap_base(WRITTEN_INT_HEAP),
+        Bitvector32Term::Constant(0),
+        Bitvector32Term::Constant(4),
+    );
+    let pending = symbolic_base(WRITTEN_INT_HEAP);
+    let (written_memory, _, _) = memory
+        .with_pending_heap_allocation(pending.clone(), Bitvector32Term::Constant(4), false)
+        .resolve_pending_heap_allocation(&pending, true)
+        .expect("the pending allocation resolves");
+    memory = written_memory.store(heap_base(WRITTEN_INT_HEAP), int32(7));
+    let written_owner = CResourceFact::own_memory(written.clone());
+    resources = resources
+        .unchecked_with_facts([
+            CResourceFact::own_allocation(heap_base(WRITTEN_INT_HEAP), 4u32),
+            written_owner.clone(),
+        ])
+        .unchecked_with_supported_facts(&written_owner, [CResourceFact::view_memory(written)])
+        .with_cached_supported_expansion(&written_owner, vec![written_owner.clone()]);
+    let mut state = CState::new().with_population_creation_tracking();
+    for (name, identity) in &locals {
+        let slot = CMemory::local_pointer(name);
+        memory = memory
+            .with_block(slot.block.clone(), 8)
+            .store(slot.clone(), CValue::pointer(heap_base(*identity)));
+        resources = resources.unchecked_with_fact(owned_range(slot, 0, 8));
+        state = state.with_local(name.clone(), CValue::pointer(heap_base(*identity)));
+    }
+    state
+        .with_local("observed", int32(0))
+        .with_memory(memory)
+        .with_resource_context(resources)
+}
+
+/// A call whose contract only `views` a heap range costs work that does not
+/// grow with unrelated live allocations, including the observable projection
+/// of the caller's resources after it, which every next statement reads.
+///
+/// The call lends a stable view; recovering it normalizes the caller's
+/// resources, which drops and restores the supported view entries and their
+/// cached expansions. Before that normalization advanced the observable
+/// projection, clearing the expansions replaced the storage root behind the
+/// projection's back, the next producer dropped the stale view, and the
+/// next observation recomputed it by removing every never-address-taken
+/// local's entries, each removal updating the paired memory-equality index again.
+/// Measured on 2026-10-15 beside 2, 4, 8 and 16 allocations: 506, 528, 572
+/// and 660 units then, 479 at every size since (about 19 units per
+/// allocation in the expanded byte-representation round trip).
+#[test]
+fn a_view_lending_call_and_its_observation_ignore_unrelated_allocations() {
+    let helper = c_function(
+        CType::Int32,
+        "peek",
+        vec![c_parameter("data", CType::Int32Pointer)],
+        c_return(c_int32_literal(0)),
+    )
+    .with_resource_summary(
+        vec![CResourceSpec::viewed_memory(CMemorySegment::new(
+            c_variable("data"),
+            c_int32_literal(0),
+            c_int32_literal(4),
+        ))],
+        Vec::new(),
+    );
+    let environment = CExecutionEnvironment::new()
+        .with_function(helper.clone())
+        .with_verified_function_rule(CVerifiedFunctionRule {
+            function: helper,
+            loop_semantics: CLoopSemantics::Verify,
+            checked_callees: None,
+            applied_tactics: Default::default(),
+        });
+    let call = c_call_assign("observed", "peek", vec![c_variable("p")]);
+    let assumptions = PureFactContext::new();
+    let mut samples = Vec::new();
+    for size in [2usize, 4, 8, 16] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let caller = caller_beside_unrelated_allocations(size);
+        // The steps before the call have already published the caller's
+        // resources to the equality graph, counted its memory's variables,
+        // and observed its resources; each of those is a one-time cost of
+        // the input, maintained by deltas afterwards.
+        caller
+            .resources()
+            .synchronize_memory_equalities(&assumptions);
+        crate::kernel::reasoning::variable_collection::collect_c_state_bitvector_variables(
+            &caller,
+            &mut BTreeSet::new(),
+        );
+        caller
+            .resources()
+            .observable_facts_assuming_valid(&assumptions);
+        let (after, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let paths = execute_c_statement_paths(
+                &caller,
+                &call,
+                &assumptions,
+                CExecutionContext::apply_verified_rules(&environment),
+                &mut ExecutionBudget::default(),
+            )
+            .expect("the view-lending call executes");
+            let [
+                CStatementExecutionPath {
+                    outcome: CStatementOutcome::Normal(after),
+                    ..
+                },
+            ] = paths.as_slice()
+            else {
+                panic!("the call returns normally: {paths:?}");
+            };
+            let after = (**after).clone();
+            after
+                .resources()
+                .observable_facts_assuming_valid(&assumptions);
+            after
+        });
+        // The warm projection is the one a cold recomputation gives.
+        let observed = after
+            .resources()
+            .observable_facts_assuming_valid(&assumptions);
+        let mut cold = after.resources().clone();
+        cold.observable_projection = Default::default();
+        assert_eq!(observed, cold.observable_facts_assuming_valid(&assumptions));
+        let [Proposition::CResourceComposition(composition)] = observed.as_slice() else {
+            panic!("the caller's owned heap is observable: {observed:?}");
+        };
+        // Every allocation's token and bytes stay; no pointer local's slot is
+        // observable.
+        assert_eq!(
+            composition.facts().len(),
+            2 * (size + 1) + 3,
+            "{composition:?}"
+        );
+        assert_eq!(after.resources().facts().len(), 3 * (size + 1) + 3);
+        samples.push((size, work));
+    }
+    assert_constant_plus_log_growth("a view-lending call and its observation", &samples, 4.0);
+}
