@@ -64,6 +64,24 @@ order entries, two queries inspect three relevant edges and charge six
 units at every size. This removes that individual ambient scan; it does not
 remove the growing lower-bound candidate count or close this bug.
 
+The quadratic part is gone. Simple checking no longer calls the general
+decision (`issues/difference-logic.md` step 4), so no candidate lower bounds
+are decided. The largest loop clause now charges 1,847, 2,485, 3,759 and
+5,031 units at N = 4, 8, 16 and 24, about 160 per earlier loop. A trace of
+deterministic work at N = 8, 16 and 24 puts that growth in two places:
+
+- About two thirds rebuilds fact contexts from the path's propositions
+  (`assumptions_from_propositions` at the loop's preservation proof, its
+  state join, and `have` lowering), which re-registers every earlier loop's
+  facts in the equality and difference graphs
+  (`register_expression_operands`, `TermClasses::root`,
+  `retain_signed_int32_interval`, `DifferenceGraph::tighten`).
+- The rest is per-loop scans of the whole function's C source:
+  `statement_takes_address_of` and `loop_at_index`
+  (`src/kernel/termination.rs`), `expression_reads`
+  (`src/surface/lowering/source_layout.rs`), and
+  `collect_local_pointer_element_types`.
+
 The gate records the drift: `known_drift_sequential_loop_clauses` in
 `src/scaling_tests/surface/tests/step_shape_scaling_tests.rs` fails once the
 clauses stop growing, and then becomes an ordinary no-drift test.

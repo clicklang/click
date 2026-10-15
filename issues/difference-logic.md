@@ -220,14 +220,14 @@ Each step is its own pull request.
      existing pointer-tag rules (`decide_pointer_word_equality_citing`),
      whose leaves then ask only the fast decisions. With the general
      decision dropped, every mdtest and example the assessment listed now
-     verifies, except the tag-free `rbtree-augmented` guard below.
-   - *Left:*
-     - a sum bounded by its guard, `a <= INT_MAX - b`, which is not a
-       difference constraint. Simple checking deliberately does not
-       rediscover it: `explicit_nonnegative_add_definedness_certifies_the_whole_contract`
-       requires the lemma `int32_nonnegative_add_within_max_is_defined`.
-       `rbtree-augmented` relies on the general decision for it;
-     - certain overflows, which the graph does not answer.
+     verifies.
+   - *Left:* certain overflows, which the graph does not answer. A sum
+     bounded by its guard, `a <= INT_MAX - b`, is not a difference
+     constraint, and simple checking deliberately does not rediscover it:
+     `explicit_nonnegative_add_definedness_certifies_the_whole_contract`
+     requires the lemma `int32_nonnegative_add_within_max_is_defined`.
+     `rbtree-augmented` gets it from its lemma `size_sum_defined`, whose
+     `defined(1 + l + r)` the graph reads (step 4).
    - *Landed after the assessment:* a narrow integer cast (`int8`,
      `uint8`, `int16`, `uint16`, `int32` as `int32` values) links to its
      operand once their intervals leave one multiple of the modulus between
@@ -235,7 +235,7 @@ Each step is its own pull request.
      unsigned `a - b` with `b <= a` is at most `a`, which bounds a non-empty
      suffix. The fast path asks the keyed disjunction rule for division
      overflow (`divide_overflow_excluded_by_disjunction`).
-4. **Remove the general decision from simple checking.** A condition the fast
+4. **Remove the general decision from simple checking (landed).** A condition the fast
    path leaves undecided keeps both branches, and an arithmetic requirement it
    leaves open goes to implicit `auto`, as
    [simplify-step.md](simplify-step.md) decides. Rerun the corpus, migrate the
@@ -257,6 +257,27 @@ Each step is its own pull request.
      general decision (`has_lower_bound_above` deciding each earlier loop's
      dead copy of `i`). About 160 units per earlier loop remain, linear,
      which the bug's acceptance (constant) still needs removed.
+   - *Landed:* the four sites no longer call the general decision, and the
+     census route `HiddenPrerequisiteRoute::KernelCondition` is gone. The
+     last failure, `rbtree-augmented`'s `defined(1 + l + r)` fact not
+     answering `(1 + v8) + v11`, is fixed by keying no-overflow facts by
+     their operands' nodes and offsets modulo the word size, so a fact and a
+     question that group their constants differently meet. The whole mdtests
+     corpus and every example verify, apart from the two nightly mdtests
+     `bugs/loop-invariant-through-pointer-field-simp-exhausts-budget.md`
+     records failing on master.
+   - *Left: the linear part of the loop bug.* A deterministic work trace of
+     `loops` at N = 8, 16 and 24 puts the remaining growth in two places.
+     Rebuilding a fact context from the path's propositions
+     (`assumptions_from_propositions`, at the loop's preservation proof, its
+     state join, and `have` lowering) re-registers every earlier loop's facts
+     in the equality and difference graphs: about two thirds of it. The rest
+     is per-loop scans of the whole function's C source:
+     `statement_takes_address_of` and `loop_at_index` in
+     `src/kernel/termination.rs`, `expression_reads` in source layout, and
+     `collect_local_pointer_element_types`. The first needs the path's facts
+     about dead values retired or the loop's context extended rather than
+     rebuilt; the second needs those scans computed once per function.
 
 ## Acceptance criteria
 

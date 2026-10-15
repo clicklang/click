@@ -1029,6 +1029,40 @@ fn low_bits_from_alignment_survive_tagged_word_arithmetic() {
     );
 }
 
+/// A recorded `!((1 + l) + r overflows)` answers the same question about
+/// `(1 + v) + r` for `v == l`, though `1 + l` may wrap: an overflow depends
+/// only on its operands' bitvector values, so the facts are keyed modulo
+/// the word size.
+#[test]
+fn a_no_overflow_fact_answers_its_operands_under_other_names() {
+    use Bitvector32Term as T;
+    let (l, r, v) = (variable(0), variable(1), variable(2));
+    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let one_more = |x: &Bitvector32Term| T::Add(boxed(&constant(1)), boxed(x));
+    let overflows = |x: &Bitvector32Term| {
+        ConditionTerm::Bitvector32SignedAddOverflows(Box::new(one_more(x)), boxed(&r))
+    };
+    let graph = graph(&[
+        (overflows(&l), false),
+        (ConditionTerm::equal(v.clone(), l.clone()), true),
+    ]);
+    assert_eq!(graph.decide(&overflows(&v)), Some(false));
+    let other = graph_of_other(&l, &r);
+    assert_eq!(other.decide(&overflows(&v)), None);
+
+    fn graph_of_other(l: &Bitvector32Term, r: &Bitvector32Term) -> DifferenceGraph {
+        let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+        // `1 + l` with `l` unrelated to `v`.
+        super::tests::graph(&[(
+            ConditionTerm::Bitvector32SignedAddOverflows(
+                Box::new(Bitvector32Term::Add(boxed(&constant(1)), boxed(l))),
+                boxed(r),
+            ),
+            false,
+        )])
+    }
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/difference_graph/tests.rs");

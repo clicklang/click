@@ -263,14 +263,6 @@ const ARTIFACT_REUSE_REJECTION_BASELINE: &[(ArtifactReuseRejection, usize)] = &[
 /// not retain, over the whole unfiltered corpus, by route and top rule. A
 /// count may only fall; `issues/simplify-step.md` drives it to zero.
 const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] = &[
-    // `issues/difference-logic.md` drives these to zero.
-    (
-        (
-            HiddenPrerequisiteRoute::KernelCondition,
-            "decide_with_facts",
-        ),
-        22,
-    ),
 ];
 
 #[test]

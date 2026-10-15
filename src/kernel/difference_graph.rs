@@ -200,8 +200,8 @@ impl DifferenceGraph {
         }
         if let Some((operation, domain, a, b, commutative)) = overflow_parts(condition) {
             if !value {
-                let a = self.affine(domain, a);
-                let b = self.affine(domain, b);
+                let a = self.modular_affine(domain, a);
+                let b = self.modular_affine(domain, b);
                 charge();
                 self.no_overflow =
                     self.no_overflow
@@ -661,6 +661,38 @@ impl DifferenceGraph {
         (Some(self.node(domain, term)), 0)
     }
 
+    /// `term`'s bitvector value as a node plus a constant modulo the
+    /// domain's width: `1 + l` and `1 + v` share a key when `l` and `v`
+    /// share a node, whether or not the sum wraps. Only the absence of
+    /// overflow is keyed this way, which depends on the operands' bitvector
+    /// values alone.
+    fn modular_affine(&mut self, domain: Domain, term: &Bitvector32Term) -> Affine {
+        match modular_parts(domain, term) {
+            Some((base, k)) => {
+                let (node, offset) = self.modular_affine(domain, base);
+                (node, wrap(domain, offset + k))
+            }
+            None => {
+                let (node, offset) = self.affine(domain, term);
+                (node, wrap(domain, offset))
+            }
+        }
+    }
+
+    /// `modular_affine` without adding to the graph.
+    fn modular_resolve(&self, domain: Domain, term: &Bitvector32Term) -> Option<Affine> {
+        match modular_parts(domain, term) {
+            Some((base, k)) => {
+                let (node, offset) = self.modular_resolve(domain, base)?;
+                Some((node, wrap(domain, offset + k)))
+            }
+            None => {
+                let (node, offset) = self.resolve(domain, term)?;
+                Some((node, wrap(domain, offset)))
+            }
+        }
+    }
+
     /// `term` as known nodes and constants, without adding to the graph.
     /// A term not in the graph resolves through a link its base's interval
     /// already justifies; otherwise `None`.
@@ -773,7 +805,10 @@ impl DifferenceGraph {
             _ => None,
         };
         if let Some((operation, domain, a, b, commutative)) = overflow_parts(condition)
-            && let (Some(a), Some(b)) = (self.resolve(domain, a), self.resolve(domain, b))
+            && let (Some(a), Some(b)) = (
+                self.modular_resolve(domain, a),
+                self.modular_resolve(domain, b),
+            )
             && self
                 .no_overflow
                 .contains(&overflow_key(operation, a, b, commutative))
@@ -1662,6 +1697,35 @@ impl PointerClasses {
         }
         None
     }
+}
+
+/// A sum or difference with a constant, as its other operand and the
+/// constant added.
+fn modular_parts(domain: Domain, term: &Bitvector32Term) -> Option<(&Bitvector32Term, i128)> {
+    use Bitvector32Term as T;
+    match (domain, term) {
+        (Domain::Int32, T::Add(a, b))
+        | (Domain::Int64, T::Int64Add(a, b))
+        | (Domain::UInt64, T::UInt64Add(a, b)) => {
+            match (constant(domain, a), constant(domain, b)) {
+                (_, Some(k)) => Some((a.as_ref(), k)),
+                (Some(k), _) => Some((b.as_ref(), k)),
+                _ => None,
+            }
+        }
+        (Domain::Int32, T::Subtract(a, b))
+        | (Domain::Int64, T::Int64Subtract(a, b))
+        | (Domain::UInt64, T::UInt64Subtract(a, b)) => {
+            constant(domain, b).map(|k| (a.as_ref(), -k))
+        }
+        _ => None,
+    }
+}
+
+/// `value` reduced modulo `domain`'s width, into `[0, 2^width)`.
+fn wrap(domain: Domain, value: i128) -> i128 {
+    let (min, max) = domain.range();
+    value.rem_euclid(max - min + 1)
 }
 
 /// `term`'s value in `domain` when it is a constant there.
