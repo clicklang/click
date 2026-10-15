@@ -750,7 +750,9 @@ fn heap_object_stores_and_releases_cost_the_same_at_every_position() {
 /// `bugs/sequential-loop-clause-grows-with-earlier-loops.md`.
 #[test]
 fn known_drift_sequential_loop_clauses() {
-    let loops = run(loops, 3).loops;
+    // Five loops: the remaining growth is about 44 units per earlier loop,
+    // and the first clause's own warm-up hides it among only three.
+    let loops = run(loops, 5).loops;
     assert!(
         drifts(&loops),
         "sequential loop clauses stopped drifting ({loops:?}); delete this test and the bug \

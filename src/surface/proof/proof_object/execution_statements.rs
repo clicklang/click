@@ -2206,6 +2206,27 @@ impl<'a> Proof<'a> {
         }
     }
 
+    /// The proof's facts with the body's memory effects and their store
+    /// equations, as the loop's back edge reads them: the proof's own
+    /// context extended by the effects, not a fold of every path fact.
+    pub(in crate::surface::proof) fn back_edge_assumptions(
+        &self,
+        execution: &ExecutionProofState,
+    ) -> PureFactContext {
+        execution
+            .core
+            .effect_facts
+            .iter()
+            .map(|fact| fact.proposition().clone())
+            .chain(crate::kernel::certified_store_equations(
+                &execution.core.effect_facts,
+            ))
+            .fold(
+                self.facts().pure_context(),
+                PureFactContext::assume_proposition,
+            )
+    }
+
     /// Checks the heap, resource, and counted-population components at this
     /// loop-state join using the Proof-owned state and facts.
     pub(in crate::surface::proof) fn check_loop_state_join(
@@ -2228,18 +2249,7 @@ impl<'a> Proof<'a> {
         if execution.core.frontier.region != ExecutionRegionKind::LoopBody {
             return Err(self.step_error("loop state join requires a loop-region proof"));
         }
-        let mut closer_facts = self.facts().to_vec();
-        closer_facts.extend(
-            execution
-                .core
-                .effect_facts
-                .iter()
-                .map(|fact| fact.proposition().clone()),
-        );
-        closer_facts.extend(crate::kernel::certified_store_equations(
-            &execution.core.effect_facts,
-        ));
-        let assumptions = assumptions_from_propositions(&closer_facts);
+        let assumptions = self.back_edge_assumptions(execution);
         // The back edge binds the loop's names again before anything reads
         // them: whatever the body called the instance it ends holding, the
         // binder names it, and a body that ends with no instance at those
@@ -2273,12 +2283,10 @@ impl<'a> Proof<'a> {
             &assumptions,
         )
         .map_err(|message| self.step_error(format!("loop invariant classification: {message}")))?;
-        closer_facts.extend(
-            invariant_obligations
-                .into_iter()
-                .map(|obligation| obligation.proposition().clone()),
-        );
-        let assumptions = assumptions_from_propositions(&closer_facts);
+        let assumptions = invariant_obligations
+            .into_iter()
+            .map(|obligation| obligation.proposition().clone())
+            .fold(assumptions, PureFactContext::assume_proposition);
         if !crate::kernel::c_loop_condition_may_continue(&back_edge_state, condition, &assumptions)
             .map_err(|message| {
                 self.step_error(format!("loop condition classification: {message}"))
@@ -2343,21 +2351,10 @@ impl<'a> Proof<'a> {
         }
 
         if do_while {
-            let mut closer_facts = self.facts().to_vec();
-            closer_facts.extend(
-                execution
-                    .core
-                    .effect_facts
-                    .iter()
-                    .map(|fact| fact.proposition().clone()),
-            );
-            closer_facts.extend(crate::kernel::certified_store_equations(
-                &execution.core.effect_facts,
-            ));
             let condition_may_continue = crate::kernel::c_loop_condition_may_continue(
                 &execution.core.state,
                 condition,
-                &assumptions_from_propositions(&closer_facts),
+                &self.back_edge_assumptions(execution),
             )
             .map_err(|message| {
                 self.step_error(format!("loop condition classification: {message}"))
