@@ -3,30 +3,8 @@ use super::*;
 const SIDECAR: &str = include_str!("../../design/charon-trial/trait-objects/shapes.click");
 
 fn trait_objects_project() -> Project {
-    let p = Project::new("");
-    for (name, bytes) in [
-        (
-            "shapes.rs",
-            include_bytes!("../../design/charon-trial/trait-objects/shapes.rs").as_slice(),
-        ),
-        ("borrow.click", SIDECAR.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!("../../design/charon-trial/trait-objects/shapes.click.import.json")
-                .as_slice(),
-        ),
-        (
-            "shapes.ullbc",
-            include_bytes!("../../design/charon-trial/trait-objects/shapes.ullbc").as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!("../../design/charon-trial/trait-objects/shapes.click.import.json.lock")
-                .as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/trait-objects");
+    fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
     p
 }
 
@@ -39,7 +17,7 @@ fn trait_objects_project() -> Project {
 #[ignore = "nightly: 3.3s in the parallel gate"]
 fn charon_trait_object_functions_are_defined_per_implementation() {
     let p = trait_objects_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     for (before, after, expected) in [

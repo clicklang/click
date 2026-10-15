@@ -612,8 +612,9 @@ mod tests {
         assert_ne!(direct[0], INTERFACE);
     }
 
-    const OBJECT_ARTIFACT: &[u8] =
-        include_bytes!("../../../../design/charon-trial/trait-objects/shapes.ullbc");
+    const OBJECT_ARTIFACT: &[u8] = include_bytes!(
+        "../../../../design/charon-trial/trait-objects/.click/trait_objects/shapes.rs.ullbc"
+    );
     const OBJECT_SOURCE: &[u8] =
         include_bytes!("../../../../design/charon-trial/trait-objects/shapes.rs");
 
@@ -622,7 +623,7 @@ mod tests {
     // is between the struct's pack and unpack, which the import declares.
     #[test]
     fn charon_trait_objects_wrap_coercions_in_pack_and_unpack() {
-        let artifact: TrialArtifact = serde_json::from_slice(OBJECT_ARTIFACT).unwrap();
+        let artifact: ExtractionArtifact = serde_json::from_slice(OBJECT_ARTIFACT).unwrap();
         let sources = [("shapes.rs".into(), OBJECT_SOURCE.to_vec())]
             .into_iter()
             .collect();
