@@ -3735,8 +3735,9 @@ fn fold_composite_resources_on_outcome_with_facts(
     unfolded_predicates: &[String],
     closure: ResourceBodyClosure,
     family_reaches_population: bool,
-) -> Result<(CFunctionOutcome, Vec<CResourceFact>), ClickError> {
+) -> Result<FoldedOutcome, ClickError> {
     let mut selections = Vec::with_capacity(resource_folds.len());
+    let mut loan_holds = Vec::new();
     for resource in resource_folds {
         let definition = composite_resource_law_definition(
             resource_environment,
@@ -4413,13 +4414,18 @@ fn fold_composite_resources_on_outcome_with_facts(
                         describe_resource_clause(resource)
                     )));
                 };
-                let (ledger, hold) = ledger.hold(binding, holder).map_err(|refusal| {
-                    ClickError::new(format!(
-                        "`{claim_label}` path {path_index}: `fold({})` cannot hold the loan behind its viewed body: {refusal}",
-                        describe_resource_clause(resource)
-                    ))
-                })?;
+                let (ledger, hold, transition) = ledger
+                    .hold_with_transition(binding, holder)
+                    .map_err(|refusal| {
+                        ClickError::new(format!(
+                            "`{claim_label}` path {path_index}: `fold({})` cannot hold the loan behind its viewed body: {refusal}",
+                            describe_resource_clause(resource)
+                        ))
+                    })?;
                 binding.hold = Some(hold);
+                // The kernel checks the fold's ledger change against this
+                // exact transition.
+                loan_holds.push(transition);
                 post_state = Box::new(post_state.with_loan_ledger(Some(ledger)));
             }
             // Authority rewrites authenticate the selected exchange only;
@@ -4574,14 +4580,25 @@ fn fold_composite_resources_on_outcome_with_facts(
         };
     }
 
-    Ok((outcome, selections))
+    Ok((outcome, selections, loan_holds))
 }
 
 pub(super) struct CheckedResourceFold {
     pub(super) selected: CResourceFact,
     pub(super) state: CState,
     pub(super) facts: ProofFacts,
+    /// The hold a borrowing fold placed on the loan behind its viewed body,
+    /// which the kernel checks as the fold's only ledger change.
+    pub(super) loan_holds: Vec<crate::kernel::CheckedLoanTransition>,
 }
+
+/// A folded outcome, the resources it selected, and the loan holds its
+/// borrowing folds placed.
+type FoldedOutcome = (
+    CFunctionOutcome,
+    Vec<CResourceFact>,
+    Vec<crate::kernel::CheckedLoanTransition>,
+);
 
 pub(super) struct CheckedOutcomeResourceFold {
     pub(super) selected: CResourceFact,
@@ -4645,7 +4662,9 @@ pub(super) fn fold_composite_resource_on_outcome_for_proof(
     family_reaches_population: bool,
 ) -> Result<CheckedOutcomeResourceFold, ClickError> {
     let mut facts = ProofResourcePureFacts::new(facts);
-    let (outcome, mut selections) = fold_composite_resources_on_outcome_with_facts(
+    // A return fold's ledger change, if any, is not presented to the kernel
+    // as a hold: the return rewrite check keeps refusing it.
+    let (outcome, mut selections, _) = fold_composite_resources_on_outcome_with_facts(
         resource_environment,
         std::slice::from_ref(resource),
         None,
@@ -4760,7 +4779,7 @@ fn fold_composite_resource_for_proof_with_closure(
         value: CValue::Int32(Bitvector32Term::Constant(0)),
         state: Box::new(state),
     };
-    let (outcome, mut selections) = fold_composite_resources_on_outcome_with_facts(
+    let (outcome, mut selections, loan_holds) = fold_composite_resources_on_outcome_with_facts(
         resource_environment,
         std::slice::from_ref(resource),
         Some(source_resource),
@@ -4785,6 +4804,7 @@ fn fold_composite_resource_for_proof_with_closure(
             .expect("one fold has one selected resource"),
         state: *state,
         facts: facts.facts,
+        loan_holds,
     })
 }
 
