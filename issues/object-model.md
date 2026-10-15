@@ -640,3 +640,10 @@ locations remain strict. Nine focused upstream controls pass (four ignored),
 including the existing flat-work checks at four range sizes. The corresponding
 seven archive controls pass (one ignored). Arena now gets past `take`; its
 window fold is still under diagnosis. Retain the last full **48/52** audit.
+
+The next complete normal archive audit is **49/52** in 131.48 seconds, with no
+new failure: only arena, owned-vector and rust-chunks-exact remain. Concurrent
+compilation affected timing. CI's byte-sum mirror checks caught the stale
+migrated `sum-proof.click`; it now matches the explicit canonical proof. Both
+failing Rust parity checks pass locally. The original frozen sidecar and its
+hash are unchanged.
