@@ -169,6 +169,7 @@ fn direct_call_map_is_checked_in_kernel_like_named_proof_arguments() {
             function.contract_interface(),
             &state,
             &environment,
+            None,
         )
     };
     let application = bind("touch", &[(0, 10), (1, 11)])

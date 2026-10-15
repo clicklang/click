@@ -331,6 +331,211 @@ impl BodyAdapter<'_, '_> {
     }
 }
 
+impl Adapter<'_> {
+    /// The crate trait a type parameter is bound by, when it is one.
+    fn type_parameter_interface(
+        &self,
+        generics: &a::GenericParams,
+        parameter: a::TypeVarId,
+    ) -> Option<a::TraitDeclId> {
+        generics.trait_clauses.iter().find_map(|clause| {
+            let trait_ref = &clause.trait_.skip_binder;
+            let Some(a::TyKind::TypeVar(a::DeBruijnVar::Bound(_, id))) =
+                trait_ref.generics.types.first().map(|ty| ty.kind())
+            else {
+                return None;
+            };
+            (*id == parameter && matches!(self.interface_trait(trait_ref.id), Ok(true)))
+                .then_some(trait_ref.id)
+        })
+    }
+
+    /// The crate trait whose object a callee's parameter `ty` is, `&T` for
+    /// `T: Trait` or `&dyn Trait`.
+    pub(super) fn object_parameter_trait(
+        &self,
+        callee: &a::FunDecl,
+        ty: &a::Ty,
+    ) -> Option<a::TraitDeclId> {
+        let a::TyKind::Ref(_, pointee, _) = ty.kind() else {
+            return None;
+        };
+        match pointee.kind() {
+            a::TyKind::TypeVar(a::DeBruijnVar::Bound(_, id)) => {
+                self.type_parameter_interface(&callee.generics, *id)
+            }
+            a::TyKind::DynTrait(predicate) => self.dyn_interface_trait(predicate).ok().flatten(),
+            _ => None,
+        }
+    }
+
+    /// The external functions that turn a crate struct's memory into a crate
+    /// trait's object and back, where a reference to the struct becomes the
+    /// trait's object: `<S as Trait>::__pack` and `<S as Trait>::__unpack`.
+    /// The sidecar's definitions of the trait's functions for the struct give
+    /// them their contracts.
+    pub(super) fn object_coercion_names(
+        &self,
+        record: a::TypeDeclId,
+        trait_id: a::TraitDeclId,
+    ) -> Result<(String, String), String> {
+        let trait_name =
+            self.qualified_function_name(&self.krate.trait_decls[trait_id].item_meta.name)?;
+        let record_name = &self.records[&record];
+        Ok((
+            super::super::names::trait_method_name(record_name, &trait_name, "__pack"),
+            super::super::names::trait_method_name(record_name, &trait_name, "__unpack"),
+        ))
+    }
+
+    /// The pack and unpack functions of `record` as `trait_id`'s object.
+    pub(super) fn object_coercion_functions(
+        &self,
+        record: a::TypeDeclId,
+        trait_id: a::TraitDeclId,
+    ) -> Result<Vec<out::Function>, String> {
+        let (pack, unpack) = self.object_coercion_names(record, trait_id)?;
+        let span = span(self.krate.trait_decls[trait_id].item_meta.span);
+        Ok([pack, unpack]
+            .into_iter()
+            .map(|name| out::Function {
+                name,
+                return_type: Type::Unit,
+                parameters: vec![out::Place {
+                    name: "__rust_arg_0".into(),
+                    value_type: Type::Reference {
+                        mutable: false,
+                        pointee: Box::new(Type::Record {
+                            name: self.records[&record].clone(),
+                        }),
+                    },
+                    span: span.clone(),
+                }],
+                body: vec![],
+                mir: None,
+                external: true,
+                captures: 0,
+                implements: None,
+                span: span.clone(),
+            })
+            .collect())
+    }
+}
+
+/// The locals of `body` a crate struct reference is unsized into a `&dyn`
+/// crate trait for, with the struct and the trait.
+pub(super) fn unsized_objects(
+    adapter: &Adapter<'_>,
+    body: &u::ExprBody,
+) -> BTreeMap<a::LocalId, (a::TypeDeclId, a::TraitDeclId)> {
+    let mut objects = BTreeMap::new();
+    for block in body.body.iter() {
+        for statement in &block.statements {
+            if let u::StatementKind::Assign(target, value) = &statement.kind
+                && let a::PlaceKind::Local(local) = target.kind
+                && let a::Rvalue::UnaryOp(
+                    a::UnOp::Cast(a::CastKind::Unsize(
+                        source,
+                        destination,
+                        a::UnsizingMetadata::VTable(..),
+                    )),
+                    _,
+                ) = value
+                && let a::TyKind::Ref(_, record, _) = source.kind()
+                && let Ok(record) = adapter.record_id(record)
+                && let a::TyKind::Ref(_, object, _) = destination.kind()
+                && let a::TyKind::DynTrait(predicate) = object.kind()
+                && let Ok(Some(trait_id)) = adapter.dyn_interface_trait(predicate)
+            {
+                objects.insert(local, (record, trait_id));
+            }
+        }
+    }
+    objects
+}
+
+/// Wraps each call that passes a crate struct reference as a crate trait's
+/// object: before it, the struct's memory becomes the object, and after it,
+/// the object becomes the memory again. Each wrapped call's block keeps its
+/// statements and calls the first pack; new blocks call the rest, the call
+/// itself, and the unpacks, then go where the call went.
+pub(super) fn wrap_object_coercions(
+    blocks: &mut Vec<out::MirBlock>,
+    coercions: Vec<(usize, Vec<(String, String, E)>)>,
+) -> Result<(), String> {
+    for (block, wraps) in coercions {
+        if wraps.is_empty() {
+            continue;
+        }
+        let T::Call {
+            target,
+            destination,
+            ..
+        } = blocks[block].terminator.clone()
+        else {
+            return Err(unsupported("trait object coercion outside a call"));
+        };
+        let call = std::mem::replace(
+            &mut blocks[block].terminator,
+            T::Goto { target: usize::MAX },
+        );
+        let call_with = |function: &str, argument: &E, target: usize| T::Call {
+            function: function.to_string(),
+            arguments: vec![argument.clone()],
+            owned_arguments: Vec::new(),
+            destination: destination.clone(),
+            target,
+            through_pointer: false,
+        };
+        // Blocks in order: packs after the first, the call, the unpacks.
+        let first = blocks.len();
+        let packs = wraps.len() - 1;
+        let call_block = first + packs;
+        let first_unpack = call_block + 1;
+        for (index, (pack, _, argument)) in wraps.iter().enumerate().skip(1) {
+            let next = if index == wraps.len() - 1 {
+                call_block
+            } else {
+                first + index
+            };
+            blocks.push(out::MirBlock {
+                statements: Vec::new(),
+                terminator: call_with(pack, argument, next),
+            });
+        }
+        let mut call = call;
+        if let T::Call {
+            target: call_target,
+            ..
+        } = &mut call
+        {
+            *call_target = first_unpack;
+        }
+        blocks.push(out::MirBlock {
+            statements: Vec::new(),
+            terminator: call,
+        });
+        for (index, (_, unpack, argument)) in wraps.iter().enumerate() {
+            let next = if index == wraps.len() - 1 {
+                target
+            } else {
+                first_unpack + index + 1
+            };
+            blocks.push(out::MirBlock {
+                statements: Vec::new(),
+                terminator: call_with(unpack, argument, next),
+            });
+        }
+        let (first_pack, _, argument) = &wraps[0];
+        blocks[block].terminator = call_with(
+            first_pack,
+            argument,
+            if packs == 0 { call_block } else { first },
+        );
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -405,6 +610,84 @@ mod tests {
         let direct = calls(function("__rust_q_I13_trait_methods_I6_direct"));
         assert_eq!(direct.len(), 1);
         assert_ne!(direct[0], INTERFACE);
+    }
+
+    const OBJECT_ARTIFACT: &[u8] = include_bytes!(
+        "../../../../design/charon-trial/trait-objects/.click/trait_objects/shapes.rs.ullbc"
+    );
+    const OBJECT_SOURCE: &[u8] =
+        include_bytes!("../../../../design/charon-trial/trait-objects/shapes.rs");
+
+    // A crate struct reference passed for a bound type parameter's reference,
+    // or unsized to `&dyn`, becomes the trait's object for the call: the call
+    // is between the struct's pack and unpack, which the import declares.
+    #[test]
+    fn charon_trait_objects_wrap_coercions_in_pack_and_unpack() {
+        let artifact: ExtractionArtifact = serde_json::from_slice(OBJECT_ARTIFACT).unwrap();
+        let sources = [("shapes.rs".into(), OBJECT_SOURCE.to_vec())]
+            .into_iter()
+            .collect();
+        let export = decode_crate(
+            &serde_json::to_vec(&artifact).unwrap(),
+            "shapes.rs",
+            OBJECT_SOURCE,
+            artifact.crate_config.as_ref(),
+            Some(&sources),
+        )
+        .unwrap();
+        let display = |name: &str| super::super::super::names::rust_display_name(name).unwrap();
+        let function = |name: &str| export.functions.iter().find(|f| f.name == name).unwrap();
+        // The calls in block order from the entry, following each call.
+        let path = |name: &str| {
+            let blocks = &function(name).mir.as_ref().unwrap().blocks;
+            let mut block = 0;
+            let mut calls = Vec::new();
+            loop {
+                match &blocks[block].terminator {
+                    T::Call {
+                        function, target, ..
+                    } => {
+                        calls.push(display(function));
+                        block = *target;
+                    }
+                    T::Goto { target } => block = *target,
+                    _ => break,
+                }
+            }
+            calls
+        };
+        assert_eq!(
+            path("__rust_q_I13_trait_objects_I13_through_bound"),
+            [
+                "<trait_objects::Square as trait_objects::Shape>::__pack",
+                "trait_objects::total",
+                "<trait_objects::Square as trait_objects::Shape>::__unpack",
+            ]
+        );
+        assert_eq!(
+            path("__rust_q_I13_trait_objects_I11_through_dyn"),
+            [
+                "<trait_objects::Circle as trait_objects::Shape>::__pack",
+                "trait_objects::dynamic",
+                "<trait_objects::Circle as trait_objects::Shape>::__unpack",
+            ]
+        );
+        for name in [
+            "<trait_objects::Square as trait_objects::Shape>::__pack",
+            "<trait_objects::Circle as trait_objects::Shape>::__unpack",
+        ] {
+            let coercion = export
+                .functions
+                .iter()
+                .find(|f| {
+                    super::super::super::names::rust_display_name(&f.name).as_deref() == Some(name)
+                })
+                .unwrap();
+            assert!(coercion.external && coercion.return_type == Type::Unit);
+            assert!(super::super::super::names::is_object_coercion(
+                &coercion.name
+            ));
+        }
     }
 
     // Every implementation a call through the trait can reach must be

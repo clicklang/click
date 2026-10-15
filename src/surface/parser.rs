@@ -2,6 +2,8 @@ mod cpp_model;
 mod cpp_syntax;
 mod library_paths;
 mod rust_syntax;
+mod rust_trait_objects;
+pub(crate) use rust_trait_objects::implementation_interface_contract;
 mod tokenizer;
 use cpp_model::rewrite_model_accessors;
 use rust_syntax::rust_signature_hint;
@@ -688,6 +690,9 @@ struct Parser {
     /// Each crate trait method implementation read, by name, with the
     /// interface it inherits.
     rust_trait_implementations: Vec<(String, String)>,
+    /// The crate traits whose objects carry state, by importer name: the
+    /// token rewrite already gave their implementations their interfaces.
+    rust_object_traits: BTreeSet<String>,
     match_nesting: usize,
     proposition_nesting: usize,
     proof_nesting: usize,
@@ -1088,8 +1093,16 @@ impl Parser {
                 }
                 _ => None,
             }));
+        // A Rust sidecar's trait object state is rewritten into contracts
+        // over abstract resources before anything is parsed.
+        let (tokens, positions, rust_object_traits) = if language == SourceLanguage::Rust {
+            rust_trait_objects::rewrite_trait_objects(tokens, positions)?
+        } else {
+            (tokens, positions, BTreeSet::new())
+        };
         let matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
         Ok(Self {
+            rust_object_traits,
             source_aliases: BTreeMap::new(),
             qualified_objects: None,
             pending_tactic_signature: false,

@@ -4631,6 +4631,7 @@ pub(super) fn execute_c_function_call_paths(
             rule.function.contract_interface(),
             caller_state,
             execution_context.environment,
+            Some(&mut *budget),
         ) {
             Ok(application) => application,
             Err(message) => return Ok(vec![resource_call_failure(message)]),
@@ -5072,6 +5073,7 @@ fn execute_verified_function_rule(
         rule.function.contract_interface(),
         caller_state,
         environment,
+        Some(&mut *budget),
     ) {
         Ok(application) => application,
         Err(message) => return Ok(vec![resource_call_failure(message)]),
@@ -5178,6 +5180,7 @@ fn selected_call_binder_application(
     interface: &CFunctionContractInterface,
     caller_state: &CState,
     environment: &CExecutionEnvironment,
+    produced_names: Option<&mut ExecutionBudget>,
 ) -> Result<Option<ResourceCallApplication>, &'static str> {
     let written = environment
         .selected_call_binders
@@ -5222,6 +5225,33 @@ fn selected_call_binder_application(
             continue;
         };
         inferred.insert(identity, only.identity());
+    }
+    // An instance the call only produces, which the proof does not name,
+    // is the caller's under a fresh identity: it binds nothing the caller
+    // holds, and a later call finds it as the only instance of its family.
+    if let Some(budget) = produced_names {
+        let required = parameters
+            .iter()
+            .filter_map(CResourceSpec::binding_identity)
+            .collect::<BTreeSet<_>>();
+        for produced in interface.resource_ensures() {
+            crate::instrumentation::record_deterministic_work(1);
+            let Some(identity) = produced.instance_identity() else {
+                continue;
+            };
+            if required.contains(&identity)
+                || inferred.contains_key(&identity)
+                || written
+                    .as_ref()
+                    .is_some_and(|bindings| bindings.contains_key(&identity))
+            {
+                continue;
+            }
+            let fresh = budget
+                .allocate_kernel_variable()
+                .map_err(|_| "a produced instance could not be named")?;
+            inferred.insert(identity, fresh);
+        }
     }
     let bindings = match (written, inferred.is_empty()) {
         (None, true) => return Ok(None),
@@ -8878,6 +8908,7 @@ pub(super) fn execute_c_function_contracts_paths(
                 contract.interface(),
                 caller_state,
                 environment,
+                None,
             ) {
                 Ok(application) => application,
                 Err(message) => return Ok(vec![resource_call_failure(message)]),

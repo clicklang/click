@@ -2346,6 +2346,9 @@ fn proof_function_blocks(file: &ClickFile) -> impl Iterator<Item = &FunctionBloc
                 .map(TacticDefinition::function_block),
         )
         .filter(|block| file.function_is_selected(block.signature().name()))
+        // An `extern` declaration has no proof, and a synthesized one, such
+        // as a trait object's pack, has no source text.
+        .filter(|block| !block.is_external())
 }
 
 /// The token after a Rust signature's return type, `-> T` or `-> ()`, when
