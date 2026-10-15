@@ -1,0 +1,26 @@
+# A borrowed C string decides its signed char terminator comparison
+
+```c filename=terminator.c
+int terminator(const char *src, uint64 n) {
+    return src[n] == '\0';
+}
+```
+
+```click
+import click::cstr;
+target "x86_64-linux-userspace";
+verifying "terminator.c";
+int32 terminator(const char* src, uint64 n) {
+    views cstr_at(src, n);
+    ensures result == 1;
+} by {
+    open(cstr_at(src, n)) {
+        execute();
+        simp();
+    }
+}
+```
+
+```expect
+pass
+```
