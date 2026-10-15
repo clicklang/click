@@ -283,7 +283,7 @@ fn nat_integer_laws_expand_and_reject_wrong_successor() {
     let source = r#"
 theorem nat_integer_client(n: Nat) {
     ensures to_integer(Nat::Succ(n)) == to_integer(n) + 1 by {
-        apply(nat_integer_succ(n));
+        apply(nat::to_integer_succ(n));
     }
 }
 "#;
@@ -330,10 +330,10 @@ function to_nat(z: Integer) -> Nat { Nat::Zero }
 fn successive_constructor_unfolds_retain_a_checked_goal() {
     let source = r#"
 theorem add_two(n: Nat) {
-    ensures nat_add(Nat::Succ(Nat::Succ(Nat::Zero)), n) == Nat::Succ(Nat::Succ(n)) by {
-        unfold(nat_add(Nat::Succ(Nat::Succ(Nat::Zero)), n));
-        unfold(nat_add(Nat::Succ(Nat::Zero), n));
-        unfold(nat_add(Nat::Zero, n));
+    ensures nat::add(Nat::Succ(Nat::Succ(Nat::Zero)), n) == Nat::Succ(Nat::Succ(n)) by {
+        unfold(nat::add(Nat::Succ(Nat::Succ(Nat::Zero)), n));
+        unfold(nat::add(Nat::Succ(Nat::Zero), n));
+        unfold(nat::add(Nat::Zero, n));
         normalize();
     }
 }
@@ -2734,32 +2734,37 @@ theorem int32_le_antisymmetric() {
 #[test]
 fn builtin_nat_integer_laws_expand_and_reject_invalid_conversions() {
     for (parameters, requirements, goal, application) in [
-        ("", "", "to_integer(Nat::Zero) == 0", "nat_integer_zero()"),
+        (
+            "",
+            "",
+            "to_integer(Nat::Zero) == 0",
+            "nat::to_integer_zero()",
+        ),
         (
             "n: Nat",
             "",
             "to_integer(Nat::Succ(n)) == to_integer(n) + 1",
-            "nat_integer_succ(n)",
+            "nat::to_integer_succ(n)",
         ),
         (
             "n: Nat",
             "",
             "to_integer(n) >= 0",
-            "nat_integer_nonnegative(n)",
+            "nat::to_integer_nonnegative(n)",
         ),
         (
             "n: Nat",
             "",
             "to_nat(to_integer(n)) == n",
-            "nat_integer_round_trip(n)",
+            "nat::to_nat_to_integer(n)",
         ),
         (
             "z: Integer",
             "requires z >= 0;",
             "to_integer(to_nat(z)) == z",
-            "integer_nat_round_trip(z)",
+            "nat::to_integer_to_nat(z)",
         ),
-        ("", "", "to_nat(0) == Nat::Zero", "integer_to_nat_zero()"),
+        ("", "", "to_nat(0) == Nat::Zero", "nat::to_nat_zero()"),
     ] {
         let source = format!(
             "theorem client({parameters}) {{ {requirements} ensures {goal} by {{ apply({application}); }} }}"
@@ -2770,10 +2775,10 @@ fn builtin_nat_integer_laws_expand_and_reject_invalid_conversions() {
         verify_c0_sources(&expanded, &[]).unwrap();
     }
     for source in [
-        "theorem bad(z: Integer) { ensures to_integer(to_nat(z)) == z by { apply(integer_nat_round_trip(z)); } }",
+        "theorem bad(z: Integer) { ensures to_integer(to_nat(z)) == z by { apply(nat::to_integer_to_nat(z)); } }",
         "theorem bad() { ensures to_nat(-1) == to_nat(-1) by normalize; }",
         "theorem bad(x: int32) { ensures to_nat(x) == to_nat(x) by normalize; }",
-        "theorem bad() { ensures to_integer(Nat::Zero) == 1 by { apply(nat_integer_zero()); } }",
+        "theorem bad() { ensures to_integer(Nat::Zero) == 1 by { apply(nat::to_integer_zero()); } }",
         "theorem bad() { ensures to_nat() == Nat::Zero by normalize; }",
         "theorem bad(z: Integer) { requires z >= 0; ensures to_nat(z, z) == to_nat(z) by normalize; }",
     ] {
@@ -2783,7 +2788,7 @@ fn builtin_nat_integer_laws_expand_and_reject_invalid_conversions() {
 
 #[test]
 fn nat_addition_agrees_with_integer_addition_and_rechecks_expansion() {
-    let source = "theorem client(a: Nat, b: Nat) { ensures to_integer(nat_add(a, b)) == to_integer(a) + to_integer(b) by { apply(nat_integer_add(a, b)); } }";
+    let source = "theorem client(a: Nat, b: Nat) { ensures to_integer(nat::add(a, b)) == to_integer(a) + to_integer(b) by { apply(nat::to_integer_add(a, b)); } }";
     verify_c0_sources(source, &[]).unwrap();
     let expanded = expand_c0_claim_source_by_label(source, &[], "client.ensures_0").unwrap();
     verify_c0_sources(&expanded, &[]).unwrap();

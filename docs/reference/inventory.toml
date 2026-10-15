@@ -2310,32 +2310,32 @@ id = "library.type.Nat"
 path = "reference/library/index.md#nat"
 
 [[item]]
-id = "library.function.nat_add"
-path = "reference/library/index.md#nat_add"
+id = "library.function.add"
+path = "reference/library/index.md#natadd"
 
 [[item]]
-id = "library.theorem.nat_add_left_identity"
-path = "reference/library/index.md#nat_add_left_identity"
+id = "library.theorem.add_left_identity"
+path = "reference/library/index.md#natadd_left_identity"
 
 [[item]]
-id = "library.theorem.nat_add_succ_left"
-path = "reference/library/index.md#nat_add_succ_left"
+id = "library.theorem.add_succ_left"
+path = "reference/library/index.md#natadd_succ_left"
 
 [[item]]
-id = "library.theorem.nat_add_right_identity"
-path = "reference/library/index.md#nat_add_right_identity"
+id = "library.theorem.add_right_identity"
+path = "reference/library/index.md#natadd_right_identity"
 
 [[item]]
-id = "library.theorem.nat_add_succ_right"
-path = "reference/library/index.md#nat_add_succ_right"
+id = "library.theorem.add_succ_right"
+path = "reference/library/index.md#natadd_succ_right"
 
 [[item]]
-id = "library.theorem.nat_add_associative"
-path = "reference/library/index.md#nat_add_associative"
+id = "library.theorem.add_associative"
+path = "reference/library/index.md#natadd_associative"
 
 [[item]]
-id = "library.theorem.nat_add_commutative"
-path = "reference/library/index.md#nat_add_commutative"
+id = "library.theorem.add_commutative"
+path = "reference/library/index.md#natadd_commutative"
 
 [[item]]
 id = "library.function.length"
@@ -3371,32 +3371,32 @@ id = "library.theorem.integer_to_uint64_round_trip"
 path = "reference/library/index.md#integer_to_uint64_round_trip"
 
 [[item]]
-id = "library.theorem.nat_integer_zero"
-path = "reference/library/index.md#nat_integer_zero"
+id = "library.theorem.to_integer_zero"
+path = "reference/library/index.md#natto_integer_zero"
 
 [[item]]
-id = "library.theorem.nat_integer_succ"
-path = "reference/library/index.md#nat_integer_succ"
+id = "library.theorem.to_integer_succ"
+path = "reference/library/index.md#natto_integer_succ"
 
 [[item]]
-id = "library.theorem.nat_integer_nonnegative"
-path = "reference/library/index.md#nat_integer_nonnegative"
+id = "library.theorem.to_integer_nonnegative"
+path = "reference/library/index.md#natto_integer_nonnegative"
 
 [[item]]
-id = "library.theorem.nat_integer_round_trip"
-path = "reference/library/index.md#nat_integer_round_trip"
+id = "library.theorem.to_nat_to_integer"
+path = "reference/library/index.md#natto_nat_to_integer"
 
 [[item]]
-id = "library.theorem.integer_nat_round_trip"
-path = "reference/library/index.md#integer_nat_round_trip"
+id = "library.theorem.to_integer_to_nat"
+path = "reference/library/index.md#natto_integer_to_nat"
 
 [[item]]
-id = "library.theorem.integer_to_nat_zero"
-path = "reference/library/index.md#integer_to_nat_zero"
+id = "library.theorem.to_nat_zero"
+path = "reference/library/index.md#natto_nat_zero"
 
 [[item]]
-id = "library.theorem.nat_integer_add"
-path = "reference/library/index.md#nat_integer_add"
+id = "library.theorem.to_integer_add"
+path = "reference/library/index.md#natto_integer_add"
 
 [[item]]
 id = "library.resource.mutex_guard"

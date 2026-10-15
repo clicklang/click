@@ -7,7 +7,7 @@ imports with `import click::...;`, and the modules those import:
 | Module | Seen | Contents |
 | --- | --- | --- |
 | `primitives.click` | implicit | Verifier primitives: the abstract resources the kernel interprets (`mutex_guard`, `mutex_live`, `mutex_use`, `publisher`, `subscriber`, `authority`, `allocation`) |
-| `nat.click` | implicit | `Nat`, `to_nat`, `nat_add` and their laws |
+| `nat.click` | implicit | `Nat`, `to_nat`, `nat::add` and their laws |
 | `list.click` | implicit | `List<T>`, `list::append`, `list::contains`, `list::length` and their laws |
 | `machine_integer.click` | `import click::machine_integer;` | Order, increment and definedness lemmas over native integer widths |
 | `permutation.click` | `import click::permutation;` | `count` and `permutation` over `int32[]` |

@@ -2141,7 +2141,7 @@ pub(super) fn c_ranking_measure_term(
 /// the constant `true`: it keeps the bundle's one-member-per-component shape
 /// without asking a proof for anything. The Integer image `to_integer(n)` of
 /// a `Nat` is the same case: the checked conversion law
-/// `nat_integer_nonnegative` states exactly this member.
+/// `nat::to_integer_nonnegative` states exactly this member.
 pub(super) fn ranking_nonnegative_proposition(value: &CRankingMeasureValue) -> Proposition {
     Proposition::ConditionIs(
         match value {

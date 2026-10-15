@@ -299,8 +299,8 @@ The example-local generic `Tree<T>`, with `tree_size`, `tree_mirror`,
 `tree_mirror_twice`, and `tree_mirror_preserves_size`, is a separate pure
 exercise in structural induction over an arbitrary payload type. Mirroring is
 not a C operation here; the theorems exist to keep the generic ADT path
-covered, and they use the standard library's `Nat`, `nat_add`, and
-`nat_add_commutative`.
+covered, and they use the standard library's `Nat`, `nat::add`, and
+`nat::add_commutative`.
 
 ## Negative rotation regression
 

@@ -8,13 +8,13 @@ theorem length_laws<T>(head: T, xs: List<T>, ys: List<T>) {
     ensures list::length(List<T>::Cons(head, xs)) == Nat::Succ(list::length(xs)) by {
         apply(list::length_cons(head, xs));
     }
-    ensures list::length(list::append(xs, ys)) == nat_add(list::length(xs), list::length(ys)) by {
+    ensures list::length(list::append(xs, ys)) == nat::add(list::length(xs), list::length(ys)) by {
         apply(list::length_append(xs, ys));
     }
 }
 
 theorem nested_length(xs: List<List<int32>>, ys: List<List<int32>>) {
-    ensures list::length(list::append(xs, ys)) == nat_add(list::length(xs), list::length(ys)) by {
+    ensures list::length(list::append(xs, ys)) == nat::add(list::length(xs), list::length(ys)) by {
         apply(list::length_append(xs, ys));
     }
 }
