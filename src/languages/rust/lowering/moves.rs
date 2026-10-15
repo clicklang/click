@@ -465,6 +465,52 @@ pub(super) fn lower(
                         }
                     }
                 }
+                // A new closure instance is the value its instance function
+                // returns for the captured values.
+                S::Assign {
+                    target: E::Local { name },
+                    value:
+                        E::ClosureInstance {
+                            function,
+                            captures,
+                            value_type,
+                        },
+                } => {
+                    let closure = cx
+                        .functions
+                        .get(function.as_str())
+                        .ok_or("Rust closure instance of an unknown closure")?;
+                    let Type::FnPointer { parameters, result } = value_type else {
+                        return Err("Rust closure instance requires a callable type".into());
+                    };
+                    if closure.captures != captures.len()
+                        || closure.return_type != **result
+                        || closure.parameters.len() != closure.captures + parameters.len()
+                        || closure.parameters[closure.captures..]
+                            .iter()
+                            .zip(parameters)
+                            .any(|(parameter, expected)| parameter.value_type != *expected)
+                    {
+                        return Err(format!(
+                            "Rust closure instance of `{function}` does not have the closure's type"
+                        ));
+                    }
+                    let mut checks = c_skip();
+                    let mut values = Vec::new();
+                    for capture in captures {
+                        let (capture_checks, value) = cx.prepared_expr(capture)?;
+                        checks = c_seq(checks, capture_checks);
+                        values.push(value);
+                    }
+                    c_seq(
+                        checks,
+                        c_call_assign(
+                            name,
+                            crate::languages::rust::names::closure_instance_name(function),
+                            values,
+                        ),
+                    )
+                }
                 S::Assign {
                     target: E::Local { name },
                     value,
@@ -939,6 +985,7 @@ mod tests {
             parameters: vec![],
             body: vec![],
             external: false,
+            captures: 0,
             span: span.clone(),
             mir: Some(MirBody {
                 locals: vec![Place {
@@ -985,6 +1032,7 @@ mod tests {
                     }],
                     mir: None,
                     external: false,
+                    captures: 0,
                     span: span.clone(),
                 });
             }

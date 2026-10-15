@@ -164,6 +164,10 @@ pub struct C0Function {
     /// `extern` block item does in Charon's output; the sidecar head names
     /// them ([`Self::named_by_head`]).
     positional_parameters: bool,
+    /// A closure's leading parameters that are the variables it captures. A
+    /// sidecar names only the closure's own parameters; its contract reads
+    /// the captures by name.
+    closure_captures: usize,
     parameters: Vec<C0Parameter>,
     body: C0Statement,
     /// Compiler-created carriers for statement-form callback calls. Keeping
@@ -3201,6 +3205,18 @@ impl C0Function {
         self
     }
 
+    /// A closure's function whose first `count` parameters are captures.
+    pub(crate) fn with_closure_captures(mut self, count: usize) -> Self {
+        self.closure_captures = count;
+        self
+    }
+
+    /// The parameters that are a closure's captures; empty for any other
+    /// function.
+    pub(crate) fn closure_captures(&self) -> &[C0Parameter] {
+        &self.parameters[..self.closure_captures.min(self.parameters.len())]
+    }
+
     pub(crate) fn has_positional_parameters(&self) -> bool {
         self.positional_parameters
     }
@@ -3253,6 +3269,7 @@ impl C0Function {
             inline_body: false,
             requires_read_only_contract: false,
             positional_parameters: false,
+            closure_captures: 0,
             program_entry_state: None,
             prelowered_kernel_function: None,
             parameters,
@@ -9542,6 +9559,7 @@ impl Parser {
             inline_body,
             requires_read_only_contract: false,
             positional_parameters: false,
+            closure_captures: 0,
             program_entry_state: None,
             prelowered_kernel_function: None,
             parameters: header.parameters,

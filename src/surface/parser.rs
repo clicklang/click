@@ -164,6 +164,10 @@ pub(in crate::surface) struct ProgramLayouts {
     /// The Click library modules the program's C declarations bring, such
     /// as `click::c::string` for a declared `memcpy`.
     pub(in crate::surface) library_modules: BTreeSet<&'static str>,
+    /// Each closure's captured variables, by the closure's function name.
+    /// A sidecar head names only the closure's own parameters; the captures
+    /// lead its signature, so its contract reads them by name.
+    pub(in crate::surface) closure_captures: BTreeMap<String, Vec<FunctionParameter>>,
 }
 
 /// The qualified identity of the Click library theorem `name`: `name`
@@ -741,6 +745,8 @@ struct Parser {
     /// Set while a `contract` block's embedded function block is parsed: its
     /// signature names an interface, not a callable C function.
     in_contract_definition: bool,
+    /// Each closure's captured variables, by the closure's function name.
+    closure_captures: BTreeMap<String, Vec<FunctionParameter>>,
     /// The value parameters a named contract's body declares with
     /// `let name: type;`, in declaration order, while its block is parsed.
     contract_value_parameters: Vec<FunctionParameter>,
@@ -998,6 +1004,7 @@ impl Parser {
             .extend(layouts.library_modules);
         parser.qualified_objects = Some(layouts.qualified_objects);
         parser.local_struct_pointers_by_function = layouts.local_struct_pointers;
+        parser.closure_captures = layouts.closure_captures;
         parser.plain_char = layouts.plain_char;
         parser.int64_t_rank = layouts.int64_t_rank.unwrap_or(LongRank::Long);
         if layouts.language == Some(SourceLanguage::Cpp) {
@@ -1107,6 +1114,7 @@ impl Parser {
             contract_resource_binders: BTreeMap::new(),
             in_contract_definition: false,
             contract_value_parameters: Vec::new(),
+            closure_captures: BTreeMap::new(),
             contract_value_parameter_names: BTreeMap::new(),
             in_function_block: false,
             integer_literal_context: false,
@@ -3668,6 +3676,12 @@ impl Parser {
             signature
                 .parameters
                 .extend(self.contract_value_parameters.iter().cloned());
+        }
+        // A closure's captures lead its signature, as they lead its function.
+        if !external && let Some(captures) = self.closure_captures.get(signature.name()) {
+            let mut parameters = captures.clone();
+            parameters.append(&mut signature.parameters);
+            signature.parameters = parameters;
         }
         Ok(FunctionBlock {
             c_object_names,

@@ -40,6 +40,13 @@ fn closure_index(segment: &str) -> Option<u32> {
         .flatten()
 }
 
+/// The function that creates an instance of the closure named `closure`:
+/// it takes the captured values and returns the callable value. No path
+/// segment ends in `_instance`, so the name is no item's.
+pub(crate) fn closure_instance_name(closure: &str) -> String {
+    format!("{closure}_instance")
+}
+
 /// The rustc spelling of the closure with index `index`, `{closure#0}`.
 pub(crate) fn closure_segment(index: u32) -> String {
     format!("{{closure#{index}}}")

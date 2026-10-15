@@ -2555,6 +2555,7 @@ fn verify_c0_sources_in_context(
                     .map(|name| executing_function_name(&termination_kernel_names, name))
                     .filter(|name| !declared_diverging.contains(name))
                     .collect::<BTreeSet<_>>();
+                assumed_terminating.extend(closure_instance_names(&parsed_sources));
                 assumed_terminating.extend([
                     "pthread_create".to_string(),
                     "pthread_join".to_string(),
@@ -3503,6 +3504,7 @@ fn verify_c0_sources_in_context(
         .map(|name| executing_function_name(&termination_kernel_names, name))
         .filter(|name| !declared_diverging.contains(name))
         .collect::<BTreeSet<_>>();
+    assumed_terminating.extend(closure_instance_names(&parsed_sources));
     if selected_thread_runtime
         == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread
     {
@@ -5229,6 +5231,24 @@ impl parser::ProgramLayouts {
             ..Default::default()
         };
         for function in &execution.functions {
+            let captures = function.closure_captures();
+            if !captures.is_empty() {
+                tables.closure_captures.insert(
+                    function.source_name().to_string(),
+                    captures
+                        .iter()
+                        .map(|capture| FunctionParameter {
+                            click_type: ClickType::C(capture.c_type()),
+                            name: capture.name().to_string(),
+                            struct_name: None,
+                            function_pointer_signature: None,
+                            constant: false,
+                            pointee_constant: false,
+                            reference: false,
+                        })
+                        .collect(),
+                );
+            }
             tables.aggregate_objects.insert(
                 function.source_name().to_string(),
                 function.local_struct_values().clone(),
@@ -5612,6 +5632,7 @@ pub(in crate::surface) fn build_function_environment(
             environment.with_function_contract(contract.with_proof_parameters(proof_parameters));
     }
     for (source_path, function) in parsed_sources.values() {
+        let closure_captures = function.closure_captures().len();
         let mut function_block = function_blocks
             .iter()
             .find(|block| block.signature().name() == function.source_name());
@@ -5708,6 +5729,9 @@ pub(in crate::surface) fn build_function_environment(
             }
             None => function.to_kernel_function(),
         };
+        if closure_captures > 0 {
+            environment = with_closure_instance(environment, &function, closure_captures)?;
+        }
         environment = environment.with_function(function);
     }
     // A standard-library declaration is built only for a program that
@@ -5779,6 +5803,79 @@ pub(in crate::surface) fn build_function_environment(
             .with_external_function_rule(rule);
     }
     Ok(environment)
+}
+
+/// The functions that make instances of the program's capturing closures.
+/// Each returns at once: it only forms a function value.
+fn closure_instance_names(
+    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+) -> impl Iterator<Item = String> + '_ {
+    parsed_sources
+        .values()
+        .filter(|(_, function)| !function.closure_captures().is_empty())
+        .map(|(_, function)| crate::languages::rust::names::closure_instance_name(function.name()))
+}
+
+/// Registers a capturing closure's contract and the function that makes an
+/// instance of it.
+///
+/// The closure's contract is a named contract under the closure's own name
+/// whose value parameters are its captures. The instance function takes the
+/// captured values and returns a fresh function value whose fact attaches
+/// that contract fixed to them, so a callee requiring another contract of
+/// the value is answered by contract-to-contract refinement.
+fn with_closure_instance(
+    environment: CExecutionEnvironment,
+    closure: &CFunction,
+    captures: usize,
+) -> Result<CExecutionEnvironment, ClickError> {
+    let contract = CFunctionContract::new(closure.name(), closure.clone())
+        .and_then(|contract| contract.with_leading_value_parameters(captures))
+        .ok_or_else(|| {
+            ClickError::new(format!(
+                "closure `{}` has a contract that cannot be applied opaquely",
+                closure.name()
+            ))
+        })?;
+    let parameters = contract.interface().value_parameters().to_vec();
+    let mut arguments = vec![SpecPredicateArgument::Value(SpecExpression::CExpression(
+        crate::kernel::c_variable(crate::kernel::C_CONTRACT_RESULT_NAME),
+    ))];
+    arguments.extend(parameters.iter().map(|parameter| {
+        SpecPredicateArgument::Value(SpecExpression::CExpression(crate::kernel::c_variable(
+            parameter.name(),
+        )))
+    }));
+    let instance = crate::kernel::c_function(
+        contract.function_pointer_type(),
+        crate::languages::rust::names::closure_instance_name(closure.name()),
+        parameters,
+        CStatement::Skip,
+    )
+    .with_contract(
+        vec![],
+        vec![SpecProposition::Predicate {
+            resource_state_dependent: false,
+            name: contract.predicate_name(),
+            arguments,
+        }],
+        vec![],
+        vec![
+            CFunctionContractClaim::body_safety(),
+            CFunctionContractClaim::ensure_proposition(0, 0),
+        ],
+        true,
+    );
+    let rule = crate::kernel::c_external_function_rule(instance.clone()).ok_or_else(|| {
+        ClickError::new(format!(
+            "closure `{}` cannot be made into a function value",
+            closure.name()
+        ))
+    })?;
+    Ok(environment
+        .with_function_contract(contract)
+        .with_function(instance)
+        .with_external_function_rule(rule))
 }
 
 /// Whether `function_block` is the standard-library declaration that carries
