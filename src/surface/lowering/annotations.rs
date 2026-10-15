@@ -7081,6 +7081,12 @@ impl AnnotationLowerer<'_> {
                 .unwrap_or_else(|| {
                     self.array_ref_element_type_for_name_in_environment(name, environment)
                 }),
+            // A held resource's arguments are substituted as C values. A
+            // pointer value carries its own pointee type, which is the
+            // element an index steps by; `uint8*` must not read as `int32*`.
+            ContractExpression::CFragment(lowered) => self
+                .c_expression_array_element_type(lowered, environment)
+                .unwrap_or(CType::Int32),
             ContractExpression::QualifiedC { lowered, .. }
             | ContractExpression::Field { lowered, .. } => self
                 .c_expression_array_element_type(lowered, environment)
