@@ -2002,6 +2002,12 @@ fn scan_source_tokens(source: &str) -> Result<Vec<SourceToken>, ClickError> {
             // A Rust closure's path segment, `caller::{closure#0}`, is one
             // name, as the surface tokenizer reads it.
             index += length;
+        } else if character == '('
+            && after_path_separator
+            && let Some(length) = lambda_segment_length(&source[index..])
+        {
+            // So is a C++ lambda's, `caller::(lambda#0)`.
+            index += length;
         } else if character.is_ascii_alphabetic() || character == '_' {
             index += character.len_utf8();
             while index < source.len() {
@@ -2085,6 +2091,14 @@ fn closure_segment_length(text: &str) -> Option<usize> {
     let rest = text.strip_prefix("{closure#")?;
     let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
     (digits > 0 && rest[digits..].starts_with('}')).then_some("{closure#".len() + digits + 1)
+}
+
+/// The length of a C++ lambda path segment, `(lambda#0)`, at the start of
+/// `text`.
+fn lambda_segment_length(text: &str) -> Option<usize> {
+    let rest = text.strip_prefix("(lambda#")?;
+    let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+    (digits > 0 && rest[digits..].starts_with(')')).then_some("(lambda#".len() + digits + 1)
 }
 
 /// A proof written as one tactic, `by T(args);`, is the block
@@ -2492,6 +2506,16 @@ fn cpp_declarator_name_ending_at(tokens: &[SourceToken], end: usize) -> String {
     }
     let qualifier = segments.len().checked_sub(2).map(|index| segments[index]);
     let last = segments[segments.len() - 1];
+    // `caller::(lambda#0)` is the importer's `caller__lambda_0`.
+    if let Some(index) = last
+        .strip_prefix("(lambda#")
+        .and_then(|rest| rest.strip_suffix(')'))
+    {
+        return format!(
+            "{}__lambda_{index}",
+            segments[..segments.len() - 1].join("_")
+        );
+    }
     match (operator, qualifier) {
         (Some(operator), Some(_)) => {
             format!("{}_{operator}", segments[..segments.len() - 1].join("_"))

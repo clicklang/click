@@ -41,6 +41,14 @@ pub(super) fn tokenize(
                 tokens.push(Token::Ident(chars[index..index + length].iter().collect()));
                 index += length;
             }
+            // A C++ lambda's path segment, `caller::(lambda#0)`, is one name.
+            '(' if tokens.last() == Some(&Token::ColonColon)
+                && lambda_segment_length(&chars[index..]).is_some() =>
+            {
+                let length = lambda_segment_length(&chars[index..]).unwrap();
+                tokens.push(Token::Ident(chars[index..index + length].iter().collect()));
+                index += length;
+            }
             '{' => {
                 tokens.push(Token::LBrace);
                 index += 1;
@@ -509,6 +517,20 @@ fn closure_segment_length(chars: &[char]) -> Option<usize> {
         .take_while(|ch| ch.is_ascii_digit())
         .count();
     (digits > 0 && chars.get(prefix + digits) == Some(&'}')).then_some(prefix + digits + 1)
+}
+
+/// The length of a C++ lambda path segment, `(lambda#0)`, at the start of
+/// `chars`.
+fn lambda_segment_length(chars: &[char]) -> Option<usize> {
+    let prefix = "(lambda#".chars().count();
+    if !chars.iter().take(prefix).copied().eq("(lambda#".chars()) {
+        return None;
+    }
+    let digits = chars[prefix..]
+        .iter()
+        .take_while(|ch| ch.is_ascii_digit())
+        .count();
+    (digits > 0 && chars.get(prefix + digits) == Some(&')')).then_some(prefix + digits + 1)
 }
 
 #[cfg(test)]
