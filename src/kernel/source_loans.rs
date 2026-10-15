@@ -3,13 +3,64 @@
 use super::*;
 use std::sync::Arc;
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub(crate) struct ScalarReferencePlanKey {
+/// Full labels are retained once for diagnostics and source membership. Hot
+/// semantic identity uses the same collision-resistant identity discipline as
+/// locked imports, with explicit lengths separating the two source labels.
+#[derive(Clone, Debug)]
+pub(crate) struct ScalarReferencePlanFamily {
     pub(crate) import_identity: Arc<str>,
     pub(crate) function: Arc<str>,
+    digest: [u8; 32],
+}
+impl ScalarReferencePlanFamily {
+    pub(crate) fn new(import_identity: &str, function: &str) -> Arc<Self> {
+        use sha2::{Digest, Sha256};
+        let mut hash = Sha256::new();
+        hash.update(b"click-scalar-reference-source-family-v1");
+        for label in [import_identity, function] {
+            hash.update((label.len() as u64).to_le_bytes());
+            hash.update(label.as_bytes());
+        }
+        Arc::new(Self {
+            import_identity: import_identity.into(),
+            function: function.into(),
+            digest: hash.finalize().into(),
+        })
+    }
+}
+impl PartialEq for ScalarReferencePlanFamily {
+    fn eq(&self, other: &Self) -> bool {
+        self.digest == other.digest
+    }
+}
+impl Eq for ScalarReferencePlanFamily {}
+impl std::hash::Hash for ScalarReferencePlanFamily {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(&self.digest, state);
+    }
+}
+impl Ord for ScalarReferencePlanFamily {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.digest.cmp(&other.digest)
+    }
+}
+impl PartialOrd for ScalarReferencePlanFamily {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(crate) struct ScalarReferencePlanKey {
+    pub(crate) family: Arc<ScalarReferencePlanFamily>,
     pub(crate) block: usize,
     pub(crate) borrow: usize,
     pub(crate) end: usize,
+}
+impl std::ops::Deref for ScalarReferencePlanKey {
+    type Target = ScalarReferencePlanFamily;
+    fn deref(&self) -> &Self::Target {
+        &self.family
+    }
 }
 
 /// Private operands are captured only after the source frontier checker and
@@ -21,16 +72,6 @@ pub(crate) struct ScalarReferenceSourcePlan {
     child: String,
     value_type: CType,
     assignment: CExpression,
-    ending: ScalarReferenceEnding,
-}
-#[derive(Debug)]
-enum ScalarReferenceEnding {
-    Store((CExpression, CExpression, CType, bool, bool)),
-    Read {
-        name: String,
-        expression: CExpression,
-        reference: String,
-    },
 }
 impl ScalarReferenceSourcePlan {
     pub(crate) fn new(
@@ -39,7 +80,6 @@ impl ScalarReferenceSourcePlan {
         child: String,
         value_type: CType,
         assignment: CExpression,
-        store: (CExpression, CExpression, CType, bool, bool),
     ) -> Arc<Self> {
         Arc::new(Self {
             key,
@@ -47,28 +87,6 @@ impl ScalarReferenceSourcePlan {
             child,
             value_type,
             assignment,
-            ending: ScalarReferenceEnding::Store(store),
-        })
-    }
-    pub(crate) fn new_read(
-        key: ScalarReferencePlanKey,
-        parent: String,
-        child: String,
-        value_type: CType,
-        assignment: CExpression,
-        read: (String, CExpression, String),
-    ) -> Arc<Self> {
-        Arc::new(Self {
-            key,
-            parent,
-            child,
-            value_type,
-            assignment,
-            ending: ScalarReferenceEnding::Read {
-                name: read.0,
-                expression: read.1,
-                reference: read.2,
-            },
         })
     }
     pub(crate) fn key(&self) -> &ScalarReferencePlanKey {
@@ -76,77 +94,6 @@ impl ScalarReferenceSourcePlan {
     }
     pub(super) fn validates_assignment(&self, name: &str, expression: &CExpression) -> bool {
         name == self.child && expression == &self.assignment
-    }
-    pub(super) fn validates_store(
-        &self,
-        pointer: &CExpression,
-        value: &CExpression,
-        value_type: CType,
-        volatile: bool,
-        constant: bool,
-    ) -> bool {
-        let ScalarReferenceEnding::Store(store) = &self.ending else {
-            return false;
-        };
-        (&store.0, &store.1, store.2, store.3, store.4)
-            == (pointer, value, value_type, volatile, constant)
-    }
-    pub(super) fn validates_read_assignment(&self, name: &str, expression: &CExpression) -> bool {
-        let ScalarReferenceEnding::Read {
-            name: expected,
-            expression: expected_expression,
-            reference,
-        } = &self.ending
-        else {
-            return false;
-        };
-        name == expected
-            && expression == expected_expression
-            && matches!(expression, CExpression::TypedLoad { pointer, value_type, volatile: false, pointee_constant: false, .. }
-                if *value_type == self.value_type && matches!(pointer.as_ref(), CExpression::Variable(local) if local == reference))
-    }
-    /// Only a successful direct read assignment may call this operation. The
-    /// selected reference must be a private local, so its value in `before` is
-    /// exactly the operand consumed by the ordinary checked load. No source
-    /// observation or earlier read fact supplies permission or ending evidence.
-    pub(super) fn end_read(
-        &self,
-        before: &CState,
-        after: &CState,
-        assumptions: &PureFactContext,
-    ) -> Result<CState, loans::LoanRefusal> {
-        let ScalarReferenceEnding::Read {
-            name,
-            expression,
-            reference,
-        } = &self.ending
-        else {
-            return Err(loans::LoanRefusal::InvalidEvidence);
-        };
-        if !self.validates_read_assignment(name, expression)
-            || before
-                .locals
-                .slot(reference)
-                .is_some_and(|slot| !block_is_never_address_taken_local(&slot.block))
-        {
-            return Err(loans::LoanRefusal::UnsupportedResource);
-        }
-        let Some(CValue::Pointer(pointer)) = before.locals.get(reference) else {
-            return Err(loans::LoanRefusal::InvalidEvidence);
-        };
-        let reference = pointer
-            .local_reference()
-            .ok_or(loans::LoanRefusal::MissingLoanBinding)?;
-        if pointer.c_type().pointee_type() != Some(self.value_type) {
-            return Err(loans::LoanRefusal::InvalidEvidence);
-        }
-        self.end(
-            after,
-            *reference,
-            pointer.pointer().clone(),
-            self.value_type,
-            assumptions,
-        )
     }
     pub(super) fn begin(
         &self,
@@ -183,14 +130,20 @@ impl ScalarReferenceSourcePlan {
             (Some(_), Some(_)) => {}
             _ => return Err(loans::LoanRefusal::InvalidEvidence),
         }
-        let support = state
-            .resources()
-            .exact_scalar_owner_occurrence(
-                parent.pointer(),
-                self.value_type.byte_width(),
-                assumptions,
+        let support = if parent.local_reference().is_some() {
+            None
+        } else {
+            Some(
+                state
+                    .resources()
+                    .exact_scalar_owner_occurrence(
+                        parent.pointer(),
+                        self.value_type.byte_width(),
+                        assumptions,
+                    )
+                    .ok_or(loans::LoanRefusal::MissingBacking)?,
             )
-            .ok_or(loans::LoanRefusal::MissingBacking)?;
+        };
         let (mut state, child) = state.begin_source_scalar_reference(
             parent,
             support,
@@ -205,24 +158,6 @@ impl ScalarReferenceSourcePlan {
         state.locals.set(self.child.clone(), value);
         Ok(state)
     }
-    pub(super) fn end(
-        &self,
-        state: &CState,
-        reference: loans::LocalScalarReference,
-        pointer: Pointer,
-        value_type: CType,
-        assumptions: &PureFactContext,
-    ) -> Result<CState, loans::LoanRefusal> {
-        state.validate_source_scalar_reference(&reference, &self.key)?;
-        let pointer = CPointerValue::new(
-            pointer,
-            value_type
-                .pointer_to()
-                .ok_or(loans::LoanRefusal::InvalidEvidence)?,
-        )
-        .with_local_reference(reference);
-        state.end_local_scalar_reference(&pointer, assumptions)
-    }
 }
 
 pub(super) fn source_loan_error(error: loans::LoanRefusal) -> CRuntimeError {
@@ -231,3 +166,21 @@ pub(super) fn source_loan_error(error: loans::LoanRefusal) -> CRuntimeError {
 
 #[cfg(test)]
 mod tests;
+
+/// An explicit checked source borrow ending. Construction is restricted to
+/// lowering after its immutable-source frontier has been checked. The key is
+/// semantic identity; execution resolves only this invocation's live handle.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct CScalarReferenceEnd(Arc<ScalarReferencePlanKey>);
+impl CScalarReferenceEnd {
+    pub(crate) fn new(key: ScalarReferencePlanKey) -> Self {
+        Self(Arc::new(key))
+    }
+    pub(super) fn execute(
+        &self,
+        state: &CState,
+        assumptions: &PureFactContext,
+    ) -> Result<CState, loans::LoanRefusal> {
+        state.end_source_scalar_reference(&self.0, assumptions)
+    }
+}

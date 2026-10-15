@@ -2392,6 +2392,7 @@ pub(super) fn execute_c_statement_verification_paths(
             // identity stream: `variables` allocates from `budget`, so nothing
             // has to be synchronized across this boundary.
             let operation = match statement {
+                CStatement::EndScalarReference(_) => "verification statement: borrow end",
                 CStatement::Skip => "verification statement: skip",
                 CStatement::Break => "verification statement: break",
                 CStatement::Continue => "verification statement: continue",
@@ -9725,6 +9726,7 @@ fn validate_loop_havoc_stable_loans(
 pub(super) fn statement_may_write_memory(state: &CState, statement: &CStatement) -> bool {
     match statement {
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
@@ -9862,6 +9864,7 @@ pub(super) fn collect_loop_modified_locals(statement: &CStatement, names: &mut B
             names.extend(retired.iter().cloned())
         }
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
@@ -10034,6 +10037,7 @@ pub(crate) fn collect_address_taken_locals(statement: &CStatement, names: &mut B
     match statement {
         CStatement::EndAutomaticLifetimes { .. } => {}
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }

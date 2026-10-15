@@ -55,6 +55,7 @@ pub(super) fn summarize(function: &CFunction, summary: &mut AddressTakenSummary)
                 summary.taken.insert(name.clone());
             }
             CStatement::Skip
+            | CStatement::EndScalarReference(_)
             | CStatement::Break
             | CStatement::Continue
             | CStatement::Goto { .. }

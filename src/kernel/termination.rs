@@ -1197,6 +1197,7 @@ fn statement_takes_address_of(statement: &CStatement, name: &str) -> bool {
     let escapes = |expression: &CExpression| expression_takes_address_of(expression, name);
     match statement {
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -1541,6 +1542,7 @@ fn statement_calls_visiting(
         }
         CStatement::ForStep { step, .. } => statement_calls_visiting(step, calls, visit),
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -1602,6 +1604,7 @@ fn statement_declared_variables(statement: &CStatement, names: &mut BTreeSet<Str
         }
         CStatement::ForStep { step, .. } => statement_declared_variables(step, names),
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -3183,6 +3186,7 @@ fn loop_at_index<'a>(
         // loops only while they descend into the same statements, so a new
         // statement kind must be placed in both.
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -3491,6 +3495,7 @@ fn collect_loops<'a>(statement: &'a CStatement, loops: &mut Vec<&'a CStatement>)
         }
         CStatement::ForStep { step, .. } => collect_loops(step, loops),
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -3760,6 +3765,7 @@ fn check_loops(
             unranked,
         ),
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -3978,6 +3984,7 @@ fn statement_function_addresses(statement: &CStatement, taken: &mut BTreeSet<Str
     let mut visit = |expression: &CExpression| expression_function_addresses(expression, taken);
     match statement {
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -4363,6 +4370,7 @@ pub(super) fn statement_calls_function(statement: &CStatement, callee: &str) -> 
             .any(|case| statement_calls_function(&case.body, callee)),
         CStatement::ForStep { step, .. } => statement_calls_function(step, callee),
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -4445,6 +4453,7 @@ fn self_call_loop_indices(
         // number the same loops only while they descend into the same
         // statements, so a new statement kind must be placed in all of them.
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue

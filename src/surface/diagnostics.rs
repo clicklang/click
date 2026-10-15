@@ -5283,6 +5283,7 @@ const MAX_STATEMENT_HEAD_BYTES: usize = 512;
 /// successors it is complaining about.
 pub(super) fn describe_c_statement_head(statement: &CStatement) -> String {
     let head = match statement {
+        CStatement::EndScalarReference(_) => "borrow end".to_string(),
         CStatement::Skip => ";".to_string(),
         CStatement::Break => "break;".to_string(),
         CStatement::Continue => "continue;".to_string(),
