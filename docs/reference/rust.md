@@ -117,10 +117,10 @@ gate's live Charon tests refresh and verify all 16 original Rust fixtures.
 New lock identities use the `click-rust-v1` profile name. Existing
 `click-charon-trial-v1` lock identities remain accepted with the same exact
 input, artifact and semantic-profile checks; loading preserves their original
-identities. The backend spelling is likewise a compatibility alias. Historical
-single-file crate/output labels inside serialized artifacts remain stable, so
+identities. Legacy configurations still accept `"charon-trial"` as a backend
+compatibility alias. Historical single-file crate/output labels inside serialized
+artifacts remain stable, so
 this naming cleanup requires no artifact rewrite or forced lock refresh.
-
 
 ## Locked crates and qualified declarations
 
