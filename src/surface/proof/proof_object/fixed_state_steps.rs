@@ -3474,6 +3474,14 @@ impl<'a> Proof<'a> {
         premises: &[ClickProposition],
         context: &ExecutionProofContext<'a>,
     ) -> Result<CheckedFocusedTransition, ClickError> {
+        // Resolve only the named operands, as other proposition operations
+        // do. Model-match pointers are proof bindings, not C local names.
+        let source = self.substitute_fixed_state_locals_in_proposition(source)?;
+        let target = self.substitute_fixed_state_locals_in_proposition(target)?;
+        let premises = premises
+            .iter()
+            .map(|premise| self.substitute_fixed_state_locals_in_proposition(premise))
+            .collect::<Result<Vec<_>, _>>()?;
         // A nested proposition proof stated at this frontier may transport
         // facts as well; the successor below preserves the goal's kind.
         let mut execution = self
@@ -3491,9 +3499,9 @@ impl<'a> Proof<'a> {
             .old_reference_state(&execution.core.frontier, &execution.core.state)
             .clone();
         let checked = check_fixed_state_fact_transport_using_facts(
-            source,
-            target,
-            premises,
+            &source,
+            &target,
+            &premises,
             context.claim_label,
             context.tactic_index,
             self.facts(),
@@ -3511,11 +3519,11 @@ impl<'a> Proof<'a> {
         execution
             .presentation
             .surface_propositions
-            .record_lowering(source, &checked.source)?;
+            .record_lowering(&source, &checked.source)?;
         execution
             .presentation
             .surface_propositions
-            .record_lowering(target, &checked.target)?;
+            .record_lowering(&target, &checked.target)?;
         let mut facts = self.facts().clone();
         let added_facts = if facts.contains(&checked.target) {
             Vec::new()
