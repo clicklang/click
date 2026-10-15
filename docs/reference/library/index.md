@@ -2788,6 +2788,35 @@ an arbitrary write to the string. See
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr::readable)` when a proof needs the predicate body.
 
+### `cstr_at`
+
+```click
+resource cstr_at(p: const uint8*, len: uint64) {
+    views p[0..len + 1u64];
+    fact len < 18446744073709551615u64;
+    fact forall (k: uint64) { 0u64 <= k and k < len implies p[k] != '\0' };
+    fact p[len] == '\0';
+    fact forall (k: uint64) { 0u64 <= k and k < len + 1u64 implies defined(p[k]) };
+}
+```
+
+**Meaning:** A borrowed C string: a view of the `len + 1` bytes of `p`
+through its first terminator, with the facts that make them the C string of
+length `len`. The bytes determine `len`, so `fold(cstr_at(p, m))` at any other
+length fails. A contract holds it with `views cstr_at(p, len);` and lends it
+to a callee that views the same instance without opening it; `open(cstr_at(p,
+len)) { ... }` exposes the view and the facts. A `char`, `signed char`, or
+`unsigned char` pointer may be passed for `p`, as for the C-string predicates;
+a signed character pointer is read through its byte view `(uint8*)p`.
+
+**Kind:** composite resource. Parameter types, memory clause, and facts are normative in the declaration above.
+
+**Verified use:** [`cstr_at_view_passes_through_a_call.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_view_passes_through_a_call.md),
+[`cstr_at_opens_and_lends_a_prefix_to_a_copy.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_opens_and_lends_a_prefix_to_a_copy.md),
+[`cstr_at_fold_refuses_a_wrong_length.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_fold_refuses_a_wrong_length.md),
+and, through character pointers,
+[`cstr_at_borrows_a_char_string_from_the_library.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_borrows_a_char_string_from_the_library.md).
+
 ### `cstr::bounded`
 
 ```click

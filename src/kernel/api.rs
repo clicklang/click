@@ -7782,6 +7782,27 @@ pub fn c_function_contract_refinement_context(
     )
 }
 
+/// Whether `function`'s contract refines the named contract `contract_name`,
+/// by the judgment that forms `Contract(&function)` at a call: a trait
+/// method implementation is checked once against the trait's interface,
+/// which calls through the trait then assume. `function` must itself be
+/// verified against its contract; this compares the two contracts only.
+pub fn c_function_refines_named_contract(
+    environment: &CExecutionEnvironment,
+    contract_name: &str,
+    function: &CFunction,
+) -> Result<bool, String> {
+    let Some(contract) = environment.get_function_contract(contract_name) else {
+        return Ok(false);
+    };
+    super::functions::function_refines_named_contract(
+        contract,
+        function,
+        &mut ExecutionBudget::for_new_execution(),
+    )
+    .map_err(ExecutionLimit::describe)
+}
+
 /// The explicit refinement theorem a refused concrete formation needs.
 ///
 /// Both names are exact map lookups into the same tables the formation check

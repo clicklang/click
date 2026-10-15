@@ -337,7 +337,10 @@ An operator-trait method prints in Rust's qualified form: the method of
 `<adler2::algo::U32X4 as MulAssign<u32>>::mul_assign`, a reference or by-value
 argument reads `<T as AddAssign<&T>>::add_assign` or
 `<T as AddAssign<T>>::add_assign`, and `impl Default for adler2::Adler32` is
-`<adler2::Adler32 as Default>::default`. `--claim` and `--trace-proof` take
+`<adler2::Adler32 as Default>::default`. A crate trait is named by its path,
+and its method's implementation prints as
+`<trait_methods::Square as trait_methods::Shape>::area` ([trait method
+interfaces](#trait-method-interfaces)). `--claim` and `--trace-proof` take
 that form, the importer's name, or a `FILE:LINE` location in the sidecar
 ([claim labels](cli/expand.md#claim-labels)). The importer names an inherent method by the
 module its `impl` block is in, which Rust does not write: the method is
@@ -447,6 +450,48 @@ verified body covers every instantiation. A type parameter with any other
 bound, `impl FnMut` and `impl FnOnce`, generic function items, and
 non-scalar parameters or results are refused
 ([`design/charon-trial/impl-fn`](https://github.com/clicklang/click/blob/master/design/charon-trial/impl-fn/closure.click)).
+
+### Trait method interfaces
+
+A method of a crate trait, `pub trait Shape { fn area(&self, scale: i32) ->
+i32; }`, has an interface: the sidecar's `trait` block states it, with the
+trait named by its path and no proof, as an `extern fn` is declared,
+`trait trait_methods::Shape { fn area(&self, scale: i32) -> i32 { requires 0
+<= scale and scale <= 1000; ensures scale < result and result <= 3001; } }`.
+
+A call through a trait bound, `shape.area(scale)` for `shape: &T` and
+`T: Shape`, or through a `&dyn Shape`, is checked against the interface, as
+a call of an `extern fn` is: its caller establishes the `requires` and has
+only the `ensures`. The head writes a bound parameter as the source does,
+`fn trait_methods::total<T: trait_methods::Shape>(shape: &T, scale: i32)`
+or `shape: &dyn trait_methods::Shape`. A call on a known type,
+`square.area(scale)`, is a call of that type's implementation, under its
+own contract.
+
+Each implementation is written in an `impl` block naming the trait and the
+type by their paths, `impl trait_methods::Shape for trait_methods::Square
+{ fn area(&self, scale: i32) -> i32 { ... } by { ... } }`, and verified as
+any method is. Its contract must refine the interface, by the check that
+forms a named contract at `&f`: it must accept every call the interface
+allows, and guarantee what the interface promises. The check reads each
+clause exactly or decides a bare comparison, without search, so an
+implementation states the interface's guarantees in its own contract, where
+its proof establishes them; a wider precondition written as bare
+comparisons, `requires 0 <= scale; requires scale <= 2000;`, is accepted.
+An implementation that does not refine the interface is refused, naming
+both. Without a `trait` block, a call through the trait has no contract.
+
+The interface's receiver is a reference to a value of a type it does not
+know: the interface reads nothing through `self` and holds none of its
+resources, so an implementation whose contract needs the receiver's
+fields does not refine it. Every implementation a call can reach is in the
+import, since a generic call names its instance's implementation and a
+`dyn` coercion its vtable, and each one is checked. The importer refuses a
+crate trait with generics, associated items, supertraits, or default
+methods, a method that is generic or takes no `&self` or `&mut self`,
+non-scalar parameters or results, an implementation for anything but a
+crate struct, and a generic implementation
+([`design/charon-trial/trait-methods`](https://github.com/clicklang/click/blob/master/design/charon-trial/trait-methods/shapes.click)).
 
 ### `extern` block functions
 
@@ -882,17 +927,23 @@ source identities, duplicate endings and parent endings with live children are
 refused. Closing the outermost lease returns the original owned occurrence and
 preserves current memory. Expired aliases cannot use that returned owner.
 
-Across an `if`, both arms preserve the exact live loan ledger. Scalar reads,
-writes and calculations, including nested branches and condition reads, keep
-the borrow live through the common continuation. An arm's last use ends at the
-outermost enclosing continuation; a later use can extend that ending further.
-Nested borrows end innermost first. Births and reference copies or reassignment
-must occur on the shared path outside branch arms. Reusing a suspended parent
-in just one arm requires branch-specific recovery and remains outside this
-protocol.
+Across an `if`, scalar reads, writes and calculations can keep a borrow live
+through the common continuation. A use in a deeper arm extends that borrow to
+the corresponding common continuation; later uses can extend it further.
+Nested borrows end innermost first.
+
+Arm-local reborrows and reference copies are also supported when every such
+reference stays inside its defining arm. Each branch scope checkpoints the
+entry ledger, ends all references born there, verifies restoration of the exact
+original owned occurrences, and clears the private arm-local reference slots
+before restoring the exact entry ledger. Current writes are retained. Nested
+scopes may borrow an entry reference temporarily, preserving it at scope exit.
+The existing join still requires identical live loan state. Reference IDs are
+never reused, and old copies remain invalid after scope reconciliation.
 
 The source and sidecars require no additional lifetime annotations. Source
-observations remain read-only. Branch-local births or reference reassignment,
+observations remain read-only. Reference assignments to an existing outer
+binding, references escaping an arm, conditionally live borrow recovery,
 early returns, shared borrow graphs, aggregate or addressable reference
 transport, calls and loops still need source integration. Functions outside
 the activated subset retain their existing lowering and have no local lease

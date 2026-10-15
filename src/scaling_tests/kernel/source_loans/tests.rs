@@ -153,3 +153,69 @@ fn source_scalar_lease_branch_preparation_scales_with_shared_diamonds() {
         }
     }
 }
+
+#[test]
+fn source_scalar_scope_arm_preparation_is_linear_in_shared_diamonds() {
+    let mut measurements = vec![];
+    for count in [16, 64, 256, 1024] {
+        let source = arm_export(count);
+        let (program, work) =
+            crate::instrumentation::measure_deterministic_work(|| body(&source, "locked-source"));
+        let starts = leaves(&program)
+            .iter()
+            .filter(|statement| matches!(statement, CStatement::ScalarReferenceScope(_)))
+            .count();
+        assert_eq!(starts, count);
+        measurements.push((count, work));
+    }
+    eprintln!("closed arm preparation: {measurements:?}");
+    for pair in measurements.windows(2) {
+        assert!(pair[1].1 <= pair[0].1 * 5 + 100, "{measurements:?}");
+    }
+}
+
+#[test]
+fn source_scalar_scope_selected_checkpoint_work_is_indexed_across_ambient_history() {
+    let mut measurements = vec![];
+    for count in [16, 64, 256, 1024] {
+        let (mut state, support) = scope_initial();
+        let parent = scope_parent(&state);
+        for _ in 0..count {
+            let (active, child) = state
+                .begin_local_scalar_reference(
+                    &parent,
+                    Some(support),
+                    CType::Int32,
+                    &PureFactContext::new(),
+                )
+                .unwrap();
+            state = active
+                .end_local_scalar_reference(&child, &PureFactContext::new())
+                .unwrap();
+        }
+        let base = state.loan_ledger().cloned();
+        let plan = empty_scope_plan(0);
+        let (recovered, work) = crate::persistent::measure_persistent_work(|| {
+            let entered = normal(execute(&state, &plan.operation(false)));
+            let (active, child) = entered
+                .begin_local_scalar_reference(
+                    &parent,
+                    Some(support),
+                    CType::Int32,
+                    &PureFactContext::new(),
+                )
+                .unwrap();
+            let ended = active
+                .end_local_scalar_reference(&child, &PureFactContext::new())
+                .unwrap();
+            normal(execute(&ended, &plan.operation(true)))
+        });
+        assert_eq!(recovered.loan_ledger(), base.as_ref());
+        measurements.push((count, work));
+    }
+    eprintln!("selected closed scope work: {measurements:?}");
+    assert!(
+        measurements[3].1 < measurements[0].1 * 4,
+        "{measurements:?}"
+    );
+}

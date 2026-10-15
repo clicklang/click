@@ -24,6 +24,7 @@ fn authority_test_scope(
         instances: Default::default(),
         field_binders: Default::default(),
         unowned_resource_parameters: Default::default(),
+        character_parameters: Default::default(),
         constructors: ConstructorTypes::inactive(),
     }
 }

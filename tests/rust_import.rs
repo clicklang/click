@@ -4307,6 +4307,8 @@ mod function_pointers;
 mod impl_fn;
 #[path = "rust_import/parameterized_contracts.rs"]
 mod parameterized_contracts;
+#[path = "rust_import/trait_methods.rs"]
+mod trait_methods;
 
 #[path = "rust_import/loop_headers.rs"]
 mod loop_headers;
@@ -4550,6 +4552,40 @@ fn rust_scalar_borrow_stays_live_through_both_branch_arms_and_ends_at_join() {
         "branch_update.contract",
         "nested_branch_update.contract",
         "branch_caller.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+    }
+    assert_cli(&p, &["verify"]);
+    assert_eq!(
+        fs::read_to_string(p.root.join("borrow.rs")).unwrap(),
+        source
+    );
+}
+
+#[test]
+#[ignore = "nightly: fully closed arm-local scalar borrows with checked expansion"]
+fn rust_arm_local_borrows_close_without_escaping_before_the_join() {
+    let source = include_str!("../design/charon-trial/gate-fixtures/scalar-arm-scopes/borrow.rs");
+    let p = gate_fixtures::project("scalar-arm-scopes", source);
+    let proof = "verifying \"borrow.rs\";\nfn scoped_update(parent: &mut i32, choose: bool) { owns *parent; ensures *parent == (if choose { 8 } else { 10 }); } by { execute(); simp(); }\nfn nested_scopes(parent: &mut i32, choose: bool, inner: bool) { owns *parent; ensures *parent == (if choose { if inner { 9 } else { 11 } } else { 12 }); } by { execute(); simp(); }\nfn scoped_caller(parent: &mut i32, choose: bool) { owns *parent; ensures *parent == (if choose { 8 } else { 10 }); } by { execute(); simp(); }\n";
+    fs::write(p.root.join("borrow.click"), proof).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(proof, &prepared).unwrap();
+    for invalid in [
+        proof.replacen(
+            "if choose { 8 } else { 10 }",
+            "if choose { 7 } else { 9 }",
+            1,
+        ),
+        proof.replace("if inner { 9 } else { 11 }", "if inner { 8 } else { 10 }"),
+        proof.replacen("owns *parent;", "views *parent;", 1),
+    ] {
+        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+    }
+    for claim in [
+        "scoped_update.contract",
+        "nested_scopes.contract",
+        "scoped_caller.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     }

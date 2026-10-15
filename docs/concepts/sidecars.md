@@ -133,9 +133,12 @@ import click::machine_integer;
 A proof that cites a theorem of a module the file does not import is refused
 before any proof runs, and the message names the import to add
 (`mdtests/a_cited_library_theorem_needs_its_module_import.md`).
-A predicate or function of an unimported module is not visible either, so a
-file may declare its own declaration with that name
-(`mdtests/an_unimported_library_name_is_free_for_a_user_definition.md`).
+A predicate, function, or resource of an unimported module is not visible
+either, so a file may declare its own declaration with that name
+(`mdtests/an_unimported_library_name_is_free_for_a_user_definition.md`,
+`mdtests/an_unimported_library_resource_name_is_free_for_a_user_definition.md`).
+A resource named in a contract without its module's import is refused with
+the import to add (`mdtests/a_library_resource_needs_its_module_import.md`).
 Built-in tactics such as `simp`, `arithmetic` and loop-invariant closing
 apply library theorems as part of their own reasoning, whatever the file
 imports. They name a library theorem by its qualified identity, such as

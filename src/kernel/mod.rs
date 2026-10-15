@@ -13,16 +13,17 @@ pub(crate) use source_access::{
     ExecutedReferenceAccess, ExecutedReferenceBoundary, ReferenceAccessKind,
     ReferenceAccessSourceId, ReferenceBorrowSourceId,
 };
-pub use source_loans::CScalarReferenceEnd;
+pub use source_loans::{CScalarReferenceEnd, CScalarReferenceScope};
 pub(crate) use source_loans::{
-    ScalarReferencePlanFamily, ScalarReferencePlanKey, ScalarReferenceSourcePlan,
+    ScalarReferencePlanFamily, ScalarReferencePlanKey, ScalarReferenceScopeKey,
+    ScalarReferenceScopePlan, ScalarReferenceSourcePlan,
 };
 
 /// Version of the resource and stable-view semantics used by proof
 /// artifacts.  This is deliberately separate from source and compiler
 /// identities: changing the authority interpretation must invalidate an old
 /// certificate even when its inputs are byte-identical.
-pub const RESOURCE_SEMANTICS_VERSION: u32 = 68;
+pub const RESOURCE_SEMANTICS_VERSION: u32 = 69;
 
 pub(crate) mod assumptions;
 mod difference_graph;

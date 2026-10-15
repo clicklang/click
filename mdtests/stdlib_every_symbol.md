@@ -20,6 +20,11 @@ The external catalog symbol `__click_constant_p_unknown`, the value of the C
 builtin `__builtin_constant_p`, is verified in
 [`c_builtin_constant_p.md`](c_builtin_constant_p.md).
 
+The borrowed C-string resource `cstr_at` is verified in
+[`cstr_at_view_passes_through_a_call.md`](cstr_at_view_passes_through_a_call.md),
+[`cstr_at_opens_and_lends_a_prefix_to_a_copy.md`](cstr_at_opens_and_lends_a_prefix_to_a_copy.md),
+and [`cstr_at_fold_refuses_a_wrong_length.md`](cstr_at_fold_refuses_a_wrong_length.md).
+
 The modeled-runtime resource `mutex_guard` is verified in
 [`mutex_guard_resource_body.md`](mutex_guard_resource_body.md) and
 [`mutex_guard_conditional_body.md`](mutex_guard_conditional_body.md).

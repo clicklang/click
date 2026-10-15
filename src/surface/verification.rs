@@ -5766,6 +5766,10 @@ pub(in crate::surface) fn build_function_environment(
         .values()
         .map(|(_, function)| (function.source_name(), function))
         .collect::<BTreeMap<_, _>>();
+    let interfaces = parsed_sources
+        .values()
+        .filter_map(|(_, function)| function.trait_interface())
+        .collect::<BTreeSet<_>>();
     for function_block in function_blocks
         .iter()
         .filter(|function| function.is_external())
@@ -5805,6 +5809,16 @@ pub(in crate::surface) fn build_function_environment(
                     function_block.signature().name()
                 ))
             })?;
+        // A crate trait method's interface is also the named contract its
+        // implementations refine.
+        if interfaces.contains(name) {
+            let contract = CFunctionContract::new(name, function.clone()).ok_or_else(|| {
+                ClickError::new(format!(
+                    "trait method interface `{name}` has a contract that cannot be applied opaquely"
+                ))
+            })?;
+            environment = environment.with_function_contract(contract);
+        }
         // Bind the representation-copy effect to the exact standard-library
         // declaration, never to the spelling. A user function that shadows the
         // name with a different declaration keeps the plain external contract.
@@ -5819,7 +5833,57 @@ pub(in crate::surface) fn build_function_environment(
             .with_function(function)
             .with_external_function_rule(rule);
     }
+    check_trait_method_implementations(&environment, parsed_sources, function_blocks)?;
     Ok(environment)
+}
+
+/// Checks that each crate trait method implementation's contract refines the
+/// trait's interface for that method, which a call through the trait
+/// assumes of whichever implementation it reaches. An interface the sidecar
+/// does not declare has no contract, so no call through it verifies.
+fn check_trait_method_implementations(
+    environment: &CExecutionEnvironment,
+    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    function_blocks: &[FunctionBlock],
+) -> Result<(), ClickError> {
+    for (_, function) in parsed_sources.values() {
+        let Some(interface) = function.trait_interface() else {
+            continue;
+        };
+        if environment.get_function_contract(interface).is_none() {
+            continue;
+        }
+        // An implementation without its own contract is never verified, so
+        // no interface may stand for it.
+        if !function_blocks
+            .iter()
+            .any(|block| !block.is_external() && block.signature().name() == function.source_name())
+        {
+            return Err(ClickError::new(format!(
+                "`{}` implements the trait method interface `{interface}` but has no contract; \
+                 write it in the `impl` block, with its proof",
+                function.name()
+            ))
+            .at_declaration(function.name()));
+        }
+        let Some(implementation) = environment.get_function(function.name()) else {
+            continue;
+        };
+        if !crate::kernel::c_function_refines_named_contract(environment, interface, implementation)
+            .map_err(ClickError::new)?
+        {
+            return Err(ClickError::new(format!(
+                "`{}` does not refine the trait method interface `{interface}`: its contract \
+                 must accept every call the interface allows and guarantee what the interface \
+                 promises; the check reads each clause exactly or decides a bare comparison, so \
+                 state the interface's guarantees in the implementation's contract, where its \
+                 proof establishes them",
+                function.name()
+            ))
+            .at_declaration(function.name()));
+        }
+    }
+    Ok(())
 }
 
 /// The functions that make instances of the program's capturing closures.

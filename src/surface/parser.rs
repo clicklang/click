@@ -674,6 +674,17 @@ struct Parser {
     /// The module of the `impl` block being read, as the importer names
     /// it, when the block is an inherent one for a type named by a path.
     rust_impl_module: Option<String>,
+    /// The crate trait the `impl` block being read implements, as the
+    /// importer names it: its methods are `<Type as Trait>::name`.
+    rust_impl_trait: Option<String>,
+    /// The crate trait whose `trait` block is being read: its methods are
+    /// the interfaces `Trait::name`, external declarations of the methods
+    /// a call through the trait reaches.
+    rust_trait_interface: Option<String>,
+    /// The type parameters of the Rust signature being parsed that a crate
+    /// trait bounds, `T` of `<T: traits::Shape>`: a reference to one is a
+    /// reference to a value of a type the function does not know.
+    rust_trait_type_parameters: BTreeSet<String>,
     match_nesting: usize,
     proposition_nesting: usize,
     proof_nesting: usize,
@@ -1089,6 +1100,9 @@ impl Parser {
             rust_impl_type: None,
             rust_impl_method_suffix: None,
             rust_impl_module: None,
+            rust_impl_trait: None,
+            rust_trait_interface: None,
+            rust_trait_type_parameters: BTreeSet::new(),
             tokens,
             positions,
             matching_parentheses,
@@ -1331,6 +1345,8 @@ impl Parser {
                 function_blocks.push(self.parse_function_block(true)?);
             } else if self.verifies_rust() && self.peek_ident() == Some("impl") {
                 self.parse_rust_impl_block(&mut function_blocks)?;
+            } else if self.verifies_rust() && self.peek_ident() == Some("trait") {
+                self.parse_rust_trait_block(&mut function_blocks)?;
             } else {
                 function_blocks.push(self.parse_function_block(false)?);
             }
@@ -3049,7 +3065,9 @@ impl Parser {
         let previous_function_block = std::mem::replace(&mut self.in_function_block, true);
         let previous_resource_targets = std::mem::take(&mut self.current_resource_targets);
         let previous_resource_bindings = std::mem::take(&mut self.current_resource_bindings);
-        if external {
+        // A crate trait's method is declared without `extern`, as Rust
+        // writes it in the `trait` block.
+        if external && self.rust_trait_interface.is_none() {
             self.expect_ident_spelling("extern")?;
         }
         let ParsedFunctionSignature {
@@ -10478,6 +10496,7 @@ impl Parser {
         base: CExpression,
         field_name: &str,
     ) -> Result<CExpression, ClickError> {
+        self.refuse_trait_receiver_field(named_place_base(&base).map(String::as_str))?;
         let Some(field) = self.resolve_field_metadata(&base, field_name)? else {
             return Ok(CExpression::Load(Box::new(base)));
         };
@@ -10490,11 +10509,25 @@ impl Parser {
         })
     }
 
+    /// A crate trait method's interface does not know its receiver's type,
+    /// so it has no field of `self` to read.
+    fn refuse_trait_receiver_field(&self, base: Option<&str>) -> Result<(), ClickError> {
+        if self.rust_trait_interface.is_some() && base == Some("self") {
+            return Err(self.error(
+                "a trait method's interface reads nothing through `self`, whose type it does not know",
+            ));
+        }
+        Ok(())
+    }
+
     fn resolve_c0_field_load(
         &self,
         base: C0Expression,
         field_name: &str,
     ) -> Result<Option<C0Expression>, ClickError> {
+        if let C0Expression::Variable(name) = &base {
+            self.refuse_trait_receiver_field(Some(name))?;
+        }
         let struct_name = match &base {
             C0Expression::Variable(base_name) => self
                 .current_struct_params

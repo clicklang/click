@@ -1198,6 +1198,7 @@ fn statement_takes_address_of(statement: &CStatement, name: &str) -> bool {
     match statement {
         CStatement::Skip
         | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -1543,6 +1544,7 @@ fn statement_calls_visiting(
         CStatement::ForStep { step, .. } => statement_calls_visiting(step, calls, visit),
         CStatement::Skip
         | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -1605,6 +1607,7 @@ fn statement_declared_variables(statement: &CStatement, names: &mut BTreeSet<Str
         CStatement::ForStep { step, .. } => statement_declared_variables(step, names),
         CStatement::Skip
         | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -3187,6 +3190,7 @@ fn loop_at_index<'a>(
         // statement kind must be placed in both.
         CStatement::Skip
         | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -3496,6 +3500,7 @@ fn collect_loops<'a>(statement: &'a CStatement, loops: &mut Vec<&'a CStatement>)
         CStatement::ForStep { step, .. } => collect_loops(step, loops),
         CStatement::Skip
         | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -3766,6 +3771,7 @@ fn check_loops(
         ),
         CStatement::Skip
         | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -3985,6 +3991,7 @@ fn statement_function_addresses(statement: &CStatement, taken: &mut BTreeSet<Str
     match statement {
         CStatement::Skip
         | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -4371,6 +4378,7 @@ pub(super) fn statement_calls_function(statement: &CStatement, callee: &str) -> 
         CStatement::ForStep { step, .. } => statement_calls_function(step, callee),
         CStatement::Skip
         | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -4454,6 +4462,7 @@ fn self_call_loop_indices(
         // statements, so a new statement kind must be placed in all of them.
         CStatement::Skip
         | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue

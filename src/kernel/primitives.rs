@@ -3105,6 +3105,7 @@ pub enum CStatement {
     },
     /// Consume one live source lease at its checked ending frontier.
     EndScalarReference(super::CScalarReferenceEnd),
+    ScalarReferenceScope(super::CScalarReferenceScope),
     TypedStore {
         pointer: CExpression,
         value: CExpression,
