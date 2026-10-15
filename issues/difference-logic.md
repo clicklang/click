@@ -267,7 +267,15 @@ Each step is its own pull request.
      at most `k`, and exact for an exact `x` (zlib's `adler == 1` rules out
      `(adler & 65535) >= 65521`); and a 64-bit word's signed and unsigned
      readings, and conversions between them, bound each other modulo 2^64
-     (`value == u64::MAX` makes `(int64) value + 1` defined). The whole mdtests
+     (`value == u64::MAX` makes `(int64) value + 1` defined). The nightly
+     import tests (C++ fee rounding, Bitcoin Core's `FeeFrac`, Rust's checked
+     multiply, adler2 and chunk loops) needed more: intervals for quotients
+     and remainders by divisors that cannot be zero, unsigned narrowing,
+     conditional values, `x ^ MIN` of known sign and `x - x % k`; an
+     unsigned remainder is at most its dividend; field offsets from equal
+     bases are equal; and an overflow question whose operands are load
+     variables of one cell (`a -= a`) is asked of that value with itself,
+     by exact cell lookups. The whole mdtests
      corpus and every example verify, apart from the two nightly mdtests
      `bugs/loop-invariant-through-pointer-field-simp-exhausts-budget.md`
      records failing on master.
