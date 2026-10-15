@@ -11,7 +11,9 @@ is done.
 
 `scan` breaks at 3, continues at 5, and otherwise falls to the body's end. The
 proof closes the `break` arm and steps once into the other, stopping before the
-second C `if`, so exactly one of the two remaining ends is behind it.
+second C `if`, so exactly one of the two remaining ends is behind it. The rest
+of the body does not run from there, because `12 / i` on the way to the body's
+end may divide by zero.
 
 Counting only this loop's own exits is what makes the "still ahead" list
 correct: a nested loop or `switch` owns the `break`s and `continue`s written
@@ -33,6 +35,7 @@ int32 scan(int32 n) {
             continue;
         }
         i = i - 1;
+        i = 12 / i;
     }
     return i;
 }

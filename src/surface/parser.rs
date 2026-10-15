@@ -8520,6 +8520,13 @@ impl Parser {
             self.position += 2;
             return Ok(vec![ProofTactic::Simp]);
         }
+        // `auto` has no script spelling, and the bare closer is already the
+        // smart one; say so rather than suggest the `by auto;` just written.
+        if self.peek_ident() == Some("auto") {
+            return Err(self.error(
+                "`close_invariants by auto` is not a form: write `close_invariants();`, whose closer is already smart, or end the `preserve` script and let the back edge close implicitly",
+            ));
+        }
         match self.peek() {
             Some(Token::Ident(_)) => Ok(vec![self.parse_proof_tactic()?]),
             Some(token) => Err(self.error(format!(

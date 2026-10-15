@@ -853,10 +853,56 @@ pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
         environment.theorem_environment,
     )
     .with_surface_local_scope(&phase_proof_scope(environment));
+    let (completed, joined_apart) = walk_loop_body(&claim_label, root)?;
+    let mut paths = Vec::new();
+    for leaf in completed {
+        let context_execution = leaf.execution_view()?.execution.clone();
+        if let Some(blocker) = &context_execution.presentation.surface_record.blocker {
+            return Err(ClickError::new(format!(
+                "`{claim_label}` automatic preservation could not lower a body step: {blocker}"
+            )));
+        }
+        let case_path = context_execution
+            .presentation
+            .case_assumptions
+            .iter()
+            .map(|choice| ProofCaseChoice {
+                condition: choice.condition.clone(),
+                value: choice.value,
+                match_arm: choice.match_arm.clone(),
+            })
+            .collect::<Vec<_>>();
+        let surface_tactics = leaf.path_certificate()?.to_proof_tactics();
+        let (certificate, selected_offsets) =
+            certificate_leaf_for_case_path(&claim_label, &surface_tactics, &case_path)?;
+        let case_offsets = selected_offsets
+            .or_else(|| recorded_case_offsets(&context_execution.presentation, case_path.len()));
+        paths.push(PathCertificate {
+            case_path,
+            case_offsets,
+            certificate,
+        });
+    }
+    Ok(AutomaticLoopBody {
+        certificate: merge_phase_path_aligned_certificates(&claim_label, paths)?,
+        joined_apart,
+    })
+}
+
+/// Walks a loop body from `root` to its ends, one smart step at a time,
+/// as the automatic closer does: a C `if` with more of the body after it
+/// whose arms both fall through is run and joined, and any other `if`
+/// splits into separate paths. Returns the paths that reached one of the
+/// body's ends or function exit, and whether some join kept only what its
+/// arms agree on.
+pub(in crate::surface::proof) fn walk_loop_body<'a>(
+    claim_label: &str,
+    root: Proof<'a>,
+) -> Result<(Vec<Proof<'a>>, bool), ClickError> {
     let mut pending = vec![root];
     let mut completed = Vec::new();
     let mut search = AutomaticBodySearch {
-        claim_label: &claim_label,
+        claim_label,
         steps: 0,
         diverging: BTreeSet::new(),
         joined_apart: false,
@@ -905,39 +951,7 @@ pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
             pending.push(preservation_smart_step(split.focus_branch(id)?)?);
         }
     }
-    let mut paths = Vec::new();
-    for leaf in completed {
-        let context_execution = leaf.execution_view()?.execution.clone();
-        if let Some(blocker) = &context_execution.presentation.surface_record.blocker {
-            return Err(ClickError::new(format!(
-                "`{claim_label}` automatic preservation could not lower a body step: {blocker}"
-            )));
-        }
-        let case_path = context_execution
-            .presentation
-            .case_assumptions
-            .iter()
-            .map(|choice| ProofCaseChoice {
-                condition: choice.condition.clone(),
-                value: choice.value,
-                match_arm: choice.match_arm.clone(),
-            })
-            .collect::<Vec<_>>();
-        let surface_tactics = leaf.path_certificate()?.to_proof_tactics();
-        let (certificate, selected_offsets) =
-            certificate_leaf_for_case_path(&claim_label, &surface_tactics, &case_path)?;
-        let case_offsets = selected_offsets
-            .or_else(|| recorded_case_offsets(&context_execution.presentation, case_path.len()));
-        paths.push(PathCertificate {
-            case_path,
-            case_offsets,
-            certificate,
-        });
-    }
-    Ok(AutomaticLoopBody {
-        certificate: merge_phase_path_aligned_certificates(&claim_label, paths)?,
-        joined_apart: search.joined_apart,
-    })
+    Ok((completed, search.joined_apart))
 }
 
 pub(in crate::surface::proof) struct LoopPreservationProofResult {
