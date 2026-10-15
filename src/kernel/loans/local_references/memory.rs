@@ -1,7 +1,7 @@
 //! Private scalar-reference adapter for the ordinary memory producers.
 //!
 //! Source observations cannot construct these leases. Checked source plans
-//! issue births and bind endings to actual executed lvalue custody.
+//! issue births; explicit endings resolve the current invocation's live custody.
 
 use super::*;
 use crate::kernel::primitives::ReservedLocalScalarOwner;

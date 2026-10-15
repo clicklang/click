@@ -294,7 +294,8 @@ Source labels are shared in one immutable family; its precomputed fixed-width
 identity and frontier positions form the hot semantic key. Preparation and
 execution inspect selected statements and indexed state deltas. Deterministic
 16/64/256/1024 regressions cover ordinary source length, alias chains, read
-endings and nested depth. No per-borrow whole-function scan is used.
+endings and nested depth. A selected-end regression also bounds execution work
+across growing live-handle indexes. No per-borrow whole-function scan is used.
 
 The unchanged native `set_seven`, alias-move and read-ending witnesses activate
 explicit end operations. A new native fixture covers shared and separate
@@ -327,6 +328,7 @@ cargo test --lib exclusive_call_
 cargo test --lib local_reference_
 cargo test --lib scalar_reference_
 cargo test --lib source_scalar_lease
+cargo test --test rust_import rust_nested_scalar_borrows_end_explicitly_at_shared_and_separate_frontiers -- --ignored
 cargo test --test rust_import rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop -- --ignored
 cargo test --test rust_import rust_owned_field_parent_can_write_after_explicit_child_drop -- --ignored
 cargo test --test rust_import rust_owned_disjoint_mutable_fields_verify -- --ignored

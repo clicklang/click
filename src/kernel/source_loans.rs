@@ -63,8 +63,8 @@ impl std::ops::Deref for ScalarReferencePlanKey {
     }
 }
 
-/// Private operands are captured only after the source frontier checker and
-/// the lowering pass agree on both selected operations in one immutable body.
+/// Private birth operands are captured after checked source analysis and
+/// lowering agree on the selected assignment in one immutable body.
 #[derive(Debug)]
 pub(crate) struct ScalarReferenceSourcePlan {
     key: ScalarReferencePlanKey,
