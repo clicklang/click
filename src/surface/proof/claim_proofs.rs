@@ -2310,19 +2310,22 @@ pub(super) fn finish_ordered_proof<'a>(
                                     )));
                                 };
                                 let before = evolving.checkpoint();
-                                let step = match post_tactic {
-                                    PostExecutionTactic::Unfold(resource) => {
-                                        ProofStep::UnfoldResource(resource.clone())
-                                    }
-                                    PostExecutionTactic::Fold(resource) => {
-                                        ProofStep::FoldResource(resource.clone())
-                                    }
-                                    PostExecutionTactic::FoldProved(tactic) => {
-                                        ProofStep::from_validated_tactic(tactic)
-                                    }
+                                let folded = match post_tactic {
+                                    PostExecutionTactic::Unfold(resource) => evolving
+                                        .apply_step(ProofStep::UnfoldResource(resource.clone()))?,
+                                    PostExecutionTactic::Fold(resource) => evolving
+                                        .apply_step(ProofStep::FoldResource(resource.clone()))?,
+                                    PostExecutionTactic::FoldProved(ProofTactic::StepProved {
+                                        step,
+                                        proof,
+                                    }) => super::checked_drivers::apply_source_step_proofs(
+                                        &evolving,
+                                        step,
+                                        proof,
+                                        *tactic_index,
+                                    )?,
                                     _ => unreachable!("matched a resource operation above"),
                                 };
-                                let folded = evolving.apply_step(step)?;
                                 has_return_resource_rewrite |=
                                     folded.execution().is_some_and(|execution| {
                                         execution

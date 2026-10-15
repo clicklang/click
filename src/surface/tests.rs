@@ -2342,6 +2342,7 @@ mod contract_tests;
 mod diagnostic_tests;
 mod execution_tests;
 mod expansion_tests;
+mod fold_body_tests;
 mod loop_tests;
 mod project_tests;
 mod scaling_tests;
