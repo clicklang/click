@@ -7458,6 +7458,13 @@ pub(super) struct ResourceContextIndex {
     /// compares a range only with the ranges these keys select
     /// (`owned_validity_candidates`).
     pub(super) owned_memory_by_root: PersistentMap<MemoryBaseRoot, ResourceEntryIds>,
+    /// Fixed footprints at one unregistered scalar base, indexed by that
+    /// variable independently of its scale. Other footprints remain in the
+    /// open bucket: they may resolve through memory or symbolic endpoints.
+    pub(super) owned_memory_by_base_variable:
+        PersistentMap<(PointerBlock, Variable), ResourceEntryIds>,
+    pub(super) owned_memory_open_bases: PersistentMap<PointerBlock, ResourceEntryIds>,
+    pub(super) owned_non_memory_entries: ResourceEntryIds,
     /// Owned memory ranges with a first element, keyed by that element's
     /// offset (the range's anchor). Two distinct owned members of one block
     /// have different anchors, which a pointer comparison asks by key

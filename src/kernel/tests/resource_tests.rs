@@ -18,6 +18,90 @@ fn folded_without_read_views(state: CState) -> CState {
 }
 
 #[test]
+fn separation_candidates_preserve_derived_aliases_and_loaded_bases() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let scalar = |id: u64| Bitvector32Term::Variable(Variable(989_700 + id));
+    let base = |value| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(value, 4),
+    };
+    let owner = |pointer| {
+        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            pointer,
+            0u32.into(),
+            3u32.into(),
+            4,
+        ))
+    };
+    let query = |pointer| {
+        CResource::Memory(CMemoryRange::new_with_element_width(
+            pointer,
+            1u32.into(),
+            2u32.into(),
+            4,
+        ))
+    };
+    let a = scalar(0);
+    let b = scalar(1);
+    let alias = scalar(2);
+    let middle = scalar(3);
+    let frame = ResourceContext::new()
+        .unchecked_with_fact(owner(base(a.clone())))
+        .unchecked_with_fact(owner(base(b.clone())));
+    let holds = |context: PureFactContext| {
+        context.assume_proposition(Proposition::CResourceComposition(frame.clone()))
+    };
+    let separated = |context: &PureFactContext| {
+        context.proves_resource_separate(&query(base(alias.clone())), &query(base(b.clone())))
+    };
+    assert!(!separated(&holds(PureFactContext::new())));
+    let one_order = PureFactContext::new().assume_condition(
+        ConditionTerm::signed_less_equal(a.clone(), alias.clone()),
+        true,
+    );
+    assert!(
+        !separated(&holds(one_order.clone())),
+        "one bound is not an alias"
+    );
+    let both_orders = one_order.assume_condition(
+        ConditionTerm::signed_less_equal(alias.clone(), a.clone()),
+        true,
+    );
+    assert!(separated(&holds(both_orders)));
+    let pinned = PureFactContext::new()
+        .assume_condition(ConditionTerm::equal(a.clone(), 7u32.into()), true)
+        .assume_condition(ConditionTerm::equal(alias.clone(), 7u32.into()), true);
+    assert!(separated(&holds(pinned)));
+    let transitive = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::pointer_equal(base(alias.clone()), base(middle.clone())),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::pointer_equal(base(middle), base(a.clone())),
+            true,
+        );
+    assert!(separated(&holds(transitive)));
+
+    // No condition names `a`: the owner's loaded base must remain a
+    // candidate because the memory edge itself resolves it to `a`.
+    let slot = Pointer::symbolic(Variable(989_799));
+    let snapshot = CMemory::new().store(slot.clone(), CValue::Int32(a.clone()));
+    let loaded = Bitvector32Term::MemoryLoad(
+        crate::kernel::intern_c_memory(snapshot),
+        Box::new(slot),
+        LoadKind::Bits32,
+    );
+    let loaded_frame = ResourceContext::new()
+        .unchecked_with_fact(owner(base(loaded)))
+        .unchecked_with_fact(owner(base(b.clone())));
+    let facts =
+        PureFactContext::new().assume_proposition(Proposition::CResourceComposition(loaded_frame));
+    assert!(facts.proves_resource_separate(&query(base(a.clone())), &query(base(b.clone()))));
+    assert!(!facts.proves_resource_separate(&query(base(a.clone())), &query(base(a))));
+}
+
+#[test]
 fn normalized_resource_specs_validate_families_and_preserve_transfer_metadata() {
     let segment = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(2));
     let memory_view = CResourceSpec::new(
