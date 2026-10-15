@@ -64,6 +64,10 @@ order entries, two queries inspect three relevant edges and charge six
 units at every size. This removes that individual ambient scan; it does not
 remove the growing lower-bound candidate count or close this bug.
 
+The gate records the drift: `known_drift_sequential_loop_clauses` in
+`src/scaling_tests/surface/tests/step_shape_scaling_tests.rs` fails once the
+clauses stop growing, and then becomes an ordinary no-drift test.
+
 Acceptance: a multi-size regression over `loops` shows each loop clause's
 work and time constant in the number of earlier loops, up to logarithmic
 factors; each loop's invariants and termination are still checked; no budget

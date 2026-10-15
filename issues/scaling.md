@@ -97,15 +97,19 @@ measures; `cargo nextest run --lib -E 'test(/scaling_tests/)'` runs them all
 (`docs/internals/testing.md`, "Scaling tests"). Most measure one kernel
 operation beside unrelated state built in advance, and such tests pass while
 `heap_objects` grows, because its extra state comes from the proof itself.
-The remaining step is to add the end-to-end shapes from
-`scripts/step-scaling-hunt.py` to the gate at small sizes, the known failures
-marked as such.
+End-to-end, `src/scaling_tests/surface/tests/step_shape_scaling_tests.rs`
+runs the `scripts/step-scaling-hunt.py` shapes in the gate: a step repeated at
+several positions must not drift with the statements before it, and a call
+must not grow with unrelated facts, aliases or owned objects.
+`known_drift_heap_object_stores_and_releases` records the `heap_objects` drift
+of causes 1 to 3 and fails when it stops, so the fix updates this issue.
 
 ## Acceptance
 
 - Each known cause above is fixed in its representation, with a
   deterministic regression at four or more sizes.
-- `heap_objects` and the other `step-scaling-hunt.py` shapes run in the gate
-  at small sizes and show every simple step's work constant in N, up to
-  logarithmic factors; ownership is still checked at every store and release.
+- `known_drift_heap_object_stores_and_releases` becomes an ordinary
+  no-drift test, and `step-scaling-hunt.py heap_objects` shows every simple
+  step's work constant in N, up to logarithmic factors; ownership is still
+  checked at every store and release.
 - No budget or threshold is raised to get there.

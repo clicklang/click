@@ -2347,6 +2347,8 @@ mod loop_tests;
 mod project_tests;
 #[path = "../scaling_tests/surface/tests/scaling_tests.rs"]
 mod scaling_tests;
+#[path = "../scaling_tests/surface/tests/step_shape_scaling_tests.rs"]
+mod step_shape_scaling_tests;
 mod surface_syntax;
 mod tactic_tests;
 
