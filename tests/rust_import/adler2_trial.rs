@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 #[test]
 #[ignore = "requires the pinned live Charon extractor"]
 fn charon_adler2_crate_trial_rejects_unlocked_module_closure() {
-    let p = Project::new("");
+    let p = Project::legacy("");
     let manifest: serde_json::Value =
         serde_json::from_str(include_str!("../../design/rust-checksum-sources.json")).unwrap();
     let pin = manifest["sources"]

@@ -275,7 +275,7 @@ fn charon_external_array_copies_live_refresh() {
 #[test]
 #[ignore = "requires the pinned live Charon/compiler; scripts/check.sh --charon-live"]
 fn charon_whole_array_copy_live_refresh_checks_full_authority() {
-    let p = Project::new(include_str!("../../examples/rust-array-values/arrays.rs"));
+    let p = Project::legacy(include_str!("../../examples/rust-array-values/arrays.rs"));
     let sidecar = include_str!("../../examples/rust-array-values/arrays.click")
         .replace("arrays.rs", "borrow.rs");
     let config = serde_json::json!({
