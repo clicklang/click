@@ -1368,13 +1368,13 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         assert!(c_error.starts_with("syntax error:"), "{c_error}");
         assert!(c_error.contains("\n  located.md:7\n"), "{c_error}");
 
-        // The Click block body starts on line 14; the labeled `have` is
-        // its third line, line 16 of the file.
+        // The Click block body starts on line 14; the `have` whose name
+        // hides the parameter is its third line, line 16 of the file.
         fs::write(
             &path,
             mdtest(
                 valid_c,
-                "verifying \"inc.c\";\nint32 inc(int32 x) {\n    ensures result == x by { have same: x == x by { simp(); } step(); simp(); }\n}",
+                "verifying \"inc.c\";\nint32 inc(int32 x) {\n    ensures result == x by { have x: x == x by { simp(); } step(); simp(); }\n}",
             ),
         )
         .unwrap();
