@@ -189,6 +189,73 @@ fn an_unsigned_byte_constant_decides_its_signed_read() {
 }
 
 #[test]
+fn frozen_signed_byte_comparisons_follow_exact_unsigned_facts() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let unsigned = byte_load(0);
+    let signed = Bitvector32Term::signed_byte(unsigned.clone());
+    let other = Bitvector32Term::signed_byte(byte_load(1));
+    let facts = crate::kernel::ExecutionFacts::new();
+    for (signed_value, unsigned_value) in BYTE_PAIRS {
+        for byte_condition in [
+            equal(unsigned.clone(), unsigned_value),
+            equal_terms(
+                Bitvector32Term::Constant(unsigned_value as u32),
+                unsigned.clone(),
+            ),
+        ] {
+            let context = PureFactContext::new()
+                .assume_condition(byte_condition, true)
+                .defer_non_exact_condition_reasoning();
+            for condition in [
+                equal(signed.clone(), signed_value),
+                equal_terms(
+                    Bitvector32Term::Constant(signed_value as i32 as u32),
+                    signed.clone(),
+                ),
+            ] {
+                assert!(!context.contains_assumed_exact(&fact(condition.clone())));
+                assert_eq!(
+                    crate::kernel::reasoning::path_facts::decide_with_facts(
+                        &context, &facts, &condition,
+                    ),
+                    Some(true)
+                );
+            }
+            let different = if signed_value == 127 {
+                -128
+            } else {
+                signed_value + 1
+            };
+            assert_eq!(
+                context
+                    .decide_signed_byte_equality_from_exact_fact(&equal(signed.clone(), different)),
+                Some(false)
+            );
+            assert_eq!(
+                context.decide_signed_byte_equality_from_exact_fact(&equal(
+                    other.clone(),
+                    signed_value
+                )),
+                None
+            );
+        }
+    }
+    let ordinary = Bitvector32Term::Variable(Variable(612_155));
+    let context = PureFactContext::new().assume_condition(equal(ordinary.clone(), 0), true);
+    assert_eq!(
+        context.decide_signed_byte_equality_from_exact_fact(&equal(
+            Bitvector32Term::signed_byte(ordinary),
+            0
+        )),
+        None
+    );
+    assert_eq!(
+        PureFactContext::new().decide_signed_byte_equality_from_exact_fact(&equal(signed, 0)),
+        None
+    );
+}
+
+#[test]
 fn byte_constants_cross_equalities_with_symbolic_values_in_both_directions() {
     let _session = crate::kernel::VerificationSession::enter();
     let unsigned = byte_load(0);

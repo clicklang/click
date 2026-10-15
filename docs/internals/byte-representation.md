@@ -220,6 +220,14 @@ byte equality. The inverse applies only to a byte load operand, and only to
 constants: an order fact on the signed read (`s[0] < 0`) does not yet bound
 the unsigned read.
 
+Frozen execution also decides `int8(u) == k` from an exact `u == c` fact
+by looking up the unsigned byte load's constant-equality bucket and folding
+its signed conversion. This records the original unsigned equality as the
+premise without changing exact fact membership. Both comparison branches,
+symbolic C-string indices, and independently checked expansion are covered by
+`mdtests/known_byte_decides_signed_char_comparison*.md` and
+`known_unsigned_byte_decides_signed_comparison_in_all_proof_modes`.
+
 ## Reinterpretation stays refused
 
 A copy moves cells without converting them. A typed load accepts only a cell

@@ -1789,6 +1789,7 @@ pub(in crate::kernel) fn decide_with_facts(
         .find(|value| {
             assumptions.proves_exact(&Proposition::ConditionIs(condition.clone(), *value))
         })
+        .or_else(|| assumptions.decide_signed_byte_equality_from_exact_fact(condition))
         .or_else(|| PureFactContext::decide_intrinsically(condition))
         .or_else(|| {
             let extra = facts

@@ -272,8 +272,8 @@ Each step is a separate PR that leaves every example verifying:
 
 ### Sequencing with Integer-default specification arithmetic
 
-[design-review.md](design-review.md) P2 and [smt-auto.md](smt-auto.md)
-stage 4 propose that specification arithmetic use `Integer` by default. If
+[design-review.md](design-review.md) P2 proposes that specification
+arithmetic use `Integer` by default. If
 that lands, most of the 110 width lemmas exist only to bridge machine
 arithmetic and can be deleted rather than completed. Do the layering, the
 generic predicates, the `allocation` signature and the naming scheme first.

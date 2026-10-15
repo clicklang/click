@@ -52,6 +52,27 @@ line ambiguity, and target containment. Matching delimiters skip nested bodies,
 and direct tactic ranges are cached by body rather than rebuilt per child.
 Regressions cover siblings, long lines, deep nesting, and unrelated source text.
 
+## Construction, not re-validation
+
+Efficiency outranks the size of the trusted base. A proof-object operation
+builds its successor from the branch's own state and is valid by
+construction; nothing afterwards re-validates what the same session produced.
+Producing evidence in one place and admitting it through a checker that
+re-derives it (walking a theorem's premises against the context it was proved
+under, re-comparing states the producer started from, recomputing an identity
+the producer recorded) costs the work twice, and the second pass is usually
+the one that grows with the path. Trusted-base size, untrusted callers, and
+defense in depth do not justify it: if a caller could supply bad input, the
+computation belongs inside the operation. Independent checking belongs only
+where the input genuinely comes from outside the session, such as expansion
+checks, audits, and certificates read back from disk, which run off the
+simple-checking path.
+
+Existing produce-then-check code is a defect, tracked in
+`issues/scaling.md` cause 4. The review question for any
+change is: does this re-validate something the same session produced? If so,
+restructure it so the producing operation is the only one.
+
 ## Proof size and speed targets
 
 Direct int32 constant lookup follows only exact written equality edges filed
@@ -742,10 +763,13 @@ reads every fact as before. So the answers are unchanged
 walks), and a refusal beside 64 to 512 other bounded indices costs a flat
 27 units against 932 to 7,204 for the full scan
 (`memory_resolution_order_walk_ignores_shared_bounds_of_other_indices`).
-A line of 4 to 64 such stores costs 990 to 18,570 units of store work,
-where it cost 2,294 to 408,974
+A line of 4 to 64 such stores cost 990 to 18,570 units of store work,
+where it had cost 2,294 to 408,974
 (`stores_to_bounded_unordered_indices_are_near_linear` in
-`src/scaling_tests/surface/tests/scaling_tests.rs`).
+`src/scaling_tests/surface/tests/scaling_tests.rs`). The difference
+graph's bounded propagation now adds a fixed cost per store once more than
+its `EDGE_LIMIT` (32) indices share the bound, so the test checks
+near-linear growth at 4 to 32 stores and at 64 to 256 separately.
 
 A term's constant after equality normalization is a lookup in
 `ConstantClasses` (`src/kernel/assumptions/constant_classes.rs`), which the
