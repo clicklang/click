@@ -137,10 +137,15 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                     "execution proof traversal source statement({statement_index}) does not match loop({loop_index})"
                 )));
             }
+            // An early refusal: the kernel checks every certified loop's
+            // measures against the function again when it records
+            // termination, so the function-wide walk is shared by the loops.
             crate::kernel::c_reject_address_escaped_loop_measures(
                 environment.function_block.signature().name(),
                 ranking_measures,
-                environment.function.source_body(),
+                environment.source_layout.address_taken_locals(|| {
+                    crate::kernel::c_address_taken_locals(environment.function.source_body())
+                }),
             )
             .map_err(ClickError::new)?;
             let loop_clause = environment

@@ -1101,13 +1101,19 @@ pub fn c_loop_invariant_obligations_at_back_edge(
 pub fn c_reject_address_escaped_loop_measures(
     function_name: &str,
     measures: &[CRankingComponent],
-    body: &CStatement,
+    addressed: &BTreeSet<String>,
 ) -> Result<(), String> {
     crate::kernel::termination::c_reject_address_escaped_loop_measures(
         function_name,
         measures,
-        body,
+        addressed,
     )
+}
+
+/// The locals whose address `body` takes anywhere: the one walk the
+/// address-escape checks read (see the termination module).
+pub fn c_address_taken_locals(body: &CStatement) -> BTreeSet<String> {
+    crate::kernel::termination::address_taken_locals(body)
 }
 
 /// The source form of one declared `decreases` component, for diagnostics.
