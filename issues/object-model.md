@@ -420,3 +420,10 @@ modes; 133 selected recovery controls pass. Continue with the
 [string/vector postcondition gap](../bugs/c-pointer-field-postconditions-lose-frame-evidence.md),
 keeping C and claims intact and distinguishing an explicit checked equality
 proof from `assumption`'s exact-fact lookup. The full example audit remains 41/52.
+
+The next proof-only slice supplies explicit checked stored-value equalities in
+`owned_string_set` and `vector_push`; their original function contracts now
+verify. Continue with string push's terminator comparison and the later vector
+allocation fold. This does not close either complete project or change the
+41/52 archive audit. See the
+[focused evidence](../design/object-model-recovery-audit.md#explicit-stored-value-proofs-in-the-original-examples).
