@@ -54,6 +54,7 @@ pub(crate) struct ScalarReferencePlanKey {
     pub(crate) family: Arc<ScalarReferencePlanFamily>,
     pub(crate) block: usize,
     pub(crate) borrow: usize,
+    pub(crate) end_block: usize,
     pub(crate) end: usize,
 }
 impl std::ops::Deref for ScalarReferencePlanKey {

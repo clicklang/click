@@ -1376,7 +1376,7 @@ mod tests {
         ] {
             let mut f = function();
             f.mir.as_mut().unwrap().blocks[0].statements = statements;
-            let forest = lease_forest::certify(&f, Some("locked")).unwrap();
+            let forest = lease_forest::certify(&f, Some("locked"), &[1]).unwrap();
             for birth in forest.births.values() {
                 certify_scalar_reference_end(
                     &f,
@@ -1404,8 +1404,8 @@ mod tests {
             assign(local("alias"), reborrow()),
             assign(deref("alias"), E::Integer { value: 7 }),
         ];
-        let forest = lease_forest::certify(&f, Some("locked")).unwrap();
-        let endings = &forest.endings[&3];
+        let forest = lease_forest::certify(&f, Some("locked"), &[1]).unwrap();
+        let endings = &forest.endings[&point(3)];
         assert_eq!(
             endings.iter().map(|key| key.borrow).collect::<Vec<_>>(),
             vec![1, 0]
