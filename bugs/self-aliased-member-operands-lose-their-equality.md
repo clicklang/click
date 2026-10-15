@@ -37,15 +37,16 @@ Bisected locally: both pass on `842be5ca4` and fail from `b08e9207c` ("Remove
 the general decision from simple checking"). Kernel condition evaluation now
 asks only exact facts, the condition's own form and the difference graph. The
 equality of the two loads through `this == &other` is no longer derived. The
-cpp_import nightly test
+cpp_import nightly tests
 `subtraction_method_self_aliasing_is_defined_without_bounds_and_frames_caller_memory`
-exercises the same pattern and probably has the same cause.
+and `ordinary_value_methods_import_with_const_receiver_and_mixed_width_fields`
+(case `double_size`) fail with the same refusal on master `26caef84b`.
 
 Acceptance:
 
 - With `this == &other`, `this->size - other.size` is defined with no bounds,
   and `this->size + other.size` is defined under the contract's bounds.
 - `pinned_upstream_fee_frac_addself_reexports_and_verifies`,
-  `pinned_upstream_fee_frac_subtractself_reexports_and_verifies` and the
-  cpp_import self-aliasing test pass, within simple checking's complexity
+  `pinned_upstream_fee_frac_subtractself_reexports_and_verifies` and the two
+  cpp_import tests pass, within simple checking's complexity
   contract (`docs/internals/verification-efficiency.md`).

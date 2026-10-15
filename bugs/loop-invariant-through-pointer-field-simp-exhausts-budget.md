@@ -27,6 +27,11 @@ locally, not by spending its whole budget. These proofs verified before, so
 either a search now explores more than it did, or the proof's state changed
 under it.
 
+The same exhaustion fails the nightly lib test
+`surface::tests::expansion_tests::padded_struct_field_loop_expansion_reverifies`
+(`statement 4, source tactic 12`) on master `26caef84b`, and the nightly
+`click audit` reports both mdtests as session failures.
+
 Acceptance:
 - Both mdtests verify again on master without raising any budget, with
   their C unchanged.
