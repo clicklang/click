@@ -829,17 +829,19 @@ impl CInput {
 }
 
 pub fn read_c_inputs(sidecar: &Path, click_source: &str) -> Result<CInput, String> {
-    let directory = fs::canonicalize(containing_directory(sidecar))
-        .map_err(|error| format!("failed to resolve sidecar directory: {error}"))?;
-    let profile = match read_c_project_profile(&directory, &directory)? {
-        Some(profile) => Some(profile),
-        None => ancestor_project_profile(&directory)?,
-    };
-    let target = match profile.and_then(|profile| profile.target) {
-        Some(target) => target,
-        None => crate::surface::selected_c_target(click_source).map_err(|error| error.report())?,
-    };
-    read_c_inputs_for_target(sidecar, click_source, target)
+    read_lone_sidecar_inputs(sidecar, click_source).map(|(_, inputs)| inputs)
+}
+
+/// Loads a lone sidecar's Click project and its C inputs. The C target comes
+/// from the whole project, imported modules and project config included,
+/// exactly as `click verify` selects it.
+pub fn read_lone_sidecar_inputs(
+    sidecar: &Path,
+    click_source: &str,
+) -> Result<(ClickProject, CInput), String> {
+    let project = read_lone_sidecar_project(sidecar, click_source)?;
+    let inputs = read_c_inputs_for_project(sidecar, click_source, &project)?;
+    Ok((project, inputs))
 }
 
 pub fn read_c_inputs_for_project(
@@ -2274,6 +2276,43 @@ mod tests {
         assert_eq!(
             selection.sidecars().collect::<Vec<_>>(),
             vec![root.join("entry.click"), root.join("theorems.click")]
+        );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// `click audit` and `click expand` load a lone sidecar's C sources under
+    /// the target `click verify` selects, including one an imported module
+    /// declares: under the kernel target, `__KERNEL__` brings in a header the
+    /// user-space target would not collect.
+    #[test]
+    fn lone_sidecar_inputs_use_an_imported_modules_target() {
+        let root = std::env::temp_dir().join(format!(
+            "click-imported-target-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join("settings.click"),
+            "target \"x86_64-linux-kernel\";\n",
+        )
+        .unwrap();
+        let click = "import \"settings.click\";\nverifying \"k.c\";\n";
+        let path = root.join("main.click");
+        fs::write(&path, click).unwrap();
+        fs::write(
+            root.join("k.c"),
+            "#ifdef __KERNEL__\n#include \"kern.h\"\n#endif\nint answer(void) { return 1; }\n",
+        )
+        .unwrap();
+        fs::write(root.join("kern.h"), "int kernel_helper(void);\n").unwrap();
+        let CInput::Bundle(sources) = read_c_inputs(&path, click).unwrap() else {
+            panic!("a lone sidecar without a manifest reads a source bundle");
+        };
+        assert!(
+            sources.iter().any(|(name, _)| name == "kern.h"),
+            "{:?}",
+            sources.iter().map(|(name, _)| name).collect::<Vec<_>>()
         );
         fs::remove_dir_all(&root).unwrap();
     }
