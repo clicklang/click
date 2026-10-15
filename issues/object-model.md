@@ -434,3 +434,11 @@ string-push proof adjustment. The remaining string pointer-frame and vector
 allocation-fold failures are specific to the recovery archive; continue reducing
 those compatibility obligations before activation. See the
 [upstream/archive distinction](../design/object-model-recovery-audit.md#string-push-proof-and-full-upstream-project-checks).
+
+The split-field string reduction now identifies a narrower next blocker:
+explicit append-index bounds and stored-value proofs check, but the subsequent
+simple fold exhausts its work budget. Reduce and fix the
+[fold performance defect](../bugs/split-descriptor-fold-exhausts-simple-budget.md)
+before continuing the archive's string proof or activation. Keep the original
+C, split-field resource and existing budgets; the vector allocation fold remains
+separate.
