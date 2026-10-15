@@ -262,7 +262,12 @@ Each step is its own pull request.
      last failure, `rbtree-augmented`'s `defined(1 + l + r)` fact not
      answering `(1 + v8) + v11`, is fixed by keying no-overflow facts by
      their operands' nodes and offsets modulo the word size, so a fact and a
-     question that group their constants differently meet. The whole mdtests
+     question that group their constants differently meet. Two reads the
+     gate's import tests needed: an unsigned `x & k` with a constant mask is
+     at most `k`, and exact for an exact `x` (zlib's `adler == 1` rules out
+     `(adler & 65535) >= 65521`); and a 64-bit word's signed and unsigned
+     readings, and conversions between them, bound each other modulo 2^64
+     (`value == u64::MAX` makes `(int64) value + 1` defined). The whole mdtests
      corpus and every example verify, apart from the two nightly mdtests
      `bugs/loop-invariant-through-pointer-field-simp-exhausts-budget.md`
      records failing on master.

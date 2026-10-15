@@ -797,6 +797,69 @@ fn an_unsigned_quotient_by_a_positive_divisor_is_bounded() {
     assert_eq!(graph(&[]).decide(&fits), None);
 }
 
+/// A constant mask bounds an unsigned value by the mask, and an exactly
+/// known value masks exactly: zlib's `adler == 1` rules out the case
+/// `(adler & 65535) >= 65521`.
+#[test]
+fn a_constant_mask_bounds_an_unsigned_value() {
+    use Bitvector32Term as T;
+    let x = variable(0);
+    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let low_half = T::UInt64BitwiseAnd(boxed(&x), Box::new(T::UInt64Constant(65535)));
+    let at_least = |k| {
+        ConditionTerm::Bitvector64UnsignedLessEqual(
+            Box::new(T::UInt64Constant(k)),
+            Box::new(low_half.clone()),
+        )
+    };
+    let one = graph(&[(
+        ConditionTerm::Bitvector64Equal(boxed(&x), Box::new(T::UInt64Constant(65537))),
+        true,
+    )]);
+    assert_eq!(one.decide(&at_least(65521)), Some(false));
+    assert_eq!(one.decide(&at_least(1)), Some(true));
+    assert_eq!(one.decide(&at_least(2)), Some(false));
+    // Unknown, the value is still at most the mask.
+    assert_eq!(graph(&[]).decide(&at_least(65536)), Some(false));
+    assert_eq!(graph(&[]).decide(&at_least(65535)), None);
+}
+
+/// A 64-bit word read as signed and as unsigned is one value modulo 2^64:
+/// `value == u64::MAX` makes the signed reading `-1`, so `value + 1` cannot
+/// overflow as `int64`. An explicit conversion between the two keeps its
+/// operand the same way.
+#[test]
+fn signed_and_unsigned_readings_of_a_word_bound_each_other() {
+    use crate::kernel::MachineIntegerType as M;
+    use Bitvector32Term as T;
+    let x = variable(0);
+    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let all_ones = graph(&[(
+        ConditionTerm::Bitvector64Equal(boxed(&x), Box::new(T::UInt64Constant(u64::MAX))),
+        true,
+    )]);
+    let increment_overflows = |value: &Bitvector32Term| {
+        ConditionTerm::Bitvector64SignedAddOverflows(
+            Box::new(value.clone()),
+            Box::new(T::Int64Constant(1)),
+        )
+    };
+    assert_eq!(all_ones.decide(&increment_overflows(&x)), Some(false));
+    let cast = T::MachineIntegerCast {
+        value: boxed(&x),
+        source: M::UInt64,
+        destination: M::Int64,
+    };
+    assert_eq!(all_ones.decide(&increment_overflows(&cast)), Some(false));
+    // The largest signed value is its own unsigned reading, and its
+    // increment overflows: nothing says otherwise.
+    let largest = graph(&[(
+        ConditionTerm::Bitvector64Equal(boxed(&x), Box::new(T::UInt64Constant(i64::MAX as u64))),
+        true,
+    )]);
+    assert_eq!(largest.decide(&increment_overflows(&x)), None);
+}
+
 /// Pointer equality facts form classes with known-unequal classes: `p` is
 /// null and `q` is not, so `p != q`, and two pointers of one block are
 /// equal exactly when their offsets are, so the offset question the kernel

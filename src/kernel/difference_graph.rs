@@ -941,11 +941,30 @@ impl DifferenceGraph {
             .resolve(domain, term)
             .map_or_else(|| domain.range(), |affine| self.affine_interval(affine));
         let (low, high) = self.structural_interval(domain, term);
-        (node_low.max(low), node_high.min(high))
+        // A 64-bit word read as signed and as unsigned is one value modulo
+        // 2^64, so the other reading's node bounds this one.
+        let (other_low, other_high) = match domain {
+            Domain::Int64 => Some(Domain::UInt64),
+            Domain::UInt64 => Some(Domain::Int64),
+            Domain::Int32 => None,
+        }
+        .and_then(|other| self.resolve(other, term))
+        .map_or_else(
+            || domain.range(),
+            |affine| {
+                let (low, high) = self.affine_interval(affine);
+                wrap_interval(domain, low, high)
+            },
+        );
+        (
+            node_low.max(low).max(other_low),
+            node_high.min(high).min(other_high),
+        )
     }
 
     /// `term_interval` from `term`'s operands alone.
     fn structural_interval(&self, domain: Domain, term: &Bitvector32Term) -> (i128, i128) {
+        use crate::kernel::MachineIntegerType as M;
         use Bitvector32Term as T;
         if matches!(term, T::Variable(_) | T::Constant(_)) {
             // No operands to read: nothing to charge.
@@ -1004,6 +1023,46 @@ impl DifferenceGraph {
                     return domain.range();
                 }
                 (a_low / b_high, a_high / b_low)
+            }
+            // A constant mask: at most the mask and the masked value, and
+            // exact for an exactly known value.
+            (Domain::UInt64, T::UInt64BitwiseAnd(a, b))
+                if constant(domain, a)
+                    .or_else(|| constant(domain, b))
+                    .is_some() =>
+            {
+                let (mask, value) = match constant(domain, b) {
+                    Some(mask) => (mask, a),
+                    None => (constant(domain, a).expect("checked above"), b),
+                };
+                let (low, high) = self.term_interval(domain, value);
+                if low == high {
+                    (low & mask, low & mask)
+                } else {
+                    (0, high.min(mask))
+                }
+            }
+            // A conversion between the 64-bit types keeps its operand
+            // modulo 2^64.
+            (
+                Domain::Int64 | Domain::UInt64,
+                T::MachineIntegerCast {
+                    value,
+                    source: source @ (M::Int64 | M::UInt64),
+                    destination: M::Int64 | M::UInt64,
+                },
+            ) => {
+                let source = if *source == M::Int64 {
+                    Domain::Int64
+                } else {
+                    Domain::UInt64
+                };
+                let (low, high) = self.term_interval(source, value);
+                wrap_interval(domain, low, high)
+            }
+            (Domain::UInt64, T::UInt64FromInt64(value)) => {
+                let (low, high) = self.term_interval(Domain::Int64, value);
+                wrap_interval(domain, low, high)
             }
             // Zero extension: a non-negative `int32` keeps its value, a
             // negative one gains 2^32, and an operand of unknown sign lands
@@ -1290,6 +1349,19 @@ fn sign_flip_base(domain: Domain, term: &Bitvector32Term) -> Option<&Bitvector32
     } else {
         None
     }
+}
+
+/// The interval `[low, high]` of mathematical values taken modulo `domain`'s
+/// width: unchanged, or shifted by one modulus when that lands it inside
+/// `domain`, and otherwise all of `domain`.
+fn wrap_interval(domain: Domain, low: i128, high: i128) -> (i128, i128) {
+    let (min, max) = domain.range();
+    let modulus = max - min + 1;
+    [0, modulus, -modulus]
+        .into_iter()
+        .map(|shift| (low + shift, high + shift))
+        .find(|&(low, high)| low >= min && high <= max)
+        .unwrap_or((min, max))
 }
 
 /// `value ^ MIN` in a signed `domain`.
