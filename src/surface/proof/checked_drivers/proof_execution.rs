@@ -656,7 +656,7 @@ fn checked_execution_region_contains_source_at(
 /// Checks a written `step` with proofs of its open obligations: each body is
 /// read by the source `have` driver, so it may use smart tactics, and the
 /// step's certificate keeps what they expanded to.
-fn apply_source_step_proofs<'a>(
+pub(in crate::surface::proof) fn apply_source_step_proofs<'a>(
     proof: &Proof<'a>,
     step: &ProofTactic,
     step_proof: &StepProof,
