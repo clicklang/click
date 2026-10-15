@@ -189,7 +189,15 @@ impl Application {
         match self {
             Self::Apply(left, right) => Self::Apply(classes.root(left), classes.root(right)),
             Self::Condition(kind, left, right) => {
-                Self::Condition(kind, classes.root(left), classes.root(right))
+                let (mut left, mut right) = (classes.root(left), classes.root(right));
+                if matches!(
+                    kind,
+                    congruence::ConditionKind::PointerEq | congruence::ConditionKind::OffsetEq
+                ) && left > right
+                {
+                    std::mem::swap(&mut left, &mut right);
+                }
+                Self::Condition(kind, left, right)
             }
             Self::UInt64Binary(op, left, right) => {
                 Self::UInt64Binary(op, classes.root(left), classes.root(right))
@@ -301,7 +309,7 @@ pub(super) struct TermClasses {
     // class. A narrow spelling must not discard the wide coordinate whose
     // bounds justify a borrow. Queries never enumerate class members.
     additive_addresses: PersistentMap<u64, (Option<Arc<Pointer>>, Option<Arc<Pointer>>)>,
-    // Same-block pointer comparisons enter as offset equalities. Their checked
+    // The offset views of same-block pointer equations. These checked
     // producer spellings carry no block identity and are applied only in the
     // query's own block.
     additive_offsets: PersistentMap<

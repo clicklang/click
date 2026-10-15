@@ -1114,13 +1114,9 @@ impl ProofFacts {
     /// implicit and are never visited.
     pub(crate) fn with_selected_load_equality_bridge(&self, goal: &Proposition) -> Self {
         if self.pure_assumption_available(goal)
-            || !matches!(
-                goal,
-                Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(_, _) | ConditionTerm::PointerOffsetEqual(_, _),
-                    true
-                )
-            )
+            || !matches!(goal, Proposition::ConditionIs(condition, true)
+                if matches!(condition, ConditionTerm::Bitvector32Equal(..))
+                    || condition.pointer_offset_sides().is_some())
         {
             return self.clone();
         }

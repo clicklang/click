@@ -135,6 +135,11 @@ impl PureFactContext {
             ConditionTerm::PointerEqual(left, right) => {
                 if self.pointers_known_equal(left, right) {
                     Some(true)
+                } else if left.block == right.block {
+                    self.decide_from_order_rules(&ConditionTerm::pointer_offset_equal(
+                        left.offset.clone(),
+                        right.offset.clone(),
+                    ))
                 } else {
                     left.blocks_proven_distinct(right).then_some(false)
                 }
