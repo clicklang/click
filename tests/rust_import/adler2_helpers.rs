@@ -1374,6 +1374,39 @@ fn charon_adler2_four_byte_compute_proves_original_body_and_rejects_false_output
 }
 
 #[test]
+#[ignore = "nightly: checks the original Adler cursor have and its deterministic work"]
+fn charon_adler2_four_byte_cursor_have_keeps_its_pre_regression_work_bound() {
+    let p = compute_project(FOUR_BYTE_COMPUTE);
+    let prepared = p.prepared().unwrap();
+    let source = compute_proof(FOUR_BYTE_COMPUTE);
+    let offset = source.find("execute_until(assignment(b, 0))").unwrap();
+    let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
+    let (_, samples) = click::instrumentation::collect_tactic_work(|| {
+        click::surface::verify_sources_at(
+            &source,
+            &click::surface::ProgramInputs::program(&prepared),
+            line,
+            2,
+        )
+    });
+    // The unchanged imported body and proof identify this have at MIR
+    // statement 904, source tactic 58. Later independent proof refusals
+    // cannot substitute for a successfully checked event at this site;
+    // the existing full-body/tool tests still require the entire proof.
+    let target = samples
+        .iter()
+        .find(|sample| {
+            sample.tactic.claim.ends_with("_compute.contract")
+                && sample.tactic.statement_index == 904
+                && sample.tactic.source_index == 58
+                && sample.tactic.tactic_name == "have"
+        })
+        .expect("the original cursor equality must be reached");
+    assert!(!target.failed, "{target:?}");
+    assert!(target.work > 0 && target.work <= 192_075, "{target:?}");
+}
+
+#[test]
 #[ignore = "nightly: original vector-step preservation and false bound/state rejections"]
 fn charon_adler2_four_byte_compute_rejects_false_native_step_bounds() {
     // The complete positive caller is checked by the existing computation

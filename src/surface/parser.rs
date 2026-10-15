@@ -170,6 +170,9 @@ pub(in crate::surface) struct ProgramLayouts {
     /// A sidecar head names only the closure's own parameters; the captures
     /// lead its signature, so its contract reads them by name.
     pub(in crate::surface) closure_captures: BTreeMap<String, Vec<FunctionParameter>>,
+    /// Each C++ override with the virtual method it overrides, by their
+    /// sidecar names: the override inherits that method's interface.
+    pub(in crate::surface) virtual_overrides: Vec<(String, String)>,
 }
 
 /// Whether the library declaration `name` of module `identity` is known by
@@ -1062,6 +1065,7 @@ impl Parser {
         parser.int64_t_rank = layouts.int64_t_rank.unwrap_or(LongRank::Long);
         if layouts.language == Some(SourceLanguage::Cpp) {
             parser.language = SourceLanguage::Cpp;
+            parser.rust_trait_implementations = layouts.virtual_overrides;
         }
         Ok(parser)
     }
@@ -1400,12 +1404,15 @@ impl Parser {
                 )));
             }
         }
-        // A crate trait method's implementation inherits its interface,
-        // which the sidecar may declare before or after it.
+        // A crate trait method's implementation, or a C++ override, inherits
+        // its interface, which the sidecar may declare before or after it: a
+        // trait's `extern` method, or the virtual method overridden, whose
+        // contract a call through it assumes.
+        let cpp = self.language == SourceLanguage::Cpp;
         for (implementation, interface) in std::mem::take(&mut self.rust_trait_implementations) {
             let Some(interface) = function_blocks
                 .iter()
-                .find(|block| block.is_external() && block.signature().name() == interface)
+                .find(|block| (cpp || block.is_external()) && block.signature().name() == interface)
                 .cloned()
             else {
                 continue;
@@ -1414,13 +1421,25 @@ impl Parser {
                 .iter_mut()
                 .find(|block| !block.is_external() && block.signature().name() == implementation)
             {
-                block.inherit_interface(&interface).map_err(|message| {
-                    ClickError::new(format!(
-                        "`{}` cannot inherit its trait's interface: {message}",
-                        crate::languages::rust::names::display_rust_names(&implementation)
-                    ))
-                    .at_declaration(&implementation)
-                })?;
+                let source = if cpp {
+                    "the method it overrides"
+                } else {
+                    "the trait's interface"
+                };
+                block
+                    .inherit_interface(&interface, source)
+                    .map_err(|message| {
+                        let what = if cpp {
+                            "the interface of the virtual method it overrides"
+                        } else {
+                            "its trait's interface"
+                        };
+                        ClickError::new(format!(
+                            "`{}` cannot inherit {what}: {message}",
+                            crate::languages::rust::names::display_rust_names(&implementation)
+                        ))
+                        .at_declaration(&implementation)
+                    })?;
             }
         }
         let end = self.position;

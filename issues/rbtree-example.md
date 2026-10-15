@@ -1415,8 +1415,9 @@ callback table. Its copy dispatcher preserves independent structural ownership;
 its propagation dispatcher returns the whole repaired sized tree. Its rotation
 dispatcher selects the left or right dirty model and returns a valid sized
 subtree, with separately checked interfaces for both directions. The callback
-bodies remain unchanged. Writable callback-table integration with insertion
-and erasure remains.
+bodies remain unchanged. The concrete sized insertion cases below check
+selected writable callback-table paths; general insertion and writable erasure
+integration remain unfinished.
 
 
 ### Pinned source
@@ -1602,11 +1603,42 @@ arbitrary ancestor contexts and writable erase integration remain.
 The mirrored right-right root case and both wrappers also verify in
 `rbtree_size_insert_mirrored_rotation.click`, using `RotateTreeLeft` for the
 writable callback. All 17 expansion sites in each single-rotation sidecar
-pass. Double rotations, color flips, arbitrary ancestor contexts and writable
-erase integration remain.
+pass. Color flips, arbitrary ancestor contexts and writable erase integration
+remain; double-rotation progress is described below.
 
 `rbtree_size_model_unique.click` now proves that two recursively count-valid
 `SizedTree` values with equal erased shapes are equal, by induction on one
 model and exhaustive constructor matching on the other. This supplies the
-exact model transport needed between two writable rotation callbacks; it
-does not yet complete double-rotation insertion.
+exact model transport needed between two writable rotation callbacks.
+
+
+`rbtree_size_insert_double_rotation.click` checks the left-right three-node
+root insertion and both augmented insertion wrappers with writable callbacks.
+The first left rotation repairs the parent/focus sizes; model uniqueness
+identifies that returned subtree before the outer right rotation. The second
+callback repairs the final root and demoted grandparent sizes. The result owns
+the exact black-root/two-red-leaf shape with recursively valid subtree counts.
+The Linux C is unchanged. Color flips, arbitrary ancestor contexts, and
+writable erase integration remain unfinished.
+
+
+`rbtree_size_insert_mirrored_double_rotation.click` checks the mirrored
+right-left root case and both wrappers. It repairs the inner right rotation
+before the outer left rotation, returning a black focus root with the
+grandparent on the left and the original parent on the right. Both double
+rotation directions now check two writable callbacks in sequence. Together
+with the single rotations, all four three-node root rotation shapes are
+covered with recursively valid cached sizes.
+
+
+`rbtree_size_insert_color_flip.click` and
+`rbtree_size_insert_mirrored_color_flip.click` check the four-node color-flip
+path in both orientations, including `__rb_insert` and both augmented wrappers.
+The red parent and uncle become black, the focus moves to the grandparent,
+and the loop continues before blackening that new root. The owned
+`sized_context_at` chain has two ancestor frames before the flip and none
+afterwards; its actual `sized_context_depth` supplies the decreasing measure.
+All cached sizes and links are preserved, and the returned resource describes
+the exact recolored sized tree. This path invokes no callback and accepts any
+correctly typed rotation pointer. These are root-reaching flips; continuing
+through arbitrary ancestors and writable erase integration remain unfinished.

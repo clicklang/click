@@ -7774,6 +7774,24 @@ pub fn c_function_refines_named_contract(
     .map_err(ExecutionLimit::describe)
 }
 
+/// Whether `function`'s contract refines the contract `interface` is
+/// verified against, as an override's must refine the virtual method's it
+/// overrides: the same judgment as a named contract's.
+pub fn c_function_refines_function_contract(
+    interface: &CFunction,
+    function: &CFunction,
+) -> Result<bool, String> {
+    let Some(contract) = CFunctionContract::new(interface.name(), interface.clone()) else {
+        return Ok(false);
+    };
+    super::functions::function_refines_named_contract(
+        &contract,
+        function,
+        &mut ExecutionBudget::for_new_execution(),
+    )
+    .map_err(ExecutionLimit::describe)
+}
+
 /// The explicit refinement theorem a refused concrete formation needs.
 ///
 /// Both names are exact map lookups into the same tables the formation check

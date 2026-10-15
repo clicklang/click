@@ -5250,6 +5250,11 @@ impl parser::ProgramLayouts {
             struct_layouts: execution.layouts.clone(),
             ..Default::default()
         };
+        let source_names = execution
+            .functions
+            .iter()
+            .map(|function| (function.name(), function.source_name()))
+            .collect::<BTreeMap<_, _>>();
         for function in &execution.functions {
             let captures = function.closure_captures();
             if !captures.is_empty() {
@@ -5273,6 +5278,13 @@ impl parser::ProgramLayouts {
                 function.source_name().to_string(),
                 function.local_struct_values().clone(),
             );
+            if let Some(interface) = function.trait_interface()
+                && let Some(interface) = source_names.get(interface)
+            {
+                tables
+                    .virtual_overrides
+                    .push((function.source_name().to_string(), interface.to_string()));
+            }
             tables.local_struct_pointers.insert(
                 function.source_name().to_string(),
                 parser::FunctionLocals {
@@ -5877,9 +5889,20 @@ fn check_trait_method_implementations(
         let Some(interface) = function.trait_interface() else {
             continue;
         };
-        if environment.get_function_contract(interface).is_none() {
+        let rust = crate::languages::rust::names::is_rust_name(function.name());
+        // A C++ virtual method with a body is verified against its own
+        // contract, which is its interface.
+        let verified_interface = if rust || environment.get_function_contract(interface).is_some() {
+            None
+        } else {
+            environment.get_function(interface)
+        };
+        if environment.get_function_contract(interface).is_none() && verified_interface.is_none() {
             continue;
         }
+        let interface_name = parsed_sources
+            .get(interface)
+            .map_or(interface, |(_, function)| function.source_name());
         // A trait whose object carries state states each implementation's
         // interface on that implementation's own memory.
         let iface = crate::surface::parser::implementation_interface_contract(function.name());
@@ -5894,25 +5917,51 @@ fn check_trait_method_implementations(
             .iter()
             .any(|block| !block.is_external() && block.signature().name() == function.source_name())
         {
-            return Err(ClickError::new(format!(
-                "`{}` implements the trait method interface `{interface}` but has no contract; \
-                 write it in the `impl` block, with its proof",
-                function.name()
-            ))
+            return Err(ClickError::new(if rust {
+                format!(
+                    "`{}` implements the trait method interface `{interface}` but has no \
+                     contract; write it in the `impl` block, with its proof",
+                    function.name()
+                )
+            } else {
+                format!(
+                    "`{}` overrides the virtual method `{interface_name}` but has no contract; \
+                     write it in the sidecar, with its proof",
+                    function.source_name()
+                )
+            })
             .at_declaration(function.name()));
         }
         let Some(implementation) = environment.get_function(function.name()) else {
             continue;
         };
-        if !crate::kernel::c_function_refines_named_contract(environment, contract, implementation)
-            .map_err(ClickError::new)?
-        {
+        let refines = match verified_interface {
+            Some(interface) => {
+                crate::kernel::c_function_refines_function_contract(interface, implementation)
+            }
+            None => crate::kernel::c_function_refines_named_contract(
+                environment,
+                contract,
+                implementation,
+            ),
+        };
+        if !refines.map_err(ClickError::new)? {
+            let (name, interface) = if rust {
+                (
+                    function.name(),
+                    format!("the trait method interface `{interface}`"),
+                )
+            } else {
+                (
+                    function.source_name(),
+                    format!("the virtual method `{interface_name}` it overrides"),
+                )
+            };
             return Err(ClickError::new(format!(
-                "`{}` does not refine the trait method interface `{interface}`: its contract \
-                 must accept every call the interface allows; it inherits the interface's \
-                 guarantees, and its `requires` must follow from the interface's, each clause \
-                 read exactly or decided as a bare comparison",
-                function.name()
+                "`{name}` does not refine {interface}: its contract must accept every call the \
+                 interface allows; it inherits the interface's guarantees, and its `requires` \
+                 must follow from the interface's, each clause read exactly or decided as a \
+                 bare comparison"
             ))
             .at_declaration(function.name()));
         }

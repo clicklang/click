@@ -5750,7 +5750,7 @@ fn terminal_destructor_rejects_throwing_virtual_empty_and_nonterminal_cleanup() 
                 "~RestoreState() noexcept",
                 "virtual ~RestoreState() noexcept",
             ),
-            "standard-layout",
+            "public, non-virtual, non-deleted, and explicitly noexcept",
         ),
         (
             TERMINAL_DESTRUCTOR_SOURCE.replace(
@@ -18383,4 +18383,100 @@ fn cpp_project_unit_exports_several_functions_from_an_external_tree() {
         "{error}"
     );
     let _ = fs::remove_dir_all(&base);
+}
+
+const VIRTUAL_SOURCE: &str = "struct Shape { virtual int area(int scale) const noexcept = 0; };
+struct Square : Shape {
+    int side;
+    int area(int scale) const noexcept override { return scale + 1; }
+};
+int total(const Shape& shape, int scale) noexcept { return shape.area(scale); }
+";
+
+// Virtual dispatch is admitted where every override a call may reach is
+// imported and checked, and no object is built: a polymorphic class with one
+// polymorphic base, reached by reference, and a call graph whose dispatch
+// edges, from a virtual method to each override, close no cycle.
+#[test]
+#[ignore = "nightly: 0.6s in the parallel gate"]
+fn virtual_dispatch_refuses_construction_recursion_and_other_class_shapes() {
+    for (edits, expected) in [
+        (
+            &[(
+                "{ return shape.area(scale); }",
+                "{ Square square; square.side = 1; return square.area(scale); }",
+            )][..],
+            "constructing a polymorphic C++ object remains unsupported",
+        ),
+        // A call back through the interface from an override.
+        (
+            &[
+                (
+                    "= 0; };",
+                    "= 0;\n    int twice(int scale) const noexcept { return area(scale); }\n};",
+                ),
+                ("return scale + 1; }", "return twice(scale); }"),
+            ][..],
+            "recursive C++ calls are outside the supported slice",
+        ),
+        (
+            &[(
+                "return shape.area(scale); }",
+                "return shape.Shape::area(scale); }",
+            )][..],
+            "unsupported C++ method dispatch",
+        ),
+        (
+            &[(
+                "struct Square : Shape {",
+                "struct Other { virtual int other() const noexcept { return 1; } };\nstruct Square : Shape, Other {",
+            )][..],
+            "at most one public non-virtual base",
+        ),
+        (
+            &[(
+                "= 0; };",
+                "= 0; };\nint Shape::area(int scale) const noexcept { return scale; }",
+            )][..],
+            "pure virtual C++ method with a definition",
+        ),
+    ] {
+        let mut source = VIRTUAL_SOURCE.to_string();
+        for (from, to) in edits {
+            assert!(source.contains(from), "{from}");
+            source = source.replacen(from, to, 1);
+        }
+        let project = Project::with_fixture("shapes.cpp", "total", &source);
+        let error = refresh_import(&project.config())
+            .and_then(|_| load_import(&project.config()).map(|_| ()))
+            .unwrap_err();
+        assert!(error.contains(expected), "{error}");
+    }
+    // An override the sidecar does not state is never verified, so the
+    // interface may not stand for it.
+    let project = Project::with_fixture("shapes.cpp", "total", VIRTUAL_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let error = C0VerificationSession::new_program_prepared(
+        r#"verifying "shapes.cpp";
+extern int Shape::area(int scale) const {
+    requires 0 <= scale and scale <= 1000;
+    ensures scale < result;
+}
+int total(const Shape& shape, int scale) {
+    requires 0 <= scale and scale <= 1000;
+    ensures scale < result;
+} by { execute(); simp(); }
+"#,
+        &import,
+    )
+    .err()
+    .expect("an unstated override must be refused");
+    let rendered = format!("{error:?}");
+    assert!(
+        rendered.contains(
+            "`Square_area` overrides the virtual method `Shape_area` but has no contract"
+        ),
+        "{rendered}"
+    );
 }

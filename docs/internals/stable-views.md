@@ -121,7 +121,9 @@ lending the requested subrange and keeping the remainder usable, from the
 caller's own view by a reborrow, from an owned composite by a composite
 lend, and from a different owned composite or the caller's owned frontier
 when the viewed composite's checked expansion is covered piecewise and its
-facts hold at the call. Coverage starts from the exact owner occurrence
+facts hold at the call. A fact holds by the exact routes a fold uses: a
+quantified fact the caller states matches the body's up to its binder and the
+registered loads that binder indexes. Coverage starts from the exact owner occurrence
 checked before reservations. If memory splitting assigns a fresh occurrence
 to a residual fragment, the planner accepts it only when the original owner
 uniquely supported the view and the residual is contained in that owner. It

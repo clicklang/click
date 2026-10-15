@@ -606,3 +606,56 @@ rust-chunks-exact. Concurrent local compilation affected this run's elapsed
 time. The archive's trace bug file is closed; its historical reproduction at
 the immutable link above remains available. This is not a full green gate or
 native-feature activation.
+
+Refcount delivery [PR #1136](https://github.com/clicklang/click/pull/1136)
+merged; both pushed commits are verified on upstream. The next shared repair
+recognizes cached function-pointer values in definitional memory comparison:
+the canonical representation names an exact registered load at zero offset,
+which the existing comparison did not recognize. The read must still have the
+cell's load kind, read that cell and be unchanged across snapshots. The kernel
+regression reproduces upstream before the fix; controls reject a different
+cell, narrower load, arbitrary symbol, displacement and changed cell value.
+
+On the recovery archive, that repair gets past the original red-black tree
+callback `open`. Explicit references to the callee's existing result and
+inorder facts complete the entry-module proofs without changing C or contracts.
+The normal archive audit is **48/52** in 111.13 seconds; remaining failures are
+arena, owned-vector, rust-byte-sum and rust-chunks-exact. This is the normal
+entry-module audit under conditional imported interfaces, not proof of every
+imported helper. Selected proof-unit checking additionally reaches the known
+integer-to-pointer origin refusal in an imported rotation helper. No full green
+gate or native-feature activation is claimed.
+
+Byte-sum's two exhausted smart searches are now explicit applications of the
+existing integer-conversion lemmas and arithmetic over relevant premises.
+Original Rust and contracts are unchanged. Its result proof passes fresh,
+expanded, rewritten and retained checking on both the archive and this
+upstream-based branch. The last complete archive audit remains **48/52**;
+byte-sum is individually restored pending the next complete audit.
+
+The next shared repair makes iterated ownership use checked read equality both
+when selecting an element and when comparing complete iterated holdings. The
+same pointer slot read across an unrelated store remains the same address;
+wrong-slot and changed-slot controls reject, and element widths and guard
+locations remain strict. Nine focused upstream controls pass (four ignored),
+including the existing flat-work checks at four range sizes. The corresponding
+seven archive controls pass (one ignored). Arena now gets past `take`; its
+window fold is still under diagnosis. Retain the last full **48/52** audit.
+
+The next complete normal archive audit is **49/52** in 131.48 seconds, with no
+new failure: only arena, owned-vector and rust-chunks-exact remain. Concurrent
+compilation affected timing. CI's byte-sum mirror checks caught the stale
+migrated `sum-proof.click`; it now matches the explicit canonical proof. Both
+failing Rust parity checks pass locally. The original frozen sidecar and its
+hash are unchanged.
+
+[PR #1144](https://github.com/clicklang/click/pull/1144) merged; all four pushed
+commits are verified on upstream. The next bounded proof repair completes
+Rust chunks-exact with existing native-to-Integer conversion lemmas and explicit
+cursor/last-byte formation and read bounds. Original Rust and contracts are
+unchanged, and the migrated sidecar remains synchronized with its canonical
+copy. Fresh, expanded, rewritten and retained checks pass on the archive and
+upstream-based `95fe8cbd1`. The active migration inventory control and the
+specifically selected source/obligation control pass; the other two ignored
+chunk tool controls were not run. The last complete archive audit remains
+**49/52** pending a rerun; arena and owned-vector are the other failures.

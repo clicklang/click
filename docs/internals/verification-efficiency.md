@@ -701,6 +701,21 @@ explicit:
   get their own search. False list-position claims are checked below the
   ordinary smart budget, beside increasing unrelated fact sets and against
   the unchanged `rb_next` proof.
+- **Select pointer rewrites from the differing offsets.** For a same-block
+  pointer comparison, equality selection omits the shared block and an exact
+  shared leading offset: `(base + i) == base` selects facts about `i`, and
+  `(base + i) == (base + j)` selects facts about `i` and `j`. This also covers
+  external arguments whose base is a scaled offset in `ExternalArgument`.
+  A direct offset rewrite runs before a speculative typed closer searches
+  historical facts. Selected facts are first reconstructed at the current
+  state before searching historical snapshots that may not name their values.
+  The original pointer comparison remains the checked goal; candidate selection
+  neither changes pointer equality nor grants access authority. Deterministic
+  regressions grow same-base historical pointers and recorded snapshots
+  separately, keeping rewrite work bounded in both.
+  Exact pointer-operand buckets precede shared-base variable buckets. Literal
+  values do not nominate rewrite candidates; an old iterator's `k_old == 4`
+  cannot help rewrite a distinct `k` merely because its goal contains `4`.
 - **Decide an overlap before searching for a separation.** A walk across a
   call asks whether each cell it names is separate from the callee's write
   set. A cell the write set contains, such as a field of an object that a
