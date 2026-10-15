@@ -8591,11 +8591,9 @@ fn restricted_simp_rewrites_pointer_aliases_inside_memory_loads() {
         expanded_have.contains("rewrite(index == 0);"),
         "{expanded_have}"
     );
-    assert!(
-        expanded_have.contains("rewrite(value == original[0]);"),
-        "{expanded_have}"
-    );
-    assert!(expanded_have.contains("normalize();"), "{expanded_have}");
+    // The checked read bridge can use the cited equality directly. Require
+    // an explicit certificate, not a particular orientation or final closer.
+    assert!(!expanded_have.contains("simp() using"), "{expanded_have}");
     assert!(!expanded_have.contains("derive using"), "{expanded_have}");
     verify_c0_sources(&expanded, &sources)
         .expect("expanded pointer-alias certificate should check");
