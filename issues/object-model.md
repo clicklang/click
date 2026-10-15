@@ -587,3 +587,21 @@ The new regression and all 73 active diagnostic controls pass (nine ignored).
 On the archive, the original refcount trace now records the post-retain read
 equal to `1 + amount`; its functional failure still needs diagnosis. Retain
 the 46/52 audit count.
+
+The shared diagnostic repair landed through
+[PR #1131](https://github.com/clicklang/click/pull/1131), with its pushed commit
+verified on upstream. The restored refcount trace showed the same read in the
+goal and the `1 + amount` value fact, together with its bounds and overflow
+premise. Rewriting that value and invoking arithmetic with the existing
+premises completes the comparison. The original C, contracts and resources
+remain unchanged. The explicit pipeline proof passes fresh, expanded,
+rewritten and retained checking on both the archive and upstream-based
+`3c616ce13` tree.
+
+Recovery checkpoint `cb6c3772c` restores refcount. The full normal archive audit
+now passes **47/52** in 146.33 seconds, with no new failing project. The five
+remaining failures are arena, owned-vector, rbtree-augmented, rust-byte-sum and
+rust-chunks-exact. Concurrent local compilation affected this run's elapsed
+time. The archive's trace bug file is closed; its historical reproduction at
+the immutable link above remains available. This is not a full green gate or
+native-feature activation.
