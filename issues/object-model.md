@@ -520,3 +520,16 @@ strict while distinguishing C access knowledge. Borrowed-slice separately
 requires write authorization from the call's already checked mutable resource
 projection. These repairs are recovery work, not upstream feature activation;
 repeat the complete archive example audit before reporting a new count.
+
+Recovery checkpoint `f936e47d8` repairs both regressions. The normal example audit
+now passes **44/52** in 105.27 seconds, with exactly the other eight failures
+listed above and no new failing project. The original service loop passes all
+four proof modes; its focused Markdown control passes on both trees. All 22
+native-input controls pass. The broader pointer selection has 477 passes, the
+same two documented failures and 17 ignored controls. These are preserved
+archive results, not an upstream activation or full green-gate verdict.
+
+The narrower cursor-take caller recorded in the carrier bug also fails on
+upstream-based `2c484f457`, for missing borrowing-composite loan backing. Keep
+that baseline limitation separate from archive compatibility regressions;
+the original input-cursor project is restored on the recovery branch.
