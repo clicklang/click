@@ -13,6 +13,11 @@
 //!
 //! A sidecar selects a unit's source with an ordinary `verifying` path,
 //! relative to the sidecar, that names a file the unit lists.
+//!
+//! A C unit lists translation units that its compiler preprocesses. A Rust
+//! unit is one crate and lists its root; the pinned Charon named by
+//! `CLICK_CHARON` extracts it at lock time, and the crate's `roots` are the
+//! entry points every sidecar verifying it sees.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -21,8 +26,10 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
+use crate::languages::PreparedProgram;
 use crate::languages::c::compiler_import::{self, PreparedCImport, UnitConfig, UnitSource};
 use crate::languages::c::target::CTarget;
+use crate::languages::rust::{self as rust_import, CrateConfig};
 
 /// The project file's name.
 pub const FILE_NAME: &str = "click.project.json";
@@ -49,7 +56,19 @@ struct UnitJson {
     /// Arguments every source of the unit is prepared with, before its own.
     #[serde(default)]
     args: Vec<String>,
+    /// A Rust unit's crate description.
+    #[serde(default, rename = "crate")]
+    crate_config: Option<CrateConfig>,
     sources: BTreeMap<String, SourceJson>,
+}
+
+/// The prepared inputs a sidecar selects from a project's units.
+#[derive(Clone, Debug)]
+pub enum UnitSelection {
+    /// C translation units, one per `verifying` source.
+    C(Vec<PreparedCImport>),
+    /// One crate.
+    Program(PreparedProgram),
 }
 
 fn project_directory() -> String {
@@ -224,6 +243,33 @@ impl Project {
         })
     }
 
+    pub(crate) fn rust_unit(&self, name: &str) -> Result<rust_import::UnitConfig, String> {
+        let unit = &self.units[name];
+        let source = unit
+            .spec
+            .sources
+            .keys()
+            .next()
+            .expect("a validated Rust unit lists its crate root")
+            .clone();
+        Ok(rust_import::UnitConfig {
+            unit_name: name.to_string(),
+            project_file: self.file.clone(),
+            unit_digest: self.unit_digest(name)?,
+            root: self.root.join(&unit.spec.root),
+            artifact: self
+                .root
+                .join(format!("{ARTIFACT_DIRECTORY}/{name}/{source}.ullbc")),
+            source,
+            crate_config: unit
+                .spec
+                .crate_config
+                .clone()
+                .expect("a validated Rust unit has a crate"),
+            lock_path: self.lock_path(),
+        })
+    }
+
     /// Prepares every unit and writes the project lock and its artifacts.
     pub fn lock(&self) -> Result<(), String> {
         if !self.has_units() {
@@ -234,19 +280,33 @@ impl Project {
         }
         let mut entries = serde_json::Map::new();
         let mut artifacts = Vec::new();
-        for name in self.units.keys() {
-            let unit = self.c_unit(name)?;
-            for source in &unit.sources {
-                let artifact = self.root.join(&source.artifact);
-                let parent = artifact.parent().expect("an artifact path has a parent");
-                fs::create_dir_all(parent)
-                    .map_err(|error| format!("create directory `{}`: {error}", parent.display()))?;
-            }
-            let (lock, unit_artifacts) = compiler_import::prepare_unit(&unit)
-                .map_err(|error| format!("unit `{name}`: {error}"))?;
+        for (name, unit) in &self.units {
+            let (language, lock, unit_artifacts) = match unit.spec.language.as_str() {
+                "rust" => {
+                    let unit = self.rust_unit(name)?;
+                    let exporter = std::env::var_os("CLICK_CHARON").ok_or_else(|| {
+                        format!(
+                            "set CLICK_CHARON to the pinned Charon executable to prepare Rust unit `{name}`"
+                        )
+                    })?;
+                    create_parent(&unit.artifact)?;
+                    let (lock, artifacts) = rust_import::prepare_unit(&unit, Path::new(&exporter))
+                        .map_err(|error| format!("unit `{name}`: {error}"))?;
+                    ("rust", lock, artifacts)
+                }
+                _ => {
+                    let unit = self.c_unit(name)?;
+                    for source in &unit.sources {
+                        create_parent(&self.root.join(&source.artifact))?;
+                    }
+                    let (lock, artifacts) = compiler_import::prepare_unit(&unit)
+                        .map_err(|error| format!("unit `{name}`: {error}"))?;
+                    ("c", lock, artifacts)
+                }
+            };
             entries.insert(
                 name.clone(),
-                serde_json::json!({ "language": "c", "lock": lock }),
+                serde_json::json!({ "language": language, "lock": lock }),
             );
             artifacts.extend(unit_artifacts);
         }
@@ -263,13 +323,13 @@ impl Project {
         crate::cli::write_file_atomically(&self.lock_path(), &encoded)
     }
 
-    /// The prepared sources a sidecar's `verifying` declarations select, as
-    /// `(spelling, canonical path)` pairs, or `None` when no unit lists any of
-    /// them.
-    pub fn prepared_c_sources(
+    /// The prepared inputs a sidecar's `verifying` declarations select, given
+    /// as `(spelling, canonical path)` pairs, or `None` when no unit lists any
+    /// of them.
+    pub fn prepared_sources(
         &self,
         requested: &[(String, Option<PathBuf>)],
-    ) -> Result<Option<Vec<PreparedCImport>>, String> {
+    ) -> Result<Option<UnitSelection>, String> {
         let mut selected = Vec::with_capacity(requested.len());
         let mut unlisted = Vec::new();
         for (spelling, path) in requested {
@@ -288,11 +348,23 @@ impl Project {
             ));
         }
         let lock = self.read_lock()?;
+        if let Some((spelling, unit, _)) = selected
+            .iter()
+            .find(|(_, unit, _)| self.units[*unit].spec.language == "rust")
+        {
+            if selected.len() != 1 {
+                return Err(format!(
+                    "`verifying \"{spelling}\"` selects the crate of Rust unit `{unit}`, which a sidecar verifies on its own"
+                ));
+            }
+            let import = self.load_rust_unit(unit, &lock)?;
+            return Ok(Some(UnitSelection::Program(import.named(spelling).into())));
+        }
         let mut loaded = BTreeMap::<&str, BTreeMap<String, PreparedCImport>>::new();
         let mut prepared = Vec::with_capacity(selected.len());
         for (spelling, unit, relative) in selected {
             if !loaded.contains_key(unit) {
-                let imports = self.load_unit(unit, &lock)?;
+                let imports = self.load_c_unit(unit, &lock)?;
                 loaded.insert(
                     unit,
                     imports
@@ -306,7 +378,7 @@ impl Project {
             })?;
             prepared.push(import.named(spelling));
         }
-        Ok(Some(prepared))
+        Ok(Some(UnitSelection::C(prepared)))
     }
 
     /// Whether a unit lists any of the requested sources.
@@ -357,11 +429,13 @@ impl Project {
         Ok(lock)
     }
 
-    fn load_unit(
+    /// The lock entry of unit `name`, which must be of `language`.
+    fn lock_entry<'l>(
         &self,
         name: &str,
-        lock: &serde_json::Value,
-    ) -> Result<Vec<PreparedCImport>, String> {
+        language: &str,
+        lock: &'l serde_json::Value,
+    ) -> Result<&'l serde_json::Value, String> {
         let entry = lock
             .get("units")
             .and_then(|units| units.get(name))
@@ -371,15 +445,34 @@ impl Project {
                     self.root.display()
                 )
             })?;
-        if entry.get("language").and_then(serde_json::Value::as_str) != Some("c") {
+        if entry.get("language").and_then(serde_json::Value::as_str) != Some(language) {
             return Err(format!(
-                "the project lock entry for unit `{name}` is not a C unit"
+                "the project lock entry for unit `{name}` is not a `{language}` unit; run `click import lock {}`",
+                self.root.display()
             ));
         }
-        let unit_lock = entry
+        entry
             .get("lock")
-            .ok_or_else(|| format!("the project lock entry for unit `{name}` has no lock"))?;
+            .ok_or_else(|| format!("the project lock entry for unit `{name}` has no lock"))
+    }
+
+    fn load_c_unit(
+        &self,
+        name: &str,
+        lock: &serde_json::Value,
+    ) -> Result<Vec<PreparedCImport>, String> {
+        let unit_lock = self.lock_entry(name, "c", lock)?;
         compiler_import::load_unit(&self.c_unit(name)?, unit_lock)
+            .map_err(|error| format!("unit `{name}`: {error}"))
+    }
+
+    fn load_rust_unit(
+        &self,
+        name: &str,
+        lock: &serde_json::Value,
+    ) -> Result<rust_import::PreparedRustImport, String> {
+        let unit_lock = self.lock_entry(name, "rust", lock)?;
+        rust_import::load_unit(&self.rust_unit(name)?, unit_lock)
             .map_err(|error| format!("unit `{name}`: {error}"))
     }
 }
@@ -400,11 +493,38 @@ fn validate_unit_name(name: &str) -> Result<(), String> {
 
 fn validate_unit(name: &str, unit: &UnitJson) -> Result<(), String> {
     match unit.language.as_str() {
-        "c" => {}
-        "c++" | "rust" => {
+        "c" => {
+            if unit.crate_config.is_some() {
+                return Err(format!("C unit `{name}` cannot describe a `crate`"));
+            }
+        }
+        "rust" => {
+            if unit.crate_config.is_none() {
+                return Err(format!("Rust unit `{name}` needs a `crate` description"));
+            }
+            if unit.compiler.is_some()
+                || !unit.environment.is_empty()
+                || unit.option_profile.is_some()
+                || !unit.args.is_empty()
+            {
+                return Err(format!(
+                    "Rust unit `{name}` takes no `compiler`, `environment`, `option_profile` or `args`; the pinned Charon prepares it"
+                ));
+            }
+            if unit.sources.len() != 1
+                || unit
+                    .sources
+                    .values()
+                    .any(|source| !source.args.is_empty() || source.projection.is_some())
+            {
+                return Err(format!(
+                    "Rust unit `{name}` lists exactly its crate root in `sources`, with no arguments"
+                ));
+            }
+        }
+        "c++" => {
             return Err(format!(
-                "unit `{name}`: {} units are not supported in `click.project.json` yet; use a per-sidecar import config",
-                unit.language
+                "unit `{name}`: C++ units are not supported in `click.project.json` yet; use a per-sidecar import config"
             ));
         }
         other => return Err(format!("unit `{name}` has unsupported language `{other}`")),
@@ -429,6 +549,12 @@ fn validate_unit(name: &str, unit: &UnitJson) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn create_parent(path: &Path) -> Result<(), String> {
+    let parent = path.parent().expect("an artifact path has a parent");
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("create directory `{}`: {error}", parent.display()))
 }
 
 fn read_bounded(path: &Path, max: u64) -> Result<Vec<u8>, String> {
@@ -501,6 +627,17 @@ mod tests {
                 "not supported in `click.project.json` yet",
             ),
             (
+                r#"{"rs": {"language": "rust", "sources": {"src/lib.rs": {}}}}"#,
+                "needs a `crate` description",
+            ),
+            (
+                r#"{"rs": {"language": "rust", "compiler": "/usr/bin/gcc",
+                    "crate": {"name": "a", "edition": "2021", "features": [],
+                        "roots": ["a::f"], "files": ["src/lib.rs"]},
+                    "sources": {"src/lib.rs": {}}}}"#,
+                "takes no `compiler`",
+            ),
+            (
                 r#"{"bad name": {"language": "c", "sources": {"a.c": {}}}}"#,
                 "unit name `bad name`",
             ),
@@ -541,13 +678,13 @@ mod tests {
         let listed = [("add.c".to_string(), Some(source))];
         assert!(project.lists_any(&listed));
         assert!(!project.lists_any(&[("local.c".to_string(), Some(other.clone()))]));
-        let error = project.prepared_c_sources(&listed).unwrap_err();
+        let error = project.prepared_sources(&listed).unwrap_err();
         assert!(
             error.contains("has no lock; run `click import lock"),
             "{error}"
         );
         let mixed = [listed[0].clone(), ("local.c".to_string(), Some(other))];
-        let error = project.prepared_c_sources(&mixed).unwrap_err();
+        let error = project.prepared_sources(&mixed).unwrap_err();
         assert!(
             error.contains("`verifying \"local.c\"` names no source"),
             "{error}"

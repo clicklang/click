@@ -895,10 +895,15 @@ fn read_c_inputs_for_target(
         }
     }
     if let Some((project, requested)) = unit_selection {
-        let imports = project
-            .prepared_c_sources(&requested)?
-            .expect("the project lists the selected sources");
-        return Ok(CInput::Prepared(imports));
+        return Ok(
+            match project
+                .prepared_sources(&requested)?
+                .expect("the project lists the selected sources")
+            {
+                crate::project::UnitSelection::C(imports) => CInput::Prepared(imports),
+                crate::project::UnitSelection::Program(program) => CInput::PreparedProgram(program),
+            },
+        );
     }
     Ok(CInput::Bundle(read_verifying_sources_for_target(
         sidecar,
