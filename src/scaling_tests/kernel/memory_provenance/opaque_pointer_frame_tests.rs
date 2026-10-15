@@ -4,6 +4,7 @@ use super::*;
 #[test]
 fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
     let mut samples = Vec::new();
+    let mut wide_samples = Vec::new();
     for size in [16u64, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Pointer {
@@ -52,9 +53,46 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
         assert!(holds);
         assert!(work > 0);
         samples.push(work);
+        let wide_address = field.offset_by_bytes(32);
+        let write_alias = Pointer::loaded(
+            PointerBlock::ExternalArgument,
+            Bitvector32Term::Variable(Variable(9_880_303)),
+            4,
+        );
+        context = context.assume_condition(
+            ConditionTerm::pointer_equal(write_alias.clone(), wide_address.clone()),
+            true,
+        );
+        let parent = Pointer::symbolic(Variable(9_880_304));
+        let parent_alias = Pointer::symbolic(Variable(9_880_305));
+        context = context.assume_condition(
+            ConditionTerm::pointer_equal(parent.clone(), parent_alias.clone()),
+            true,
+        );
+        let value = Bitvector32Term::PointerAddress(Box::new(parent));
+        let wanted = Bitvector32Term::PointerAddress(Box::new(parent_alias));
+        let source = intern_c_memory(
+            snapshot
+                .memory()
+                .clone()
+                .store(write_alias, CValue::UInt64(value.clone())),
+        );
+        let projected = canonical_projected_load_memory(&source, &wide_address);
+        let wide_read =
+            Bitvector32Term::MemoryLoad(projected, Box::new(wide_address), LoadKind::Bits64);
+        let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
+            wide_read_has_recorded_value(&wide_read, &wanted, &context)
+        });
+        assert!(holds);
+        assert!(work > 0);
+        wide_samples.push(work);
     }
     assert!(
         samples.windows(2).all(|pair| pair[0] == pair[1]),
         "{samples:?}"
+    );
+    assert!(
+        wide_samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "{wide_samples:?}"
     );
 }

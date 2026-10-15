@@ -1358,8 +1358,26 @@ pub(in crate::kernel) fn memory_dag_cell_source_with_hop_limit(
     assumptions: &PureFactContext,
     max_hops: usize,
 ) -> Option<MemoryDagCell> {
+    memory_dag_cell_source_with_hop_limit_and_stop(memory, pointer, bytes, assumptions, max_hops)
+        .map(|(cell, _)| cell)
+}
+
+pub(in crate::kernel) fn memory_dag_cell_source_with_hop_limit_and_stop(
+    memory: &SharedCMemory,
+    pointer: &Pointer,
+    bytes: u32,
+    assumptions: &PureFactContext,
+    max_hops: usize,
+) -> Option<(MemoryDagCell, CellWalkStop)> {
     let _lookup = CellLookupGuard::enter(memory, pointer)?;
-    Some(memory_dag_cell_source_walk(memory, pointer, bytes, assumptions, true, Some(max_hops)).0)
+    Some(memory_dag_cell_source_walk(
+        memory,
+        pointer,
+        bytes,
+        assumptions,
+        true,
+        Some(max_hops),
+    ))
 }
 
 fn memory_dag_cell_source_walk(
