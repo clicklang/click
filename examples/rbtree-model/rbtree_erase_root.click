@@ -92,13 +92,13 @@ theorem rb_blacken_reparent_is_rb_root(tree: RbTree, parent: struct rb_node*) {
 theorem rb_erase_root_child_inorder(tree: RbTree) {
     requires rb_left(tree) == RbTree::Empty or rb_right(tree) == RbTree::Empty;
     ensures rb_inorder(rb_erase_root_child(tree))
-    == list_append(rb_inorder(rb_left(tree)), rb_inorder(rb_right(tree))) by {
+    == list::append(rb_inorder(rb_left(tree)), rb_inorder(rb_right(tree))) by {
         induct(tree) as ih {
             RbTree::Empty => {
                 unfold(rb_erase_root_child(RbTree::Empty));
                 unfold(rb_left(RbTree::Empty)); unfold(rb_right(RbTree::Empty));
                 unfold(rb_inorder(RbTree::Empty));
-                unfold(list_append(List<struct rb_node*>::Nil, List<struct rb_node*>::Nil));
+                unfold(list::append(List<struct rb_node*>::Nil, List<struct rb_node*>::Nil));
                 normalize();
             }
             RbTree::Node(node, parent, color, left, right) => {
@@ -113,7 +113,7 @@ theorem rb_erase_root_child_inorder(tree: RbTree) {
                         unfold(rb_left(RbTree::Node(node, parent, color, RbTree::Empty, right)));
                         unfold(rb_right(RbTree::Node(node, parent, color, RbTree::Empty, right)));
                         unfold(rb_inorder(RbTree::Empty));
-                        unfold(list_append(List::Nil, rb_inorder(right)));
+                        unfold(list::append(List::Nil, rb_inorder(right)));
                         normalize();
                     }
                     rb_right(RbTree::Node(node, parent, color, left, right)) == RbTree::Empty => {
@@ -122,8 +122,8 @@ theorem rb_erase_root_child_inorder(tree: RbTree) {
                         unfold(rb_left(RbTree::Node(node, parent, color, left, RbTree::Empty)));
                         unfold(rb_right(RbTree::Node(node, parent, color, left, RbTree::Empty)));
                         unfold(rb_inorder(RbTree::Empty));
-                        apply(list_append_right_identity(rb_inorder(left)));
-                        rewrite(list_append(rb_inorder(left), List::Nil) ==
+                        apply(list::append_right_identity(rb_inorder(left)));
+                        rewrite(list::append(rb_inorder(left), List::Nil) ==
                             rb_inorder(left));
                         apply(rb_erase_root_child_no_right(node, parent, color, left));
                         rewrite(rb_erase_root_child(RbTree::Node(node, parent, color, left, RbTree::Empty))
@@ -145,7 +145,7 @@ theorem rb_erase_root_no_deficit(tree: RbTree) {
         assumption();
     }
     ensures rb_inorder(rb_reparent(rb_recolor(rb_erase_root_child(tree), Color::Black), 0))
-    == list_append(rb_inorder(rb_left(tree)), rb_inorder(rb_right(tree))) by {
+    == list::append(rb_inorder(rb_left(tree)), rb_inorder(rb_right(tree))) by {
         apply(rb_erase_root_child_inorder(tree));
         apply(rb_recolor_preserves_inorder(rb_erase_root_child(tree), Color::Black));
         apply(rb_reparent_preserves_inorder(rb_recolor(rb_erase_root_child(tree), Color::Black), 0));

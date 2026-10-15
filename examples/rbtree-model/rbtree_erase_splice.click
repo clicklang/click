@@ -597,7 +597,7 @@ theorem rb_erase_black_successor_splice(erased: struct rb_node*, successor: stru
     }
 
     ensures rb_inorder(rb_successor_splice(successor, parent, color, left, right))
-        == list_append(rb_inorder(left), rb_inorder(right)) by {
+        == list::append(rb_inorder(left), rb_inorder(right)) by {
         apply(rb_minimum_list(right, successor, Color::Black, RbTree::Empty));
         apply(rb_erase_two_child_splice(erased, successor, parent, color, left, right));
         unfold(rb_successor_splice(successor, parent, color, left, right));
@@ -671,7 +671,7 @@ theorem rb_erase_red_successor_splice(erased: struct rb_node*, successor: struct
     }
 
     ensures rb_inorder(rb_successor_splice(successor, parent, color, left, right))
-        == list_append(rb_inorder(left), rb_inorder(right)) by {
+        == list::append(rb_inorder(left), rb_inorder(right)) by {
         apply(rb_minimum_list(right, successor, Color::Red, RbTree::Empty));
         apply(rb_erase_two_child_splice(erased, successor, parent, color, left, right));
         unfold(rb_successor_splice(successor, parent, color, left, right)); assumption();

@@ -2,33 +2,33 @@
 
 ```click
 theorem rewrite_append_in_contains(head: int32, tail: List<int32>, ys: List<int32>, value: int32) {
-    ensures list_contains(list_append(List<int32>::Cons(head, tail), ys), value)
-        == list_contains(List<int32>::Cons(head, list_append(tail, ys)), value) by {
-        apply(list_append_cons(head, tail, ys));
-        rewrite(list_append(List<int32>::Cons(head, tail), ys)
-            == List<int32>::Cons(head, list_append(tail, ys)));
+    ensures list::contains(list::append(List<int32>::Cons(head, tail), ys), value)
+        == list::contains(List<int32>::Cons(head, list::append(tail, ys)), value) by {
+        apply(list::append_cons(head, tail, ys));
+        rewrite(list::append(List<int32>::Cons(head, tail), ys)
+            == List<int32>::Cons(head, list::append(tail, ys)));
         simp();
     }
 }
 
 theorem nested_membership(xs: List<List<int32>>, value: List<int32>) {
-    ensures list_contains(List<List<int32>>::Cons(value, xs), value) by {
-        apply(list_contains_cons(value, xs, value));
+    ensures list::contains(List<List<int32>>::Cons(value, xs), value) by {
+        apply(list::contains_cons(value, xs, value));
         simp();
     }
 }
 
 theorem nested_append(xs: List<List<int32>>, ys: List<List<int32>>, value: List<int32>) {
-    ensures list_contains(list_append(xs, ys), value)
-        == if list_contains(xs, value) { true } else { list_contains(ys, value) } by {
-        apply(list_contains_append(xs, ys, value));
+    ensures list::contains(list::append(xs, ys), value)
+        == if list::contains(xs, value) { true } else { list::contains(ys, value) } by {
+        apply(list::contains_append(xs, ys, value));
     }
 }
 
 theorem scalar_append(xs: List<int32>, ys: List<int32>, value: int32) {
-    ensures list_contains(list_append(xs, ys), value)
-        == if list_contains(xs, value) { true } else { list_contains(ys, value) } by {
-        apply(list_contains_append(xs, ys, value));
+    ensures list::contains(list::append(xs, ys), value)
+        == if list::contains(xs, value) { true } else { list::contains(ys, value) } by {
+        apply(list::contains_append(xs, ys, value));
     }
 }
 
@@ -49,24 +49,24 @@ theorem rewrite_inside_condition(xs: List<int32>, ys: List<int32>, zs: List<int3
         rewrite(xs == ys);
         normalize();
     }
-    ensures adt_equal(list_append(xs, zs), zs) == adt_equal(list_append(ys, zs), zs) by {
+    ensures adt_equal(list::append(xs, zs), zs) == adt_equal(list::append(ys, zs), zs) by {
         rewrite(xs == ys);
         normalize();
     }
 }
 
 theorem known_distinct(xs: List<List<int32>>, value: int32) {
-    ensures list_contains(List<List<int32>>::Cons(List<int32>::Cons(value, List<int32>::Nil), xs), List<int32>::Nil)
-        == list_contains(xs, List<int32>::Nil) by {
-        apply(list_contains_cons(List<int32>::Cons(value, List<int32>::Nil), xs, List<int32>::Nil));
+    ensures list::contains(List<List<int32>>::Cons(List<int32>::Cons(value, List<int32>::Nil), xs), List<int32>::Nil)
+        == list::contains(xs, List<int32>::Nil) by {
+        apply(list::contains_cons(List<int32>::Cons(value, List<int32>::Nil), xs, List<int32>::Nil));
         simp();
     }
 }
 
 theorem pointer_append(xs: List<int32*>, ys: List<int32*>, value: int32*) {
-    ensures list_contains(list_append(xs, ys), value)
-        == if list_contains(xs, value) { true } else { list_contains(ys, value) } by {
-        apply(list_contains_append(xs, ys, value));
+    ensures list::contains(list::append(xs, ys), value)
+        == if list::contains(xs, value) { true } else { list::contains(ys, value) } by {
+        apply(list::contains_append(xs, ys, value));
     }
 }
 ```

@@ -1607,7 +1607,7 @@ fn named_resource_bindings_preserve_symbolic_fields_and_recheck_expansion() {
             ensures cell.model == old(cell.model);
             ensures cell.revision == old(cell.revision);
             ensures cell.contents == old(cell.contents);
-            ensures list_length(cell.contents) == old(list_length(cell.contents));
+            ensures list::length(cell.contents) == old(list::length(cell.contents));
         } by { execute(); simp(); }
     "#;
     let sources = [(

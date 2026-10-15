@@ -31,15 +31,15 @@ theorem singleton_is_one_cons(x: int32) {
 }
 
 theorem append_nothing(xs: List<int32>) {
-    ensures list_append(List::Nil, xs) == xs by {
-        unfold(list_append(List::Nil, xs));
+    ensures list::append(List::Nil, xs) == xs by {
+        unfold(list::append(List::Nil, xs));
         normalize();
     }
 }
 
 theorem singleton_contains(x: int32) {
-    ensures list_contains(List::Cons(x, List::Nil), x) by {
-        unfold(list_contains(List::Cons(x, List::Nil), x));
+    ensures list::contains(List::Cons(x, List::Nil), x) by {
+        unfold(list::contains(List::Cons(x, List::Nil), x));
         simp();
     }
 }

@@ -2338,60 +2338,60 @@ id = "library.theorem.nat_add_commutative"
 path = "reference/library/index.md#nat_add_commutative"
 
 [[item]]
-id = "library.function.list_length"
-path = "reference/library/index.md#list_length"
+id = "library.function.length"
+path = "reference/library/index.md#listlength"
 
 [[item]]
-id = "library.theorem.list_length_nil"
-path = "reference/library/index.md#list_length_nil"
+id = "library.theorem.length_nil"
+path = "reference/library/index.md#listlength_nil"
 
 [[item]]
-id = "library.theorem.list_length_cons"
-path = "reference/library/index.md#list_length_cons"
+id = "library.theorem.length_cons"
+path = "reference/library/index.md#listlength_cons"
 
 [[item]]
-id = "library.theorem.list_length_append"
-path = "reference/library/index.md#list_length_append"
+id = "library.theorem.length_append"
+path = "reference/library/index.md#listlength_append"
 
 [[item]]
 id = "library.type.List"
 path = "reference/library/index.md#list"
 
 [[item]]
-id = "library.function.list_append"
-path = "reference/library/index.md#list_append"
+id = "library.function.append"
+path = "reference/library/index.md#listappend"
 
 [[item]]
-id = "library.function.list_contains"
-path = "reference/library/index.md#list_contains"
+id = "library.function.contains"
+path = "reference/library/index.md#listcontains"
 
 [[item]]
-id = "library.theorem.list_append_left_identity"
-path = "reference/library/index.md#list_append_left_identity"
+id = "library.theorem.append_left_identity"
+path = "reference/library/index.md#listappend_left_identity"
 
 [[item]]
-id = "library.theorem.list_append_right_identity"
-path = "reference/library/index.md#list_append_right_identity"
+id = "library.theorem.append_right_identity"
+path = "reference/library/index.md#listappend_right_identity"
 
 [[item]]
-id = "library.theorem.list_append_cons"
-path = "reference/library/index.md#list_append_cons"
+id = "library.theorem.append_cons"
+path = "reference/library/index.md#listappend_cons"
 
 [[item]]
-id = "library.theorem.list_append_associative"
-path = "reference/library/index.md#list_append_associative"
+id = "library.theorem.append_associative"
+path = "reference/library/index.md#listappend_associative"
 
 [[item]]
-id = "library.theorem.list_contains_nil"
-path = "reference/library/index.md#list_contains_nil"
+id = "library.theorem.contains_nil"
+path = "reference/library/index.md#listcontains_nil"
 
 [[item]]
-id = "library.theorem.list_contains_cons"
-path = "reference/library/index.md#list_contains_cons"
+id = "library.theorem.contains_cons"
+path = "reference/library/index.md#listcontains_cons"
 
 [[item]]
-id = "library.theorem.list_contains_append"
-path = "reference/library/index.md#list_contains_append"
+id = "library.theorem.contains_append"
+path = "reference/library/index.md#listcontains_append"
 
 [[item]]
 id = "library.function.count"

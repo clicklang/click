@@ -72,7 +72,7 @@ fn modeled_tree_rotate_left_checks_model_and_ownership() {
         ),
         source.replace(
             "ensures heap_inorder(rotated.model) == heap_inorder(old(t.model));",
-            "ensures heap_inorder(rotated.model) == list_append(heap_inorder(old(t.model)), List<struct tree_node*>::Cons(root, List<struct tree_node*>::Nil));",
+            "ensures heap_inorder(rotated.model) == list::append(heap_inorder(old(t.model)), List<struct tree_node*>::Cons(root, List<struct tree_node*>::Nil));",
         ),
         source.replace("    requires heap_right(t.model) != HeapTree::Empty;", ""),
         source.replace(
