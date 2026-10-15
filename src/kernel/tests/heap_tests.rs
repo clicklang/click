@@ -914,7 +914,7 @@ fn standalone_view_cannot_authorize_free() {
 }
 
 #[test]
-fn persistent_composite_view_blocks_free_locally() {
+fn persistent_composite_view_blocks_free_and_realloc_locally() {
     let state = successful_heap_allocation_state();
     let Some(CValue::Pointer(pointer)) = state.locals().get("p") else {
         panic!("successful allocation should expose its pointer")
@@ -929,26 +929,32 @@ fn persistent_composite_view_blocks_free_locally() {
             .clone()
             .unchecked_with_fact(persistent.clone()),
     );
-    let paths = execute_c_statement_paths(
-        &state,
-        &c_heap_free(c_variable("p")),
-        &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
-        &mut ExecutionBudget::default(),
-    )
-    .expect("a persistent stale view should produce a local diagnostic");
-    assert!(
-        matches!(
-            paths.as_slice(),
-            [CStatementExecutionPath {
-                outcome: CStatementOutcome::RuntimeError(
-                    CRuntimeError::StaleResourceAfterFree { resource }
-                ),
-                ..
-            }] if **resource == persistent
-        ),
-        "unexpected free result for {persistent:#?}: {paths:#?}"
-    );
+    let state = state.with_local("q", CValue::pointer(Pointer::null()));
+    for statement in [
+        c_heap_free(c_variable("p")),
+        c_call_assign("q", "realloc", vec![c_variable("p"), c_int32_literal(8)]),
+    ] {
+        let paths = execute_c_statement_paths(
+            &state,
+            &statement,
+            &PureFactContext::new(),
+            CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+            &mut ExecutionBudget::default(),
+        )
+        .expect("a persistent stale view should produce a local diagnostic");
+        assert!(
+            matches!(
+                paths.as_slice(),
+                [CStatementExecutionPath {
+                    outcome: CStatementOutcome::RuntimeError(
+                        CRuntimeError::StaleResourceAfterFree { resource }
+                    ),
+                    ..
+                }] if **resource == persistent
+            ),
+            "unexpected free result for {persistent:#?}: {paths:#?}"
+        );
+    }
 }
 
 #[test]

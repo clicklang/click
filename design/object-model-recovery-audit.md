@@ -975,3 +975,20 @@ regression (1.74s harness). Existing double/interior-free, missing-authority,
 view, loan and external-allocation controls remain green. Formatting, included
 scaling-file formatting, mdBook and whitespace checks pass; advisory Vale is
 unavailable. The full gate and nightly remain CI work.
+
+### Selected stale-reference checks before reallocation
+
+PR #1059 merged, and final pushed head `3d55c023b` is verified upstream.
+The adjacent reallocation path still projected all held resource observations
+and scanned all facts after consuming the old allocation and backing range.
+It now uses the same conservative block-reference candidate index as free,
+with the existing separation check and error for a retained dependent resource.
+Resource observations are projected only when a candidate remains. This avoids
+visiting unrelated allocation tokens; it does not change pointer equality,
+authority, loan checks, or the semantics of reallocation's pending result.
+
+All 47 heap controls pass (1.13s harness), including deterministic
+0/16/64/256 unrelated-token scaling and rejection of the same persistent
+composite view at both free and reallocation. Formatting, mdBook, structural
+documentation lint and whitespace checks pass. Advisory Vale is unavailable;
+the full gate and nightly were not run locally.
