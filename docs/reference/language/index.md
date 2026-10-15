@@ -3211,7 +3211,7 @@ pure helper over `uint8[]` can appear in an invariant or inside `old(...)`.
 The Click library provides byte-slice helpers over `uint8[]`: `bytes::count`,
 `bytes::equal`, `bytes::equal_range`, `bytes::all_equal`, `bytes::contains`, and
 `bytes::all_not_equal`. It also provides C-string predicates:
-`cstr_prefix`, `cstr_len`, `cstr`, and `cstr_bounded`, whose lengths and bounds
+`cstr::prefix`, `cstr::len`, `cstr::cstr`, and `cstr::bounded`, whose lengths and bounds
 are `size_t` (`uint64`) values as C measures them. These are ordinary Click
 functions and predicates, not built-in kernel concepts.
 

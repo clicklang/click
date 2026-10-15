@@ -1104,7 +1104,7 @@ Supported C surface includes:
   library's, and a program may not define one with external linkage; see
   [System headers](#system-headers). A specification may
   pass a `char` or `signed char` pointer where a predicate or pure function
-  takes `uint8` bytes, as in `requires cstr_readable(s);` for a `const char *s`.
+  takes `uint8` bytes, as in `requires cstr::readable(s);` for a `const char *s`.
   For a signed character type, the argument is elaborated to the explicit byte view
   `(uint8*)s`: the predicate reads the string's bytes as unsigned values,
   and since a signed read of a byte is the conversion of its unsigned read,

@@ -1041,8 +1041,11 @@ impl Parser {
     ) -> Result<Self, ClickError> {
         let (tokens, positions) = tokenize(source, container)?;
         let (tokens, positions) = rewrite_model_accessors(tokens, positions, &struct_layouts);
-        let (tokens, positions, path_library_modules) =
-            library_paths::resolve_library_paths(tokens, positions)?;
+        let (tokens, positions, path_library_modules) = library_paths::resolve_library_paths(
+            tokens,
+            positions,
+            container.map(|container| &*container.filename),
+        )?;
         // A cited theorem the file does not declare is a library theorem,
         // named by its qualified identity. A library module cites every
         // library theorem that way, its own included.

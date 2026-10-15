@@ -21,7 +21,7 @@ target "x86_64-linux-userspace";
 verifying "main.c";
 
 uint64 last_index(const char* s) {
-    requires cstr_readable(s);
+    requires click::cstr::readable(s);
     ensures s[result] == '\0';
 } by {
     execute();

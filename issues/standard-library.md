@@ -135,7 +135,7 @@ using a Rust core slice method brings its contract. The contracts are
 written under `library/c/`, `library/cpp/` and `library/rust/`, with module
 paths such as `click::c::string` for documentation and explicit reference.
 A model's own specification dependencies (for example, `strlen` on
-`cstr_readable`) are imported by its model file, not by the sidecar.
+`cstr::readable`) are imported by its model file, not by the sidecar.
 
 ### Qualified names (accepted 2026-10-14)
 
@@ -218,8 +218,11 @@ Each step is a separate PR that leaves every example verifying:
      full `click::bytes::` path. Inventory IDs of renamed modules carry the
      module, `library.function.bytes::count`, since `count` repeats in
      `permutation`.
-   - Next: the remaining renames, one module per PR (`cstr`,
-     `permutation`), each joining `QUALIFIED_MODULES` in
+   - Done: the `cstr` rename: `cstr_len` is `cstr::len`,
+     `cstr_readable` is `cstr::readable`, and so on. The predicate that
+     was `cstr` keeps its name as `cstr::cstr`, beside `cstr::len` and
+     `cstr::readable`.
+   - Next: the `permutation` rename, joining `QUALIFIED_MODULES` in
      `src/surface/parser/library_paths.rs`; `machine_integer` and
      `integer` wait on the Integer-default arithmetic decision.
 6. Document the primitives in the language reference, and describe the

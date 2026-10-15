@@ -11,10 +11,10 @@ import click::c::string;
 import click::cstr;
 
 theorem imported_cstr_len_is_viewable(bytes: uint8[], len: uint64) {
-    requires cstr_len(bytes, len);
+    requires cstr::len(bytes, len);
 
     ensures viewable(bytes[0..len + 1u64]) by {
-        apply(cstr_len_is_viewable(bytes, len));
+        apply(cstr::len_is_viewable(bytes, len));
     }
 }
 ```
