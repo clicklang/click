@@ -29,16 +29,18 @@ The P1 work is the Charon front-end pipeline. It follows the
 - install layout and version pinning;
 - locating front ends;
 - the identity handshake;
-- the lock envelope;
 - errors.
 
-This file adds only what is specific to Rust.
+The lock envelope, the build description (including how a crate is
+described) and project configuration belong to
+[project-config.md](project-config.md). This file adds only what is specific
+to Rust.
 
 ## Goal
 
 A user with a Rust crate, within the supported subset, installs Click with
-`install.sh` or `install.ps1`, writes a sidecar and import configuration, and
-runs `click import lock` and `click verify`. No Click repository checkout and
+`install.sh` or `install.ps1`, describes the crate in its [project configuration](project-config.md), writes
+a sidecar, and runs `click import lock` and `click verify`. No Click repository checkout and
 no Charon build from source are needed. The user also does not hand-install a
 pinned nightly toolchain, or Click installs it for them in one documented
 step.
@@ -124,16 +126,12 @@ Audit of the current path, from a user's point of view:
    - the configuration-error text about retired legacy extraction.
 
    The canonical evidence lives under `design/charon-trial/`.
-6. **Config and lock formats differ from C++.** The config is schema 3 or 4
-   and the lock is schema 8, with fields named `config`, `source`,
-   `exporter`, …. The reading, hashing and atomic-write helpers (`read`,
-   `write_atomic`, `local_file` in `rust/import.rs`) duplicate their C++
-   counterparts.
-7. **Crate closures are hand-listed.** Schema 4 requires every file rustc
+6. **Crate closure errors are vague.** Schema 4 requires every file rustc
    reads to appear in `files`. When the list is wrong, the refusal "Rust
    compiler source closure differs from configured crate files" does not
-   say which files are missing or extra.
-8. **The target and host are fixed.** Extraction targets only
+   say which files are missing or extra. Where that list lives moves to
+   [project-config.md](project-config.md); the diagnostic stays here.
+7. **The target and host are fixed.** Extraction targets only
    `x86_64-unknown-linux-gnu`. Releases build `click` for eight targets,
    including macOS, Windows and aarch64 (`Cargo.toml`), and the Charon
    toolchain must exist for whichever of those hosts are supported.
@@ -210,8 +208,7 @@ release, and a lock depends only on the project and the pinned front end.
 - Front ends are located only by the shared resolution order. No checked-in
   user config names a repository build path, and `rustup` on `PATH` is not
   required.
-- Locks record release identities and are byte-identical across machines,
-  using the shared lock envelope and input-handling code.
+- Locks record release identities and are byte-identical across machines.
 - No "trial" spellings remain in user-facing names or diagnostics, except
   documented compatibility aliases.
 - Crate-closure diagnostics name the differing files.
@@ -265,8 +262,14 @@ needed to finish a claim already made:
     The unchanged native reborrow witness verifies with real lease operations,
     including proof expansion/recheck and authority/value negatives. New source
     tests reject missing births, stale/foreign handles and transplanted plans.
+    Same-typed scalar reference copies/moves between private locals now retain
+    that identity; the final store can use a checked alias, including after
+    replacement of the original child local. Recovery expires all copies.
+    Source tests cover delayed alias uses and missing actual alias custody;
+    a native local-move fixture verifies the helper and caller with checked
+    expansion, and alias-chain preparation has deterministic scaling coverage.
 
-  Wider source coverage remains open: copies and nested local references, read
+  Wider source coverage remains open: nested local references, read
   endings, multiple blocks/loops, aggregates, shared aliases and call/havoc
   transport need checked protocols. Observations remain read-only; only the
   activated source subset executes local leases. A reproduced false acceptance

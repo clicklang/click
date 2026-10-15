@@ -423,3 +423,204 @@ fn source_scalar_lease_unsigned_source_widths_preserve_updated_contents() {
         ));
     }
 }
+
+fn alias_export(count: usize) -> r::RustExport {
+    let mut source = export();
+    let mir = source.functions[0].mir.as_mut().unwrap();
+    let mut statements = vec![mir.blocks[0].statements[0].clone()];
+    let mut previous = "child".to_string();
+    for index in 0..count {
+        let next = format!("alias_{index}");
+        mir.locals.push(place(&next, reference_type()));
+        statements.push(assign(local(&next), local(&previous)));
+        previous = next;
+    }
+    statements.push(assign(deref(&previous), E::Integer { value: 7 }));
+    statements.push(assign(deref("parent"), E::Integer { value: 8 }));
+    mir.blocks[0].statements = statements;
+    source
+}
+
+// Match the production session's analysis of which pointer locals are private.
+// Restore thread-local registries even when an assertion panics.
+struct AliasLocalScope(BlockRegistriesState);
+impl Drop for AliasLocalScope {
+    fn drop(&mut self) {
+        restore_block_registries(&self.0);
+    }
+}
+fn alias_body(export: &r::RustExport) -> (CStatement, AliasLocalScope) {
+    let scope = AliasLocalScope(capture_block_registries());
+    let (functions, _) =
+        crate::languages::rust::lowering::lower_with_identity(export, Some("locked-source"))
+            .unwrap();
+    let summary = crate::languages::c::address_taken::summarize_address_taken(functions.iter());
+    set_never_address_taken_locals(summary.never_taken());
+    (functions[0].to_kernel_function().body().clone(), scope)
+}
+
+#[test]
+fn source_scalar_lease_alias_chain_shares_custody_and_expires_together() {
+    let (program, _scope) = alias_body(&alias_export(3));
+    let (initial, support) = initial();
+    let (state, _, ending) = active(&initial, &program);
+    let child = state.locals.get("child").unwrap();
+    for name in ["alias_0", "alias_1", "alias_2"] {
+        assert_eq!(state.locals.get(name), Some(child));
+        assert_eq!(
+            read(&state, c_load(c_variable(name))),
+            CExpressionOutcome::Value(int32(4))
+        );
+    }
+    assert!(
+        state
+            .resources()
+            .owned_fact_for_occurrence(support)
+            .is_none()
+    );
+    assert!(matches!(
+        read(&state, c_load(c_variable("parent"))),
+        CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource { .. })
+    ));
+    let raw_parent = initial.locals.get("parent").unwrap().clone();
+    let mut untagged_alias = state.clone();
+    eval::sync_stack_local(&mut untagged_alias, "alias_2", &raw_parent);
+    untagged_alias.locals.set("alias_2", raw_parent);
+    // A still-live original child cannot substitute for missing custody on
+    // the actual alias lvalue selected by the ending store.
+    assert!(matches!(
+        execute(&untagged_alias, &ending),
+        CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+    ));
+    let recovered = normal(execute(&state, &ending));
+    assert_eq!(
+        read(&recovered, c_load(c_variable("parent"))),
+        CExpressionOutcome::Value(int32(7))
+    );
+    assert!(
+        recovered
+            .resources()
+            .owned_fact_for_occurrence(support)
+            .is_some()
+    );
+    for name in ["child", "alias_0", "alias_1", "alias_2"] {
+        assert!(matches!(
+            read(&recovered, c_load(c_variable(name))),
+            CExpressionOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+        ));
+        assert!(matches!(
+            execute(&recovered, &c_store(c_variable(name), c_int32_literal(9))),
+            CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+        ));
+    }
+    assert!(matches!(
+        execute(&recovered, &ending),
+        CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+    ));
+    let CStatementOutcome::Return { state, .. } = execute(&initial, &program) else {
+        panic!("alias source function return");
+    };
+    assert_eq!(
+        read(&state, c_load(c_variable("parent"))),
+        CExpressionOutcome::Value(int32(8))
+    );
+}
+
+#[test]
+fn source_scalar_lease_alias_survives_replacing_original_child() {
+    let mut source = alias_export(1);
+    source.functions[0]
+        .parameters
+        .push(place("other", reference_type()));
+    source.functions[0].mir.as_mut().unwrap().blocks[0]
+        .statements
+        .insert(2, assign(local("child"), local("other")));
+    let (program, _scope) = alias_body(&source);
+    let (initial, _) = initial();
+    let other = Pointer {
+        block: "other-scalar".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let memory = initial
+        .memory
+        .clone()
+        .with_block(other.block.clone(), 4)
+        .store(other.clone(), int32(2));
+    let fact = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        other.clone(),
+        0.into(),
+        1.into(),
+        4,
+    ));
+    let resources = initial.resources().clone().unchecked_with_fact(fact);
+    let initial = initial
+        .with_memory(memory)
+        .with_resource_context(resources)
+        .with_local("other", CValue::typed_pointer(other, CType::Int32Pointer));
+    let (state, _, ending) = active(&initial, &program);
+    assert_ne!(state.locals.get("child"), state.locals.get("alias_0"));
+    assert_eq!(
+        read(&state, c_load(c_variable("child"))),
+        CExpressionOutcome::Value(int32(2))
+    );
+    assert!(matches!(
+        read(&state, c_load(c_variable("parent"))),
+        CExpressionOutcome::RuntimeError(_)
+    ));
+    let recovered = normal(execute(&state, &ending));
+    assert_eq!(
+        read(&recovered, c_load(c_variable("parent"))),
+        CExpressionOutcome::Value(int32(7))
+    );
+    assert_eq!(
+        read(&recovered, c_load(c_variable("child"))),
+        CExpressionOutcome::Value(int32(2))
+    );
+    assert!(matches!(
+        read(&recovered, c_load(c_variable("alias_0"))),
+        CExpressionOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+    ));
+}
+
+#[test]
+fn source_scalar_lease_alias_later_use_prevents_early_parent_recovery() {
+    let mut source = alias_export(1);
+    let statements = &mut source.functions[0].mir.as_mut().unwrap().blocks[0].statements;
+    statements.push(assign(deref("alias_0"), E::Integer { value: 9 }));
+    let (program, _scope) = alias_body(&source);
+    // The supplied MIR is deliberately illegal Rust: parent access occurs
+    // before the alias's actual last store. The source plan must keep it leased.
+    let (initial, _) = initial();
+    let endings: Vec<_> = leaves(&program)
+        .into_iter()
+        .filter_map(|statement| match statement {
+            CStatement::TypedStore { value, source, .. } if source.lease_plan().is_some() => {
+                Some(value)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(endings, [c_int32_literal(9)]);
+    assert!(matches!(
+        execute(&initial, &program),
+        CStatementOutcome::RuntimeError(CRuntimeError::MissingResource { .. })
+    ));
+}
+
+#[test]
+fn source_scalar_lease_alias_plan_preparation_scales_with_alias_chain() {
+    let mut measurements = vec![];
+    for count in [16, 64, 256, 1024] {
+        let source = alias_export(count);
+        let (program, work) =
+            crate::instrumentation::measure_deterministic_work(|| body(&source, "locked-source"));
+        let statements = leaves(&program);
+        assert_eq!(statements.iter().filter(|s| matches!(s, CStatement::Assign { source, .. } if source.lease_plan().is_some())).count(), 1);
+        assert_eq!(statements.iter().filter(|s| matches!(s, CStatement::TypedStore { source, .. } if source.lease_plan().is_some())).count(), 1);
+        measurements.push((count, work));
+    }
+    eprintln!("source scalar lease alias preparation: {measurements:?}");
+    for pair in measurements.windows(2) {
+        assert!(pair[1].1 <= pair[0].1 * 5 + 100, "{measurements:?}");
+    }
+}

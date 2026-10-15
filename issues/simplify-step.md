@@ -391,6 +391,25 @@ facts open, is refused. The fold no longer searches at all: a body fact over
 a witness the proof cannot name is refused. The census counts no tactic
 search in the corpus.
 
+**5h, the remaining simple-tactic checks (landed).** Nine premise checks
+still ended in the counted search, though the census found no corpus proof
+that needed it: a `branch` condition obligation, an outcome `if` or `cases`
+condition, a `have` of a separation away from the frontier, resource body
+selection, `unfold` and `observe` of a symbolic quantity, and `fold`'s
+zero-or-positive quantity. Each now makes only the exact lookup and the
+kernel's condition decision; a premise they miss is refused, or for an
+outcome `if`, split. The separation check could never succeed, since the
+separation selection before it publishes everything it would, so it is
+deleted. Dropping the search changed no verdict in the corpus. Small mdtests
+decide each check both ways and show the `have` that states a missed premise
+(`branch_refuses_an_undecided_condition_prerequisite.md`,
+`post_execution_if_*`, `unfold_quantity_final_unit_*`,
+`observe_quantity_positive_without_search.md`, `fold_symbolic_quantity_*`).
+Writing them found three bugs, filed in `bugs/`: owning zero of a composite
+grants its body facts (unsound), a float-cast `branch` prerequisite prints
+`<unnamed A>` and raw bits, and a post-execution `if` ignores an earlier
+`have`.
+
 ## Acceptance criteria
 
 - No simple tactic performs a search over the proof context; its cost is
