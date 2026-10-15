@@ -1027,3 +1027,19 @@ absence of ownership grants, unchanged bindings, and unrelated ranges at
 0/16/64/256 sizes. All 413 selected kernel controls and all 3,979 normal Markdown
 fixtures pass. Clippy with warnings denied also passes. These checks follow the
 earlier 52-example run; the full gate and nightly were not run locally.
+
+### Modular C prefix compatibility control
+
+PR #1063 merged; both pushed commits `d0900a8ba` and `fc69c7a10` are
+verified upstream. All 711 scaling tests also pass with the gate's 8 MiB Rust
+test stack setting; the initial run omitted that setting and overflowed a Rust
+importer test.
+
+The next small delivery retains the unchanged vector-push C body, storage
+resource and contract, with a caller that exports its prefix guarantee. The
+caller uses `simp` to bridge the callee's returned read observations; exact
+`assumption` alone is insufficient. Fresh verification, expansion, rewritten
+verification and retained rechecking pass on current upstream. The same control
+passes all four modes in recovery checkpoint `417678854`. This is a shared C
+compatibility baseline, not activation of the recovery model. The archive's
+grow-then-push proof and ten-failure audit remain open.
