@@ -767,6 +767,17 @@ impl DifferenceGraph {
         {
             return Some(answer);
         }
+        // The same field of two bases is one cell exactly when the bases
+        // are, which a pointer equality (`this == &other`) may say rather
+        // than an integer one: the bases' own offset question is asked.
+        if let C::PointerOffsetEqual(a, b) = condition
+            && let Some((a, b)) = same_field_bases(a, b)
+        {
+            return self.decide(&C::PointerOffsetEqual(
+                Box::new(a.clone()),
+                Box::new(b.clone()),
+            ));
+        }
         if let Some(equality) = offset_equality(condition) {
             return self.decide(&equality);
         }
@@ -1539,14 +1550,10 @@ fn offset_equality(condition: &ConditionTerm) -> Option<ConditionTerm> {
     };
     // Field offsets from equal bases (`p->size`, `q->size`) are equal
     // exactly when the bases are.
-    use crate::kernel::PointerOffsetTerm as O;
-    if let (O::Add(a_base, a_field), O::Add(b_base, b_field)) = (a.as_ref(), b.as_ref())
-        && let (O::Constant(a_field), O::Constant(b_field)) = (a_field.as_ref(), b_field.as_ref())
-        && a_field == b_field
-    {
+    if let Some((a, b)) = same_field_bases(a, b) {
         return offset_equality(&ConditionTerm::PointerOffsetEqual(
-            a_base.clone(),
-            b_base.clone(),
+            Box::new(a.clone()),
+            Box::new(b.clone()),
         ));
     }
     let (a, b) = match (scaled_offset(a)?, scaled_offset(b)?) {
@@ -1563,6 +1570,27 @@ fn offset_equality(condition: &ConditionTerm) -> Option<ConditionTerm> {
         _ => return None,
     };
     Some(ConditionTerm::Bitvector32Equal(Box::new(a), Box::new(b)))
+}
+
+/// The bases of two offsets that add one constant field offset to each
+/// (`p->size` and `q->size`): the offsets are equal exactly when the bases
+/// are, since adding one constant is injective.
+fn same_field_bases<'a>(
+    a: &'a PointerOffsetTerm,
+    b: &'a PointerOffsetTerm,
+) -> Option<(&'a PointerOffsetTerm, &'a PointerOffsetTerm)> {
+    use crate::kernel::PointerOffsetTerm as O;
+    match (a, b) {
+        (O::Add(a_base, a_field), O::Add(b_base, b_field))
+            if matches!(
+                (a_field.as_ref(), b_field.as_ref()),
+                (O::Constant(a_field), O::Constant(b_field)) if a_field == b_field
+            ) =>
+        {
+            Some((a_base.as_ref(), b_base.as_ref()))
+        }
+        _ => None,
+    }
 }
 
 /// Two pointer offsets that cannot be equal whatever their values: a

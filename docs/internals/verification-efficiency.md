@@ -871,7 +871,10 @@ answers less, never something false. Queries read stored bounds or a bounded
 path between the two values. Pointer classes and disequalities, known low
 bits, and no-overflow facts are keyed by their own values (an overflow fact
 by its operands' nodes and offsets modulo the word size, so `(1 + a) + b`
-finds `defined(1 + a + b)`).
+finds `defined(1 + a + b)`). The same field of two bases (`b + k == c + k`)
+asks the bases' own offset question, one recursion per field, so a pointer
+equality `this == &other` makes `this->size` and `other.size` one cell
+(`mdtests/a_self_aliased_field_operand_is_one_value.md`).
 
 `work_is_independent_of_unrelated_bounded_values` pins insertion and query
 work beside 16 to 1,024 unrelated values, and

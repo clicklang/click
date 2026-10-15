@@ -1080,6 +1080,43 @@ fn field_offsets_from_equal_bases_are_equal() {
     assert_eq!(graph(&[]).decide(&other_field), None);
 }
 
+/// The same field of two pointers stated equal as pointers (`this ==
+/// &other`, a `PointerEqual` fact in the pointer classes, not an integer
+/// equality) is one cell: `&this->size` and `&other.size` (`4 * i + 8` and
+/// `4 * j + 8` in one block) are equal. Unrelated or unequal pointers
+/// leave it open or decide it unequal.
+#[test]
+fn field_offsets_from_pointers_stated_equal_are_equal() {
+    use crate::kernel::{Pointer, PointerOffsetTerm as O};
+    let base = |index| O::scale_int32(variable(index), 4);
+    let argument = |index| Pointer {
+        block: crate::kernel::PointerBlock::ExternalArgument,
+        offset: base(index),
+    };
+    let field = |index, bytes| O::Add(Box::new(base(index)), Box::new(O::Constant(bytes)));
+    let pointers = |a, b, value| {
+        (
+            ConditionTerm::PointerEqual(Box::new(argument(a)), Box::new(argument(b))),
+            value,
+        )
+    };
+    let same_field =
+        ConditionTerm::PointerOffsetEqual(Box::new(field(0, 8)), Box::new(field(1, 8)));
+    assert_eq!(
+        graph(&[pointers(0, 1, true)]).decide(&same_field),
+        Some(true)
+    );
+    assert_eq!(
+        graph(&[pointers(0, 1, false)]).decide(&same_field),
+        Some(false)
+    );
+    assert_eq!(graph(&[pointers(0, 2, true)]).decide(&same_field), None);
+    // Different fields of equal pointers are not compared this way.
+    let other_field =
+        ConditionTerm::PointerOffsetEqual(Box::new(field(0, 8)), Box::new(field(1, 12)));
+    assert_eq!(graph(&[pointers(0, 1, true)]).decide(&other_field), None);
+}
+
 /// Pointer equality facts form classes with known-unequal classes: `p` is
 /// null and `q` is not, so `p != q`, and two pointers of one block are
 /// equal exactly when their offsets are, so the offset question the kernel
