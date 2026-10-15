@@ -17184,11 +17184,25 @@ fn loaded_struct_field_loop_expansion_names_fields_and_reverifies() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
+    // The old whole-prefix search exhausted the ordinary 2,000,000-unit
+    // allowance. Keep the repaired proof comfortably below it.
+    crate::instrumentation::with_tactic_work_limits(
+        crate::instrumentation::TacticWorkLimits {
+            smart: 100_000,
+            ..Default::default()
+        },
+        || verify_c0_sources(&source, &sources),
+    )
+    .unwrap();
     let expanded =
         expand_c0_claim_source_by_label(&source, &sources, "probe_contract.contract").unwrap();
-    assert!(expanded.contains("viewable(j->lo)"), "{expanded}");
-    assert!(!expanded.contains("viewable(j[2..3])"), "{expanded}");
-    verify_c0_sources(&expanded, &sources).unwrap();
+    assert!(
+        expanded.contains("at(statement(3).entry, j->lo)"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("j[2..3]"), "{expanded}");
+    crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .unwrap();
 }
 
 #[test]
@@ -17200,9 +17214,20 @@ fn padded_struct_field_loop_expansion_reverifies() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
+    // The old whole-prefix search exhausted the ordinary 2,000,000-unit
+    // allowance. Keep the repaired proof comfortably below it.
+    crate::instrumentation::with_tactic_work_limits(
+        crate::instrumentation::TacticWorkLimits {
+            smart: 100_000,
+            ..Default::default()
+        },
+        || verify_c0_sources(&source, &sources),
+    )
+    .unwrap();
     let expanded =
         expand_c0_claim_source_by_label(&source, &sources, "probe_contract.contract").unwrap();
-    verify_c0_sources(&expanded, &sources).unwrap();
+    crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .unwrap();
 }
 
 #[test]
