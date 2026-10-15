@@ -85,14 +85,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                         have ctx_node_is(Context::Top, parent_model) == 1 by {
                             rewrite(Context::Top == remaining.model); rewrite(remaining.model == old(up.model)); assumption();
                         }
-                        have parent_model == 0 by {
-                            if parent_model == 0 { assumption(); } else {
-                                have ctx_node_is(Context::Top, parent_model) != 1 by {
-                                    unfold(ctx_node_is(Context::Top, parent_model)); normalize() using { not(parent_model == 0); };
-                                }
-                                contradiction(ctx_node_is(Context::Top, parent_model) == 1);
-                            }
-                        }
+                        have parent_model == 0 by auto;
                         have erase_flips_red_all_result(remaining.model, RbTree::Empty) == plug(remaining.model, RbTree::Empty) by {
                             rewrite(remaining.model == Context::Top);
                             unfold(erase_flips_red_all_result(Context::Top, RbTree::Empty));
@@ -118,14 +111,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                             rewrite(Context::Left(pid, gp, pc_model, sibling_model, above_model) == remaining.model);
                             rewrite(remaining.model == old(up.model)); assumption();
                         }
-                        have parent_model == pid by {
-                            if parent_model == pid { assumption(); } else {
-                                have ctx_node_is(Context::Left(pid, gp, pc_model, sibling_model, above_model), parent_model) != 1 by {
-                                    unfold(ctx_node_is(Context::Left(pid, gp, pc_model, sibling_model, above_model), parent_model)); normalize() using { not(parent_model == pid); };
-                                }
-                                contradiction(ctx_node_is(Context::Left(pid, gp, pc_model, sibling_model, above_model), parent_model) == 1);
-                            }
-                        }
+                        have parent_model == pid by auto;
                         let { sibling: sibling, up: above } = unfold(remaining);
                         have parent_model != 0;
                         let remaining = fold(ctx_at(0, root), { model: Context::Left(pid, gp, pc_model, sibling_model, above_model) }, { up: above });
@@ -148,14 +134,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                             rewrite(Context::Right(pid, gp, pc_model, sibling_model, above_model) == remaining.model);
                             rewrite(remaining.model == old(up.model)); assumption();
                         }
-                        have parent_model == pid by {
-                            if parent_model == pid { assumption(); } else {
-                                have ctx_node_is(Context::Right(pid, gp, pc_model, sibling_model, above_model), parent_model) != 1 by {
-                                    unfold(ctx_node_is(Context::Right(pid, gp, pc_model, sibling_model, above_model), parent_model)); normalize() using { not(parent_model == pid); };
-                                }
-                                contradiction(ctx_node_is(Context::Right(pid, gp, pc_model, sibling_model, above_model), parent_model) == 1);
-                            }
-                        }
+                        have parent_model == pid by auto;
                         let { sibling: sibling, up: above } = unfold(remaining);
                         let remaining = fold(ctx_at(0, root), { model: Context::Right(pid, gp, pc_model, sibling_model, above_model) }, { up: above });
                         have remaining.model == old(up.model) by { rewrite(remaining.model == Context::Right(pid, gp, pc_model, sibling_model, above_model)); assumption(); }

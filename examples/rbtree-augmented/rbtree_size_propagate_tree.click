@@ -101,15 +101,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                                 have sized_parent_is(SizedTree::Node(identity, parent, color, value, left_model, right_model), sized_context_parent(sized_path_context(path_model), stop)) == 1 by {
                                     rewrite(SizedTree::Node(identity, parent, color, value, left_model, right_model) == repaired.model); assumption();
                                 }
-                                have parent == sized_context_parent(sized_path_context(path_model), stop) by {
-                                    if parent == sized_context_parent(sized_path_context(path_model), stop) { assumption(); } else {
-                                        have sized_parent_is(SizedTree::Node(identity, parent, color, value, left_model, right_model), sized_context_parent(sized_path_context(path_model), stop)) != 1 by {
-                                            unfold(sized_parent_is(SizedTree::Node(identity, parent, color, value, left_model, right_model), sized_context_parent(sized_path_context(path_model), stop)));
-                                            normalize() using { not (parent == sized_context_parent(sized_path_context(path_model), stop)); }
-                                        }
-                                        contradiction(sized_parent_is(SizedTree::Node(identity, parent, color, value, left_model, right_model), sized_context_parent(sized_path_context(path_model), stop)) == 1);
-                                    }
-                                }
+                                have parent == sized_context_parent(sized_path_context(path_model), stop) by auto;
                                 let { metadata: metadata, left: left, right: right } = unfold(repaired);
                                 step(); step();
                                 have rb == parent by { normalize(); }

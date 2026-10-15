@@ -1865,13 +1865,13 @@ impl<'a> Proof<'a> {
         if let Some(closed) = self.try_auto_conjunction_closure()? {
             return Ok(Some(closed));
         }
+        if let Some(closed) = self.try_definition_condition_closure()? {
+            return Ok(Some(closed));
+        }
         if let Some(closed) = self.try_auto_equality_chain_closure()? {
             return Ok(Some(closed));
         }
         if let Some(closed) = self.try_constructor_join_closure()? {
-            return Ok(Some(closed));
-        }
-        if let Some(closed) = self.try_definition_condition_closure()? {
             return Ok(Some(closed));
         }
         self.try_wide_equality_solver_closure()
