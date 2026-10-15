@@ -2865,6 +2865,57 @@ fn resource_delta_pointer_equality(
         })
 }
 
+/// A selected loadability range may use another name for the same complete
+/// pointer-cell read. Retain the checked frame in this rewrite's existing
+/// capture; this proves address equality only, never a referent designation.
+fn resource_delta_has_checked_pointer_read_frame(
+    source: &Proposition,
+    goal: &Proposition,
+    facts: &PureFactContext,
+) -> bool {
+    let (Some((source, _, _)), Some((goal, _, _))) =
+        (resource_read_key(source), resource_read_key(goal))
+    else {
+        return false;
+    };
+    let (
+        crate::kernel::PointerOffsetTerm::Int32Scaled {
+            value: left,
+            byte_width: left_width,
+        },
+        crate::kernel::PointerOffsetTerm::Int32Scaled {
+            value: right,
+            byte_width: right_width,
+        },
+    ) = (&source.offset, &goal.offset)
+    else {
+        return false;
+    };
+    if left_width != right_width || *left_width <= 0 {
+        return false;
+    }
+    let read = |term: &Bitvector32Term| {
+        let Bitvector32Term::Variable(variable) = term else {
+            return None;
+        };
+        if crate::kernel::eval::registered_load_bytes_for_variable(variable) != Some(8) {
+            return None;
+        }
+        let load = crate::kernel::eval::registered_load_term_for_variable(variable)?;
+        let Bitvector32Term::MemoryLoad(memory, address, crate::kernel::LoadKind::Bits32) = &load
+        else {
+            return None;
+        };
+        (crate::kernel::load_term_access_width(memory, address, crate::kernel::LoadKind::Bits32)
+            == 8)
+            .then_some(load)
+    };
+    let (Some(left), Some(right)) = (read(left), read(right)) else {
+        return false;
+    };
+    crate::kernel::memory_provenance::checked_recorded_atomic_load_equality(&left, &right, facts)
+}
+
 type ResourceContainmentKey = (
     CResource,
     Bitvector32Term,
@@ -3022,7 +3073,9 @@ impl ResourceDeltaPremises {
             None
         } else {
             let equality = resource_delta_pointer_equality(source, goal)?;
-            if !facts.proves_exact(&equality) {
+            if !facts.proves_exact(&equality)
+                && !resource_delta_has_checked_pointer_read_frame(source, goal, facts)
+            {
                 return None;
             }
             Some(equality)

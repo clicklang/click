@@ -887,3 +887,33 @@ rbtree-augmented, refcount, ring-buffer, rust-byte-sum and rust-chunks-exact.
 This is not a green archive verdict. The expensive first returned-resource
 assumption has a separate preserved report at that checkpoint; the fold budget
 failure itself no longer reproduces on the final indexed-order archive variant.
+
+### Selected complete-read bridge for resource deltas
+
+Recovery checkpoint `c72759eb7` closes a producer/checker mismatch when unfolding
+a returned resource. The kernel's instantiated loadability premise and the
+surface-produced fact name the same backing address through different registered
+pointer reads. The existing delta index already selects a unique body premise;
+only its exact named address-equality bridge was missing.
+
+For that selected pair, admit only complete eight-byte registered reads at the
+same positive pointee scale and check their recorded memory evidence. Retain the
+evidence in the existing rewrite capture for rechecking. Upstream's legacy
+`Bits32` pointer encoding additionally checks the raw term's eight-byte access
+width before using the recorded-only equality constructor. This is numeric
+loadability transport; it supplies no object designation or allocation token.
+Ambiguous premise selection, changed lifetime metadata, overwritten cells,
+partial writes (including the upper half), and narrow-only reads remain refused.
+
+All 337 selected archive execution, memory, pointer-effect and native-record
+controls pass. The focused unfold-and-free reduction verifies its three proofs
+and passes fresh, expanded, rewritten and retained checks with a rebuilt library.
+The latest normal archive audit remains **42/52**, with the same ten failures
+(136.3s harness, exit 100). The original vector allocation fold still rejects its
+full pointer-value comparison. This is not archive activation. Upstream
+extraction passes all four targeted controls and all 707 scaling tests with two
+workers (59.3s). The initial scaling run timed out one endpoint test while a
+compiler ran concurrently; that case passes alone in 6.8s, and the complete
+rerun passes without changing limits. Formatting, mdBook, docs lint and whitespace
+checks pass; advisory Vale is unavailable. The full gate and nightly remain CI
+work.
