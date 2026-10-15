@@ -24,7 +24,7 @@ use click::surface::{
     project_smart_tactic_source_sites, project_tactic_source_position, smart_tactic_source_sites,
     tactic_source_position, verify_project_at, verify_sources_at, verifying_source_paths,
 };
-use click::surface::{claim_label_matches, display_rust_names};
+use click::surface::{claim_label_matches, display_source_names};
 
 /// Each phase's wall-clock bound is crash containment only: a phase is judged
 /// by its deterministic work, so machine load cannot change a verdict.
@@ -1499,7 +1499,7 @@ fn select_claim_sites(
                 return Err(format!(
                     "`{}` names claim `{}`, which has no smart tactic to audit",
                     claim.requested,
-                    display_rust_names(&claim.label)
+                    display_source_names(&claim.label)
                 ));
             }
             let known = sites

@@ -42,10 +42,20 @@ pub(super) fn prepare(
             ));
         }
     }
+    let record_spellings = import
+        .export()
+        .records
+        .iter()
+        .filter_map(|record| {
+            let spelling = record.path.last()?;
+            (spelling != &record.name).then(|| (spelling.clone(), record.name.clone()))
+        })
+        .collect();
     Ok(PreparedExecution {
         functions,
         layouts,
         library_contracts,
+        record_spellings,
     })
 }
 

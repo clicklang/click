@@ -22,5 +22,6 @@ pub(crate) fn prepare_execution(
         functions,
         layouts,
         library_contracts: String::new(),
+        record_spellings: Default::default(),
     }))
 }

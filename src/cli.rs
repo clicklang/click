@@ -220,7 +220,7 @@ pub fn describe_claim_location_error(
         message.push_str(&format!(
             "\n  {} `{}`",
             location(candidate.position.line, Some(candidate.position.column)),
-            crate::surface::display_rust_names(&candidate.label)
+            crate::surface::display_source_names(&candidate.label)
         ));
     }
     message

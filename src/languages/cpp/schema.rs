@@ -298,6 +298,9 @@ impl CppExceptionBehavior {
 pub struct CppRecord {
     pub declaration_id: String,
     pub name: String,
+    /// Its C++ path, `["Stored<long long>"]`, as a sidecar writes it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub path: Vec<String>,
     pub size_bytes: u32,
     pub alignment_bytes: u32,
     pub fields: Vec<CppField>,
@@ -361,6 +364,10 @@ pub struct CppProfile {
 pub struct CppFunction {
     pub declaration_id: String,
     pub name: String,
+    /// Its C++ path, `["Square", "area"]`, as a sidecar writes it, which
+    /// names it in a proof (`super::names::path_name`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub path: Vec<String>,
     pub function_kind: CppFunctionKind,
     pub return_type: CppType,
     pub parameters: Vec<CppPlace>,
@@ -6667,6 +6674,7 @@ mod tests {
             virtual_method: None,
             declaration_id: "root".into(),
             name: "root".into(),
+            path: vec!["root".into()],
             function_kind: CppFunctionKind::Free,
             return_type: signed_integer(32, false),
             parameters: vec![],
@@ -6825,6 +6833,7 @@ mod tests {
             virtual_method: None,
             declaration_id: "static_function".into(),
             name: "Math_echo".into(),
+            path: vec!["Math_echo".into()],
             function_kind: CppFunctionKind::StaticMethod {
                 record_declaration_id: "Math_class".into(),
                 record_name: "Math".into(),
@@ -6980,6 +6989,7 @@ mod tests {
             span: cleanup_span(),
             base: None,
             polymorphic: false,
+            path: Vec::new(),
             fields: vec![CppField {
                 declaration_id: "field".into(),
                 name: "value".into(),
@@ -7146,6 +7156,7 @@ mod tests {
             virtual_method: None,
             declaration_id: name.into(),
             name: name.into(),
+            path: vec![name.into()],
             function_kind: CppFunctionKind::Free,
             return_type: signed_integer(32, false),
             parameters,
@@ -7222,6 +7233,7 @@ mod tests {
             virtual_method: None,
             declaration_id: name.into(),
             name: name.into(),
+            path: vec![name.into()],
             function_kind: CppFunctionKind::Free,
             return_type: signed_integer(32, false),
             parameters,
@@ -7332,6 +7344,7 @@ mod tests {
             virtual_method: None,
             declaration_id: name.into(),
             name: name.into(),
+            path: vec![name.into()],
             function_kind: CppFunctionKind::Free,
             return_type: signed_integer(32, false),
             parameters: vec![],
@@ -7430,6 +7443,7 @@ mod tests {
             span: cleanup_span(),
             base: None,
             polymorphic: false,
+            path: Vec::new(),
             fields: vec![CppField {
                 declaration_id: "field".into(),
                 name: "fee".into(),
@@ -7480,6 +7494,7 @@ mod tests {
             virtual_method: None,
             declaration_id: "method".into(),
             name: "State_update".into(),
+            path: vec!["State_update".into()],
             function_kind: CppFunctionKind::Method {
                 record_declaration_id: "record".into(),
                 record_name: "State".into(),
@@ -7614,6 +7629,7 @@ mod tests {
             virtual_method: None,
             declaration_id: "root".into(),
             name: "root".into(),
+            path: vec!["root".into()],
             function_kind: CppFunctionKind::Free,
             return_type: signed_integer(64, false),
             parameters: vec![],
@@ -7998,6 +8014,7 @@ mod tests {
             virtual_method: None,
             declaration_id: "root".into(),
             name: "root".into(),
+            path: vec!["root".into()],
             function_kind: CppFunctionKind::Free,
             return_type: signed_integer(32, false),
             parameters: vec![place("parameter")],

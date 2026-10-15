@@ -332,15 +332,11 @@ pub fn display_rust_names(text: &str) -> Cow<'_, str> {
     Cow::Owned(output)
 }
 
-/// Whether the claim label `label` is the one `requested` names, as the
-/// importer spells it or as its Rust path.
-pub fn claim_label_matches(label: &str, requested: &str) -> bool {
-    label == requested || (requested.contains("::") && display_rust_names(label) == requested)
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::languages::claim_label_matches;
 
     #[test]
     fn importer_names_read_as_their_paths() {

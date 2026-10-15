@@ -5248,6 +5248,7 @@ impl parser::ProgramLayouts {
     fn of_execution(execution: &crate::languages::PreparedExecution) -> Self {
         let mut tables = parser::ProgramLayouts {
             struct_layouts: execution.layouts.clone(),
+            record_spellings: execution.record_spellings.clone(),
             ..Default::default()
         };
         let source_names = execution

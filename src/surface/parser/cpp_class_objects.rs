@@ -64,6 +64,11 @@ struct Head {
     end: usize,
 }
 
+/// The importer name of `class`'s method `method`, `Square::area`.
+fn method_name(class: &str, method: &str) -> String {
+    crate::languages::cpp::names::path_name(&[class, method])
+}
+
 /// The name of the abstract resource that is class `class`'s object.
 pub(crate) fn object_family(class: &str) -> String {
     format!("{class}__object")
@@ -122,7 +127,7 @@ pub(super) fn rewrite_class_objects(
             let class = head.class.as_ref()?;
             defining
                 .contains_key(class)
-                .then(|| format!("{class}_{}", head.method))
+                .then(|| method_name(class, &head.method))
         })
         .collect();
     let mut pending = found.into_iter().peekable();
@@ -167,7 +172,7 @@ pub(super) fn rewrite_class_objects(
             object
                 .methods
                 .keys()
-                .map(move |method| format!("{class}_{method}"))
+                .map(move |method| method_name(class, method))
         })
         .collect();
     let (tokens, positions) = output.into_iter().unzip();
@@ -738,10 +743,7 @@ fn rewrite_function(
             contract.extend(at(
                 &position,
                 vec![
-                    ident(&implementation_interface_contract(&format!(
-                        "{class}_{}",
-                        head.method
-                    ))),
+                    ident(&implementation_interface_contract(&method_name(class, &head.method))),
                     Token::LParen,
                 ],
             ));
