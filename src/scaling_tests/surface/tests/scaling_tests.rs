@@ -8003,7 +8003,13 @@ resource callbacks0(cb: const struct callbacks*) {
 
 /// Guarded preparation visits one body; the complete rewrite also pays the
 /// existing linear validation cost for surrounding owners.
+///
+/// Nightly: each of the four verifications costs over half a second in a
+/// debug build at any size, and the proof's `execute` grows faster than
+/// the owners (3,561, 6,045, 13,413 and 37,749 units at 4 to 32 owners in a
+/// release build on 2026-10-15), so the largest size dominates.
 #[test]
+#[ignore = "nightly: 7.2s in the parallel gate"]
 fn guarded_unfold_cell_preparation_scales_linearly_with_surrounding_owners() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/c_guarded_resource_disjoint_store.md");
