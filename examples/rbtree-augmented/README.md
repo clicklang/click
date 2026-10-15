@@ -197,3 +197,14 @@ subtree model, selects the corresponding proved callback interface inside the
 borrowed table scope, and returns a recursively valid sized subtree. Both named
 rotation interfaces preserve the structural shape and establish the repaired
 root count. Connection to insertion and erasure remains to be checked.
+
+
+`rbtree_size_insert.click` begins the writable-callback insertion boundary with
+its no-parent case. It checks the unchanged `__rb_insert` body and both augmented
+wrappers when the supplied node is the red root of a valid `sized_at` subtree.
+The root becomes black; the exact cached sizes and child models are preserved.
+The children may be nonempty. This path never invokes the rotation callback,
+so it accepts any correctly typed callback without the plain insertion proof's
+read-only `AugmentRotate` premise. `InsertSizedRoot` exposes the checked root-case
+interface. This is not yet the ancestor or rotation paths of sized insertion,
+and does not establish balancing from arbitrary child colors.

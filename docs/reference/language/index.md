@@ -3207,7 +3207,9 @@ functions and predicates, not built-in kernel concepts.
 In pointer-valued C contexts, the integer constant `0` is the null pointer
 constant. It may initialize or assign a pointer, be returned from a pointer
 function, be passed to a pointer parameter, or be compared with a pointer.
-Nonzero integers do not implicitly convert to pointers.
+Pointer-typed datatype constructor fields use the same rule in function
+contracts and pure expressions: a field declared `int32*` accepts `0` as its
+typed null pointer. Nonzero integers do not implicitly convert to pointers.
 
 Supported C accepts the struct shapes listed in
 [struct subset](c.md#struct-subset). The C side lowers chained `obj->child->field` loads and stores at

@@ -1825,6 +1825,10 @@ fn validate_algebraic_expression_node(
                             describe_click_type(&ClickType::Algebraic(actual))
                         )));
                     }
+                    (ClickType::C(expected), None)
+                        if crate::surface::lowering::argument_is_null_pointer_constant(
+                            argument, *expected,
+                        ) => {}
                     (ClickType::C(expected), Some(actual)) => {
                         return Err(ClickError::new(format!(
                             "constructor `{}::{variant}` argument {index} expects {}, got {} in {context}",
@@ -2608,6 +2612,13 @@ fn infer_generic_expression_type(
                 .expect("constructors were validated before generic inference");
             for (index, (argument, field)) in arguments.iter().zip(variant.fields()).enumerate() {
                 let expected = instantiate_field_type(definition, algebraic_type, field)?;
+                if let ClickType::C(expected) = &expected
+                    && crate::surface::lowering::argument_is_null_pointer_constant(
+                        argument, *expected,
+                    )
+                {
+                    continue;
+                }
                 let actual = infer_generic_expression_type(
                     argument,
                     variables,
