@@ -652,7 +652,7 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
             requires known_len < 18446744073709551615u64;
             requires defined(known_len + 1u64);
             requires viewable(haystack[0..known_len + 1u64]);
-            requires cstr_readable(haystack);
+            requires cstr::readable(haystack);
             views haystack[0..known_len + 1u64];
             ensures result < 18446744073709551615u64;
         } by {

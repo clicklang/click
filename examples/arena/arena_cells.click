@@ -739,12 +739,6 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         assumption();
                     }
                 }
-                have hi == at(iteration, i) by {
-                    simp();
-                }
-                have i == at(iteration, i) + 1 by {
-                    normalize();
-                }
                 have at(iteration, i) < at(iteration, i) + 1 by {
                     apply(int32_increment_strictly_increases(
                         at(iteration, i),

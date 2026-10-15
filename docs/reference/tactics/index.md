@@ -99,7 +99,10 @@ claims with `auto`, per claim or once for a grouped proof. Closing with
 for a chain of rewrites on a claim `simp` leaves open. A proof script that
 ends with a claim still open closes it the same way, so a script needs no
 final closer. On a stated fact, `have P by auto;`, there is no C to execute,
-and `auto` is the solver, then `simp`, then the rewrite search. `auto` has no
+and `auto` is the solver, then `simp`, then the rewrite search. Before the
+solver, `auto` tries a goal that restates an available fact through one
+connected equality, such as `f(Node(..)) == 1` beside `f(t) == 1` and
+`t == Node(..)`: one `rewrite` and `assumption`, at most 16 rewrites. `auto` has no
 script-tactic spelling of its own: a written `simp()` is `simp` alone. Successful smart tactics and `auto` retain the checked
 surface provenance that `click expand` can render as an explicit proof.
 Source-premise selection skips synthesized candidates whose rendered

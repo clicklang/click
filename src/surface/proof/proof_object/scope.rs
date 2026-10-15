@@ -642,6 +642,11 @@ impl<'a> ProofScope<'a> {
     pub(in crate::surface::proof) fn try_auto_fact_closure(
         &self,
     ) -> Result<Option<Self>, ClickError> {
+        if let Some(body) = self.body.try_single_rewrite_closure()? {
+            let mut next = self.clone();
+            next.body = body;
+            return Ok(Some(next));
+        }
         if let Some(closed) = self.try_solver_closure()? {
             return Ok(Some(closed));
         }

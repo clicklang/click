@@ -20,7 +20,7 @@ unsigned long outer(char *src)
 verifying "measure.c";
 
 uint64 measure(const char* src) {
-    requires cstr_readable(src);
+    requires click::cstr::readable(src);
     ensures src[result] == '\0';
 } by {
     execute();
@@ -28,7 +28,7 @@ uint64 measure(const char* src) {
 }
 
 uint64 outer(char* src) {
-    requires cstr_readable(src);
+    requires click::cstr::readable(src);
     owns src[0..1];
     ensures src[result] == '\0';
 } by {

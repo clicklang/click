@@ -9,7 +9,7 @@ prefix, and the definedness of each byte through the terminator. The final
 call step can therefore use only checked, retained facts instead of searching
 the ambient context.
 
-The caller holds only concrete byte facts, not `cstr_readable` itself, and
+The caller holds only concrete byte facts, not `cstr::readable` itself, and
 the terminator is not the first byte, so the `have` is the route to the
 precondition.
 

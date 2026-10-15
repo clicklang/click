@@ -285,45 +285,134 @@ fn plain_text(markdown: &str) -> String {
     result.replace("**", "")
 }
 
-/// Rewrites the page's relative links, outside code fences, to paths relative
-/// to `docs/`. An in-page anchor `#x` becomes `page.md#x`.
+/// Rewrites relative links outside inline code and fenced code blocks.
+/// An in-page anchor `#x` becomes `page.md#x`.
 fn rewrite_links(docs: &Path, page: &str, source: &str) -> Result<String, String> {
     let directory = Path::new(page).parent().unwrap_or(Path::new(""));
-    let mut output = String::new();
-    let mut in_fence = false;
-    for line in source.split_inclusive('\n') {
-        if line.trim_start().starts_with("```") {
-            in_fence = !in_fence;
+    map_links(source, &mut |target| {
+        let rewritten = rewrite_target(page, directory, target)?;
+        let local = !(rewritten.is_empty()
+            || rewritten.contains("://")
+            || rewritten.starts_with("mailto:")
+            || rewritten.starts_with('/'));
+        let file = rewritten.split('#').next().unwrap_or_default();
+        if local && !docs.join(file).is_file() {
+            return Err(format!(
+                "link {target} does not resolve to a file under docs/"
+            ));
         }
-        if in_fence {
+        Ok(rewritten)
+    })
+}
+
+/// Inline link destinations outside code, shared with the documentation checker.
+pub fn markdown_links(source: &str) -> Vec<String> {
+    let mut links = Vec::new();
+    map_links(source, &mut |target| {
+        let value = target.trim();
+        let value = value.split_whitespace().next().unwrap_or(value);
+        if !value.is_empty() {
+            links.push(value.trim_matches(['<', '>']).to_string());
+        }
+        Ok(target.to_string())
+    })
+    .expect("collecting link destinations cannot fail");
+    links
+}
+
+fn map_links(
+    source: &str,
+    rewrite: &mut impl FnMut(&str) -> Result<String, String>,
+) -> Result<String, String> {
+    let mut output = String::new();
+    let mut prose = String::new();
+    let mut fence = None;
+    for line in source.split_inclusive('\n') {
+        let marker = fence_marker(line);
+        if let Some((character, length)) = fence {
             output.push_str(line);
+            if marker.is_some_and(|(ch, count, tail)| {
+                ch == character && count >= length && tail.trim().is_empty()
+            }) {
+                fence = None;
+            }
+        } else if let Some((character, length, tail)) = marker
+            && (character != b'`' || !tail.contains('`'))
+        {
+            output.push_str(&rewrite_prose_links(&prose, rewrite)?);
+            prose.clear();
+            output.push_str(line);
+            fence = Some((character, length));
+        } else {
+            prose.push_str(line);
+        }
+    }
+    output.push_str(&rewrite_prose_links(&prose, rewrite)?);
+    Ok(output)
+}
+
+fn fence_marker(line: &str) -> Option<(u8, usize, &str)> {
+    let trimmed = line.trim_start_matches(' ');
+    if line.len() - trimmed.len() > 3 {
+        return None;
+    }
+    let character = *trimmed.as_bytes().first()?;
+    if !matches!(character, b'`' | b'~') {
+        return None;
+    }
+    let length = trimmed.bytes().take_while(|ch| *ch == character).count();
+    (length >= 3).then_some((character, length, &trimmed[length..]))
+}
+
+fn rewrite_prose_links(
+    source: &str,
+    rewrite: &mut impl FnMut(&str) -> Result<String, String>,
+) -> Result<String, String> {
+    let mut output = String::new();
+    let mut rest = source;
+    while let Some(start) = rest.find(['`', '\\', ']']) {
+        output.push_str(&rest[..start]);
+        rest = &rest[start..];
+        if rest.starts_with('\\') {
+            let length = 1 + rest[1..].chars().next().map_or(0, char::len_utf8);
+            output.push_str(&rest[..length]);
+            rest = &rest[length..];
             continue;
         }
-        let mut rest = line;
-        while let Some(start) = rest.find("](") {
-            let target_start = start + 2;
-            output.push_str(&rest[..target_start]);
-            let Some(length) = rest[target_start..].find(')') else {
-                rest = &rest[target_start..];
-                continue;
-            };
-            let target = &rest[target_start..target_start + length];
-            let rewritten = rewrite_target(page, directory, target)?;
-            let local = !(rewritten.is_empty()
-                || rewritten.contains("://")
-                || rewritten.starts_with("mailto:")
-                || rewritten.starts_with('/'));
-            let file = rewritten.split('#').next().unwrap_or_default();
-            if local && !docs.join(file).is_file() {
-                return Err(format!(
-                    "link {target} does not resolve to a file under docs/"
-                ));
+        if rest.starts_with('`') {
+            let delimiter = rest.bytes().take_while(|ch| *ch == b'`').count();
+            let mut search = delimiter;
+            let mut end = delimiter;
+            while let Some(next) = rest[search..].find('`') {
+                let next = search + next;
+                let count = rest[next..].bytes().take_while(|ch| *ch == b'`').count();
+                search = next + count;
+                if count == delimiter {
+                    end = search;
+                    break;
+                }
             }
-            output.push_str(&rewritten);
-            rest = &rest[target_start + length..];
+            // An unmatched backtick run is ordinary text. Only a matching
+            // delimiter shields the intervening text from link processing.
+            output.push_str(&rest[..end]);
+            rest = &rest[end..];
+            continue;
         }
-        output.push_str(rest);
+        if !rest.starts_with("](") {
+            output.push(']');
+            rest = &rest[1..];
+            continue;
+        }
+        output.push_str("](");
+        rest = &rest[2..];
+        let Some(length) = rest.find(')') else {
+            continue;
+        };
+        let target = &rest[..length];
+        output.push_str(&rewrite(target)?);
+        rest = &rest[length..];
     }
+    output.push_str(rest);
     Ok(output)
 }
 
@@ -358,4 +447,71 @@ fn rewrite_target(page: &str, directory: &Path, target: &str) -> Result<String, 
         Some(anchor) => format!("{resolved}#{anchor}"),
         None => resolved,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rewrite(source: &str) -> Result<String, String> {
+        rewrite_links(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("docs"),
+            "reference/cli/import.md",
+            source,
+        )
+    }
+
+    #[test]
+    fn inline_code_links_are_literal() {
+        for source in [
+            "A lambda, `apply([](int y) noexcept { return y + y; }, x)`, is its address.\n",
+            "``a ` [](x)`` and `[](y)`\n",
+            "`a\n[](x)`\n",
+        ] {
+            assert_eq!(rewrite(source).unwrap(), source);
+        }
+        assert_eq!(
+            rewrite("`[](x)` [real](#section) `[](y)`").unwrap(),
+            "`[](x)` [real](reference/cli/import.md#section) `[](y)`"
+        );
+    }
+
+    #[test]
+    fn fenced_code_links_are_literal() {
+        for source in [
+            "```cpp\n[](x)\n```\n",
+            "~~~cpp\n[](x)\n~~~\n",
+            "````markdown\n```\n[](x)\n```\n````\n",
+            "~~~markdown\n```\n[](x)\n~~~\n",
+        ] {
+            let input = format!("{source}[real](#section)\n");
+            assert_eq!(
+                rewrite(&input).unwrap(),
+                format!("{source}[real](reference/cli/import.md#section)\n")
+            );
+        }
+    }
+
+    #[test]
+    fn unmatched_and_escaped_backticks_do_not_hide_links() {
+        for source in ["` [real](#section)", "\\` [real](#section)"] {
+            assert_eq!(
+                rewrite(source).unwrap(),
+                source.replace("(#section)", "(reference/cli/import.md#section)")
+            );
+        }
+        assert!(rewrite("`[](x)` [missing](missing.md)").is_err());
+        assert_eq!(
+            markdown_links("`[](x)` [real](target.md)\n~~~cpp\n[](y)\n~~~\n"),
+            ["target.md"]
+        );
+    }
+
+    #[test]
+    fn reference_with_literal_lambda_generates() {
+        let files = generate(Path::new(env!("CARGO_MANIFEST_DIR"))).unwrap();
+        assert!(files.iter().any(|(_, content)| {
+            content.contains("`apply([](int y) noexcept { return y + y; }, x)`")
+        }));
+    }
 }

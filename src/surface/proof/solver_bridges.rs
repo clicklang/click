@@ -29,6 +29,10 @@ const REWRITE_ATTEMPTS: usize = 256;
 /// closers miss: `simp` unfolds and computes what a rewrite exposes.
 const REWRITE_SIMP_CLOSURES: usize = 8;
 
+/// How many rewrites `auto` tries, each followed by `assumption`, before
+/// its solvers: a goal that restates a fact through one equation.
+const SINGLE_REWRITES: usize = 16;
+
 /// How many connected constructor equations `auto` pairs.
 const CONSTRUCTOR_EQUATIONS: usize = 16;
 
@@ -612,6 +616,9 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn try_auto_proof_closure(
         &self,
     ) -> Result<Option<Self>, ClickError> {
+        if let Some(closed) = self.try_single_rewrite_closure()? {
+            return Ok(Some(closed));
+        }
         if let Some(closed) = self.try_solver_closure()? {
             return Ok(Some(closed));
         }
@@ -644,6 +651,72 @@ impl<'a> Proof<'a> {
             return Ok(Some(closed));
         }
         self.try_wide_equality_solver_closure()
+    }
+
+    /// A goal that restates an available fact through one connected
+    /// equality, such as `f(Node(..)) == 1` beside `f(t) == 1` and
+    /// `t == Node(..)`: one `rewrite` and `assumption`. Tried before the
+    /// solvers, which would prove it too, at far greater cost and through a
+    /// much longer certificate. At most `SINGLE_REWRITES` rewrites.
+    pub(in crate::surface::proof) fn try_single_rewrite_closure(
+        &self,
+    ) -> Result<Option<Self>, ClickError> {
+        use crate::kernel::proof::equality_rewrite::{equality_rewrite_applies, reverse_equality};
+        let Some(goal) = self.goal() else {
+            return Ok(None);
+        };
+        let Some(equalities) =
+            crate::surface::planning::proposition_search::solver_connected_equalities(
+                self.facts().assumptions(),
+                goal,
+            )
+        else {
+            return Ok(None);
+        };
+        let mut attempts = 0;
+        for equality in &equalities {
+            let applies = |kernel: &Proposition| {
+                equality_rewrite_applies(goal, kernel)
+                    || reverse_equality(kernel)
+                        .is_some_and(|reverse| equality_rewrite_applies(goal, &reverse))
+            };
+            if !applies(equality) {
+                continue;
+            }
+            check_verification_deadline()?;
+            let Some((kernel, surface)) = self
+                .resolve_simp_premises(std::slice::from_ref(equality), &[])
+                .and_then(|mut spelled| spelled.pop())
+            else {
+                continue;
+            };
+            let mut forms = Vec::new();
+            if let Some(unanchored) = unanchored_equality(&surface)
+                && let Ok(lowered) =
+                    self.lower_surface_proposition(&unanchored, "`auto` rewrite equality")
+            {
+                forms.extend(oriented_forms(lowered, unanchored));
+            }
+            forms.extend(oriented_forms(kernel, surface));
+            for (kernel, surface) in forms {
+                if !equality_rewrite_applies(goal, &kernel) {
+                    continue;
+                }
+                if attempts == SINGLE_REWRITES {
+                    return Ok(None);
+                }
+                attempts += 1;
+                let Ok(rewritten) = self.apply_step(ProofStep::Rewrite(surface)) else {
+                    continue;
+                };
+                if let Ok(closed) = rewritten.apply_step(ProofStep::Assumption)
+                    && (closed.focused_discharged() || closed.is_complete())
+                {
+                    return Ok(Some(closed));
+                }
+            }
+        }
+        Ok(None)
     }
 
     /// Rewrite the goal by the equality facts connected to it until

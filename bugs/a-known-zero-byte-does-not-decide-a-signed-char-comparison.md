@@ -14,7 +14,7 @@ comparison of the same read opens: with the same fact, the path whose case is
 shown to return 1.
 
 This blocks reading a C string's terminator through plain `char` after
-`cstr_readable_len(src, n)`, or after opening the library's
+`cstr::readable_len(src, n)`, or after opening the library's
 `cstr_at(src, n)`, whose facts state the bytes through `(uint8*)src`.
 
 ## Reproduction
@@ -48,8 +48,8 @@ result == 1; left side evaluated to 0, right side evaluated to 1
 case: [(int8)old(*p) != 0]
 ```
 
-The same failure occurs with `requires cstr_readable_len(src, n);`,
-`unfold(cstr_readable_len)` and `return src[n] == '\0';`, and inside
+The same failure occurs with `requires cstr::readable_len(src, n);`,
+`unfold(cstr::readable_len)` and `return src[n] == '\0';`, and inside
 `open(cstr_at(src, n)) { ... }`. With `const uint8*` in place of `char*`
 each version verifies.
 

@@ -400,7 +400,7 @@ uint64 label_fit(uint64 length) {
 }
 
 uint64 label_measure(const char* src) {
-    requires cstr_readable(src);
+    requires click::cstr::readable(src);
     ensures result < 32;
 } by {
     execute();
@@ -439,7 +439,7 @@ click: preprocess label_copy.c: compiler exited with exit status: 1: In file inc
 ```
 
 The contracts are in the [standard library](../reference/library/index.md).
-`strlen` requires `cstr_readable(src)`: a readable, NUL-terminated string. The
+`strlen` requires `cstr::readable(src)`: a readable, NUL-terminated string. The
 caller must state that requirement. `external assumptions` lists every
 contract the result depends on but did not check: here, Click's `strlen`
 contract.
@@ -500,7 +500,7 @@ theorem label_source_prefix_viewable(bytes: uint8[], length: uint64, taken: uint
 }
 
 uint64 label_measure(const char* src) {
-    requires cstr_readable(src);
+    requires click::cstr::readable(src);
     ensures result < 32;
 } by {
     execute();
@@ -508,14 +508,14 @@ uint64 label_measure(const char* src) {
 }
 
 uint64 label_copy(char* dst, const char* src) {
-    requires cstr_readable(src);
+    requires click::cstr::readable(src);
     owns dst[0u64..32u64];
     requires separate(memory(dst[0u64..32u64]), memory(src[0u64..32u64]));
     ensures result < 32;
     ensures dst[result] == '\0';
 } by {
     step();
-    unfold(cstr_readable);
+    unfold(click::cstr::readable);
     have exists (len: uint64) {
         len < 18446744073709551615u64 and
         viewable(((uint8*)src)[0..len + 1u64]) and
