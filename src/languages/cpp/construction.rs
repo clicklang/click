@@ -263,6 +263,7 @@ impl Eligibility<'_, '_> {
             } => self.arguments(arguments, values)? && self.function(callee)?,
             CppExpression::AddressOf { .. }
             | CppExpression::FunctionAddress { .. }
+            | CppExpression::ClosureInstance { .. }
             | CppExpression::ReferenceBinding { .. }
             | CppExpression::Dereference { .. }
             | CppExpression::MemberLoad { .. } => false,
