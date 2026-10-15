@@ -420,6 +420,10 @@ impl ProofFacts {
                         | (
                             ConditionTerm::Bitvector32Equal(a, b),
                             ConditionTerm::Bitvector32Equal(c, d),
+                        )
+                        | (
+                            ConditionTerm::Bitvector64Equal(a, b),
+                            ConditionTerm::Bitvector64Equal(c, d),
                         ) => vec![(a.as_ref(), c.as_ref()), (b.as_ref(), d.as_ref())],
                         (ConditionTerm::IntegerEqual(a, b), ConditionTerm::IntegerEqual(c, d))
                         | (
@@ -471,13 +475,15 @@ impl ProofFacts {
                         _ if a == b => continue,
                         _ => return None,
                     };
-                    for (a, b) in pairs {
-                        if a == b {
-                            continue;
-                        }
+                    let mut pairs = pairs;
+                    while let Some((a, b)) = pairs.pop() {
+                        crate::instrumentation::record_deterministic_work(1);
                         // A load atom is independent of a surrounding binder.
                         // Do not use ambient premises to identify a bound
                         // value, or a load with an explicitly bound address.
+                        if !bound_variables.is_empty() && a == b {
+                            continue;
+                        }
                         if !bound_variables.is_empty()
                             && [a, b].iter().any(|term| match *term {
                                 Bitvector32Term::Variable(variable) => {
@@ -489,22 +495,99 @@ impl ProofFacts {
                         {
                             return None;
                         }
+                        // Walk matching arithmetic structure once. Do not
+                        // compare whole subtrees at every node: a long chain
+                        // with one changed leaf must remain linear.
+                        if let (Some((op, x, y)), Some((other, u, v))) =
+                            (a.as_binary(), b.as_binary())
+                        {
+                            if op != other {
+                                return None;
+                            }
+                            pairs.push((x, u));
+                            pairs.push((y, v));
+                            continue;
+                        }
+                        if let (Some((op, x)), Some((other, y))) = (a.as_unary(), b.as_unary()) {
+                            if op != other {
+                                return None;
+                            }
+                            pairs.push((x, y));
+                            continue;
+                        }
+                        if a == b {
+                            continue;
+                        }
+                        let kind = |term: &Bitvector32Term| match term {
+                            Bitvector32Term::MemoryLoad(_, _, kind) => Some(*kind),
+                            Bitvector32Term::Variable(variable) => {
+                                crate::kernel::registered_load_kind_for_variable(variable)
+                            }
+                            _ => None,
+                        };
+                        let (a_kind, b_kind) = (kind(a), kind(b));
+                        // This judgment transports native integer words.
+                        // A narrow equality must not authorize replacing a
+                        // wider or floating-point observation.
+                        let supported = |kind| {
+                            matches!(
+                                kind,
+                                LoadKind::Int8
+                                    | LoadKind::UInt8
+                                    | LoadKind::Int16
+                                    | LoadKind::UInt16
+                                    | LoadKind::Bits32
+                                    | LoadKind::Bits64
+                            )
+                        };
+                        if [a_kind, b_kind]
+                            .into_iter()
+                            .flatten()
+                            .any(|kind| !supported(kind))
+                        {
+                            return None;
+                        }
+                        if a_kind.is_none() && b_kind.is_none()
+                            || matches!((a_kind, b_kind), (Some(a), Some(b)) if a != b)
+                        {
+                            return None;
+                        }
+                        let wide =
+                            a_kind == Some(LoadKind::Bits64) || b_kind == Some(LoadKind::Bits64);
                         let selected = Proposition::ConditionIs(
-                            ConditionTerm::equal(a.clone(), b.clone()),
+                            if wide {
+                                ConditionTerm::Bitvector64Equal(
+                                    Box::new(a.clone()),
+                                    Box::new(b.clone()),
+                                )
+                            } else {
+                                ConditionTerm::equal(a.clone(), b.clone())
+                            },
                             true,
                         );
-                        if !self
-                            .with_selected_load_equality_bridge(&selected)
-                            .contains(&selected)
+                        let recorded_wide_read = || {
+                            let raw = |term: &Bitvector32Term| match term {
+                                Bitvector32Term::Variable(variable) => {
+                                    crate::kernel::registered_load_term_for_variable(variable)
+                                }
+                                Bitvector32Term::MemoryLoad(..) => Some(term.clone()),
+                                _ => None,
+                            };
+                            raw(a).zip(raw(b)).is_some_and(|(a, b)|
+                                crate::kernel::memory_provenance::checked_recorded_atomic_load_equality(
+                                    &a, &b, self.assumptions()))
+                        };
+                        if !self.pure_assumption_available(&selected)
+                            && !(wide && recorded_wide_read())
+                            && !self
+                                .with_selected_load_equality_bridge(&selected)
+                                .contains(&selected)
                             && !checked_origin_load_equality(a, b, self.assumptions())
                             && !checked_stored_origin_equality(a, b, self.assumptions())
                         {
                             return None;
                         }
-                        equalities.push(Proposition::ConditionIs(
-                            ConditionTerm::equal(a.clone(), b.clone()),
-                            true,
-                        ));
+                        equalities.push(selected);
                     }
                 }
                 _ if left == right => (),
