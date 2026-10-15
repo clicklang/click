@@ -1904,7 +1904,12 @@ impl PureFactContext {
     /// Whether every byte of an access of `bytes` at `pointer` lies in the
     /// kept `range`, decided in this context: the placement step of
     /// [`Self::kept_range_holding_access`].
-    fn kept_range_holds_access(&self, range: &CMemoryRange, pointer: &Pointer, bytes: u32) -> bool {
+    pub(in crate::kernel) fn kept_range_holds_access(
+        &self,
+        range: &CMemoryRange,
+        pointer: &Pointer,
+        bytes: u32,
+    ) -> bool {
         let width = range.element_width();
         if width == 0 {
             return false;
@@ -3054,7 +3059,10 @@ impl PureFactContext {
                 }
             }
         }
-        None
+        // The immediate spelling index is only a fast path. A transitive
+        // address equality must select the same live owner as a checked read
+        // or write; do not search unrelated resources or enumerate aliases.
+        resources.owned_memory_member_covering_access(&pointer, bytes, self)
     }
 
     fn proves_resource_separate_inner(&self, left: &CResource, right: &CResource) -> bool {
