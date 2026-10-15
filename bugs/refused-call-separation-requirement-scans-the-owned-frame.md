@@ -58,24 +58,63 @@ shapes), about 1,000 units per unrelated object, nearly all in
 `resource separation: owned resources`, `composition covers` and
 `composition members`.
 
-## Why it was not fixed with the proved case
+## Why no candidate index is complete today
 
 A proved query can stop at the members its sides' roots nominate, because
 any pair those members hold is a pair the full scan admits. A refusal needs
-every member that could hold a side to answer no, and the containment
-question is answered by the general decision procedure
-(`pointer_element_index_from_base_with_width` asks `decide` whether two
-offsets are equal), which can relate offsets with different roots through
-facts. Skipping members at unrelated roots would therefore change the
-verdict only where such facts exist, but nothing yet shows the routes'
-candidate sets are complete, so the scan stays.
+every member that could hold a side to answer no. A member holds a side when
+`pointer_element_index_from_base_with_width` relates the side's address to
+the member's base, and three of its routes relate offsets whose roots
+(`memory_base_root`) differ and are tied by no exact alias:
+
+- `decide(PointerOffsetEqual(4*i, 4*j))` reaches the difference graph, whose
+  `offset_equality` asks `Bitvector32Equal(i, j)`; order facts `i <= j` and
+  `j <= i`, or both values pinned to one constant, decide it. Pointer
+  parameters are `Int32Scaled { Variable, 4 }`, so this is their shape. A
+  kernel probe over a composition owning `4*i[0..3]` and `4*k[0..3]` proved
+  `4*i[0..3]` contains `4*j[1..2]` and `separate(4*j[1..2], 4*k[1..2])` with
+  both orders stated, and refused both with only `i <= j` (2026-10-15).
+- The difference graph's pointer union-find closes equalities transitively:
+  with `requires a == r; requires r == q;`, a member `q[0..1]` holds
+  `memory(a[0..1])`, which one-hop exact aliases do not nominate (seen at
+  source level with a tracing build).
+- Memory resolution (`pointer_offsets_proven_equal_for_memory_resolution`
+  through `stored_value_at_equal_pointer`) equates a loaded pointer with the
+  pointer stored in its cell, so a side spelled through a load is held by a
+  member at a parameter's base. In the mdtest corpus a tracing build saw 22
+  acceptances by members outside the nominated roots (8 deciding the pair),
+  all of this or the scaled-equality shape; the rbtree, arena and
+  linked-list examples saw none outside, and their verdicts were unchanged.
+
+A key complete for these routes would have to follow difference-graph
+equalities (including two values pinned to one constant), the pointer
+union-find's transitive classes, and memory resolution's load-to-stored
+value equalities, none of which is indexed by root today.
+
+## Smallest kernel changes that would allow it
+
+Either keeps `decide` unchanged in what it proves:
+
+1. Maintain, beside the difference graph and pointer union-find, a
+   persistent relatedness index over offset root atoms: union the atoms of
+   both sides of every int32 or pointer-offset fact that relates two
+   non-constant atoms, file atoms with a pinning constant bound under that
+   constant, and mark load-rooted atoms (registered loads) as related to
+   every stored pointer. A refusal then asks the members filed under the
+   side's related atoms, the constant-root bucket, and the load-related
+   members. Load-rooted frames such as the rbtree examples would still read
+   most of their members.
+2. Or make the composition routes' cross-root containment read only the
+   resource context's canonical address index (`memory_addresses`, kept in
+   the equality graph's canonical classes), so that index is complete by
+   construction. This changes what those routes prove and needs the corpus
+   and an approval before it lands.
 
 ## Acceptance criteria
 
-- A candidate index for the three routes whose completeness is argued from
-  the containment rules (which bases a member's containment proof can
-  relate), or a containment relation restricted to what such an index
-  serves, with the verdict argument written beside it.
+- One of the changes above, with its completeness argument written beside
+  the index and a test-only cross-check comparing the indexed refusal with
+  the full scan over the separation tests and the corpus.
 - The reproduction above refuses the requirement with requirement-checking
   work independent of `N` up to indexing factors, pinned by a deterministic
   regression at four sizes.
