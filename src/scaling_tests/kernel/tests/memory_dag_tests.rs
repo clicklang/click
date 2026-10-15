@@ -1042,3 +1042,100 @@ fn local_lifetime_end_retains_complete_separated_range_evidence_and_scales() {
         "indexed lifetime separation grew with unrelated members: {costs:?}"
     );
 }
+
+#[test]
+fn preliminary_byte_gap_uses_only_selected_recorded_order() {
+    use crate::kernel::reasoning::memory_resolution::{AccessByteOverlap, access_byte_overlap};
+    let _session = crate::kernel::VerificationSession::enter();
+    let memory = crate::kernel::intern_c_memory_ref(&CMemory::new());
+    let index = |slot: i64| {
+        Bitvector32Term::MemoryLoad(
+            memory.clone(),
+            Box::new(Pointer {
+                block: "byte-gap-index".into(),
+                offset: PointerOffsetTerm::Constant(slot * 4),
+            }),
+            crate::kernel::LoadKind::Bits32,
+        )
+    };
+    let middle = index(2);
+    let left_index = index(0);
+    let right_index = index(1);
+    let at = |index: &Bitvector32Term| Pointer {
+        block: "byte-gap-data".into(),
+        offset: PointerOffsetTerm::scale_int32(index.clone(), 4),
+    };
+    let left = at(&left_index);
+    let right = at(&right_index);
+    let order = ConditionTerm::signed_less_than(left_index.clone(), right_index.clone());
+    let mut baseline_work = None;
+    for size in [0u64, 16, 64, 256] {
+        let mut context = PureFactContext::new();
+        for extra in 0..size {
+            context = context.assume_condition(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(Variable(97_400 + extra)),
+                    (extra as u32).into(),
+                ),
+                true,
+            );
+        }
+        let ordered = context.clone().assume_condition(order.clone(), true);
+        let withdrawn = ordered.without_exact_fact(&Proposition::ConditionIs(order.clone(), true));
+        let reversed = context.clone().assume_condition(order.clone(), false);
+        let first_edge = Proposition::ConditionIs(
+            ConditionTerm::signed_less_than(left_index.clone(), middle.clone()),
+            true,
+        );
+        let second_edge = Proposition::ConditionIs(
+            ConditionTerm::signed_less_equal(middle.clone(), right_index.clone()),
+            true,
+        );
+        let chained = context
+            .clone()
+            .assume_proposition(first_edge.clone())
+            .assume_proposition(second_edge);
+        let broken = chained.without_exact_fact(&first_edge);
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert_eq!(
+                access_byte_overlap(&left, 4, &right, 8, &context),
+                AccessByteOverlap::Unknown
+            );
+            assert_eq!(
+                access_byte_overlap(&left, 4, &right, 8, &ordered),
+                AccessByteOverlap::Separate
+            );
+            // The eight-byte access is now below the four-byte one: a single
+            // element gap cannot guarantee that its upper half is disjoint.
+            assert_eq!(
+                access_byte_overlap(&left, 8, &right, 4, &ordered),
+                AccessByteOverlap::Unknown
+            );
+            assert_eq!(
+                access_byte_overlap(&right, 8, &left, 4, &ordered),
+                AccessByteOverlap::Separate
+            );
+            assert_eq!(
+                access_byte_overlap(&left, 4, &right, 8, &withdrawn),
+                AccessByteOverlap::Unknown
+            );
+            assert_eq!(
+                access_byte_overlap(&left, 4, &right, 8, &reversed),
+                AccessByteOverlap::Unknown
+            );
+            assert_eq!(
+                access_byte_overlap(&left, 4, &right, 8, &chained),
+                AccessByteOverlap::Separate
+            );
+            assert_eq!(
+                access_byte_overlap(&left, 4, &right, 8, &broken),
+                AccessByteOverlap::Unknown
+            );
+        });
+        let baseline = *baseline_work.get_or_insert(work);
+        assert!(
+            work <= baseline + 8 && work <= 256,
+            "unrelated order context caused {work} work at size {size} (baseline {baseline})"
+        );
+    }
+}

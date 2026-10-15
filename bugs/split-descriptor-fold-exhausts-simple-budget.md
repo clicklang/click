@@ -57,3 +57,16 @@ not established. Preserve original split-field ownership when investigating.
   multiple unrelated-context sizes.
 - Remove temporary probes. Keep the separate vector allocation-fold failure
   open until its own original case verifies.
+
+## Repair validation in progress
+
+Archive checkpoint `be001cb2f` restricts the preliminary directional byte-gap
+query to exact recorded order. That variant passes the focused proof in fresh,
+expanded, rewritten and retained modes; its completed profile measures the fold
+at 0.40s. Wrong-value, wrong-terminator and missing-ownership controls reject.
+
+The final extraction also follows written order edges through the existing
+endpoint index, preserving an existing derived-order store-hop proof. All 189
+selected current-upstream controls and all 224 selected archive kernel controls
+pass that variant. Its final archive four-mode recheck remains pending; keep
+this report until the final variant and its acceptance checks are complete.

@@ -435,10 +435,10 @@ allocation-fold failures are specific to the recovery archive; continue reducing
 those compatibility obligations before activation. See the
 [upstream/archive distinction](../design/object-model-recovery-audit.md#string-push-proof-and-full-upstream-project-checks).
 
-The split-field string reduction now identifies a narrower next blocker:
-explicit append-index bounds and stored-value proofs check, but the subsequent
-simple fold exhausts its work budget. Reduce and fix the
-[fold performance defect](../bugs/split-descriptor-fold-exhausts-simple-budget.md)
-before continuing the archive's string proof or activation. Keep the original
-C, split-field resource and existing budgets; the vector allocation fold remains
-separate.
+The split-field string fold now passes at unchanged limits after the
+[preliminary byte-gap query repair](../design/object-model-recovery-audit.md#preliminary-byte-gap-query-repair).
+The focused archive proof passes fresh, expanded, rewritten and retained checks.
+Continue with clear's final zero-value claim and its missing failure trace before
+activation. Keep the original C and split-field resource; the vector allocation
+fold remains separate. The original 41/52 archive audit is not a new full-project
+result.

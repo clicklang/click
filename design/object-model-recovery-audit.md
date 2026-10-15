@@ -776,10 +776,11 @@ original boundary. Explicitly establishing the nonnegative append index lets
 the complete-width frame prove the unchanged pointer. Stored-value and zero
 terminator facts also check. This needs no new object rule or keyword.
 
-The next simple fold exhausts its unchanged 750,000-unit budget. The
-[fold defect](../bugs/split-descriptor-fold-exhausts-simple-budget.md) records a
-single-function reproduction, the incomplete diagnostic profile and acceptance
-criteria. Repeated offset/range reasoning dominates the failed fold; a specific
+At checkpoint `ee9b29f87`, the next simple fold exhausts its unchanged
+750,000-unit budget. The archived
+[fold defect](https://github.com/lacker/click/blob/ee9b29f87822302f753f53eeb1c505bcc06f21ea/bugs/split-descriptor-fold-exhausts-simple-budget.md)
+records its reproduction and incomplete diagnostic profile. The
+[repair below](#preliminary-byte-gap-query-repair) supersedes this blocker. Repeated offset/range reasoning dominates the failed fold; a specific
 performance repair has not yet been established. Failed proof edits and private
 probes are removed from production sources. Keep the original 41/52 archive
 audit and the separate vector allocation-fold failure open.
@@ -819,3 +820,44 @@ The cleanup's rebuilt upstream CLI/library also pass the split-field fixture's
 fresh, expanded, rewritten and retained checks. Its filtered nightly-fixture
 harness passes (3.14s). Formatting, mdBook, docs lint and whitespace checks pass;
 Vale is unavailable, so advisory prose lint is skipped.
+
+### Preliminary byte-gap query repair
+
+PR #1042 merged; its final pushed commit `f3f71a8d7` is verified in upstream
+history. The next archive repair targets the split-field fold itself. A private
+stack sample identifies general signed-order reasoning inside the preliminary
+byte-gap check: resolving its load operands reenters the same memory histories.
+Use exact recorded order and indexed traversal of written order edges for that
+directional check. The traversal retains only its successful path's exact
+premises, handles order withdrawal, and performs no memory equality queries.
+Unknown geometry falls through to complete range-separation evidence; constant-gap
+and direction-free stride checks retain their behavior. The experiment moving
+frame discovery out of read registration is excluded from this repair.
+
+The archive's focused original-source proof now verifies at unchanged limits;
+a completed profile measures its fold at 0.40s. Other expensive simple steps
+remain and this is not a whole-proof performance claim. All 227 selected archive
+memory-history, pointer-frame, designation, span, loop, loan and resource-query
+controls pass. The new query regression checks 0, 16, 64 and 256 unrelated facts,
+order withdrawal, absent/reversed order and overlapping access widths. The final
+extraction also checks a two-edge order chain over memory-load atoms, preserving
+the existing derived-order store-hop control. Wrong
+stored-value and wrong-terminator claims reject, and missing backing ownership
+is refused while checking the resource's read authority.
+
+The initial exact-order variant's rebuilt probe-free archive CLI/library passes
+fresh verification, expansion, rewritten verification and retained rechecking.
+Archive checkpoint `be001cb2f` contains that initial repair; `3279dd7b0` preserves the separately checked push/pop proof
+adaptations and the missing final-assumption trace reproduction.
+All 189 selected current-upstream controls and 224 selected archive kernel
+controls pass the final indexed-order variant. Its final archive four-mode
+recheck remains pending, so the [fold defect](../bugs/split-descriptor-fold-exhausts-simple-budget.md)
+remains open until those acceptance checks complete. The final extraction's
+rebuilt upstream CLI/library passes the split-field fixture and full original
+owned-string project in fresh, expanded, rewritten and retained modes. All three
+wrong-value, wrong-terminator and missing-ownership controls still reject.
+Formatting, mdBook, docs lint and whitespace checks pass; the full gate and
+nightly suite are left to CI.
+The full archive string project gets past push; a focused pop adaptation also
+checks, but the full project still stops at clear's zero-value claim. No new
+52-project audit or bounded-model completion is claimed.
