@@ -942,6 +942,77 @@ void object_retain_many(struct object* obj, int32 amount) {
     fs::remove_dir_all(directory).unwrap();
 }
 
+/// A claim whose only automation is the implicit `auto` proving a bare
+/// step's obligation holds no smart site, but its expansion must still verify
+/// without the implicit `auto`, so discovery makes it a site of its own. A
+/// claim with smart sites is already expanded as a whole and is left to them.
+#[test]
+#[ignore = "nightly: 2s in the parallel gate"]
+fn a_claim_proved_only_by_the_implicit_auto_is_audited() {
+    let directory =
+        std::env::temp_dir().join(format!("click-audit-implicit-auto-{}", std::process::id()));
+    if directory.exists() {
+        fs::remove_dir_all(&directory).unwrap();
+    }
+    fs::create_dir(&directory).unwrap();
+    let c_source = r#"int32 compare_self(uint8 bytes[]) {
+    return memcmp(bytes, bytes, 2);
+}
+int32 compare_smart(uint8 bytes[]) {
+    return memcmp(bytes, bytes, 2);
+}"#;
+    let click_source = r#"verifying "compare.c";
+
+int32 compare_self(uint8 bytes[]) {
+    requires viewable(bytes[0..2]);
+    ensures 1 == 1 by {
+        step();
+        step();
+        have 1 == 1 by { normalize(); }
+        assumption();
+    }
+}
+
+int32 compare_smart(uint8 bytes[]) {
+    requires viewable(bytes[0..2]);
+    ensures 1 == 1 by {
+        step();
+        step();
+        simp();
+    }
+}
+"#;
+    let click_path = directory.join("compare.click");
+    fs::write(directory.join("compare.c"), c_source).unwrap();
+    fs::write(&click_path, click_source).unwrap();
+    let click_path = fs::canonicalize(&click_path).unwrap();
+    let smart = inventory_sites(std::slice::from_ref(&click_path)).unwrap();
+    assert!(
+        smart
+            .iter()
+            .all(|site| site.claim == "compare_smart.ensures_0"),
+        "{smart:?}"
+    );
+    let (implicit, failures) = implicit_auto_sites(
+        std::slice::from_ref(&click_path),
+        &smart,
+        AuditLimits::default().session,
+    )
+    .unwrap();
+    assert!(failures.is_empty(), "{failures:?}");
+    let [site] = implicit.as_slice() else {
+        panic!("one claim proved only by the implicit `auto`: {implicit:?}");
+    };
+    assert_eq!(site.claim, "compare_self.ensures_0");
+    assert_eq!(
+        site.tactic_name,
+        click::instrumentation::IMPLICIT_AUTO_TACTIC
+    );
+    entry_with([click_path.display().to_string()])
+        .expect("both claims' expansions verify without the implicit `auto`");
+    fs::remove_dir_all(directory).unwrap();
+}
+
 #[test]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn audit_expands_an_unnamed_witness_with_a_checked_return_pointer() {
