@@ -411,6 +411,10 @@ impl<'a> AccessCollector<'a, '_> {
             | E::Array {
                 elements: arguments,
                 ..
+            }
+            | E::ClosureInstance {
+                captures: arguments,
+                ..
             } => arguments.iter().map(|arg| (arg, Some(Read))).collect(),
             E::FunctionAddress { .. }
             | E::Integer { .. }
@@ -482,6 +486,10 @@ fn alias_effect(expr: &E, aliases: &BTreeSet<&str>) -> Result<(bool, bool), Fron
         E::Call { arguments, .. }
         | E::Array {
             elements: arguments,
+            ..
+        }
+        | E::ClosureInstance {
+            captures: arguments,
             ..
         } => arguments.iter().collect(),
         E::FunctionAddress { .. }
@@ -793,6 +801,7 @@ mod tests {
             ],
             body: vec![],
             external: false,
+            captures: 0,
             span: Span { line: 1, column: 1 },
             mir: Some(MirBody {
                 locals: vec![

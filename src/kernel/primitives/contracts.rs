@@ -816,6 +816,15 @@ impl CFunctionContractInterface {
         Some(self)
     }
 
+    pub(crate) fn with_leading_value_parameters(mut self, count: usize) -> Option<Self> {
+        if count > self.parameters.len() {
+            return None;
+        }
+        let call_parameters = self.parameters.split_off(count);
+        self.value_parameters = std::mem::replace(&mut self.parameters, call_parameters);
+        Some(self)
+    }
+
     pub fn resource_requires(&self) -> &[CResourceSpec] {
         &self.resource_requires
     }
@@ -2920,6 +2929,13 @@ impl CFunctionContract {
     /// This contract with its last `count` parameters as value parameters.
     pub fn with_value_parameters(mut self, count: usize) -> Option<Self> {
         self.interface = self.interface.with_trailing_value_parameters(count)?;
+        Some(self)
+    }
+
+    /// The contract of a function whose first `count` parameters are values
+    /// fixed when its function value is made, as a closure's captures are.
+    pub fn with_leading_value_parameters(mut self, count: usize) -> Option<Self> {
+        self.interface = self.interface.with_leading_value_parameters(count)?;
         Some(self)
     }
 

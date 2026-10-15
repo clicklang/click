@@ -404,3 +404,10 @@ Both original buffer pipelines and the reduction pass all four proof modes;
 new failures. This supersedes the earlier unconfirmed split-buffer attribution.
 Next assess an independent upstream extraction, then reduce the remaining eleven
 compatibility failures. Do not activate the archive as a whole.
+
+The supplier-coordinate extraction landed in PR #1011. Recovery checkpoint
+`c6d5c4200` additionally checks registered read prefixes during interior-write
+lookup (87 selected kernel controls passing). This is partial progress: the
+[two-store execution reduction](../bugs/pointer-field-reload-loses-backing-write-authority.md)
+still fails, as do the original string/vector postconditions. Continue there;
+keep the 41/52 audit count until a new complete example run establishes otherwise.

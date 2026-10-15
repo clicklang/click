@@ -2187,8 +2187,11 @@ fn splice_source(
 }
 
 /// `replacement` with each library theorem a tactic cited by its qualified
-/// identity written as the file writes it: by its bare name, unless `source`
-/// declares a theorem of that name, which the bare name would mean instead.
+/// identity written as the file writes it. A module whose names need a path
+/// is cited by the bare name when the file imports it selectively, and
+/// otherwise by `m::name`. Any other library theorem is cited by its bare
+/// name, unless `source` declares a theorem of that name, which the bare name
+/// would mean instead.
 fn library_citation_spelling(source: &str, replacement: &str) -> String {
     let mut spelled = String::with_capacity(replacement.len());
     let mut rest = replacement;
@@ -2211,7 +2214,13 @@ fn library_citation_spelling(source: &str, replacement: &str) -> String {
                 })
         });
         spelled.push_str(&rest[..start]);
-        if !shadowed && crate::surface::parser::library_theorem_identity(bare) == path {
+        if let Some(short) = crate::surface::parser::qualified_module_spelling(path) {
+            if selectively_imports(source, path) {
+                spelled.push_str(bare);
+            } else {
+                spelled.push_str(&short);
+            }
+        } else if !shadowed && crate::surface::parser::library_theorem_identity(bare) == path {
             spelled.push_str(bare);
         } else {
             spelled.push_str(path);
@@ -2220,6 +2229,27 @@ fn library_citation_spelling(source: &str, replacement: &str) -> String {
     }
     spelled.push_str(rest);
     spelled
+}
+
+/// Whether `source` brings the library declaration `path` into scope by its
+/// bare name with a selective import, `import click::m::{name, ...};`.
+fn selectively_imports(source: &str, path: &str) -> bool {
+    let Some((module, name)) = path.rsplit_once("::") else {
+        return false;
+    };
+    source.split(';').any(|statement| {
+        statement
+            .trim_start()
+            .strip_prefix("import ")
+            .and_then(|import| import.trim().strip_prefix(module))
+            .and_then(|rest| rest.trim_start().strip_prefix("::"))
+            .and_then(|rest| rest.trim_start().strip_prefix('{'))
+            .is_some_and(|names| {
+                names
+                    .split([',', '}'])
+                    .any(|selected| selected.trim() == name)
+            })
+    })
 }
 
 /// `source` with an `import click::...;` line for each Click library module
@@ -2235,6 +2265,7 @@ fn with_cited_library_imports(source: String, replacement: &str) -> String {
         .filter_map(|(start, prefix)| {
             let path = &source[start + prefix.len()..];
             let path = &path[..path.find(';')?];
+            let path = path.split_once("::{").map_or(path, |(module, _)| module);
             Some(format!("library/{}.click", path.trim().replace("::", "/")))
         })
         .collect::<Vec<_>>();
@@ -4987,7 +5018,9 @@ fn tactic_contains_smart_tactic(tactic: &ProofTactic) -> bool {
         },
         ProofTactic::StructuralInduct { arms, .. } => arms.iter().any(|arm| any(&arm.tactics)),
         ProofTactic::Have(have) => proof(&have.proof),
-        ProofTactic::Open(open) => any(&open.tactics),
+        ProofTactic::Open(open) => {
+            any(&open.tactics) || open.close_proof.as_deref().is_some_and(any)
+        }
         ProofTactic::If(proof_if) => any(&proof_if.then_tactics) || any(&proof_if.else_tactics),
         ProofTactic::Match(proof_match) => proof_match.arms.iter().any(|arm| any(&arm.tactics)),
         ProofTactic::Cases(cases) => cases.arms().iter().any(|arm| any(arm.tactics())),

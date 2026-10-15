@@ -9861,7 +9861,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
         let retained_root = root.clone();
         let before = fact_node_allocations();
         let scope = root
-            .begin_open(resource.clone(), 0)
+            .begin_open(resource.clone(), 0, None)
             .expect("the held marker should open");
         let rejected = scope
             .begin_have(reflexive.clone())
@@ -9891,6 +9891,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
             closed.certificate().steps(),
             &[ProofStep::Open {
                 resource: resource.clone(),
+                close_proof: None,
                 proof: Box::new(
                     ProofCertificate::from_steps(vec![
                         ProofStep::Have {
@@ -9908,7 +9909,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
         let sibling_scope = root
-            .begin_open(resource.clone(), 0)
+            .begin_open(resource.clone(), 0, None)
             .expect("the retained root should open a sibling scope");
         let sibling_nested = sibling_scope
             .begin_have(reflexive.clone())
@@ -9916,7 +9917,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
             .apply_step(ProofStep::Assumption)
             .expect("the sibling nested proof should close");
         let unrelated_scope = root
-            .begin_open(resource.clone(), 0)
+            .begin_open(resource.clone(), 0, None)
             .expect("the retained root should open an unrelated scope");
         assert!(unrelated_scope.join_nested(sibling_nested).is_err());
         assert!(unrelated_scope.body().certificate().steps().is_empty());
@@ -9931,11 +9932,11 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
             panic!("the marker resource should be declared");
         };
         *name = "missing_marker".to_string();
-        assert!(root.begin_open(missing, 0).is_err());
+        assert!(root.begin_open(missing, 0, None).is_err());
         assert!(root.certificate().steps().is_empty());
 
         let terminal = root
-            .begin_open(resource.clone(), 0)
+            .begin_open(resource.clone(), 0, None)
             .expect("the retained root should open an alternate scope")
             .apply_step(ProofStep::Step)
             .expect("the terminal scope should cross its assignment")
@@ -9955,6 +9956,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
             terminal.certificate().steps(),
             &[ProofStep::Open {
                 resource: resource.clone(),
+                close_proof: None,
                 proof: Box::new(
                     ProofCertificate::from_steps(vec![ProofStep::Step, ProofStep::Step]).unwrap(),
                 ),

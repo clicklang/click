@@ -629,3 +629,29 @@ This is a preserved archive repair, not activation of the archive. The next
 step is to assess whether this small supplier-coordinate repair has independent
 upstream value and can be extracted with its checked-frame prerequisites, then
 continue reducing the remaining compatibility failures.
+
+## Interior-write query follow-up
+
+PR #1011 merged the supplier-coordinate join repair; its pushed head
+`f2b2962a3` is verified in upstream history. Recovery checkpoint `c6d5c4200`
+then repairs a separate indexed lookup gap: scalar interior-write queries must
+ask for the checked endpoint of producer-registered pointer-read prefixes, as
+footprint queries already do. It keeps the relation query-local and checks the
+live supplier's ownership and bounds. All 87 selected recovery kernel controls
+pass (6.75s harness), including the original manual-snapshot rejection and a
+failing-before/passing-after interior-write regression at 16/64/256 unrelated
+owners. The regression rejects weakened separation, removed ownership, partial
+pointer overwrites and a write past the owned extent.
+
+This does not yet restore owned-string or owned-vector. Fresh verification still
+rejects their original postconditions. The [two-store C reduction](../bugs/pointer-field-reload-loses-backing-write-authority.md)
+also still rejects its second write, so execution-side pointer reload/authority
+tracking remains the next reduced investigation. No C, contract, proof, tactic
+budget or language-profile change is included in this checkpoint. No new full
+example-stage count is claimed; the last completed audit remains 41/52.
+
+The independently extracted query-prefix repair also passes all 63 selected
+current-upstream controls (8.33s harness). It uses upstream's existing typed-load
+API and omits the archive-only frame-context adapter. Formatting, book rendering
+and structural documentation lint pass. The full gate and nightly suite were not
+run locally; required CI supplies the integration verdict.

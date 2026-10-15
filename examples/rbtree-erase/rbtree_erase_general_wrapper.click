@@ -31,7 +31,7 @@ void rb_erase(struct rb_node* node, struct rb_root* root) {
     ensures rb_tree_parent_consistent(whole.model) == 1;
     ensures rb_inorder(whole.model) == rb_inorder(plug(old(up.model), erase_splice(old(tree.model))));
     ensures rb_inorder(erase_splice(old(tree.model)))
-        == list_append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model))));
+        == list::append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model))));
 } by {
     apply(dummy_propagate_contract());
     apply(dummy_copy_contract());

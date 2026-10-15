@@ -3786,10 +3786,16 @@ fn tactic_sorry_outside_have(tactic: &ProofTactic, in_have: bool) -> bool {
                 .any(|tactic| tactic_sorry_outside_have(tactic, true)),
             SourceProof::Default | SourceProof::Tactic(_) => false,
         },
-        ProofTactic::Open(open) => open
-            .tactics
-            .iter()
-            .any(|tactic| tactic_sorry_outside_have(tactic, in_have)),
+        // The close's `by` proves a body fact as a `have` does.
+        ProofTactic::Open(open) => {
+            open.tactics
+                .iter()
+                .any(|tactic| tactic_sorry_outside_have(tactic, in_have))
+                || open
+                    .close_proof
+                    .as_ref()
+                    .is_some_and(|body| tactic_sorry_outside_have_in(body, true))
+        }
         ProofTactic::If(proof_if) => {
             tactic_sorry_outside_have_in(&proof_if.then_tactics, in_have)
                 || tactic_sorry_outside_have_in(&proof_if.else_tactics, in_have)
@@ -4373,6 +4379,8 @@ pub enum ProofStep {
     Open {
         resource: ResourceClause,
         proof: Box<ProofCertificate>,
+        /// The closing fold's proof of its one open body fact.
+        close_proof: Option<Box<ProofCertificate>>,
     },
     If {
         condition: ClickProposition,
@@ -4567,7 +4575,19 @@ pub(crate) fn proof_step_contains_arithmetic_using(step: &ProofStep) -> bool {
                 }
                 ProofStep::CloseInvariantsBy(proof)
                 | ProofStep::Have { proof, .. }
-                | ProofStep::Open { proof, .. } => pending.extend(proof.steps.iter()),
+                | ProofStep::Open {
+                    proof,
+                    close_proof: None,
+                    ..
+                } => pending.extend(proof.steps.iter()),
+                ProofStep::Open {
+                    proof,
+                    close_proof: Some(close_proof),
+                    ..
+                } => {
+                    pending.extend(proof.steps.iter());
+                    pending.extend(close_proof.steps.iter());
+                }
                 ProofStep::StepProved { step, proof } => {
                     pending.push(step);
                     match proof {
@@ -4826,6 +4846,11 @@ impl ProofStep {
                         .map(Self::from_validated_tactic)
                         .collect(),
                 )),
+                close_proof: proof_open.close_proof.as_ref().map(|body| {
+                    Box::new(ProofCertificate::from_validated_steps(
+                        body.iter().map(Self::from_validated_tactic).collect(),
+                    ))
+                }),
             },
             ProofTactic::If(proof_if) => Self::If {
                 condition: proof_if.condition.clone(),
@@ -5066,9 +5091,14 @@ impl ProofStep {
                 proposition: proposition.clone(),
                 proof: proof.to_source_proof(),
             }),
-            Self::Open { resource, proof } => ProofTactic::Open(ProofOpen {
+            Self::Open {
+                resource,
+                proof,
+                close_proof,
+            } => ProofTactic::Open(ProofOpen {
                 resource: resource.clone(),
                 tactics: proof.to_proof_tactics(),
+                close_proof: close_proof.as_ref().map(|body| body.to_proof_tactics()),
             }),
             Self::If {
                 condition,
@@ -5418,9 +5448,17 @@ fn validate_certificate_tactics(
                         unreachable!("tactic class and variant must agree")
                     };
                     path.push(CertificatePathSegment::OpenBody);
-                    let result = validate_certificate_tactics(&proof_open.tactics, path);
+                    validate_certificate_tactics(&proof_open.tactics, path)?;
                     path.pop();
-                    result
+                    match &proof_open.close_proof {
+                        Some(close_proof) => {
+                            path.push(CertificatePathSegment::StepBody);
+                            let result = validate_certificate_tactics(close_proof, path);
+                            path.pop();
+                            result
+                        }
+                        None => Ok(()),
+                    }
                 }
                 TacticClass::Control(ControlTactic::If) => {
                     let ProofTactic::If(proof_if) = tactic else {
@@ -5703,6 +5741,26 @@ impl ProofHave {
 pub struct ProofOpen {
     resource: ResourceClause,
     tactics: Vec<ProofTactic>,
+    /// `open(r) { ... } by { ... }`: the proof of the one body fact the
+    /// scope's closing fold leaves open, as `fold(r) by { ... }` proves a
+    /// fold's.
+    close_proof: Option<Vec<ProofTactic>>,
+}
+
+impl ProofOpen {
+    /// The proof a deferred close of `open(resource)` recorded for the body
+    /// fact its closing fold left open: an `open` with no body, which the
+    /// certificate attaches to the scope it closes as that scope's `by`.
+    pub(crate) fn deferred_close_proof(
+        resource: ResourceClause,
+        close_proof: Vec<ProofTactic>,
+    ) -> Self {
+        Self {
+            resource,
+            tactics: Vec::new(),
+            close_proof: Some(close_proof),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -8449,7 +8507,12 @@ fn collect_unfold_tactic_names(tactics: &[ProofTactic], names: &mut Vec<String>)
                     collect_unfold_tactic_names(tactics, names);
                 }
             }
-            ProofTactic::Open(open) => collect_unfold_tactic_names(&open.tactics, names),
+            ProofTactic::Open(open) => {
+                collect_unfold_tactic_names(&open.tactics, names);
+                if let Some(close_proof) = &open.close_proof {
+                    collect_unfold_tactic_names(close_proof, names);
+                }
+            }
             ProofTactic::If(proof_if) => {
                 collect_unfold_tactic_names(&proof_if.then_tactics, names);
                 collect_unfold_tactic_names(&proof_if.else_tactics, names);

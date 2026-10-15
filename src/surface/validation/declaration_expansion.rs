@@ -514,6 +514,16 @@ fn load_library_modules(modules: &[(&str, &str)]) -> Result<Vec<LibraryModule>, 
         for theorem in &mut module.theorem_definitions {
             theorem.name = format!("{path}::{}", theorem.name);
         }
+        for function in &mut module.click_function_definitions {
+            if crate::surface::parser::is_qualified_library_declaration(identity, &function.name) {
+                function.name = format!("{path}::{}", function.name);
+            }
+        }
+        for predicate in &mut module.predicate_definitions {
+            if crate::surface::parser::is_qualified_library_declaration(identity, &predicate.name) {
+                predicate.name = format!("{path}::{}", predicate.name);
+            }
+        }
         append_library_module(&mut context, module.clone());
         loaded.push(LibraryModule {
             file: module,
@@ -1989,6 +1999,14 @@ fn expand_declared_resource_tactic_with_nested_proofs(
                 .into_iter()
                 .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
                 .collect::<Result<Vec<_>, _>>()?,
+            close_proof: open
+                .close_proof
+                .map(|body| {
+                    body.into_iter()
+                        .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .transpose()?,
         })),
         ProofTactic::If(proof_if) => Ok(ProofTactic::If(ProofIf {
             condition: expand_declared_resource_proposition(

@@ -164,6 +164,22 @@ pub(in crate::surface) struct ProgramLayouts {
     /// The Click library modules the program's C declarations bring, such
     /// as `click::c::string` for a declared `memcpy`.
     pub(in crate::surface) library_modules: BTreeSet<&'static str>,
+    /// Each closure's captured variables, by the closure's function name.
+    /// A sidecar head names only the closure's own parameters; the captures
+    /// lead its signature, so its contract reads them by name.
+    pub(in crate::surface) closure_captures: BTreeMap<String, Vec<FunctionParameter>>,
+}
+
+/// Whether the library declaration `name` of module `identity` is known by
+/// its qualified identity.
+pub(in crate::surface) fn is_qualified_library_declaration(identity: &str, name: &str) -> bool {
+    library_paths::is_qualified_declaration(identity, name)
+}
+
+/// The in-scope spelling `m::name` of a full path to a declaration of a
+/// module whose names need a path; `None` for any other name.
+pub(in crate::surface) fn qualified_module_spelling(path: &str) -> Option<String> {
+    library_paths::qualified_module_spelling(path)
 }
 
 /// The qualified identity of the Click library theorem `name`: `name`
@@ -343,10 +359,11 @@ fn standard_library_pure_function_names() -> &'static BTreeSet<String> {
     static NAMES: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
     NAMES.get_or_init(|| {
         let mut names = BTreeSet::new();
-        for (_, source) in super::CLICK_LIBRARY_MODULES {
+        for (identity, source) in super::CLICK_LIBRARY_MODULES {
             let Ok(parser) = Parser::new(source) else {
                 continue;
             };
+            let path = super::library_module_path(identity);
             let tokens = parser.tokens;
             let mut depth = 0usize;
             for (index, token) in tokens.iter().enumerate() {
@@ -355,7 +372,11 @@ fn standard_library_pure_function_names() -> &'static BTreeSet<String> {
                     Token::RBrace => depth = depth.saturating_sub(1),
                     Token::Ident(word) if depth == 0 && word == "function" => {
                         if let Some(Token::Ident(name)) = tokens.get(index + 1) {
-                            names.insert(name.clone());
+                            if library_paths::is_qualified_declaration(identity, name) {
+                                names.insert(format!("{path}::{name}"));
+                            } else {
+                                names.insert(name.clone());
+                            }
                         }
                     }
                     _ => {}
@@ -741,6 +762,8 @@ struct Parser {
     /// Set while a `contract` block's embedded function block is parsed: its
     /// signature names an interface, not a callable C function.
     in_contract_definition: bool,
+    /// Each closure's captured variables, by the closure's function name.
+    closure_captures: BTreeMap<String, Vec<FunctionParameter>>,
     /// The value parameters a named contract's body declares with
     /// `let name: type;`, in declaration order, while its block is parsed.
     contract_value_parameters: Vec<FunctionParameter>,
@@ -998,6 +1021,7 @@ impl Parser {
             .extend(layouts.library_modules);
         parser.qualified_objects = Some(layouts.qualified_objects);
         parser.local_struct_pointers_by_function = layouts.local_struct_pointers;
+        parser.closure_captures = layouts.closure_captures;
         parser.plain_char = layouts.plain_char;
         parser.int64_t_rank = layouts.int64_t_rank.unwrap_or(LongRank::Long);
         if layouts.language == Some(SourceLanguage::Cpp) {
@@ -1107,6 +1131,7 @@ impl Parser {
             contract_resource_binders: BTreeMap::new(),
             in_contract_definition: false,
             contract_value_parameters: Vec::new(),
+            closure_captures: BTreeMap::new(),
             contract_value_parameter_names: BTreeMap::new(),
             in_function_block: false,
             integer_literal_context: false,
@@ -1367,8 +1392,23 @@ impl Parser {
         self.expect_ident_spelling("import")?;
         let at = self.error_context();
         let mut segments = vec![self.expect_ident("a Click library module path")?];
+        let mut selected = Vec::new();
         while self.peek() == Some(&Token::ColonColon) {
             self.expect(Token::ColonColon)?;
+            // `click::list::{append, length}` selects names of the module.
+            if self.peek() == Some(&Token::LBrace) {
+                self.expect(Token::LBrace)?;
+                loop {
+                    selected.push(self.expect_ident("a declaration name to import")?);
+                    if self.peek() == Some(&Token::Comma) {
+                        self.expect(Token::Comma)?;
+                        continue;
+                    }
+                    break;
+                }
+                self.expect(Token::RBrace)?;
+                break;
+            }
             segments.push(self.expect_ident("a Click library module name")?);
         }
         self.expect(Token::Semicolon)?;
@@ -1396,6 +1436,14 @@ impl Parser {
                 at,
                 format!("unknown Click library module `{spelling}`; the library has {available}"),
             ));
+        }
+        for name in &selected {
+            if !library_paths::module_declares(&identity, name) {
+                return Err(self.error_at(
+                    at.clone(),
+                    format!("Click library module `{spelling}` declares no `{name}` to import"),
+                ));
+            }
         }
         Ok(identity)
     }
@@ -3668,6 +3716,12 @@ impl Parser {
             signature
                 .parameters
                 .extend(self.contract_value_parameters.iter().cloned());
+        }
+        // A closure's captures lead its signature, as they lead its function.
+        if !external && let Some(captures) = self.closure_captures.get(signature.name()) {
+            let mut parameters = captures.clone();
+            parameters.append(&mut signature.parameters);
+            signature.parameters = parameters;
         }
         Ok(FunctionBlock {
             c_object_names,
@@ -7125,8 +7179,26 @@ impl Parser {
             let resource = self.parse_declared_resource_call()?;
             self.expect(Token::RParen)?;
             let tactics = self.parse_possibly_empty_tactic_block()?;
+            // `open(r) { ... } by ...`: the proof of the one body fact the
+            // closing fold leaves open, as after `fold(r) by`.
+            let close_proof = if self.peek_ident() == Some("by") {
+                self.position += 1;
+                if self.peek_ident() == Some("auto") && self.peek_next() == Some(&Token::Semicolon)
+                {
+                    return Err(self.error(
+                        "`open(...) { ... } by auto` is `open(...) { ... }`: its closing fold's open body facts already go to `auto`",
+                    ));
+                }
+                Some(self.parse_step_proof_body()?)
+            } else {
+                None
+            };
             self.skip_redundant_semicolon();
-            return Ok(ProofTactic::Open(ProofOpen { resource, tactics }));
+            return Ok(ProofTactic::Open(ProofOpen {
+                resource,
+                tactics,
+                close_proof,
+            }));
         }
         if name == "cases" {
             // One arm per disjunct, each naming the disjunct it assumes:
@@ -8195,8 +8267,7 @@ impl Parser {
         let name = if self.local_theorems.contains(&name) {
             name
         } else {
-            library_paths::library_theorem_identities()
-                .get(&name)
+            library_paths::bare_theorem_citation(&name)
                 .cloned()
                 .unwrap_or(name)
         };

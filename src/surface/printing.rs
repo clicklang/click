@@ -478,7 +478,14 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 &format!("open({}) {{", format_resource_call(&open.resource)),
             );
             write_tactics(output, &open.tactics, indent + 1);
-            line(output, &prefix, "}");
+            match &open.close_proof {
+                Some(close_proof) => {
+                    line(output, &prefix, "} by {");
+                    write_tactics(output, close_proof, indent + 1);
+                    line(output, &prefix, "}");
+                }
+                None => line(output, &prefix, "}"),
+            }
         }
         ProofTactic::If(proof_if) => {
             output.push_str(&prefix);

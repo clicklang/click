@@ -18,36 +18,36 @@ function rev_onto(xs: List<int32>, acc: List<int32>) -> List<int32>
 }
 
 theorem rev_onto_appends(xs: List<int32>, acc: List<int32>) {
-    ensures rev_onto(xs, acc) == list_append(rev_onto(xs, List<int32>::Nil), acc) by {
+    ensures rev_onto(xs, acc) == list::append(rev_onto(xs, List<int32>::Nil), acc) by {
         induct(xs) as ih {
             List::Nil => {
                 unfold(rev_onto(List<int32>::Nil, acc));
                 unfold(rev_onto(List<int32>::Nil, List<int32>::Nil));
-                apply(list_append_left_identity(acc));
-                rewrite(list_append(List<int32>::Nil, acc) == acc);
+                apply(list::append_left_identity(acc));
+                rewrite(list::append(List<int32>::Nil, acc) == acc);
                 normalize();
             }
             List::Cons(head, tail) => {
                 apply(ih(tail, List<int32>::Cons(head, acc)));
                 apply(ih(tail, List<int32>::Cons(head, List<int32>::Nil)));
-                apply(list_append_associative(rev_onto(tail, List<int32>::Nil),
+                apply(list::append_associative(rev_onto(tail, List<int32>::Nil),
                     List<int32>::Cons(head, List<int32>::Nil), acc));
-                apply(list_append_cons(head, List<int32>::Nil, acc));
-                apply(list_append_left_identity(acc));
+                apply(list::append_cons(head, List<int32>::Nil, acc));
+                apply(list::append_left_identity(acc));
                 unfold(rev_onto(List<int32>::Cons(head, tail), acc));
                 unfold(rev_onto(List<int32>::Cons(head, tail), List<int32>::Nil));
                 rewrite(rev_onto(tail, List<int32>::Cons(head, List<int32>::Nil))
-                    == list_append(rev_onto(tail, List<int32>::Nil),
+                    == list::append(rev_onto(tail, List<int32>::Nil),
                         List<int32>::Cons(head, List<int32>::Nil)));
-                rewrite(list_append(list_append(rev_onto(tail, List<int32>::Nil),
+                rewrite(list::append(list::append(rev_onto(tail, List<int32>::Nil),
                         List<int32>::Cons(head, List<int32>::Nil)), acc)
-                    == list_append(rev_onto(tail, List<int32>::Nil),
-                        list_append(List<int32>::Cons(head, List<int32>::Nil), acc)));
-                rewrite(list_append(List<int32>::Cons(head, List<int32>::Nil), acc)
-                    == List<int32>::Cons(head, list_append(List<int32>::Nil, acc)));
-                rewrite(list_append(List<int32>::Nil, acc) == acc);
+                    == list::append(rev_onto(tail, List<int32>::Nil),
+                        list::append(List<int32>::Cons(head, List<int32>::Nil), acc)));
+                rewrite(list::append(List<int32>::Cons(head, List<int32>::Nil), acc)
+                    == List<int32>::Cons(head, list::append(List<int32>::Nil, acc)));
+                rewrite(list::append(List<int32>::Nil, acc) == acc);
                 rewrite(rev_onto(tail, List<int32>::Cons(head, acc))
-                    == list_append(rev_onto(tail, List<int32>::Nil),
+                    == list::append(rev_onto(tail, List<int32>::Nil),
                         List<int32>::Cons(head, acc)));
                 normalize();
             }
