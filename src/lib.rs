@@ -31,5 +31,6 @@ pub mod instrumentation;
 pub mod kernel;
 pub mod languages;
 mod persistent;
+pub mod project;
 mod source;
 pub mod surface;
