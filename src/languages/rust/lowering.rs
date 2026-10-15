@@ -410,7 +410,8 @@ fn lower_function(
         .unwrap_or_default();
     let mut lowered = C0Function::external(return_type, f.name.clone(), parameters)
         .with_local_struct_values(local_records)
-        .with_prelowered_kernel_function(kernel);
+        .with_prelowered_kernel_function(kernel)
+        .with_closure_captures(f.captures);
     if let Some((name, layout)) = return_layout {
         lowered = lowered.with_struct_return(name.clone(), layout.clone());
     }
@@ -1726,6 +1727,9 @@ impl Context<'_> {
                 }
             }
             E::Call { .. } => Err("nested Rust calls outside statement lowering".into()),
+            E::ClosureInstance { .. } => {
+                Err("Rust closure instance outside an assignment to a local".into())
+            }
             E::FunctionAddress {
                 function,
                 value_type,

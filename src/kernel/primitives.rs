@@ -9869,6 +9869,9 @@ pub struct CFunctionContractRefinementContext {
     pub(super) function_name: String,
     pub(super) pointer: CPointerValue,
     pub(super) source_contract: Option<CFunctionContract>,
+    /// The values a fact fixed for the implementation side's own value
+    /// parameters, when that side is a named contract found through one.
+    pub(super) function_value_arguments: Vec<CValue>,
     pub(super) argument_values: Vec<CValue>,
     pub(super) result_variable: Variable,
     /// The mark the budget that invented `argument_values` reached,

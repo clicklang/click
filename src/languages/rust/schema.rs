@@ -105,7 +105,15 @@ pub struct Function {
     /// calls are checked against the sidecar's `extern fn` contract.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub external: bool,
+    /// A closure's leading parameters that are the variables it captures,
+    /// fixed where an instance of it is created.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub captures: usize,
     pub span: Span,
+}
+
+fn is_zero(count: &usize) -> bool {
+    *count == 0
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -208,6 +216,13 @@ pub enum Expression {
     /// A function item reified as a function pointer, `twice as fn(i32) -> i32`.
     FunctionAddress {
         function: String,
+        value_type: Type,
+    },
+    /// A new instance of a closure that captures `captures`, as a callable
+    /// value of `value_type`: `&|y| y + k as &dyn Fn(i32) -> i32`.
+    ClosureInstance {
+        function: String,
+        captures: Vec<Self>,
         value_type: Type,
     },
 }
