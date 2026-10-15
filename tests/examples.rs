@@ -1,3 +1,6 @@
+// Match the library when Rust checks Send/Sync for recursive memory histories.
+#![recursion_limit = "256"]
+
 use click::surface::ProgramInputs;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
