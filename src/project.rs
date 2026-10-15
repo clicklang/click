@@ -334,6 +334,12 @@ impl Project {
 
     /// Prepares every unit and writes the project lock and its artifacts.
     pub fn lock(&self) -> Result<(), String> {
+        self.lock_with_cpp_exporter(None)
+    }
+
+    /// Prepares every unit as [`Project::lock`] does, running C++ units with
+    /// `cpp_exporter` when given instead of `CLICK_CPP_EXPORTER`.
+    pub fn lock_with_cpp_exporter(&self, cpp_exporter: Option<&Path>) -> Result<(), String> {
         if !self.has_units() {
             return Err(format!(
                 "`{}` declares no units to prepare",
@@ -346,11 +352,14 @@ impl Project {
             let (language, lock, unit_artifacts) = match unit.spec.language.as_str() {
                 "c++" => {
                     let (config, sources) = self.cpp_unit(name)?;
-                    let exporter = std::env::var_os("CLICK_CPP_EXPORTER").ok_or_else(|| {
-                        format!(
-                            "set CLICK_CPP_EXPORTER to the pinned C++ exporter to prepare C++ unit `{name}`"
-                        )
-                    })?;
+                    let exporter = match cpp_exporter {
+                        Some(exporter) => exporter.as_os_str().to_owned(),
+                        None => std::env::var_os("CLICK_CPP_EXPORTER").ok_or_else(|| {
+                            format!(
+                                "set CLICK_CPP_EXPORTER to the pinned C++ exporter to prepare C++ unit `{name}`"
+                            )
+                        })?,
+                    };
                     for source in &sources {
                         create_parent(&self.root.join(&source.artifact))?;
                     }

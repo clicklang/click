@@ -212,7 +212,19 @@ that writes `int32` for such a source already writes the source's spelling.
    importer packs the struct into the object at generic instantiation and
    `dyn` coercion. Remaining: `&mut self` object state, implementations of
    function-free traits that rename the interface's parameters, generic
-   traits and default methods, and C++ virtual methods.
+   traits and default methods, and C++ virtual methods. Done for C++
+   virtual methods without object state: a virtual method's contract is the
+   interface a call through it assumes, each override in the source
+   inherits it and is checked to refine it, a pure virtual method's contract
+   is written `extern`, and polymorphic classes with one polymorphic base
+   are admitted by reference. Object state is done for `const` methods and
+   `const` references: a `class Shape { function size(this) -> int32; }`
+   block declares it, each direct subclass defines it on its own memory and
+   is verified there against an `_iface` contract, and the importer packs
+   the subclass into the object where a reference converts to the base.
+   Remaining for C++: state through mutable receivers and references,
+   overriding a defining class's method, constructing polymorphic objects,
+   and virtual destructors.
 
 ## Intended regressions
 

@@ -602,6 +602,14 @@ pub(crate) fn uncharged_debug_check(check: impl FnOnce()) {
     UNCHARGED_DEBUG_CHECK.with(|flag| flag.set(previous));
 }
 
+/// Opt-in debug-build cross-check for the separation corpus runs. It never
+/// changes production candidate selection or contributes proof authority.
+#[cfg(debug_assertions)]
+pub(crate) fn separation_candidate_cross_checks_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var_os("CLICK_DEBUG_CHECK_SEPARATION_CANDIDATES").is_some())
+}
+
 /// Whether the caller runs inside an [`uncharged_debug_check`]. A rule that
 /// collects side results from a predicate the check re-invokes skips them
 /// there, so a debug build collects exactly what a release build does.

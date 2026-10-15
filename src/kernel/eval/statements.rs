@@ -3,6 +3,7 @@ use crate::kernel::CStatementStoreSource;
 use crate::kernel::loans::empty_checked_loan_evidence_sequence;
 mod scalar_arrays;
 
+#[cfg(test)]
 pub(in crate::kernel) fn execute_c_statement(
     state: &CState,
     statement: &CStatement,
@@ -2676,7 +2677,7 @@ pub(in crate::kernel) fn end_scope_automatic_lifetimes(
         let Some(slot) = state.locals.slot(name).cloned() else {
             continue;
         };
-        if slot.block.starts_with("local:") && memory.has_block(&slot.block) {
+        if slot.block.is_local_block() && memory.has_block(&slot.block) {
             if let Some(error) = state.population_storage_retirement_refusal(&slot.block) {
                 return Err(error);
             }
@@ -4143,7 +4144,7 @@ pub(in crate::kernel) fn execute_c_while_paths(
 fn local_declaration_pointer(state: &mut CState, name: &str) -> Result<Pointer, CRuntimeError> {
     let previous = state.locals.slot(name).cloned();
     if let Some(previous) = previous
-        && previous.block.starts_with("local:")
+        && previous.block.is_local_block()
     {
         if let Some(error) =
             crate::kernel::mutexes::automatic_storage_refusal(state, name, &previous.block)
@@ -4236,7 +4237,7 @@ fn fresh_local_object_identity(state: &mut CState, name: &str) -> Pointer {
 /// the trusted creation event for an automatic object.
 fn note_declared_population_storage(mut state: CState, name: &str) -> CState {
     if let Some(slot) = state.locals.slot(name).cloned()
-        && slot.block.starts_with("local:")
+        && slot.block.is_local_block()
         && state.memory.has_block(&slot.block)
     {
         state.record_population_storage_creation(slot.block);
@@ -4262,7 +4263,7 @@ fn zero_fill_declared_array(
         .locals
         .slot(name)
         .cloned()
-        .filter(|slot| slot.block.starts_with("local:") && state.memory.has_block(&slot.block))
+        .filter(|slot| slot.block.is_local_block() && state.memory.has_block(&slot.block))
         .ok_or(CRuntimeError::TypeMismatch)?;
     let object_bytes = zero_fill
         .stride

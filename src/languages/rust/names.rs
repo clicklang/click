@@ -75,6 +75,11 @@ pub(crate) fn trait_method_name(type_name: &str, trait_name: &str, method: &str)
     encoded
 }
 
+/// Whether `name` is a Rust importer name.
+pub(crate) fn is_rust_name(name: &str) -> bool {
+    name.starts_with(PREFIX)
+}
+
 /// Whether `name` is a function the importer places where a crate struct
 /// reference becomes a crate trait's object, or back:
 /// `<S as Trait>::__pack` or `<S as Trait>::__unpack`.

@@ -56,6 +56,24 @@ impl ResolvedNames {
     }
 }
 
+/// The function the importer places where a reference to `derived` becomes
+/// a reference to its polymorphic base `base`: it makes the base class's
+/// object, whose state the sidecar declares, from the derived class's memory.
+pub(crate) fn object_pack_name(derived: &str, base: &str) -> String {
+    format!("{derived}__click_pack__{base}")
+}
+
+/// The function the importer places after such a call, returning the
+/// derived class's memory.
+pub(crate) fn object_unpack_name(derived: &str, base: &str) -> String {
+    format!("{derived}__click_unpack__{base}")
+}
+
+/// Whether `name` is one of those functions.
+pub(crate) fn is_object_coercion(name: &str) -> bool {
+    name.contains("__click_pack__") || name.contains("__click_unpack__")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

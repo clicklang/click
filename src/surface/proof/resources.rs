@@ -225,12 +225,25 @@ struct DynamicViewDependencyIndex {
     bound_dependencies:
         BTreeMap<crate::kernel::ResourceOccurrenceId, crate::kernel::LoanViewBinding>,
     unbound: ResourceContext,
+    /// Owned memory an unfold is about to insert. The folded instance held
+    /// it exclusively, so a body fact over it needs no loan: it is supported
+    /// exactly as a read of ambient owned memory is.
+    owned: ResourceContext,
 }
 
 impl DynamicViewDependencyIndex {
     fn new(
         bound_views: &[(CResourceFact, crate::kernel::LoanViewBinding)],
         unbound_views: &[CResourceFact],
+        assumptions: &PureFactContext,
+    ) -> Self {
+        Self::with_owned(bound_views, unbound_views, &[], assumptions)
+    }
+
+    fn with_owned(
+        bound_views: &[(CResourceFact, crate::kernel::LoanViewBinding)],
+        unbound_views: &[CResourceFact],
+        owned: &[CResourceFact],
         assumptions: &PureFactContext,
     ) -> Self {
         let (bound, inserted) = ResourceContext::new_with_equalities(assumptions)
@@ -245,6 +258,8 @@ impl DynamicViewDependencyIndex {
             bound_dependencies,
             unbound: ResourceContext::new_with_equalities(assumptions)
                 .unchecked_with_facts(unbound_views.iter().cloned()),
+            owned: ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_facts(owned.iter().cloned()),
         }
     }
 }
@@ -329,6 +344,10 @@ fn dynamic_body_fact_dependency(
                 .resources()
                 .directly_supporting_owned_entry(&required_view, assumptions)
                 .is_some()
+                || temporary_views
+                    .owned
+                    .directly_supporting_owned_entry(&required_view, assumptions)
+                    .is_some()
             {
                 return Ok(());
             }
@@ -3506,9 +3525,15 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         } else {
             Vec::new()
         };
-        let temporary_view_index = DynamicViewDependencyIndex::new(
+        let temporary_owned = unfolded_facts
+            .iter()
+            .filter(|child| child.memory_own_range().is_some())
+            .cloned()
+            .collect::<Vec<_>>();
+        let temporary_view_index = DynamicViewDependencyIndex::with_owned(
             &temporary_views,
             &temporary_unbound_views,
+            &temporary_owned,
             available_pure_facts.assumptions(),
         );
         if let Some(binding) = dynamic_body_fact_dependency(

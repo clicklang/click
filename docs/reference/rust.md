@@ -41,13 +41,14 @@ show the expected identity and the bounded identity actually reported. A
 and the source-build setup command. Hosts without a packaged bundle are
 reported as unavailable rather than being given an install command that
 cannot supply their platform.
-Only the Linux x86-64 GNU host is packaged initially.
+Linux x86-64 GNU is the agreed launch host scope. The P1 frontend delivery
+milestone is complete for that scope; additional host bundles and broader Rust
+coverage are optional future work.
 
 Rust project units use this frontend automatically. `CLICK_CHARON` is a
 contributor override: a bundle directory selects that bundle, while an
 executable selects the existing source-build path and its rustup-managed pinned
-toolchain. Legacy per-sidecar configs may still name an `exporter`; omitting it
-selects the same resolution. The project schema and lock format are described
+toolchain. The project schema and lock format are described
 in [`click import`](cli/import.md#project-units) and
 [project configuration](../concepts/own-project.md).
 
@@ -65,7 +66,11 @@ Click launcher, invokes the real `click install VERSION --rust` command using
 local release assets through its ordinary curl subprocess, relocates the
 installed home, and verifies both examples with an empty PATH and no user
 Rust toolchain. It checks repeated installation and locking, then offline
-verification after removing the frontend. The release workflow runs this check
+verification after removing the frontend. It also runs the
+[C/Rust checksum demonstration](https://github.com/clicklang/click/blob/master/design/charon-trial/checksum-correspondence.md#reproduce)
+from a relocated prepared directory, checking the complete C/Rust producer and
+helper bodies, real incremental/saved-state clients and correspondence theorem
+through locked imports after removing the frontend. The release workflow runs this check
 before attaching assets to a release and on pull requests touching packaging.
 The dedicated integration target stays outside the normal ten-minute gate;
 there is no development-binary fallback for its release archive.

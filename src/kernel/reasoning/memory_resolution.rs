@@ -2344,7 +2344,7 @@ fn memory_snapshots_match_for_resolution(
     {
         return true;
     }
-    if pointer.block.starts_with("local:") {
+    if pointer.block.is_local_block() {
         return false;
     }
     let Some(_query) = ResolutionQueryGuard::enter(ResolutionQuery::SnapshotsMatch(
@@ -2464,7 +2464,7 @@ pub(in crate::kernel) fn differing_cell_bytes_miss_the_load(
 ///
 /// It is [`PointerBlock::observable_by_load`] — the same filter the rest of
 /// the load-framing routes use — and this note exists because it used to be
-/// `!cell.block.starts_with("local:")`, a block-name shortcut that dropped
+/// `!cell.block.is_local_block()`, a block-name shortcut that dropped
 /// every differing `local:` cell from the comparison without asking anything.
 ///
 /// The shortcut's implicit claim was that a load the caller cannot resolve to
@@ -2501,7 +2501,7 @@ fn cell_is_observable_by_load(cell_pointer: &Pointer, load: &Pointer) -> bool {
 ///
 /// The cell filter beside this one was corrected to
 /// [`cell_is_observable_by_load`]; this one was left as the same block-name
-/// shortcut, `!block.starts_with("local:")`, and it makes the same claim about
+/// shortcut, `!block.is_local_block()`, and it makes the same claim about
 /// a different map. A block's extent is what says the object is there and how
 /// big it is, so two snapshots that disagree about a local's extent or
 /// liveness disagree about the object a load through a pointer that may
@@ -2733,7 +2733,7 @@ pub(in crate::kernel) fn memories_match_for_pointer_load(
     if left == right {
         return true;
     }
-    if pointer.block.starts_with("local:") {
+    if pointer.block.is_local_block() {
         return false;
     }
 
@@ -3303,14 +3303,37 @@ fn source_holds_cells_observable_by(
     }
     let memory = source.memory();
     let candidates = AliasCandidates::of_block(block);
-    let observable = candidates.any_entry(memory.cells.concrete(), |cell, _| {
-        cell.block.observable_by_load(block)
-    }) || candidates.any_entry(&memory.union_cells, |(cell, _), _| {
-        cell.block.observable_by_load(block)
-    }) || memory
-        .cells
-        .candidate_runs(&candidates)
-        .any(|other| other.base().block.observable_by_load(block));
+    // An unresolved block's candidates are every block, slots no pointer
+    // value reaches included; the store's maintained reachable map leaves
+    // those out, so the first observable cell is found without visiting
+    // every such slot ahead of it.
+    let observable_cell = if matches!(
+        block,
+        crate::kernel::primitives::PointerBlock::Symbolic(_)
+            | crate::kernel::primitives::PointerBlock::LoadedPointer(_)
+    ) {
+        let mut visited = 0usize;
+        let found = memory
+            .cells
+            .caught_up_pointer_reachable()
+            .iter()
+            .inspect(|_| visited += 1)
+            .any(|(cell, _)| cell.block.observable_by_load(block));
+        crate::instrumentation::record_deterministic_work(visited);
+        found
+    } else {
+        candidates.any_entry(memory.cells.concrete(), |cell, _| {
+            cell.block.observable_by_load(block)
+        })
+    };
+    let observable = observable_cell
+        || candidates.any_entry(&memory.union_cells, |(cell, _), _| {
+            cell.block.observable_by_load(block)
+        })
+        || memory
+            .cells
+            .candidate_runs(&candidates)
+            .any(|other| other.base().block.observable_by_load(block));
     SOURCE_OBSERVABLE_BY_BLOCK.with(|memo| {
         let mut memo = memo.borrow_mut();
         if memo.len() >= RESOLUTION_QUERY_MEMO_LIMIT {
@@ -3391,15 +3414,24 @@ fn canonical_memory_for_pointer_load_uncached(memory: &CMemory, pointer: &Pointe
     // A cell in a block proven distinct from the load's is not observable
     // by it, so every scan below visits the candidates alone.
     let candidates = AliasCandidates::of_block(&pointer.block);
+    let unresolved = matches!(
+        pointer.block,
+        PointerBlock::Symbolic(_) | PointerBlock::LoadedPointer(_)
+    );
+    // A load through an unresolved pointer observes only pointer-reachable
+    // cells; reading them from the store's maintained reachable map skips
+    // the slots no pointer value can reach without visiting each one.
+    let reachable = unresolved.then(|| memory.cells.caught_up_pointer_reachable());
     let mut visited = 0usize;
-    let relevant_cells = candidates
-        .entries(memory.cells.concrete())
+    // Lazily: the collection below stops at the first cell that is not a
+    // cached load, so an ordinary store costs one visit, not every cell.
+    let observable: Box<dyn Iterator<Item = (&Pointer, &CValue)>> = match &reachable {
+        Some(reachable) => Box::new(reachable.iter()),
+        None => Box::new(candidates.entries(memory.cells.concrete())),
+    };
+    let materialization_sources = observable
         .inspect(|_| visited += 1)
         .filter(|(cell_pointer, _)| cell_pointer.block.observable_by_load(&pointer.block))
-        .collect::<Vec<_>>();
-    crate::instrumentation::record_deterministic_work(visited);
-    let materialization_sources = relevant_cells
-        .iter()
         .map(|(cell_pointer, value)| {
             let source = materialized_cell_source(cell_pointer, value)?;
             Some(canonical_memory_for_pointer_load(&source, cell_pointer))
@@ -3412,6 +3444,7 @@ fn canonical_memory_for_pointer_load_uncached(memory: &CMemory, pointer: &Pointe
                 .flat_map(run_materialization_sources),
         )
         .collect::<Option<Vec<_>>>();
+    crate::instrumentation::record_deterministic_work(visited);
     let common_materialization_source = materialization_sources.as_ref().and_then(|sources| {
         let first = sources.first()?;
         sources
@@ -3463,14 +3496,24 @@ fn canonical_memory_for_pointer_load_uncached(memory: &CMemory, pointer: &Pointe
         )
         .collect::<SnapshotMap<_, _>>();
     let mut cells = (*canonical.cells).clone();
-    let mut visited = cells.retain_only_candidates_by(
-        &candidates,
-        |cell_pointer, value| {
-            cell_pointer.block.observable_by_load(&pointer.block)
-                && !cell_disjoint_from_load_by_constant_offset(cell_pointer, value, pointer)
-        },
-        |run| run_slots_kept_by_load_projection(run, pointer),
-    );
+    let keep = |cell_pointer: &Pointer, value: &CValue| {
+        cell_pointer.block.observable_by_load(&pointer.block)
+            && !cell_disjoint_from_load_by_constant_offset(cell_pointer, value, pointer)
+    };
+    // A load through an unresolved pointer observes every pointer-reachable
+    // cell outside a few key ranges; projecting from the store's maintained
+    // reachable map keeps the cells of other objects without visiting them,
+    // so the cost does not grow with every object the memory holds
+    // (`issues/scaling.md` cause 6).
+    let mut visited = match unresolved
+        .then(|| cells.retain_for_unresolved_load(pointer, keep))
+        .flatten()
+    {
+        Some(visited) => visited,
+        None => cells.retain_only_candidates_by(&candidates, keep, |run| {
+            run_slots_kept_by_load_projection(run, pointer)
+        }),
+    };
     let union_cells = candidates
         .entries(&canonical.union_cells)
         .inspect(|_| visited += 1)
@@ -4498,7 +4541,7 @@ pub(in crate::kernel) fn memories_match_for_pointer_load_bounded_alias(
     if memories_match_for_pointer_load(left, right, pointer) {
         return true;
     }
-    if pointer.block.starts_with("local:") {
+    if pointer.block.is_local_block() {
         return false;
     }
     if !snapshot_objects_agree(left, right, pointer) {
@@ -4554,7 +4597,7 @@ pub(in crate::kernel) fn memories_match_for_pointer_load_under_assumptions(
     if memories_match_for_pointer_load(left, right, pointer) {
         return true;
     }
-    if pointer.block.starts_with("local:") {
+    if pointer.block.is_local_block() {
         return false;
     }
     if !snapshot_objects_agree(left, right, pointer) {

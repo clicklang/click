@@ -1,3 +1,4 @@
+mod cpp_class_objects;
 mod cpp_model;
 mod cpp_syntax;
 mod library_paths;
@@ -170,6 +171,9 @@ pub(in crate::surface) struct ProgramLayouts {
     /// A sidecar head names only the closure's own parameters; the captures
     /// lead its signature, so its contract reads them by name.
     pub(in crate::surface) closure_captures: BTreeMap<String, Vec<FunctionParameter>>,
+    /// Each C++ override with the virtual method it overrides, by their
+    /// sidecar names: the override inherits that method's interface.
+    pub(in crate::surface) virtual_overrides: Vec<(String, String)>,
 }
 
 /// Whether the library declaration `name` of module `identity` is known by
@@ -641,6 +645,10 @@ struct Parser {
     child_slot_identities: BTreeSet<Variable>,
     current_resource_fields: BTreeMap<String, ResourceFieldAccess>,
     current_resource_targets: BTreeMap<String, ResourceClause>,
+    /// The current function block's value binders, `views s: R(a, _);`.
+    current_value_binders: BTreeMap<String, ValueBinder>,
+    /// Their declaration order, for the function block.
+    current_value_binder_order: Vec<String>,
     in_resource_definition: bool,
     /// The fields of each resource declared so far, hidden ones included.
     declared_resource_fields: BTreeMap<String, Vec<ResourceFieldDefinition>>,
@@ -693,6 +701,9 @@ struct Parser {
     /// The crate traits whose objects carry state, by importer name: the
     /// token rewrite already gave their implementations their interfaces.
     rust_object_traits: BTreeSet<String>,
+    /// The importer names of the methods of C++ classes whose objects carry
+    /// state: an override of one is stated on its own memory.
+    cpp_object_methods: cpp_class_objects::ObjectMethods,
     match_nesting: usize,
     proposition_nesting: usize,
     proof_nesting: usize,
@@ -836,6 +847,10 @@ enum CalleeResourceBinderKind {
     /// A runtime binder that names a resource type, not an instance:
     /// `atomic_init`'s `payload`.
     Type,
+    /// A value binder, `views s: R(a, _);`: the caller may name the instance
+    /// it selects with a resource term or one of its own value binders, or
+    /// leave it to the call.
+    Value,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -998,6 +1013,15 @@ enum ContractLetBindingKind {
 }
 
 impl ContractLetBinding {
+    /// `let name = value;`, as a value binder's parameter names its argument.
+    pub(in crate::surface) fn value_binding(name: String, value: ContractExpression) -> Self {
+        Self {
+            name,
+            click_type: None,
+            kind: ContractLetBindingKind::Value(value),
+        }
+    }
+
     pub(super) fn value(&self) -> Option<&ContractExpression> {
         match &self.kind {
             ContractLetBindingKind::Value(value) => Some(value),
@@ -1061,7 +1085,21 @@ impl Parser {
         parser.plain_char = layouts.plain_char;
         parser.int64_t_rank = layouts.int64_t_rank.unwrap_or(LongRank::Long);
         if layouts.language == Some(SourceLanguage::Cpp) {
+            // A sidecar verifying a C++ header is C++ by its import, which
+            // its `verifying` path does not say: its class object state is
+            // rewritten here.
+            if parser.language != SourceLanguage::Cpp {
+                let (tokens, positions, methods) = cpp_class_objects::rewrite_class_objects(
+                    std::mem::take(&mut parser.tokens),
+                    std::mem::take(&mut parser.positions),
+                )?;
+                parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
+                parser.tokens = tokens;
+                parser.positions = positions;
+                parser.cpp_object_methods = methods;
+            }
             parser.language = SourceLanguage::Cpp;
+            parser.rust_trait_implementations = layouts.virtual_overrides;
         }
         Ok(parser)
     }
@@ -1108,9 +1146,20 @@ impl Parser {
         } else {
             (tokens, positions, BTreeSet::new())
         };
+        // So is a C++ sidecar's class object state.
+        let (tokens, positions, cpp_object_methods) = if language == SourceLanguage::Cpp {
+            cpp_class_objects::rewrite_class_objects(tokens, positions)?
+        } else {
+            (
+                tokens,
+                positions,
+                cpp_class_objects::ObjectMethods::default(),
+            )
+        };
         let matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
         Ok(Self {
             rust_object_traits,
+            cpp_object_methods,
             source_aliases: BTreeMap::new(),
             qualified_objects: None,
             pending_tactic_signature: false,
@@ -1121,6 +1170,8 @@ impl Parser {
             child_slot_identities: BTreeSet::new(),
             current_resource_fields: BTreeMap::new(),
             current_resource_targets: BTreeMap::new(),
+            current_value_binders: BTreeMap::new(),
+            current_value_binder_order: Vec::new(),
             in_resource_definition: false,
             declared_resource_fields: BTreeMap::new(),
             declared_resource_child_slots: BTreeMap::new(),
@@ -1400,12 +1451,38 @@ impl Parser {
                 )));
             }
         }
-        // A crate trait method's implementation inherits its interface,
-        // which the sidecar may declare before or after it.
+        // A crate trait method's implementation, or a C++ override, inherits
+        // its interface, which the sidecar may declare before or after it: a
+        // trait's `extern` method, or the virtual method overridden, whose
+        // contract a call through it assumes.
+        let cpp = self.language == SourceLanguage::Cpp;
         for (implementation, interface) in std::mem::take(&mut self.rust_trait_implementations) {
+            // A defining class's method is stated on that class's memory, which
+            // an override's class lays out differently.
+            if cpp && self.cpp_object_methods.on_memory.contains(&interface) {
+                return Err(ClickError::new(format!(
+                    "`{implementation}` overrides `{interface}`, which is stated on its class's \
+                     memory by that class's definitions of its object's state; overriding it \
+                     remains unsupported"
+                ))
+                .at_declaration(&implementation));
+            }
+            // An override of a method of a class whose object carries state is
+            // stated on its own memory, by its class's definitions.
+            if cpp && self.cpp_object_methods.interfaces.contains(&interface) {
+                if !self.cpp_object_methods.on_memory.contains(&implementation) {
+                    return Err(ClickError::new(format!(
+                        "`{implementation}` overrides `{interface}`, whose class's object \
+                         carries state: its class defines that state on its own memory, \
+                         `class Derived : Base {{ function f(this) -> T {{ ... }} }}`"
+                    ))
+                    .at_declaration(&implementation));
+                }
+                continue;
+            }
             let Some(interface) = function_blocks
                 .iter()
-                .find(|block| block.is_external() && block.signature().name() == interface)
+                .find(|block| (cpp || block.is_external()) && block.signature().name() == interface)
                 .cloned()
             else {
                 continue;
@@ -1414,13 +1491,25 @@ impl Parser {
                 .iter_mut()
                 .find(|block| !block.is_external() && block.signature().name() == implementation)
             {
-                block.inherit_interface(&interface).map_err(|message| {
-                    ClickError::new(format!(
-                        "`{}` cannot inherit its trait's interface: {message}",
-                        crate::languages::rust::names::display_rust_names(&implementation)
-                    ))
-                    .at_declaration(&implementation)
-                })?;
+                let source = if cpp {
+                    "the method it overrides"
+                } else {
+                    "the trait's interface"
+                };
+                block
+                    .inherit_interface(&interface, source)
+                    .map_err(|message| {
+                        let what = if cpp {
+                            "the interface of the virtual method it overrides"
+                        } else {
+                            "its trait's interface"
+                        };
+                        ClickError::new(format!(
+                            "`{}` cannot inherit {what}: {message}",
+                            crate::languages::rust::names::display_rust_names(&implementation)
+                        ))
+                        .at_declaration(&implementation)
+                    })?;
             }
         }
         let end = self.position;
@@ -3149,6 +3238,8 @@ impl Parser {
         let previous_function_block = std::mem::replace(&mut self.in_function_block, true);
         let previous_resource_targets = std::mem::take(&mut self.current_resource_targets);
         let previous_resource_bindings = std::mem::take(&mut self.current_resource_bindings);
+        let previous_value_binders = std::mem::take(&mut self.current_value_binders);
+        let previous_value_binder_order = std::mem::take(&mut self.current_value_binder_order);
         // A crate trait's method is declared without `extern`, as Rust
         // writes it in the `trait` block.
         if external && self.rust_trait_interface.is_none() {
@@ -3464,7 +3555,16 @@ impl Parser {
                 }
                 Some("owns") => {
                     self.position += 1;
-                    let resource = self.parse_owned_resource_binding()?;
+                    let resource = if self.value_binder_follows(false) {
+                        self.parse_value_binder(
+                            ResourceAccessMode::Own,
+                            signature.name(),
+                            &parameter_names,
+                            requires.len(),
+                        )?
+                    } else {
+                        self.parse_owned_resource_binding()?
+                    };
                     let proof = self.parse_proof_clause_or_default()?;
                     let binder_resource =
                         apply_contract_lets_to_resource_clause(resource.clone(), &contract_lets)
@@ -3500,7 +3600,16 @@ impl Parser {
                 }
                 Some("views") => {
                     self.position += 1;
-                    let resource = self.parse_resource_target(ResourceAccessMode::View)?;
+                    let resource = if self.value_binder_follows(true) {
+                        self.parse_value_binder(
+                            ResourceAccessMode::View,
+                            signature.name(),
+                            &parameter_names,
+                            requires.len(),
+                        )?
+                    } else {
+                        self.parse_resource_target(ResourceAccessMode::View)?
+                    };
                     self.expect(Token::Semicolon)?;
                     requires.push(
                         apply_contract_lets_to_requirement(
@@ -3512,7 +3621,16 @@ impl Parser {
                 }
                 Some("consumes") => {
                     self.position += 1;
-                    let resource = self.parse_owned_resource_binding()?;
+                    let resource = if self.value_binder_follows(false) {
+                        self.parse_value_binder(
+                            ResourceAccessMode::Own,
+                            signature.name(),
+                            &parameter_names,
+                            requires.len(),
+                        )?
+                    } else {
+                        self.parse_owned_resource_binding()?
+                    };
                     self.expect(Token::Semicolon)?;
                     let binder_resource =
                         apply_contract_lets_to_resource_clause(resource.clone(), &contract_lets)
@@ -3721,6 +3839,15 @@ impl Parser {
         self.in_function_block = previous_function_block;
         self.current_resource_bindings = previous_resource_bindings;
         self.current_resource_targets = previous_resource_targets;
+        let mut value_binders_by_name =
+            std::mem::replace(&mut self.current_value_binders, previous_value_binders);
+        let value_binders = std::mem::replace(
+            &mut self.current_value_binder_order,
+            previous_value_binder_order,
+        )
+        .into_iter()
+        .filter_map(|name| value_binders_by_name.remove(&name))
+        .collect::<Vec<_>>();
         self.current_aggregate_objects = previous_aggregate_objects;
         self.current_global_array_shapes = previous_global_array_shapes;
         self.current_struct_array_params = previous_struct_array_params;
@@ -3845,6 +3972,8 @@ impl Parser {
             parameter_struct_casts,
             parameter_field_places,
             pointee_field_places,
+            value_binders,
+            witness_count: 0,
         })
     }
 
@@ -5050,9 +5179,53 @@ impl Parser {
         let mut bound = BTreeSet::new();
         let mut instances = BTreeSet::new();
         let mut type_arguments = Vec::new();
+        let mut value_arguments = Vec::new();
         while has_map && self.peek() != Some(&Token::RBrace) {
             let binder = self.expect_ident("callee resource binder")?;
             self.expect(Token::Colon)?;
+            if let Some(declaration) = declared.get(&binder)
+                && declaration.kind == CalleeResourceBinderKind::Value
+            {
+                if !bound.insert(binder.clone()) {
+                    return Err(self.error(format!("duplicate binder `{binder}` in the call map")));
+                }
+                let argument = if matches!(self.peek(), Some(Token::Ident(_)))
+                    && self.peek_next() == Some(&Token::LParen)
+                {
+                    let term = self.parse_declared_resource_call()?;
+                    if let (ResourceClause::Declared { name, .. }, Some(expected)) =
+                        (&term, &declaration.family)
+                        && name != expected
+                    {
+                        return Err(self.error(format!(
+                            "binder `{binder}` selects a `{expected}`, not a `{name}`"
+                        )));
+                    }
+                    ValueBinderArgument::Term(term)
+                } else {
+                    let caller = self.expect_ident("resource term or value binder")?;
+                    let Some(caller_binder) = self.current_value_binders.get(&caller) else {
+                        return Err(self.error(format!(
+                            "`{caller}` is not a value binder of this function; name the instance with a resource term such as `{binder}: {}(...)`",
+                            declaration.family.as_deref().unwrap_or("resource")
+                        )));
+                    };
+                    if Some(&caller_binder.resource) != declaration.family.as_ref() {
+                        return Err(self.error(format!(
+                            "binder `{binder}` selects a `{}`, but `{caller}` names a `{}`",
+                            declaration.family.as_deref().unwrap_or("resource"),
+                            caller_binder.resource
+                        )));
+                    }
+                    ValueBinderArgument::Binder(caller)
+                };
+                value_arguments.push((binder, argument));
+                if self.peek() != Some(&Token::Comma) {
+                    break;
+                }
+                self.position += 1;
+                continue;
+            }
             if let Some(declaration) = declared.get(&binder)
                 && declaration.kind == CalleeResourceBinderKind::Type
             {
@@ -5278,6 +5451,7 @@ impl Parser {
             binders,
             produced,
             type_arguments,
+            value_arguments,
             result,
         })
     }
@@ -5449,6 +5623,123 @@ impl Parser {
 
     /// Records an instance binder in the selected function/interface registry.
     /// Call maps name those declarations, including produced identities.
+    /// Whether a value binder follows: `name: R(...)` where the clause is a
+    /// `views` clause, or one of `R`'s arguments is `_`. An `owns` or
+    /// `consumes` binder without `_` keeps naming an instance.
+    fn value_binder_follows(&self, view: bool) -> bool {
+        let open = self.position + 3;
+        if !matches!(self.peek(), Some(Token::Ident(_)))
+            || self.peek_next() != Some(&Token::Colon)
+            || !matches!(self.tokens.get(self.position + 2), Some(Token::Ident(_)))
+            || self.tokens.get(open) != Some(&Token::LParen)
+        {
+            return false;
+        }
+        if view {
+            return true;
+        }
+        let Some(close) = self.matching_parentheses.get(open).cloned().flatten() else {
+            return false;
+        };
+        self.tokens[open + 1..close]
+            .iter()
+            .any(|token| matches!(token, Token::Ident(name) if name == "_"))
+    }
+
+    /// `name: R(a, _)`: the clause `R(a, s.#1)` with a placeholder at each
+    /// `_`, which declaration expansion names after `R`'s parameter. The
+    /// binder is recorded for `s.<parameter>` and for callers' call maps.
+    fn parse_value_binder(
+        &mut self,
+        access: ResourceAccessMode,
+        function: &str,
+        parameter_names: &BTreeSet<String>,
+        requirement_index: usize,
+    ) -> Result<ResourceClause, ClickError> {
+        if self.in_contract_definition {
+            return Err(self.error(
+                "a value binder `name: resource(..., _)` is supported only in a C function contract",
+            ));
+        }
+        let name = self.expect_ident("binder name")?;
+        self.expect(Token::Colon)?;
+        if self.current_value_binders.contains_key(&name)
+            || self.current_resource_bindings.contains_key(&name)
+            || self.current_contract_bindings.contains(&name)
+            || parameter_names.contains(&name)
+        {
+            return Err(self.error(format!("duplicate binder `{name}`")));
+        }
+        let resource = self.expect_ident("resource name")?;
+        if matches!(
+            resource.as_str(),
+            "authority" | "mutex_live" | "mutex_guard" | "mutex_use" | "publisher" | "subscriber"
+        ) {
+            return Err(self.error(format!("`{resource}` cannot be named by a value binder")));
+        }
+        self.expect(Token::LParen)?;
+        let mut written = Vec::new();
+        if self.peek() != Some(&Token::RParen) {
+            loop {
+                if self.peek_ident() == Some("_") {
+                    self.position += 1;
+                    written.push(None);
+                } else {
+                    written.push(Some(self.parse_contract_expression()?));
+                }
+                match self.peek() {
+                    Some(Token::Comma) => self.position += 1,
+                    Some(Token::RParen) => break,
+                    _ => return Err(self.error("expected `,` or `)` after resource argument")),
+                }
+            }
+        }
+        self.expect(Token::RParen)?;
+        let arguments = written
+            .iter()
+            .enumerate()
+            .map(|(index, argument)| {
+                argument.clone().unwrap_or_else(|| {
+                    ContractExpression::CFragment(CExpression::Variable(ValueBinder::placeholder(
+                        &name, index,
+                    )))
+                })
+            })
+            .collect();
+        let binder = ValueBinder {
+            name: name.clone(),
+            resource: resource.clone(),
+            arguments: written,
+            requirement_index,
+        };
+        self.current_value_binders.insert(name.clone(), binder);
+        self.current_value_binder_order.push(name.clone());
+        crate::instrumentation::record_deterministic_work(1);
+        self.callee_resource_binders
+            .entry(function.to_string())
+            .or_default()
+            .insert(
+                name,
+                CalleeResourceBinder {
+                    identity: Variable(0),
+                    family: Some(resource.clone()),
+                    resource: None,
+                    parameter_names: Vec::new(),
+                    kind: CalleeResourceBinderKind::Value,
+                },
+            );
+        Ok(ResourceClause::Declared {
+            type_schema: None,
+            resource_type_arguments: Vec::new(),
+            resource_arguments: Vec::new(),
+            access,
+            kind: ResourceKind::Token,
+            name: resource,
+            arguments,
+            parameter_types: Vec::new(),
+        })
+    }
+
     fn record_callee_resource_binder(
         &mut self,
         function: &str,
@@ -6816,7 +7107,8 @@ impl Parser {
                 result.push((slot, name, identity));
                 continue;
             }
-            let identity = if let Some((identity, _)) = self.current_resource_bindings.get(&name) {
+            let existing = self.current_resource_bindings.get(&name).cloned();
+            let identity = if let Some((identity, _)) = &existing {
                 // A child slot's resource comes from the parent's matched
                 // arm, which the parser cannot resolve; declaration
                 // expansion checks the supplied instance against it.
@@ -6830,8 +7122,15 @@ impl Parser {
             };
             if introduce {
                 self.child_slot_identities.insert(identity);
+                // A name already bound, such as the contract's `produces
+                // whole: ...` that the unfold's child becomes, keeps the
+                // resource it was declared with: its fields are that
+                // resource's, not the parent's, when a later `have` reads
+                // `whole.model`. Only a new binder records the parent, which
+                // declaration expansion replaces with the slot's resource.
+                let recorded = existing.map_or_else(|| family.clone(), |(_, family)| family);
                 self.current_resource_bindings
-                    .insert(name.clone(), (identity, family.clone()));
+                    .insert(name.clone(), (identity, recorded));
                 self.current_resource_targets.insert(
                     name.clone(),
                     ResourceClause::Named {
@@ -11707,6 +12006,20 @@ impl Parser {
                             .children
                             .push(std::mem::replace(&mut access.field, next));
                         access.click_type = None;
+                        continue;
+                    }
+                    if let ContractExpression::CFragment(CExpression::Variable(owner)) = &expression
+                        && self.current_value_binders.contains_key(owner)
+                    {
+                        if self.peek() != Some(&Token::Dot) {
+                            return Err(self.error("binder parameters use `.`, not `->`"));
+                        }
+                        let owner = owner.clone();
+                        self.position += 1;
+                        let parameter = self.expect_ident("resource parameter name")?;
+                        expression = ContractExpression::CFragment(CExpression::Variable(format!(
+                            "{owner}.{parameter}"
+                        )));
                         continue;
                     }
                     if let ContractExpression::CFragment(CExpression::Variable(owner)) = &expression

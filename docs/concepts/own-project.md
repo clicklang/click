@@ -400,7 +400,8 @@ declaration-only system headers and checks each call against its own contract
 for the function; GCC finds them in place of the platform's. The modeled
 headers are `<stdint.h>`, `<inttypes.h>`, `<stdbool.h>`, `<limits.h>`,
 `<stddef.h>`, `<string.h>` (`memcpy`, `memcmp`, `memset`, `strlen`), and
-`<stdlib.h>` (`malloc`, `calloc`, `realloc`, `free`); the
+`<stdlib.h>` (`malloc`, `calloc`, `realloc`, `free`), plus the type-only
+`<stdarg.h>` (`va_list`) and `<sys/types.h>` (`ssize_t`, `off_t`); the
 [system headers](../reference/language/c.md#system-headers) table has the
 details. Any other system include, such as `<ctype.h>` or `<stdio.h>`, stops
 `click import lock` with a message that names it. Had `label_copy.c` begun

@@ -10,19 +10,27 @@ With an installed Click release, the committed artifact and lock verify offline:
 click verify examples/basic-rust/borrow.click
 ```
 
-`click install VERSION --rust` adds the pinned Charon/compiler bundle for
-Linux x86-64 GNU. Rust project units use it automatically at lock time. This
-legacy example's config still names a contributor exporter path; to refresh
-with the installed bundle, omit its `exporter` field, then run
-`click import lock examples/basic-rust/borrow.click`. No compiler is run by
-ordinary verification. See [Rust imports](../../docs/reference/rust.md) for
-project units and frontend resolution.
+To refresh with the installed frontend on Linux x86-64 GNU:
+
+```sh
+click install VERSION --rust
+click import lock examples/basic-rust/borrow.click
+click verify examples/basic-rust/borrow.click
+```
+
+Replace `VERSION` with the installed Click release version. The
+`click.project.json` unit selects the pinned bundle automatically; no exporter
+path or user Rust toolchain is needed. Unset the contributor override
+`CLICK_CHARON` when using the installed frontend. Refresh reproduces the committed
+lock for its matching release and profile. Ordinary verification needs neither
+the compiler nor the frontend. See [Rust imports](../../docs/reference/rust.md)
+for project units and frontend resolution.
 
 For contributor builds, install pinned Charon and its compiler once:
 
 ```sh
 scripts/setup-environment.sh
-scripts/build-charon.sh --install-toolchain
+export CLICK_CHARON="$(scripts/build-charon.sh --install-toolchain)"
 cargo run --bin click -- import lock examples/basic-rust/borrow.click
 cargo run --bin click -- verify examples/basic-rust/borrow.click
 ```

@@ -113,3 +113,36 @@ fn scalar_conflict_queries_and_selected_merges_skip_ambient_facts() {
         "selected-merge work: {costs:?}"
     );
 }
+
+#[test]
+fn constructor_lookup_skips_unrelated_model_classes() {
+    let ty = model_type(
+        "ConstructorLookupScale",
+        AlgebraicValueType::C(CType::Int32),
+    );
+    let costs = [16, 64, 256, 1024].map(|size| {
+        let mut context = PureFactContext::new();
+        for id in 0..size {
+            context = context.assume_proposition(eq(
+                &variable(&ty, 1000 + id),
+                &constructor(&ty, "Node", vec![scalar(id)]),
+            ));
+        }
+        let (a, b, c) = (variable(&ty, 10), variable(&ty, 11), variable(&ty, 12));
+        let ctor = constructor(&ty, "Node", vec![scalar(7)]);
+        context = context
+            .assume_proposition(eq(&a, &b))
+            .assume_proposition(eq(&b, &c))
+            .assume_proposition(eq(&c, &ctor));
+        let (((), work), maps) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                assert_eq!(context.known_algebraic_constructor(&a), Some(ctor));
+            })
+        });
+        (work, maps)
+    });
+    for pair in costs.windows(2) {
+        assert_eq!(pair[1].0, pair[0].0, "{costs:?}");
+        assert!(pair[1].1 <= pair[0].1 * 2, "{costs:?}");
+    }
+}

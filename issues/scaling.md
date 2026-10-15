@@ -105,23 +105,27 @@ instead of from what the step changed.
    N = 64, and a mean step of 18.7 to 6.4 ms at N = 256. Still open, under
    the rule in `AGENTS.md` (construct valid proofs; never produce-then-check):
    a step still runs its executor up to three times (a probe before
-   obligations, and a call before its `return`), fold and unfold re-run
-   their producer to check it, joins re-walk their arms, and condition and
-   function-level theorems still list their contexts.
+   obligations, and a call before its `return`), instance, observation and
+   population rewrites still re-check their producer's result, joins re-walk
+   their arms, and condition and function-level theorems still list their
+   contexts. A plain composite `fold` or `unfold` is recorded from its
+   producer's result without re-expanding or comparing (2.84 billion
+   instructions at N = 64; fold work at N = 256 137,981 to 22,782).
 5. **Fixed: satisfying a composite checked every held one of its shape.**
    `ResourceContext::satisfies_fact` tried entailment against every held
    `boxed(..)` when the required pointer was spelled differently, so each
    `heap_objects` fold cost 3 units per live object. It now reads the held
    composites whose pointer is related to the required one
    (`direct_match_candidates_for`), and folds are flat.
-6. **A load through an unresolved pointer keeps every cell it may alias.**
-   `canonical_memory_for_pointer_load` is assumption-free, and a `Symbolic`
-   block's alias candidates narrow nothing, so the canonical memory of a
-   load through one heap object keeps every earlier object's cell and every
-   local's slot: each `heap_objects` unfold still grows 3 units per earlier
-   object. The slots are unreachable by any pointer value, as cause 1 used
-   for stores; the other objects' cells need ownership, which
-   canonicalization does not consult.
+6. **Fixed: a load through an unresolved pointer rebuilt every cell it may
+   alias.** `canonical_memory_for_pointer_load` is assumption-free, and a
+   `Symbolic` block's alias candidates narrow nothing, so the canonical memory
+   of a load through one heap object was rebuilt from every earlier object's
+   cell and every local's slot, at every unfold. The cell store now keeps the
+   pointer-reachable cells with their values, caught up by its own changes,
+   and the projection starts from that map and filters only the `local:`
+   cells and the load's own block; each `heap_objects` unfold is flat
+   (141 units at every position at N = 24).
 
 Related scaling bugs stay in `bugs/` until fixed:
 [sequential-loop-clause-grows-with-earlier-loops.md](../bugs/sequential-loop-clause-grows-with-earlier-loops.md).

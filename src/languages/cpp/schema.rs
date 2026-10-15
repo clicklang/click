@@ -306,6 +306,10 @@ pub struct CppRecord {
     pub byte_template_arguments: Vec<CppByteTemplateArgument>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base: Option<CppBase>,
+    /// A polymorphic class: its leading bytes hold the vtable pointer,
+    /// which no field names and nothing but dispatch reads.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub polymorphic: bool,
     pub destructor: Option<CppFunctionReference>,
     pub span: CppSpan,
 }
@@ -372,6 +376,31 @@ pub struct CppFunction {
     /// Click supplies the contract the call is checked against.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub axiom: Option<CppAxiom>,
+    /// Present for a virtual method: a call through it is checked against
+    /// its contract, which each of its overrides must refine.
+    #[serde(default, rename = "virtual", skip_serializing_if = "Option::is_none")]
+    pub virtual_method: Option<CppVirtual>,
+}
+
+/// A virtual method's place in dispatch.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CppVirtual {
+    /// A pure virtual method has no body: it is only its interface.
+    pub pure: bool,
+    /// The methods this one overrides.
+    pub overrides: Vec<CppFunctionReference>,
+    /// The methods of the source that override this one, which a call
+    /// through it may reach.
+    pub overridden_by: Vec<CppFunctionReference>,
+}
+
+impl CppFunction {
+    pub(crate) fn is_pure_virtual(&self) -> bool {
+        self.virtual_method
+            .as_ref()
+            .is_some_and(|method| method.pure)
+    }
 }
 
 fn is_zero(count: &usize) -> bool {
@@ -1317,6 +1346,20 @@ impl CppExport {
         let mut functions = BTreeMap::new();
         let mut referenced_constants = BTreeSet::new();
         for source in self.functions.iter().chain(&self.reachable_functions) {
+            if source.is_pure_virtual() {
+                source.span.validate(logical_source)?;
+                source.validate_pure_virtual(&records)?;
+                if functions
+                    .insert(source.declaration_id.clone(), source)
+                    .is_some()
+                {
+                    return Err(format!(
+                        "duplicate C++ function declaration identity `{}`",
+                        source.declaration_id
+                    ));
+                }
+                continue;
+            }
             if source.axiom.is_some() {
                 source.validate_axiom(&records)?;
                 if functions
@@ -1406,6 +1449,7 @@ impl CppExport {
             }
         }
 
+        validate_virtual_methods(&functions)?;
         let mut visiting = Vec::new();
         let mut visited = BTreeMap::new();
         for function in &self.functions {
@@ -1416,6 +1460,27 @@ impl CppExport {
                 &mut visiting,
                 &mut visited,
             )?;
+        }
+        // A reachable override brings the methods it overrides, whose
+        // contracts it refines, though no call may reach them.
+        let mut pending = visited.keys().cloned().collect::<Vec<_>>();
+        while let Some(declaration_id) = pending.pop() {
+            let Some(method) = functions[declaration_id.as_str()].virtual_method.as_ref() else {
+                continue;
+            };
+            for overridden in &method.overrides {
+                crate::instrumentation::record_deterministic_work(1);
+                if !visited.contains_key(&overridden.declaration_id) {
+                    validate_reachable_calls(
+                        &overridden.declaration_id,
+                        &functions,
+                        &records,
+                        &mut visiting,
+                        &mut visited,
+                    )?;
+                    pending.push(overridden.declaration_id.clone());
+                }
+            }
         }
         validate_reachable_records(&functions, &records)?;
         super::construction::validate_returns(&functions, &records)?;
@@ -1741,6 +1806,9 @@ fn validate_reachable_records(
 
 impl CppRecord {
     fn require_constructor_local_layout(&self) -> Result<(), String> {
+        if self.polymorphic {
+            return Err("automatic polymorphic C++ objects remain unsupported".into());
+        }
         if self.base.is_some() {
             return Err("automatic C++ objects with base subobjects remain unsupported".into());
         }
@@ -1810,7 +1878,7 @@ impl CppRecord {
             }
             destructor.span.validate(logical_source)?;
         }
-        if (self.fields.is_empty() && self.base.is_none())
+        if (self.fields.is_empty() && self.base.is_none() && !self.polymorphic)
             || self.alignment_bytes == 0
             || !self.alignment_bytes.is_power_of_two()
             || self.size_bytes == 0
@@ -1829,9 +1897,28 @@ impl CppRecord {
                 return Err("C++ base subobject requires a mutable nominal record type".into());
             };
             let child = validate_record_reference(records, declaration_id, name)?;
-            // This first profile models data-free tagged wrappers: one complete
-            // base, no own fields, overlap, tail-padding reuse or base cleanup.
-            if base.span.file != self.span.file
+            // A polymorphic class extends its polymorphic base: the whole base,
+            // vtable pointer first, then its own fields.
+            if self.polymorphic || child.polymorphic {
+                if !self.polymorphic
+                    || !child.polymorphic
+                    || base.span.file != self.span.file
+                    || self.destructor.is_some()
+                    || base.offset_bytes != 0
+                    || base.size_bytes != child.size_bytes
+                    || self.size_bytes < child.size_bytes
+                    || self.alignment_bytes < child.alignment_bytes
+                    || self
+                        .fields
+                        .iter()
+                        .any(|field| field.offset_bytes < child.size_bytes)
+                {
+                    return Err(format!(
+                        "C++ record `{}` has an invalid polymorphic base layout",
+                        self.name
+                    ));
+                }
+            } else if base.span.file != self.span.file
                 || !self.fields.is_empty()
                 || self.destructor.is_some()
                 || child.destructor.is_some()
@@ -1845,6 +1932,21 @@ impl CppRecord {
                     self.name
                 ));
             }
+        }
+        let vtable_pointer = 8u32;
+        if self.polymorphic
+            && self.base.is_none()
+            && (self.size_bytes < vtable_pointer
+                || self.alignment_bytes < vtable_pointer
+                || self
+                    .fields
+                    .iter()
+                    .any(|field| field.offset_bytes < vtable_pointer))
+        {
+            return Err(format!(
+                "C++ record `{}` has no room for its vtable pointer",
+                self.name
+            ));
         }
         let mut identities = std::collections::BTreeSet::new();
         let mut names = std::collections::BTreeSet::new();
@@ -1932,7 +2034,112 @@ impl CppRecord {
     }
 }
 
+/// Checks each virtual method's overrides against the methods they name:
+/// both are methods of polymorphic records with one signature, and each
+/// edge is listed from both ends.
+fn validate_virtual_methods(functions: &BTreeMap<String, &CppFunction>) -> Result<(), String> {
+    let method = |declaration_id: &str, name: &str| -> Result<&CppFunction, String> {
+        let target = functions.get(declaration_id).ok_or_else(|| {
+            format!("C++ virtual method `{name}` refers to missing declaration `{declaration_id}`")
+        })?;
+        if target.name != name || target.virtual_method.is_none() {
+            return Err(format!(
+                "C++ declaration `{declaration_id}` is not the virtual method `{name}`"
+            ));
+        }
+        Ok(target)
+    };
+    let lists = |listed: &[CppFunctionReference], declaration_id: &str| {
+        listed
+            .iter()
+            .any(|reference| reference.declaration_id == declaration_id)
+    };
+    for function in functions.values() {
+        let Some(virtual_method) = &function.virtual_method else {
+            continue;
+        };
+        if !matches!(function.function_kind, CppFunctionKind::Method { .. })
+            || !function.declared_noexcept
+        {
+            return Err(format!(
+                "C++ virtual method `{}` must be a noexcept non-static method",
+                function.name
+            ));
+        }
+        for overridden in &virtual_method.overrides {
+            crate::instrumentation::record_deterministic_work(1);
+            let target = method(&overridden.declaration_id, &overridden.name)?;
+            let CppFunctionKind::Method { is_const, .. } = &function.function_kind else {
+                unreachable!("checked method");
+            };
+            let same_signature = matches!(
+                &target.function_kind,
+                CppFunctionKind::Method { is_const: target_const, .. } if target_const == is_const
+            ) && target.return_type == function.return_type
+                && target.parameters.len() == function.parameters.len()
+                && target.parameters[1..]
+                    .iter()
+                    .zip(&function.parameters[1..])
+                    .all(|(left, right)| left.value_type == right.value_type);
+            if !same_signature
+                || !lists(
+                    &target.virtual_method.as_ref().unwrap().overridden_by,
+                    &function.declaration_id,
+                )
+            {
+                return Err(format!(
+                    "C++ override `{}` does not match the virtual method `{}` it overrides",
+                    function.name, target.name
+                ));
+            }
+        }
+        for overrider in &virtual_method.overridden_by {
+            crate::instrumentation::record_deterministic_work(1);
+            let target = method(&overrider.declaration_id, &overrider.name)?;
+            if !lists(
+                &target.virtual_method.as_ref().unwrap().overrides,
+                &function.declaration_id,
+            ) {
+                return Err(format!(
+                    "C++ override `{}` does not name the virtual method `{}` it overrides",
+                    target.name, function.name
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 impl CppFunction {
+    /// A pure virtual method is an interface without a body, a method of a
+    /// polymorphic record.
+    fn validate_pure_virtual(&self, records: &RecordIndex<'_>) -> Result<(), String> {
+        let CppFunctionKind::Method {
+            record_declaration_id,
+            record_name,
+            ..
+        } = &self.function_kind
+        else {
+            return Err(format!("C++ pure virtual `{}` must be a method", self.name));
+        };
+        if !self.body.is_empty() || !self.declared_noexcept {
+            return Err(format!(
+                "C++ pure virtual `{}` must be a noexcept interface without a body",
+                self.name
+            ));
+        }
+        if !validate_record_reference(records, record_declaration_id, record_name)?.polymorphic {
+            return Err(format!(
+                "C++ pure virtual `{}` must be a method of a polymorphic class",
+                self.name
+            ));
+        }
+        if self.return_type == CppType::Void {
+            return Ok(());
+        }
+        require_function_return_type(&self.return_type, records, "function return type")
+    }
+
     /// An axiom has an interface and no body; its record references must
     /// still name checked records.
     fn validate_axiom(&self, records: &RecordIndex<'_>) -> Result<(), String> {
@@ -4618,6 +4825,25 @@ fn validate_reachable_calls(
         depth = depth.max(child_depth + 1);
         super::budget::limit("call graph depth", depth, super::budget::MAX_CALL_DEPTH)?;
     }
+    // A call to a virtual method may run any method that overrides it, so
+    // those are reached from it: a call back through the interface is
+    // recursion like any other.
+    for overrider in function
+        .virtual_method
+        .iter()
+        .flat_map(|method| &method.overridden_by)
+    {
+        crate::instrumentation::record_deterministic_work(1);
+        let (child_depth, child_observes_constant_context) = validate_reachable_calls(
+            &overrider.declaration_id,
+            functions,
+            records,
+            visiting,
+            visited,
+        )?;
+        observes_constant_context |= child_observes_constant_context;
+        depth = depth.max(child_depth);
+    }
     visiting.pop();
     let summary = (depth, observes_constant_context);
     visited.insert(declaration_id.to_string(), summary);
@@ -6438,6 +6664,7 @@ mod tests {
         };
         let mut function = CppFunction {
             axiom: None,
+            virtual_method: None,
             declaration_id: "root".into(),
             name: "root".into(),
             function_kind: CppFunctionKind::Free,
@@ -6595,6 +6822,7 @@ mod tests {
     fn static_helper_artifacts_require_class_identity_and_scalar_signature() {
         let mut function = CppFunction {
             axiom: None,
+            virtual_method: None,
             declaration_id: "static_function".into(),
             name: "Math_echo".into(),
             function_kind: CppFunctionKind::StaticMethod {
@@ -6751,6 +6979,7 @@ mod tests {
             destructor: None,
             span: cleanup_span(),
             base: None,
+            polymorphic: false,
             fields: vec![CppField {
                 declaration_id: "field".into(),
                 name: "value".into(),
@@ -6914,6 +7143,7 @@ mod tests {
         );
         let function = |name: &str, body, parameters| CppFunction {
             axiom: None,
+            virtual_method: None,
             declaration_id: name.into(),
             name: name.into(),
             function_kind: CppFunctionKind::Free,
@@ -6989,6 +7219,7 @@ mod tests {
         };
         let function = |name: &str, body, parameters| CppFunction {
             axiom: None,
+            virtual_method: None,
             declaration_id: name.into(),
             name: name.into(),
             function_kind: CppFunctionKind::Free,
@@ -7098,6 +7329,7 @@ mod tests {
     fn return_call_graphs_check_callee_identity_destination_arguments_and_cycles() {
         let function = |name: &str, body| CppFunction {
             axiom: None,
+            virtual_method: None,
             declaration_id: name.into(),
             name: name.into(),
             function_kind: CppFunctionKind::Free,
@@ -7197,6 +7429,7 @@ mod tests {
             destructor: None,
             span: cleanup_span(),
             base: None,
+            polymorphic: false,
             fields: vec![CppField {
                 declaration_id: "field".into(),
                 name: "fee".into(),
@@ -7244,6 +7477,7 @@ mod tests {
         };
         let mut function = CppFunction {
             axiom: None,
+            virtual_method: None,
             declaration_id: "method".into(),
             name: "State_update".into(),
             function_kind: CppFunctionKind::Method {
@@ -7377,6 +7611,7 @@ mod tests {
         let sources = BTreeSet::from(["fixture.cpp".into()]);
         let mut function = CppFunction {
             axiom: None,
+            virtual_method: None,
             declaration_id: "root".into(),
             name: "root".into(),
             function_kind: CppFunctionKind::Free,
@@ -7760,6 +7995,7 @@ mod tests {
         };
         let mut function = CppFunction {
             axiom: None,
+            virtual_method: None,
             declaration_id: "root".into(),
             name: "root".into(),
             function_kind: CppFunctionKind::Free,

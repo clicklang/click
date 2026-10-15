@@ -2604,11 +2604,7 @@ mod tests {
     fn locked_c_import_verifies_without_the_target_compiler_or_headers() {
         let fixture = OfflineFixture::new();
         let proof = fs::read_to_string(fixture.root.join("main.click")).unwrap();
-        let crate::cli::CInput::Prepared(imports) =
-            crate::cli::read_c_inputs(&fixture.root.join("main.click"), &proof).unwrap()
-        else {
-            panic!("the ordinary CLI input path must load the prepared C artifact");
-        };
+        let imports = load_imports(&fixture.config()).unwrap();
         assert_eq!(imports[0].source(), "int answer(void) { return 42; }\n");
         crate::surface::verify_c0_prepared_sources(&proof, &imports).unwrap();
 

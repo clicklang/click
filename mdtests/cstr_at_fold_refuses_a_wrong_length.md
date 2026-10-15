@@ -2,8 +2,8 @@
 
 `cstr_at(p, len)`, the `click::cstr` library resource, states that byte
 `len` is the first terminator. The bytes
-determine that length, so a fold at any other length must fail. `mk` holds a
-viewed string of length `n` and claims to produce `cstr_at(p, n + 1)`: byte
+determine that length, so a fold at any other length must fail. `mk` owns the
+bytes of a string of length `n` and claims to produce `cstr_at(p, n + 1)`: byte
 `n` is a terminator, so the body fact that the first `n + 1` bytes are nonzero
 cannot be established.
 
@@ -17,7 +17,7 @@ import click::cstr;
 verifying "cstr_at_fold_refuses_a_wrong_length.c";
 
 int32 mk(const uint8* p, uint64 n) {
-    views p[0..n + 2u64];
+    consumes p[0..n + 2u64];
     requires n < 18446744073709551614u64;
     requires forall (k: uint64) { 0u64 <= k and k < n implies p[k] != '\0' };
     requires p[n] == '\0';

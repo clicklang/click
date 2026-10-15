@@ -122,7 +122,7 @@ fn installed_rust_frontend_extracts_and_verifies_without_rustup() {
         &["verify", "restoration.click"],
     ));
 
-    // Legacy sidecars may omit the development exporter path as well.
+    // A legacy per-sidecar config is refused with its replacement named.
     let legacy = t.path().join("legacy");
     fs::create_dir_all(&legacy).unwrap();
     fs::write(
@@ -144,13 +144,18 @@ fn installed_rust_frontend_extracts_and_verifies_without_rustup() {
         .to_string(),
     )
     .unwrap();
-    success(cli(
-        &binary,
-        &home,
-        &legacy,
-        &["import", "lock", "borrow.click"],
-    ));
-    success(cli(&binary, &home, &legacy, &["verify", "borrow.click"]));
+    for command in [
+        &["import", "lock", "borrow.click"][..],
+        &["verify", "borrow.click"],
+    ] {
+        let refused = cli(&binary, &home, &legacy, command);
+        assert!(!refused.status.success());
+        let error = String::from_utf8_lossy(&refused.stderr);
+        assert!(
+            error.contains("per-sidecar import config") && error.contains("click.project.json"),
+            "{error}"
+        );
+    }
 
     // A compiler-identity mismatch is diagnosed before replacing the lock.
     let manifest_path = bundle.join("frontend.json");

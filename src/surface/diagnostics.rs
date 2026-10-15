@@ -3952,7 +3952,7 @@ fn describe_source_cell_of_width(
         // loses its index this way, which costs an index-inequality repair the
         // reader could not have used anyway -- the array is one object, so the
         // two spellings name the same storage either way.
-        PointerOffsetTerm::Constant(0) if pointer.block.starts_with("local:") => Some(SourceCell {
+        PointerOffsetTerm::Constant(0) if pointer.block.is_local_block() => Some(SourceCell {
             object: declared,
             index: CellIndex::Whole,
             element_bytes: None,
@@ -4073,9 +4073,9 @@ pub(super) fn describe_memory_block(
         PointerBlock::Concrete(name) => Some(
             name.strip_prefix("global:")
                 .or_else(|| {
-                    name.rsplit(':')
-                        .next()
-                        .filter(|_| name.starts_with("static:") || name.starts_with("local:"))
+                    name.rsplit(':').next().filter(|_| {
+                        PointerBlock::is_static_name(name) || PointerBlock::is_local_name(name)
+                    })
                 })
                 .unwrap_or(name)
                 .to_string(),

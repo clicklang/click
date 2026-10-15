@@ -13,7 +13,7 @@
 use super::lifetime::{LifetimePlan, LifetimeState};
 use super::names::ResolvedNames;
 use super::scalar::{self, Scalar, ScalarKind};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
     CppBinaryOperator, CppCallArgument, CppCleanup, CppCondition, CppConstant,
@@ -118,17 +118,38 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
         })
         .collect::<BTreeMap<_, _>>();
     let layouts = super::interface::prepare_layouts(import)?;
+    let object_coercions = std::cell::RefCell::new(BTreeSet::new());
     let functions = import
         .export()
         .functions
         .iter()
-        .map(|source| lower_function(import, source, &names, &records, &constants, &layouts))
+        .map(|source| {
+            lower_function(
+                import,
+                source,
+                &names,
+                &records,
+                &constants,
+                &layouts,
+                &object_coercions,
+            )
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let reachable_functions = import
         .export()
         .reachable_functions
         .iter()
-        .map(|source| lower_function(import, source, &names, &records, &constants, &layouts))
+        .map(|source| {
+            lower_function(
+                import,
+                source,
+                &names,
+                &records,
+                &constants,
+                &layouts,
+                &object_coercions,
+            )
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let library_contracts = super::standard_library::contracts(import.export(), &names)?;
     let execution = std::sync::Arc::new(super::interface::prepare(
@@ -137,6 +158,7 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
         &reachable_functions,
         layouts,
         library_contracts,
+        &object_coercions.into_inner(),
     )?);
     Ok(LoweredCppFunction {
         execution,
@@ -154,6 +176,7 @@ fn lower_function(
     records: &super::schema::RecordIndex<'_>,
     constants: &BTreeMap<&str, &CppConstant>,
     layouts: &BTreeMap<String, crate::languages::c::syntax::C0StructLayout>,
+    object_coercions: &std::cell::RefCell<BTreeSet<(String, String)>>,
 ) -> Result<CFunction, String> {
     let mut declared_places = Vec::new();
     collect_declared_places(&source.body, &mut declared_places);
@@ -221,6 +244,8 @@ fn lower_function(
             import.export().exception_behavior,
             CppExceptionBehavior::ScalarInt32
         ),
+        pending_coercions: Vec::new(),
+        object_coercions,
     };
     let lifetimes = LifetimePlan::new(&source.body, |id| context.records.get(id).copied())?;
     let body = context.lower_sequence_with_lifetimes(
@@ -402,9 +427,76 @@ struct LoweringContext<'a> {
     next_call_capture: u64,
     unwind_exception_name: String,
     unwind_cleanups: bool,
+    /// The packs the call being lowered needs, with their unpacks and the
+    /// derived class's address: one for each reference argument that
+    /// converts a derived class reference to a polymorphic base.
+    pending_coercions: Vec<(String, String, CExpression)>,
+    /// Every such conversion of the program, by derived and base record.
+    object_coercions: &'a std::cell::RefCell<BTreeSet<(String, String)>>,
 }
 
 impl LoweringContext<'_> {
+    /// `call`, after the packs its arguments need and before their unpacks:
+    /// the callee holds the base class's object the derived class's memory
+    /// stands for, which the sidecar may declare.
+    fn coerced(&mut self, call: CStatement) -> CStatement {
+        let coercions = std::mem::take(&mut self.pending_coercions);
+        let mut statement = call;
+        for (pack, unpack, address) in coercions.iter().rev() {
+            crate::instrumentation::record_deterministic_work(1);
+            statement = c_seq(
+                c_call(pack.clone(), vec![address.clone()]),
+                c_seq(statement, c_call(unpack.clone(), vec![address.clone()])),
+            );
+        }
+        statement
+    }
+
+    /// Records the pack a reference argument needs when its place ends in
+    /// base projections to a polymorphic class.
+    fn note_object_coercion(&mut self, place: &super::CppPlaceReference) -> Result<(), String> {
+        let trailing = place
+            .projections
+            .iter()
+            .rev()
+            .take_while(|projection| {
+                matches!(projection, super::schema::CppProjection::Base { .. })
+            })
+            .count();
+        if trailing == 0 {
+            return Ok(());
+        }
+        let super::schema::CppProjection::Base { base } = place.projections.last().unwrap() else {
+            unreachable!("a trailing base projection");
+        };
+        if !self
+            .records
+            .get(&base.base_declaration_id)
+            .is_some_and(|record| record.polymorphic)
+        {
+            return Ok(());
+        }
+        let root = self.place(place)?;
+        let derived_path = &place.projections[..place.projections.len() - trailing];
+        let (derived_type, _) = self.records.resolve_path(&root.value_type, derived_path)?;
+        let CppType::Record { name: derived, .. } = derived_type else {
+            return Err("C++ base conversion starts from a non-record place".into());
+        };
+        let derived = derived.clone();
+        let mut derived_place = place.clone();
+        derived_place.projections.truncate(derived_path.len());
+        let address = c_cast(self.lower_place(&derived_place)?, CType::Int32Pointer);
+        self.pending_coercions.push((
+            crate::languages::cpp::names::object_pack_name(&derived, &base.base_name),
+            crate::languages::cpp::names::object_unpack_name(&derived, &base.base_name),
+            address,
+        ));
+        self.object_coercions
+            .borrow_mut()
+            .insert((derived, base.base_name.clone()));
+        Ok(())
+    }
+
     fn lower_statement(&mut self, statement: &CppStatement) -> Result<CStatement, String> {
         match statement {
             CppStatement::TrivialCopy { target, source, .. } => {
@@ -532,7 +624,11 @@ impl LoweringContext<'_> {
                         prefix,
                         c_seq(
                             c_allocate_aggregate_destination(local.name.clone(), layout),
-                            c_call_assign(local.name.clone(), self.callee_name(callee)?, actual),
+                            self.coerced(c_call_assign(
+                                local.name.clone(),
+                                self.callee_name(callee)?,
+                                actual,
+                            )),
                         ),
                     ))
                 }
@@ -604,7 +700,7 @@ impl LoweringContext<'_> {
                     lowered_arguments.extend(self.lower_call_arguments(arguments)?);
                     Ok(c_seq(
                         c_allocate_aggregate_destination(local.name.clone(), layout),
-                        c_call(self.callee_name(callee)?, lowered_arguments),
+                        self.coerced(c_call(self.callee_name(callee)?, lowered_arguments)),
                     ))
                 }
                 // A function-pointer local holds `&f` or another pointer.
@@ -666,7 +762,7 @@ impl LoweringContext<'_> {
                 );
                 let mut lowered = vec![destination];
                 lowered.extend(self.lower_call_arguments(arguments)?);
-                Ok(c_call(self.callee_name(callee)?, lowered))
+                Ok(self.coerced(c_call(self.callee_name(callee)?, lowered)))
             }
             CppStatement::MemberStore {
                 object,
@@ -738,7 +834,7 @@ impl LoweringContext<'_> {
                 let (prefix, arguments) = self.normalize_arguments(arguments)?;
                 Ok(evaluate_then(
                     prefix,
-                    c_call(self.callee_name(callee)?, arguments),
+                    self.coerced(c_call(self.callee_name(callee)?, arguments)),
                 ))
             }
             CppStatement::CallStore {
@@ -767,11 +863,11 @@ impl LoweringContext<'_> {
                         c_seq(
                             c_seq(
                                 c_declare(address.clone(), element_pointer_type(element)?),
-                                c_call_assign(
+                                self.coerced(c_call_assign(
                                     address.clone(),
                                     self.callee_name(callee)?,
                                     arguments,
-                                ),
+                                )),
                             ),
                             c_typed_store(c_variable(address), c_variable(stored), element_type),
                         ),
@@ -861,7 +957,11 @@ impl LoweringContext<'_> {
                     c_seq(
                         c_allocate_aggregate_destination(temporary.clone(), layout.clone()),
                         c_seq(
-                            c_call_assign(temporary.clone(), self.callee_name(callee)?, actual),
+                            self.coerced(c_call_assign(
+                                temporary.clone(),
+                                self.callee_name(callee)?,
+                                actual,
+                            )),
                             c_seq(
                                 c_copy_aggregate(
                                     self.lower_place(target)?,
@@ -886,7 +986,7 @@ impl LoweringContext<'_> {
                 Ok(evaluate_then(
                     prefix,
                     c_seq(
-                        c_call(self.callee_name(callee)?, actual),
+                        self.coerced(c_call(self.callee_name(callee)?, actual)),
                         c_return(c_variable(crate::kernel::C_CONTRACT_RESULT_NAME)),
                     ),
                 ))
@@ -898,11 +998,11 @@ impl LoweringContext<'_> {
                 Ok(evaluate_then(
                     prefix,
                     c_seq(
-                        c_call_assign(
+                        self.coerced(c_call_assign(
                             crate::kernel::C_CONTRACT_RESULT_NAME,
                             self.callee_name(callee)?,
                             arguments,
-                        ),
+                        )),
                         c_return(c_variable(crate::kernel::C_CONTRACT_RESULT_NAME)),
                     ),
                 ))
@@ -1118,7 +1218,11 @@ impl LoweringContext<'_> {
                                 false,
                                 scalar::returns_constant_element(value_type),
                             ),
-                            c_call_assign(capture.clone(), self.callee_name(callee)?, arguments),
+                            self.coerced(c_call_assign(
+                                capture.clone(),
+                                self.callee_name(callee)?,
+                                arguments,
+                            )),
                         ),
                     ),
                     value,
@@ -1427,6 +1531,7 @@ impl LoweringContext<'_> {
             }
             CppCallArgument::Value { value } => self.lower_expression(value),
             CppCallArgument::Reference { place } => {
+                self.note_object_coercion(place)?;
                 let address = self.lower_place(place)?;
                 let root = self.place(place)?;
                 if !matches!(root.value_type, CppType::Record { .. }) {

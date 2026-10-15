@@ -4616,17 +4616,17 @@ impl PureFactContext {
     ) -> Option<AlgebraicTerm> {
         match &value.node {
             AlgebraicTermNode::Constructor { .. } => value.is_well_formed().then(|| value.clone()),
-            AlgebraicTermNode::Variable(variable) => {
-                let (premise, constructor) = self
-                    .algebraic_variable_constructors
-                    .get(variable)?
-                    .iter()
-                    .inspect(|_| crate::instrumentation::record_deterministic_work(1))
-                    .find(|(_, constructor)| constructor.algebraic_type == value.algebraic_type)?;
-                record_reasoning_provenance(self, premise);
-                Some(constructor.clone())
+            _ => {
+                let constructor = self.equality_graph.known_algebraic_constructor(value)?;
+                record_reasoning_provenance(
+                    self,
+                    &Proposition::Equal(
+                        Term::Algebraic(value.clone()),
+                        Term::Algebraic(constructor.clone()),
+                    ),
+                );
+                Some(constructor)
             }
-            _ => None,
         }
     }
 

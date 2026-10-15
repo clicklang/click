@@ -493,7 +493,12 @@ impl TermArena {
     }
 
     fn equivalent_explicit(&self, reference: usize, explicit: &Bitvector32Term) -> bool {
-        let mut pending = vec![(reference, explicit)];
+        // Source propositions can retain a read where the checked arena
+        // names its registered load variable. They share one canonical atom.
+        let Some(explicit) = canonical_term_budgeted(explicit) else {
+            return false;
+        };
+        let mut pending = vec![(reference, &explicit)];
         while let Some((reference, explicit)) = pending.pop() {
             if crate::instrumentation::deadline_exceeded_with_work(1) {
                 return false;
@@ -3025,6 +3030,26 @@ mod tests {
         ] {
             assert!(interval_remainder_add(&op, &rem, add, divisor, 0).is_err());
         }
+    }
+
+    #[test]
+    fn checked_atom_matches_its_explicit_read_but_not_another_cell() {
+        let read = |offset| {
+            Bitvector32Term::MemoryLoad(
+                crate::kernel::CMemory::new().into(),
+                Box::new(crate::kernel::Pointer {
+                    block: "arithmetic-read-identity".into(),
+                    offset: crate::kernel::PointerOffsetTerm::Constant(offset),
+                }),
+                crate::kernel::LoadKind::Bits32,
+            )
+        };
+        let explicit = read(0);
+        let canonical = crate::kernel::canonical_term(&explicit);
+        let mut terms = TermArena::default();
+        let atom = terms.atom(canonical).unwrap();
+        assert!(terms.equivalent_explicit(atom, &explicit));
+        assert!(!terms.equivalent_explicit(atom, &read(4)));
     }
 
     fn x() -> Bitvector32Term {

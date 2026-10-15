@@ -198,7 +198,7 @@ quarantines, original programs or claims changed.
 
 ## Loop escape and retained-resource lookup recovery
 
-The [loop selector reduction](../bugs/loop-resource-selector-loses-descriptor-read-authority.md)
+The [loop selector reduction](https://github.com/lacker/click/blob/6b8c5a1bbf0ce3f79ffe9f5e2891ada0aa432b84/bugs/loop-resource-selector-loses-descriptor-read-authority.md)
 attributes the erroneous `MemberAddress` escape classification to archived
 commit `3e6d4cc0e7`. Preserved repair `6b8c5a1bb` keeps a pointer carrier stable
 when selecting its referent's member, while retaining genuine escaped-slot havoc.
@@ -700,7 +700,7 @@ postcondition is rejected. Temporary instrumentation is removed.
 The execution-gap bug is replaced by
 [`pointer_field_reloaded_backing_writes.md`](../mdtests/pointer_field_reloaded_backing_writes.md).
 The original string/vector postconditions remain under the
-[separate report](../bugs/c-pointer-field-postconditions-lose-frame-evidence.md).
+[separate report](https://github.com/clicklang/click/blob/439b841c4633c9282354e772ffdf95748fb5dc41/bugs/c-pointer-field-postconditions-lose-frame-evidence.md).
 The last full recovery example count remains 41/52; no new full-stage or nightly
 verdict is claimed. PR #1016 merged and its pushed head `863de60ed` is verified
 in upstream history.
@@ -732,7 +732,7 @@ The focused checks use the original functions in their full sidecars. Reduced
 projects copy the same C, resource definitions, contracts and proofs for fresh,
 expanded, rewritten and retained checks without admitting the unrelated failing
 functions. This is partial recovery, not closure of the
-[string/vector report](../bugs/c-pointer-field-postconditions-lose-frame-evidence.md):
+[string/vector report](https://github.com/clicklang/click/blob/439b841c4633c9282354e772ffdf95748fb5dc41/bugs/c-pointer-field-postconditions-lose-frame-evidence.md):
 string push still rejects its terminator equality, while the vector project now
 reaches an allocation-resource fold in `allocated_vector_push`. The last full
 archive audit remains 41/52; no new full-stage verdict is claimed.
@@ -769,7 +769,7 @@ previous checkpoint are recovery-archive results, not current-upstream results.
 At archive `d6caff076`, the same explicit backing-pointer proof still fails
 after the zero store, with distinct projected pointer-read snapshots in the
 trace. The archive's later vector allocation fold also remains open. The
-[bug report](../bugs/c-pointer-field-postconditions-lose-frame-evidence.md) records
+[bug report](https://github.com/clicklang/click/blob/439b841c4633c9282354e772ffdf95748fb5dc41/bugs/c-pointer-field-postconditions-lose-frame-evidence.md) records
 that distinction. Its activation work and the last full archive count of 41/52
 remain unchanged. No new full example-stage or nightly verdict is claimed.
 
@@ -1100,3 +1100,95 @@ are verified upstream. After the correction, all 52 normal example projects,
 46 normal fixed-state controls, and library Clippy with warnings denied pass.
 The full Markdown corpus was not repeated after that correction. These are
 upstream checks; the recovery archive still has ten known example failures.
+
+
+## Loop resource selector closure
+
+The selector report remained open after the complete reduced loop repair at
+`53da27b58` and the shared upstream extractions. Its original C and proof are
+retained in
+[`loop_resource_backing_range_fold_after_write.md`](../mdtests/loop_resource_backing_range_fold_after_write.md),
+with fresh, expanded, rewritten and retained checking covered by
+`descriptor_backing_range_loop_survives_all_proof_modes`. The introducing
+`MemberAddress` escape error belongs to archived `3e6d4cc0e7`; the carrier
+repair is preserved at `6b8c5a1bb`. Upstream does not contain that archived
+`MemberAddress` representation. No new object-model activation is needed to
+close this selector regression.
+
+The rejection controls preserve the authority boundary: selecting a backing
+resource without a descriptor view is refused, owning an uninitialized local
+descriptor does not initialize its pointer, and a loop that changes the pointer
+cannot retarget the entry backing owner. These are retained in
+[`loop_resource_selector_requires_descriptor_view.md`](../mdtests/loop_resource_selector_requires_descriptor_view.md),
+[`loop_resource_selector_rejects_uninitialized_field.md`](../mdtests/loop_resource_selector_rejects_uninitialized_field.md)
+and
+[`loop_resource_selector_rejects_overwritten_field.md`](../mdtests/loop_resource_selector_rejects_overwritten_field.md).
+
+Recovery checkpoint `7ccabaee9` rechecks the unchanged reduction in all four
+proof modes through the public verification, expansion and retained-session
+APIs. It passes all three new selector rejection controls, both selected
+loop-argument rejection controls, all seven loop-carrier controls, all three
+exit-local argument controls and all three selected actual-call/domain controls.
+The original arena C is unchanged. Its project gets past the selector and now
+stops at `arena_alloc.contract` tactic 239: `fold requires ownership of the complete instance body`. This later range
+refold is still recovery work; closing the selector report does not restore
+arena or change the last full example-audit count. No work or proof limit was
+raised.
+
+The broader archive
+`c_declared_member_domains_reject_scalar_sibling_traversal` control still fails
+by accepting `*(&pair->first + 1)`. This is the separately tracked
+[scalar-subobject defect](../bugs/pointer-arithmetic-crosses-scalar-subobject.md),
+not a passing domain check or a full green-gate verdict.
+
+On upstream-based `b1af9a1b2`, the three new rejection fixtures and four
+existing loop-exit resource argument fixtures pass. The original reduced loop
+passes `click audit --claim probe.contract` at all four smart sites, including
+cold and retained rewritten verification and the expansion fixed-point check.
+The original arena sidecar verifies all nine selected proofs. All 42
+documentation checks pass. The full and nightly gates were not repeated.
+
+
+## Pointer-field postcondition closure
+
+Recovery candidate `ebe4f69a1`, based on `80d5584ac`, restores the complete
+original owned-vector project (13 proofs). The original owned-string project
+also passes all 15 proofs. C, contracts, resources and work budgets are unchanged.
+This supersedes the earlier partial postcondition and callee-prefix reports;
+it does not activate the archived object model or update the full example count.
+
+The remaining grow-then-push prefix proof used only grow's old-prefix equality
+and tried to frame it across push's writable buffer. Instead, instantiate
+push's exact guarantee at `statement(8).exit`, carry the post-call read to the
+current state and the earlier read to `statement(8).entry` separately, then
+rewrite the resulting element equalities. The complete repaired caller passes
+`click audit --claim allocated_vector_push.contract`: all six smart sites pass
+expansion, cold rewritten verification, retained checking and fixed-point checks.
+No pointer identity is inferred from numeric address equality.
+
+Full-project verification then exposed a structural branch-join regression in
+`vector_replace_if`. Its arms already retain checked statement-effect counts,
+including the modular call's complete-pointer refinement. Structural joins
+discarded their walked memory-step records and tried to reconstruct the chain
+from snapshots. Preserve the same records already used by interface joins.
+Exact arm-delta, source, continuation, state and effect-coverage requirements
+remain in place. The original getter, setter, conditional caller and contracts
+are preserved in
+[`c_pointer_field_preserving_calls_join_branches.md`](../mdtests/c_pointer_field_preserving_calls_join_branches.md).
+The recovery reduction verifies all three proofs.
+
+The recovered original string push/clear claims also pass all eight selected
+audit sites. The branch reduction passes its one smart-site audit. The permanent
+`owned_vector_grow_then_push_prefix_rechecks_in_all_proof_modes` regression reads
+the original vector project, expands the complete caller, checks it cold, and
+rechecks it in a retained session. Wrong setter results and missing backing
+authority are rejection controls. A separate four-size branch control varies
+unrelated caller requirements; the existing effect-delta, uncertified-effect
+and memory-coverage rejection controls remain active.
+
+On the upstream extraction, all 723 active scaling tests and the named
+64/128/256/512-requirement branch scaling control pass. All 14 selected checked
+execution controls pass, including wrong arm deltas, uncertified effects,
+insufficient memory coverage, forged resource events and invalid source tails.
+The original-vector four-mode regression and both branch rejection mutations
+pass. Slow new controls run by name here and remain in nightly for the gate.

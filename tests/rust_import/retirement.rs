@@ -3,7 +3,7 @@ use super::*;
 #[test]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn rust_default_is_native_charon_and_legacy_extraction_is_rejected() {
-    let p = Project::new(SOURCE);
+    let p = Project::legacy(SOURCE);
     let config: serde_json::Value = serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
     assert_eq!(config["schema"], 3);
     assert!(config.get("backend").is_none());
@@ -103,7 +103,7 @@ fn rust_import_pure_theorem_claim_labels_expand_and_reverify() {
 #[test]
 #[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_native_aliases_use_the_same_backend_and_unknown_backends_fail_closed() {
-    let p = Project::new(SOURCE);
+    let p = Project::legacy(SOURCE);
     let original: serde_json::Value =
         serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
     for backend in ["charon", "charon-trial"] {
@@ -139,7 +139,7 @@ fn rust_native_aliases_use_the_same_backend_and_unknown_backends_fail_closed() {
 #[test]
 #[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_refresh_is_reproducible_for_configs_sharing_an_artifact() {
-    let p = Project::new(SOURCE);
+    let p = Project::legacy(SOURCE);
     let second = p.root.join("second.click.import.json");
     let mut config: serde_json::Value =
         serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();

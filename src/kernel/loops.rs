@@ -3904,9 +3904,7 @@ fn indexed_loop_exit_load_equality(
 }
 
 fn is_loop_exit_snapshot_marker(block: &PointerBlock) -> bool {
-    block.starts_with("havoc:")
-        || block.starts_with("call-havoc:")
-        || block.starts_with("call-write-set:")
+    block.is_havoc_block() || block.is_call_havoc_block() || block.starts_with("call-write-set:")
 }
 
 #[cfg(test)]
@@ -7231,7 +7229,7 @@ pub(super) fn prepare_loop_top_state(
     let mut runs_by_slot = Vec::new();
     for run in entry_state.memory().cells.runs() {
         crate::instrumentation::record_deterministic_work(1);
-        if run.base().block.starts_with("local:") || run.live_count() == 0 {
+        if run.base().block.is_local_block() || run.live_count() == 0 {
             continue;
         }
         if summaries.is_empty() && withheld.is_none() {
@@ -7305,7 +7303,7 @@ pub(super) fn prepare_loop_top_state(
     {
         let pointer = &pointer;
         let value = &value;
-        if pointer.block.starts_with("local:") {
+        if pointer.block.is_local_block() {
             continue;
         }
         let is_stable = summaries.iter().any(|summary| {
@@ -7323,7 +7321,7 @@ pub(super) fn prepare_loop_top_state(
         }
     }
     for ((pointer, c_type), value) in entry_state.memory().union_cells.iter() {
-        if pointer.block.starts_with("local:") {
+        if pointer.block.is_local_block() {
             continue;
         }
         let is_stable = summaries.iter().any(|summary| {
@@ -9150,7 +9148,7 @@ pub(super) fn loop_effect_segment_contains_range(
 }
 
 pub(super) fn is_loop_effect_relevant_pointer(pointer: &Pointer) -> bool {
-    !pointer.block.starts_with("local:") && !pointer.block.starts_with("havoc:")
+    !pointer.block.is_local_block() && !pointer.block.is_havoc_block()
 }
 
 /// A footprint range for a loop-effect refusal, without the kernel's
