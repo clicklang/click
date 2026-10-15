@@ -3551,11 +3551,6 @@ impl Parser {
                 self.error("external function contracts cannot carry proof or decreases clauses")
             );
         }
-        if external && signature.exceptional_type().is_some() {
-            return Err(
-                self.error("external exceptional contracts are not supported in this slice")
-            );
-        }
         if signature.exceptional_type().is_some()
             && (!constructs.is_empty()
                 || requires

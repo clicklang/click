@@ -920,12 +920,11 @@ impl CFunctionContractInterface {
         self.opaque_contract_supported && self.exceptional_signature.is_empty()
     }
 
-    /// Whether this interface is representable by a body-certified direct
-    /// call rule. The first exceptional slice deliberately remains narrower
-    /// than ordinary opaque contracts: only the checked scalar channel and
-    /// pure clauses cross the boundary. Resource and mutable-effect transfer,
-    /// named contracts, external assumptions, and indirect application stay
-    /// on the normal-only `opaque_contract_supported` path.
+    /// Whether this interface can be applied as a modular call: a direct
+    /// call, an external declaration, or a named contract a call through a
+    /// pointer is made under. A throwing interface is narrower than an
+    /// ordinary one: only the checked scalar channel and pure clauses cross
+    /// the boundary, with no resource or mutable-effect transfer.
     pub(crate) fn verified_direct_contract_supported(&self) -> bool {
         if self.exceptional_signature.is_empty() {
             return self.opaque_contract_supported();
@@ -969,19 +968,20 @@ impl CFunctionContractInterface {
         &self.predicate_unfoldings
     }
 
+    /// The type of a pointer to a function with this interface. Whether the
+    /// function may throw is not part of it: a C pointer type cannot say, and
+    /// a call through a pointer may throw exactly when the contract it is
+    /// called under, or its known target's own interface, says so.
     pub(crate) fn function_pointer_type(&self) -> CType {
-        CType::FunctionPointer(
-            CType::qualified_function_pointer_signature_with_exceptional_outcome(
-                self.return_type(),
-                self.return_pointee_is_constant(),
-                &self
-                    .parameters()
-                    .iter()
-                    .map(|parameter| (parameter.c_type(), parameter.pointee_is_constant()))
-                    .collect::<Vec<_>>(),
-                self.exceptional_signature(),
-            ),
-        )
+        CType::FunctionPointer(CType::qualified_function_pointer_signature(
+            self.return_type(),
+            self.return_pointee_is_constant(),
+            &self
+                .parameters()
+                .iter()
+                .map(|parameter| (parameter.c_type(), parameter.pointee_is_constant()))
+                .collect::<Vec<_>>(),
+        ))
     }
 
     /// Compare exactly the semantic interface, including normalized resource
@@ -1029,7 +1029,9 @@ impl CFunctionContractInterface {
             && self.return_aggregate_layout == other.return_aggregate_layout
             && self.aggregate_return_mode == other.aggregate_return_mode
             && self.construction_parameter == other.construction_parameter
-            && self.exceptional_signature == other.exceptional_signature
+            // A function that never throws implements a contract that may.
+            && (other.exceptional_signature.is_empty()
+                || self.exceptional_signature == other.exceptional_signature)
             && self.parameters.len() == other.parameters.len()
             && self
                 .parameters
@@ -2897,7 +2899,7 @@ impl CFunctionContract {
     }
 
     pub fn new(name: impl Into<String>, function: CFunction) -> Option<Self> {
-        if function.has_internal_exceptional_outcome() {
+        if !function.verified_direct_contract_supported() {
             return None;
         }
         let name = name.into();
@@ -2913,7 +2915,9 @@ impl CFunctionContract {
         callee_name: String,
         interface: CFunctionContractInterface,
     ) -> Option<Self> {
-        (interface.opaque_contract_supported()
+        // A throwing interface is supported when its exceptional channel is
+        // the checked scalar one with pure clauses.
+        (interface.verified_direct_contract_supported()
             && interface.aggregate_return_mode() == CAggregateReturnMode::Copy
             && interface.construction_parameter().is_none()
             && interface.resource_constructors().is_empty()

@@ -5490,16 +5490,19 @@ fn execute_verified_function_applications_with_suspension(
         )]);
     }
     let application = applications[0];
+    // A throwing interface is applied alone, whether it is a direct callee's
+    // own or a named contract a call through a pointer is made under.
     if applications
         .iter()
         .any(|application| !application.interface.exceptional_signature().is_empty())
         && (applications.len() != 1
             || selected_contract.is_some()
             || resource_application.is_some()
+            || !application.interface.verified_direct_contract_supported()
             || application
                 .evidence
                 .or(application.storage)
-                .is_none_or(|function| {
+                .is_some_and(|function| {
                     !function.verified_direct_contract_supported()
                         || function.contract_interface() != application.interface
                 }))
@@ -5795,9 +5798,7 @@ fn execute_verified_function_applications_with_suspension(
             Some(exceptional_direct_function_path(
                 caller_state,
                 interface,
-                evidence
-                    .or(storage)
-                    .expect("exceptional applications require a direct function declaration"),
+                evidence.or(storage),
                 &argument_values,
                 &entry_state,
                 &entry_contract_state,
@@ -7304,9 +7305,11 @@ fn execute_verified_function_applications_with_suspension(
     Ok(paths)
 }
 
-/// Builds the exceptional successor of a direct modular call. Its function
-/// declaration supplies storage identity, not necessarily body evidence:
-/// targeted proofs may assume an unselected callee's checked interface.
+/// Builds the exceptional successor of a modular call: a direct call, whose
+/// function declaration supplies storage identity (not necessarily body
+/// evidence: targeted proofs may assume an unselected callee's checked
+/// interface), or a call through a pointer under a named contract, which has
+/// no declaration.
 /// Entry checking and the unchanged post-memory are shared with the
 /// normal application, but the payload and certified facts are specific to
 /// this outcome. Keeping this path separate is what prevents ordinary
@@ -7314,7 +7317,7 @@ fn execute_verified_function_applications_with_suspension(
 fn exceptional_direct_function_path(
     caller_state: &CState,
     interface: &CFunctionContractInterface,
-    evidence: &CFunction,
+    evidence: Option<&CFunction>,
     argument_values: &[CValue],
     entry_state: &CState,
     entry_contract_state: &CState,
@@ -7365,7 +7368,9 @@ fn exceptional_direct_function_path(
         value: payload,
         state: Box::new(throw_state),
     };
-    append_string_literal_loadable_facts(evidence, &outcome, &mut facts);
+    if let Some(evidence) = evidence {
+        append_string_literal_loadable_facts(evidence, &outcome, &mut facts);
+    }
     Ok(CFunctionPath::new(outcome, facts, obligations))
 }
 
@@ -9541,6 +9546,12 @@ pub(super) fn prepare_contract_refinement_obligations(
 ) -> Option<CFunctionContractRefinementObligations> {
     let target = context.contract.interface();
     let source = &context.function_interface;
+    // The theorem's obligation states the normal outcome only; a source that
+    // may throw owes its exceptional guarantees too, which it does not
+    // carry yet, so that refinement is left to the automatic route.
+    if !source.exceptional_signature().is_empty() {
+        return None;
+    }
     let mut budget = ExecutionBudget::continuing_from(context.next_kernel_variable);
     let entry = function_contract_refinement_entry_state(context);
     let source_entry = function_contract_refinement_implementation_state(context);
@@ -10214,6 +10225,12 @@ fn function_refines_named_contract_in_case(
     if !resource_and_effects_compatible {
         return Ok(false);
     }
+    // A throw leaves memory as it was, since a throwing interface has no
+    // effects, and binds the payload in both frames; the implementation's
+    // exceptional guarantees must give the contract's. One that never throws
+    // owes nothing here.
+    let exceptional_preconditions =
+        (!function_interface.exceptional_signature().is_empty()).then(|| preconditions.clone());
     let mut postconditions = preconditions;
     if !assume_contract_propositions(
         &function_post,
@@ -10224,11 +10241,44 @@ fn function_refines_named_contract_in_case(
     )? {
         return Ok(false);
     }
-    prove_contract_propositions(
+    if !prove_contract_propositions(
         &contract_post,
         &contract_entry,
         contract_interface.contract_ensures(),
         &mut postconditions,
+        budget,
+    )? {
+        return Ok(false);
+    }
+    let Some(mut exceptional) = exceptional_preconditions else {
+        return Ok(true);
+    };
+    let payload = symbolic_call_result(CType::Int32, budget.allocate_kernel_variable()?);
+    let throw_frame = |entry: &CState| {
+        let mut state = entry.clone();
+        state.locals.set_typed(
+            C_EXCEPTIONAL_RESULT_NAME.to_string(),
+            payload.clone(),
+            CType::Int32,
+        );
+        state
+    };
+    let function_throw = throw_frame(&function_entry);
+    let contract_throw = throw_frame(&contract_entry);
+    if !assume_contract_propositions(
+        &function_throw,
+        &function_entry,
+        function_interface.exceptional_ensures(),
+        &mut exceptional,
+        budget,
+    )? {
+        return Ok(false);
+    }
+    prove_contract_propositions(
+        &contract_throw,
+        &contract_entry,
+        contract_interface.exceptional_ensures(),
+        &mut exceptional,
         budget,
     )
 }

@@ -553,12 +553,8 @@ fn exceptional_contract_bindings_are_family_specific() {
             exceptional ensures exception == 7;
         }
     "#;
-    let error = verify_c0_sources(external, &[])
-        .expect_err("external exceptional contracts remain outside this slice");
-    assert!(
-        error.message().contains("external exceptional contracts"),
-        "unexpected error: {error:?}"
-    );
+    verify_c0_sources(external, &[])
+        .unwrap_or_else(|error| panic!("an external contract may throw: {error:?}"));
 }
 
 #[test]
