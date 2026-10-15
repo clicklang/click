@@ -373,7 +373,7 @@ actually performed while checking that operation. Each observation identifies
 the queried address and byte width, starting and stopping snapshots, number of
 crossed edges, stopping reason, and the extended/explicit DAG modes used by the
 query. The address and snapshot identities share the checked source, target,
-and effect facts' exact formatter and construction legend.
+and execution facts' exact formatter and construction legend.
 
 These observations are captured as each walk returns, not reconstructed by
 walking memory again while rendering the error. They describe checker queries,
