@@ -1,27 +1,12 @@
 use super::*;
 
 fn project(name: &str) -> Project {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/split-slices");
-    let p = Project::new("");
-    for (destination, original) in [
-        (format!("{name}.rs"), format!("{name}.rs")),
-        (format!("{name}.ullbc"), format!("{name}.ullbc")),
-        ("borrow.click".into(), format!("{name}.click")),
-        (
-            "borrow.click.import.json".into(),
-            format!("{name}.click.import.json"),
-        ),
-        (
-            "borrow.click.import.json.lock".into(),
-            format!("{name}.click.import.json.lock"),
-        ),
-    ] {
-        fs::write(
-            p.root.join(destination),
-            fs::read(root.join(original)).unwrap(),
-        )
-        .unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/split-slices");
+    fs::copy(
+        p.root.join(format!("{name}.click")),
+        p.root.join("borrow.click"),
+    )
+    .unwrap();
     p
 }
 
@@ -29,7 +14,7 @@ fn project(name: &str) -> Project {
 #[ignore = "nightly: 2.1s in the parallel gate"]
 fn charon_split_at_empty_endpoints_and_full_width_lengths() {
     let p = project("split");
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     for claim in [
         include_str!("../../design/charon-trial/split-slices/empty.click"),
         include_str!("../../design/charon-trial/split-slices/endpoints.click"),
@@ -121,14 +106,8 @@ fn charon_split_at_expand_right_first() {
 fn charon_split_at_live_refresh_and_rejected_mutable_or_nonbyte_pairs() {
     for name in ["split", "copies"] {
         let p = project(name);
-        let mut config: serde_json::Value =
-            serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
-        config["exporter"] = serde_json::json!(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
-        );
-        fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-        refresh_import(&p.config()).unwrap();
-        let prepared = load_import(&p.config()).unwrap();
+        p.refresh().unwrap();
+        let prepared = p.prepared().unwrap();
         C0VerificationSession::new_program_prepared(
             &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
             &prepared,
@@ -140,17 +119,14 @@ fn charon_split_at_live_refresh_and_rejected_mutable_or_nonbyte_pairs() {
             "pub fn bad(bytes: &[u8], mid:usize)->(&[u8], &[u8]) { bytes.split_at(mid) }",
         ] {
             fs::write(p.root.join(format!("{name}.rs")), source).unwrap();
-            let artifact = fs::read(p.root.join(format!("{name}.ullbc"))).unwrap();
-            let lock = fs::read(p.root.join("borrow.click.import.json.lock")).unwrap();
-            assert!(refresh_import(&p.config()).is_err());
+            let artifact = fs::read(p.artifact(&format!("{name}.rs"))).unwrap();
+            let lock = fs::read(p.lock_file()).unwrap();
+            assert!(p.refresh().is_err());
             assert_eq!(
-                fs::read(p.root.join(format!("{name}.ullbc"))).unwrap(),
+                fs::read(p.artifact(&format!("{name}.rs"))).unwrap(),
                 artifact
             );
-            assert_eq!(
-                fs::read(p.root.join("borrow.click.import.json.lock")).unwrap(),
-                lock
-            );
+            assert_eq!(fs::read(p.lock_file()).unwrap(), lock);
         }
     }
 }

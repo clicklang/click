@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "units": {
+    "arrays": {
+      "language": "rust",
+      "lock": {
+        "artifact": "c757b79c148a6e54cf86d0ce34b415c62813b2b1bff0ecdd9130370adf64651e",
+        "charon_driver": "645ab4b0456083642cafa05da8b1d58aca0c6d3349c2b7921b0820cbb465fb72",
+        "config": "55895eb54b65c82ad8db4b4911f57e2cff4ba1ce23899438fcb5731f0a48edba",
+        "exporter": "c6cc5acf5bb7e4d4bb6bef5265639d1b05b0138e3072767825cc2aa62a5040e4",
+        "identity": "953e60635a89c4e2e90ca930f365280baec84a6f3ad6c307c1cf77afb4188023",
+        "schema": 8,
+        "source": "44b9efe6b8cc8853fa840fc425fa21cd0be2dbf2f3e6434083db15d68cd10353",
+        "source_files": {
+          "arrays.rs": "44b9efe6b8cc8853fa840fc425fa21cd0be2dbf2f3e6434083db15d68cd10353"
+        }
+      }
+    },
+    "bounds": {
+      "language": "rust",
+      "lock": {
+        "artifact": "39e8d37025804cce2ce10dbc7332ad4279d83edf15288629bcc90deb8ea09536",
+        "charon_driver": "645ab4b0456083642cafa05da8b1d58aca0c6d3349c2b7921b0820cbb465fb72",
+        "config": "324de43e8bfcb8d7de7f35f79a15c5f2c00bbed990eec2948ef60abf1d097ea1",
+        "exporter": "c6cc5acf5bb7e4d4bb6bef5265639d1b05b0138e3072767825cc2aa62a5040e4",
+        "identity": "4836e53a54c259d9c8b424176bed8c8e344bdcdf4133ba62f1552cfba1860934",
+        "schema": 8,
+        "source": "5944abdc66d49c31eda9324c446cb8fdbe29e382a960e3b17954801719925d73",
+        "source_files": {
+          "bounds.rs": "5944abdc66d49c31eda9324c446cb8fdbe29e382a960e3b17954801719925d73"
+        }
+      }
+    },
+    "external": {
+      "language": "rust",
+      "lock": {
+        "artifact": "f0070cdd7973ecd5906ec6aa6e2e359854617322468787ae3385312e6e5bd94b",
+        "charon_driver": "645ab4b0456083642cafa05da8b1d58aca0c6d3349c2b7921b0820cbb465fb72",
+        "config": "dc089fa420e2c035256ba5b2b7ba054660cd85fa04b9eaa47cb5f068557d5971",
+        "exporter": "c6cc5acf5bb7e4d4bb6bef5265639d1b05b0138e3072767825cc2aa62a5040e4",
+        "identity": "94943c35cd9793acfce21db8f6d475e70a3b0dab32e7e03be13285f3141222fc",
+        "schema": 8,
+        "source": "47d6052dafa06711124f8fb72cc7e01e240125e381ce288b93794b833ae73980",
+        "source_files": {
+          "external.rs": "47d6052dafa06711124f8fb72cc7e01e240125e381ce288b93794b833ae73980"
+        }
+      }
+    }
+  }
+}

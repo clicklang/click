@@ -1,0 +1,10 @@
+{
+  "units": {
+    "trial": {
+      "language": "rust",
+      "sources": {
+        "trial.rs": {}
+      }
+    }
+  }
+}

@@ -3,35 +3,8 @@ use super::*;
 const SIDECAR: &str = include_str!("../../design/charon-trial/parameterized-contracts/adds.click");
 
 fn parameterized_contract_project() -> Project {
-    let p = Project::new("");
-    for (name, bytes) in [
-        (
-            "adds.rs",
-            include_bytes!("../../design/charon-trial/parameterized-contracts/adds.rs").as_slice(),
-        ),
-        ("borrow.click", SIDECAR.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!(
-                "../../design/charon-trial/parameterized-contracts/adds.click.import.json"
-            )
-            .as_slice(),
-        ),
-        (
-            "adds.ullbc",
-            include_bytes!("../../design/charon-trial/parameterized-contracts/adds.ullbc")
-                .as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!(
-                "../../design/charon-trial/parameterized-contracts/adds.click.import.json.lock"
-            )
-            .as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/parameterized-contracts");
+    fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
     p
 }
 
@@ -42,7 +15,7 @@ fn parameterized_contract_project() -> Project {
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn charon_parameterized_contract_fixes_its_value_where_attached() {
     let p = parameterized_contract_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     let weak = SIDECAR.replacen("ensures result == x + 3;", "ensures result >= x;", 1);

@@ -1,0 +1,10 @@
+{
+  "units": {
+    "chunks": {
+      "language": "rust",
+      "sources": {
+        "chunks.rs": {}
+      }
+    }
+  }
+}

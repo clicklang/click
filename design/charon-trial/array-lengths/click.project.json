@@ -1,0 +1,16 @@
+{
+  "units": {
+    "arrays": {
+      "language": "rust",
+      "sources": {
+        "arrays.rs": {}
+      }
+    },
+    "bounds": {
+      "language": "rust",
+      "sources": {
+        "bounds.rs": {}
+      }
+    }
+  }
+}

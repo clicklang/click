@@ -1,0 +1,10 @@
+{
+  "units": {
+    "fields": {
+      "language": "rust",
+      "sources": {
+        "fields.rs": {}
+      }
+    }
+  }
+}

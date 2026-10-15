@@ -1,0 +1,10 @@
+{
+  "units": {
+    "owned": {
+      "language": "rust",
+      "sources": {
+        "owned.rs": {}
+      }
+    }
+  }
+}

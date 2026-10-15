@@ -1,0 +1,10 @@
+{
+  "units": {
+    "nested": {
+      "language": "rust",
+      "sources": {
+        "nested.rs": {}
+      }
+    }
+  }
+}

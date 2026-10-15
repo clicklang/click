@@ -13,14 +13,8 @@ pub(super) fn project(name: &str, source: &str) -> Project {
         source,
         "the frozen fixture must match the unchanged test input"
     );
-    let p = Project::isolated(source);
-    for name in [
-        "borrow.click.import.json",
-        "borrow.click.import.json.lock",
-        "borrow.ullbc",
-    ] {
-        fs::copy(fixture.join(name), p.root.join(name)).unwrap();
-    }
+    let p = Project::from_fixture(&format!("design/charon-trial/gate-fixtures/{name}"));
+    fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
     p
 }
 
@@ -60,20 +54,16 @@ fn frozen_gate_fixtures_match_live_charon_extraction() {
         let name = fixture.file_name().unwrap().to_str().unwrap();
         let source = fs::read_to_string(fixture.join("borrow.rs")).unwrap();
         let p = project(name, &source);
-        load_import(&p.config()).unwrap();
-        let artifact = fs::read(p.root.join("borrow.ullbc")).unwrap();
-        let mut config: serde_json::Value =
-            serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
-        config["exporter"] = std::env::var("CLICK_CHARON").unwrap().into();
-        fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-        refresh_import(&p.config()).unwrap();
-        load_import(&p.config()).unwrap();
+        p.prepared().unwrap();
+        let artifact = fs::read(p.artifact("borrow.rs")).unwrap();
+        p.refresh().unwrap();
+        p.prepared().unwrap();
         let frozen_suffix = PathBuf::from("design/charon-trial/gate-fixtures")
             .join(name)
             .join("borrow.rs");
         let expected = relocated_artifact(&artifact, &frozen_suffix);
         let actual = relocated_artifact(
-            &fs::read(p.root.join("borrow.ullbc")).unwrap(),
+            &fs::read(p.artifact("borrow.rs")).unwrap(),
             &p.root.join("borrow.rs"),
         );
         assert!(

@@ -1,0 +1,10 @@
+{
+  "units": {
+    "split": {
+      "language": "rust",
+      "sources": {
+        "split.rs": {}
+      }
+    }
+  }
+}

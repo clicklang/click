@@ -45,12 +45,12 @@ fn charon_adler2_crate_trial_rejects_unlocked_module_closure() {
         .unwrap(),
     )
     .unwrap();
-    let error = refresh_import(&p.config()).unwrap_err();
+    let error = p.refresh().unwrap_err();
     assert!(
         error.contains("requires exactly one locked source file"),
         "{error}"
     );
-    assert!(!p.root.join("adler2.ullbc").exists());
+    assert!(!p.artifact("adler2.rs").exists());
     assert!(
         !p.config()
             .with_file_name("borrow.click.import.json.lock")

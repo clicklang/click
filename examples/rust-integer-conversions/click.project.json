@@ -1,0 +1,10 @@
+{
+  "units": {
+    "accumulator": {
+      "language": "rust",
+      "sources": {
+        "accumulator.rs": {}
+      }
+    }
+  }
+}
