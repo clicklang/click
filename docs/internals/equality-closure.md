@@ -19,7 +19,10 @@ not new P1 acceptance criteria.
 ## Pointer comparison evidence
 
 Symbolic pointer equality and disequality retain both complete addresses,
-including a syntactically common block. Constant comparisons still fold.
+including a syntactically common block and symbolic reflexive comparisons.
+Constant comparisons still fold. Keeping symbolic comparisons preserves the
+fact lookup used by explicit `assumption()` after resolving a stored pointer;
+reflexivity remains available to normalization and equality closure.
 When registering a same-block comparison, the graph identifies its condition
 node with the comparison of the two offsets. This is a definitional view of
 one predicate, not an additional premise. Later pointer aliases can therefore

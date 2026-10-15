@@ -2756,14 +2756,15 @@ impl ConditionTerm {
     }
 
     pub fn pointer_equal(left: Pointer, right: Pointer) -> Self {
-        if left == right {
-            Self::Constant(true)
-        } else if left.blocks_proven_distinct(&right) {
+        if left.blocks_proven_distinct(&right) {
             Self::Constant(false)
         } else {
             // Keep the common base as evidence: a later equal pointer may use
             // another base spelling. The graph derives the offset comparison
             // without discarding the original address comparison.
+            // Preserve symbolic reflexive comparisons as well: exact fact
+            // checking must still see the comparison after a stored pointer
+            // resolves to the same symbolic value on both sides.
             if left.block == right.block
                 && let Self::Constant(value) =
                     Self::pointer_offset_equal(left.offset.clone(), right.offset.clone())
