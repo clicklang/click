@@ -605,3 +605,22 @@ rust-chunks-exact. Concurrent local compilation affected this run's elapsed
 time. The archive's trace bug file is closed; its historical reproduction at
 the immutable link above remains available. This is not a full green gate or
 native-feature activation.
+
+Refcount delivery [PR #1136](https://github.com/clicklang/click/pull/1136)
+merged; both pushed commits are verified on upstream. The next shared repair
+recognizes cached function-pointer values in definitional memory comparison:
+the canonical representation names an exact registered load at zero offset,
+which the existing comparison did not recognize. The read must still have the
+cell's load kind, read that cell and be unchanged across snapshots. The kernel
+regression reproduces upstream before the fix; controls reject a different
+cell, narrower load, arbitrary symbol, displacement and changed cell value.
+
+On the recovery archive, that repair gets past the original red-black tree
+callback `open`. Explicit references to the callee's existing result and
+inorder facts complete the entry-module proofs without changing C or contracts.
+The normal archive audit is **48/52** in 111.13 seconds; remaining failures are
+arena, owned-vector, rust-byte-sum and rust-chunks-exact. This is the normal
+entry-module audit under conditional imported interfaces, not proof of every
+imported helper. Selected proof-unit checking additionally reaches the known
+integer-to-pointer origin refusal in an imported rotation helper. No full green
+gate or native-feature activation is claimed.
