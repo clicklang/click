@@ -1159,20 +1159,19 @@ fn nonexact_composite_entailment_ignores_unrelated_instances_of_the_shape() {
         CResourceFact::own_composite("boxed".into(), vec![CValue::pointer(pointer)])
     };
     let alias = Pointer::symbolic(Variable(782_999));
-    let work = [16u64, 64, 256]
-        .map(|size| {
-            let context = ResourceContext::new()
-                .unchecked_with_facts((0..size).map(|index| boxed(object(index))));
-            let assumptions = PureFactContext::new().assume_condition(
-                ConditionTerm::pointer_equal(alias.clone(), object(size - 1)),
-                true,
-            );
-            let (held, used) = crate::instrumentation::measure_deterministic_work(|| {
-                context.satisfies_fact(&boxed(alias.clone()), &assumptions)
-            });
-            assert!(held, "size={size}");
-            used
+    let work = [16u64, 64, 256].map(|size| {
+        let context = ResourceContext::new()
+            .unchecked_with_facts((0..size).map(|index| boxed(object(index))));
+        let assumptions = PureFactContext::new().assume_condition(
+            ConditionTerm::pointer_equal(alias.clone(), object(size - 1)),
+            true,
+        );
+        let (held, used) = crate::instrumentation::measure_deterministic_work(|| {
+            context.satisfies_fact(&boxed(alias.clone()), &assumptions)
         });
+        assert!(held, "size={size}");
+        used
+    });
     assert!(
         work.windows(2).all(|pair| pair[1] <= pair[0] + 2),
         "composite entailment grows with unrelated instances of its shape: {work:?}"

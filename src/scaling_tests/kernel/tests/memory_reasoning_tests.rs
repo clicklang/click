@@ -550,8 +550,8 @@ fn store_separation_without_an_owner_reads_only_listed_compositions() {
         let mut last = 0;
         for index in 0..size {
             resources = resources.unchecked_with_fact(own_memory_fact(object(index), 0, 1));
-            let alone = ResourceContext::new()
-                .unchecked_with_fact(own_memory_fact(object(index), 0, 1));
+            let alone =
+                ResourceContext::new().unchecked_with_fact(own_memory_fact(object(index), 0, 1));
             let (next, used) = crate::instrumentation::measure_deterministic_work(|| {
                 context
                     .clone()
