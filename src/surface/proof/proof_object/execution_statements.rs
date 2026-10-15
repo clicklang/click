@@ -1664,6 +1664,113 @@ impl<'a> Proof<'a> {
         Ok(self.step_proved_successor(stepped, step, proof))
     }
 
+    /// Closes an `open(resource)` scope by `close`, its closing fold, with a
+    /// proof of the one body fact the fold leaves open: `written`, from the
+    /// source's `open(r) { ... } by { ... }`, or else the implicit `auto`,
+    /// returned so that expansion prints it as that `by`. This Proof is
+    /// where the scope closes; `close` closes it from this Proof or from one
+    /// that has proved the fact. A close that leaves several facts open, or
+    /// one that cannot be spelled or that `auto` does not prove, is refused
+    /// with the fold's own diagnostic.
+    pub(in crate::surface::proof) fn close_scope_with_body_fact_proof<T>(
+        &self,
+        resource: &ResourceClause,
+        written: Option<&[ProofTactic]>,
+        close: &dyn Fn(&Self) -> Result<T, ClickError>,
+    ) -> Result<(T, Option<Box<ProofCertificate>>), ClickError> {
+        if written.is_none() && implicit_auto_disabled() {
+            return Ok((close(self)?, None));
+        }
+        let scope = format!(
+            "closing `open({})`",
+            crate::surface::printing::format_resource_call(resource)
+        );
+        let (probe, recorded) = probe_open_obligations(|| close(self));
+        if recorded.recorded.is_empty() {
+            let closed = probe?;
+            if written.is_some() {
+                return Err(self.step_error(format!(
+                    "the `by` after `open` is superfluous: {scope} leaves no body fact open; write the `open` without it"
+                )));
+            }
+            return Ok((closed, None));
+        }
+        let refusals = recorded.refusals;
+        let recorded = recorded.recorded;
+        let open = distinct_requirements(recorded.clone());
+        let step = ProofStep::FoldResource(resource.clone());
+        // The fold's own diagnostic for an open fact.
+        let refused = |requirement: &UnresolvedRequirement| {
+            let position = recorded
+                .iter()
+                .position(|recorded| {
+                    crate::kernel::proof::propositions_are_alpha_equal(
+                        &recorded.proposition,
+                        &requirement.proposition,
+                    )
+                })
+                .unwrap_or(0);
+            refusals[position].clone()
+        };
+        // Without a written proof, the implicit `auto` proves each open fact
+        // or the close is refused at the first it misses.
+        let proved_by_auto = match written {
+            Some(_) => None,
+            None => {
+                let open = open.iter().collect::<Vec<_>>();
+                match self.prove_obligations_by_auto_or_name_the_first_missed(&step, &open)? {
+                    Ok(proved) => Some(proved),
+                    Err(missed) => return Err(refused(open[missed])),
+                }
+            }
+        };
+        let [requirement] = open.as_slice() else {
+            let facts = open
+                .iter()
+                .map(|requirement| {
+                    Ok(match self.requirement_surface(requirement, &step)? {
+                        Some(spelling) => format!(
+                            "`{}`",
+                            crate::surface::printing::source_click_proposition(&spelling.surface)
+                        ),
+                        None => format!("{:?}", requirement.proposition),
+                    })
+                })
+                .collect::<Result<Vec<_>, ClickError>>()?
+                .join(", ");
+            return Err(self.step_error(format!(
+                "{scope} leaves {} body facts open ({facts}), but its `by` proves one; prove the others with `have` in the block",
+                open.len()
+            )));
+        };
+        let (proved, body) = match written {
+            Some(body) => {
+                let Some(spelling) = self.requirement_surface(requirement, &step)? else {
+                    return Err(refused(requirement));
+                };
+                let checkpoint = self.checkpoint();
+                let proved = self
+                    .begin_have(spelling.surface.clone())?
+                    .try_authoritative_linear_script(body)?
+                    .ok_or_else(|| {
+                        self.step_error(format!(
+                            "the `by` after `open` does not prove `{}`, the body fact {scope} leaves open",
+                            crate::surface::printing::source_click_proposition(&spelling.surface)
+                        ))
+                    })?
+                    .join()?;
+                let body = retained_have_body(&proved.certificate_since(&checkpoint)?)?;
+                (proved, body)
+            }
+            None => {
+                let (proved, mut entries) =
+                    proved_by_auto.expect("the implicit `auto` proved every open fact");
+                (proved, entries.pop().expect("one entry").proof)
+            }
+        };
+        Ok((close(&proved)?, Some(Box::new(body))))
+    }
+
     /// A simple tactic's fast path: a statement step under the `Fast`
     /// policy, or a `fold`, whose body checks are exact. Either refuses an
     /// obligation it cannot close exactly, or records it while probed.

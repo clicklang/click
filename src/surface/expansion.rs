@@ -4987,7 +4987,9 @@ fn tactic_contains_smart_tactic(tactic: &ProofTactic) -> bool {
         },
         ProofTactic::StructuralInduct { arms, .. } => arms.iter().any(|arm| any(&arm.tactics)),
         ProofTactic::Have(have) => proof(&have.proof),
-        ProofTactic::Open(open) => any(&open.tactics),
+        ProofTactic::Open(open) => {
+            any(&open.tactics) || open.close_proof.as_deref().is_some_and(any)
+        }
         ProofTactic::If(proof_if) => any(&proof_if.then_tactics) || any(&proof_if.else_tactics),
         ProofTactic::Match(proof_match) => proof_match.arms.iter().any(|arm| any(&arm.tactics)),
         ProofTactic::Cases(cases) => cases.arms().iter().any(|arm| any(arm.tactics())),

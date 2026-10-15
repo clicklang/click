@@ -1414,10 +1414,14 @@ impl<'a> Proof<'a> {
     /// audited representation transition, not a separately serialized
     /// `unfold`; the child Proof starts fresh provenance and the eventual join
     /// records the child certificate inside one `Open` step.
+    ///
+    /// `written_close_proof` is the proof `open(r) { ... } by { ... }` writes
+    /// for the one body fact the scope's closing fold leaves open.
     pub(in crate::surface::proof) fn begin_open(
         &self,
         resource: ResourceClause,
         source_index: usize,
+        written_close_proof: Option<Vec<ProofTactic>>,
     ) -> Result<ProofScope<'a>, ClickError> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("`open` requires an execution-frontier proof"));
@@ -1490,6 +1494,7 @@ impl<'a> Proof<'a> {
                 resource,
                 source_index,
                 preserve_exposed_body: checked.body_was_already_exposed,
+                written_close_proof,
             }),
             body,
             introduced_facts,

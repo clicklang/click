@@ -269,14 +269,6 @@ const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] 
         ),
         32,
     ),
-    // `issues/simplify-step.md` step 5 drives these to zero.
-    (
-        (
-            HiddenPrerequisiteRoute::TacticSearch,
-            "fold projected body fact",
-        ),
-        4,
-    ),
 ];
 
 #[test]
