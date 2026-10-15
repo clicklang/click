@@ -2747,7 +2747,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                             source: source.clone(),
                                             target: target.clone(),
                                             premises: premises.clone(),
-                                        })?
+                                        })
                                     } else {
                                         prepared.search_fixed_state_fact_transport(
                                             source,
@@ -2755,8 +2755,14 @@ pub(super) fn finish_ordered_proof<'a>(
                                             candidates
                                                 .clone()
                                                 .expect("smart transport gathered candidates"),
-                                        )?
-                                    };
+                                        )
+                                    }
+                                    .inspect_err(|_| {
+                                        prepared.record_certification_failure_trace(
+                                            &proof_label,
+                                            path_index,
+                                        );
+                                    })?;
                                     let checked_facts = transported.checked_facts().to_vec();
                                     let certificate = transported.certificate_since(&before)?;
                                     outcome_proof = Some(transported);

@@ -253,6 +253,12 @@ impl<'a> ProofScope<'a> {
         Ok(next)
     }
 
+    /// Retain only the checked body when a written operation is rejected.
+    pub(in crate::surface::proof) fn record_certification_failure_trace(&self) {
+        self.body
+            .record_certification_failure_trace(self.body.claim_label(), 0);
+    }
+
     /// Applies one checked step inside the nested body. Failed
     /// candidates leave the enclosing scope value unchanged.
     pub(in crate::surface::proof) fn apply_step(

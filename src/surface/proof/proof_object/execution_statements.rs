@@ -2576,6 +2576,18 @@ impl<'a> Proof<'a> {
         surface_target: &ClickProposition,
         tactic_index: usize,
     ) -> Result<Self, ClickError> {
+        self.apply_planned_fact_transport_inner(surface_source, surface_target, tactic_index)
+            .inspect_err(|_| {
+                self.record_certification_failure_trace(self.claim_label(), 0);
+            })
+    }
+
+    fn apply_planned_fact_transport_inner(
+        &self,
+        surface_source: &ClickProposition,
+        surface_target: &ClickProposition,
+        tactic_index: usize,
+    ) -> Result<Self, ClickError> {
         let resolved_source = self.substitute_fixed_state_locals_in_proposition(surface_source)?;
         let resolved_target = self.substitute_fixed_state_locals_in_proposition(surface_target)?;
         let ProofContext::Execution(context) = self.context.as_ref() else {
