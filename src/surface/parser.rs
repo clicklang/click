@@ -772,6 +772,14 @@ struct Parser {
     fact_names: BTreeMap<String, ClickProposition>,
     /// The bindings each name shadowed, undone when its block ends.
     fact_name_restores: Vec<(String, Option<ClickProposition>)>,
+    /// Names whose `have` proof is being parsed, and names whose block has
+    /// ended inside the current proof, so citing one is refused by name
+    /// rather than read as an unbound variable.
+    fact_names_being_proved: BTreeSet<String>,
+    ended_fact_names: BTreeSet<String>,
+    /// Quantifier variables open at the cursor, innermost last. Each hides
+    /// a fact of the same name inside its body.
+    quantifier_binders: Vec<String>,
     integer_literal_context: bool,
     /// Instance binders declared by each C function block already parsed,
     /// keyed by function name. A call step reads exactly the entry for its
@@ -1173,6 +1181,9 @@ impl Parser {
             proof_let_restores: Vec::new(),
             fact_names: BTreeMap::new(),
             fact_name_restores: Vec::new(),
+            fact_names_being_proved: BTreeSet::new(),
+            ended_fact_names: BTreeSet::new(),
+            quantifier_binders: Vec::new(),
             callee_resource_binders: BTreeMap::new(),
             contract_resource_binders: BTreeMap::new(),
             in_contract_definition: false,
@@ -5946,20 +5957,43 @@ impl Parser {
         Ok(proposition)
     }
 
+    /// The name at the cursor when it stands alone as a proposition, as a
+    /// cited fact name does.
+    fn standalone_proposition_name(&self) -> Option<&str> {
+        let Some(Token::Ident(name)) = self.peek() else {
+            return None;
+        };
+        let standalone = matches!(
+            self.peek_next(),
+            None | Some(Token::Semicolon | Token::RParen | Token::RBrace | Token::Comma)
+        ) || matches!(
+            self.tokens.get(self.position + 1),
+            Some(Token::Ident(next)) if matches!(next.as_str(), "and" | "or" | "implies" | "by")
+        );
+        standalone.then_some(name.as_str())
+    }
+
     fn parse_proposition_atom(&mut self) -> Result<ClickProposition, ClickError> {
-        if let Some(Token::Ident(name)) = self.peek()
-            && let Some(proposition) = self.fact_names.get(name)
-            && (matches!(
-                self.peek_next(),
-                None | Some(Token::Semicolon | Token::RParen | Token::RBrace | Token::Comma)
-            ) || matches!(
-                self.tokens.get(self.position + 1),
-                Some(Token::Ident(next)) if matches!(next.as_str(), "and" | "or" | "implies" | "by")
-            ))
+        if let Some(name) = self.standalone_proposition_name()
+            && !self.quantifier_binders.iter().any(|binder| binder == name)
         {
-            let proposition = proposition.clone();
-            self.position += 1;
-            return Ok(proposition);
+            if let Some(proposition) = self.fact_names.get(name) {
+                let proposition = proposition.clone();
+                self.position += 1;
+                return Ok(proposition);
+            }
+            if !self.name_bound_in_scope(name) {
+                if self.fact_names_being_proved.contains(name) {
+                    return Err(self.error(format!(
+                        "`{name}` names the fact this `have` is proving, so it cannot be cited inside its own proof; restate the proposition"
+                    )));
+                }
+                if self.ended_fact_names.contains(name) {
+                    return Err(self.error(format!(
+                        "the fact name `{name}` is out of scope here: `have {name}: ...` names its fact only to the end of the block that holds it"
+                    )));
+                }
+            }
         }
         if self.peek_ident() == Some("let") {
             let start = self.position;
@@ -6344,6 +6378,7 @@ impl Parser {
                                 ));
                             }
                         }
+                        self.quantifier_binders.push(name.clone());
                         scopes.push(Scope {
                             forall,
                             click_type,
@@ -6415,6 +6450,7 @@ impl Parser {
                         reduce(operator, &mut operands);
                     }
                     let scope = scopes.pop().expect("quantifier scope marker has a scope");
+                    self.quantifier_binders.pop();
                     self.integer_literal_context = scope.previous_integer_context;
                     if scope.integer_was_bound {
                         self.current_integer_params.insert(scope.name.clone());
@@ -6640,6 +6676,7 @@ impl Parser {
                 }
                 None => {
                     self.fact_names.remove(&name);
+                    self.ended_fact_names.insert(name);
                 }
             }
         }
@@ -7330,8 +7367,16 @@ impl Parser {
         } else {
             None
         };
-        let have = self.parse_have_after_name()?;
+        if let Some(name) = &name {
+            self.fact_names_being_proved.insert(name.clone());
+        }
+        let have = self.parse_have_after_name();
+        if let Some(name) = &name {
+            self.fact_names_being_proved.remove(name);
+        }
+        let have = have?;
         if let (Some(name), ProofTactic::Have(have)) = (name, &have) {
+            self.ended_fact_names.remove(&name);
             let previous = self
                 .fact_names
                 .insert(name.clone(), have.proposition.clone());
@@ -7345,8 +7390,20 @@ impl Parser {
     /// a name that already binds anything visible is refused.
     fn refuse_fact_name_in_scope(&self, name: &str) -> Result<(), ClickError> {
         self.refuse_bool_literal_binder(name)?;
-        let bound = self.fact_names.contains_key(name)
-            || self.current_proof_let_names.contains(name)
+        if self.fact_names.contains_key(name)
+            || self.fact_names_being_proved.contains(name)
+            || self.name_bound_in_scope(name)
+        {
+            return Err(self.error(format!(
+                "`have {name}: ...` names a fact `{name}`, but `{name}` already names something in scope; choose another name"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Whether `name` binds a parameter, binding or C object visible here.
+    fn name_bound_in_scope(&self, name: &str) -> bool {
+        self.current_proof_let_names.contains(name)
             || self.current_contract_bindings.contains(name)
             || self.current_integer_params.contains(name)
             || self.current_theorem_param_names.contains(name)
@@ -7357,13 +7414,7 @@ impl Parser {
             || self
                 .current_c_object_names
                 .as_ref()
-                .is_some_and(|names| names.contains(name));
-        if bound {
-            return Err(self.error(format!(
-                "`have {name}: ...` names a fact `{name}`, but `{name}` already names something in scope; choose another name"
-            )));
-        }
-        Ok(())
+                .is_some_and(|names| names.contains(name))
     }
 
     /// `have P ...` after any `name:`.
@@ -8075,7 +8126,14 @@ impl Parser {
                 self.expect_empty_tactic_args(&name)?;
                 if self.peek_ident() == Some("as") {
                     self.position += 1;
-                    ProofTactic::IntroAs(self.expect_ident("name for the introduced variable")?)
+                    let name = self.expect_ident("name for the introduced variable")?;
+                    if self.fact_names.contains_key(&name) {
+                        return Err(self.error(format!(
+                            "`intro() as {name}` would hide the fact named `{name}` by `have {name}: ...`; choose another name"
+                        )));
+                    }
+                    self.ended_fact_names.remove(&name);
+                    ProofTactic::IntroAs(name)
                 } else {
                     ProofTactic::Intro
                 }
