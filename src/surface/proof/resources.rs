@@ -249,6 +249,10 @@ impl DynamicViewDependencyIndex {
     }
 }
 
+/// The innermost guarded universal binder around a body-fact read: its
+/// variable and the guard its body's implication assumes.
+type QuantifiedBinder<'a> = Option<(Variable, &'a Proposition)>;
+
 /// Find the live stable-view authority needed by the current memory loads in
 /// one lowered body fact.  Loads from an older memory snapshot are historical
 /// scalar facts and deliberately do not participate in this check.  The
@@ -266,14 +270,31 @@ fn dynamic_body_fact_dependency(
         state: &CState,
         assumptions: &PureFactContext,
         temporary_views: &DynamicViewDependencyIndex,
+        binder: QuantifiedBinder<'_>,
         selected: &mut Option<crate::kernel::LoanViewBinding>,
     ) -> Result<(), String> {
-        let required_view = CResourceFact::view_memory(CMemoryRange::new_with_element_width(
-            pointer,
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
-            width,
-        ));
+        // A read under a guarded universal, `forall v { lo <= v < hi implies
+        // ... p[v] ... }`, reads only cells of `p[lo..hi]`. Require a live
+        // view of that whole range instead of one of the symbolic cell
+        // `p[v]`, which no view contains since `v` alone is unconstrained.
+        // Every cell the guard admits lies in the range
+        // (`CMemoryRange::guarded_quantified_cells`), so a view covering the
+        // range covers every cell the fact reads, and its loan is the fact's
+        // dependency. A read the range does not describe keeps the one-cell
+        // requirement.
+        let range = binder
+            .and_then(|(variable, guard)| {
+                CMemoryRange::guarded_quantified_cells(&pointer, variable, guard, width)
+            })
+            .unwrap_or_else(|| {
+                CMemoryRange::new_with_element_width(
+                    pointer,
+                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::Constant(1),
+                    width,
+                )
+            });
+        let required_view = CResourceFact::view_memory(range);
         if !temporary_views
             .unbound
             .view_occurrences_for_fact(&required_view, assumptions)
@@ -346,6 +367,7 @@ fn dynamic_body_fact_dependency(
         state: &CState,
         assumptions: &PureFactContext,
         temporary_views: &DynamicViewDependencyIndex,
+        binder: QuantifiedBinder<'_>,
         selected: &mut Option<crate::kernel::LoanViewBinding>,
     ) -> Result<(), String> {
         for (pointer, width) in crate::kernel::current_memory_loads_in_term(term, state.memory())? {
@@ -355,6 +377,7 @@ fn dynamic_body_fact_dependency(
                 state,
                 assumptions,
                 temporary_views,
+                binder,
                 selected,
             )?;
         }
@@ -365,6 +388,7 @@ fn dynamic_body_fact_dependency(
         state: &CState,
         assumptions: &PureFactContext,
         temporary_views: &DynamicViewDependencyIndex,
+        binder: QuantifiedBinder<'_>,
         selected: &mut Option<crate::kernel::LoanViewBinding>,
     ) -> Result<(), String> {
         match proposition {
@@ -373,26 +397,48 @@ fn dynamic_body_fact_dependency(
                 state,
                 assumptions,
                 temporary_views,
+                binder,
                 selected,
             ),
             Proposition::Equal(left, right) => {
-                walk_term(left, state, assumptions, temporary_views, selected)?;
-                walk_term(right, state, assumptions, temporary_views, selected)
+                walk_term(left, state, assumptions, temporary_views, binder, selected)?;
+                walk_term(right, state, assumptions, temporary_views, binder, selected)
             }
             Proposition::And(left, right)
             | Proposition::Or(left, right)
             | Proposition::Implies(left, right) => {
-                walk_proposition(left, state, assumptions, temporary_views, selected)?;
-                walk_proposition(right, state, assumptions, temporary_views, selected)
+                walk_proposition(left, state, assumptions, temporary_views, binder, selected)?;
+                walk_proposition(right, state, assumptions, temporary_views, binder, selected)
             }
-            Proposition::Not(body)
-            | Proposition::ForAll { body, .. }
-            | Proposition::Exists { body, .. } => {
-                walk_proposition(body, state, assumptions, temporary_views, selected)
+            Proposition::ForAll { var, body, .. } => match body.as_ref() {
+                Proposition::Implies(guard, consequent) => {
+                    walk_proposition(guard, state, assumptions, temporary_views, binder, selected)?;
+                    walk_proposition(
+                        consequent,
+                        state,
+                        assumptions,
+                        temporary_views,
+                        Some((*var, guard)),
+                        selected,
+                    )
+                }
+                body => {
+                    walk_proposition(body, state, assumptions, temporary_views, binder, selected)
+                }
+            },
+            Proposition::Not(body) | Proposition::Exists { body, .. } => {
+                walk_proposition(body, state, assumptions, temporary_views, binder, selected)
             }
             Proposition::Predicate { arguments, .. } => {
                 for argument in arguments {
-                    walk_term(argument, state, assumptions, temporary_views, selected)?;
+                    walk_term(
+                        argument,
+                        state,
+                        assumptions,
+                        temporary_views,
+                        binder,
+                        selected,
+                    )?;
                 }
                 Ok(())
             }
@@ -405,6 +451,7 @@ fn dynamic_body_fact_dependency(
                     state,
                     assumptions,
                     temporary_views,
+                    binder,
                     selected,
                 ),
                 CExpressionOutcome::UndefinedBehavior(_) | CExpressionOutcome::RuntimeError(_) => {
@@ -423,6 +470,7 @@ fn dynamic_body_fact_dependency(
                     state,
                     assumptions,
                     temporary_views,
+                    binder,
                     selected,
                 )?;
                 if memory == state.memory() {
@@ -432,6 +480,7 @@ fn dynamic_body_fact_dependency(
                         state,
                         assumptions,
                         temporary_views,
+                        binder,
                         selected,
                     )?;
                 }
@@ -443,6 +492,7 @@ fn dynamic_body_fact_dependency(
                 state,
                 assumptions,
                 temporary_views,
+                binder,
                 selected,
             ),
             Proposition::CMemoryCanStore { .. }
@@ -454,7 +504,14 @@ fn dynamic_body_fact_dependency(
         }
     }
     let mut selected = None;
-    walk_proposition(required, state, assumptions, temporary_views, &mut selected)?;
+    walk_proposition(
+        required,
+        state,
+        assumptions,
+        temporary_views,
+        None,
+        &mut selected,
+    )?;
     Ok(selected)
 }
 
@@ -5408,6 +5465,108 @@ void child_release(struct child* obj) {
     #[test]
     fn dynamic_definedness_requires_live_view_binding_and_keeps_owner_scalar_distinct() {
         check_dynamic_current_fact_dependencies(true);
+    }
+
+    /// A guarded universal read depends on a view of every cell its guard
+    /// admits, not on the one symbolic cell `p[k]`, which no view contains.
+    #[test]
+    fn dynamic_quantified_definedness_depends_on_the_guarded_range() {
+        let base = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let memory = CMemory::new();
+        let index = Variable(2_000_000);
+        let index_term = || Box::new(Bitvector32Term::Variable(index));
+        let below = |end: u32| {
+            Proposition::ConditionIs(
+                ConditionTerm::Bitvector32SignedLessThan(
+                    index_term(),
+                    Box::new(Bitvector32Term::Constant(end)),
+                ),
+                true,
+            )
+        };
+        let at_least_zero = Proposition::ConditionIs(
+            ConditionTerm::Bitvector32SignedLessEqual(
+                Box::new(Bitvector32Term::Constant(0)),
+                index_term(),
+            ),
+            true,
+        );
+        let quantified = |guard: Proposition| Proposition::ForAll {
+            var: index,
+            sort: crate::kernel::Sort::CInt32,
+            body: Box::new(Proposition::Implies(
+                Box::new(guard),
+                Box::new(Proposition::CMemoryReadDefined {
+                    memory: memory.clone(),
+                    pointer: Pointer {
+                        block: PointerBlock::ExternalArgument,
+                        offset: PointerOffsetTerm::Int32Scaled {
+                            value: index_term(),
+                            byte_width: 4,
+                        },
+                    },
+                    value_type: crate::kernel::CType::Int32,
+                }),
+            )),
+        };
+        let range = CMemoryRange::new(
+            base,
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(4),
+        );
+        let own = CResourceFact::own_memory(range.clone());
+        let view = CResourceFact::view_memory(range);
+        let support_resources = ResourceContext::new().unchecked_with_fact(own.clone());
+        let support = support_resources.owned_occurrences_for_fact(&own)[0];
+        let ledger = crate::kernel::LoanLedger::new();
+        let lender = ledger.fresh_participant().unwrap();
+        let opening = ledger.lend(lender, lender, support, own).unwrap();
+        let ledger = ledger.apply(&opening.transition).unwrap();
+        let binding = crate::kernel::LoanViewBinding {
+            loan: opening.loan,
+            scope: opening.scope,
+            share: opening.root_share,
+            support,
+            viewed: view.clone(),
+            hold: None,
+        };
+        let bound_resources = ResourceContext::new().unchecked_with_fact(view.clone());
+        let view_occurrence = bound_resources.occurrences_for_fact(&view)[0];
+        let state = CState::new()
+            .with_memory(memory.clone())
+            .with_resource_context_and_loan_dependencies(
+                bound_resources,
+                [(view_occurrence, binding)],
+            )
+            .with_loan_ledger(Some(ledger))
+            .with_loan_participant(Some(lender));
+        let no_temporary_views = DynamicViewDependencyIndex::new(&[], &[], &PureFactContext::new());
+        let dependency = |fact: &Proposition| {
+            dynamic_body_fact_dependency(fact, &state, &PureFactContext::new(), &no_temporary_views)
+        };
+        let within = quantified(Proposition::And(
+            Box::new(at_least_zero.clone()),
+            Box::new(below(4)),
+        ));
+        assert!(
+            dependency(&within).unwrap().is_some(),
+            "a guard inside the view keeps the view's loan"
+        );
+        let beyond = quantified(Proposition::And(
+            Box::new(at_least_zero),
+            Box::new(below(5)),
+        ));
+        assert!(
+            dependency(&beyond).is_err(),
+            "a guard admitting a cell past the view is refused"
+        );
+        assert!(
+            dependency(&quantified(below(4))).is_err(),
+            "a signed index with no lower bound admits negative cells"
+        );
     }
 
     fn check_dynamic_current_fact_dependencies(definedness: bool) {

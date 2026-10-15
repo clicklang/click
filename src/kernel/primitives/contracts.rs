@@ -2210,6 +2210,105 @@ impl CMemoryRange {
         }
     }
 
+    /// The range of cells a guarded universal read can reach.
+    ///
+    /// `pointer` is a cell read inside `forall v { guard implies ... }`. When
+    /// `pointer` is exactly element `v` of some `base`, in the addressing a
+    /// range's own [`Self::start_pointer`] uses, and `guard` has conjuncts
+    /// bounding `v` to `lo <= v < hi` in the comparison of that addressing's
+    /// index kind, the answer is `base[lo..hi]` of that kind. Every value of
+    /// `v` the guard admits is then an index of this range, so a view that
+    /// covers the range covers every cell the read names. Other conjuncts
+    /// only shrink the admitted set. An unsigned 64-bit index needs no lower
+    /// conjunct, since `0` bounds it already; a signed one does.
+    ///
+    /// `base`, `lo` and `hi` must not mention `v`: the range is then one
+    /// fixed set, rather than a description that varies with the binder.
+    /// Any other shape answers nothing, and the caller keeps its per-cell
+    /// check. The work is proportional to the guard and the pointer.
+    pub(crate) fn guarded_quantified_cells(
+        pointer: &Pointer,
+        variable: Variable,
+        guard: &Proposition,
+        element_width: u32,
+    ) -> Option<Self> {
+        let is_variable = |term: &Bitvector32Term| matches!(term, Bitvector32Term::Variable(found) if *found == variable);
+        let (base_offset, scaled) = match &pointer.offset {
+            PointerOffsetTerm::Add(base, scaled) => (base.as_ref().clone(), scaled.as_ref()),
+            scaled => (PointerOffsetTerm::Constant(0), scaled),
+        };
+        let kind = match scaled {
+            PointerOffsetTerm::Int32Scaled { value, .. } if is_variable(value) => {
+                RangeIndexKind::Int32
+            }
+            PointerOffsetTerm::Int64Scaled {
+                value,
+                unsigned: true,
+                ..
+            } if is_variable(value) => RangeIndexKind::UInt64,
+            _ => return None,
+        };
+        let base = Pointer {
+            block: pointer.block.clone(),
+            offset: base_offset,
+        };
+        let index = Bitvector32Term::Variable(variable);
+        let reconstructed = match kind {
+            RangeIndexKind::Int32 => base.offset_by_elements(index, element_width),
+            RangeIndexKind::UInt64 => {
+                base.offset_by_typed_elements(index, element_width, true, true)
+            }
+        };
+        if &reconstructed != pointer {
+            return None;
+        }
+        let mut lower =
+            (kind == RangeIndexKind::UInt64).then_some(Bitvector32Term::UInt64Constant(0));
+        let mut upper = None;
+        let mut pending = vec![guard];
+        while let Some(conjunct) = pending.pop() {
+            match conjunct {
+                Proposition::And(left, right) => {
+                    pending.push(left);
+                    pending.push(right);
+                }
+                Proposition::ConditionIs(condition, true) => match (kind, condition) {
+                    (RangeIndexKind::Int32, ConditionTerm::Bitvector32SignedLessEqual(lo, v))
+                    | (
+                        RangeIndexKind::UInt64,
+                        ConditionTerm::Bitvector64UnsignedLessEqual(lo, v),
+                    ) if is_variable(v) => lower = Some(lo.as_ref().clone()),
+                    (RangeIndexKind::Int32, ConditionTerm::Bitvector32SignedLessThan(v, hi))
+                    | (RangeIndexKind::UInt64, ConditionTerm::Bitvector64UnsignedLessThan(v, hi))
+                        if is_variable(v) =>
+                    {
+                        upper = Some(hi.as_ref().clone())
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+        let (lower, upper) = (lower?, upper?);
+        let mut mentioned = BTreeSet::new();
+        for term in [
+            Term::PointerOffset(base.offset.clone()),
+            Term::Bitvector32(lower.clone()),
+            Term::Bitvector32(upper.clone()),
+        ] {
+            crate::kernel::reasoning::collect_term_bitvector_variables(&term, &mut mentioned);
+        }
+        if mentioned.contains(&variable) {
+            return None;
+        }
+        Some(match kind {
+            RangeIndexKind::Int32 => {
+                Self::new_with_element_width(base, lower, upper, element_width)
+            }
+            RangeIndexKind::UInt64 => Self::new_wide(base, lower, upper, element_width),
+        })
+    }
+
     /// A range whose bounds are unsigned 64-bit element indices.
     pub(crate) fn new_wide(
         base: Pointer,
@@ -3512,3 +3611,97 @@ impl std::fmt::Display for CTerminationError {
 }
 
 impl std::error::Error for CTerminationError {}
+
+#[cfg(test)]
+mod guarded_quantified_cell_tests {
+    use super::*;
+
+    fn index() -> Variable {
+        Variable(2_000_000)
+    }
+
+    fn holds(condition: ConditionTerm) -> Proposition {
+        Proposition::ConditionIs(condition, true)
+    }
+
+    fn variable(variable: Variable) -> Box<Bitvector32Term> {
+        Box::new(Bitvector32Term::Variable(variable))
+    }
+
+    /// `p + v` for a byte array `p`, indexed by an unsigned 64-bit `v`.
+    fn wide_cell(base: &Pointer) -> Pointer {
+        base.offset_by_typed_elements(Bitvector32Term::Variable(index()), 1, true, true)
+    }
+
+    fn parameter() -> Pointer {
+        Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(7)), 1),
+        }
+    }
+
+    #[test]
+    fn an_unsigned_guard_names_the_range_from_zero() {
+        let base = parameter();
+        let length = Bitvector32Term::Variable(Variable(8));
+        let guard = holds(ConditionTerm::Bitvector64UnsignedLessThan(
+            variable(index()),
+            Box::new(length.clone()),
+        ));
+        assert_eq!(
+            CMemoryRange::guarded_quantified_cells(&wide_cell(&base), index(), &guard, 1),
+            Some(CMemoryRange::new_wide(
+                base,
+                Bitvector32Term::UInt64Constant(0),
+                length,
+                1
+            ))
+        );
+    }
+
+    #[test]
+    fn a_guard_in_another_comparison_or_on_the_binder_names_nothing() {
+        let base = parameter();
+        let cell = wide_cell(&base);
+        let length = Box::new(Bitvector32Term::Variable(Variable(8)));
+        // A signed comparison does not bound an unsigned 64-bit index.
+        let signed = holds(ConditionTerm::Bitvector32SignedLessThan(
+            variable(index()),
+            length.clone(),
+        ));
+        assert_eq!(
+            CMemoryRange::guarded_quantified_cells(&cell, index(), &signed, 1),
+            None
+        );
+        // An upper bound that mentions the binder is not one fixed range.
+        let circular = holds(ConditionTerm::Bitvector64UnsignedLessThan(
+            variable(index()),
+            Box::new(Bitvector32Term::UInt64Add(
+                variable(index()),
+                length.clone(),
+            )),
+        ));
+        assert_eq!(
+            CMemoryRange::guarded_quantified_cells(&cell, index(), &circular, 1),
+            None
+        );
+        // A stride other than the read's width is not that range's element.
+        let bound = holds(ConditionTerm::Bitvector64UnsignedLessThan(
+            variable(index()),
+            length,
+        ));
+        assert_eq!(
+            CMemoryRange::guarded_quantified_cells(&cell, index(), &bound, 4),
+            None
+        );
+        // A base that moves with the binder is not one fixed range.
+        let moving = wide_cell(&Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(index()), 1),
+        });
+        assert_eq!(
+            CMemoryRange::guarded_quantified_cells(&moving, index(), &bound, 1),
+            None
+        );
+    }
+}
