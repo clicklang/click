@@ -898,8 +898,47 @@ fn library_source() -> String {
 
 #[test]
 fn standard_library_inventory_is_bidirectional() {
-    let source = library_source();
+    // A module that has dropped its name prefixes lists its functions,
+    // predicates and theorems by their in-scope paths, `list::append`,
+    // since bare names repeat across modules.
+    let paths = fs::read_to_string(root().join("src/surface/parser/library_paths.rs"))
+        .expect("read library path resolution");
+    let qualified = paths
+        .split_once("const QUALIFIED_MODULES: &[&str] = &[")
+        .and_then(|(_, rest)| rest.split_once("];"))
+        .expect("QUALIFIED_MODULES is declared")
+        .0
+        .split('"')
+        .skip(1)
+        .step_by(2)
+        .map(str::to_string)
+        .collect::<BTreeSet<_>>();
+    let mut files = Vec::new();
+    files_with_extension(&root().join("library"), "click", &mut files);
     let mut declarations = BTreeSet::new();
+    for path in files {
+        let identity = path
+            .strip_prefix(root())
+            .expect("library module under the root")
+            .to_string_lossy()
+            .replace('\\', "/");
+        let module = qualified.contains(&identity).then(|| {
+            path.file_stem()
+                .expect("library module name")
+                .to_string_lossy()
+                .into_owned()
+        });
+        let source = fs::read_to_string(&path).expect("read library module");
+        declare_library_inventory(&source, module.as_deref(), &mut declarations);
+    }
+    assert_eq!(declarations, inventory_ids("library."));
+}
+
+fn declare_library_inventory(
+    source: &str,
+    module: Option<&str>,
+    declarations: &mut BTreeSet<String>,
+) {
     for line in source.lines() {
         let line = line.trim_start();
         if let Some(rest) = line.strip_prefix("abstract resource ") {
@@ -916,7 +955,14 @@ fn standard_library_inventory_is_bidirectional() {
                     .next()
                     .expect("declaration name");
                 let kind = if kind == "spec enum" { "type" } else { kind };
-                declarations.insert(format!("{kind}.{name}"));
+                match module {
+                    Some(module) if matches!(kind, "theorem" | "function" | "predicate") => {
+                        declarations.insert(format!("{kind}.{module}::{name}"));
+                    }
+                    _ => {
+                        declarations.insert(format!("{kind}.{name}"));
+                    }
+                }
             }
         }
         if let Some(rest) = line.strip_prefix("extern ") {
@@ -928,7 +974,6 @@ fn standard_library_inventory_is_bidirectional() {
             declarations.insert(format!("extern.{name}"));
         }
     }
-    assert_eq!(declarations, inventory_ids("library."));
 }
 
 #[test]

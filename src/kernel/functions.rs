@@ -5281,7 +5281,7 @@ struct CFunctionContractApplication<'a> {
 /// mapping and the alignment test are exact. A cell the copy would split, a
 /// symbolic range, or a misaligned destination is left alone: the destination
 /// keeps its post-havoc state, so the transfer can only add observations the
-/// copy's `bytes_equal` guarantee already justified. An untyped source has no
+/// copy's `click::bytes::equal` guarantee already justified. An untyped source has no
 /// cells, so a raw byte copy still establishes nothing typed.
 pub(in crate::kernel) fn transfer_representation_copy_cells(
     entry_memory: &CMemory,
@@ -5840,7 +5840,7 @@ fn execute_verified_function_applications_with_suspension(
         };
         // A recognized byte-copy declaration transfers initialized typed
         // cells across the copy. It runs after the external contract's havoc,
-        // so the copies' `bytes_equal` guarantee is what makes the transferred
+        // so the copies' `click::bytes::equal` guarantee is what makes the transferred
         // values the checked ones, and it is the only thing that turns the
         // destination's freshly owned bytes into typed observations.
         let memory = if let Some(effect) = application.representation_copy {

@@ -2531,10 +2531,10 @@ predicate permutation(a: int32[], b: int32[], lo: int32, hi: int32) {
 
 ## Byte-range specifications
 
-### `byte_count`
+### `bytes::count`
 
 ```click
-function byte_count(bytes: uint8[], lo: int32, hi: int32, value: uint8) -> int32 {
+function count(bytes: uint8[], lo: int32, hi: int32, value: uint8) -> int32 {
     (lo..hi).fold(0, |acc, k| {
         acc + if bytes[k] == value { 1 } else { 0 }
     })
@@ -2547,10 +2547,10 @@ function byte_count(bytes: uint8[], lo: int32, hi: int32, value: uint8) -> int32
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `bytes_equal`
+### `bytes::equal`
 
 ```click
-predicate bytes_equal(left: uint8[], left_lo: uint64, right: uint8[], right_lo: uint64, len: uint64) {
+predicate equal(left: uint8[], left_lo: uint64, right: uint8[], right_lo: uint64, len: uint64) {
     (0u64..len).all(|k| {
         left[left_lo + k] == right[right_lo + k]
     })
@@ -2561,12 +2561,12 @@ predicate bytes_equal(left: uint8[], left_lo: uint64, right: uint8[], right_lo: 
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes_equal)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes::equal)` when a proof needs the predicate body.
 
-### `bytes_equal_range`
+### `bytes::equal_range`
 
 ```click
-predicate bytes_equal_range(left: uint8[], right: uint8[], lo: uint64, hi: uint64) {
+predicate equal_range(left: uint8[], right: uint8[], lo: uint64, hi: uint64) {
     (lo..hi).all(|k| {
         left[k] == right[k]
     })
@@ -2577,12 +2577,12 @@ predicate bytes_equal_range(left: uint8[], right: uint8[], lo: uint64, hi: uint6
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes_equal_range)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes::equal_range)` when a proof needs the predicate body.
 
-### `bytes_all_equal`
+### `bytes::all_equal`
 
 ```click
-predicate bytes_all_equal(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
+predicate all_equal(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
     (lo..hi).all(|k| {
         bytes[k] == value
     })
@@ -2593,12 +2593,12 @@ predicate bytes_all_equal(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) 
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes_all_equal)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes::all_equal)` when a proof needs the predicate body.
 
-### `bytes_contains`
+### `bytes::contains`
 
 ```click
-predicate bytes_contains(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
+predicate contains(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
     (lo..hi).any(|k| {
         bytes[k] == value
     })
@@ -2609,12 +2609,12 @@ predicate bytes_contains(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes_contains)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes::contains)` when a proof needs the predicate body.
 
-### `bytes_all_not_equal`
+### `bytes::all_not_equal`
 
 ```click
-predicate bytes_all_not_equal(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
+predicate all_not_equal(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
     (lo..hi).all(|k| {
         bytes[k] != value
     })
@@ -2625,7 +2625,7 @@ predicate bytes_all_not_equal(bytes: uint8[], lo: uint64, hi: uint64, value: uin
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes_all_not_equal)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes::all_not_equal)` when a proof needs the predicate body.
 
 ## C-string specifications
 
@@ -2891,7 +2891,7 @@ extern uint8* memcpy(uint8 destination[], const uint8 source[], uint64 bytes) {
     owns destination[0..bytes];
     requires separate(memory(destination[0..bytes]), memory(source[0..bytes]));
     ensures result == destination;
-    ensures bytes_equal(destination, 0u64, old(source), 0u64, bytes);
+    ensures bytes::equal(destination, 0u64, old(source), 0u64, bytes);
 }
 ```
 
@@ -2915,8 +2915,8 @@ extern int32 memcmp(const uint8 left[], const uint8 right[], uint64 bytes) {
     requires viewable(left[0..bytes]);
     requires viewable(right[0..bytes]);
     requires forall (k: uint64) { k < bytes implies defined(left[k]) and defined(right[k]) };
-    ensures result == 0 implies bytes_equal(left, 0u64, right, 0u64, bytes);
-    ensures result != 0 implies not bytes_equal(left, 0u64, right, 0u64, bytes);
+    ensures result == 0 implies bytes::equal(left, 0u64, right, 0u64, bytes);
+    ensures result != 0 implies not bytes::equal(left, 0u64, right, 0u64, bytes);
 }
 ```
 
