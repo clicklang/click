@@ -173,8 +173,13 @@ size. All nine split/rejoin expansion sites pass.
 `rbtree_size_callback_frames.click` supplies `CopySizedStructure`: the unchanged
 copy callback updates its two metadata cells while preserving independently
 owned `rb_at` trees. Its execution theorem and expansion audit check the
-returned structural ownership and models. This is a callback frame contract;
-writable callback-table integration with insertion and erasure remains pending.
+returned structural ownership and models. `RotateSizedStructure` also certifies
+that the unchanged rotation callback preserves an independently owned `rb_at`
+tree at its new root while updating the source and target cache values. Its
+proof exposes the existing guarded separation premises in all four child
+null/non-null cases, then checks the call and returned frame. These are callback
+frame contracts; writable callback-table integration with insertion and erasure
+remains pending.
 
 `rbtree_size_callbacks.click` connects the writable copy interface to the
 concrete generated callback table. Its C translation unit combines the unchanged
