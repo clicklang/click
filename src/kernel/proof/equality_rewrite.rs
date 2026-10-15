@@ -87,35 +87,37 @@ impl ProofFacts {
                 facts: self.clone(),
             }),
             Err(original_error) => {
-                // The explicitly cited read may precede the goal's read of
-                // the same cell. Select only the goal's two atomic operands;
-                // retain and validate their checked snapshot/address bridge
-                // before doing ordinary exact substitution.
-                let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(from, to), true) =
-                    equality
-                else {
-                    return Err(original_error);
+                // Compare only the cited expression with the two operands of
+                // this atomic goal. Corresponding operators stay exact; the
+                // shared transport checker validates any changed read leaves.
+                let (from, to, wide) = match equality {
+                    Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(a, b), true) => {
+                        (a, b, false)
+                    }
+                    Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(a, b), true) => {
+                        (a, b, true)
+                    }
+                    _ => return Err(original_error),
                 };
-                let is_read = |term: &Bitvector32Term| {
-                    matches!(term, Bitvector32Term::MemoryLoad(..))
-                        || matches!(term, Bitvector32Term::Variable(variable) if crate::kernel::is_load_variable(variable))
-                };
-                if !is_read(from) {
-                    return Err(original_error);
-                }
-                let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), _) =
-                    goal
-                else {
-                    return Err(original_error);
+                let (left, right) = match goal {
+                    Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(a, b), _) if !wide => {
+                        (a, b)
+                    }
+                    Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(a, b), _) if wide => {
+                        (a, b)
+                    }
+                    _ => return Err(original_error),
                 };
                 for selected in [left, right] {
-                    if !is_read(selected) || selected == from {
+                    if selected == from {
                         continue;
                     }
-                    let adapted = Proposition::ConditionIs(
-                        ConditionTerm::equal(selected.as_ref().clone(), to.as_ref().clone()),
-                        true,
-                    );
+                    let condition = if wide {
+                        ConditionTerm::Bitvector64Equal(selected.clone(), to.clone())
+                    } else {
+                        ConditionTerm::equal(selected.as_ref().clone(), to.as_ref().clone())
+                    };
+                    let adapted = Proposition::ConditionIs(condition, true);
                     let Some(facts) = self.with_checked_rewritten_loads(equality, &adapted) else {
                         continue;
                     };
@@ -2383,6 +2385,194 @@ mod tests {
         let (obligation, retained) = result.into_obligation("display", None::<()>);
         assert_eq!(obligation.proposition(), &expected);
         assert!(retained.shares_premises_with(&facts));
+    }
+
+    // Both widths use the same corresponding-leaf checker. A write, a
+    // different read kind, address, or operator cannot stand in for that leaf.
+    #[test]
+    fn compound_read_rewrite_checks_snapshots_kinds_and_operators() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for wide in [false, true] {
+            let pointer = Pointer {
+                block: "compound-rewrite".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let before = CMemory::new().with_block("compound-rewrite", 16);
+            let after = before.clone().with_block("local:compound-unrelated", 4);
+            let changed = after.clone().store(
+                pointer.clone(),
+                if wide {
+                    CValue::UInt64(Bitvector32Term::UInt64Constant(7))
+                } else {
+                    CValue::Int32(Bitvector32Term::Constant(7))
+                },
+            );
+            let kind = if wide {
+                LoadKind::Bits64
+            } else {
+                LoadKind::Bits32
+            };
+            crate::kernel::eval::declare_load_access_width(&pointer, if wide { 8 } else { 4 });
+            let load = |memory: &CMemory, pointer: Pointer, kind| {
+                Bitvector32Term::MemoryLoad(
+                    crate::kernel::intern_c_memory_ref(memory),
+                    Box::new(pointer),
+                    kind,
+                )
+            };
+            let one = if wide {
+                Bitvector32Term::UInt64Constant(1)
+            } else {
+                Bitvector32Term::Constant(1)
+            };
+            let mask = |value| {
+                if wide {
+                    Bitvector32Term::UInt64BitwiseAnd(Box::new(value), Box::new(one.clone()))
+                } else {
+                    Bitvector32Term::BitwiseAnd(Box::new(value), Box::new(one.clone()))
+                }
+            };
+            let eq = |a, b| {
+                Proposition::ConditionIs(
+                    if wide {
+                        ConditionTerm::Bitvector64Equal(Box::new(a), Box::new(b))
+                    } else {
+                        ConditionTerm::equal(a, b)
+                    },
+                    true,
+                )
+            };
+            let cited = eq(mask(load(&before, pointer.clone(), kind)), one.clone());
+            let facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
+            let goal = eq(mask(load(&after, pointer.clone(), kind)), one.clone());
+            let checked = facts
+                .check_equality_rewrite(&goal, &cited)
+                .expect("unchanged selected cell");
+            assert_eq!(
+                checked.proposition(),
+                &Proposition::ConditionIs(
+                    if wide {
+                        ConditionTerm::Bitvector64Equal(
+                            Box::new(one.clone()),
+                            Box::new(one.clone()),
+                        )
+                    } else {
+                        ConditionTerm::Bitvector32Equal(
+                            Box::new(one.clone()),
+                            Box::new(one.clone()),
+                        )
+                    },
+                    true
+                )
+            );
+            assert!(
+                ProofFacts::default()
+                    .check_equality_rewrite(&goal, &cited)
+                    .is_err()
+            );
+            for wrong in [
+                mask(load(&changed, pointer.clone(), kind)),
+                mask(load(
+                    &after,
+                    pointer.clone(),
+                    if wide {
+                        LoadKind::Bits32
+                    } else {
+                        LoadKind::Bits64
+                    },
+                )),
+                mask(load(
+                    &after,
+                    Pointer {
+                        offset: PointerOffsetTerm::Constant(8),
+                        ..pointer.clone()
+                    },
+                    kind,
+                )),
+                if wide {
+                    Bitvector32Term::UInt64BitwiseOr(
+                        Box::new(load(&after, pointer.clone(), kind)),
+                        Box::new(one.clone()),
+                    )
+                } else {
+                    Bitvector32Term::BitwiseOr(
+                        Box::new(load(&after, pointer.clone(), kind)),
+                        Box::new(one.clone()),
+                    )
+                },
+            ] {
+                assert!(
+                    facts
+                        .check_equality_rewrite(&eq(wrong, one.clone()), &cited)
+                        .is_err()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn compound_read_rewrite_work_is_local_to_selected_expressions() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer {
+            block: "compound-rewrite-work".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        crate::kernel::eval::declare_load_access_width(&pointer, 8);
+        let before = CMemory::new().with_block("compound-rewrite-work", 8);
+        let after = before.clone().with_block("local:compound-rewrite-work", 4);
+        let expression = |memory: &CMemory, size| {
+            let mut term = Bitvector32Term::MemoryLoad(
+                crate::kernel::intern_c_memory_ref(memory),
+                Box::new(pointer.clone()),
+                LoadKind::Bits64,
+            );
+            for index in 0..size {
+                term = Bitvector32Term::UInt64BitwiseXor(
+                    Box::new(term),
+                    Box::new(Bitvector32Term::Variable(Variable(931_000 + index))),
+                );
+            }
+            term
+        };
+        let eq = |a, b| {
+            Proposition::ConditionIs(
+                ConditionTerm::Bitvector64Equal(Box::new(a), Box::new(b)),
+                true,
+            )
+        };
+        let mut costs = Vec::new();
+        for size in [8, 32, 128] {
+            let cited = eq(
+                expression(&before, size),
+                Bitvector32Term::UInt64Constant(1),
+            );
+            let goal = eq(expression(&after, size), Bitvector32Term::UInt64Constant(1));
+            let mut context_costs = Vec::new();
+            for ambient in [0, 32, 128] {
+                let mut facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
+                for i in 0..ambient {
+                    facts = facts.with_fact(equality(
+                        Bitvector32Term::Variable(Variable(930_000 + i)),
+                        Bitvector32Term::Constant(i as u32),
+                    ));
+                }
+                crate::kernel::eval::clear_load_canonicalization_caches();
+                let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    facts.check_equality_rewrite(&goal, &cited)
+                });
+                assert!(result.is_ok());
+                context_costs.push(work);
+            }
+            assert!(
+                context_costs.iter().all(|work| *work <= context_costs[0]),
+                "{context_costs:?}"
+            );
+            costs.push(context_costs[0]);
+        }
+        assert!(
+            costs.windows(2).all(|pair| pair[1] <= 4 * pair[0]),
+            "{costs:?}"
+        );
     }
 
     #[test]
