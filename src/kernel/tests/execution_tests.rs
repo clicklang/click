@@ -1364,7 +1364,12 @@ fn internal_throw_is_int32_only_and_requires_a_verified_direct_rule() {
     .with_int32_exceptional_outcome();
     assert!(!throwing.opaque_contract_supported());
     assert!(throwing.verified_direct_contract_supported());
-    assert!(CFunctionContract::new("Throwing", throwing.clone()).is_none());
+    // A throwing interface is a named contract too; the throw is part of it.
+    assert!(
+        CFunctionContract::new("Throwing", throwing.clone()).is_some_and(|contract| {
+            contract.interface().exceptional_signature() == CExceptionalSignature::Int32
+        })
+    );
 
     let declared_without_throw = c_function(
         CType::Int32,
@@ -1375,7 +1380,7 @@ fn internal_throw_is_int32_only_and_requires_a_verified_direct_rule() {
     .with_int32_exceptional_outcome();
     assert!(!declared_without_throw.opaque_contract_supported());
     assert!(declared_without_throw.verified_direct_contract_supported());
-    assert!(CFunctionContract::new("DeclaredWithoutThrow", declared_without_throw).is_none());
+    assert!(CFunctionContract::new("DeclaredWithoutThrow", declared_without_throw).is_some());
 
     let modular = prove_symbolic_c_execution_with_environment(
         CState::new(),
