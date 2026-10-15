@@ -3130,7 +3130,7 @@ fn rewrite_integer_match_typed_fields(
                         .insert(
                             *from,
                             crate::kernel::proof::term_rewrite::TypedCReplacement::Pointer(
-                                to.pointer().clone(),
+                                to.clone(),
                             ),
                         )
                         .is_some()

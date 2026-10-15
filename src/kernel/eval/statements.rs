@@ -2181,7 +2181,7 @@ pub(crate) fn resolve_pending_heap_allocations(
                 } = binding
                     && pointer.pointer() == &base
                 {
-                    pointer.replace_pointer(resolved_base.clone());
+                    *pointer = rebase_resolved_allocation(pointer, &base, &resolved_base);
                 }
             }
             if !is_null {
@@ -2241,7 +2241,7 @@ pub(crate) fn resolve_pending_heap_allocations(
             } = binding
                 && pointer.pointer() == &base
             {
-                pointer.replace_pointer(resolved_base.clone());
+                *pointer = rebase_resolved_allocation(pointer, &base, &resolved_base);
             }
         }
         if !is_null {
@@ -4601,4 +4601,25 @@ pub(in crate::kernel) fn sync_stack_local(state: &mut CState, name: &str, value:
     if state.memory.has_block(&pointer.block) {
         state.set_memory(state.memory.clone().store(pointer, value.clone()));
     }
+}
+
+/// A pointer value moved from a pending allocation's base to its resolved
+/// block. Its subobject extent, which names the same block, moves with it.
+fn rebase_resolved_allocation(
+    value: &CPointerValue,
+    base: &Pointer,
+    resolved: &Pointer,
+) -> CPointerValue {
+    value.map_pointers(|address| {
+        if address == base {
+            resolved.clone()
+        } else if address.block == base.block && base.offset == PointerOffsetTerm::Constant(0) {
+            Pointer {
+                block: resolved.block.clone(),
+                offset: PointerOffsetTerm::add(resolved.offset.clone(), address.offset.clone()),
+            }
+        } else {
+            address.clone()
+        }
+    })
 }
