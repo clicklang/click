@@ -36,12 +36,17 @@ pub(in crate::surface) struct ClaimProofResult {
 
 /// `call_depth` counts the `outcomes` arms already entered on this route; a
 /// nested `outcomes` reads the call edge at that depth.
+///
+/// A `have` the path runs before a post-execution `if` states a fact that
+/// `if` may read: it is checked where it is written, before the arm runs
+/// anything. `stated` collects those propositions in path order.
 fn select_checked_post_execution_tactics<'a>(
     proof: &Proof<'_>,
     tactics: impl IntoIterator<Item = &'a DeferredPostExecutionTactic>,
     call_depth: usize,
     selected: &mut Vec<&'a DeferredPostExecutionTactic>,
     choices: &mut Vec<SurfacePathChoice>,
+    stated: &mut Vec<Proposition>,
 ) -> Result<(), ClickError> {
     for deferred in tactics {
         match &deferred.tactic {
@@ -55,10 +60,12 @@ fn select_checked_post_execution_tactics<'a>(
                     .lexical_bindings
                     .as_ref()
                     .map(|bindings| proof.with_surface_local_scope(bindings));
+                // A refusal names the `if` itself.
                 let value = scoped
                     .as_ref()
                     .unwrap_or(proof)
-                    .checked_outcome_if_value(condition, *execution_route)?;
+                    .at_source_tactic(deferred.source_index)
+                    .checked_outcome_if_value(condition, *execution_route, stated)?;
                 choices.push(SurfacePathChoice {
                     occurrence: deferred.source_index,
                     selector: SurfacePathSelector::Proposition(condition.clone()),
@@ -66,7 +73,9 @@ fn select_checked_post_execution_tactics<'a>(
                     tactic_offset: selected.len(),
                 });
                 let arm = if value { then_tactics } else { else_tactics };
-                select_checked_post_execution_tactics(proof, arm, call_depth, selected, choices)?;
+                select_checked_post_execution_tactics(
+                    proof, arm, call_depth, selected, choices, stated,
+                )?;
             }
             PostExecutionTactic::CallOutcomes {
                 returned_tactics,
@@ -90,7 +99,24 @@ fn select_checked_post_execution_tactics<'a>(
                     call_depth + 1,
                     selected,
                     choices,
+                    stated,
                 )?;
+            }
+            PostExecutionTactic::Have(have) => {
+                // A proposition that does not lower here is refused when the
+                // `have` runs.
+                let scoped = deferred
+                    .lexical_bindings
+                    .as_ref()
+                    .map(|bindings| proof.with_surface_local_scope(bindings));
+                if let Ok(lowered) = scoped
+                    .as_ref()
+                    .unwrap_or(proof)
+                    .lower_surface_proposition(&have.proposition, "post-execution `have`")
+                {
+                    stated.push(lowered);
+                }
+                selected.push(deferred);
             }
             _ => selected.push(deferred),
         }
@@ -2101,7 +2127,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         loop_outcome_selector.as_ref().and_then(|condition| {
                             outcome_proof
                                 .as_ref()?
-                                .checked_outcome_if_value(condition, None)
+                                .checked_outcome_if_value(condition, None, &[])
                                 .ok()
                         });
                     // The implicit closer follows the script's last tactic,
@@ -2127,6 +2153,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             0,
                             &mut selected_post_execution_tactics,
                             &mut selected_post_choices,
+                            &mut Vec::new(),
                         )?;
                     } else {
                         if post_execution_tactics.iter().any(|deferred| {

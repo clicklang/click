@@ -2893,10 +2893,14 @@ impl<'a> Proof<'a> {
     /// choose which source arm to visit, but it cannot manufacture a fact or
     /// successor: both alternatives are lowered and the kernel assumptions
     /// must establish exactly one of them on this `Proof` path.
+    /// `stated` holds the propositions of the `have`s the path runs before
+    /// this `if`: each is checked where it is written, before the arm this
+    /// decides runs anything, so the decision may read it as a fact.
     pub(in crate::surface::proof) fn checked_outcome_if_value(
         &self,
         condition: &ClickProposition,
         execution_route: Option<usize>,
+        stated: &[Proposition],
     ) -> Result<bool, ClickError> {
         if !matches!(
             self.focused_obligation(),
@@ -2930,13 +2934,24 @@ impl<'a> Proof<'a> {
             self.lower_surface_proposition(condition, "post-execution `if` condition")?;
         let negative =
             self.lower_surface_proposition(&negative_surface, "post-execution `if` negation")?;
-        let assumptions = self.facts().assumptions();
+        let stated_assumptions;
+        let assumptions = if stated.is_empty() {
+            self.facts().assumptions()
+        } else {
+            stated_assumptions = stated.iter().cloned().fold(
+                self.facts().assumptions().clone(),
+                PureFactContext::assume_proposition,
+            );
+            &stated_assumptions
+        };
         let positive_holds = self.facts().contains(&positive)
+            || stated.contains(&positive)
             || crate::surface::planning::proposition_search::decided_without_search(
                 assumptions,
                 &positive,
             );
         let negative_holds = self.facts().contains(&negative)
+            || stated.contains(&negative)
             || crate::surface::planning::proposition_search::decided_without_search(
                 assumptions,
                 &negative,

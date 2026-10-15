@@ -2,9 +2,8 @@
 
 On the path where `a > b` is false, `old(a) >= old(b)` follows from the
 `requires` only by a case split, which the `if` does not search for, so the
-`if` is refused. A `have a >= b;` before `execute()` decides it
-(`bugs/post-execution-if-ignores-earlier-have-and-points-at-previous-tactic.md`
-tracks a `have` written after `execute()`).
+`if` is refused at the `if`. A `have` stating the condition before it decides it
+(`post_execution_if_reads_an_earlier_have.md`).
 
 ```c filename=pick_undecided.c
 int32 pick(int32 a, int32 b) {
