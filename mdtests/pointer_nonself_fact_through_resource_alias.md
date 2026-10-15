@@ -1,0 +1,49 @@
+# Non-self links survive a resource address alias
+
+The inner resource contributes both its address identity and its non-self
+link fact. Looking up the same fact through that identity uses the shared
+pointer/offset comparison bridge.
+
+```c filename=pointer_nonself.c
+struct item { uint64 word; struct item* child; };
+void keep(struct item* root) {}
+```
+```click
+verifying "pointer_nonself.c";
+spec enum Tree { Leaf(struct item*), Parent(struct item*, Tree) }
+resource chain(p: struct item*) {
+    field model: Tree;
+    match model {
+        Tree::Leaf(identity) => { owns p->word; fact p == identity; },
+        Tree::Parent(identity, rest) => {
+            owns p->child;
+            owns child: chain(p->child);
+            fact p == identity;
+            fact p->child != p;
+            fact child.model == rest;
+        },
+    }
+}
+void keep(struct item* root) {
+    consumes state: chain(root);
+    ensures 1 == 1;
+} by {
+    match state.model {
+        Tree::Leaf(identity) => { unfold(state); execute(); simp(); },
+        Tree::Parent(identity, rest) => {
+            let { child: inner } = unfold(state);
+            match inner.model {
+                Tree::Leaf(parent) => { unfold(inner); execute(); simp(); },
+                Tree::Parent(parent, tail) => {
+                    let { child: leaf } = unfold(inner);
+                    have parent->child != parent by { assumption(); }
+                    execute(); simp();
+                },
+            }
+        },
+    }
+}
+```
+```expect
+pass
+```

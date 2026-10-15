@@ -5052,11 +5052,7 @@ pub(in crate::kernel) fn pointer_equality_condition(
     left: Pointer,
     right: Pointer,
 ) -> ConditionTerm {
-    if left.block == right.block {
-        ConditionTerm::pointer_offset_equal(left.offset, right.offset)
-    } else {
-        ConditionTerm::pointer_equal(left, right)
-    }
+    ConditionTerm::pointer_equal(left, right)
 }
 
 pub(in crate::kernel) fn pointer_is_null_condition(pointer: Pointer) -> ConditionTerm {

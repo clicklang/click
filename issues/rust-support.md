@@ -29,16 +29,18 @@ The P1 work is the Charon front-end pipeline. It follows the
 - install layout and version pinning;
 - locating front ends;
 - the identity handshake;
-- the lock envelope;
 - errors.
 
-This file adds only what is specific to Rust.
+The lock envelope, the build description (including how a crate is
+described) and project configuration belong to
+[project-config.md](project-config.md). This file adds only what is specific
+to Rust.
 
 ## Goal
 
 A user with a Rust crate, within the supported subset, installs Click with
-`install.sh` or `install.ps1`, writes a sidecar and import configuration, and
-runs `click import lock` and `click verify`. No Click repository checkout and
+`install.sh` or `install.ps1`, describes the crate in its [project configuration](project-config.md), writes
+a sidecar, and runs `click import lock` and `click verify`. No Click repository checkout and
 no Charon build from source are needed. The user also does not hand-install a
 pinned nightly toolchain, or Click installs it for them in one documented
 step.
@@ -124,16 +126,12 @@ Audit of the current path, from a user's point of view:
    - the configuration-error text about retired legacy extraction.
 
    The canonical evidence lives under `design/charon-trial/`.
-6. **Config and lock formats differ from C++.** The config is schema 3 or 4
-   and the lock is schema 8, with fields named `config`, `source`,
-   `exporter`, …. The reading, hashing and atomic-write helpers (`read`,
-   `write_atomic`, `local_file` in `rust/import.rs`) duplicate their C++
-   counterparts.
-7. **Crate closures are hand-listed.** Schema 4 requires every file rustc
+6. **Crate closure errors are vague.** Schema 4 requires every file rustc
    reads to appear in `files`. When the list is wrong, the refusal "Rust
    compiler source closure differs from configured crate files" does not
-   say which files are missing or extra.
-8. **The target and host are fixed.** Extraction targets only
+   say which files are missing or extra. Where that list lives moves to
+   [project-config.md](project-config.md); the diagnostic stays here.
+7. **The target and host are fixed.** Extraction targets only
    `x86_64-unknown-linux-gnu`. Releases build `click` for eight targets,
    including macOS, Windows and aarch64 (`Cargo.toml`), and the Charon
    toolchain must exist for whichever of those hosts are supported.
@@ -210,8 +208,7 @@ release, and a lock depends only on the project and the pinned front end.
 - Front ends are located only by the shared resolution order. No checked-in
   user config names a repository build path, and `rustup` on `PATH` is not
   required.
-- Locks record release identities and are byte-identical across machines,
-  using the shared lock envelope and input-handling code.
+- Locks record release identities and are byte-identical across machines.
 - No "trial" spellings remain in user-facing names or diagnostics, except
   documented compatibility aliases.
 - Crate-closure diagnostics name the differing files.
@@ -243,8 +240,8 @@ needed to finish a claim already made:
     produce no store observation, and source deltas have ambient-scaling checks.
   - the checked kernel lifecycle for exclusive scalar-reference identities:
     parent suspension, nested dependencies and one-time child recovery, with
-    exact owned-support checks and indexed scaling regressions. Rust execution
-    does not yet issue or consume these local-reference transitions.
+    exact owned-support checks and indexed scaling regressions. The restricted
+    source integration below now issues and consumes these transitions.
   - completed scalar-reborrow assignment receipts and execution-bound endings
     immediately after selected child stores. Bindings require both operations
     on one path, check the source and actual pointer, and refuse ambiguous
@@ -254,13 +251,25 @@ needed to finish a claim already made:
     checks custody in ordinary loads/stores, preserves child writes through
     recovery and rejects copied stale children after ownership returns. Kernel
     execution negatives and indexed adapter scaling checks cover this layer;
-    Rust source execution does not yet activate it. Calls, reference storage,
-    aggregates and loop summarization remain refused while a lease is active.
+    restricted Rust source execution now activates it as described below.
+    Calls, reference storage, aggregates and loop summarization remain refused
+    while a lease is active.
 
-  Those executed observations must still bind the local-reference lifecycle
-  and private memory adapter to the actual ending frontier/invocation. Recovery
-  at checked frontiers remains open. A reproduced false acceptance here
-  would be `unsound`, and so P1, under the [issue rules](README.md).
+  - source-bound births and explicit borrow-end operations for straight-line
+    scalar borrow forests. An indexed alias/tree pass computes frontiers once;
+    nested endings at one frontier run innermost first. Endings resolve live
+    invocation handles, reject live children and consume each handle once,
+    preserving the original owned support and current memory. Copies and moves
+    retain the same identity, even after replacement of the original variable.
+    Read/store observations remain read-only. Native store, alias, read-ending
+    and nested-frontier fixtures cover helper/caller verification, expansion,
+    parent reuse and authority/value negatives. Preparation scaling includes
+    source length, aliases and nested depth.
+
+  Wider source coverage remains open: multiple blocks/loops, aggregates, shared
+  borrow graphs and call/havoc transport need checked protocols. Only the
+  activated source subset executes local leases. A reproduced false acceptance
+  here would be `unsound`, and so P1, under the [issue rules](README.md).
 - **Stable proof observations.** Provide source-facing slice, array and
   iterator observations, so that contracts need not depend on compiler
   temporary names or storage details. They must preserve qualified

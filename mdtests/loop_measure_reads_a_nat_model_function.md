@@ -4,9 +4,9 @@
 computed from the binder's model. A `Nat` has no order of its own that a
 ranking member can compare, so the measure ranks by its Integer image
 `to_integer(chain_nat(c.model))`. The checked conversion law
-`nat_integer_nonnegative` already states that image's nonnegativity, so the
+`nat::to_integer_nonnegative` already states that image's nonnegativity, so the
 bundle's nonnegativity member is closed by construction. Only the decrease is
-owed, and `nat_integer_succ` turns the arm's `Nat::Succ` into the `+ 1` that
+owed, and `nat::to_integer_succ` turns the arm's `Nat::Succ` into the `+ 1` that
 `arithmetic` compares. The `Integer` form of the same loop is
 `loop_measure_reads_a_model_function.md`.
 
@@ -65,7 +65,7 @@ void countdown(int32 n) {
                         unfold(chain_nat(Chain::Link(rest_model)));
                         normalize();
                     }
-                    apply(nat_integer_succ(chain_nat(rest_model)));
+                    apply(nat::to_integer_succ(chain_nat(rest_model)));
                     have to_integer(chain_nat(c.model)) == to_integer(chain_nat(rest_model)) + 1 by {
                         rewrite(chain_nat(c.model) == Nat::Succ(chain_nat(rest_model)));
                         assumption();

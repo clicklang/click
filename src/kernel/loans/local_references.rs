@@ -2,8 +2,8 @@
 //!
 //! Registration checks an existing owned occurrence; no lifecycle transition
 //! creates or returns an owned fact. The private memory adapter reserves that
-//! occurrence and checks leases at ordinary scalar loads/stores. A frontend
-//! must still bind birth and ending to a checked source plan and invocation.
+//! occurrence and checks leases at ordinary scalar loads/stores. Checked source
+//! plans bind supported births and endings to actual executed custody.
 
 use super::*;
 use crate::kernel::{CType, Pointer};
@@ -26,6 +26,7 @@ struct LocalReferenceBacking {
 pub(super) struct LocalReferenceBinding {
     id: LocalReferenceId,
     parent: Option<LocalReferenceId>,
+    source_plan: Option<crate::kernel::ScalarReferencePlanKey>,
     backing: Arc<LocalReferenceBacking>,
 }
 
@@ -53,6 +54,25 @@ impl LocalReferenceId {
 impl LoanLedger {
     pub(super) fn local_references_invariant(&self) -> bool {
         let data = &self.storage.data;
+        let expected = data
+            .local_references
+            .iter()
+            .filter(|(_, record)| record.active && record.binding.source_plan.is_some())
+            .count();
+        if data.source_local_references.len() != expected
+            || !data
+                .source_local_references
+                .iter()
+                .all(|((holder, key), id)| {
+                    data.local_references.get(id).is_some_and(|record| {
+                        record.active
+                            && record.binding.backing.holder == *holder
+                            && record.binding.source_plan.as_ref() == Some(key)
+                    })
+                })
+        {
+            return false;
+        }
         let mut holders = BTreeMap::<LoanParticipantId, u64>::new();
         for (_, id) in data.local_reference_roots.iter() {
             let Some(record) = data.local_references.get(id) else {
@@ -120,6 +140,7 @@ impl LoanLedger {
         let binding = LocalReferenceBinding {
             id: LocalReferenceId::fresh()?,
             parent: None,
+            source_plan: None,
             backing: Arc::new(LocalReferenceBacking {
                 holder,
                 support,
@@ -140,10 +161,28 @@ impl LoanLedger {
         holder: LoanParticipantId,
         resources: &ResourceContext,
     ) -> Result<(LocalReferenceBinding, CheckedLoanTransition), LoanRefusal> {
+        self.borrow_local_reference_with_source(parent, holder, resources, None)
+    }
+    pub(super) fn borrow_local_reference_with_source(
+        &self,
+        parent: &LocalReferenceBinding,
+        holder: LoanParticipantId,
+        resources: &ResourceContext,
+        source_plan: Option<crate::kernel::ScalarReferencePlanKey>,
+    ) -> Result<(LocalReferenceBinding, CheckedLoanTransition), LoanRefusal> {
         self.validate_local_reference(parent, holder, resources)?;
+        if source_plan.as_ref().is_some_and(|key| {
+            self.storage
+                .data
+                .source_local_references
+                .contains_key(&(holder, key.clone()))
+        }) {
+            return Err(LoanRefusal::ActiveDependency);
+        }
         let child = LocalReferenceBinding {
             id: LocalReferenceId::fresh()?,
             parent: Some(parent.id),
+            source_plan,
             backing: parent.backing.clone(),
         };
         let transition = self.issue(LoanTransitionEvidence::BorrowLocalReference(child.clone()))?;
@@ -267,8 +306,11 @@ impl LoanLedger {
                 range
                     .signed_constant_end()
                     .zip(range.signed_constant_start())
-                    .is_some_and(|(end, start)| end.checked_sub(start) == Some(1))
-                    && range.element_width() == backing.value_type.byte_width()
+                    .is_some_and(|(end, start)| {
+                        end.checked_sub(start)
+                            .and_then(|count| count.checked_mul(i64::from(range.element_width())))
+                            == Some(i64::from(backing.value_type.byte_width()))
+                    })
             })
         {
             return Err(LoanRefusal::InvalidEvidence);
@@ -316,6 +358,14 @@ impl LoanLedger {
         if !Arc::ptr_eq(&parent.binding.backing, &child.backing) {
             return Err(LoanRefusal::InvalidEvidence);
         }
+        if let Some(key) = &child.source_plan {
+            let key = (child.backing.holder, key.clone());
+            if data.source_local_references.contains_key(&key) {
+                return Err(LoanRefusal::ActiveDependency);
+            }
+            data.source_local_references =
+                data.source_local_references.with_inserted(key, child.id);
+        }
         parent.child = Some(child.id);
         data.local_references = data
             .local_references
@@ -348,6 +398,13 @@ impl LoanLedger {
             || !Arc::ptr_eq(&parent.binding.backing, &child.backing)
         {
             return Err(LoanRefusal::InvalidEvidence);
+        }
+        if let Some(key) = &child.source_plan {
+            let key = (child.backing.holder, key.clone());
+            if data.source_local_references.get(&key) != Some(&child.id) {
+                return Err(LoanRefusal::InvalidEvidence);
+            }
+            data.source_local_references = data.source_local_references.without_key(&key);
         }
         parent.child = None;
         ended.active = false;

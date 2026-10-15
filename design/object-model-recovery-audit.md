@@ -703,3 +703,235 @@ fixture was run explicitly; the full nightly suite was not run.
 The current-upstream fixture also passes fresh verification, expansion, rewritten
 verification and retained rechecking after an explicit `cargo build --lib` and
 helper relink. The final filtered nightly-fixture rerun passes (1.02s harness).
+
+### Explicit stored-value proofs in the original examples
+
+Following PR #1023, `owned_string_set` and `vector_push` can discharge their
+original contracts by explicitly proving relevant equalities before folding
+their resources. The setter proves its stored value with `simp`; vector push
+proves the unchanged backing pointer and the stored value. The existing final
+`assumption` steps then consume those checked facts. C, claims, resource
+contracts and kernel rules are unchanged.
+
+The focused checks use the original functions in their full sidecars. Reduced
+projects copy the same C, resource definitions, contracts and proofs for fresh,
+expanded, rewritten and retained checks without admitting the unrelated failing
+functions. This is partial recovery, not closure of the
+[string/vector report](../bugs/c-pointer-field-postconditions-lose-frame-evidence.md):
+string push still rejects its terminator equality, while the vector project now
+reaches an allocation-resource fold in `allocated_vector_push`. The last full
+archive audit remains 41/52; no new full-stage verdict is claimed.
+
+Recovery checkpoint `d6caff076` preserves these proof changes and the updated
+bug report. Both reduced cases pass all four modes on that checkpoint; both
+wrong-stored-value controls are rejected. PR #1023's final pushed commit
+`4df6468ff` is verified in upstream history before beginning this extraction.
+
+With the CLI and library rebuilt at upstream `42315e69f`, both functions verify
+in their original full sidecars. The two reduced projects pass all four modes,
+and both wrong-value controls reject. mdBook, docs lint and whitespace checks
+pass; Vale is unavailable, so its advisory prose lint is skipped. No full gate
+or nightly suite was run locally.
+
+
+### String push proof and full upstream project checks
+
+PR #1027 merged, and its final pushed commit `bd36007a1` is verified in upstream
+history. The next proof-only adjustment explicitly checks string push's unchanged
+backing pointer and proves the unfolded zero terminator with `simp` instead of
+requiring it to be an exact available fact. No C, contract, resource or kernel
+changes are involved.
+
+On the current upstream kernel, the complete owned-string sidecar verifies all
+15 proofs and the complete owned-vector sidecar verifies all 13 proofs. The
+whole string project also passes fresh verification, expansion of
+`owned_string_push.contract`, rewritten-project verification and retained
+rechecking. Controls with a wrong terminator or wrong appended value are rejected
+at their final postconditions.
+
+This corrects the earlier attribution: string/vector failures described in the
+previous checkpoint are recovery-archive results, not current-upstream results.
+At archive `d6caff076`, the same explicit backing-pointer proof still fails
+after the zero store, with distinct projected pointer-read snapshots in the
+trace. The archive's later vector allocation fold also remains open. The
+[bug report](../bugs/c-pointer-field-postconditions-lose-frame-evidence.md) records
+that distinction. Its activation work and the last full archive count of 41/52
+remain unchanged. No new full example-stage or nightly verdict is claimed.
+
+The entire vector project also passes fresh verification, expansion of
+`vector_push.contract`, rewritten-project verification and retained rechecking.
+The production kernel sources are unchanged between the explicitly rebuilt
+`42315e69f` and this slice's upstream base `8fc1b58a7`; intervening changes are
+coverage prose, #1027's proof adaptations and recovery records. Recovery
+checkpoint `87ad14e1b` preserves the comparative failure evidence without keeping
+the unsuccessful archive proof edit. mdBook, docs lint and whitespace checks
+pass (Vale unavailable; advisory prose lint skipped).
+
+### Split-field terminator reduction
+
+PR #1028 merged; its final pushed commit `f669cb90f` is in upstream history.
+The recovery reduction now preserves the original separately owned descriptor
+fields. A whole-struct resource is a passing control but differs from that
+original boundary. Explicitly establishing the nonnegative append index lets
+the complete-width frame prove the unchanged pointer. Stored-value and zero
+terminator facts also check. This needs no new object rule or keyword.
+
+At checkpoint `ee9b29f87`, the next simple fold exhausts its unchanged
+750,000-unit budget. The archived
+[fold defect](https://github.com/lacker/click/blob/ee9b29f87822302f753f53eeb1c505bcc06f21ea/bugs/split-descriptor-fold-exhausts-simple-budget.md)
+records its reproduction and incomplete diagnostic profile. The
+[repair below](#preliminary-byte-gap-query-repair) supersedes this blocker. Repeated offset/range reasoning dominates the failed fold; a specific
+performance repair has not yet been established. Failed proof edits and private
+probes are removed from production sources. Keep the original 41/52 archive
+audit and the separate vector allocation-fold failure open.
+
+Archive checkpoint `ee9b29f87` preserves the executable Markdown reproduction
+and updated reports. Its checked-in reproduction independently fails at the
+same simple fold with 750,001 units; the original example source is restored,
+and the CLI/library are rebuilt without probes. This is an unresolved defect
+checkpoint, not a claimed fix or a positive archive verification result.
+
+At upstream base `5fa772724`, a freshly rebuilt CLI/library verifies the focused
+split-field fixture in 2.91s. Fresh verification, expansion, rewritten checking
+and retained rechecking all pass. Wrong-value and wrong-terminator controls fail
+at final postconditions; a control without backing ownership is rejected while
+checking its resource's read authority. The filtered Markdown harness passes
+(2.77s); the fixture is classified nightly, and only this named fixture was run.
+No kernel rule or diagnostic presentation changes are included in this slice.
+
+### Bounded resource-query shortcuts
+
+A separate cleanup classifies literal resource quantities directly as signed
+int32 values, retaining the existing bounded decision route for symbolic
+quantities. A view-occurrence query returns immediately when the maintained
+ownership count establishes that every held fact is owned; mixed inputs skip
+owned candidates before aligning viewed requirements. These shortcuts neither
+publish pointer equalities nor grant authority.
+
+All 12 selected current-upstream quantity, view-dependency and fold-body controls
+pass (0.50s harness). The new deterministic controls cover 0, 16, 64 and 256
+unrelated facts/owners, signed count boundaries, symbolic counts, and view
+insertion/removal/forks. This is not the archive fold repair: the same fold
+still exhausts its budget. Private probes narrow that failure to lowering the
+`terminated_at` body fact, after the preceding exact bound checks succeed.
+PR #1038 merged, and its final pushed commit `e3175f36b` is verified upstream.
+
+The cleanup's rebuilt upstream CLI/library also pass the split-field fixture's
+fresh, expanded, rewritten and retained checks. Its filtered nightly-fixture
+harness passes (3.14s). Formatting, mdBook, docs lint and whitespace checks pass;
+Vale is unavailable, so advisory prose lint is skipped.
+
+### Preliminary byte-gap query repair
+
+PR #1042 merged; its final pushed commit `f3f71a8d7` is verified in upstream
+history. The next archive repair targets the split-field fold itself. A private
+stack sample identifies general signed-order reasoning inside the preliminary
+byte-gap check: resolving its load operands reenters the same memory histories.
+Use exact recorded order and indexed traversal of written order edges for that
+directional check. The traversal retains only its successful path's exact
+premises, handles order withdrawal, and performs no memory equality queries.
+Unknown geometry falls through to complete range-separation evidence; constant-gap
+and direction-free stride checks retain their behavior. The experiment moving
+frame discovery out of read registration is excluded from this repair.
+
+The archive's focused original-source proof now verifies at unchanged limits;
+a completed profile measures its fold at 0.40s. Other expensive simple steps
+remain and this is not a whole-proof performance claim. All 227 selected archive
+memory-history, pointer-frame, designation, span, loop, loan and resource-query
+controls pass. The new query regression checks 0, 16, 64 and 256 unrelated facts,
+order withdrawal, absent/reversed order and overlapping access widths. The final
+extraction also checks a two-edge order chain over memory-load atoms, preserving
+the existing derived-order store-hop control. Wrong
+stored-value and wrong-terminator claims reject, and missing backing ownership
+is refused while checking the resource's read authority.
+
+The initial exact-order variant's rebuilt probe-free archive CLI/library passes
+fresh verification, expansion, rewritten verification and retained rechecking.
+Archive checkpoint `be001cb2f` contains that initial repair; `3279dd7b0` preserves the separately checked push/pop proof
+adaptations and the missing final-assumption trace reproduction.
+The final indexed-order variant passes the split-field fixture and full original
+owned-string project in fresh, expanded, rewritten and retained modes on both
+the recovery archive and current-upstream extraction. Wrong stored-value and
+wrong-terminator claims reject, and missing backing ownership is refused. These
+checks close the fold-budget defect; its historical reproduction remains in
+archive history. The separate returned-resource performance report remains open.
+
+### CI graph-lock boundary follow-up
+
+PR #1051's bounded order checks expose an existing graph reentry path in
+`equivalent_field_derived_bases_frame_symbolic_index_store`. The failed library
+partition reproduces locally: 944 of 945 tests pass and that case times out.
+A debugger shows the graph mutex held by address registration while term
+canonicalization starts a cell-epoch walk that queries the same mutex.
+
+The repair keeps term interning and affine decomposition structural. Scalar and
+offset query adapters perform selected normalization before locking; internal
+raw-read names retain their exact snapshot, kind and access width. A new
+multi-size raw-read registration regression complements the existing
+snapshot/support and complete-width controls. The selected offset adapter
+preserves expression shape while normalizing scalar indices before locking.
+
+After integrating upstream `c819a273e`, all 5,415 normal library tests pass
+(115.1s; 572 skipped), as do all 168 selected C++ import/span integration tests
+(32.4s). All 534 selected archive graph, memory, designation, span, loop/loan and
+diagnostic controls pass. Freshly rebuilt libraries and CLIs pass the positive
+four-mode checks above; all three negative controls reject. Formatting, mdBook,
+docs lint and whitespace checks pass. The full gate and nightly remain CI work.
+
+The recovery archive's full original string project and focused original pop
+and clear reductions now pass all four proof modes. Checkpoint `5570f876c`
+preserves the one-line clear predicate elimination and the completed normal
+example audit: **42/52 pass**, 10 fail, exit 100, 176.3s harness. Remaining projects
+are arena, binary-tree, input-cursor, multifile-registry, owned-vector,
+rbtree-augmented, refcount, ring-buffer, rust-byte-sum and rust-chunks-exact.
+This is not a green archive verdict. The expensive first returned-resource
+assumption has a separate preserved report at that checkpoint; the fold budget
+failure itself no longer reproduces on the final indexed-order archive variant.
+
+### Preserve the final-assumption trace context
+
+The ordered final-assumption driver discarded each failed focused proof error
+and constructed a fresh summary. Focusing also created a semantic root without
+linking its existing checked trace prefix. Retain one selected failed goal's
+diagnostic on the original summary and register the focused root under that
+prefix. This restores recorded execution and successful `have` steps through the
+existing renderer; it introduces no facts or output format.
+
+The regression rejects a deliberately false second postcondition after a checked
+store and true stored-value fact. It checks the original driver summary and the
+presence of those earlier operations, and refuses any trace fact asserting the
+false claim. All 135 selected current-upstream diagnostic and proof-trace controls pass
+(2.47s). A freshly rebuilt CLI rejects the false claim with the original summary
+and useful checked prefix. Formatting, mdBook, docs lint and whitespace checks
+pass; advisory Vale is unavailable. Archive checkpoint
+`e5305eeba` preserves the original false-claim and string-clear reproductions.
+
+### Selected complete-read bridge for resource deltas
+
+Recovery checkpoint `c72759eb7` closes a producer/checker mismatch when unfolding
+a returned resource. The kernel's instantiated loadability premise and the
+surface-produced fact name the same backing address through different registered
+pointer reads. The existing delta index already selects a unique body premise;
+only its exact named address-equality bridge was missing.
+
+For that selected pair, admit only complete eight-byte registered reads at the
+same positive pointee scale and check their recorded memory evidence. Retain the
+evidence in the existing rewrite capture for rechecking. Upstream's legacy
+`Bits32` pointer encoding additionally checks the raw term's eight-byte access
+width before using the recorded-only equality constructor. This is numeric
+loadability transport; it supplies no object designation or allocation token.
+Ambiguous premise selection, changed lifetime metadata, overwritten cells,
+partial writes (including the upper half), and narrow-only reads remain refused.
+
+All 337 selected archive execution, memory, pointer-effect and native-record
+controls pass. The focused unfold-and-free reduction verifies its three proofs
+and passes fresh, expanded, rewritten and retained checks with a rebuilt library.
+The latest normal archive audit remains **42/52**, with the same ten failures
+(136.3s harness, exit 100). The original vector allocation fold still rejects its
+full pointer-value comparison. This is not archive activation. Upstream
+extraction passes all four targeted controls and all 707 scaling tests with two
+workers (59.3s). The initial scaling run timed out one endpoint test while a
+compiler ran concurrently; that case passes alone in 6.8s, and the complete
+rerun passes without changing limits. Formatting, mdBook, docs lint and whitespace
+checks pass; advisory Vale is unavailable. The full gate and nightly remain CI
+work.

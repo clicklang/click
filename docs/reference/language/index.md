@@ -129,9 +129,18 @@ Ordinary `ensures` is owed only by normal returns and may use `result`;
 payload name is available in the opposite family. Omitting `throws int32`
 declares a nonthrowing interface.
 
-Exceptional contracts are pure and direct: the exceptional family cannot
-carry resources or mutable effects, and named contracts, external contracts,
-callbacks, indirect calls, handlers, and unwinding do not support it. A separate, object-free C++ scalar-exception
+Exceptional contracts are pure: the exceptional family cannot carry
+resources or mutable effects. A named contract or an `extern` declaration
+may say `throws int32` too, and a call through a pointer under a throwing
+contract, or to a throwing `extern`, has both outcomes, as a direct call
+does. Whether a function may throw is part of its contract, not of its
+pointer type: a function that never throws meets a contract that may, a
+function that may throw meets only a contract that may, and its
+`exceptional ensures` must give the contract's
+(`mdtests/exceptional_named_contract.md`,
+`mdtests/exceptional_external_contract.md`). An explicit refinement theorem
+for a source that may throw is not supported yet, and nor are handlers and
+unwinding. A separate, object-free C++ scalar-exception
 import profile accepts typed `throw int32`, one typed `try`/`catch (int name)`
 with a fresh payload binding, and the narrow single-guard cleanup shape
 documented by the import reference. It still rejects nested handlers and other
@@ -1924,6 +1933,8 @@ let root = fold(tree(p), { model: old(root.model) }, { left: l, right: r });
 and introduces folded children. It is the one form that names what an unfold
 opens; the trailing `unfold(root) as { ... }` spelling is refused with that
 advice (`mdtests/unfold_names_its_pieces_on_the_left.md`). No parent handle or `root.left` path remains.
+Child-field equations and the aliases they establish are local to each match
+arm; another arm may reuse the child name with different parent fields.
 Each selected-arm child must be named exactly once. An introduced name must
 not already own a resource. `unfold(l)` exposes the child's immediate body;
 an arm with no children needs no bindings (an empty output pattern is also
@@ -3215,9 +3226,9 @@ Click function or predicate parameter declared as `uint8[]` is rejected.
 The same typed array-ref model is used by loop-invariant spec lowering, so a
 pure helper over `uint8[]` can appear in an invariant or inside `old(...)`.
 
-The Click library provides byte-slice helpers over `uint8[]`: `byte_count`,
-`bytes_equal`, `bytes_equal_range`, `bytes_all_equal`, `bytes_contains`, and
-`bytes_all_not_equal`. It also provides C-string predicates:
+The Click library provides byte-slice helpers over `uint8[]`: `bytes::count`,
+`bytes::equal`, `bytes::equal_range`, `bytes::all_equal`, `bytes::contains`, and
+`bytes::all_not_equal`. It also provides C-string predicates:
 `cstr_prefix`, `cstr_len`, `cstr`, and `cstr_bounded`, whose lengths and bounds
 are `size_t` (`uint64`) values as C measures them. These are ordinary Click
 functions and predicates, not built-in kernel concepts.
@@ -3225,7 +3236,9 @@ functions and predicates, not built-in kernel concepts.
 In pointer-valued C contexts, the integer constant `0` is the null pointer
 constant. It may initialize or assign a pointer, be returned from a pointer
 function, be passed to a pointer parameter, or be compared with a pointer.
-Nonzero integers do not implicitly convert to pointers.
+Pointer-typed datatype constructor fields use the same rule in function
+contracts and pure expressions: a field declared `int32*` accepts `0` as its
+typed null pointer. Nonzero integers do not implicitly convert to pointers.
 
 Supported C accepts the struct shapes listed in
 [struct subset](c.md#struct-subset). The C side lowers chained `obj->child->field` loads and stores at

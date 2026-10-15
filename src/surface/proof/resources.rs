@@ -1,7 +1,7 @@
 use super::*;
 use crate::kernel::ExecutionFactSource;
 use crate::kernel::ResourceInstance;
-use crate::surface::planning::proposition_search::proves_by_tactic_search;
+use crate::surface::planning::proposition_search::decided_without_search;
 use crate::surface::proof::execution_planning::refuse_or_record_open_obligation;
 use crate::surface::proof_diagnostics::render::{
     render_resource_fact_diagnostic, render_resource_facts_diagnostic,
@@ -17,6 +17,39 @@ pub(super) enum ResourceBodyAccess {
 pub(super) enum ResourceBodyClosure {
     Initialize,
     CloseOpen { preserve_exposed_body: bool },
+}
+
+/// Literal resource counts are signed int32 values. Classify them without
+/// asking whether unrelated assumptions imply a contradictory arithmetic fact.
+/// Symbolic counts still require the existing checked proof queries.
+fn fold_resource_quantity_activity(
+    quantity: &Bitvector32Term,
+    assumptions: &PureFactContext,
+) -> (bool, bool) {
+    if let Some(value) = quantity.as_const() {
+        return (value == 0, (value as i32) > 0);
+    }
+    let zero = decided_without_search(
+        assumptions,
+        &Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(
+                Box::new(quantity.clone()),
+                Box::new(Bitvector32Term::Constant(0)),
+            ),
+            true,
+        ),
+    );
+    let positive = decided_without_search(
+        assumptions,
+        &Proposition::ConditionIs(
+            ConditionTerm::Bitvector32SignedGreaterThan(
+                Box::new(quantity.clone()),
+                Box::new(Bitvector32Term::Constant(0)),
+            ),
+            true,
+        ),
+    );
+    (zero, positive)
 }
 
 /// The pure-fact surface needed by resource semantics.
@@ -216,6 +249,10 @@ impl DynamicViewDependencyIndex {
     }
 }
 
+/// The innermost guarded universal binder around a body-fact read: its
+/// variable and the guard its body's implication assumes.
+type QuantifiedBinder<'a> = Option<(Variable, &'a Proposition)>;
+
 /// Find the live stable-view authority needed by the current memory loads in
 /// one lowered body fact.  Loads from an older memory snapshot are historical
 /// scalar facts and deliberately do not participate in this check.  The
@@ -233,14 +270,31 @@ fn dynamic_body_fact_dependency(
         state: &CState,
         assumptions: &PureFactContext,
         temporary_views: &DynamicViewDependencyIndex,
+        binder: QuantifiedBinder<'_>,
         selected: &mut Option<crate::kernel::LoanViewBinding>,
     ) -> Result<(), String> {
-        let required_view = CResourceFact::view_memory(CMemoryRange::new_with_element_width(
-            pointer,
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
-            width,
-        ));
+        // A read under a guarded universal, `forall v { lo <= v < hi implies
+        // ... p[v] ... }`, reads only cells of `p[lo..hi]`. Require a live
+        // view of that whole range instead of one of the symbolic cell
+        // `p[v]`, which no view contains since `v` alone is unconstrained.
+        // Every cell the guard admits lies in the range
+        // (`CMemoryRange::guarded_quantified_cells`), so a view covering the
+        // range covers every cell the fact reads, and its loan is the fact's
+        // dependency. A read the range does not describe keeps the one-cell
+        // requirement.
+        let range = binder
+            .and_then(|(variable, guard)| {
+                CMemoryRange::guarded_quantified_cells(&pointer, variable, guard, width)
+            })
+            .unwrap_or_else(|| {
+                CMemoryRange::new_with_element_width(
+                    pointer,
+                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::Constant(1),
+                    width,
+                )
+            });
+        let required_view = CResourceFact::view_memory(range);
         if !temporary_views
             .unbound
             .view_occurrences_for_fact(&required_view, assumptions)
@@ -313,6 +367,7 @@ fn dynamic_body_fact_dependency(
         state: &CState,
         assumptions: &PureFactContext,
         temporary_views: &DynamicViewDependencyIndex,
+        binder: QuantifiedBinder<'_>,
         selected: &mut Option<crate::kernel::LoanViewBinding>,
     ) -> Result<(), String> {
         for (pointer, width) in crate::kernel::current_memory_loads_in_term(term, state.memory())? {
@@ -322,6 +377,7 @@ fn dynamic_body_fact_dependency(
                 state,
                 assumptions,
                 temporary_views,
+                binder,
                 selected,
             )?;
         }
@@ -332,6 +388,7 @@ fn dynamic_body_fact_dependency(
         state: &CState,
         assumptions: &PureFactContext,
         temporary_views: &DynamicViewDependencyIndex,
+        binder: QuantifiedBinder<'_>,
         selected: &mut Option<crate::kernel::LoanViewBinding>,
     ) -> Result<(), String> {
         match proposition {
@@ -340,26 +397,48 @@ fn dynamic_body_fact_dependency(
                 state,
                 assumptions,
                 temporary_views,
+                binder,
                 selected,
             ),
             Proposition::Equal(left, right) => {
-                walk_term(left, state, assumptions, temporary_views, selected)?;
-                walk_term(right, state, assumptions, temporary_views, selected)
+                walk_term(left, state, assumptions, temporary_views, binder, selected)?;
+                walk_term(right, state, assumptions, temporary_views, binder, selected)
             }
             Proposition::And(left, right)
             | Proposition::Or(left, right)
             | Proposition::Implies(left, right) => {
-                walk_proposition(left, state, assumptions, temporary_views, selected)?;
-                walk_proposition(right, state, assumptions, temporary_views, selected)
+                walk_proposition(left, state, assumptions, temporary_views, binder, selected)?;
+                walk_proposition(right, state, assumptions, temporary_views, binder, selected)
             }
-            Proposition::Not(body)
-            | Proposition::ForAll { body, .. }
-            | Proposition::Exists { body, .. } => {
-                walk_proposition(body, state, assumptions, temporary_views, selected)
+            Proposition::ForAll { var, body, .. } => match body.as_ref() {
+                Proposition::Implies(guard, consequent) => {
+                    walk_proposition(guard, state, assumptions, temporary_views, binder, selected)?;
+                    walk_proposition(
+                        consequent,
+                        state,
+                        assumptions,
+                        temporary_views,
+                        Some((*var, guard)),
+                        selected,
+                    )
+                }
+                body => {
+                    walk_proposition(body, state, assumptions, temporary_views, binder, selected)
+                }
+            },
+            Proposition::Not(body) | Proposition::Exists { body, .. } => {
+                walk_proposition(body, state, assumptions, temporary_views, binder, selected)
             }
             Proposition::Predicate { arguments, .. } => {
                 for argument in arguments {
-                    walk_term(argument, state, assumptions, temporary_views, selected)?;
+                    walk_term(
+                        argument,
+                        state,
+                        assumptions,
+                        temporary_views,
+                        binder,
+                        selected,
+                    )?;
                 }
                 Ok(())
             }
@@ -372,6 +451,7 @@ fn dynamic_body_fact_dependency(
                     state,
                     assumptions,
                     temporary_views,
+                    binder,
                     selected,
                 ),
                 CExpressionOutcome::UndefinedBehavior(_) | CExpressionOutcome::RuntimeError(_) => {
@@ -390,6 +470,7 @@ fn dynamic_body_fact_dependency(
                     state,
                     assumptions,
                     temporary_views,
+                    binder,
                     selected,
                 )?;
                 if memory == state.memory() {
@@ -399,6 +480,7 @@ fn dynamic_body_fact_dependency(
                         state,
                         assumptions,
                         temporary_views,
+                        binder,
                         selected,
                     )?;
                 }
@@ -410,6 +492,7 @@ fn dynamic_body_fact_dependency(
                 state,
                 assumptions,
                 temporary_views,
+                binder,
                 selected,
             ),
             Proposition::CMemoryCanStore { .. }
@@ -421,7 +504,14 @@ fn dynamic_body_fact_dependency(
         }
     }
     let mut selected = None;
-    walk_proposition(required, state, assumptions, temporary_views, &mut selected)?;
+    walk_proposition(
+        required,
+        state,
+        assumptions,
+        temporary_views,
+        None,
+        &mut selected,
+    )?;
     Ok(selected)
 }
 
@@ -1643,7 +1733,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             .owned_quantity_term()
             .expect("an explicitly quantified observation lowers to owned authority");
         let positive = quantity.as_const().is_some_and(|value| value > 0)
-            || proves_by_tactic_search(
+            || decided_without_search(
                 &assumptions,
                 &Proposition::ConditionIs(
                     ConditionTerm::Bitvector32SignedGreaterThan(
@@ -1652,7 +1742,6 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
                     ),
                     true,
                 ),
-                "observe quantity positive",
             );
         if !positive {
             // The count lower bound remains valid for zero or an undecided
@@ -2224,7 +2313,7 @@ fn try_select_composite_resource_body(
             }
             _ => false,
         },
-        _ => proves_by_tactic_search(assumptions, proposition, "resource body selection"),
+        _ => decided_without_search(assumptions, proposition),
     };
     if proves_condition(&lowered) {
         return Ok(Some(true));
@@ -3194,9 +3283,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             ConditionTerm::Bitvector32Equal(Box::new(count), Box::new(quantity)),
             true,
         );
-        if !final_by_constant
-            && !proves_by_tactic_search(&assumptions, &final_unit, "unfold population final unit")
-        {
+        if !final_by_constant && !decided_without_search(&assumptions, &final_unit) {
             return Err(ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `unfold({})` Requires count({}) == {}",
                 describe_resource_clause(resource),
@@ -3686,8 +3773,9 @@ fn fold_composite_resources_on_outcome_with_facts(
     unfolded_predicates: &[String],
     closure: ResourceBodyClosure,
     family_reaches_population: bool,
-) -> Result<(CFunctionOutcome, Vec<CResourceFact>), ClickError> {
+) -> Result<FoldedOutcome, ClickError> {
     let mut selections = Vec::with_capacity(resource_folds.len());
+    let mut loan_holds = Vec::new();
     for resource in resource_folds {
         let definition = composite_resource_law_definition(
             resource_environment,
@@ -3819,35 +3907,8 @@ fn fold_composite_resources_on_outcome_with_facts(
                 }
             };
             let assumptions = pure_facts.assumptions();
-            let quantity_is_zero = quantity.as_const() == Some(0)
-                || proves_by_tactic_search(
-                    assumptions,
-                    &Proposition::ConditionIs(
-                        ConditionTerm::Bitvector32Equal(
-                            Box::new(quantity.clone()),
-                            Box::new(Bitvector32Term::Constant(0)),
-                        ),
-                        true,
-                    ),
-                    "fold quantity zero",
-                );
-            // A resource quantity is a signed `int32`, and `as_const` answers
-            // `u32`, so `-1` read here as `4294967295` was both "positive"
-            // and the thing that made the body active. The symbolic arm
-            // beside it always asked the signed question; reading the
-            // constant signed is what makes the two agree.
-            let quantity_is_positive = quantity.as_const().is_some_and(|value| (value as i32) > 0)
-                || proves_by_tactic_search(
-                    assumptions,
-                    &Proposition::ConditionIs(
-                        ConditionTerm::Bitvector32SignedGreaterThan(
-                            Box::new(quantity.clone()),
-                            Box::new(Bitvector32Term::Constant(0)),
-                        ),
-                        true,
-                    ),
-                    "fold quantity positive",
-                );
+            let (quantity_is_zero, quantity_is_positive) =
+                fold_resource_quantity_activity(&quantity, assumptions);
             if !quantity_is_zero && !quantity_is_positive {
                 return Err(ClickError::new(format!(
                     "`{claim_label}` path {path_index}: `fold({})` requires its quantity to be proved zero or positive",
@@ -4391,13 +4452,18 @@ fn fold_composite_resources_on_outcome_with_facts(
                         describe_resource_clause(resource)
                     )));
                 };
-                let (ledger, hold) = ledger.hold(binding, holder).map_err(|refusal| {
-                    ClickError::new(format!(
-                        "`{claim_label}` path {path_index}: `fold({})` cannot hold the loan behind its viewed body: {refusal}",
-                        describe_resource_clause(resource)
-                    ))
-                })?;
+                let (ledger, hold, transition) = ledger
+                    .hold_with_transition(binding, holder)
+                    .map_err(|refusal| {
+                        ClickError::new(format!(
+                            "`{claim_label}` path {path_index}: `fold({})` cannot hold the loan behind its viewed body: {refusal}",
+                            describe_resource_clause(resource)
+                        ))
+                    })?;
                 binding.hold = Some(hold);
+                // The kernel checks the fold's ledger change against this
+                // exact transition.
+                loan_holds.push(transition);
                 post_state = Box::new(post_state.with_loan_ledger(Some(ledger)));
             }
             // Authority rewrites authenticate the selected exchange only;
@@ -4552,14 +4618,25 @@ fn fold_composite_resources_on_outcome_with_facts(
         };
     }
 
-    Ok((outcome, selections))
+    Ok((outcome, selections, loan_holds))
 }
 
 pub(super) struct CheckedResourceFold {
     pub(super) selected: CResourceFact,
     pub(super) state: CState,
     pub(super) facts: ProofFacts,
+    /// The hold a borrowing fold placed on the loan behind its viewed body,
+    /// which the kernel checks as the fold's only ledger change.
+    pub(super) loan_holds: Vec<crate::kernel::CheckedLoanTransition>,
 }
+
+/// A folded outcome, the resources it selected, and the loan holds its
+/// borrowing folds placed.
+type FoldedOutcome = (
+    CFunctionOutcome,
+    Vec<CResourceFact>,
+    Vec<crate::kernel::CheckedLoanTransition>,
+);
 
 pub(super) struct CheckedOutcomeResourceFold {
     pub(super) selected: CResourceFact,
@@ -4623,7 +4700,9 @@ pub(super) fn fold_composite_resource_on_outcome_for_proof(
     family_reaches_population: bool,
 ) -> Result<CheckedOutcomeResourceFold, ClickError> {
     let mut facts = ProofResourcePureFacts::new(facts);
-    let (outcome, mut selections) = fold_composite_resources_on_outcome_with_facts(
+    // A return fold's ledger change, if any, is not presented to the kernel
+    // as a hold: the return rewrite check keeps refusing it.
+    let (outcome, mut selections, _) = fold_composite_resources_on_outcome_with_facts(
         resource_environment,
         std::slice::from_ref(resource),
         None,
@@ -4738,7 +4817,7 @@ fn fold_composite_resource_for_proof_with_closure(
         value: CValue::Int32(Bitvector32Term::Constant(0)),
         state: Box::new(state),
     };
-    let (outcome, mut selections) = fold_composite_resources_on_outcome_with_facts(
+    let (outcome, mut selections, loan_holds) = fold_composite_resources_on_outcome_with_facts(
         resource_environment,
         std::slice::from_ref(resource),
         Some(source_resource),
@@ -4763,6 +4842,7 @@ fn fold_composite_resource_for_proof_with_closure(
             .expect("one fold has one selected resource"),
         state: *state,
         facts: facts.facts,
+        loan_holds,
     })
 }
 
@@ -5450,6 +5530,108 @@ void child_release(struct child* obj) {
         check_dynamic_current_fact_dependencies(true);
     }
 
+    /// A guarded universal read depends on a view of every cell its guard
+    /// admits, not on the one symbolic cell `p[k]`, which no view contains.
+    #[test]
+    fn dynamic_quantified_definedness_depends_on_the_guarded_range() {
+        let base = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let memory = CMemory::new();
+        let index = Variable(2_000_000);
+        let index_term = || Box::new(Bitvector32Term::Variable(index));
+        let below = |end: u32| {
+            Proposition::ConditionIs(
+                ConditionTerm::Bitvector32SignedLessThan(
+                    index_term(),
+                    Box::new(Bitvector32Term::Constant(end)),
+                ),
+                true,
+            )
+        };
+        let at_least_zero = Proposition::ConditionIs(
+            ConditionTerm::Bitvector32SignedLessEqual(
+                Box::new(Bitvector32Term::Constant(0)),
+                index_term(),
+            ),
+            true,
+        );
+        let quantified = |guard: Proposition| Proposition::ForAll {
+            var: index,
+            sort: crate::kernel::Sort::CInt32,
+            body: Box::new(Proposition::Implies(
+                Box::new(guard),
+                Box::new(Proposition::CMemoryReadDefined {
+                    memory: memory.clone(),
+                    pointer: Pointer {
+                        block: PointerBlock::ExternalArgument,
+                        offset: PointerOffsetTerm::Int32Scaled {
+                            value: index_term(),
+                            byte_width: 4,
+                        },
+                    },
+                    value_type: crate::kernel::CType::Int32,
+                }),
+            )),
+        };
+        let range = CMemoryRange::new(
+            base,
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(4),
+        );
+        let own = CResourceFact::own_memory(range.clone());
+        let view = CResourceFact::view_memory(range);
+        let support_resources = ResourceContext::new().unchecked_with_fact(own.clone());
+        let support = support_resources.owned_occurrences_for_fact(&own)[0];
+        let ledger = crate::kernel::LoanLedger::new();
+        let lender = ledger.fresh_participant().unwrap();
+        let opening = ledger.lend(lender, lender, support, own).unwrap();
+        let ledger = ledger.apply(&opening.transition).unwrap();
+        let binding = crate::kernel::LoanViewBinding {
+            loan: opening.loan,
+            scope: opening.scope,
+            share: opening.root_share,
+            support,
+            viewed: view.clone(),
+            hold: None,
+        };
+        let bound_resources = ResourceContext::new().unchecked_with_fact(view.clone());
+        let view_occurrence = bound_resources.occurrences_for_fact(&view)[0];
+        let state = CState::new()
+            .with_memory(memory.clone())
+            .with_resource_context_and_loan_dependencies(
+                bound_resources,
+                [(view_occurrence, binding)],
+            )
+            .with_loan_ledger(Some(ledger))
+            .with_loan_participant(Some(lender));
+        let no_temporary_views = DynamicViewDependencyIndex::new(&[], &[], &PureFactContext::new());
+        let dependency = |fact: &Proposition| {
+            dynamic_body_fact_dependency(fact, &state, &PureFactContext::new(), &no_temporary_views)
+        };
+        let within = quantified(Proposition::And(
+            Box::new(at_least_zero.clone()),
+            Box::new(below(4)),
+        ));
+        assert!(
+            dependency(&within).unwrap().is_some(),
+            "a guard inside the view keeps the view's loan"
+        );
+        let beyond = quantified(Proposition::And(
+            Box::new(at_least_zero),
+            Box::new(below(5)),
+        ));
+        assert!(
+            dependency(&beyond).is_err(),
+            "a guard admitting a cell past the view is refused"
+        );
+        assert!(
+            dependency(&quantified(below(4))).is_err(),
+            "a signed index with no lower bound admits negative cells"
+        );
+    }
+
     fn check_dynamic_current_fact_dependencies(definedness: bool) {
         let pointer = Pointer {
             block: PointerBlock::ExternalArgument,
@@ -5742,6 +5924,68 @@ resource cell(p: int32*) {
             if !active {
                 assert_eq!(after.memory(), before.memory());
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod fold_quantity_activity_tests {
+    use super::*;
+
+    #[test]
+    fn literal_counts_ignore_unrelated_assumptions_and_keep_signed_bounds() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for size in [0, 16, 64, 256] {
+            let mut assumptions = PureFactContext::new();
+            for index in 0..size {
+                assumptions = assumptions.assume_condition(
+                    ConditionTerm::Bitvector32SignedLessEqual(
+                        Box::new(Bitvector32Term::Variable(Variable(9_810_000 + index))),
+                        Box::new(100u32.into()),
+                    ),
+                    true,
+                );
+            }
+            for (value, expected) in [
+                (0, (true, false)),
+                (1, (false, true)),
+                (i32::MAX as u32, (false, true)),
+                (i32::MIN as u32, (false, false)),
+                (u32::MAX, (false, false)),
+            ] {
+                let (activity, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    fold_resource_quantity_activity(&value.into(), &assumptions)
+                });
+                assert_eq!(activity, expected);
+                assert_eq!(
+                    work, 0,
+                    "literal classification visited ambient facts: size={size}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn symbolic_counts_require_checked_zero_or_positive_facts() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let count = Bitvector32Term::Variable(Variable(9_820_001));
+        assert_eq!(
+            fold_resource_quantity_activity(&count, &PureFactContext::new()),
+            (false, false)
+        );
+        for (value, expected) in [
+            (0, (true, false)),
+            (1, (false, true)),
+            (u32::MAX, (false, false)),
+        ] {
+            let assumptions = PureFactContext::new().assume_condition(
+                ConditionTerm::Bitvector32Equal(Box::new(count.clone()), Box::new(value.into())),
+                true,
+            );
+            assert_eq!(
+                fold_resource_quantity_activity(&count, &assumptions),
+                expected
+            );
         }
     }
 }

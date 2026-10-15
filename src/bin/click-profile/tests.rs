@@ -841,6 +841,41 @@ fn generated_commands_quote_locations_and_artifacts() {
 }
 
 #[test]
+fn an_implicit_auto_row_expands_its_claim() {
+    let key = StepKey {
+        prepared_import: false,
+        source_tactic_path: None,
+        source_path: PathBuf::from("examples/caller.click"),
+        claim: "caller.contract".to_string(),
+        tactic_index: 0,
+        source_index: 0,
+        tactic_name: click::instrumentation::IMPLICIT_AUTO_TACTIC.to_string(),
+        category: TacticCategory::Smart,
+        statement_index: 0,
+        position: None,
+    };
+    let mut output = String::new();
+    render_expansion_command(
+        &mut output,
+        &key,
+        SourcePosition {
+            line: 2,
+            column: 3,
+            origin: None,
+        },
+        Thresholds::default(),
+    );
+    // A bare `step()` is not a selectable site: the claim is expanded.
+    assert!(
+        output.contains(
+            "click expand --output examples/caller.expanded.click --claim caller.contract examples/caller.click"
+        ),
+        "{output}"
+    );
+    assert!(!output.contains("caller.click:2:3"), "{output}");
+}
+
+#[test]
 fn common_threshold_sets_every_tactic_class() {
     let arguments = parse_arguments([
         "--threshold".to_string(),

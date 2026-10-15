@@ -190,7 +190,15 @@ impl Application {
         match self {
             Self::Apply(left, right) => Self::Apply(classes.root(left), classes.root(right)),
             Self::Condition(kind, left, right) => {
-                Self::Condition(kind, classes.root(left), classes.root(right))
+                let (mut left, mut right) = (classes.root(left), classes.root(right));
+                if matches!(
+                    kind,
+                    congruence::ConditionKind::PointerEq | congruence::ConditionKind::OffsetEq
+                ) && left > right
+                {
+                    std::mem::swap(&mut left, &mut right);
+                }
+                Self::Condition(kind, left, right)
             }
             Self::UInt64Binary(op, left, right) => {
                 Self::UInt64Binary(op, classes.root(left), classes.root(right))
@@ -302,7 +310,7 @@ pub(super) struct TermClasses {
     // class. A narrow spelling must not discard the wide coordinate whose
     // bounds justify a borrow. Queries never enumerate class members.
     additive_addresses: PersistentMap<u64, (Option<Arc<Pointer>>, Option<Arc<Pointer>>)>,
-    // Same-block pointer comparisons enter as offset equalities. Their checked
+    // The offset views of same-block pointer equations. These checked
     // producer spellings carry no block identity and are applied only in the
     // query's own block.
     additive_offsets: PersistentMap<
@@ -507,7 +515,7 @@ impl TermClasses {
         term: &crate::kernel::Bitvector32Term,
         merged: &std::collections::HashSet<u64>,
     ) -> Int32AtomClass {
-        let term = crate::kernel::canonical_term(term);
+        let term = term.clone();
         match self
             .nodes
             .get(&Node::Int32(MachineAtom::int32(term.clone())))
@@ -1067,7 +1075,7 @@ impl TermClasses {
                             } else {
                                 crate::kernel::MachineIntegerType::Int64
                             },
-                            crate::kernel::canonical_term(value),
+                            value.as_ref().clone(),
                         ),
                         *byte_width,
                         *unsigned,
@@ -1230,8 +1238,10 @@ impl TermClasses {
     }
 
     fn intern_int32(&mut self, term: &crate::kernel::Bitvector32Term) -> u64 {
-        let term = crate::kernel::canonical_term(term);
-        self.intern_machine(&term, false)
+        // This interner runs under the graph mutex. Memory canonicalization
+        // can re-enter this graph through a cell-epoch walk; callers perform
+        // it before locking, while raw reads here retain their own snapshot.
+        self.intern_machine(term, false)
     }
 
     pub(super) fn int32_class(&mut self, term: &crate::kernel::Bitvector32Term) -> u64 {
@@ -1293,7 +1303,7 @@ impl TermClasses {
             if supported(term) {
                 return None;
             }
-            let term = crate::kernel::canonical_term(term);
+            let term = term.clone();
             (!supported(&term)).then(|| Node::Int32(MachineAtom::int32(term)))
         };
         let left_atom = opaque(left);
@@ -1825,61 +1835,6 @@ mod tests {
     }
 
     #[test]
-    fn addition_congruence_late_merge_work_scales_with_affected_parents() {
-        for size in [16u64, 64, 256, 1024] {
-            let mut graph = EqualityGraph::default();
-            for i in 0..size {
-                graph.add_offset_equality(&add(var(0), var(10 + i)), &var(10_000 + i));
-                graph.add_offset_equality(&add(var(1), var(10 + i)), &var(20_000 + i));
-            }
-            let ((_, work), map_work) = crate::persistent::measure_persistent_work(|| {
-                crate::instrumentation::measure_deterministic_work(|| {
-                    graph.add_offset_equality(&var(0), &var(1));
-                    for i in 0..size {
-                        assert!(graph.are_offsets_equal(&var(10_000 + i), &var(20_000 + i)));
-                    }
-                })
-            });
-            let logarithm = size.ilog2() as usize + 1;
-            assert!(work < 80 * size as usize, "size={size}, work={work}");
-            assert!(
-                map_work < 512 * size as usize * logarithm,
-                "size={size}, map work={map_work}"
-            );
-        }
-    }
-
-    #[test]
-    fn addition_congruence_forks_do_not_reindex_unrelated_parents() {
-        for size in [16u64, 64, 256, 1024] {
-            let mut graph = EqualityGraph::default();
-            for i in 0..size {
-                graph.add_offset_equality(&add(var(0), var(10 + i)), &var(10_000 + i));
-            }
-            let ((_, work), map_work) = crate::persistent::measure_persistent_work(|| {
-                crate::instrumentation::measure_deterministic_work(|| {
-                    for i in 0..size {
-                        let mut branch = graph.clone();
-                        // Argument order must not move the class with many
-                        // parents under this newly registered singleton.
-                        branch.add_offset_equality(&var(20_000 + i), &var(0));
-                        assert!(
-                            branch.are_offsets_equal(&add(var(20_000 + i), var(10)), &var(10_000))
-                        );
-                    }
-                })
-            });
-            let logarithm = size.ilog2() as usize + 1;
-            assert!(work < 100 * size as usize, "size={size}, work={work}");
-            assert!(
-                map_work < 512 * size as usize * logarithm,
-                "size={size}, map work={map_work}"
-            );
-            assert!(!graph.are_offsets_equal(&var(20_000), &var(0)));
-        }
-    }
-
-    #[test]
     fn offset_equality_is_transitive_symmetric_and_branch_local() {
         let (a, b, c) = (var(1), var(2), var(3));
         let mut parent = EqualityGraph::default();
@@ -1988,39 +1943,8 @@ mod tests {
         assert!(twice.equality_graph.are_offsets_equal(&b, &c));
     }
 
-    #[test]
-    fn offset_graph_construction_and_fork_queries_scale_with_indexed_work() {
-        let offset = |id| PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(id))),
-            byte_width: 4,
-        };
-        for size in [16u64, 64, 256, 1024] {
-            let ((graph, work), map_work) = crate::persistent::measure_persistent_work(|| {
-                crate::instrumentation::measure_deterministic_work(|| {
-                    let mut graph = EqualityGraph::default();
-                    for i in 0..size {
-                        graph.add_offset_equality(&offset(i), &offset(i + 1));
-                        assert!(graph.are_offsets_equal(&offset(0), &offset(i + 1)));
-                    }
-                    graph
-                })
-            });
-            let logarithm = size.ilog2() as usize + 1;
-            assert!(work < 40 * size as usize, "size={size}, work={work}");
-            assert!(
-                map_work < 160 * size as usize * logarithm,
-                "size={size}, map work={map_work}"
-            );
-            let (_, fork_work) = crate::persistent::measure_persistent_work(|| {
-                let mut branch = graph.clone();
-                branch.add_offset_equality(&offset(size), &offset(size + 1));
-                assert!(branch.are_offsets_equal(&offset(0), &offset(size + 1)));
-                assert!(!graph.are_offsets_equal(&offset(0), &offset(size + 1)));
-            });
-            assert!(
-                fork_work < 160 * logarithm,
-                "size={size}, fork work={fork_work}"
-            );
-        }
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/equality_graph/terms/tests.rs");
     }
 }

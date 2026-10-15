@@ -461,6 +461,43 @@ function that forwards a pointer requires the contract its callee requires.
 Reassigning a pointer, storing one in memory, and any other read of its value
 are refused (`tests/cpp_import.rs`, `*function_pointer*`).
 
+A lambda that captures nothing, passed for such a parameter,
+`apply([] (int y) noexcept { return y + y; }, x)`, is its call operator's
+address: the importer reads Clang's conversion of the closure to the pointer
+type as a `function_address` of the call operator, which it exports as a free
+function of the lambda's parameters. The sidecar names it by its enclosing
+function and its index among the lambdas written in that function's body, in
+source order: `int caller::(lambda#0)(int y) { ... } by { ... }`, the
+importer's `caller__lambda_0`. A lambda in a member function, a capturing or
+generic lambda, and a lambda used other than converted to a function pointer
+are refused (`mdtests/cpp_lambda_named_contract.md`,
+`tests/cpp_import.rs`, `cpp_lambdas_*`).
+
+A `std::function<R(A...)>` parameter, by value or by `const` reference, is a
+callable value of its signature, as a function pointer is; the sidecar head
+writes it as the source does, `int apply(const std::function<int(int)>& f,
+int x)`. Click models it as the callable it holds, never the library's
+record, so its layout is not read, and a contract on it, `requires
+Doubling(f)`, implies it is not empty: a call through it cannot throw
+`std::bad_function_call`. `f(x)` is a call through the value. The exporter
+reads the construction of a `std::function` argument from what it is made
+of: a function is its address; another `std::function` parameter or local
+is a load of the callable it holds; and a lambda is made from the values it
+captures by copy, a closure creation the importer evaluates before the call
+into a fresh local, by the lambda's instance function. The lambda's call
+operator is exported with its captures as leading parameters, named for the
+captured variables, and its sidecar contract reads them by name,
+`int caller::(lambda#0)(int y) { requires 0 <= k and k <= 1000; ensures
+result == y + k; }`. A callee requiring a parameterized contract of the
+value, `requires Adds(f, { amount: k })`, is met by refinement from the
+lambda's contract fixed to its captured values, as for a Rust closure (see
+[Rust closures](../rust.md#function-pointers-and-named-contracts)). A
+capture by reference is refused, since C++ does not keep the variable from
+changing while the closure lives, and so are captures of non-scalars,
+`std::function` locals, and calls through a `std::function` that is not a
+parameter or local (`tests/libcxx_functional.rs`, against the pinned closure
+in `tests/fixtures/libcxx-functional`).
+
 A direct free-function return call accepts one nested call argument, including
 chains such as `return echo(echo(echo(value)));`. Other arguments must be stable
 scalars: literals, locked compiler/constexpr constants, by-value scalar parameters

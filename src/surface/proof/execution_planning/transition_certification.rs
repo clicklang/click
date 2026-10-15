@@ -286,11 +286,7 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
                 path_facts.push(proposition);
             }
             for obligation in path.obligations() {
-                if !crate::surface::planning::proposition_search::proves_by_tactic_search(
-                    successor_facts.assumptions(),
-                    obligation.proposition(),
-                    "branch condition obligation",
-                ) {
+                if !crate::surface::planning::proposition_search::decided_without_search(successor_facts.assumptions(), obligation.proposition()) {
                     return Err(missing_condition_prerequisite_error(
                         context_label,
                         obligation,
@@ -641,6 +637,7 @@ pub(in crate::surface::proof) fn statement_contains_call(statement: &CStatement)
         }
         CStatement::ForStep { step, .. } => statement_contains_call(step),
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }

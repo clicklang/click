@@ -638,7 +638,7 @@ function tree_size<T>(tree: Tree<T>) -> Nat
     match tree {
         Tree::Empty => Nat::Zero,
         Tree::Node(left, value, right) =>
-            Nat::Succ(nat_add(tree_size(left), tree_size(right))),
+            Nat::Succ(nat::add(tree_size(left), tree_size(right))),
     }
 }
 
@@ -687,9 +687,9 @@ theorem tree_mirror_preserves_size<T>(tree: Tree<T>) {
                 unfold(tree_size(Tree::Node(left, value, right)));
                 rewrite(tree_size(tree_mirror(left)) == tree_size(left));
                 rewrite(tree_size(tree_mirror(right)) == tree_size(right));
-                apply(nat_add_commutative(tree_size(right), tree_size(left)));
-                rewrite(nat_add(tree_size(right), tree_size(left))
-                    == nat_add(tree_size(left), tree_size(right)));
+                apply(nat::add_commutative(tree_size(right), tree_size(left)));
+                rewrite(nat::add(tree_size(right), tree_size(left))
+                    == nat::add(tree_size(left), tree_size(right)));
                 normalize();
             }
         }

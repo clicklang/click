@@ -281,7 +281,7 @@ Clang 19.1.7 for the exporter, and the Rust import tests need Charon's pinned
 `scripts/build-charon.sh --check` reports its toolchain missing,
 `scripts/check.sh` skips the suites that need it and runs the rest. Without
 the C++ toolchain it leaves out `tests/cpp_import.rs`,
-`tests/bitcoin_core_money_range.rs`, `tests/libcxx_span.rs`, the four `click` command tests that run a
+`tests/bitcoin_core_money_range.rs`, `tests/libcxx_span.rs`, `tests/libcxx_functional.rs`, the four `click` command tests that run a
 C++ mdtest (named in its filterset), and, through `CLICK_SKIP_CPP_FRONTEND`,
 the C++ mdtests and examples. Without Charon it leaves out
 `tests/rust_import.rs`. The gate names each skipped suite when it starts and
@@ -636,7 +636,59 @@ the option; it goes on the short list of
 `--work-limit` or `instrumentation::with_run_work_limit` instead, which is
 deterministic.
 
-### Scaling regressions
+### Scaling tests
+
+A scaling test measures deterministic work at several input sizes and asserts
+how it grows. Every one lives under `src/scaling_tests/`, whose tree mirrors
+`src/`: the scaling tests at the top level of
+`src/kernel/tests/resource_tests.rs` are in
+`src/scaling_tests/kernel/tests/resource_tests.rs`, and those of an inline
+module are in a file named after it, so the scaling tests of
+`mod held_separation_tests` in `src/kernel/proof/facts.rs` are in
+`src/scaling_tests/kernel/proof/facts/held_separation_tests.rs`. The module
+whose behavior a file measures includes it in a child module named
+`scaling_tests`:
+
+```rust
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/kernel/proof/facts/held_separation_tests.rs");
+}
+```
+
+so the tests keep their module's private access through `use super::*`. A
+whole file of scaling tests is declared with `#[path]` instead, keeping its
+module name, which ends in `scaling_tests`. `include!` rather than `#[path]`
+is needed because a path inside an inline module is resolved through
+directories that need not exist. Every scaling test's path therefore contains
+`scaling_tests`, and one filter runs the whole set:
+
+```sh
+cargo nextest run --lib -E 'test(/scaling_tests/)'
+```
+
+`cargo fmt` does not follow `include!`, so `scripts/check.sh` formats
+`src/scaling_tests/` with `rustfmt` directly, and the documentation test
+`every_scaling_test_file_is_included_by_its_module` fails on a file no module
+includes. Before changing a hot path, read the scaling tests of the modules it
+touches; add new ones beside them.
+
+Most scaling tests measure one kernel operation beside unrelated state built
+in advance. Growth that comes from the proof itself, such as state each
+statement leaves for the next, needs whole functions:
+`src/scaling_tests/surface/tests/step_shape_scaling_tests.rs` verifies the
+shapes of `scripts/step-scaling-hunt.py` at gate sizes with one `step()` per
+statement. Its main check needs one size. Steps that execute the same
+statement at different positions (each `drop_box(p#)`, each call) must cost
+the same, so a step whose work moves the same way by more than a small band
+at each of its last positions depends on how many statements ran before it.
+A warm-up, such as the first call or the first store into a block, jumps once
+and then holds, which this does not flag. Shapes whose every step sees the
+same growing state (unrelated facts, aliases, owned objects) compare one
+step across two sizes instead. Known growth is asserted as still present
+(`known_drift_` tests naming their issue or bug), so a fix fails the test that
+records it and the record is updated with it. `step-scaling-hunt.py` runs the
+same shapes at larger sizes, with timing, when a curve needs investigating.
 
 The built-in standard library is parsed and resource-expanded once per process.
 Only immutable surface declarations are shared; each verification constructs
@@ -659,7 +711,7 @@ paths, quantified instances, premises, and definition members count as input
 or output and may be charged accordingly.
 
 Kernel memory snapshots have such regressions in
-`src/kernel/tests/memory_scaling_tests.rs`: sequential stores into one block,
+`src/scaling_tests/kernel/tests/memory_scaling_tests.rs`: sequential stores into one block,
 one store beside a growing number of unrelated cells, interning a one-store
 derivative of an interned snapshot, and deduplication of equal content reached
 by different routes. The same file bounds by a constant plus a logarithm the
@@ -671,7 +723,7 @@ the first derivation's storage. Normalizing allocation tokens in distinct heap
 blocks must stay linear in the tokens.
 
 Resource-context validity has its own in
-`src/kernel/tests/resource_scaling_tests.rs`. Validity of a caller frame, and
+`src/scaling_tests/kernel/tests/resource_scaling_tests.rs`. Validity of a caller frame, and
 composing one ensured range into it (a verified call's return), must cost
 work that does not grow with unrelated owned allocations and instances beside
 the target, nor with unrelated pointer equalities in the assumptions: the
@@ -679,10 +731,12 @@ check reads only indexed candidates (identities held twice or with invalid
 access, blocks owning two or more ranges, and aliased bases, driven from the
 smaller of the bases and the equalities). A companion test finds each
 violation kind beside many unrelated resources from either side of the alias
-walk.
+walk. A call that only `views` a heap range, with the observable projection
+of its caller's resources after it, must likewise cost the same work beside
+2, 4, 8, and 16 unrelated live allocations.
 
 End to end, `roundtrip_extra_copy_stays_nearly_flat_beside_unrelated_allocations`
-in `src/surface/tests/scaling_tests.rs` verifies the frozen byte-representation
+in `src/scaling_tests/surface/tests/scaling_tests.rs` verifies the frozen byte-representation
 round trip beside 2, 4, 8, and 16 unrelated live heap allocations, with and
 without one extra fixed `memcpy`, and bounds the extra copy's marginal work by
 an eighth above its smallest value. It guards the collapse of the quadratic
@@ -865,13 +919,12 @@ which records the claim and step of each hidden derivation. The
 condition the general decision settled after the difference graph left it
 open
 ([`issues/difference-logic.md`](https://github.com/clicklang/click/blob/master/issues/difference-logic.md)),
-by evaluation site. The `TacticSearch` route counts a premise a simple tactic
-proved by searching the proof context after its exact lookup missed, by
-tactic site: resource `fold`, `unfold` and `observe`, a `branch` arm's condition
-obligation, an outcome `if` or `cases` condition the kernel's condition
-decision leaves open, a `have` of a separation away from the frontier, and a
-resource, separation or loadable-memory obligation checked outside a step's
-fast path. A simple tactic may consult the proof context through the kernel's
+by evaluation site. The `TacticSearch` route counts a resource, separation or
+loadable-memory obligation a step proves by searching the proof context
+outside its fast path, under a smart tactic's policy. A simple tactic never
+searches: its premise checks are an exact lookup and the kernel's condition
+decision (`decided_without_search`), and a premise they miss is refused or
+left to a case split. A simple tactic may consult the proof context through the kernel's
 indexed, bounded decisions, as a step's fast path does: the condition
 decision and the checked load equality over recorded memory history. Those
 are not searches and are not counted; only a `PropositionSearch` is.

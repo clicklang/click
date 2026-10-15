@@ -1,5 +1,6 @@
 //! Producer observations connecting locked MIR operations to completed
-//! reference assignments and checked memory accesses. They grant no permission.
+//! reference assignments and checked memory accesses. Observation labels grant
+//! no permission; optional checked lease plans are separate semantic operations.
 use super::*;
 use std::sync::Arc;
 
@@ -13,12 +14,29 @@ pub(crate) struct ReferenceBorrowSourceId {
     pub(crate) child: Arc<str>,
 }
 
-/// Optional source provenance for a reference assignment; never a permission.
+/// Source observations compare neutrally. A checked lease plan participates in
+/// statement identity and executes an actual checked birth.
 #[derive(Clone, Debug, Default)]
-pub struct CStatementAssignSource(Option<Arc<ReferenceBorrowSourceId>>);
+pub struct CStatementAssignSource(
+    Option<Arc<ReferenceBorrowSourceId>>,
+    Option<Arc<ScalarReferenceSourcePlan>>,
+);
 impl CStatementAssignSource {
     pub(crate) fn new(source: ReferenceBorrowSourceId) -> Self {
-        Self(Some(Arc::new(source)))
+        Self(Some(Arc::new(source)), None)
+    }
+    pub(crate) fn as_ref(&self) -> Option<&ReferenceBorrowSourceId> {
+        self.0.as_deref()
+    }
+    pub(crate) fn with_lease_plan(mut self, plan: Arc<ScalarReferenceSourcePlan>) -> Self {
+        self.1 = Some(plan);
+        self
+    }
+    pub(super) fn lease_plan(&self) -> Option<&Arc<ScalarReferenceSourcePlan>> {
+        self.1.as_ref()
+    }
+    fn semantic_key(&self) -> Option<&ScalarReferencePlanKey> {
+        self.1.as_ref().map(|plan| plan.key())
     }
     pub(super) fn completed(
         &self,
@@ -58,17 +76,19 @@ impl CStatementAssignSource {
     }
 }
 impl PartialEq for CStatementAssignSource {
-    fn eq(&self, _: &Self) -> bool {
-        true
+    fn eq(&self, other: &Self) -> bool {
+        self.semantic_key() == other.semantic_key()
     }
 }
 impl Eq for CStatementAssignSource {}
 impl std::hash::Hash for CStatementAssignSource {
-    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(&self.semantic_key(), state);
+    }
 }
 impl Ord for CStatementAssignSource {
-    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
-        std::cmp::Ordering::Equal
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.semantic_key().cmp(&other.semantic_key())
     }
 }
 impl PartialOrd for CStatementAssignSource {
@@ -99,8 +119,8 @@ pub(crate) struct ReferenceAccessSourceId {
     pub(crate) kind: ReferenceAccessKind,
 }
 
-/// Optional producer provenance. It is not part of statement semantics or
-/// proof identity, and is not an authorization to perform the store.
+/// Store observations compare neutrally and never authorize a store or end.
+/// Checked borrow endings are explicit statements with semantic identity.
 #[derive(Clone, Debug, Default)]
 pub struct CStatementStoreSource(Option<Arc<ReferenceAccessSourceId>>);
 impl CStatementStoreSource {
@@ -435,62 +455,9 @@ mod tests {
                 .is_some()
         );
     }
-    #[test]
-    fn source_reference_selected_observation_merge_does_not_scan_ambient_facts() {
-        for size in [16, 64, 256, 1024] {
-            let mut prefix = ExecutionFacts::new();
-            for index in 0..size {
-                prefix.push(ExecutionPureFact::condition(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(Bitvector32Term::Variable(Variable(index))),
-                        Box::new(Bitvector32Term::Constant(7)),
-                    ),
-                    true,
-                ));
-            }
-            let mut suffix = ExecutionFacts::new();
-            suffix.push(read_fact());
-            let (merged, work) = crate::instrumentation::measure_deterministic_work(|| {
-                crate::kernel::reasoning::path_facts::merge_facts(
-                    &prefix,
-                    &suffix,
-                    &PureFactContext::new(),
-                )
-                .unwrap()
-            });
-            assert_eq!(merged.len(), size as usize + 1);
-            assert!(
-                merged
-                    .iter()
-                    .last()
-                    .unwrap()
-                    .reference_observation
-                    .is_some()
-            );
-            assert!(
-                work <= 64,
-                "selected source delta scanned {size} old facts: {work}"
-            );
-            let mut births = ExecutionFacts::new();
-            births.push(borrow_fact());
-            let (merged, work) = crate::instrumentation::measure_deterministic_work(|| {
-                crate::kernel::reasoning::path_facts::merge_facts(
-                    &prefix,
-                    &births,
-                    &PureFactContext::new(),
-                )
-                .unwrap()
-            });
-            assert_eq!(merged.len(), size as usize + 1);
-            assert!(
-                merged
-                    .iter()
-                    .last()
-                    .unwrap()
-                    .reference_observation
-                    .is_borrow()
-            );
-            assert!(work <= 64, "birth delta scanned {size} old facts: {work}");
-        }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/source_access/tests.rs");
     }
 }

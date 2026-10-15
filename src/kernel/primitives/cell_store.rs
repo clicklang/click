@@ -1014,6 +1014,7 @@ pub(crate) struct CellStore {
     /// function of the two maps above.
     logical: OnceLock<SnapshotMap<Pointer, CValue>>,
     ordered_index: std::sync::Mutex<Option<OrderedIndexCache>>,
+    pointer_reachable_index: std::sync::Mutex<Option<PointerReachableIndex>>,
     parameter_partition_index: std::sync::Mutex<Option<ParameterPartitionIndex>>,
 }
 
@@ -1028,6 +1029,19 @@ struct ParameterPartitionIndex {
     known: SnapshotMap<(Pointer, Pointer), ()>,
     unknown: SnapshotMap<Pointer, ()>,
     bases: SnapshotMap<Pointer, Pointer>,
+}
+
+/// The concrete cells a pointer value can reach: every cell outside the
+/// slot of a local whose address is never taken
+/// ([`super::block_is_never_address_taken_local`]). Kept beside the store and
+/// caught up by diffing the concrete map it was taken from, so a store only
+/// pays for the cells changed since; a change to the addressability registry
+/// rebuilds it.
+#[derive(Clone)]
+struct PointerReachableIndex {
+    cells: SnapshotMap<Pointer, CValue>,
+    generation: u64,
+    keys: SnapshotMap<Pointer, ()>,
 }
 
 #[derive(Clone)]
@@ -1051,6 +1065,9 @@ impl Clone for CellStore {
             run_cells: self.run_cells,
             logical: self.logical.clone(),
             ordered_index: std::sync::Mutex::new(self.ordered_index.lock().unwrap().clone()),
+            pointer_reachable_index: std::sync::Mutex::new(
+                self.pointer_reachable_index.lock().unwrap().clone(),
+            ),
             parameter_partition_index: std::sync::Mutex::new(
                 self.parameter_partition_index.lock().unwrap().clone(),
             ),
@@ -1387,6 +1404,53 @@ impl CellStore {
     /// The ordinary candidate cells, omitting only array cells which the
     /// recorded strict path places a full scalar width away from this store.
     /// The derivative cache follows persistent-map deltas between stores.
+    /// The concrete cells a pointer value can reach, in key order: every cell
+    /// except those in the slot of a local whose address is never taken,
+    /// which no pointer value designates. Costs the cells changed since this
+    /// store's lineage last asked, plus the cells returned.
+    pub(in crate::kernel) fn pointer_reachable_cells(&self) -> Vec<Pointer> {
+        let generation = super::memory_state::never_address_taken_generation();
+        let mut guard = self.pointer_reachable_index.lock().unwrap();
+        let mut index = guard
+            .take()
+            .filter(|index| index.generation == generation)
+            .unwrap_or_else(|| PointerReachableIndex {
+                cells: SnapshotMap::new(),
+                generation,
+                keys: SnapshotMap::new(),
+            });
+        let changes = index
+            .cells
+            .diff(&self.concrete)
+            .filter_map(|change| match change {
+                super::persistent_map::SnapshotMapChange::Added(key) => Some((key.clone(), true)),
+                super::persistent_map::SnapshotMapChange::Removed(key) => {
+                    Some((key.clone(), false))
+                }
+                super::persistent_map::SnapshotMapChange::Changed(_) => None,
+            })
+            .collect::<Vec<_>>();
+        for (key, added) in changes {
+            if super::block_is_never_address_taken_local(&key.block) {
+                continue;
+            }
+            if added {
+                index.keys.insert(key, ());
+            } else {
+                index.keys.remove(&key);
+            }
+        }
+        index.cells = self.concrete.clone();
+        let cells = index
+            .keys
+            .keys()
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+            .cloned()
+            .collect();
+        *guard = Some(index);
+        cells
+    }
+
     pub(in crate::kernel) fn ordered_store_candidates(
         &self,
         pointer: &Pointer,
@@ -2943,40 +3007,6 @@ mod tests {
     use crate::kernel::primitives::{CMemory, Variable};
     use std::collections::BTreeMap;
 
-    #[test]
-    fn retained_run_reads_refresh_load_origins_without_scanning_the_run() {
-        let mut samples = Vec::new();
-        for count in [16, 64, 65, 256, 1024] {
-            let _session = crate::kernel::VerificationSession::enter();
-            let source = source(99);
-            let base = constant(&PointerBlock::from("cell-store-source-99"), 0);
-            let run = run(base.clone(), 4, count, &source);
-            let first = run.value(0);
-            let CValue::Int32(crate::kernel::Bitvector32Term::Variable(variable)) = first else {
-                panic!("a seeded scalar names its source load");
-            };
-            assert!(crate::kernel::eval::registered_load_origin_for_variable(&variable).is_some());
-            crate::kernel::eval::begin_load_origin_epoch();
-            assert!(crate::kernel::eval::registered_load_origin_for_variable(&variable).is_none());
-            assert_eq!(run.value(0), first);
-            assert_eq!(
-                crate::kernel::eval::registered_load_origin_for_variable(&variable),
-                Some((source, base)),
-                "a retained {count}-cell run must observe the load in this epoch"
-            );
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                for _ in 0..16 {
-                    assert_eq!(run.value(0), first);
-                }
-            });
-            samples.push((count, work));
-        }
-        assert!(
-            samples.iter().all(|(_, work)| *work == samples[0].1),
-            "repeated seeded reads must use the epoch cache without scanning the run: {samples:?}"
-        );
-    }
-
     fn source(tag: u32) -> SharedCMemory {
         crate::kernel::intern_c_memory(
             CMemory::new().with_block(format!("cell-store-source-{tag}").as_str(), 4),
@@ -3662,6 +3692,11 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/primitives/cell_store/tests.rs");
     }
 }
 

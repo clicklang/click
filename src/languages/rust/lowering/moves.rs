@@ -209,6 +209,7 @@ pub(super) fn lower(
     if mir.blocks.is_empty() {
         return Err("MIR body has no entry block".into());
     }
+    let leases = super::scalar_leases::prepare(f, cx.import_identity.as_deref());
     let flow = flow::Flow::analyze(f, mir)?;
     let mut nodes = vec![None; mir.blocks.len()];
     let check = |local: &str, record: &str| -> Result<&str, String> {
@@ -395,7 +396,7 @@ pub(super) fn lower(
             } else {
                 BTreeMap::new()
             };
-            let statement = match s {
+            let mut statement = match s {
                 S::SliceSplit {
                     slice,
                     midpoint,
@@ -734,6 +735,11 @@ pub(super) fn lower(
                 S::Initialize { fields, .. } => fields.iter().collect(),
                 _ => Vec::new(),
             };
+            if block == 0
+                && let Some(forest) = &leases
+            {
+                super::scalar_leases::decorate(forest, statement_index, &mut statement)?;
+            }
             statements = c_seq(statements, c_seq(accesses(&inputs, &live), statement));
         }
         nodes[block] = Some(c_seq(statements, terminal));

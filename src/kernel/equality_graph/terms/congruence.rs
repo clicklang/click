@@ -184,7 +184,22 @@ impl TermClasses {
                             Node::UInt64(MachineAtom::uint64(term.clone()))
                         }
                     } else {
-                        Node::Int32(MachineAtom::int32(term.clone()))
+                        let value = match term {
+                            T::MemoryLoad(memory, pointer, kind)
+                                if *kind != crate::kernel::LoadKind::Int8 =>
+                            {
+                                // Exact observation naming, without an epoch walk:
+                                // another snapshot needs its checked read bridge.
+                                T::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+                                    memory,
+                                    pointer,
+                                    *kind,
+                                    crate::kernel::load_term_access_width(memory, pointer, *kind),
+                                ))
+                            }
+                            _ => term.clone(),
+                        };
+                        Node::Int32(MachineAtom::int32(value))
                     }
                 }
                 Work::Argument(argument) => {
@@ -433,7 +448,19 @@ impl TermClasses {
             C::PointerOffsetEqual(a, b) => (OffsetEq, self.intern(a), self.intern(b)),
             _ => return None,
         };
-        Some(self.intern_node(Node::Condition(kind, left, right)))
+        let node = self.intern_node(Node::Condition(kind, left, right));
+        if let C::PointerEqual(a, b) = condition
+            && a.block == b.block
+        {
+            // These are two views of the same predicate, not a new premise.
+            // Retaining both avoids reconstructing a cancelled base from an
+            // arbitrary representative after later pointer aliases merge.
+            let a = self.intern(&a.offset);
+            let b = self.intern(&b.offset);
+            let offsets = self.intern_node(Node::Condition(OffsetEq, a, b));
+            self.close(vec![(node, offsets)]);
+        }
+        Some(node)
     }
 
     fn condition_kind(condition: &C) -> Option<ConditionKind> {
@@ -471,6 +498,10 @@ impl TermClasses {
                     && self
                         .condition_kinds
                         .contains(&(ConditionKind::PointerEq, value)))
+                || (kind == ConditionKind::PointerEq
+                    && self
+                        .condition_kinds
+                        .contains(&(ConditionKind::OffsetEq, value)))
         })
     }
 
@@ -502,14 +533,14 @@ impl TermClasses {
         };
         if let Some((a, b, strict, forward)) = order {
             let (a, b) = if forward { (a, b) } else { (b, a) };
-            if let Some(bound) = crate::kernel::canonical_term(b).as_const() {
+            if let Some(bound) = b.as_const() {
                 self.retain_signed_int32_interval(
                     a,
                     i64::from(i32::MIN),
                     i64::from(bound as i32) - i64::from(strict),
                 );
             }
-            if let Some(bound) = crate::kernel::canonical_term(a).as_const() {
+            if let Some(bound) = a.as_const() {
                 self.retain_signed_int32_interval(
                     b,
                     i64::from(bound as i32) + i64::from(strict),

@@ -1,7 +1,7 @@
 //! Private scalar-reference adapter for the ordinary memory producers.
 //!
-//! Source observations cannot construct these leases. The Rust frontend still
-//! needs a checked invocation/plan adapter before it can issue begin/end steps.
+//! Source observations cannot construct these leases. Checked source plans
+//! issue births; explicit endings resolve the current invocation's live custody.
 
 use super::*;
 use crate::kernel::primitives::ReservedLocalScalarOwner;
@@ -103,9 +103,8 @@ impl CState {
     }
 }
 
-// These constructors remain kernel-private and staged until source-plan and
-// invocation validation is connected. They are exercised through real memory
-// execution below, not through provenance labels or assumed ownership.
+// Source plans and kernel tests use these private constructors. Observation
+// labels never supply custody, ownership, or a recovery right.
 #[cfg_attr(not(test), allow(dead_code))]
 impl CState {
     pub(in crate::kernel) fn begin_local_scalar_reference(
@@ -114,6 +113,26 @@ impl CState {
         support: Option<ResourceOccurrenceId>,
         value_type: CType,
         assumptions: &PureFactContext,
+    ) -> Result<(Self, CPointerValue), LoanRefusal> {
+        self.begin_scalar_reference(parent, support, value_type, assumptions, None)
+    }
+    pub(in crate::kernel) fn begin_source_scalar_reference(
+        &self,
+        parent: &CPointerValue,
+        support: Option<ResourceOccurrenceId>,
+        value_type: CType,
+        assumptions: &PureFactContext,
+        key: crate::kernel::ScalarReferencePlanKey,
+    ) -> Result<(Self, CPointerValue), LoanRefusal> {
+        self.begin_scalar_reference(parent, support, value_type, assumptions, Some(key))
+    }
+    fn begin_scalar_reference(
+        &self,
+        parent: &CPointerValue,
+        support: Option<ResourceOccurrenceId>,
+        value_type: CType,
+        assumptions: &PureFactContext,
+        source_plan: Option<crate::kernel::ScalarReferencePlanKey>,
     ) -> Result<(Self, CPointerValue), LoanRefusal> {
         let holder = self.loan_participant().ok_or(LoanRefusal::WrongHolder)?;
         let ledger = self.loan_ledger().ok_or(LoanRefusal::MissingLoanBinding)?;
@@ -142,7 +161,10 @@ impl CState {
                 .ok_or(LoanRefusal::MissingBacking)?;
             if range.start_pointer() != *parent.pointer()
                 || parent.c_type().pointee_type() != Some(value_type)
-                || !crate::kernel::eval::is_external_memory_pointer(parent.pointer())
+                || (!crate::kernel::eval::is_external_memory_pointer(parent.pointer())
+                    && !self
+                        .memory
+                        .requires_explicit_scalar_ownership(parent.pointer()))
             {
                 return Err(LoanRefusal::UnsupportedResource);
             }
@@ -165,6 +187,7 @@ impl CState {
             let root = LocalReferenceBinding {
                 id: LocalReferenceId::fresh()?,
                 parent: None,
+                source_plan: None,
                 backing: Arc::new(LocalReferenceBacking {
                     holder,
                     support,
@@ -183,7 +206,12 @@ impl CState {
             .as_ref()
             .ok_or(LoanRefusal::MissingBacking)?
             .resources(assumptions);
-        let (binding, birth) = ledger.borrow_local_reference(&parent_binding, holder, &reserved)?;
+        let (binding, birth) = ledger.borrow_local_reference_with_source(
+            &parent_binding,
+            holder,
+            &reserved,
+            source_plan,
+        )?;
         let ledger = ledger.apply(&birth)?;
         let pointer = parent
             .clone()
@@ -194,6 +222,52 @@ impl CState {
                 .with_loan_ledger(Some(ledger)),
             pointer,
         ))
+    }
+
+    pub(in crate::kernel) fn validate_source_scalar_reference(
+        &self,
+        reference: &LocalScalarReference,
+        key: &crate::kernel::ScalarReferencePlanKey,
+    ) -> Result<(), LoanRefusal> {
+        let ledger = self.loan_ledger().ok_or(LoanRefusal::MissingLoanBinding)?;
+        let (binding, _, _) = ledger.local_scalar_reference(reference)?;
+        if binding.source_plan.as_ref() != Some(key) {
+            return Err(LoanRefusal::InvalidEvidence);
+        }
+        Ok(())
+    }
+
+    pub(in crate::kernel) fn end_source_scalar_reference(
+        &self,
+        key: &crate::kernel::ScalarReferencePlanKey,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, LoanRefusal> {
+        let holder = self.loan_participant().ok_or(LoanRefusal::WrongHolder)?;
+        let ledger = self.loan_ledger().ok_or(LoanRefusal::MissingLoanBinding)?;
+        let id = *ledger
+            .storage
+            .data
+            .source_local_references
+            .get(&(holder, key.clone()))
+            .ok_or(LoanRefusal::MissingLoanBinding)?;
+        let reference = LocalScalarReference(id);
+        let (binding, _, _) = ledger.local_scalar_reference(&reference)?;
+        self.validate_source_scalar_reference(&reference, key)?;
+        let range = binding
+            .backing
+            .owned
+            .memory_own_range()
+            .ok_or(LoanRefusal::MissingBacking)?;
+        let pointer = CPointerValue::new(
+            range.start_pointer(),
+            binding
+                .backing
+                .value_type
+                .pointer_to()
+                .ok_or(LoanRefusal::InvalidEvidence)?,
+        )
+        .with_local_reference(reference);
+        self.end_local_scalar_reference(&pointer, assumptions)
     }
 
     pub(in crate::kernel) fn end_local_scalar_reference(
@@ -228,12 +302,9 @@ impl CState {
                 .binding;
             let ending = recovered.retire_local_reference_root(root, holder, &reserved)?;
             recovered = recovered.apply(&ending)?;
-            resources = resources
-                .try_compose_into_valid_context_delaying_normalization(
-                    [binding.backing.owned.clone()],
-                    assumptions,
-                )
-                .map_err(|_| LoanRefusal::InvalidEvidence)?;
+            resources = reservation
+                .restore_into(resources, assumptions)
+                .ok_or(LoanRefusal::InvalidEvidence)?;
         }
         // Only authority changes. In particular, never restore birth memory.
         Ok(self

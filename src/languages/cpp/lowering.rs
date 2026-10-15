@@ -1157,6 +1157,41 @@ impl LoweringContext<'_> {
             crate::instrumentation::record_deterministic_work(1);
             if let Some(snapshot) = snapshot {
                 lowered.push(snapshot);
+            } else if let CppCallArgument::Value {
+                value:
+                    CppExpression::ClosureInstance {
+                        function,
+                        captures,
+                        value_type,
+                        ..
+                    },
+            } = argument
+            {
+                // A lambda made for a `std::function` argument is the value
+                // its instance function returns for the captured values.
+                let capture = self.fresh_call_capture()?;
+                let mut values = Vec::with_capacity(captures.len());
+                for value in captures {
+                    values.push(self.lower_expression(value)?);
+                }
+                let closure = self.names.require(&function.declaration_id)?;
+                evaluation = evaluate_then(
+                    evaluation,
+                    c_seq(
+                        c_declare(
+                            capture.clone(),
+                            super::interface::function_pointer_signature(value_type)?
+                                .pointer_type()
+                                .to_kernel_type(),
+                        ),
+                        c_call_assign(
+                            capture.clone(),
+                            crate::languages::rust::names::closure_instance_name(closure),
+                            values,
+                        ),
+                    ),
+                );
+                lowered.push(c_variable(capture));
             } else if let CppCallArgument::Call {
                 callee,
                 arguments,
@@ -1429,6 +1464,9 @@ impl LoweringContext<'_> {
             CppExpression::FunctionAddress { function, .. } => Ok(
                 crate::kernel::c_function_address(self.names.require(&function.declaration_id)?),
             ),
+            CppExpression::ClosureInstance { .. } => {
+                Err("a C++ closure creation is evaluated only as a call argument".into())
+            }
             CppExpression::NullPointer { value_type, .. } => Ok(c_cast(
                 CExpression::Value(int32(0)),
                 cpp_scalar_kernel_type(value_type)?,

@@ -9429,12 +9429,12 @@ fn static_helpers_reject_object_dispatch_reference_parameters_and_recursion() {
         (
             "struct H { static int echo(int x) noexcept { return x; } }; int relay(int x) noexcept { return H{}.echo(x); }",
             "relay",
-            "unsupported expression",
+            "class-qualified or unqualified",
         ),
         (
             "struct H { static int echo(int x) noexcept { return x; } }; int relay(int x) noexcept { return ((void)++x, H{}).echo(x); }",
             "relay",
-            "unsupported expression",
+            "class-qualified or unqualified",
         ),
         (
             "struct H { static int read(const int& x) noexcept { return x; } };",
@@ -18045,4 +18045,152 @@ fn forged_cpp_function_pointer_artifacts_are_refused() {
         let error = load_import(&project.config()).unwrap_err();
         assert!(error.contains(expected), "{change}: {error}");
     }
+}
+
+const LAMBDA_SOURCE: &str = "int apply(int (*f)(int) noexcept, int x) noexcept { return f(x); }\n\
+int caller(int x) noexcept {\n\
+    return apply([](int y) noexcept { return y + y; }, x);\n\
+}\n\
+int pair(int x) noexcept {\n\
+    return apply([](int y) noexcept { return y + 1; }, x) + apply([](int y) noexcept { return y + y; }, x);\n\
+}\n";
+
+const LAMBDA_SIDECAR: &str = r#"verifying "callback.cpp";
+contract int Doubling(int x) {
+    requires 0 <= x and x <= 1000;
+    ensures 0 <= result and result <= 2000;
+    ensures result == x + x;
+}
+contract int Bounded(int x) {
+    requires 0 <= x and x <= 1000;
+    ensures 0 <= result and result <= 2000;
+}
+int apply(int (*f)(int), int x) {
+    requires Doubling(f);
+    requires 0 <= x and x <= 1000;
+    ensures result == x + x;
+} by { execute(); simp(); }
+int caller::(lambda#0)(int y) {
+    requires 0 <= y and y <= 1000;
+    ensures 0 <= result and result <= 2000;
+    ensures result == y + y;
+} by { execute(); simp(); }
+int caller(int x) {
+    requires 0 <= x and x <= 1000;
+    ensures result == x + x;
+} by { execute(); simp(); }
+"#;
+
+// A lambda that captures nothing, passed for a function pointer, is its call
+// operator's address. The sidecar names the call operator by its enclosing
+// function and its index there, `caller::(lambda#0)`, verifies it like any
+// function, and a caller passing it must show it meets the contract the
+// callee requires of the pointer.
+#[test]
+#[ignore = "nightly: 1.5s in the parallel gate"]
+fn cpp_lambdas_passed_for_a_function_pointer_meet_its_named_contract() {
+    let project = Project::with_fixture("callback.cpp", "caller", LAMBDA_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let sidecar = project.directory.join("callback.click");
+    let verify = |source: &str| {
+        fs::write(&sidecar, source).unwrap();
+        let parsed = read_click_project(&sidecar, source).unwrap();
+        verify_program_prepared_project(&parsed, &import).map(|_| parsed)
+    };
+    let parsed = verify(LAMBDA_SIDECAR).unwrap_or_else(|error| panic!("{}", error.message()));
+    for label in ["caller__lambda_0.contract", "caller.contract"] {
+        let expanded =
+            expand_project_claim_source_by_label(&parsed, &ProgramInputs::program(&import), label)
+                .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
+        verify_program_prepared_project(&parsed.with_entry_source(expanded), &import)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
+    }
+    for (before, after, expected) in [
+        (
+            "    ensures result == y + y;\n",
+            "    ensures result >= y;\n",
+            "function `caller__lambda_0` does not satisfy named contract `Doubling`",
+        ),
+        (
+            "    ensures result == y + y;\n",
+            "    ensures result == y + y + 1;\n",
+            "caller__lambda_0.ensures_1",
+        ),
+        (
+            "int caller::(lambda#0)(int y)",
+            "int caller::(lambda#1)(int y)",
+            "`caller__lambda_1` is not defined by any `verifying` source",
+        ),
+    ] {
+        let hostile = LAMBDA_SIDECAR.replacen(before, after, 1);
+        assert_ne!(hostile, LAMBDA_SIDECAR);
+        let Err(error) = verify(&hostile) else {
+            panic!("accepted:\n{hostile}");
+        };
+        assert!(error.message().contains(expected), "{}", error.message());
+    }
+}
+
+// Lambdas are numbered in source order within their enclosing function.
+#[test]
+#[ignore = "nightly: 0.9s in the parallel gate"]
+fn cpp_lambdas_are_numbered_in_their_enclosing_function() {
+    let project = Project::with_fixture("callback.cpp", "pair", LAMBDA_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "callback.cpp";
+contract int Bounded(int x) {
+    requires 0 <= x and x <= 1000;
+    ensures 0 <= result and result <= 2000;
+}
+int apply(int (*f)(int), int x) {
+    requires Bounded(f);
+    requires 0 <= x and x <= 1000;
+    ensures 0 <= result and result <= 2000;
+} by { execute(); simp(); }
+int pair::(lambda#0)(int y) {
+    requires 0 <= y and y <= 1000;
+    ensures 0 <= result and result <= 2000;
+    ensures result == y + 1;
+} by { execute(); simp(); }
+int pair::(lambda#1)(int y) {
+    requires 0 <= y and y <= 1000;
+    ensures 0 <= result and result <= 2000;
+    ensures result == y + y;
+} by { execute(); simp(); }
+int pair(int x) {
+    requires 0 <= x and x <= 1000;
+    ensures 0 <= result and result <= 4000;
+} by { execute(); simp(); }
+"#;
+    let sidecar = project.directory.join("callback.click");
+    fs::write(&sidecar, source).unwrap();
+    let parsed = read_click_project(&sidecar, source).unwrap();
+    verify_program_prepared_project(&parsed, &import)
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    // Swapping the two contracts makes each lambda's false.
+    let swapped = source
+        .replacen("ensures result == y + 1;", "ensures result == SWAP;", 1)
+        .replacen("ensures result == y + y;", "ensures result == y + 1;", 1)
+        .replacen("ensures result == SWAP;", "ensures result == y + y;", 1);
+    fs::write(&sidecar, &swapped).unwrap();
+    let parsed = read_click_project(&sidecar, &swapped).unwrap();
+    assert!(verify_program_prepared_project(&parsed, &import).is_err());
+}
+
+// A lambda converted to a function pointer is admitted in a free function;
+// the importer refuses one in a member function by name.
+#[test]
+fn cpp_lambdas_outside_a_free_function_are_refused() {
+    let source = "struct R { int v; int m(int x) noexcept; };\n\
+int apply(int (*f)(int) noexcept, int x) noexcept { return f(x); }\n\
+int R::m(int x) noexcept { return apply([](int y) noexcept { return y + y; }, x); }\n\
+int caller(int x) noexcept { R r{1}; return r.m(x); }\n";
+    let project = Project::with_fixture("callback.cpp", "caller", source);
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(
+        error.contains("a C++ lambda is supported only in the body of a free function"),
+        "{error}"
+    );
 }

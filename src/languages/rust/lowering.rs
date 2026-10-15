@@ -8,6 +8,7 @@ mod move_regressions;
 mod moves;
 #[cfg(test)]
 mod owned_parameter_regressions;
+mod scalar_leases;
 mod shared_arrays;
 use crate::kernel::*;
 use crate::languages::c::syntax::{

@@ -504,7 +504,7 @@ sequence:
 - `mdtests/contract_let_type_mismatch.md`: explicit `let` type annotation
   mismatch diagnostic.
 - `mdtests/byte_count_of_two_merged_branches_matches_the_c_count.md`: the
-  stdlib `byte_count` helper over `uint8[]` matched against a C count after
+  stdlib `bytes::count` helper over `uint8[]` matched against a C count after
   two branches merge.
 - `mdtests/byte_slice_range_predicates.md`: byte contains/all-not-equal
   predicates and `obtain (...)` after explicit predicate unfolding.

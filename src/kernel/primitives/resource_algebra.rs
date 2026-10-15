@@ -3204,6 +3204,12 @@ impl ResourceContext {
         required: &CResourceFact,
         assumptions: &PureFactContext,
     ) -> Vec<ResourceOccurrenceId> {
+        // With no viewed facts there is no possible view occurrence. Avoid
+        // resolving the query's pointer history or pairing an ownership-only
+        // input with a memory index just to discover this empty result.
+        if self.storage.index.owned_count == self.storage.facts.len() {
+            return Vec::new();
+        }
         if let Some(range) = required.memory_view_range() {
             // Select the same indexed, alias-aligned frontier as memory
             // ownership. A loop cursor can name a subrange through a checked
@@ -3215,9 +3221,11 @@ impl ResourceContext {
                 .iter()
                 .filter_map(|entry| {
                     let candidate = self.fact(entry);
+                    if !candidate.is_view() {
+                        return None;
+                    }
                     let aligned = candidates.requirement(entry, required)?;
-
-                    (candidate.is_view() && resource_fact_entails(candidate, &aligned, assumptions))
+                    resource_fact_entails(candidate, &aligned, assumptions)
                         .then_some(self.occurrence(entry))
                 })
                 .collect();
@@ -5786,6 +5794,42 @@ impl ResourceContext {
         None
     }
 
+    /// Select only a unique direct whole scalar owner from the indexed access
+    /// candidates. Larger ranges and cached projections require another protocol.
+    pub(in crate::kernel) fn exact_scalar_owner_occurrence(
+        &self,
+        pointer: &Pointer,
+        bytes: u32,
+        assumptions: &PureFactContext,
+    ) -> Option<ResourceOccurrenceId> {
+        let entries = self.write_access_entries(pointer, bytes, assumptions)?;
+        let mut selected = None;
+        for entry in entries {
+            crate::instrumentation::record_deterministic_work(1);
+            let fact = self.fact(entry);
+            let Some(range) = fact.memory_own_range() else {
+                continue;
+            };
+            if self.storage.supported_by.contains_key(&entry)
+                || range.start_pointer() != *pointer
+                || range
+                    .signed_constant_end()
+                    .zip(range.signed_constant_start())
+                    .and_then(|(end, start)| end.checked_sub(start))
+                    .and_then(|count| count.checked_mul(i64::from(range.element_width())))
+                    != Some(i64::from(bytes))
+                || fact.owned_quantity_term().and_then(|q| q.as_const()) != Some(1)
+            {
+                continue;
+            }
+            if selected.is_some() {
+                return None;
+            }
+            selected = Some(self.occurrence(entry));
+        }
+        selected
+    }
+
     pub(in crate::kernel) fn memory_write_range(
         &self,
         pointer: &Pointer,
@@ -6299,38 +6343,13 @@ impl ResourceContext {
             for entry in entries {
                 self.remove_entry_only(entry);
             }
-            self.storage = std::sync::Arc::new(ResourceContextStorage {
-                facts: self.storage.facts.clone(),
-                next_entry_id: self.storage.next_entry_id,
-                occurrence_by_entry: self.storage.occurrence_by_entry.clone(),
-                entry_by_occurrence: self.storage.entry_by_occurrence.clone(),
-                index: self.storage.index.clone(),
-                supported_by: self.storage.supported_by.clone(),
-                support_occurrence_by_projection: self
-                    .storage
-                    .support_occurrence_by_projection
-                    .clone(),
-                projections_by_support: self.storage.projections_by_support.clone(),
-                projections_by_support_occurrence: self
-                    .storage
-                    .projections_by_support_occurrence
-                    .clone(),
-                support_metadata_by_projection: self.storage.support_metadata_by_projection.clone(),
-                projections_by_memory_block: self.storage.projections_by_memory_block.clone(),
-                projections_by_memory_interval: self.storage.projections_by_memory_interval.clone(),
-                projections_by_memory_interval_subtree: self
-                    .storage
-                    .projections_by_memory_interval_subtree
-                    .clone(),
-                unknown_memory_support: self.storage.unknown_memory_support.clone(),
-                symbolic_memory_support: self.storage.symbolic_memory_support.clone(),
-                expansions_by_support_occurrence: PersistentMap::default(),
-                expansions_by_support_entry: PersistentMap::default(),
-                origin: self.storage.origin.clone(),
-                history: self.storage.history.clone(),
-                observable_projection_source: None,
-                materialized: std::sync::OnceLock::new(),
-            });
+            // Each removal above advanced the observable projection; clearing
+            // the expansion caches advances it too, so a normalization that
+            // restores the same supported pairs below keeps the warm view
+            // instead of leaving every later observation to recompute it.
+            let previous = self.storage.clone();
+            self.clear_cached_support_expansions();
+            self.advance_observable_expansions_cleared(&previous);
             return self
                 .normalized_with_byte_endpoints(assumptions, byte_endpoints)
                 .restore_supported_projection_pairs(supported)
@@ -6494,6 +6513,41 @@ impl ResourceContext {
                 (*support_occurrence, expansion.as_ref().clone())
             })
             .collect()
+    }
+
+    /// Replace the storage root with one holding no cached support
+    /// expansions, leaving every fact, entry, occurrence and support index in
+    /// place. The caller advances the observable projection.
+    fn clear_cached_support_expansions(&mut self) {
+        self.storage = std::sync::Arc::new(ResourceContextStorage {
+            facts: self.storage.facts.clone(),
+            next_entry_id: self.storage.next_entry_id,
+            occurrence_by_entry: self.storage.occurrence_by_entry.clone(),
+            entry_by_occurrence: self.storage.entry_by_occurrence.clone(),
+            index: self.storage.index.clone(),
+            supported_by: self.storage.supported_by.clone(),
+            support_occurrence_by_projection: self.storage.support_occurrence_by_projection.clone(),
+            projections_by_support: self.storage.projections_by_support.clone(),
+            projections_by_support_occurrence: self
+                .storage
+                .projections_by_support_occurrence
+                .clone(),
+            support_metadata_by_projection: self.storage.support_metadata_by_projection.clone(),
+            projections_by_memory_block: self.storage.projections_by_memory_block.clone(),
+            projections_by_memory_interval: self.storage.projections_by_memory_interval.clone(),
+            projections_by_memory_interval_subtree: self
+                .storage
+                .projections_by_memory_interval_subtree
+                .clone(),
+            unknown_memory_support: self.storage.unknown_memory_support.clone(),
+            symbolic_memory_support: self.storage.symbolic_memory_support.clone(),
+            expansions_by_support_occurrence: PersistentMap::default(),
+            expansions_by_support_entry: PersistentMap::default(),
+            origin: self.storage.origin.clone(),
+            history: self.storage.history.clone(),
+            observable_projection_source: None,
+            materialized: std::sync::OnceLock::new(),
+        });
     }
 
     fn restore_cached_support_expansions(
@@ -7458,32 +7512,6 @@ mod zero_quantity_graph_tests {
     }
 
     #[test]
-    fn quantity_query_work_is_indexed_over_separately_retained_units() {
-        let assumptions = PureFactContext::new();
-        let samples = [16_u32, 64, 256, 1024].map(|size| {
-            let context = ResourceContext::new()
-                .unchecked_with_facts((0..size).map(|_| required(Bitvector32Term::Constant(1))));
-            let ((), work) = crate::persistent::measure_persistent_work(|| {
-                assert!(
-                    context
-                        .satisfies_fact(&required(Bitvector32Term::Constant(size)), &assumptions)
-                );
-                assert!(
-                    !context.satisfies_fact(
-                        &required(Bitvector32Term::Constant(size + 1)),
-                        &assumptions
-                    )
-                );
-            });
-            work
-        });
-        assert!(samples[0] > 0, "{samples:?}");
-        for (index, work) in samples.iter().enumerate() {
-            assert!(*work <= samples[0] + 16 * index, "{samples:?}");
-        }
-    }
-
-    #[test]
     fn zero_ownership_uses_graph_with_snapshot_scope() {
         let _session = crate::kernel::VerificationSession::enter();
         let before = crate::kernel::intern_c_memory(CMemory::new().with_block("zero-quantity", 8));
@@ -7534,30 +7562,11 @@ mod zero_quantity_graph_tests {
         assert!(!empty.satisfies_fact(&source, &zero_withdrawn));
     }
 
-    #[test]
-    fn zero_ownership_graph_queries_scale_without_fact_index() {
-        for size in [16u64, 64, 256, 1024] {
-            let _session = crate::kernel::VerificationSession::enter();
-            let mut context = PureFactContext::new();
-            for index in 0..size {
-                context = context
-                    .assume_condition(ConditionTerm::equal(var(index), var(index + 1)), true);
-            }
-            context = context.assume_condition(
-                ConditionTerm::equal(var(size), Bitvector32Term::Constant(0)),
-                true,
-            );
-            let empty = ResourceContext::new();
-            let _scope = context.enter_id_scope();
-            PureFactContext::reset_bitvector_equality_index_fact_visits();
-            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
-                for index in 0..size {
-                    assert!(empty.satisfies_fact(&required(var(index)), &context));
-                }
-            });
-            assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
-            assert!(work < 300 * size as usize, "size={size}, work={work}");
-        }
+    #[cfg(test)]
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/primitives/resource_algebra/zero_quantity_graph_tests.rs"
+        );
     }
 }
 
@@ -10242,45 +10251,6 @@ mod support_removal_tests {
     use super::*;
 
     #[test]
-    fn frame_exchange_preserves_occurrences_and_does_not_scan_unrelated_frame() {
-        let assumptions = PureFactContext::new();
-        let before = CResourceFact::own_composite("before".into(), Vec::new());
-        let after = CResourceFact::own_composite("after".into(), Vec::new());
-        let body = ResourceContext::new().unchecked_with_fact(before.clone());
-        let exit = body
-            .clone()
-            .without_exact_representation(&before)
-            .unwrap()
-            .unchecked_with_fact(after.clone());
-        let occurrence = exit.unique_owned_occurrence_for_fact(&after).unwrap();
-        let mut measurements = Vec::new();
-        for size in [8, 32, 128] {
-            let mut frame = body.clone();
-            for index in 0..size {
-                frame = frame.unchecked_with_fact(CResourceFact::own_composite(
-                    format!("frame_{index}"),
-                    Vec::new(),
-                ));
-            }
-            let (restored, work) = crate::instrumentation::measure_deterministic_work(|| {
-                exit.restore_frame_after_exchange(&body, &frame, &assumptions)
-                    .unwrap()
-            });
-            assert!(!restored.contains_exact_representation(&before));
-            assert_eq!(
-                restored.unique_owned_occurrence_for_fact(&after),
-                Some(occurrence)
-            );
-            assert_eq!(restored.facts().len(), size + 1);
-            measurements.push(work);
-        }
-        assert!(
-            measurements.iter().all(|work| *work == measurements[0]),
-            "{measurements:?}"
-        );
-    }
-
-    #[test]
     fn frame_exchange_refuses_duplicate_authority_and_unrelated_histories() {
         let assumptions = PureFactContext::new();
         let authority = CResourceFact::own_memory(CMemoryRange::new(
@@ -10570,6 +10540,11 @@ mod support_removal_tests {
 
         assert!(context.storage.facts.is_empty());
     }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/primitives/resource_algebra/support_removal_tests.rs");
+    }
 }
 
 #[cfg(test)]
@@ -10738,6 +10713,34 @@ impl ReservedLocalScalarOwner {
         self.occurrence == occurrence && self.fact == *fact
     }
 
+    /// Return the withheld occurrence, preserving call-receipt support identity.
+    pub(in crate::kernel) fn restore_into(
+        &self,
+        resources: ResourceContext,
+        assumptions: &PureFactContext,
+    ) -> Option<ResourceContext> {
+        if resources
+            .storage
+            .entry_by_occurrence
+            .contains_key(&self.occurrence)
+        {
+            return None;
+        }
+        let (resources, mut inserted) = resources
+            .try_compose_into_valid_context_with_occurrences([self.fact.clone()], assumptions)
+            .ok()?;
+        let mut resources =
+            resources.without_exact_representation_for_occurrence(inserted.pop()?.1)?;
+        resources.insert_fact_with_support_occurrence_and_metadata_at(
+            self.fact.clone(),
+            None,
+            None,
+            None,
+            Some(self.occurrence),
+        );
+        Some(resources)
+    }
+
     /// Materialize only the selected owner for an ordinary memory producer.
     pub(in crate::kernel) fn resources(&self, assumptions: &PureFactContext) -> ResourceContext {
         let mut resources = ResourceContext::new_with_equalities(assumptions);
@@ -10749,5 +10752,59 @@ impl ReservedLocalScalarOwner {
             Some(self.occurrence),
         );
         resources
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn absent_view_queries_ignore_owned_frames_and_track_view_lifecycle() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let assumptions = PureFactContext::new();
+    let pointer = Pointer {
+        block: "local:selected-view".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let required = CResourceFact::view_memory(CMemoryRange::new(pointer, 0u32.into(), 1u32.into()));
+    for size in [0, 16, 64, 256] {
+        let mut owned = ResourceContext::new();
+        for index in 0..size {
+            owned = owned.unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                Pointer {
+                    block: format!("local:unrelated-view-owner-{index}").into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                0u32.into(),
+                1u32.into(),
+            )));
+        }
+        let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
+            owned.view_occurrences_for_fact(&required, &assumptions)
+        });
+        assert!(found.is_empty());
+        assert_eq!(
+            work, 0,
+            "ownership-only input must not resolve memory: size={size}"
+        );
+        let view_entry = owned.storage.next_entry_id;
+        let mut with_view = owned.clone().unchecked_with_fact(required.clone());
+        let occurrence = with_view.occurrence(view_entry);
+        assert_eq!(
+            with_view.view_occurrences_for_fact(&required, &assumptions),
+            vec![occurrence],
+        );
+        assert!(
+            owned
+                .view_occurrences_for_fact(&required, &assumptions)
+                .is_empty()
+        );
+        assert_eq!(with_view.remove_entry(view_entry), required);
+        let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
+            with_view.view_occurrences_for_fact(&required, &assumptions)
+        });
+        assert!(found.is_empty());
+        assert_eq!(
+            work, 0,
+            "removing the last view restores empty lookup: size={size}"
+        );
     }
 }

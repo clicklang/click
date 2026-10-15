@@ -420,3 +420,36 @@ modes; 133 selected recovery controls pass. Continue with the
 [string/vector postcondition gap](../bugs/c-pointer-field-postconditions-lose-frame-evidence.md),
 keeping C and claims intact and distinguishing an explicit checked equality
 proof from `assumption`'s exact-fact lookup. The full example audit remains 41/52.
+
+The next proof-only slice supplies explicit checked stored-value equalities in
+`owned_string_set` and `vector_push`; their original function contracts now
+verify. Continue with string push's terminator comparison and the later vector
+allocation fold. This does not close either complete project or change the
+41/52 archive audit. See the
+[focused evidence](../design/object-model-recovery-audit.md#explicit-stored-value-proofs-in-the-original-examples).
+
+
+Upstream now verifies both full string/vector projects after the focused
+string-push proof adjustment. The remaining string pointer-frame and vector
+allocation-fold failures are specific to the recovery archive; continue reducing
+those compatibility obligations before activation. See the
+[upstream/archive distinction](../design/object-model-recovery-audit.md#string-push-proof-and-full-upstream-project-checks).
+
+The split-field string fold now passes at unchanged limits after the
+[preliminary byte-gap query repair](../design/object-model-recovery-audit.md#preliminary-byte-gap-query-repair).
+The focused archive proof passes fresh, expanded, rewritten and retained checks.
+The archive's clear proof now also passes, and the full original string project
+passes all four modes. The completed archive audit improves to 42/52; ten
+compatibility failures remain. Continue reducing the vector allocation fold
+across its modular push call, using the existing checked pointer-field effects
+before considering any new contract surface. The graph-lock follow-up passes
+all 5,415 current-upstream normal library tests and 168 C++ import/span tests.
+Keep the original C, split-field resources and contracts intact; the separate
+returned-resource performance report is not closed by the fold repair.
+
+
+PR #1054 has merged; both pushed trace-fix commits `7350af8a0` and `09c1cf285`
+are verified upstream. The latest archive audit after the selected read-frame
+repair remains 42/52 with no new failures. Continue the
+[selected resource-delta extraction](../design/object-model-recovery-audit.md#selected-complete-read-bridge-for-resource-deltas)
+and the separate full-pointer evidence gap at the vector allocation fold.

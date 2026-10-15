@@ -351,7 +351,20 @@ private:
         llvm::dyn_cast<clang::CXXConstructorDecl>(declaration);
     const auto *destructor =
         llvm::dyn_cast<clang::CXXDestructorDecl>(declaration);
-    const auto *method = llvm::dyn_cast<clang::CXXMethodDecl>(declaration);
+    // A lambda's call operator is exported as a free function of its
+    // parameters; the lambdas admitted capture nothing, so it reads no state.
+    const auto *lambda_call = llvm::dyn_cast<clang::CXXMethodDecl>(declaration);
+    if (lambda_call != nullptr && !lambda_call->getParent()->isLambda())
+      lambda_call = nullptr;
+    std::optional<std::string> lambda_function_name;
+    if (lambda_call != nullptr) {
+      lambda_function_name = lambda_name(lambda_call);
+      if (!lambda_function_name)
+        return std::nullopt;
+    }
+    const auto *method = lambda_call != nullptr
+                             ? nullptr
+                             : llvm::dyn_cast<clang::CXXMethodDecl>(declaration);
     const bool ordinary_method =
         method != nullptr && constructor == nullptr && destructor == nullptr;
     if (ordinary_method && (method->isVirtual() || method->isVolatile() ||
@@ -426,6 +439,27 @@ private:
       }
     }
     llvm::json::Array parameters;
+    // A lambda's captures are its leading parameters, named for the captured
+    // variables, so its body's reads of them read the parameters.
+    std::size_t closure_captures = 0;
+    if (lambda_call != nullptr) {
+      auto captures = lambda_captures(lambda_call->getParent(), lambda_call->getLocation());
+      if (!captures)
+        return std::nullopt;
+      for (const clang::VarDecl *variable : *captures) {
+        auto value_type =
+            lower_type(variable->getType().getUnqualifiedType(), variable->getLocation());
+        if (!value_type)
+          return std::nullopt;
+        llvm::json::Object capture;
+        capture["declaration_id"] = declaration_id(variable);
+        capture["name"] = variable->getNameAsString();
+        capture["value_type"] = std::move(*value_type);
+        capture["span"] = span(variable->getSourceRange());
+        parameters.push_back(std::move(capture));
+      }
+      closure_captures = captures->size();
+    }
     if (method != nullptr && !method->isStatic()) {
       const auto *method = llvm::cast<clang::CXXMethodDecl>(declaration);
       const auto *record = method->getParent()->getDefinition();
@@ -546,7 +580,8 @@ private:
 
     llvm::json::Object result;
     result["declaration_id"] = declaration_id(declaration);
-    result["name"] = ordinary_method ? method_name(method)
+    result["name"] = lambda_function_name ? *lambda_function_name
+                     : ordinary_method       ? method_name(method)
                      : constructor == nullptr
                          ? (destructor == nullptr ? function_name(declaration)
                                                   : destructor_name(destructor))
@@ -555,6 +590,8 @@ private:
     result["return_type"] = std::move(*return_type);
     result["parameters"] = std::move(parameters);
     result["declared_noexcept"] = prototype->isNothrow();
+    if (closure_captures != 0)
+      result["closure_captures"] = static_cast<int64_t>(closure_captures);
     result["span"] = span(declaration->getSourceRange());
     result["body"] = std::move(statements);
     if (!state_.error.empty()) {
@@ -583,6 +620,23 @@ private:
   }
 
   std::optional<Json> lower_parameter(const clang::ParmVarDecl *parameter) {
+    if (std_function_prototype(parameter->getType()) != nullptr) {
+      const auto *reference = parameter->getType()->getAs<clang::LValueReferenceType>();
+      if (reference != nullptr && !reference->getPointeeType().isConstQualified()) {
+        fail(parameter->getLocation(),
+             "a C++ std::function parameter is taken by value or by const reference");
+        return std::nullopt;
+      }
+      auto value_type = lower_type(parameter->getType(), parameter->getLocation());
+      if (!value_type)
+        return std::nullopt;
+      llvm::json::Object result;
+      result["declaration_id"] = declaration_id(parameter);
+      result["name"] = parameter->getNameAsString();
+      result["value_type"] = std::move(*value_type);
+      result["span"] = span(parameter->getSourceRange());
+      return Json(std::move(result));
+    }
     const auto *reference =
         parameter->getType()->getAs<clang::LValueReferenceType>();
     const bool int_reference =
@@ -737,6 +791,27 @@ private:
     return supported_integer_type(type) || supported_byte_enum(type);
   }
 
+  // The call signature of `std::function<R(A...)>`, possibly const or behind
+  // an lvalue reference, when `type` is one. Click models it as a callable
+  // value, not as the library's record: a contract on it says what calling
+  // it does, and implies it is not empty.
+  const clang::FunctionProtoType *
+  std_function_prototype(clang::QualType type) const {
+    if (const auto *reference = type->getAs<clang::LValueReferenceType>())
+      type = reference->getPointeeType();
+    const auto *specialization =
+        llvm::dyn_cast_or_null<clang::ClassTemplateSpecializationDecl>(
+            type->getAsCXXRecordDecl());
+    if (specialization == nullptr || !specialization->isInStdNamespace() ||
+        specialization->getName() != "function" ||
+        specialization->getTemplateArgs().size() != 1 ||
+        specialization->getTemplateArgs()[0].getKind() != clang::TemplateArgument::Type)
+      return nullptr;
+    return specialization->getTemplateArgs()[0]
+        .getAsType()
+        ->getAs<clang::FunctionProtoType>();
+  }
+
   // The function type a pointer designates, when `type` is a pointer to a
   // function, as in `int (*)(int) noexcept`.
   const clang::FunctionProtoType *
@@ -765,9 +840,13 @@ private:
   // cannot throw, so it needs no exceptional contract.
   std::optional<Json> lower_function_pointer_type(clang::QualType type,
                                                   clang::SourceLocation location) {
-    const auto *prototype = function_pointer_prototype(type);
+    // A `std::function` is not `noexcept`: its target is, as every verified
+    // function is outside the exception profile, and a contract on it says
+    // it holds one.
+    const auto *standard = std_function_prototype(type);
+    const auto *prototype = standard != nullptr ? standard : function_pointer_prototype(type);
     if (type.isVolatileQualified() || type.isRestrictQualified() ||
-        prototype->isVariadic() || !prototype->isNothrow() ||
+        prototype->isVariadic() || (standard == nullptr && !prototype->isNothrow()) ||
         prototype->getMethodQuals().hasQualifiers() ||
         prototype->getRefQualifier() != clang::RQ_None) {
       fail(location, "a C++ function pointer must point to a noexcept, non-variadic function");
@@ -798,13 +877,15 @@ private:
     result["kind"] = "function_pointer";
     result["return_type"] = std::move(*return_type);
     result["parameters"] = std::move(parameters);
-    result["is_const"] = type.isConstQualified();
+    result["is_const"] = standard == nullptr && type.isConstQualified();
     return Json(std::move(result));
   }
 
   std::optional<Json>
   lower_type(clang::QualType type, clang::SourceLocation location,
              const clang::TypedefNameDecl *source_alias = nullptr) {
+    if (std_function_prototype(type) != nullptr)
+      return lower_function_pointer_type(type, location);
     if (type->isVoidType()) {
       llvm::json::Object result;
       result["kind"] = "void";
@@ -2448,6 +2529,54 @@ private:
   // `(*f)(x)`. The callee is the variable; the contract its value meets
   // comes from the sidecar, as for a C callback. Its arguments are values,
   // never nested calls, so evaluation order needs no further evidence.
+  // `f(x)` on a `std::function` parameter or local is a call through the
+  // callable value it holds, as through a function pointer.
+  std::optional<LoweredCall>
+  lower_std_function_call(const clang::CXXOperatorCallExpr *call,
+                          const clang::FunctionDecl *caller) {
+    const auto *reference =
+        llvm::dyn_cast<clang::DeclRefExpr>(call->getArg(0)->IgnoreParenImpCasts());
+    const auto *variable =
+        reference == nullptr ? nullptr : llvm::dyn_cast<clang::VarDecl>(reference->getDecl());
+    const auto *prototype =
+        variable == nullptr ? nullptr : std_function_prototype(variable->getType());
+    if (variable == nullptr || !variable->hasLocalStorage() || prototype == nullptr) {
+      fail(call->getExprLoc(),
+           "the supported C++ slice calls a std::function parameter or local");
+      return std::nullopt;
+    }
+    if (!lower_type(variable->getType(), variable->getLocation()))
+      return std::nullopt;
+    if (call->getNumArgs() != prototype->getNumParams() + 1) {
+      fail(call->getExprLoc(),
+           "the supported C++ slice requires a call with one argument per parameter");
+      return std::nullopt;
+    }
+    llvm::json::Array arguments;
+    for (unsigned index = 1; index < call->getNumArgs(); ++index) {
+      const auto *argument = call->getArg(index);
+      if (llvm::isa<clang::CallExpr>(argument->IgnoreParenImpCasts())) {
+        fail(argument->getExprLoc(),
+             "a call through a std::function takes no call as an argument");
+        return std::nullopt;
+      }
+      auto lowered = lower_call_argument(argument, prototype->getParamType(index - 1),
+                                         argument->getExprLoc(), caller);
+      if (!lowered)
+        return std::nullopt;
+      arguments.push_back(std::move(*lowered));
+    }
+    llvm::json::Object callee;
+    callee["declaration_id"] = declaration_id(variable);
+    callee["name"] = variable->getNameAsString();
+    callee["span"] = span(call->getArg(0)->getSourceRange());
+    callee["through_pointer"] = true;
+    Json call_span = span(call->getSourceRange());
+    if (!state_.error.empty())
+      return std::nullopt;
+    return LoweredCall{std::move(callee), std::move(arguments), std::move(call_span)};
+  }
+
   std::optional<LoweredCall>
   lower_indirect_call(const clang::CallExpr *call,
                       const clang::FunctionDecl *caller) {
@@ -2506,6 +2635,11 @@ private:
     const clang::FunctionDecl *callee = call->getDirectCallee();
     if (callee == nullptr)
       return lower_indirect_call(call, caller);
+    if (const auto *operation = llvm::dyn_cast<clang::CXXOperatorCallExpr>(call);
+        operation != nullptr && operation->getOperator() == clang::OO_Call &&
+        operation->getNumArgs() > 0 &&
+        std_function_prototype(operation->getArg(0)->getType()) != nullptr)
+      return lower_std_function_call(operation, caller);
     const auto *method = llvm::dyn_cast<clang::CXXMethodDecl>(callee);
     const clang::Expr *receiver = nullptr;
     unsigned argument_offset = 0;
@@ -2733,6 +2867,9 @@ private:
   lower_call_argument(const clang::Expr *argument, clang::QualType parameter_type,
                       clang::SourceLocation parameter_location,
                       const clang::FunctionDecl *caller) {
+    if (std_function_prototype(parameter_type) != nullptr)
+      return lower_std_function_argument(argument, parameter_type, parameter_location,
+                                         caller);
     llvm::json::Object result;
     if (parameter_type->getAsCXXRecordDecl() != nullptr) {
       const auto *construction = llvm::dyn_cast<clang::CXXConstructExpr>(argument->IgnoreParenImpCasts());
@@ -3040,6 +3177,235 @@ private:
                                 : llvm::dyn_cast<clang::FunctionDecl>(reference->getDecl());
   }
 
+  // The value passed for a `std::function` parameter: a lambda, whose
+  // creation captures its by-copy captures; a function, by its address; or
+  // another `std::function` parameter or local, by its value. Clang writes a
+  // conversion as the construction of a `std::function` temporary, which
+  // Click does not model: the temporary only holds the callable.
+  std::optional<Json> lower_std_function_argument(const clang::Expr *argument,
+                                                  clang::QualType parameter_type,
+                                                  clang::SourceLocation parameter_location,
+                                                  const clang::FunctionDecl *caller) {
+    const clang::Expr *source = argument;
+    for (;;) {
+      source = source->IgnoreParens();
+      if (const auto *cleanups = llvm::dyn_cast<clang::ExprWithCleanups>(source))
+        source = cleanups->getSubExpr();
+      else if (const auto *temporary = llvm::dyn_cast<clang::MaterializeTemporaryExpr>(source))
+        source = temporary->getSubExpr();
+      else if (const auto *bound = llvm::dyn_cast<clang::CXXBindTemporaryExpr>(source))
+        source = bound->getSubExpr();
+      else if (const auto *cast = llvm::dyn_cast<clang::ImplicitCastExpr>(source);
+               cast != nullptr && (cast->getCastKind() == clang::CK_NoOp ||
+                                   cast->getCastKind() == clang::CK_ConstructorConversion))
+        source = cast->getSubExpr();
+      else if (const auto *construction = llvm::dyn_cast<clang::CXXConstructExpr>(source);
+               construction != nullptr && construction->getNumArgs() == 1 &&
+               std_function_prototype(construction->getType()) != nullptr)
+        source = construction->getArg(0);
+      else
+        break;
+    }
+    auto value_type = lower_type(parameter_type, parameter_location);
+    if (!value_type)
+      return std::nullopt;
+    std::optional<Json> value;
+    if (const auto *lambda = llvm::dyn_cast<clang::LambdaExpr>(source))
+      value = lower_closure_creation(lambda, std::move(*value_type), caller);
+    else if (const auto *designated = designated_function(source))
+      value = lower_function_address(source, designated);
+    else if (const auto *reference = llvm::dyn_cast<clang::DeclRefExpr>(source);
+             reference != nullptr && std_function_prototype(source->getType()) != nullptr) {
+      // A `std::function` parameter or local passed on is a load of the
+      // callable it holds; Clang writes no lvalue-to-rvalue cast of a record.
+      auto place = lower_place_reference(source, caller);
+      auto loaded_type = lower_type(source->getType(), source->getExprLoc());
+      if (!place || !loaded_type)
+        return std::nullopt;
+      llvm::json::Object load;
+      load["kind"] = "load";
+      load["place"] = std::move(*place);
+      load["value_type"] = std::move(*loaded_type);
+      load["span"] = span(source->getSourceRange());
+      value = Json(std::move(load));
+    }
+    else {
+      fail(argument->getExprLoc(),
+           "a C++ std::function argument must be a lambda, a function, or a "
+           "std::function parameter or local");
+      return std::nullopt;
+    }
+    if (!value)
+      return std::nullopt;
+    llvm::json::Object result;
+    result["kind"] = "value";
+    result["value"] = std::move(*value);
+    return Json(std::move(result));
+  }
+
+  // The captures a lambda passed for a `std::function` holds: each a by-copy
+  // capture of a scalar local or parameter, read when the lambda is made.
+  // A capture by reference is refused: C++ does not keep the variable from
+  // changing while the closure lives.
+  std::optional<std::vector<const clang::VarDecl *>>
+  lambda_captures(const clang::CXXRecordDecl *closure, clang::SourceLocation location) {
+    std::vector<const clang::VarDecl *> captures;
+    for (const clang::LambdaCapture &capture : closure->captures()) {
+      const auto *variable =
+          capture.capturesVariable()
+              ? llvm::dyn_cast<clang::VarDecl>(capture.getCapturedVar())
+              : nullptr;
+      if (variable == nullptr || capture.getCaptureKind() != clang::LCK_ByCopy ||
+          !variable->hasLocalStorage() || variable->getType()->isReferenceType() ||
+          !(supported_scalar_value_type(variable->getType().getUnqualifiedType()) ||
+            context_.hasSameType(variable->getType().getUnqualifiedType(), context_.BoolTy))) {
+        fail(location,
+             "a C++ lambda captures only scalar locals and parameters, by copy");
+        return std::nullopt;
+      }
+      captures.push_back(variable);
+    }
+    return captures;
+  }
+
+  // A lambda passed for a `std::function`: one that captures nothing is its
+  // call operator's address; one that captures is a closure creation from
+  // the captured values.
+  std::optional<Json> lower_closure_creation(const clang::LambdaExpr *lambda, Json value_type,
+                                             const clang::FunctionDecl *caller) {
+    const clang::CXXRecordDecl *closure = lambda->getLambdaClass();
+    const clang::CXXMethodDecl *call = lambda->getCallOperator();
+    if (call->getTemplatedKind() != clang::FunctionDecl::TK_NonTemplate) {
+      fail(lambda->getExprLoc(), "a C++ lambda passed for a std::function must not be generic");
+      return std::nullopt;
+    }
+    auto captures = lambda_captures(closure, lambda->getExprLoc());
+    auto name = lambda_name(call);
+    if (!captures || !name || !remember_function(call))
+      return std::nullopt;
+    llvm::json::Object reference;
+    reference["declaration_id"] = declaration_id(call);
+    reference["name"] = *name;
+    reference["span"] = span(lambda->getSourceRange());
+    llvm::json::Object result;
+    result["function"] = std::move(reference);
+    result["value_type"] = std::move(value_type);
+    result["span"] = span(lambda->getSourceRange());
+    if (captures->empty()) {
+      result["kind"] = "function_address";
+    } else {
+      llvm::json::Array values;
+      for (const clang::Expr *initializer : lambda->capture_inits()) {
+        auto value = lower_expression(initializer, caller);
+        if (!value)
+          return std::nullopt;
+        values.push_back(std::move(*value));
+      }
+      result["kind"] = "closure_instance";
+      result["captures"] = std::move(values);
+    }
+    if (!state_.error.empty())
+      return std::nullopt;
+    return Json(std::move(result));
+  }
+
+  // Whether every temporary `expression` binds for destruction is a
+  // `std::function`, which Click models as the callable it holds, so its
+  // destruction has no effect Click models. Lambda bodies are not searched.
+  bool only_std_function_temporaries(const clang::Expr *expression) {
+    struct Finder : clang::RecursiveASTVisitor<Finder> {
+      const SemanticExporter *self;
+      bool other = false;
+      bool TraverseLambdaExpr(clang::LambdaExpr *) { return true; }
+      bool VisitCXXBindTemporaryExpr(clang::CXXBindTemporaryExpr *bound) {
+        if (self->std_function_prototype(bound->getType()) == nullptr)
+          other = true;
+        return !other;
+      }
+    } finder;
+    finder.self = this;
+    finder.TraverseStmt(const_cast<clang::Expr *>(expression));
+    return !finder.other;
+  }
+
+  // A lambda converted to a function pointer, `apply([](int y) noexcept {
+  // return y + y; }, x)`: Clang writes the conversion as a call of the
+  // closure type's conversion function on the lambda.
+  const clang::LambdaExpr *converted_lambda(const clang::Expr *expression) {
+    const auto *cast = llvm::dyn_cast<clang::ImplicitCastExpr>(expression->IgnoreParens());
+    if (cast == nullptr || cast->getCastKind() != clang::CK_UserDefinedConversion)
+      return nullptr;
+    const auto *call =
+        llvm::dyn_cast<clang::CXXMemberCallExpr>(cast->getSubExpr()->IgnoreParens());
+    if (call == nullptr || !llvm::isa<clang::CXXConversionDecl>(call->getMethodDecl()))
+      return nullptr;
+    return llvm::dyn_cast<clang::LambdaExpr>(
+        call->getImplicitObjectArgument()->IgnoreImplicit()->IgnoreParens());
+  }
+
+  // The name of a lambda's call operator: the enclosing function's, then the
+  // lambda's index among the lambdas written in that function's body, in
+  // source order. A sidecar spells it `caller::(lambda#0)`. The importer's
+  // own names never contain a double underscore, so no function has it.
+  std::optional<std::string> lambda_name(const clang::CXXMethodDecl *call) {
+    const clang::CXXRecordDecl *closure = call->getParent();
+    const auto *enclosing =
+        llvm::dyn_cast_or_null<clang::FunctionDecl>(closure->getDeclContext());
+    if (enclosing == nullptr || llvm::isa<clang::CXXMethodDecl>(enclosing) ||
+        enclosing->getBody() == nullptr) {
+      fail(call->getLocation(),
+           "a C++ lambda is supported only in the body of a free function");
+      return std::nullopt;
+    }
+    struct Collector : clang::RecursiveASTVisitor<Collector> {
+      std::vector<const clang::CXXRecordDecl *> closures;
+      bool VisitLambdaExpr(clang::LambdaExpr *lambda) {
+        closures.push_back(lambda->getLambdaClass());
+        return true;
+      }
+    } collector;
+    collector.TraverseStmt(enclosing->getBody());
+    const auto found =
+        std::find(collector.closures.begin(), collector.closures.end(), closure);
+    if (found == collector.closures.end()) {
+      fail(call->getLocation(), "a C++ lambda's enclosing body does not contain it");
+      return std::nullopt;
+    }
+    return function_name(enclosing) + "__lambda_" +
+           std::to_string(found - collector.closures.begin());
+  }
+
+  // A lambda that captures nothing, converted to a function pointer, is the
+  // address of its call operator, which is exported as a free function.
+  std::optional<Json> lower_lambda_address(const clang::Expr *expression,
+                                           const clang::LambdaExpr *lambda) {
+    const clang::CXXRecordDecl *closure = lambda->getLambdaClass();
+    const clang::CXXMethodDecl *call = lambda->getCallOperator();
+    if (lambda->capture_size() != 0 || !closure->field_empty() ||
+        call->getTemplatedKind() != clang::FunctionDecl::TK_NonTemplate) {
+      fail(expression->getExprLoc(),
+           "a C++ lambda converted to a function pointer must capture nothing "
+           "and must not be generic");
+      return std::nullopt;
+    }
+    auto name = lambda_name(call);
+    auto value_type = lower_type(expression->getType(), expression->getExprLoc());
+    if (!name || !value_type || !remember_function(call))
+      return std::nullopt;
+    llvm::json::Object reference;
+    reference["declaration_id"] = declaration_id(call);
+    reference["name"] = *name;
+    reference["span"] = span(lambda->getSourceRange());
+    llvm::json::Object result;
+    result["kind"] = "function_address";
+    result["function"] = std::move(reference);
+    result["value_type"] = std::move(*value_type);
+    result["span"] = span(expression->getSourceRange());
+    if (!state_.error.empty())
+      return std::nullopt;
+    return Json(std::move(result));
+  }
+
   // `&f` as a value: the address of a free function or static member
   // function of the program, which is exported so its contract can be
   // checked against the one a callee requires of the pointer.
@@ -3076,6 +3442,14 @@ private:
                                        const clang::FunctionDecl *function) {
     if (const auto *designated = designated_function(expression))
       return lower_function_address(expression, designated);
+    if (const auto *lambda = converted_lambda(expression))
+      return lower_lambda_address(expression, lambda);
+    // A full expression whose temporaries end without effects, as a lambda
+    // converted to a function pointer does, is its subexpression.
+    if (const auto *cleanups = llvm::dyn_cast<clang::ExprWithCleanups>(expression);
+        cleanups != nullptr && (!cleanups->cleanupsHaveSideEffects() ||
+                                only_std_function_temporaries(cleanups->getSubExpr())))
+      return lower_expression(cleanups->getSubExpr(), function);
     if (const auto *throw_expression =
             llvm::dyn_cast<clang::CXXThrowExpr>(expression)) {
       fail(throw_expression->getThrowLoc(),
@@ -4083,9 +4457,18 @@ private:
     const bool supported_local =
         variable != nullptr && !supported_parameter &&
         variable->hasLocalStorage() && !variable->isStaticLocal();
+    // A lambda's by-copy capture is one of its leading parameters.
+    const auto *lambda_call = llvm::dyn_cast_or_null<clang::CXXMethodDecl>(expected_function);
+    const bool lambda_capture =
+        variable != nullptr && lambda_call != nullptr && lambda_call->getParent()->isLambda() &&
+        reference->refersToEnclosingVariableOrCapture() &&
+        llvm::any_of(lambda_call->getParent()->captures(), [&](const clang::LambdaCapture &capture) {
+          return capture.capturesVariable() && capture.getCapturedVar() == variable &&
+                 capture.getCaptureKind() == clang::LCK_ByCopy;
+        });
     if (place == nullptr ||
         (place->getDeclContext() != expected_function &&
-         place != active_catch_binding_) ||
+         place != active_catch_binding_ && !lambda_capture) ||
         (!supported_parameter && !supported_local)) {
       fail(expression->getExprLoc(),
            "the supported C++ slice can access only current function parameters and automatic locals");

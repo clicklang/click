@@ -2380,12 +2380,12 @@ fn integer_round_trip_destination(name: &str) -> Option<crate::kernel::MachineIn
 fn is_nat_integer_law_name(name: &str) -> bool {
     matches!(
         name,
-        "click::nat::nat_integer_zero"
-            | "click::nat::nat_integer_succ"
-            | "click::nat::nat_integer_nonnegative"
-            | "click::nat::nat_integer_round_trip"
-            | "click::nat::integer_nat_round_trip"
-            | "click::nat::integer_to_nat_zero"
+        "click::nat::to_integer_zero"
+            | "click::nat::to_integer_succ"
+            | "click::nat::to_integer_nonnegative"
+            | "click::nat::to_nat_to_integer"
+            | "click::nat::to_integer_to_nat"
+            | "click::nat::to_nat_zero"
     )
 }
 
@@ -2512,11 +2512,11 @@ fn verify_kernel_standard_theorem_axiom(
     goal: Proposition,
 ) -> Result<VerifiedPureTheorem, ClickError> {
     let (parameter_count, requirement_count) = match theorem.name() {
-        "click::nat::nat_integer_zero" | "click::nat::integer_to_nat_zero" => (0, 0),
-        "click::nat::nat_integer_succ"
-        | "click::nat::nat_integer_nonnegative"
-        | "click::nat::nat_integer_round_trip" => (1, 0),
-        "click::nat::integer_nat_round_trip" => (1, 1),
+        "click::nat::to_integer_zero" | "click::nat::to_nat_zero" => (0, 0),
+        "click::nat::to_integer_succ"
+        | "click::nat::to_integer_nonnegative"
+        | "click::nat::to_nat_to_integer" => (1, 0),
+        "click::nat::to_integer_to_nat" => (1, 1),
         name if integer_round_trip_destination(name).is_some() => (1, 2),
         name if crate::kernel::integer_truncation_law_requirements(name).is_some() => (
             2,

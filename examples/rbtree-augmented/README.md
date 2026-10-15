@@ -197,3 +197,43 @@ subtree model, selects the corresponding proved callback interface inside the
 borrowed table scope, and returns a recursively valid sized subtree. Both named
 rotation interfaces preserve the structural shape and establish the repaired
 root count. Connection to insertion and erasure remains to be checked.
+
+
+`rbtree_size_insert.click` begins the writable-callback insertion boundary with
+its no-parent case. It checks the unchanged `__rb_insert` body and both augmented
+wrappers when the supplied node is the red root of a valid `sized_at` subtree.
+The root becomes black; the exact cached sizes and child models are preserved.
+The children may be nonempty. This path never invokes the rotation callback,
+so it accepts any correctly typed callback without the plain insertion proof's
+read-only `AugmentRotate` premise. `InsertSizedRoot` exposes the checked root-case
+interface. This is not yet the ancestor or rotation paths of sized insertion,
+and does not establish balancing from arbitrary child colors.
+
+`rbtree_size_insert_black_parent.click` checks the other immediate insertion
+exit and both wrappers: a red focus beneath a nonnull black parent. Its
+`sized_black_parent_at` resource owns the sized subtree and ancestor tag;
+the exact subtree model and full ancestor tag are preserved. It needs neither
+root-field ownership nor a callback contract because this path reads neither
+the root field nor calls the callback. The ancestor can be at any depth, but
+this case stops immediately; color flips and general rotations remain pending.
+
+
+`rbtree_size_insert_rotation.click` checks the unchanged `__rb_insert` body and
+both augmented wrappers for a left-left three-node rotation at the root. The
+input owns the black grandparent, red parent and red focus with valid cached
+sizes 3, 2 and 1. After the structural rotation, the indirect callback is
+checked against `RotateTreeRight`; it may write the promoted and demoted size
+cells and returns a recursively valid `sized_at` tree. The result has a black
+root and two red leaf children, with the exact expected structural model.
+The wrappers accept the checked writable callback directly or through the
+borrowed table field. This is the first insertion path that invokes a writable
+metadata callback. Other rotation shapes, color flips, arbitrary ancestor
+contexts and writable erase integration remain unfinished.
+
+
+`rbtree_size_insert_mirrored_rotation.click` checks the mirrored right-right
+three-node root case through the same three entry points, using
+`RotateTreeLeft` for the writable callback. The returned model has the demoted
+grandparent on the left and the inserted node on the right, with recursively
+valid cached sizes. Both single-rotation directions are covered; double
+rotations, color flips and arbitrary ancestor contexts remain.

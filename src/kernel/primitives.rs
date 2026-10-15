@@ -717,6 +717,53 @@ pub enum PointerOffsetTerm {
 }
 
 impl PointerOffsetTerm {
+    /// Maps scaled index values without changing the offset expression.
+    pub(crate) fn map_scaled_values(
+        &self,
+        mut map: impl FnMut(&Bitvector32Term) -> Bitvector32Term,
+    ) -> Self {
+        enum Task<'a> {
+            Visit(&'a PointerOffsetTerm),
+            Add,
+        }
+        let mut pending = vec![Task::Visit(self)];
+        let mut values = Vec::new();
+        while let Some(task) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            match task {
+                Task::Visit(Self::Add(left, right)) => {
+                    pending.push(Task::Add);
+                    pending.push(Task::Visit(right));
+                    pending.push(Task::Visit(left));
+                }
+                Task::Visit(Self::Int32Scaled { value, byte_width }) => {
+                    values.push(Self::Int32Scaled {
+                        value: Box::new(map(value)),
+                        byte_width: *byte_width,
+                    });
+                }
+                Task::Visit(Self::Int64Scaled {
+                    value,
+                    byte_width,
+                    unsigned,
+                }) => {
+                    values.push(Self::Int64Scaled {
+                        value: Box::new(map(value)),
+                        byte_width: *byte_width,
+                        unsigned: *unsigned,
+                    });
+                }
+                Task::Visit(other) => values.push(other.clone()),
+                Task::Add => {
+                    let right = values.pop().expect("right offset");
+                    let left = values.pop().expect("left offset");
+                    values.push(Self::Add(Box::new(left), Box::new(right)));
+                }
+            }
+        }
+        values.pop().expect("one mapped offset")
+    }
+
     /// Every bitvector term nested in this offset, for traversals that must
     /// look through a pointer embedded in a term.
     pub(crate) fn scaled_values(&self) -> Vec<&Bitvector32Term> {
@@ -3495,6 +3542,8 @@ pub enum CStatement {
         pointer: CExpression,
         value: CExpression,
     },
+    /// Consume one live source lease at its checked ending frontier.
+    EndScalarReference(super::CScalarReferenceEnd),
     TypedStore {
         pointer: CExpression,
         value: CExpression,
@@ -11199,6 +11248,14 @@ pub struct PureFactContext {
     /// unrelated proposition in the context.
     pub(super) disjunction_facts: crate::persistent::PersistentSet<Proposition>,
     pub(super) resource_compositions: std::sync::Arc<BTreeSet<ResourceContext>>,
+    /// The ownership a store in this context writes under, when the writer
+    /// stated it: the current state's observable composition and any
+    /// composition the store opened from held folded instances, all also
+    /// among `resource_compositions` (empty when the state holds none). Store
+    /// separation then reads these alone rather than every composition the
+    /// path stated before (`issues/scaling.md`). `None` (the default) leaves
+    /// store separation reading them all.
+    pub(super) store_owners: Option<std::sync::Arc<Vec<ResourceContext>>>,
     /// Derived provenance-only footprints published with each explicitly
     /// admitted composition. This is not consumable resource authority.
     pub(super) composition_object_resources: memory_equality_index::ObjectEvidenceSources,
@@ -11234,6 +11291,7 @@ impl PartialEq for PureFactContext {
             && self.typed_pointer_read_definitions == other.typed_pointer_read_definitions
             && self.prop_facts == other.prop_facts
             && self.resource_compositions == other.resource_compositions
+            && self.store_owners == other.store_owners
             && self.reasoning_policy == other.reasoning_policy
     }
 }

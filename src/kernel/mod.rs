@@ -7,17 +7,22 @@
 //!
 pub(crate) mod api;
 mod source_access;
+mod source_loans;
 pub use source_access::{CStatementAssignSource, CStatementStoreSource};
 pub(crate) use source_access::{
     ExecutedReferenceAccess, ExecutedReferenceBoundary, ReferenceAccessKind,
     ReferenceAccessSourceId, ReferenceBorrowSourceId,
+};
+pub use source_loans::CScalarReferenceEnd;
+pub(crate) use source_loans::{
+    ScalarReferencePlanFamily, ScalarReferencePlanKey, ScalarReferenceSourcePlan,
 };
 
 /// Version of the resource and stable-view semantics used by proof
 /// artifacts.  This is deliberately separate from source and compiler
 /// identities: changing the authority interpretation must invalidate an old
 /// certificate even when its inputs are byte-identical.
-pub const RESOURCE_SEMANTICS_VERSION: u32 = 65;
+pub const RESOURCE_SEMANTICS_VERSION: u32 = 68;
 
 pub(crate) mod assumptions;
 mod difference_graph;
@@ -59,8 +64,8 @@ pub(crate) use loans::LoanLedger;
 pub(crate) use loans::LoanRefusal;
 pub(crate) use loans::owned_reservation_miss_for;
 pub(crate) use loans::{
-    CheckedLoanCallEvidenceSequence, LoanViewBinding, concat_checked_loan_evidence,
-    empty_checked_loan_evidence_sequence,
+    CheckedLoanCallEvidenceSequence, CheckedLoanTransition, LoanViewBinding,
+    concat_checked_loan_evidence, empty_checked_loan_evidence_sequence,
 };
 pub use loans::{
     LoanOriginKind, LoanOverlapStatus, LoanRefusalCategory, LoanRefusalDiagnostic,
@@ -182,6 +187,7 @@ pub(crate) use functions::{
 pub use loops::CLoopBinder;
 #[cfg(test)]
 pub(crate) use loops::c_loop_state_components_match_at_back_edge;
+pub(crate) use loops::memory_range_extent_refusal;
 pub(crate) use loops::{
     c_loop_binder_state_components_match_at_back_edge, c_loop_binders,
     c_loop_condition_may_continue, c_loop_state_with_loop_binders_rebound,

@@ -569,13 +569,17 @@ fn write_c_lvalue_paths_without_local_reference(
     let effective_assumptions = if direct_local_copy {
         effective_assumptions
     } else {
-        state
+        // The store is separated by what the writer owns now, not by every
+        // composition stated earlier on the path.
+        let owner = state
             .resources()
             .observable_facts_assuming_valid(&effective_assumptions)
             .into_iter()
-            .fold(effective_assumptions, |assumptions, fact| {
-                assumptions.assume_proposition(fact)
-            })
+            .find_map(|fact| match fact {
+                Proposition::CResourceComposition(owner) => Some(owner),
+                _ => None,
+            });
+        effective_assumptions.with_store_owner(owner)
     };
     let mut facts = facts;
     let constant = lvalue.is_constant();
@@ -900,9 +904,10 @@ fn write_c_lvalue_paths_without_local_reference(
                     &effective_assumptions,
                 ) {
                     Some(opened) => {
-                        let fact = Proposition::CResourceComposition(opened);
-                        facts.push(ExecutionPureFact::new(fact.clone()));
-                        effective_assumptions.assume_proposition(fact)
+                        facts.push(ExecutionPureFact::new(Proposition::CResourceComposition(
+                            opened.clone(),
+                        )));
+                        effective_assumptions.with_additional_store_owner(opened)
                     }
                     None => effective_assumptions,
                 };
@@ -2667,6 +2672,7 @@ fn collect_scope_declared_names(statement: &CStatement, names: &mut Vec<String>)
         | CStatement::TryCatchInt32 { .. }
         // Everything else declares nothing.
         | CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
@@ -3022,7 +3028,36 @@ fn execute_c_statement_leaf_paths(
             Vec::new(),
         )]);
     }
+    let valid_source_operation = match statement {
+        CStatement::Assign {
+            name,
+            expression,
+            source,
+        } => source
+            .lease_plan()
+            .is_none_or(|plan| plan.validates_assignment(name, expression)),
+        _ => true,
+    };
+    if !valid_source_operation {
+        return Ok(vec![CStatementExecutionPath::new(
+            CStatementOutcome::RuntimeError(crate::kernel::source_loans::source_loan_error(
+                crate::kernel::loans::LoanRefusal::InvalidEvidence,
+            )),
+            Vec::new().into(),
+            Vec::new(),
+        )]);
+    }
     let paths = match statement {
+        CStatement::EndScalarReference(source) => vec![CStatementExecutionPath::new(
+            match source.execute(state, assumptions) {
+                Ok(next) => CStatementOutcome::Normal(Box::new(next)),
+                Err(error) => CStatementOutcome::RuntimeError(
+                    crate::kernel::source_loans::source_loan_error(error),
+                ),
+            },
+            Vec::new().into(),
+            Vec::new(),
+        )],
         CStatement::Skip => vec![CStatementExecutionPath::new(
             CStatementOutcome::Normal(Box::new(state.clone())),
             Vec::new().into(),
@@ -3284,10 +3319,27 @@ fn execute_c_statement_leaf_paths(
                 budget,
             )?;
             for path in &mut paths {
-                if let CStatementOutcome::Normal(after) = &path.outcome
-                    && let Some(fact) = source.completed(state, after, name)
-                {
-                    path.facts.push(fact);
+                if let CStatementOutcome::Normal(after) = &mut path.outcome {
+                    if let Some(plan) = source.lease_plan() {
+                        let effective_assumptions = assumptions_with_path_context(
+                            assumptions,
+                            &path.facts,
+                            &path.obligations,
+                        );
+                        let transition = plan.begin(state, after, &effective_assumptions);
+                        match transition {
+                            Ok(next) => **after = next,
+                            Err(error) => {
+                                path.outcome = CStatementOutcome::RuntimeError(
+                                    crate::kernel::source_loans::source_loan_error(error),
+                                );
+                                continue;
+                            }
+                        }
+                    }
+                    if let Some(fact) = source.completed(state, after, name) {
+                        path.facts.push(fact);
+                    }
                 }
             }
             paths

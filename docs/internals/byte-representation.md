@@ -27,7 +27,7 @@ extern uint8* memcpy(uint8 destination[], const uint8 source[], uint64 bytes) {
     owns destination[0..bytes];
     requires separate(memory(destination[0..bytes]), memory(source[0..bytes]));
     ensures result == destination;
-    ensures bytes_equal(destination, 0u64, old(source), 0u64, bytes);
+    ensures click::bytes::equal(destination, 0u64, old(source), 0u64, bytes);
 }
 ```
 
@@ -82,7 +82,7 @@ exactly those cells. A load of any other type at a planted cell meets a cell
 of another kind and is refused (see
 [Reinterpretation stays refused](#reinterpretation-stays-refused)).
 
-The transfer only adds observations the `bytes_equal` guarantee already
+The transfer only adds observations the `bytes::equal` guarantee already
 justifies, and it refuses to plant a cell in four cases. The destination then
 keeps its post-havoc state, which has no cell there:
 
@@ -274,14 +274,14 @@ or old snapshots. Each planted cell pays the ordinary `CMemory::store` cost.
 The regressions measure deterministic work at four or more sizes, under the
 [efficiency contract](verification-efficiency.md):
 
-- `src/kernel/tests/representation_copy_tests.rs`:
+- `src/scaling_tests/kernel/tests/representation_copy_tests.rs`:
   `representation_copy_lookup_work_is_linear_in_the_copied_extent` (4 to 64
   cells) and
   `fixed_representation_copy_lookup_work_is_independent_of_unrelated_memory`
   (8 to 512 unrelated cells, constant work);
-- `src/kernel/tests/byte_view_tests.rs`:
+- `src/scaling_tests/kernel/tests/byte_view_tests.rs`:
   `containing_cell_lookup_work_is_independent_of_unrelated_cells`;
-- `src/surface/tests/scaling_tests.rs` (all nightly): the frozen round trip
+- `src/scaling_tests/surface/tests/scaling_tests.rs` (all nightly): the frozen round trip
   with the marginal work of one extra copy beside 2, 4, 8, and 16 unrelated
   live allocations
   (`roundtrip_extra_copy_stays_nearly_flat_beside_unrelated_allocations`),

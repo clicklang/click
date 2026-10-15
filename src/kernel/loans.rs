@@ -882,6 +882,8 @@ struct LoanLedgerData {
     local_references: PersistentMap<LocalReferenceId, LocalReferenceRecord>,
     local_reference_roots: PersistentMap<ResourceOccurrenceId, LocalReferenceId>,
     local_reference_holders: PersistentMap<LoanParticipantId, u64>,
+    source_local_references:
+        PersistentMap<(LoanParticipantId, crate::kernel::ScalarReferencePlanKey), LocalReferenceId>,
     next_scope: u64,
     next_loan: u64,
     next_share: u64,
@@ -4302,6 +4304,7 @@ impl LoanLedger {
                     local_references: PersistentMap::default(),
                     local_reference_roots: PersistentMap::default(),
                     local_reference_holders: PersistentMap::default(),
+                    source_local_references: PersistentMap::default(),
                     next_scope: 0,
                     next_loan: 0,
                     next_share: 0,
@@ -4337,6 +4340,7 @@ impl LoanLedger {
             || !data.local_references.is_empty()
             || !data.local_reference_roots.is_empty()
             || !data.local_reference_holders.is_empty()
+            || !data.source_local_references.is_empty()
         {
             return false;
         }
@@ -5094,6 +5098,7 @@ impl LoanLedger {
     /// that transition so later checks use the same endpoint.
     /// The composite occurrence carries the hold binding, which is released
     /// when that occurrence is consumed by a call that does not return it.
+    #[cfg(test)]
     pub(crate) fn hold(
         &self,
         binding: &LoanViewBinding,
@@ -5103,13 +5108,41 @@ impl LoanLedger {
         Ok((ledger, hold))
     }
 
-    fn hold_with_transition(
+    pub(crate) fn hold_with_transition(
         &self,
         binding: &LoanViewBinding,
         holder: LoanParticipantId,
     ) -> Result<(Self, LoanHoldId, CheckedLoanTransition), LoanRefusal> {
         self.validate_view_binding(binding.clone(), holder)?;
         self.hold_authority_with_transition(binding.authority(), holder)
+    }
+
+    /// The successor of a proof `fold` that packages a loan-backed view into
+    /// an owned borrowing composite: `transition` must be exactly the hold
+    /// `holder` placed on the loan `binding` names, and `binding.hold` must
+    /// name that hold, so the folded head carries the hold that keeps its
+    /// loan's scope from ending. Applying it rechecks the exact predecessor
+    /// and that `holder` still holds the live authority. Anything else, a
+    /// different transition or a hold the head does not carry, is refused.
+    pub(crate) fn apply_borrowing_fold_hold(
+        &self,
+        transition: &CheckedLoanTransition,
+        binding: &LoanViewBinding,
+        holder: LoanParticipantId,
+    ) -> Result<Self, LoanRefusal> {
+        match &transition.evidence {
+            LoanTransitionEvidence::Hold {
+                binding: held,
+                holder: placed_by,
+                hold,
+            } if *held == binding.authority()
+                && *placed_by == holder
+                && binding.hold == Some(*hold) =>
+            {
+                self.apply(transition)
+            }
+            _ => Err(LoanRefusal::InvalidEvidence),
+        }
     }
 
     /// Lifetime holds need possession, not a stable-read description. The
@@ -6842,7 +6875,7 @@ impl LoanLedger {
     }
 
     #[cfg(test)]
-    fn invariant_holds(&self) -> bool {
+    pub(in crate::kernel) fn invariant_holds(&self) -> bool {
         if !self.exclusive_calls_invariant() || !self.local_references_invariant() {
             return false;
         }
@@ -8294,52 +8327,6 @@ mod tests {
     }
 
     #[test]
-    fn mutex_contract_input_checks_ignore_unrelated_roots_at_multiple_sizes() {
-        let mut samples = Vec::new();
-        for size in [16, 64, 256] {
-            let (mut ledger, holder, input, description) = abstract_mutex_input();
-            let fact = ledger.mutex_use_resource(input.usage, holder).unwrap();
-            let mut resources = ResourceContext::new().unchecked_with_fact(fact);
-            for index in 0..size {
-                let (next, other) = ledger
-                    .borrowed_mutex_use_input(
-                        holder,
-                        backing(&owned("unrelated")),
-                        Pointer::symbolic(Variable(1000 + index)),
-                    )
-                    .unwrap();
-                ledger = next;
-                resources = resources
-                    .unchecked_with_fact(ledger.mutex_use_resource(other.usage, holder).unwrap());
-            }
-            let (((), work), persistent) = crate::persistent::measure_persistent_work(|| {
-                crate::instrumentation::measure_deterministic_work(|| {
-                    let (child_state, child) = ledger
-                        .reborrow_mutex_use(input.usage, holder, holder)
-                        .unwrap();
-                    let (held, hold) = child_state
-                        .hold_mutex_use(child.usage, &description, holder)
-                        .unwrap();
-                    let released = held.release(hold, holder).unwrap();
-                    let (returned, _) = released
-                        .end_mutex_reborrow_with_parent(&child, holder)
-                        .unwrap();
-                    returned
-                        .check_mutex_use_input_return(&input, holder, &resources)
-                        .unwrap();
-                })
-            });
-            samples.push((size, work, persistent));
-        }
-        for pair in samples.windows(2) {
-            assert!(
-                pair[1].1 <= pair[0].1 * 2 && pair[1].2 <= pair[0].2 * 2,
-                "mutex input boundary scans unrelated roots: {samples:?}"
-            );
-        }
-    }
-
-    #[test]
     fn mutex_use_reborrow_pins_parent_and_guard_blocks_return_across_participants() {
         let (ledger, owner, worker) = participants();
         let helper = ledger.fresh_participant().unwrap();
@@ -8498,47 +8485,6 @@ mod tests {
                 .reborrow_mutex_use(fabricated, owner, helper)
                 .is_err()
         );
-    }
-
-    #[test]
-    fn mutex_use_deep_reborrows_scale_without_ancestry_walks() {
-        let mut samples = Vec::new();
-        for depth in [16, 32, 64, 128] {
-            let (ledger, owner, _) = participants();
-            let live = mutex_owner(Some(1));
-            let (mut ledger, root) = ledger
-                .lend_mutex_use(owner, owner, backing(&live), live.clone())
-                .unwrap();
-            let (((), work), persistent_work) = crate::persistent::measure_persistent_work(|| {
-                crate::instrumentation::measure_deterministic_work(|| {
-                    let mut parent = root.usage;
-                    let mut children = Vec::new();
-                    for _ in 0..depth {
-                        let (next, child) =
-                            ledger.reborrow_mutex_use(parent, owner, owner).unwrap();
-                        ledger = next;
-                        let (held, hold) =
-                            ledger.hold_mutex_use(child.usage, &live, owner).unwrap();
-                        ledger = held.release(hold, owner).unwrap();
-                        parent = child.usage;
-                        children.push(child);
-                    }
-                    for child in children.iter().rev() {
-                        ledger = ledger.end_mutex_reborrow(child, owner).unwrap();
-                    }
-                })
-            });
-            let (ledger, recovered) = ledger.recover_mutex_use(&root, owner).unwrap();
-            assert_eq!(recovered, live);
-            assert!(ledger.invariant_holds());
-            samples.push((depth, work, persistent_work));
-        }
-        for pair in samples.windows(2) {
-            assert!(
-                pair[1].1 <= pair[0].1 * 3 && pair[1].2 <= pair[0].2 * 3,
-                "mutex reborrow work grows with ancestry: {samples:?}"
-            );
-        }
     }
 
     #[test]
@@ -8926,45 +8872,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn lifetime_holds_scale_with_selected_shares() {
-        let mut samples = Vec::new();
-        for size in [16, 32, 64, 128] {
-            let (mut ledger, owner, reader) = participants();
-            let mut bindings = Vec::new();
-            for i in 0..size {
-                let fact = owned(&format!("lifetime-{i}"));
-                let support = backing(&fact);
-                let opening = ledger.lend(owner, reader, support, fact).unwrap();
-                ledger = ledger.apply(&opening.transition).unwrap();
-                bindings.push(LoanAuthorityBinding {
-                    loan: opening.loan,
-                    scope: opening.scope,
-                    share: opening.root_share,
-                    support,
-                });
-            }
-            let (((), work), persistent_work) = crate::persistent::measure_persistent_work(|| {
-                crate::instrumentation::measure_deterministic_work(|| {
-                    for binding in bindings {
-                        let (held, hold, _) = ledger
-                            .hold_authority_with_transition(binding, reader)
-                            .unwrap();
-                        ledger = held.release(hold, reader).unwrap();
-                    }
-                })
-            });
-            assert!(ledger.invariant_holds());
-            samples.push((size, work, persistent_work));
-        }
-        for pair in samples.windows(2) {
-            assert!(
-                pair[1].1 <= pair[0].1 * 3 && pair[1].2 <= pair[0].2 * 3,
-                "lifetime holds scan unrelated loans: {samples:?}"
-            );
-        }
-    }
-
     /// A hold placed by a folded borrowing composite keeps the loan's scope
     /// from ending, and therefore the owner from being recovered, until it is
     /// released by the participant that placed it. The hold changes ledger
@@ -9047,6 +8954,63 @@ mod tests {
         let released = released.apply(&recover).unwrap();
         assert_eq!(recovered_escrow, escrow);
         assert!(released.invariant_holds());
+    }
+
+    /// A borrowing fold's ledger change is accepted only as the exact hold
+    /// its folded head names: the placer, the authority and the hold
+    /// identity must all agree, and the transition must start at the exact
+    /// input ledger.
+    #[test]
+    fn a_borrowing_fold_hold_is_exactly_the_hold_its_head_carries() {
+        let (ledger, holder, other) = participants();
+        let viewed = CResourceFact::view_memory(parameter_range(32, 0, 1, 4));
+        let resources = ResourceContext::new().unchecked_with_fact(viewed.clone());
+        let support = resources.occurrences_for_fact(&viewed)[0];
+        let opening = ledger
+            .borrowed_contract_input(holder, support, viewed.clone(), None)
+            .unwrap();
+        let ledger = ledger.apply(&opening.transition).unwrap();
+        let binding = LoanViewBinding {
+            loan: opening.loan,
+            scope: opening.scope,
+            share: opening.root_share,
+            support,
+            viewed,
+            hold: None,
+        };
+        let (held, hold, transition) = ledger.hold_with_transition(&binding, holder).unwrap();
+        let carried = LoanViewBinding {
+            hold: Some(hold),
+            ..binding.clone()
+        };
+        assert_eq!(
+            ledger.apply_borrowing_fold_hold(&transition, &carried, holder),
+            Ok(held.clone())
+        );
+        assert_eq!(
+            ledger.apply_borrowing_fold_hold(&transition, &binding, holder),
+            Err(LoanRefusal::InvalidEvidence),
+            "the head must carry the hold"
+        );
+        assert_eq!(
+            ledger.apply_borrowing_fold_hold(&transition, &carried, other),
+            Err(LoanRefusal::InvalidEvidence),
+            "the hold must be the folding participant's"
+        );
+        let elsewhere = LoanViewBinding {
+            support: ResourceOccurrenceId::default(),
+            ..carried.clone()
+        };
+        assert_eq!(
+            ledger.apply_borrowing_fold_hold(&transition, &elsewhere, holder),
+            Err(LoanRefusal::InvalidEvidence),
+            "the hold must be on the head's loan authority"
+        );
+        assert_eq!(
+            held.apply_borrowing_fold_hold(&transition, &carried, holder),
+            Err(LoanRefusal::StalePredecessor),
+            "the hold applies only to its exact input ledger"
+        );
     }
 
     /// A hold requires a live binding of its placer: a stale or foreign
@@ -9672,57 +9636,6 @@ mod tests {
     }
 
     #[test]
-    fn completed_call_history_does_not_slow_outer_ledger_lookup() {
-        let assumptions = PureFactContext::new();
-        let owner = memory(0, 4, true);
-        let caller_resources = ResourceContext::new().unchecked_with_fact(owner);
-        let (ledger, caller, callee) = participants();
-        let plan = plan_stable_view_transfer(
-            &caller_resources,
-            &[checked(memory(0, 2, false))],
-            &assumptions,
-            &ledger,
-            caller,
-            callee,
-        )
-        .unwrap();
-        let recovery = plan
-            .clone()
-            .recover_stable_views(&assumptions, &BTreeMap::new(), &[])
-            .unwrap();
-        let evidence = Arc::new(CheckedLoanCallEvidence::new(
-            plan,
-            recovery.ledger,
-            recovery.terminal_ledger,
-            recovery.transitions,
-            recovery.hold_base_ledger,
-            recovery.hold_transitions,
-        ));
-        let mut samples = Vec::new();
-        for size in [16_usize, 32, 64, 128] {
-            let mut sequence = empty_checked_loan_evidence_sequence();
-            for _ in 0..size {
-                sequence = append_checked_loan_evidence(&sequence, Some(evidence.clone()));
-            }
-            let ((valid, recovered), work) = crate::persistent::measure_persistent_work(|| {
-                (
-                    sequence.is_valid(),
-                    sequence.recovered_ledger_for(&ledger, caller, false),
-                )
-            });
-            assert!(valid);
-            assert_eq!(recovered, Some(ledger.clone()));
-            samples.push((size, work));
-        }
-        for pair in samples.windows(2) {
-            assert!(
-                pair[1].1 <= pair[0].1.saturating_mul(2).saturating_add(8),
-                "outer ledger lookup grew with completed history: {samples:?}"
-            );
-        }
-    }
-
-    #[test]
     fn checked_evidence_sequence_seals_each_appended_call_locally() {
         let assumptions = PureFactContext::new();
         let owner = memory(0, 4, true);
@@ -9889,256 +9802,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn deep_split_read_join_work_scales_with_explicit_tree_delta() {
-        let mut samples = Vec::new();
-        for depth in [16_usize, 32, 64, 128] {
-            let (base, owner, _reader) = participants();
-            let escrow = owned("deep-tree");
-            let opening = base.lend(owner, owner, backing(&escrow), escrow).unwrap();
-            let mut ledger = base.apply(&opening.transition).unwrap();
-            let (((), work), persistent_work) = crate::persistent::measure_persistent_work(|| {
-                crate::instrumentation::measure_deterministic_work(|| {
-                    let mut current = opening.root_share;
-                    let mut parents = Vec::with_capacity(depth);
-                    let mut siblings = Vec::with_capacity(depth);
-                    for _ in 0..depth {
-                        let (split, left, right) =
-                            ledger.split(current, owner, owner, owner).unwrap();
-                        ledger = ledger.apply(&split).unwrap();
-                        parents.push(current);
-                        siblings.push(right);
-                        current = left;
-                    }
-                    assert!(ledger.permits_view(
-                        owner,
-                        &opening.description,
-                        current,
-                        &PureFactContext::new()
-                    ));
-                    for (parent, sibling) in parents.into_iter().zip(siblings).rev() {
-                        let join = ledger.join(current, sibling, owner).unwrap();
-                        ledger = ledger.apply(&join).unwrap();
-                        current = parent;
-                    }
-                    assert_eq!(current, opening.root_share);
-                    assert!(ledger.invariant_holds());
-                })
-            });
-            samples.push((depth, work, persistent_work));
-        }
-        for pair in samples.windows(2) {
-            assert!(
-                pair[1].1 <= pair[0].1.saturating_mul(3)
-                    && pair[1].2 <= pair[0].2.saturating_mul(3),
-                "deep split/read/join work exceeded the explicit tree delta: {samples:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn dependency_updates_scale_with_changed_scope_entries() {
-        let mut samples = Vec::new();
-        for size in [16_usize, 32, 64, 128] {
-            let (mut ledger, owner, _reader) = participants();
-            let parent_fact = owned("dependency-parent");
-            let parent = ledger
-                .lend(owner, owner, backing(&parent_fact), parent_fact)
-                .unwrap();
-            ledger = ledger.apply(&parent.transition).unwrap();
-            let mut children = Vec::with_capacity(size);
-            for index in 0..size {
-                let child_fact = owned(&format!("dependency-child-{index}"));
-                let child = ledger
-                    .lend(owner, owner, backing(&child_fact), child_fact)
-                    .unwrap();
-                ledger = ledger.apply(&child.transition).unwrap();
-                children.push(child);
-            }
-            let (((), work), persistent_work) = crate::persistent::measure_persistent_work(|| {
-                crate::instrumentation::measure_deterministic_work(|| {
-                    for child in &children {
-                        let transition = ledger
-                            .register_dependency(parent.scope, child.scope, owner)
-                            .unwrap();
-                        ledger = ledger.apply(&transition).unwrap();
-                    }
-                })
-            });
-            samples.push((size, work, persistent_work));
-        }
-        for pair in samples.windows(2) {
-            assert!(
-                pair[1].1 <= pair[0].1.saturating_mul(3)
-                    && pair[1].2 <= pair[0].2.saturating_mul(3),
-                "dependency updates visited unrelated scope entries: {samples:?}"
-            );
-        }
-    }
-
-    #[test]
-    #[ignore = "nightly: 1.2s in the parallel gate"]
-    fn disjoint_memory_view_clustering_has_linear_overlap_work() {
-        let assumptions = PureFactContext::new();
-        let mut samples = Vec::new();
-        for size in [16_usize, 32, 64, 128] {
-            let ledger = LoanLedger::new();
-            let caller = ledger.fresh_participant().unwrap();
-            let callee = ledger.fresh_participant().unwrap();
-            let caller_resources =
-                ResourceContext::new().unchecked_with_fact(memory(0, (size * 2 + 1) as u32, true));
-            let requirements = (0..size)
-                .map(|index| checked(memory((index * 2) as u32, (index * 2 + 1) as u32, false)))
-                .collect::<Vec<_>>();
-            let (plan, work) = crate::instrumentation::measure_deterministic_work(|| {
-                plan_stable_view_transfer(
-                    &caller_resources,
-                    &requirements,
-                    &assumptions,
-                    &ledger,
-                    caller,
-                    callee,
-                )
-            });
-            let plan = plan.expect("disjoint concrete views should form independent loans");
-            assert_eq!(plan.stable_views().len(), size);
-            samples.push((size, work));
-        }
-        for pair in samples.windows(2) {
-            assert!(
-                pair[1].1 <= pair[0].1.saturating_mul(3),
-                "disjoint view clustering compared unrelated candidates: {samples:?}"
-            );
-        }
-    }
-
-    #[test]
-    #[ignore = "nightly: 3s in the parallel gate"]
-    fn overlapping_memory_view_clustering_handles_chains_and_equal_starts() {
-        let assumptions = PureFactContext::new();
-        let mut chain_samples = Vec::new();
-        let mut equal_start_samples = Vec::new();
-        for size in [16_usize, 32, 64, 128] {
-            let ledger = LoanLedger::new();
-            let caller = ledger.fresh_participant().unwrap();
-            let callee = ledger.fresh_participant().unwrap();
-            let mut caller_resources = ResourceContext::new();
-            let mut chain_requirements = Vec::with_capacity(size * 3);
-            let mut equal_requirements = Vec::with_capacity(size * 3);
-            for index in 0..size {
-                let base = crate::kernel::Pointer {
-                    block: crate::kernel::PointerBlock::Concrete(format!("overlap-{index}")),
-                    offset: crate::kernel::PointerOffsetTerm::Constant(0),
-                };
-                let owner = CResourceFact::own_memory(CMemoryRange::new(
-                    base.clone(),
-                    Bitvector32Term::Constant(0),
-                    Bitvector32Term::Constant(6),
-                ));
-                caller_resources = caller_resources.unchecked_with_fact(owner);
-                let view = |start, end| {
-                    checked(CResourceFact::view_memory(CMemoryRange::new(
-                        base.clone(),
-                        Bitvector32Term::Constant(start),
-                        Bitvector32Term::Constant(end),
-                    )))
-                };
-                // Three clauses form a transitive overlap chain. Keeping the
-                // chain bounded avoids making resource validity itself the
-                // measured axis while the number of independent chains grows.
-                chain_requirements.extend([view(0, 3), view(2, 5), view(4, 6)]);
-                equal_requirements.extend([view(0, 2), view(0, 2), view(0, 2)]);
-            }
-            let (chain, chain_work) = crate::instrumentation::measure_deterministic_work(|| {
-                plan_stable_view_transfer(
-                    &caller_resources,
-                    &chain_requirements,
-                    &assumptions,
-                    &ledger,
-                    caller,
-                    callee,
-                )
-            });
-            let chain = chain.expect("overlapping chains should share backing loans");
-            assert_eq!(chain.stable_views().len(), size * 3);
-            chain_samples.push((size, chain_work));
-
-            let (equal_start, equal_start_work) =
-                crate::instrumentation::measure_deterministic_work(|| {
-                    plan_stable_view_transfer(
-                        &caller_resources,
-                        &equal_requirements,
-                        &assumptions,
-                        &ledger,
-                        caller,
-                        callee,
-                    )
-                });
-            let equal_start = equal_start.expect("equal-start views should share backing loans");
-            assert_eq!(equal_start.stable_views().len(), size * 3);
-            equal_start_samples.push((size, equal_start_work));
-        }
-        for samples in [&chain_samples, &equal_start_samples] {
-            for pair in samples.windows(2) {
-                assert!(
-                    pair[1].1 <= pair[0].1.saturating_mul(3),
-                    "overlap clustering work exceeded its explicit view delta: {samples:?}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    #[ignore = "nightly: 5s in the parallel gate"]
-    fn loan_certificate_recheck_scales_with_explicit_transition_delta() {
-        let assumptions = PureFactContext::new();
-        let mut samples = Vec::new();
-        for size in [16_usize, 32, 64, 128] {
-            let ledger = LoanLedger::new();
-            let caller = ledger.fresh_participant().unwrap();
-            let callee = ledger.fresh_participant().unwrap();
-            let caller_resources =
-                ResourceContext::new().unchecked_with_fact(memory(0, (size * 2 + 1) as u32, true));
-            let requirements = (0..size)
-                .map(|index| checked(memory((index * 2) as u32, (index * 2 + 1) as u32, false)))
-                .collect::<Vec<_>>();
-            let plan = plan_stable_view_transfer(
-                &caller_resources,
-                &requirements,
-                &assumptions,
-                &ledger,
-                caller,
-                callee,
-            )
-            .unwrap();
-            let planned_ledger = plan.ledger.clone();
-            let recovery = plan
-                .clone()
-                .recover_stable_views(&assumptions, &BTreeMap::new(), &[])
-                .unwrap();
-            let evidence = CheckedLoanCallEvidence::new(
-                plan,
-                recovery.ledger,
-                recovery.terminal_ledger,
-                recovery.transitions,
-                recovery.hold_base_ledger,
-                recovery.hold_transitions,
-            );
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                evidence
-                    .recheck(&ledger, Some(caller), &planned_ledger, Some(callee))
-                    .unwrap();
-            });
-            samples.push((size, work));
-        }
-        for pair in samples.windows(2) {
-            assert!(
-                pair[1].1 <= pair[0].1.saturating_mul(3),
-                "certificate recheck work exceeded its explicit transition delta: {samples:?}"
-            );
-        }
-    }
-
     pub(super) fn checked(fact: CResourceFact) -> CCheckedResourceFact {
         CCheckedResourceFact {
             fact,
@@ -10276,70 +9939,6 @@ mod tests {
             &range(u32::MAX - 4, u32::MAX),
             &assumptions
         ));
-    }
-
-    #[test]
-    fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
-        use crate::kernel::{ConditionTerm, Pointer, PointerOffsetTerm, Proposition};
-        let p = Pointer {
-            block: "overlap".into(),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let q = Pointer {
-            block: p.block.clone(),
-            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(600)), 1),
-        };
-        let protected = CMemoryRange::new_with_element_width(
-            p.clone(),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
-            4,
-        );
-        let mut samples = Vec::new();
-        for size in [8, 32, 128, 512] {
-            let mut assumptions = PureFactContext::new();
-            for index in 0..size {
-                assumptions = assumptions.assume_condition(
-                    ConditionTerm::equal(
-                        Bitvector32Term::Variable(Variable(1000 + index)),
-                        Bitvector32Term::Constant(0),
-                    ),
-                    true,
-                );
-            }
-            for (offset, width, overlaps) in [
-                (3, 1, true),
-                (4, 1, false),
-                (-1, 2, true),
-                (4_294_967_297, 8, false),
-            ] {
-                let equality = ConditionTerm::pointer_offset_equal(
-                    q.offset.clone(),
-                    PointerOffsetTerm::Constant(offset),
-                );
-                let context = assumptions.clone().assume_condition(equality.clone(), true);
-                let query = CMemoryRange::new_with_element_width(
-                    q.clone(),
-                    Bitvector32Term::Constant(0),
-                    Bitvector32Term::Constant(1),
-                    width,
-                );
-                let (actual, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    protected_range_proven_overlapping(&query, &protected, &context)
-                });
-                assert_eq!(actual, overlaps);
-                if offset == 3 {
-                    samples.push(work);
-                }
-                let withdrawn =
-                    context.without_exact_fact(&Proposition::ConditionIs(equality, true));
-                assert!(withdrawn.exact_pointer_offset_aliases(&q).next().is_none());
-            }
-        }
-        assert!(
-            samples.iter().all(|work| *work <= samples[0] * 2 + 16),
-            "overlap query scanned unrelated facts: {samples:?}"
-        );
     }
 
     fn composite(name: &str, own: bool) -> CResourceFact {
@@ -11055,56 +10654,6 @@ mod tests {
                 callee
             )
             .is_err()
-        );
-    }
-
-    #[test]
-    #[ignore = "nightly: 1.2s in the parallel gate"]
-    fn joint_fragment_reservation_does_not_scan_ambient_memory_with_scalar_equalities() {
-        let facts = PureFactContext::new().assume_condition(
-            ConditionTerm::equal(
-                Bitvector32Term::Variable(Variable(944_023)),
-                Bitvector32Term::Constant(7),
-            ),
-            true,
-        );
-        assert!(facts.equality_graph.has_term_equivalences());
-        let (ledger, caller, callee) = participants();
-        let required = checked(memory(0, 4, true));
-        let mut samples = Vec::new();
-        for count in [16, 64, 256, 1024] {
-            let mut resources = ResourceContext::new()
-                .unchecked_with_fact(memory(0, 2, true))
-                .unchecked_with_fact(memory(2, 3, true))
-                .unchecked_with_fact(memory(3, 4, true));
-            for index in 0..count {
-                resources =
-                    resources.unchecked_with_fact(memory(8192 + index * 2, 8193 + index * 2, true));
-            }
-            resources.synchronize_memory_equalities(&facts);
-            let ((plan, work), map_work) = crate::persistent::measure_persistent_work(|| {
-                crate::instrumentation::measure_deterministic_work(|| {
-                    plan_stable_view_transfer(
-                        &resources,
-                        std::slice::from_ref(&required),
-                        &facts,
-                        &ledger,
-                        caller,
-                        callee,
-                    )
-                    .unwrap()
-                })
-            });
-            assert_eq!(plan.reserved_ownership_supports.len(), 3);
-            samples.push((work, map_work));
-        }
-        assert!(
-            samples[3].0 <= samples[0].0 * 2 + 64,
-            "ambient ownership scan: {samples:?}"
-        );
-        assert!(
-            samples[3].1 <= samples[0].1 * 4 + 256,
-            "ambient index scan: {samples:?}"
         );
     }
 
@@ -11887,33 +11436,6 @@ mod tests {
     }
 
     #[test]
-    fn active_memory_candidates_ignore_unrelated_live_loans() {
-        let mut samples = Vec::new();
-        for size in [16_usize, 32, 64, 128] {
-            let (mut ledger, owner, reader) = participants();
-            for index in 0..size {
-                let owned_range = memory((index * 2) as u32, (index * 2 + 1) as u32, true);
-                let opening = ledger
-                    .lend(owner, reader, backing(&owned_range), owned_range)
-                    .unwrap();
-                ledger = ledger.apply(&opening.transition).unwrap();
-            }
-            let query = memory(0, 1, false).memory_range().unwrap().clone();
-            let (loans, work) = crate::instrumentation::measure_deterministic_work(|| {
-                ledger.active_memory_overlaps(&query).unwrap()
-            });
-            assert_eq!(loans.len(), 1);
-            samples.push((size, work));
-        }
-        for pair in samples.windows(2) {
-            assert!(
-                pair[1].1 <= pair[0].1.saturating_mul(2).saturating_add(8),
-                "active interval candidates scanned unrelated live loans: {samples:?}"
-            );
-        }
-    }
-
-    #[test]
     fn ending_nested_memory_loan_keeps_parent_footprint_indexed() {
         let owned_range = memory(0, 8, true);
         let (ledger, owner, reader) = participants();
@@ -12000,6 +11522,11 @@ mod tests {
             .diagnostic_with_subject(LoanRefusalOperation::Plan, subject);
         assert!(diagnostic.subject().resource_fact().is_some());
     }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/loans/tests.rs");
+    }
 }
 
 #[cfg(test)]
@@ -12075,52 +11602,9 @@ mod local_storage_tests {
         );
     }
 
-    #[test]
-    fn local_view_work_tracks_the_explicit_delta_not_ambient_local_storage() {
-        let assumptions = PureFactContext::new();
-        let mut fixed = Vec::new();
-        let mut growing = Vec::new();
-        for size in [8, 16, 32, 64] {
-            let mut memory = CMemory::new();
-            for index in 0..size {
-                memory = memory.with_block(
-                    view(index, 1)
-                        .fact
-                        .memory_range()
-                        .unwrap()
-                        .base()
-                        .block
-                        .clone(),
-                    4,
-                );
-            }
-            let mut one = plan();
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                one.lend_local_views(&memory, &[view(0, 1)], &assumptions)
-                    .unwrap();
-            });
-            assert!(work > 0);
-            fixed.push(work);
-            let mut all = plan();
-            let requirements = (0..size).map(|index| view(index, 1)).collect::<Vec<_>>();
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                all.lend_local_views(&memory, &requirements, &assumptions)
-                    .unwrap();
-                all.recover_stable_views(&assumptions, &BTreeMap::new(), &[])
-                    .unwrap();
-            });
-            growing.push(work);
-        }
-        assert!(
-            fixed[3] <= fixed[0] * 2,
-            "local loan scans ambient storage: {fixed:?}"
-        );
-        for pair in growing.windows(2) {
-            assert!(
-                pair[1] <= pair[0] * 3,
-                "local loan work exceeds its explicit delta: {growing:?}"
-            );
-        }
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/loans/local_storage_tests.rs");
     }
 }
 

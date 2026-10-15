@@ -2687,7 +2687,31 @@ fn lower_resource_segment_with_values(
             "could not lower `{resource_name}` resource: segment base did not evaluate to a pointer"
         )));
     };
-    let base = base.into_pointer();
+    let base_value = base;
+    let base = base_value.pointer().clone();
+    // A clause through a member pointer may not claim past the member
+    // (`design/pointer-subobject-extents.md`, D1). Constant bounds are
+    // refused here by name; the kernel decides the rest when it checks
+    // the step.
+    let refuse_past_extent = |range: CMemoryRange| {
+        let (start, end) = match range.wide_bounds() {
+            Some(bounds) => bounds,
+            None => (range.start(), range.end()),
+        };
+        if start.as_const().is_none() || end.as_const().is_none() {
+            return Ok(range);
+        }
+        match crate::kernel::memory_range_extent_refusal(
+            &base_value,
+            &range,
+            &crate::kernel::PureFactContext::new(),
+        ) {
+            Some(message) => Err(ClickError::new(format!(
+                "could not lower `{resource_name}` resource: {message}"
+            ))),
+            None => Ok(range),
+        }
+    };
     // A bound keeps its own integer type in the contract: a range with a
     // 64-bit bound is wide, and one with two `int32` bounds is not
     // (`design/typed-indices.md`, stage 2).
@@ -2712,7 +2736,7 @@ fn lower_resource_segment_with_values(
     };
     // The same rule as the kernel's resource and proposition lowering.
     if let Some((start, end)) = crate::kernel::wide_range_bounds(&start_value, &end_value) {
-        return Ok(CMemoryRange::new_wide(base, start, end, element_width));
+        return refuse_past_extent(CMemoryRange::new_wide(base, start, end, element_width));
     }
     let start = bound(start_value, "start")?;
     let end = bound(end_value, "end")?;
@@ -2723,7 +2747,7 @@ fn lower_resource_segment_with_values(
             "`{resource_name}` segment has an end before its start: {start}..{end}"
         )));
     }
-    Ok(CMemoryRange::new_with_element_width(
+    refuse_past_extent(CMemoryRange::new_with_element_width(
         base,
         start,
         end,
@@ -3562,63 +3586,6 @@ pub(in crate::surface) fn lower_resource_reference_arguments(
 #[cfg(test)]
 mod input_identity_tests {
     use super::*;
-    #[test]
-    fn input_pointer_places_are_exact_and_do_not_scan_unrelated_functions() {
-        let selected = input_scope("certificate-selected");
-        let variable = input_pointer_variable(selected, 1).unwrap();
-        let pointer = crate::kernel::CPointerValue::new(
-            Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: scale_int32_offset(Bitvector32Term::Variable(variable), 4),
-            },
-            CType::Int32Pointer,
-        );
-        INPUT_POINTER_PLACES.with(|places| {
-            places
-                .borrow_mut()
-                .insert(variable, (selected, 1, pointer.clone()));
-        });
-        for size in [16, 64, 256] {
-            for index in 0..size {
-                let scope = input_scope(&format!("certificate-unrelated-{index}"));
-                let other = input_pointer_variable(scope, 0).unwrap();
-                let mut value = pointer.clone();
-                value.replace_pointer(Pointer {
-                    block: PointerBlock::ExternalArgument,
-                    offset: scale_int32_offset(Bitvector32Term::Variable(other), 4),
-                });
-                INPUT_POINTER_PLACES.with(|places| {
-                    places.borrow_mut().insert(other, (scope, 0, value));
-                });
-            }
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                for _ in 0..64 {
-                    assert_eq!(input_pointer_parameter(selected, &pointer), Some(1));
-                }
-            });
-            assert_eq!(work, 64, "unrelated input count: {size}");
-        }
-        assert_eq!(
-            input_pointer_parameter(input_scope("certificate-other"), &pointer),
-            None
-        );
-        assert_eq!(
-            input_pointer_parameter(selected, &pointer.clone().with_type(CType::Int8Pointer)),
-            None
-        );
-        let mut wrong_stride = pointer.clone();
-        wrong_stride.replace_pointer(Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: scale_int32_offset(Bitvector32Term::Variable(variable), 1),
-        });
-        assert_eq!(input_pointer_parameter(selected, &wrong_stride), None);
-        let mut unknown = pointer;
-        unknown.replace_pointer(Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: scale_int32_offset(Bitvector32Term::Variable(Variable(999_999)), 4),
-        });
-        assert_eq!(input_pointer_parameter(selected, &unknown), None);
-    }
 
     #[test]
     fn pointer_input_names_are_stable_and_function_specific() {
@@ -3639,5 +3606,10 @@ mod input_identity_tests {
             input_pointer_variable(first, 0).unwrap(),
             input_pointer_variable(second, 0).unwrap()
         );
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../../scaling_tests/surface/lowering/resource_lowering/input_identity_tests.rs");
     }
 }

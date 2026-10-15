@@ -10,10 +10,10 @@ an architecture requirement, with the following production boundary.
 | Required case | Current evidence | What remains |
 | --- | --- | --- |
 | Updated child contents return to the parent | Native Rust reborrow, field-guard cleanup and modular owned calls verify through the production engine. | Synchronous borrowed-memory calls now carry an explicit child receipt; local reference lifetimes remain separate. |
-| Parent reuse after the child's last use | `rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop` checks the unchanged `set_seven` witness body, then a real caller. Both contracts expand and reverify. | Connect authority retirement to a supported borrow frontier, rather than assuming local storage end is the borrow end. |
+| Parent reuse after the child's last use | `rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop` checks the unchanged `set_seven` witness body, then a real caller. Both contracts expand and reverify. | Extend explicit checked retirement beyond straight-line scalar borrow forests. |
 | Disjoint fields remain usable | `rust_owned_disjoint_mutable_fields_verify` checks actual simultaneous field references and updated values; the production call planner partitions exclusive requirements. | Production call receipts now combine nested dependencies with the existing footprint partition; local borrow dependencies remain open. |
-| Stale child access and duplicate recovery fail | Production exclusive-call tests reject stale receipts, duplicate returns and missing discharge; native sidecar negatives reject absent write authority. | Local stale-reference access and local recovery remain open. |
-| Wrong child identity or holder cannot recover | Production exclusive-call receipt tests reject wrong holders, other call identities, altered supports and a fabricated terminal rollback. | Apply the same requirements to local borrow endings. |
+| Stale child access and duplicate recovery fail | Production exclusive-call tests reject stale receipts, duplicate returns and missing discharge; native sidecar negatives reject absent write authority. | The first scalar source subset now rejects expired local handles; wider source coverage remains open. |
+| Wrong child identity or holder cannot recover | Production exclusive-call receipt tests reject wrong holders, other call identities, altered supports and a fabricated terminal rollback. | Source endings check live invocation handles and child dependencies; wider source coverage remains open. |
 
 The new native regression deliberately leaves the child reference's storage
 alive when the parent is reused. It proves `4 -> 7 -> 8` behavior for the
@@ -213,7 +213,8 @@ the existing 16/64/256/1024 regression now also checks borrow receipts.
 
 The kernel now connects local-reference custody to ordinary scalar memory
 execution through a private `CState` adapter. Birth selects a direct owned
-occurrence for one external scalar, checks existing mutex/shared-loan write
+occurrence for one external or declared automatic scalar, checks existing
+mutex/shared-loan write
 restrictions, and removes that owner and its derived memory views from the
 ordinary resource context. A private reservation in the ledger retains the exact original occurrence.
 A fresh child lease identity travels in the pointer value and through
@@ -225,7 +226,8 @@ pointer/type and reserved occurrence. It temporarily supplies the selected
 owner to the existing memory producer, which still performs its ordinary
 checks. A successful store withholds that temporary owner again before
 publishing its successor. Recovery retires the child exactly once; nested
-recovery restores parent custody, and outer recovery returns the scalar owner.
+recovery restores parent custody, and outer recovery returns the original scalar
+owned occurrence, preserving the support identity needed by call receipts.
 Only authority changes: the memory after the child's writes remains current.
 Expired copies keep their lease and fail even after ordinary ownership returns.
 
@@ -249,26 +251,71 @@ holders/branches/types/addresses, cast/address preservation and bypass refusal.
 Selected adapter operations have a deterministic 16/64/256/1024-owner scaling
 regression.
 
-This adapter is kernel-private. Ordinary Rust execution does not yet issue its
-birth/end operations. Source receipt tags cannot construct a lease or recover
-its reservation.
+## Source-bound scalar lease execution
+
+Locked lowering now supports exclusive scalar borrow forests in a single MIR
+block ending at Return. Roots reborrow reference parameters; nested children
+reborrow an existing local lease. Scalar assignments, direct reference copies
+and storage events are followed. Unsupported reference escapes, opaque effects,
+aggregates, calls and wider control flow retain their previous lowering and do
+not acquire local lease coverage.
+
+A source alias names one borrow node. A reborrow adds a dependency edge; copies
+keep the same node, and replacement definitions change only the assigned alias.
+The checker records direct uses while traversing the selected function once.
+A reverse birth-order pass propagates each subtree's last use to its ancestors.
+Every computed ending follows all uses of the node and its descendants, including
+copies and scalar expressions. Independent regressions compare the resulting
+frontiers with the existing single-borrow checker. StorageDead alone grants
+no recovery; an unused borrow can end immediately after its checked birth.
+
+Each actual successful borrow assignment reserves the selected owned scalar or
+borrows an existing lease. Its semantic birth plan binds exact lowered operands
+and checked source membership. Observation labels cannot issue a birth. Nested
+leases share one original reservation, rather than multiplying memory authority.
+The source key belongs to the individual lease node, not the shared backing.
+
+Lowering emits an explicit `CStatement::EndScalarReference` after the complete
+source statement at each checked frontier. Several endings at one frontier are
+emitted innermost first. Normal statement sequencing prevents an ending from
+running after a failed load, assignment or store. Reads and stores now carry
+only read-only observations; recovery is an explicit semantic operation.
+
+An ending's opaque source identity selects a fresh live reference through the
+indexed `(holder, source plan)` map in the current invocation. The kernel still
+checks the exact holder, active identity, backing occurrence, type and child
+dependencies. A parent cannot recover while its child is live. A successful
+ending consumes its index entry exactly once. Parent custody returns first;
+closing the outermost root restores the original owned occurrence. Current
+memory is preserved throughout, and stale copies remain expired. Endings do
+not depend on an original child variable or guessed observation history.
+
+Source labels are shared in one immutable family; its precomputed fixed-width
+identity and frontier positions form the hot semantic key. Preparation and
+execution inspect selected statements and indexed state deltas. Deterministic
+16/64/256/1024 regressions cover ordinary source length, alias chains, read
+endings and nested depth. A selected-end regression also bounds execution work
+across growing live-handle indexes. No per-borrow whole-function scan is used.
+
+The unchanged native `set_seven`, alias-move and read-ending witnesses activate
+explicit end operations. A new native fixture covers shared and separate
+nested frontiers, parent reuse, and a modular caller. Kernel tests cover ordered
+recovery, missing/foreign/duplicate handles, alias replacement, unsupported
+parent access and failed operations. Native proofs include expansion/recheck
+and false-value/authority negatives.
+
+The Rust semantic profile versions this source coverage and the resource
+semantics version covers the new kernel operation. Matching existing locks are
+rebound without changing source, compiler or artifact hashes.
 
 ## Remaining local-reference work
 
-A checked kernel lifecycle does not by itself enforce local references in
-ordinary Rust execution. The verifier still must issue births from actual
-source execution, validate the exact ending frontier and invocation, and
-connect checked borrow-end frontiers to the private memory adapter. Runtime
-integration must also cover call transfer, reference storage and memory havoc;
-the initial adapter refuses these operations while a scalar lease is active. An
-access observation is not evidence that every supported ending frontier has executed. The new restricted
-boundary binding supplies a completed borrow/store pair, while the ending certificate
-alone is insufficient: recovery must also match the source identity, reference
-access, borrowed footprint and exact program frontier. Neither last-use guesses nor `StorageDead`
-alone may authorize early recovery, and a live pointer alias must not revive
-an expired child. Pinned rustc establishes source borrow legality; it does not
-replace submitted-sidecar authority checks. No additional source annotation,
-separate execution engine or allocation-lifetime authority was introduced.
+Shared borrow graphs, aggregate fields and reference storage, call transfer,
+memory havoc, multiple blocks and loops still need checked source/runtime
+protocols. Functions outside the activated subset retain their existing
+lowering. Pinned rustc establishes source borrow legality and does not replace
+submitted-sidecar authority checks. Neither observations nor a submitted alias
+list grants a recovery right.
 
 ## Reproduce the assessment
 
@@ -280,6 +327,8 @@ cargo test --lib correspondence_calls_production_
 cargo test --lib exclusive_call_
 cargo test --lib local_reference_
 cargo test --lib scalar_reference_
+cargo test --lib source_scalar_lease
+cargo test --test rust_import rust_nested_scalar_borrows_end_explicitly_at_shared_and_separate_frontiers -- --ignored
 cargo test --test rust_import rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop -- --ignored
 cargo test --test rust_import rust_owned_field_parent_can_write_after_explicit_child_drop -- --ignored
 cargo test --test rust_import rust_owned_disjoint_mutable_fields_verify -- --ignored

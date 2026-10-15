@@ -213,22 +213,15 @@ pub(crate) trait PropositionSearch {
     fn proves_not(&self, proposition: &Proposition) -> bool;
 }
 
-/// `proves` for a simple tactic's premise: the exact lookup and the kernel's
-/// condition decision first, then the search over the proof context, which the hidden prerequisite census counts
-/// under `site` (`issues/simplify-step.md`, step 5) when it is what proves
-/// the premise.
-pub(crate) fn proves_by_tactic_search(
-    context: &PureFactContext,
-    proposition: &Proposition,
-    site: &'static str,
-) -> bool {
+/// A simple tactic's check of a premise: the exact lookup, then the
+/// kernel's condition decision, the one a step's fast path makes. It never
+/// searches the proof context (`issues/simplify-step.md`, step 5); a premise
+/// it misses is stated first, by a `have`.
+pub(crate) fn decided_without_search(context: &PureFactContext, proposition: &Proposition) -> bool {
     if context.proves_exact(proposition) {
         return true;
     }
-    // A condition, or its negation, is decided by the kernel's condition
-    // evaluation, the same decision a step's fast path makes: the difference
-    // graph, then the general decision the census counts on its own route.
-    let decided = match proposition {
+    match proposition {
         Proposition::ConditionIs(condition, value) => context.decide(condition) == Some(*value),
         Proposition::Not(body) => matches!(
             body.as_ref(),
@@ -236,18 +229,7 @@ pub(crate) fn proves_by_tactic_search(
                 if context.decide(condition) == Some(!*value)
         ),
         _ => false,
-    };
-    if decided {
-        return true;
     }
-    let proved = context.proves(proposition);
-    if proved {
-        crate::instrumentation::record_hidden_prerequisite(
-            crate::instrumentation::HiddenPrerequisiteRoute::TacticSearch,
-            site,
-        );
-    }
-    proved
 }
 
 impl PropositionSearch for PureFactContext {
@@ -1660,212 +1642,6 @@ mod condition_premise_tests {
     }
 
     #[test]
-    fn wide_condition_index_construction_charges_its_variable_entries() {
-        let mut samples = Vec::new();
-        for size in [4, 8, 16, 32] {
-            let mut terms = (0..size)
-                .map(|index| term(40_000 + (size * 100 + index) as u64))
-                .collect::<Vec<_>>();
-            while terms.len() > 1 {
-                terms = terms
-                    .chunks(2)
-                    .map(|pair| {
-                        if pair.len() == 1 {
-                            pair[0].clone()
-                        } else {
-                            Bitvector32Term::Add(
-                                Box::new(pair[0].clone()),
-                                Box::new(pair[1].clone()),
-                            )
-                        }
-                    })
-                    .collect();
-            }
-            let condition = ConditionTerm::Bitvector32Equal(
-                Box::new(terms.pop().unwrap()),
-                Box::new(Bitvector32Term::Constant(0)),
-            );
-            let ((context, work), events) = crate::instrumentation::collect(|| {
-                crate::instrumentation::measure_deterministic_work(|| {
-                    PureFactContext::new().assume_condition(condition, true)
-                })
-            });
-            assert_eq!(context.condition_fact_pairs().count(), 1);
-            let index_work = events
-                .into_iter()
-                .filter_map(|event| {
-                    if let crate::instrumentation::VerificationEvent::OperationFinished {
-                        name,
-                        work,
-                        ..
-                    } = event
-                    {
-                        (name == "condition variable indexing").then_some(work)
-                    } else {
-                        None
-                    }
-                })
-                .sum::<usize>();
-            // The existing context-entry charge covers the first variable.
-            assert_eq!(index_work, size - 1);
-            samples.push(work);
-        }
-        assert!(
-            samples.windows(2).all(|pair| pair[1] <= pair[0] * 3),
-            "{samples:?}"
-        );
-    }
-
-    #[test]
-    fn snapshot_condition_index_builds_once_and_survives_scalar_updates() {
-        let mut cold_samples = Vec::new();
-        let mut warm_samples = Vec::new();
-        for size in [8, 16, 32, 64] {
-            let (mut context, goal) = chain(8, 0);
-            let memory = intern_c_memory(CMemory::new().with_block("other", size as u32 * 4));
-            let mut snapshot_facts = Vec::new();
-            for index in 0..size {
-                let condition = ConditionTerm::Bitvector32Equal(
-                    Box::new(term(20_000 + index as u64)),
-                    Box::new(Bitvector32Term::MemoryLoad(
-                        memory.clone(),
-                        Box::new(Pointer {
-                            block: "other".into(),
-                            offset: PointerOffsetTerm::Constant(index as i64 * 4),
-                        }),
-                        crate::kernel::LoadKind::Bits32,
-                    )),
-                );
-                context = context.assume_condition(condition.clone(), true);
-                snapshot_facts.push(Proposition::ConditionIs(condition, true));
-            }
-            let (selected, cold) = crate::instrumentation::measure_deterministic_work(|| {
-                connected_condition_premises(&context, &goal, false).unwrap()
-            });
-            assert_eq!(selected.len(), 8);
-            let (_, warm) = crate::instrumentation::measure_deterministic_work(|| {
-                connected_condition_premises(&context, &goal, false).unwrap()
-            });
-            assert!(
-                cold >= warm + size,
-                "snapshot construction must be charged: {cold}, {warm}"
-            );
-            cold_samples.push(cold);
-            warm_samples.push(warm);
-            let scalar_branch = context
-                .clone()
-                .assume_condition(order(30_000, 30_001), true);
-            let (_, branch_work) = crate::instrumentation::measure_deterministic_work(|| {
-                connected_condition_premises(&scalar_branch, &goal, false).unwrap()
-            });
-            assert_eq!(
-                branch_work, warm,
-                "scalar insertion must share the completed snapshot index"
-            );
-            let withdrawn = context.without_exact_fact(&snapshot_facts[0]);
-            let (selected, rebuilt) = crate::instrumentation::measure_deterministic_work(|| {
-                connected_condition_premises(&withdrawn, &goal, false).unwrap()
-            });
-            assert_eq!(selected, scanned_component(&withdrawn, &goal).0);
-            assert!(
-                rebuilt > warm && rebuilt <= warm + 8,
-                "snapshot withdrawal must apply only its delta: {rebuilt}, {warm}"
-            );
-            let extra = ConditionTerm::Bitvector32Equal(
-                Box::new(term(90_000)),
-                Box::new(Bitvector32Term::MemoryLoad(
-                    memory.clone(),
-                    Box::new(Pointer {
-                        block: "other".into(),
-                        offset: PointerOffsetTerm::Constant(0),
-                    }),
-                    crate::kernel::LoadKind::Bits32,
-                )),
-            );
-            let extended = scalar_branch.assume_condition(extra, true);
-            let (selected, extended_work) =
-                crate::instrumentation::measure_deterministic_work(|| {
-                    connected_condition_premises(&extended, &goal, false).unwrap()
-                });
-            assert_eq!(selected.len(), 8);
-            assert!(
-                extended_work > warm && extended_work <= warm + 8,
-                "snapshot insertion must apply only its delta: {extended_work}, {warm}"
-            );
-            eprintln!("snapshot bucket {size}: cold {cold}, warm {warm}");
-        }
-        assert!(
-            warm_samples.iter().all(|work| *work == warm_samples[0]),
-            "{warm_samples:?}"
-        );
-        assert!(
-            cold_samples.windows(2).all(|pair| pair[1] <= pair[0] * 3),
-            "{cold_samples:?}"
-        );
-    }
-
-    #[test]
-    #[ignore = "nightly: 4.8s in the parallel gate"]
-    fn connected_condition_selection_scales_linearly_in_chain_and_context() {
-        for grow_chain in [false, true] {
-            let mut samples = Vec::new();
-            let mut complete = Vec::new();
-            for size in [8, 16, 32, 64] {
-                let length = if grow_chain { size } else { 8 };
-                let (context, goal) = chain(length, size * 4);
-                let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    connected_condition_premises(&context, &goal, false).unwrap()
-                });
-                assert_eq!(selected.len(), length);
-                assert!(
-                    work >= length && work <= 16 * (length + size * 4),
-                    "{length}: {work}"
-                );
-                samples.push(work);
-                let (proof, total) = crate::instrumentation::measure_deterministic_work(|| {
-                    context
-                        .derive_atomic_proposition(&goal)
-                        .expect("connected order chain proves goal")
-                });
-                complete.push(total);
-                assert!(proof.check(&context));
-                assert_eq!(proof.context_premises().len(), length);
-                eprintln!(
-                    "chain {length}, unrelated {}: selection {work}, complete {total}",
-                    size * 4
-                );
-                // Every link is necessary, and withdrawing it must also
-                // change the selected component and invalidate the certificate.
-                for index in 1..=length as u64 {
-                    let weakened = context
-                        .without_exact_fact(&Proposition::ConditionIs(chain_fact(index), true));
-                    assert!(!proof.check(&weakened));
-                }
-                let broken = context.without_exact_fact(&Proposition::ConditionIs(
-                    chain_fact(length as u64 / 2),
-                    true,
-                ));
-                assert!(broken.derive_atomic_proposition(&goal).is_none());
-            }
-            if !grow_chain {
-                assert!(
-                    samples.iter().all(|work| *work == samples[0]),
-                    "{samples:?}"
-                );
-                assert!(
-                    complete.iter().all(|work| *work == complete[0]),
-                    "{complete:?}"
-                );
-            }
-            for curve in [&samples, &complete] {
-                for pair in curve.windows(2) {
-                    assert!(pair[1] <= pair[0] * 3, "{curve:?}");
-                }
-            }
-        }
-    }
-
-    #[test]
     fn condition_selection_tracks_restriction_replacement_and_exclusion() {
         let (context, goal) = chain(8, 20);
         let selected = connected_condition_premises(&context, &goal, false).unwrap();
@@ -1893,6 +1669,13 @@ mod condition_premise_tests {
                 .unwrap()
                 .len(),
             1
+        );
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/surface/planning/proposition_search/condition_premise_tests.rs"
         );
     }
 }
@@ -2113,46 +1896,11 @@ fn atomic_context_from_facts(
 mod disjunction_work_tests {
     use super::*;
 
-    // A generated unsigned-arithmetic guard is `false or bound`. Checking its
-    // available bound must not search unrelated facts for a proof of false.
-    #[test]
-    fn false_disjunct_does_not_scan_unrelated_context_before_available_bound() {
-        let bound = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessEqual(
-                Box::new(Bitvector32Term::Variable(Variable(950_000))),
-                Box::new(Bitvector32Term::Constant(20)),
-            ),
-            true,
+    #[cfg(test)]
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/surface/planning/proposition_search/disjunction_work_tests.rs"
         );
-        let goal = Proposition::Or(
-            Box::new(Proposition::ConditionIs(
-                ConditionTerm::Constant(false),
-                true,
-            )),
-            Box::new(bound.clone()),
-        );
-        let mut samples = Vec::new();
-        for size in [32, 128, 512] {
-            let mut context = PureFactContext::new().assume_proposition(bound.clone());
-            for index in 0..size {
-                context = context.assume_condition(
-                    ConditionTerm::Bitvector32SignedLessEqual(
-                        Box::new(Bitvector32Term::Variable(Variable(960_000 + index))),
-                        Box::new(Bitvector32Term::Constant(100)),
-                    ),
-                    true,
-                );
-            }
-            let (proof, work) = crate::instrumentation::measure_deterministic_work(|| {
-                context
-                    .derive_proposition(&goal)
-                    .expect("the bound is stated")
-            });
-            assert!(proof.check(&context));
-            assert!(!proof.check(&context.without_exact_fact(&bound)));
-            samples.push((size, work));
-        }
-        assert!(samples[2].1 <= samples[0].1 + 64, "{samples:?}");
     }
 }
 
@@ -2225,63 +1973,6 @@ fn reduce_simp_atomic_premises(
 mod shared_atomic_premise_tests {
     use super::*;
 
-    // Connected pointer aliases used to make simp spell every historical
-    // premise even though the checked equality uses just these two links.
-    #[test]
-    fn simp_reduces_connected_pointer_premises_before_spelling() {
-        let mut samples = Vec::new();
-        for count in [8, 16, 32, 64, 128] {
-            let pointer = |index| Pointer::symbolic(Variable(index));
-            let left = pointer(1);
-            let middle = pointer(2);
-            let right = pointer(3);
-            let equality = |left, right| {
-                Proposition::ConditionIs(ConditionTerm::pointer_equal(left, right), true)
-            };
-            let first = equality(left.clone(), middle.clone());
-            let second = equality(middle.clone(), right.clone());
-            let goal = equality(left, right);
-            let mut context = PureFactContext::new()
-                .assume_proposition(first.clone())
-                .assume_proposition(second.clone());
-            for index in 2..count {
-                context = context
-                    .assume_proposition(equality(middle.clone(), pointer(10 + index as u64)));
-            }
-            let (evidence, id) = context.proves_atomic_for_derivation_with_id(&goal, true);
-            let evidence = evidence.expect("the alias chain proves the goal");
-            let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
-                reduce_simp_atomic_premises(&goal, true, (context, id, evidence)).unwrap()
-            });
-            let (reduced, id, evidence) = selected;
-            let premises = RetainedPremises::from_context(&reduced);
-            assert_eq!(premises.named().len(), 2);
-            assert!(premises.named().contains(&first));
-            assert!(premises.named().contains(&second));
-            let derivation = proposition_derivation(
-                &goal,
-                PropositionDerivationRule::ContextualAtomic {
-                    premises,
-                    premises_id: id,
-                    for_simp: true,
-                    evidence,
-                },
-            );
-            assert!(derivation.check(&reduced));
-            // Neither required link can be supplied by the discarded aliases.
-            for missing in [&first, &second] {
-                assert!(!derivation.check(&reduced.without_exact_fact(missing)));
-            }
-            samples.push((count, work));
-        }
-        for pair in samples.windows(2) {
-            assert!(
-                pair[1].1 <= pair[0].1.saturating_mul(3),
-                "bounded premise reduction grew too quickly: {samples:?}"
-            );
-        }
-    }
-
     #[test]
     fn wide_atomic_premise_cloning_scales_with_its_syntax() {
         let mut samples = Vec::new();
@@ -2323,5 +2014,12 @@ mod shared_atomic_premise_tests {
                 "deep premise cloning became superlinear: {samples:?}"
             );
         }
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/surface/planning/proposition_search/shared_atomic_premise_tests.rs"
+        );
     }
 }

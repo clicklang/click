@@ -1955,6 +1955,7 @@ impl CheckedResourceRewrite {
             after_facts,
             call_events,
             selected_children,
+            &[],
         )
         .map_err(|error| error.message)
     }
@@ -1969,6 +1970,7 @@ impl CheckedResourceRewrite {
         after_facts: &ProofFacts,
         call_events: &CheckedCallEvents,
         selected_children: Option<Arc<[(String, Variable)]>>,
+        loan_holds: &[crate::kernel::CheckedLoanTransition],
     ) -> Result<Self, ResourceRewriteCheckError> {
         Self::check_with_return_observation(
             function,
@@ -1980,6 +1982,7 @@ impl CheckedResourceRewrite {
             call_events,
             selected_children,
             None,
+            loan_holds,
         )
     }
 
@@ -1994,6 +1997,7 @@ impl CheckedResourceRewrite {
         call_events: &CheckedCallEvents,
         selected_children: Option<Arc<[(String, Variable)]>>,
         return_observation: Option<Arc<ReturnResourceObservation>>,
+        loan_holds: &[crate::kernel::CheckedLoanTransition],
     ) -> Result<Self, ResourceRewriteCheckError> {
         let mut rejected_fact = None;
         Self::check_with_children_recording(
@@ -2007,6 +2011,7 @@ impl CheckedResourceRewrite {
             selected_children,
             &mut rejected_fact,
             return_observation,
+            loan_holds,
         )
         .map_err(|message| ResourceRewriteCheckError {
             message,
@@ -2026,7 +2031,36 @@ impl CheckedResourceRewrite {
         selected_children: Option<Arc<[(String, Variable)]>>,
         rejected_fact: &mut Option<Arc<RejectedResourceRewriteFact>>,
         return_observation: Option<Arc<ReturnResourceObservation>>,
+        loan_holds: &[crate::kernel::CheckedLoanTransition],
     ) -> Result<Self, String> {
+        if !loan_holds.is_empty() {
+            // Check the hold on its own, then check the fold as a
+            // definitional rewrite from the input state with that one hold
+            // already placed. The event keeps the true input state.
+            let held_before = checked_borrowing_fold_hold(
+                function,
+                before_state,
+                before_facts,
+                selected,
+                after_state,
+                loan_holds,
+            )?;
+            let mut checked = Self::check_with_children_recording(
+                function,
+                &held_before,
+                before_facts,
+                selected,
+                after_state,
+                after_facts,
+                call_events,
+                selected_children,
+                rejected_fact,
+                return_observation,
+                &[],
+            )?;
+            checked.before_state = before_state.clone();
+            return Ok(checked);
+        }
         // A family that reaches no population keeps its ordinary definition
         // law; only population-reaching bodies take the checks below.
         let reaches_population = match selected.resource() {
@@ -2837,6 +2871,109 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
     }
 }
 
+/// The input state of a proof `fold` with its one loan hold placed.
+///
+/// A fold whose owned head packages a loan-backed view is a borrowing
+/// composite (escaping borrows in `docs/internals/stable-views.md`): the head
+/// carries body facts read through the loan, so the fold places a hold on the
+/// loan's scope and the head's binding names it. While the hold exists the
+/// scope cannot end, so the owner behind the loan cannot be recovered and
+/// written while the head still describes its memory. The hold grants nothing:
+/// it creates no loan, share or view, changes no memory and no resource, and
+/// only removes the scope's ability to end. A ledger with it permits a subset
+/// of what the input ledger permits.
+///
+/// Checked here, without trusting the proof driver's choice of loan:
+/// - `selected` is one owned composite folded by this step: no input
+///   occurrence supports it, and the successor holds an owned occurrence of
+///   it whose loan binding carries a hold;
+/// - that binding's loan is the dependency of a view the composite's body
+///   names in the input state, so the hold is on the loan the body reads
+///   through;
+/// - the one transition is exactly that hold, placed by this state's loan
+///   participant on that authority, applied to the exact input ledger, and
+///   its result is the successor's ledger.
+///
+/// The caller then checks the fold as a definitional rewrite from the
+/// returned state, so every other part of the state is compared as before.
+fn checked_borrowing_fold_hold(
+    function: &CFunction,
+    before_state: &CState,
+    before_facts: &ProofFacts,
+    selected: &CResourceFact,
+    after_state: &CState,
+    loan_holds: &[crate::kernel::CheckedLoanTransition],
+) -> Result<CState, String> {
+    let [hold] = loan_holds else {
+        return Err("a fold places at most one loan hold".into());
+    };
+    if !matches!(selected, CResourceFact::Own(CResource::Composite { .. }, _)) {
+        return Err("a loan hold requires the fold of one owned composite".into());
+    }
+    let assumptions = before_facts.assumptions();
+    if before_state
+        .resources()
+        .directly_supporting_fact(selected, assumptions)
+        .is_some()
+    {
+        return Err("a loan hold requires a fold of a composite the input does not hold".into());
+    }
+    if before_state.loan_participant() != after_state.loan_participant() {
+        return Err("a loan hold changed the loan participant".into());
+    }
+    let holder = before_state
+        .loan_participant()
+        .ok_or("a loan hold requires a loan participant")?;
+    let ledger = before_state
+        .loan_ledger()
+        .ok_or("a loan hold requires a loan ledger")?;
+    let binding = after_state
+        .resources()
+        .owned_occurrences_for_fact(selected)
+        .into_iter()
+        .filter_map(|occurrence| after_state.resources().loan_dependency(occurrence))
+        .find(|binding| binding.hold.is_some())
+        .ok_or("a loan hold is not carried by the folded composite")?;
+    let temporary =
+        ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(selected.clone());
+    let body = crate::kernel::functions::expand_composite_resource_fact(
+        &temporary,
+        selected,
+        function.composite_resource_definitions(),
+        before_state.memory(),
+        assumptions,
+    )
+    .ok_or("a loan hold's composite body could not be instantiated")?;
+    let same_authority = |dependency: &crate::kernel::LoanViewBinding| {
+        dependency.loan == binding.loan
+            && dependency.scope == binding.scope
+            && dependency.share == binding.share
+            && dependency.support == binding.support
+    };
+    let body_reads_through_loan = body
+        .facts()
+        .iter()
+        .filter(|child| *child != selected && child.is_view())
+        .any(|child| {
+            before_state
+                .resources()
+                .view_occurrences_for_fact(child, assumptions)
+                .into_iter()
+                .filter_map(|occurrence| before_state.resources().loan_dependency(occurrence))
+                .any(same_authority)
+        });
+    if !body_reads_through_loan {
+        return Err("a loan hold is not on a loan the folded body views".into());
+    }
+    let held = ledger
+        .apply_borrowing_fold_hold(hold, binding, holder)
+        .map_err(|refusal| format!("a fold's loan hold is not checked: {refusal:?}"))?;
+    if after_state.loan_ledger() != Some(&held) {
+        return Err("a fold changed the loan ledger beyond its one hold".into());
+    }
+    Ok(before_state.clone().with_loan_ledger(Some(held)))
+}
+
 type ResourceReadKey = (
     crate::kernel::Pointer,
     Bitvector32Term,
@@ -2896,6 +3033,57 @@ fn resource_delta_pointer_equality(
                 true,
             )
         })
+}
+
+/// A selected loadability range may use another name for the same complete
+/// pointer-cell read. Retain the checked frame in this rewrite's existing
+/// capture; this proves address equality only, never a referent designation.
+fn resource_delta_has_checked_pointer_read_frame(
+    source: &Proposition,
+    goal: &Proposition,
+    facts: &PureFactContext,
+) -> bool {
+    let (Some((source, _, _)), Some((goal, _, _))) =
+        (resource_read_key(source), resource_read_key(goal))
+    else {
+        return false;
+    };
+    let (
+        crate::kernel::PointerOffsetTerm::Int32Scaled {
+            value: left,
+            byte_width: left_width,
+        },
+        crate::kernel::PointerOffsetTerm::Int32Scaled {
+            value: right,
+            byte_width: right_width,
+        },
+    ) = (&source.offset, &goal.offset)
+    else {
+        return false;
+    };
+    if left_width != right_width || *left_width <= 0 {
+        return false;
+    }
+    let read = |term: &Bitvector32Term| {
+        let Bitvector32Term::Variable(variable) = term else {
+            return None;
+        };
+        if crate::kernel::eval::registered_load_bytes_for_variable(variable) != Some(8) {
+            return None;
+        }
+        let load = crate::kernel::eval::registered_load_term_for_variable(variable)?;
+        let Bitvector32Term::MemoryLoad(memory, address, crate::kernel::LoadKind::Bits32) = &load
+        else {
+            return None;
+        };
+        (crate::kernel::load_term_access_width(memory, address, crate::kernel::LoadKind::Bits32)
+            == 8)
+            .then_some(load)
+    };
+    let (Some(left), Some(right)) = (read(left), read(right)) else {
+        return false;
+    };
+    crate::kernel::memory_provenance::checked_recorded_atomic_load_equality(&left, &right, facts)
 }
 
 type ResourceContainmentKey = (
@@ -3055,7 +3243,9 @@ impl ResourceDeltaPremises {
             None
         } else {
             let equality = resource_delta_pointer_equality(source, goal)?;
-            if !facts.proves_exact(&equality) {
+            if !facts.proves_exact(&equality)
+                && !resource_delta_has_checked_pointer_read_frame(source, goal, facts)
+            {
                 return None;
             }
             Some(equality)
@@ -10465,6 +10655,33 @@ impl ExecutionProofCore {
         after_facts: &ProofFacts,
         selected_children: Option<Arc<[(String, Variable)]>>,
     ) -> Result<(), ResourceRewriteCheckError> {
+        self.record_resource_rewrite_with_loan_holds(
+            function,
+            arguments,
+            before_facts,
+            selected,
+            after_state,
+            after_facts,
+            selected_children,
+            &[],
+        )
+    }
+
+    /// A proof `fold` whose owned head packages a loan-backed view places one
+    /// hold on that loan's scope. The rewrite check applies that exact hold
+    /// transition to the input ledger rather than accepting any ledger change.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn record_resource_rewrite_with_loan_holds(
+        &mut self,
+        function: &CFunction,
+        arguments: &[CExpression],
+        before_facts: &ProofFacts,
+        selected: &CResourceFact,
+        after_state: &CState,
+        after_facts: &ProofFacts,
+        selected_children: Option<Arc<[(String, Variable)]>>,
+        loan_holds: &[crate::kernel::CheckedLoanTransition],
+    ) -> Result<(), ResourceRewriteCheckError> {
         if self.evidence_completed {
             return Err("a resource rewrite was recorded after the trace completed"
                 .to_string()
@@ -10479,6 +10696,7 @@ impl ExecutionProofCore {
             after_facts,
             &self.checked_call_events,
             selected_children,
+            loan_holds,
         )?;
         if self.frontier.is_at_function_entry() && !self.frontier.entry_member_prefix {
             rewrite.before_state =
@@ -10749,6 +10967,7 @@ impl ExecutionProofCore {
             &self.checked_call_events,
             selected_children,
             observation,
+            &[],
         )?;
         if self.frontier.execution().is_some() {
             rewrite.return_context = Some(self.return_context_for_path(path_index)?);
@@ -11640,112 +11859,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn balanced_unit_sum_domain_uses_only_indexed_related_bounds() {
-        use crate::kernel::ConditionTerm;
-        let a = Bitvector32Term::Variable(Variable(200));
-        let b = Bitvector32Term::Variable(Variable(201));
-        let one = Bitvector32Term::Constant(1);
-        let goal = Proposition::ConditionIs(
-            ConditionTerm::signed_add_overflows(
-                Bitvector32Term::add(a.clone(), one.clone()),
-                Bitvector32Term::subtract(b.clone(), one),
-            ),
-            false,
-        );
-        let mut measurements = Vec::new();
-        for n in [8, 32, 128, 512] {
-            let mut facts = PureFactContext::new()
-                .assume_condition(
-                    ConditionTerm::signed_add_overflows(a.clone(), b.clone()),
-                    false,
-                )
-                .assume_condition(
-                    ConditionTerm::signed_less_than(
-                        a.clone(),
-                        Bitvector32Term::Constant(i32::MAX as u32),
-                    ),
-                    true,
-                )
-                .assume_condition(
-                    ConditionTerm::signed_greater_equal(b.clone(), Bitvector32Term::Constant(1)),
-                    true,
-                );
-            for i in 0..n {
-                facts = facts.assume_condition(
-                    ConditionTerm::signed_less_equal(
-                        Bitvector32Term::Variable(Variable(1000 + i)),
-                        Bitvector32Term::Constant(100),
-                    ),
-                    true,
-                );
-            }
-            let (valid, work) = crate::instrumentation::measure_deterministic_work(|| {
-                super::authority_control_evaluation_condition_proven(&facts, &goal)
-            });
-            assert!(valid);
-            // Removing the old domain must fail without searching the frame.
-            let missing_old = PureFactContext::new().assume_condition(
-                ConditionTerm::signed_less_than(
-                    a.clone(),
-                    Bitvector32Term::Constant(i32::MAX as u32),
-                ),
-                true,
-            );
-            assert!(!super::authority_control_evaluation_condition_proven(
-                &missing_old,
-                &goal
-            ));
-            measurements.push(work);
-        }
-        assert!(
-            measurements
-                .iter()
-                .all(|work| *work <= measurements[0] + 16),
-            "{measurements:?}"
-        );
-    }
-
-    #[test]
-    fn named_cell_check_rejects_removals_and_ignores_unchanged_cells() {
-        use crate::kernel::{CMemory, Pointer, PointerBlock, PointerOffsetTerm};
-        let target = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let mut samples = Vec::new();
-        for count in [8, 32, 128, 512] {
-            let mut before = CMemory::new();
-            for index in 0..count {
-                before = before.store(
-                    Pointer {
-                        block: PointerBlock::Heap(index),
-                        offset: PointerOffsetTerm::Constant(0),
-                    },
-                    CValue::Int32(Bitvector32Term::Constant(7)),
-                );
-            }
-            let name = crate::kernel::canonical_form_of_load(
-                crate::kernel::intern_c_memory(before.clone()),
-                target.clone(),
-                crate::kernel::LoadKind::Bits32,
-            );
-            let after = before
-                .clone()
-                .materialize_named_cell(target.clone(), CValue::Int32(name));
-            let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
-                super::memory_only_adds_named_cells(&before, &after)
-            });
-            checked.unwrap();
-            samples.push(work);
-            assert!(super::memory_only_adds_named_cells(&after, &before).is_err());
-        }
-        assert!(
-            samples.windows(2).all(|pair| pair[1] <= pair[0] + 32),
-            "{samples:?}"
-        );
-    }
-
     use super::*;
     // The proposition search is Surface planning now; see
     // `src/surface/planning/proposition_search.rs`. Only these tests reach
@@ -11904,73 +12017,6 @@ mod tests {
                 .is_ok()
         );
         (core, value)
-    }
-
-    #[test]
-    fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_facts() {
-        let (core, mut value) = constructor_partition_fixture_with_type(2, CType::Int32Pointer);
-        let payload = Pointer::symbolic(Variable(7_000_000));
-        let program = Pointer::symbolic(Variable(1_000_001));
-        value.node = crate::kernel::AlgebraicTermNode::Constructor {
-            variant: "C0".into(),
-            fields: vec![crate::kernel::AlgebraicValue::C(CValue::typed_pointer(
-                payload.clone(),
-                CType::Int32Pointer,
-            ))],
-        };
-        let alias = Proposition::ConditionIs(
-            crate::kernel::ConditionTerm::pointer_equal(payload.clone(), program.clone()),
-            true,
-        );
-        let env = crate::kernel::CExecutionEnvironment::new();
-        let mut samples = Vec::new();
-        for size in [8, 32, 128] {
-            let mut facts = ProofFacts::default().with_fact(alias.clone());
-            for index in 0..size {
-                facts = facts.with_fact(Proposition::Predicate {
-                    name: format!("unrelated_{index}"),
-                    arguments: vec![],
-                });
-            }
-            let ((partition, fields, _), work) =
-                crate::instrumentation::measure_deterministic_work(|| {
-                    core.algebraic_case_partition(
-                        &facts,
-                        &value,
-                        &env,
-                        &[],
-                        None,
-                        4_000_000,
-                        65_536,
-                    )
-                    .unwrap()
-                });
-            let witness = Pointer::symbolic(fields[0][0].0);
-            let transported = Proposition::ConditionIs(
-                crate::kernel::ConditionTerm::pointer_equal(program.clone(), witness),
-                true,
-            );
-            assert!(partition.facts_for_case(0).unwrap().contains(&transported));
-            assert!(!partition.facts_for_case(1).unwrap().contains(&transported));
-            assert!(!facts.contains(&transported));
-            let (unrelated, _, _) = core
-                .algebraic_case_partition(
-                    &ProofFacts::default(),
-                    &value,
-                    &env,
-                    &[],
-                    None,
-                    4_000_000,
-                    65_536,
-                )
-                .unwrap();
-            assert!(!unrelated.facts_for_case(0).unwrap().contains(&transported));
-            samples.push(work);
-        }
-        assert!(
-            samples.windows(2).all(|pair| pair[1] <= pair[0] + 16),
-            "{samples:?}"
-        );
     }
 
     #[test]
@@ -12226,106 +12272,6 @@ mod tests {
     }
 
     #[test]
-    fn concrete_constructor_payload_spelling_is_checked_and_indexed() {
-        use crate::kernel::{
-            AlgebraicSchemas, AlgebraicTerm, AlgebraicTermNode, AlgebraicType, AlgebraicValue,
-            AlgebraicValueType, AlgebraicVariantType, Term,
-        };
-        let (core, mut payload) = constructor_partition_fixture(2);
-        payload.node = AlgebraicTermNode::Variable(Variable(4_065_536));
-        let inner_key = AlgebraicValueType::Algebraic {
-            name: "Cases".into(),
-            arguments: vec![],
-        };
-        let variants: Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
-            name: "Pair".into(),
-            fields: vec![inner_key.clone(), inner_key.clone()],
-        }]
-        .into();
-        let mut sibling = payload.clone();
-        sibling.node = AlgebraicTermNode::Variable(Variable(4_131_072));
-        let value = AlgebraicTerm {
-            algebraic_type: AlgebraicType {
-                rigid: false,
-                name: "Wrapper".into(),
-                arguments: vec![],
-                variants: variants.clone(),
-                schemas: Arc::new(AlgebraicSchemas::new(BTreeMap::from([
-                    (inner_key, payload.algebraic_type.variants.clone()),
-                    (
-                        AlgebraicValueType::Algebraic {
-                            name: "Wrapper".into(),
-                            arguments: vec![],
-                        },
-                        variants,
-                    ),
-                ]))),
-            },
-            node: AlgebraicTermNode::Constructor {
-                variant: "Pair".into(),
-                fields: vec![
-                    AlgebraicValue::Algebraic(payload.clone()),
-                    AlgebraicValue::Algebraic(sibling.clone()),
-                ],
-            },
-        };
-        assert_eq!(
-            crate::kernel::arm_algebraic_payload_spelling(&value, "Pair", 0),
-            Some(&payload)
-        );
-        assert_eq!(
-            crate::kernel::arm_algebraic_payload_spelling(&value, "Pair", 1),
-            Some(&sibling)
-        );
-        assert!(crate::kernel::arm_algebraic_payload_spelling(&value, "Other", 0).is_none());
-        assert!(crate::kernel::arm_algebraic_payload_spelling(&value, "Pair", 2).is_none());
-        assert!(crate::kernel::arm_algebraic_payload_spelling(&payload, "Pair", 0).is_none());
-        let environment = crate::kernel::CExecutionEnvironment::new();
-        let mut samples = Vec::new();
-        for size in [16, 64, 256] {
-            let facts = ProofFacts::from_ordered(
-                &(0..size)
-                    .map(|index| Proposition::Predicate {
-                        name: format!("ambient{index}"),
-                        arguments: vec![],
-                    })
-                    .collect::<Vec<_>>(),
-            );
-            let ((partition, witnesses, _), work) =
-                crate::instrumentation::measure_deterministic_work(|| {
-                    core.algebraic_case_partition(
-                        &facts,
-                        &value,
-                        &environment,
-                        &[],
-                        None,
-                        4_000_000,
-                        65_536,
-                    )
-                    .unwrap()
-                });
-            // Reusing the spelling must not reuse existential witness identities.
-            assert!(
-                witnesses
-                    .iter()
-                    .flatten()
-                    .all(|(variable, _)| variable.0 > 4_131_072)
-            );
-            let spelled = Proposition::Equal(
-                Term::Algebraic(value.clone()),
-                Term::Algebraic(value.clone()),
-            );
-            assert!(partition.facts_for_case(0).unwrap().contains(&spelled));
-            samples.push(work);
-        }
-        assert!(samples.iter().all(|work| *work > 0));
-        assert!(
-            samples[2] <= samples[0] * 2,
-            "ambient facts must not cause a scan: {samples:?}"
-        );
-    }
-
-    #[test]
     fn constructor_partition_freshness_is_indexed_and_output_linear() {
         for size in [16, 64, 256] {
             let (core, value) = constructor_partition_fixture(2);
@@ -12430,61 +12376,6 @@ mod tests {
     }
 
     #[test]
-    fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
-        for size in [16u32, 32, 64, 128] {
-            let before = (0..2048).fold(CMemory::new(), |memory, index| {
-                memory.store(
-                    Pointer {
-                        block: "ambient".into(),
-                        offset: crate::kernel::PointerOffsetTerm::Constant(i64::from(index) * 4),
-                    },
-                    int32(index),
-                )
-            });
-            let cached = (0..size).fold(before.clone(), |memory, index| {
-                let source = crate::kernel::intern_c_memory_ref(&memory);
-                memory.with_seeded_cells(
-                    Pointer {
-                        block: format!("cache-{index}").into(),
-                        offset: crate::kernel::PointerOffsetTerm::Constant(0),
-                    },
-                    4,
-                    crate::kernel::CType::Int32,
-                    0,
-                    2,
-                    source,
-                )
-            });
-            let view = |memory, index| Proposition::CMemoryLoadable {
-                memory,
-                base: Pointer {
-                    block: "body".into(),
-                    offset: crate::kernel::PointerOffsetTerm::Constant(i64::from(index) * 4),
-                },
-                bytes: Bitvector32Term::Constant(4),
-                wide: false,
-            };
-            let allowed = (0..size).map(|index| view(before.clone(), index)).collect();
-            let goals = (0..size)
-                .map(|index| view(cached.clone(), index))
-                .collect::<Vec<_>>();
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                let mut comparisons = HashMap::new();
-                for fact in &goals {
-                    assert!(cached_body_loadability(
-                        fact,
-                        &before,
-                        &allowed,
-                        &mut comparisons
-                    ));
-                }
-                assert_eq!(comparisons.len(), 1);
-            });
-            assert!(work <= 32 * size as usize + 64, "size={size}, work={work}");
-        }
-    }
-
-    #[test]
     fn instance_rewrite_refusal_retains_rejected_and_allowed_facts() {
         use crate::kernel::{
             CComparisonOperator, ResourceFieldSchema, ResourceFieldType, ResourceInstance,
@@ -12548,7 +12439,8 @@ mod tests {
                 &after,
                 &supported,
                 &CheckedCallEvents::default(),
-                None
+                None,
+                &[]
             )
             .is_ok()
         );
@@ -12566,6 +12458,7 @@ mod tests {
             &unsupported,
             &CheckedCallEvents::default(),
             None,
+            &[],
         )
         .err()
         .expect("unsupported facts must still be rejected");
@@ -12911,44 +12804,6 @@ mod tests {
     }
 
     #[test]
-    fn return_materialized_reads_scale_with_the_selected_cells() {
-        let samples = [16, 32, 64, 128].map(|size| {
-            let mut memory = CMemory::new();
-            let pointers: Vec<_> = (0..size).map(|i| Pointer::symbolic(Variable(i))).collect();
-            for pointer in &pointers {
-                memory = memory.store(pointer.clone(), int32(7));
-            }
-            let state = CState::new().with_memory(memory.clone());
-            let mut base = ProofFacts::default();
-            let (function, mut events) = returned_proposition_trace(&state, &base);
-            let initial = base.clone();
-            let context = returned_proposition_context(&state);
-            for pointer in pointers {
-                let fact = Proposition::CMemoryLoadable {
-                    memory: memory.clone(),
-                    base: pointer,
-                    bytes: Bitvector32Term::Constant(4),
-                    wide: false,
-                };
-                let roots = base.with_fact(fact.clone());
-                events.push(returned_proposition_event(
-                    &context, &state, &base, &roots, fact,
-                ));
-                base = roots;
-            }
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                assert!(trace_completion(&function, &events, initial.assumptions(), false).is_ok());
-            });
-            work
-        });
-        assert!(samples[0] > 0);
-        assert!(
-            samples.windows(2).all(|pair| pair[1] <= 2 * pair[0] + 8),
-            "materialized reads rescanned their context: {samples:?}"
-        );
-    }
-
-    #[test]
     fn return_argument_facts_require_an_ordinary_positive_or_viewed_resource() {
         use crate::kernel::{
             CComparisonOperator, SpecExpression, SpecProposition, c_parameter, c_variable,
@@ -13067,51 +12922,6 @@ mod tests {
     }
 
     #[test]
-    fn return_proposition_context_validation_scales_with_introductions() {
-        let samples = [16, 32, 64, 128].map(|size| {
-            let state = CState::new();
-            let mut base = ProofFacts::default();
-            let premises: Vec<_> = (0..size)
-                .map(|i| {
-                    Proposition::ConditionIs(
-                        crate::kernel::ConditionTerm::equal(
-                            Bitvector32Term::Variable(Variable(i)),
-                            Bitvector32Term::Constant(i as u32),
-                        ),
-                        true,
-                    )
-                })
-                .collect();
-            for fact in &premises {
-                base = base.with_fact(fact.clone());
-            }
-            let (function, mut events) = returned_proposition_trace(&state, &base);
-            let initial = base.clone();
-            let context = returned_proposition_context(&state);
-            for fact in premises {
-                let goal = Proposition::And(Box::new(fact.clone()), Box::new(fact));
-                events.push(returned_proposition_event(
-                    &context,
-                    &state,
-                    &base,
-                    &base,
-                    goal.clone(),
-                ));
-                base = base.with_fact(goal);
-            }
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                assert!(trace_completion(&function, &events, initial.assumptions(), false).is_ok());
-            });
-            work
-        });
-        assert!(samples[0] > 0);
-        assert!(
-            samples.windows(2).all(|pair| pair[1] <= 2 * pair[0] + 8),
-            "return proofs rescanned their growing ambient contexts: {samples:?}"
-        );
-    }
-
-    #[test]
     fn return_composite_presentations_reject_extra_facts_and_other_snapshots() {
         let before = CState::new();
         let selected = CResourceFact::own_composite("empty".into(), vec![]);
@@ -13220,6 +13030,7 @@ mod tests {
                 &CheckedCallEvents::default(),
                 None,
                 Some(observation),
+                &[],
             )
         };
         let checked = check(&facts, observation.clone()).unwrap();
@@ -13431,383 +13242,6 @@ mod tests {
                 Some(expected)
             );
         }
-    }
-
-    #[test]
-    fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
-        use crate::kernel::{ResourceFieldSchema, ResourceFieldType, ResourceInstance, Variable};
-        let schema =
-            ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::C(CType::Int32))])
-                .unwrap();
-        let instance = ResourceInstance::new(
-            Variable(1),
-            "cell".into(),
-            vec![].into(),
-            schema.clone(),
-            vec![int32(7).into()].into(),
-        )
-        .unwrap();
-        let definition = CCompositeResourceDefinition::new(
-            "cell",
-            vec![],
-            None,
-            false,
-            vec![crate::kernel::CResourceSpec::owned_memory(
-                crate::kernel::CMemorySegment {
-                    base: CExpression::Value(CValue::Pointer(
-                        crate::kernel::CPointerValue::new(
-                            crate::kernel::Pointer::symbolic(Variable(100)),
-                            CType::Int32Pointer,
-                        )
-                        .with_domain(Some(crate::kernel::CPointerDomain {
-                            bytes: 4,
-                            position: crate::kernel::IntegerTerm::constant_i64(0).into(),
-                        })),
-                    )),
-                    start: CExpression::Value(int32(0)),
-                    end: CExpression::Value(int32(1)),
-                    element_width: 4,
-                    guard: None,
-                },
-            )],
-            vec![],
-        )
-        .with_instance_schema(Some(schema));
-        let statement = CStatement::Return(CExpression::Value(int32(7)));
-        let function = c_function(CType::Int32, "test", vec![], statement.clone())
-            .with_composite_resource_definitions(vec![definition.clone()]);
-        let selected = CResourceFact::own(CResource::Instance(instance.clone()));
-        let folded = CState::new()
-            .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
-        let facts = ProofFacts::default();
-        let (open, _) = crate::kernel::rewrite_resource_instance(
-            &folded,
-            &instance,
-            &definition,
-            facts.assumptions(),
-            true,
-        )
-        .unwrap();
-        let trace = |state: CState| {
-            let mut trace = PersistentSequence::default();
-            trace.push(CheckedExecutionEvent::Statement(Theorem::new(
-                Proposition::CStatementVerifies {
-                    state: Box::new(state.clone()),
-                    statement: Box::new(statement.clone()),
-                    outcome: CStatementOutcome::Return {
-                        value: int32(7),
-                        state: Box::new(state),
-                    },
-                },
-            )));
-            trace.push(CheckedExecutionEvent::Context(PureFactContext::new()));
-            trace
-        };
-        let mut work_samples = Vec::new();
-        for size in [16, 32, 64, 128] {
-            let mut core =
-                ExecutionProofCore::at_entry(folded.clone(), ExecutionFrontier::default());
-            core.execution_evidence = (0..size)
-                .map(|index| {
-                    // A sibling lacks the body ownership. Its state cannot be used
-                    // to satisfy this path's fold, or vice versa.
-                    trace(if index == size - 1 {
-                        CState::new()
-                    } else {
-                        open.clone()
-                    })
-                })
-                .collect::<Vec<_>>()
-                .into();
-            core.evidence_completed = true;
-            core.return_proof_contexts = core.return_proof_contexts.with_inserted(
-                size / 2,
-                Arc::new(CheckedReturnContext {
-                    origin: CStatementOutcome::Return {
-                        value: int32(7),
-                        state: Box::new(open.clone()),
-                    },
-                    published: CFunctionOutcome::Return {
-                        value: int32(7),
-                        state: Box::new(open.clone()),
-                    },
-                    facts: ExecutionFacts::new(),
-                }),
-            );
-            let (observed_after, _) = crate::kernel::rewrite_resource_instance(
-                &open,
-                &instance,
-                &definition,
-                facts.assumptions(),
-                false,
-            )
-            .unwrap();
-            let base = core.clone();
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                core.record_return_resource_rewrite_with_children(
-                    &function,
-                    size / 2,
-                    &facts,
-                    &selected,
-                    &facts,
-                    false,
-                    None,
-                    Some((&open, &observed_after)),
-                )
-                .unwrap();
-            });
-            work_samples.push(work);
-            for index in 0..size {
-                assert!(
-                    core.execution_evidence[index]
-                        .shares_tail_with(&base.execution_evidence[index])
-                );
-                assert_eq!(
-                    core.return_resource_rewrites.get(&index).is_some(),
-                    index == size / 2
-                );
-            }
-            assert!(
-                core.record_return_resource_rewrite(&function, size - 1, &facts, &selected, &facts)
-                    .is_err()
-            );
-            assert!(
-                core.record_return_resource_rewrite(&function, size, &facts, &selected, &facts)
-                    .is_err()
-            );
-            assert!(
-                core.record_return_resource_rewrite(&function, size / 2, &facts, &selected, &facts)
-                    .is_err()
-            );
-            let events = core
-                .return_resource_rewrites
-                .get(&(size / 2))
-                .unwrap()
-                .to_vec();
-            let (outcome, _, _) =
-                trace_completion(&function, &events, facts.assumptions(), false).unwrap();
-            // The fold publishes read authority for the cells it consumed;
-            // apart from that observation the state is the folded one.
-            let CStatementOutcome::Return { value, state } = outcome else {
-                panic!("the completion returns");
-            };
-            assert_eq!(value, int32(7));
-            let resources = state
-                .resources()
-                .clone()
-                .without_owned_instance_read_views();
-            assert_eq!(state.with_resource_context(resources), folded);
-            // Copying an event to a different path with a different body
-            // state is rejected during final certification.
-            let mut forged = base.execution_evidence[size - 1].clone();
-            forged.push(events.last().unwrap().clone());
-            assert!(
-                trace_completion(&function, &forged.to_vec(), facts.assumptions(), false).is_err()
-            );
-            let mut collected = base.clone();
-            collected
-                .collect_return_resource_rewrites(&core, size / 2)
-                .unwrap();
-            let extra = Proposition::ConditionIs(
-                crate::kernel::ConditionTerm::equal(
-                    Bitvector32Term::Variable(Variable(1000)),
-                    Bitvector32Term::Constant(9),
-                ),
-                true,
-            );
-            let snapshot_facts = facts.with_fact(extra.clone());
-            let mut snapshot = base.clone();
-            snapshot
-                .record_return_resource_rewrite(
-                    &function,
-                    0,
-                    &snapshot_facts,
-                    &selected,
-                    &snapshot_facts,
-                )
-                .unwrap();
-            let (_, retained, _) = trace_completion(
-                &function,
-                &snapshot.return_resource_rewrites.get(&0).unwrap().to_vec(),
-                facts.assumptions(),
-                false,
-            )
-            .unwrap();
-            assert!(
-                !retained.proves(&extra),
-                "a fold must not publish unrelated snapshot assumptions"
-            );
-            let mut unrelated = base;
-            unrelated.execution_evidence[size / 2] = trace(open.clone());
-            assert!(
-                unrelated
-                    .collect_return_resource_rewrites(&core, size / 2)
-                    .is_err()
-            );
-        }
-        for pair in work_samples.windows(2) {
-            assert!(
-                pair[1] <= pair[0] + 128,
-                "path-local fold work: {work_samples:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn instance_rewrite_certificate_rejects_unrelated_state_and_fact_changes() {
-        use crate::kernel::{ResourceFieldSchema, ResourceFieldType, ResourceInstance, Variable};
-        let schema =
-            ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::C(CType::Int32))])
-                .unwrap();
-        let instance = ResourceInstance::new(
-            Variable(1),
-            "cell".into(),
-            vec![].into(),
-            schema.clone(),
-            vec![int32(7).into()].into(),
-        )
-        .unwrap();
-        let definition =
-            CCompositeResourceDefinition::new("cell", vec![], None, false, vec![], vec![])
-                .with_instance_schema(Some(schema));
-        let function = c_function(
-            CType::Void,
-            "test",
-            vec![],
-            CStatement::Return(CExpression::Value(CValue::Void)),
-        )
-        .with_composite_resource_definitions(vec![definition.clone()]);
-        let selected = CResourceFact::own(CResource::Instance(instance.clone()));
-        let before = CState::new()
-            .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
-        let facts = ProofFacts::default();
-        let (opened, _) = crate::kernel::rewrite_resource_instance(
-            &before,
-            &instance,
-            &definition,
-            facts.assumptions(),
-            true,
-        )
-        .unwrap();
-        let calls = CheckedCallEvents::default();
-        CheckedResourceRewrite::check(
-            &function, &before, &facts, &selected, &opened, &facts, &calls,
-        )
-        .unwrap();
-        let forged = opened.clone().with_resource_context(
-            opened
-                .resources()
-                .clone()
-                .unchecked_with_fact(CResourceFact::own_token("forged".into(), vec![])),
-        );
-        assert!(
-            CheckedResourceRewrite::check(
-                &function, &before, &facts, &selected, &forged, &facts, &calls
-            )
-            .is_err()
-        );
-        let forged = opened
-            .clone()
-            .with_memory(CMemory::new().with_block("invented", 4));
-        assert!(
-            CheckedResourceRewrite::check(
-                &function, &before, &facts, &selected, &forged, &facts, &calls
-            )
-            .is_err()
-        );
-        let mut forged = opened.clone();
-        forged.instance_field_scope = ResourceContext::new().unchecked_with_fact(selected.clone());
-        assert!(
-            CheckedResourceRewrite::check(
-                &function, &before, &facts, &selected, &forged, &facts, &calls,
-            )
-            .is_err(),
-            "a rewrite cannot retain scratch field bindings as a handle"
-        );
-        let forged_facts = facts.with_fact(Proposition::ConditionIs(
-            crate::kernel::ConditionTerm::Constant(false),
-            true,
-        ));
-        assert!(
-            CheckedResourceRewrite::check(
-                &function,
-                &before,
-                &facts,
-                &selected,
-                &opened,
-                &forged_facts,
-                &calls
-            )
-            .is_err()
-        );
-        let (closed, _) = crate::kernel::rewrite_resource_instance(
-            &opened,
-            &instance,
-            &definition,
-            facts.assumptions(),
-            false,
-        )
-        .unwrap();
-        CheckedResourceRewrite::check(
-            &function, &opened, &facts, &selected, &closed, &facts, &calls,
-        )
-        .unwrap();
-        let mut samples = Vec::new();
-        for size in [16, 32, 64, 128] {
-            let mut state = before.clone();
-            for identity in 2..=size {
-                let mut unrelated = instance.clone();
-                unrelated.identity = Variable(identity);
-                state.resources = state
-                    .resources
-                    .unchecked_with_fact(CResourceFact::own(CResource::Instance(unrelated)));
-            }
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                let (open, _) = crate::kernel::rewrite_resource_instance(
-                    &state,
-                    &instance,
-                    &definition,
-                    facts.assumptions(),
-                    true,
-                )
-                .unwrap();
-                CheckedResourceRewrite::check(
-                    &function, &state, &facts, &selected, &open, &facts, &calls,
-                )
-                .unwrap();
-                let (closed, _) = crate::kernel::rewrite_resource_instance(
-                    &open,
-                    &instance,
-                    &definition,
-                    facts.assumptions(),
-                    false,
-                )
-                .unwrap();
-                CheckedResourceRewrite::check(
-                    &function, &open, &facts, &selected, &closed, &facts, &calls,
-                )
-                .unwrap();
-            });
-            samples.push(work);
-        }
-        for pair in samples.windows(2) {
-            assert!(
-                pair[1] <= pair[0] + 256,
-                "certificate must inspect only its exchange: {samples:?}"
-            );
-        }
-        assert!(
-            CheckedResourceRewrite::check(
-                &function,
-                &CState::new(),
-                &facts,
-                &selected,
-                &before,
-                &facts,
-                &calls
-            )
-            .is_err()
-        );
     }
 
     fn condition_event(
@@ -14189,182 +13623,6 @@ mod tests {
     }
 
     #[test]
-    fn resource_read_alias_retains_only_an_exact_named_equality() {
-        let pointer = |i| Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(Bitvector32Term::Variable(Variable(i))),
-                byte_width: 4,
-            },
-        };
-        let read = |i| Proposition::CMemoryLoadable {
-            memory: CMemory::new(),
-            base: pointer(i),
-            bytes: Bitvector32Term::Constant(4),
-            wide: false,
-        };
-        let source = read(20);
-        let goal = read(21);
-        let index = ResourceDeltaPremises::new(std::slice::from_ref(&source));
-        let equality = resource_delta_pointer_equality(&source, &goal).unwrap();
-        let facts = PureFactContext::new().assume_proposition(equality.clone());
-        assert!(index.prove(&goal).is_none());
-        let mut retained = index.prove_with_facts(&goal, &facts).unwrap();
-        assert!(retained.matches_completed_goal());
-        assert!(retained.equality.as_ref() == Some(&equality));
-        retained.equality = None;
-        assert!(!retained.matches_completed_goal());
-        assert!(!resource_delta_uses_exact_equality(
-            &source,
-            &equality,
-            &read(22)
-        ));
-        assert!(
-            ResourceDeltaPremises::new(&[source.clone(), read(22)])
-                .prove_with_facts(&goal, &facts)
-                .is_none(),
-            "ambiguous body reads must not launch pair search"
-        );
-        // Duplicate exact ranges are interchangeable, not ambiguity.
-        assert!(
-            ResourceDeltaPremises::new(&[source.clone(), source])
-                .prove_with_facts(&goal, &facts)
-                .is_some()
-        );
-        let contains = |i, end| Proposition::CResourceContains {
-            parent: Box::new(
-                CResourceFact::own_composite("cell".into(), Vec::new())
-                    .resource()
-                    .clone(),
-            ),
-            child: Box::new(CResource::Memory(crate::kernel::CMemoryRange::new(
-                pointer(i),
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(end),
-            ))),
-        };
-        let relation_index = ResourceDeltaPremises::new(&[contains(20, 1)]);
-        assert!(relation_index.prove(&contains(21, 1)).is_none());
-        assert!(
-            relation_index
-                .prove_with_facts(&contains(21, 1), &facts)
-                .unwrap()
-                .matches_completed_goal()
-        );
-        assert!(
-            relation_index
-                .prove_with_facts(&contains(21, 2), &facts)
-                .is_none()
-        );
-        let wrong_parent = Proposition::CResourceContains {
-            parent: Box::new(
-                CResourceFact::own_composite("other".into(), Vec::new())
-                    .resource()
-                    .clone(),
-            ),
-            child: Box::new(CResource::Memory(crate::kernel::CMemoryRange::new(
-                pointer(21),
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(1),
-            ))),
-        };
-        assert!(
-            relation_index
-                .prove_with_facts(&wrong_parent, &facts)
-                .is_none()
-        );
-        let samples = [16, 32, 64, 128].map(|size| {
-            let mut context = facts.clone();
-            for i in 0..size {
-                context = context.assume_proposition(Proposition::Predicate {
-                    name: format!("unrelated_{i}"),
-                    arguments: vec![],
-                });
-            }
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                assert!(
-                    index
-                        .prove_with_facts(&goal, &context)
-                        .unwrap()
-                        .matches_completed_goal()
-                );
-                assert!(
-                    relation_index
-                        .prove_with_facts(&contains(21, 1), &context)
-                        .unwrap()
-                        .matches_completed_goal()
-                );
-            });
-            work
-        });
-        assert!(
-            samples.windows(2).all(|pair| pair[1] <= pair[0] + 8),
-            "exact alias evidence inspected unrelated premises: {samples:?}"
-        );
-    }
-
-    #[test]
-    fn resource_read_evidence_scales_with_explicit_premises_not_memory_contents() {
-        let pointer = Pointer {
-            block: "selected".into(),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let mut samples = Vec::new();
-        for size in [16, 32, 64, 128] {
-            let mut memory = CMemory::new().with_block("selected", 8);
-            for i in 0..size {
-                memory = memory.with_block(format!("unrelated_{i}"), 8);
-            }
-            let source = Proposition::CMemoryLoadable {
-                memory: memory.clone(),
-                base: pointer.clone(),
-                bytes: Bitvector32Term::Variable(Variable(42)),
-                wide: false,
-            };
-            let goal = Proposition::CMemoryLoadable {
-                memory: memory.store(pointer.clone(), int32(7)),
-                base: pointer.clone(),
-                bytes: Bitvector32Term::Variable(Variable(42)),
-                wide: false,
-            };
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                let index = ResourceDeltaPremises::new(std::slice::from_ref(&source));
-                assert!(index.prove(&goal).unwrap().matches_completed_goal());
-            });
-            samples.push(work);
-        }
-        assert!(samples.iter().all(|work| *work > 0));
-        assert!(
-            samples.windows(2).all(|pair| pair[1] <= pair[0] + 8),
-            "read transport inspected unrelated memory: {samples:?}"
-        );
-        let samples = [16, 32, 64, 128].map(|size| {
-            let allowed = (0..size)
-                .map(|i| Proposition::CMemoryLoadable {
-                    memory: CMemory::new(),
-                    base: Pointer {
-                        block: format!("range_{i}").into(),
-                        offset: PointerOffsetTerm::Constant(0),
-                    },
-                    bytes: Bitvector32Term::Constant(4),
-                    wide: false,
-                })
-                .collect::<Vec<_>>();
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                let index = ResourceDeltaPremises::new(&allowed);
-                for goal in &allowed {
-                    assert!(index.prove(goal).unwrap().matches_completed_goal());
-                }
-            });
-            work
-        });
-        assert!(
-            samples.windows(2).all(|pair| pair[1] <= pair[0] * 2 + 16),
-            "explicit read premise index: {samples:?}"
-        );
-    }
-
-    #[test]
     fn checked_composite_events_reject_forged_resources_facts_memory_and_definitions() {
         let child_spec = CResourceSpec::token(
             CResourceAccessMode::Own,
@@ -14596,60 +13854,6 @@ mod tests {
                 ),
             "a retained observation must remain tied to its checked definition"
         );
-    }
-
-    #[test]
-    fn interface_abstraction_work_scales_with_unrelated_locals_and_memory() {
-        let mut samples = Vec::new();
-        for size in [64_u32, 128, 256, 512] {
-            let mut memory = CMemory::new();
-            let mut then_state = CState::new().with_local("changed", int32(1));
-            let mut stable_locals = BTreeMap::new();
-            for index in 0..size {
-                let name = format!("stable_{index}");
-                let value = int32(index);
-                then_state = then_state.with_local(name.clone(), value.clone());
-                stable_locals.insert(name, value);
-                memory = memory.store(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: PointerOffsetTerm::Constant(i64::from(index * 4)),
-                    },
-                    int32(index),
-                );
-            }
-            then_state = then_state.with_memory(memory);
-            let else_state = then_state.clone().with_local("changed", int32(2));
-            let siblings = [&then_state, &else_state];
-            let ((then_join, else_join), work) =
-                crate::instrumentation::measure_deterministic_work(|| {
-                    (
-                        crate::kernel::abstract_c_state_for_interface_join_across(
-                            &then_state,
-                            &siblings,
-                            &stable_locals,
-                            0,
-                        )
-                        .expect("the then arm should abstract"),
-                        crate::kernel::abstract_c_state_for_interface_join_across(
-                            &else_state,
-                            &siblings,
-                            &stable_locals,
-                            0,
-                        )
-                        .expect("the else arm should abstract"),
-                    )
-                });
-            assert_eq!(then_join, else_join);
-            samples.push((size, work));
-        }
-        assert!(samples[0].1 > 0);
-        for pair in samples.windows(2) {
-            assert!(
-                pair[1].1 <= pair[0].1 * 3,
-                "interface abstraction work grew superlinearly: {samples:?}"
-            );
-        }
     }
 
     #[test]
@@ -15285,57 +14489,6 @@ mod tests {
     }
 
     #[test]
-    fn branch_fact_availability_is_exact_and_independent_of_ambient_history() {
-        use crate::kernel::ConditionTerm;
-        let x = Bitvector32Term::Variable(Variable(910_000));
-        let strong = Proposition::ConditionIs(
-            ConditionTerm::signed_greater_than(x.clone(), Bitvector32Term::Constant(0)),
-            true,
-        );
-        let weak = Proposition::ConditionIs(
-            ConditionTerm::signed_greater_equal(x.clone(), Bitvector32Term::Constant(0)),
-            true,
-        );
-        let reflexive = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(x.clone()), Box::new(x)),
-            true,
-        );
-        let mut samples = Vec::new();
-        for size in [16, 32, 64, 128] {
-            let mut facts = ProofFacts::default().with_fact(strong.clone());
-            for index in 0..size {
-                facts = facts.with_fact(Proposition::ConditionIs(
-                    ConditionTerm::signed_less_than(
-                        Bitvector32Term::Variable(Variable(920_000 + index)),
-                        Bitvector32Term::Constant(100),
-                    ),
-                    true,
-                ));
-            }
-            assert!(
-                facts.assumptions().proves(&weak),
-                "the old general route could derive this missing fact"
-            );
-            let exact = facts.with_fact(weak.clone());
-            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
-                assert!(!checked_branch_fact_is_available(&facts, &weak));
-                assert!(checked_branch_fact_is_available(&exact, &weak));
-                assert!(checked_branch_fact_is_available(&facts, &reflexive));
-                assert!(!checked_branch_fact_is_available(
-                    &facts,
-                    &Proposition::Not(Box::new(reflexive.clone()))
-                ));
-            });
-            samples.push(work);
-        }
-        assert!(samples.iter().all(|work| *work > 0));
-        assert!(
-            samples.windows(2).all(|pair| pair[1] <= pair[0] * 2),
-            "branch availability scanned unrelated history: {samples:?}"
-        );
-    }
-
-    #[test]
     fn branch_split_obligations_require_evidence_on_each_named_arm() {
         use crate::kernel::{ConditionTerm, ProofObligation};
         let state = CState::new();
@@ -15411,94 +14564,6 @@ mod tests {
             !validate([Some(&exact), Some(&unrelated)]),
             "evidence must descend from this split root"
         );
-    }
-
-    // Interface re-lowering must use the checked arm's address aliases without
-    // acquiring read authority, leaking an arm fact, or scanning its history.
-    #[test]
-    #[ignore = "nightly: 0.7s in the parallel gate"]
-    fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
-        use crate::kernel::{CPointerValue, ConditionTerm, SpecMemory};
-        let _session = crate::kernel::VerificationSession::enter();
-        let owner = Pointer::symbolic(Variable(951_000));
-        let alias = Pointer::symbolic(Variable(951_001));
-        let value = Bitvector32Term::UInt64Constant(0x1234_5678_9abc_def0);
-        let load = SpecExpression::MemoryLoad {
-            memory: SpecMemory::Current,
-            pointer: Box::new(SpecExpression::Value(CValue::Pointer(CPointerValue::new(
-                alias.clone(),
-                CType::UInt64Pointer,
-            )))),
-            value_type: CType::UInt64,
-        };
-        let spec = SpecProposition::Comparison {
-            left: load.clone(),
-            operator: CComparisonOperator::Equal,
-            right: SpecExpression::Value(CValue::UInt64(value.clone())),
-        };
-        let mut previous = None;
-        for count in [16_u32, 64, 256, 1024] {
-            let mut memory = CMemory::new();
-            let mut parent = ProofFacts::default();
-            for index in 0..count {
-                memory = memory.store(owner.offset_by_bytes((index + 1) * 8), int32(index));
-                parent = parent.with_fact(Proposition::ConditionIs(
-                    ConditionTerm::equal(
-                        Bitvector32Term::Variable(Variable(952_000 + u64::from(index))),
-                        Bitvector32Term::Constant(index),
-                    ),
-                    true,
-                ));
-            }
-            memory = memory.store(owner.clone(), CValue::UInt64(value.clone()));
-            let state = CState::new().with_memory(memory.clone());
-            let arm = parent.with_fact(Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(alias.clone(), owner.clone()),
-                true,
-            ));
-            let check = |state: &CState, facts: &ProofFacts, spec: &SpecProposition| {
-                CheckedInterfaceLowering::check(
-                    spec,
-                    state,
-                    state,
-                    facts,
-                    &InterfaceReadPremises::default(),
-                )
-            };
-            let (checked, work) =
-                crate::instrumentation::measure_deterministic_work(|| check(&state, &arm, &spec));
-            assert!(checked.is_some(), "{count} unrelated cells and premises");
-            assert!(checked.unwrap().has_complete_proof());
-            if let Some(previous) = previous {
-                assert!(work <= previous + 128, "{count}: {work} after {previous}");
-            }
-            previous = Some(work);
-            assert!(
-                check(&state, &parent, &spec).is_none(),
-                "alias stays in its arm"
-            );
-            assert!(
-                check(&state, &arm, &SpecProposition::Defined(load.clone())).is_none(),
-                "logical value evidence does not authorize a C read"
-            );
-            for (offset, overwrite) in [
-                (0, CValue::UInt64(Bitvector32Term::UInt64Constant(7))),
-                (4, int32(7)),
-            ] {
-                let address = owner.offset_by_bytes(offset);
-                let changed = memory
-                    .without_possible_aliasing_cells(
-                        &address,
-                        overwrite.byte_width(),
-                        arm.assumptions(),
-                    )
-                    .store(address, overwrite);
-                assert!(
-                    check(&state.clone().with_memory(changed), &arm, &spec).is_none(),
-                    "a full or partial overwrite invalidates the old value"
-                );
-            }
-        }
     }
 
     #[test]
@@ -15665,95 +14730,6 @@ mod tests {
             assert!(CheckedInterfaceLoadDefinition::check(&wrong).is_none());
             assert!(!definition.matches_goal_exactly(&wrong));
         }
-    }
-
-    #[test]
-    fn interface_read_premises_are_indexed_and_check_the_exact_range() {
-        use crate::kernel::{CMemory, Pointer};
-        let memory = CMemory::new();
-        let readable = |memory: CMemory, block: String, width| Proposition::CMemoryLoadable {
-            memory,
-            base: Pointer {
-                block: block.into(),
-                offset: PointerOffsetTerm::Constant(0),
-            },
-            bytes: Bitvector32Term::Constant(width),
-            wide: false,
-        };
-        let goal = readable(memory.clone(), "selected".into(), 4);
-        let source = readable(memory.clone(), "selected".into(), 8);
-        let samples = [16, 32, 64, 128].map(|size| {
-            let inputs = (0..size)
-                .map(|i| readable(memory.clone(), format!("unrelated_{i}"), 8))
-                .chain(std::iter::once(source.clone()))
-                .collect::<Vec<_>>();
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                let index = InterfaceReadPremises::new(inputs);
-                let selected = index.for_goal(&goal).unwrap();
-                assert_eq!(selected, &source);
-                assert!(interface_read_is_subrange(&goal, selected));
-                assert!(!interface_read_is_subrange(
-                    &readable(memory.clone(), "selected".into(), 9),
-                    selected
-                ));
-                assert!(!interface_read_is_subrange(
-                    &readable(memory.clone(), "other".into(), 4),
-                    selected
-                ));
-                assert!(!interface_read_is_subrange(
-                    &readable(CMemory::new().with_block("other", 4), "selected".into(), 4),
-                    selected
-                ));
-            });
-            work
-        });
-        assert!(samples.iter().all(|work| *work > 0));
-        assert!(
-            samples.windows(2).all(|pair| pair[1] <= pair[0] * 2),
-            "explicit resource index scaled superlinearly: {samples:?}"
-        );
-        assert!(InterfaceReadPremises::default().for_goal(&goal).is_none());
-    }
-
-    #[test]
-    fn interface_lowering_retention_shares_unrelated_history() {
-        let spec = SpecProposition::Comparison {
-            left: SpecExpression::Value(int32(1)),
-            operator: CComparisonOperator::Equal,
-            right: SpecExpression::Value(int32(1)),
-        };
-        let samples = [16, 32, 64, 128].map(|size| {
-            let mut facts = ProofFacts::default();
-            let mut state = CState::new();
-            for index in 0..size {
-                facts = facts.with_fact(Proposition::Predicate {
-                    name: format!("unrelated_{index}"),
-                    arguments: Vec::new(),
-                });
-                state = state.with_local(format!("unrelated_{index}"), int32(index));
-            }
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                let checked = CheckedInterfaceLowering::check(
-                    &spec,
-                    &state,
-                    &state,
-                    &facts,
-                    &InterfaceReadPremises::default(),
-                )
-                .unwrap();
-                let copy = checked.clone();
-                assert!(copy.facts.shares_premises_with(&facts));
-                assert_eq!(copy.snapshot, state);
-                assert_eq!(copy.reference, state);
-                assert!(Arc::ptr_eq(&copy.path, &checked.path));
-            });
-            work
-        });
-        assert!(samples.iter().all(|work| *work > 0));
-        assert!(
-            samples.windows(2).all(|pair| pair[1] <= pair[0] * 2),
-            "retention scanned unrelated history: {samples:?}"
-        );
     }
 
     #[test]
@@ -15955,6 +14931,11 @@ mod tests {
             "a resource absent from both arms must not gain interface authority"
         );
     }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/proof/execution/tests.rs");
+    }
 }
 
 /// Deterministic four-size curves for the loan machinery an interface join
@@ -15973,7 +14954,7 @@ mod loan_scaling_tests {
     use std::collections::BTreeSet;
 
     /// The two largest adjacent ratios of a doubling series, the same
-    /// near-linear rule `src/surface/tests/scaling_tests.rs` applies.
+    /// near-linear rule `src/scaling_tests/surface/tests/scaling_tests.rs` applies.
     fn assert_near_linear(axis: &str, samples: &[(usize, usize)]) {
         assert!(
             samples[0].1 > 0,
@@ -16052,34 +15033,6 @@ mod loan_scaling_tests {
         (arm, successor)
     }
 
-    #[test]
-    fn interface_binding_inheritance_is_near_linear_in_the_binding_count() {
-        let mut samples = Vec::new();
-        for count in [8, 16, 32, 64] {
-            let (arm, successor) = interface_join_states(count);
-            let (inherited, work) = crate::instrumentation::measure_deterministic_work(|| {
-                interface_successor_loans_are_inherited(&successor, [&arm, &arm])
-            });
-            assert!(
-                inherited,
-                "every successor binding is one the arm held, so the join is admitted"
-            );
-            samples.push((count, work));
-        }
-        // 36, 136, 528, 2080 before the membership index; 24, 48, 96, 192
-        // after it (both arms folded in, then one lookup per successor
-        // binding). The second assertion pins the linear shape itself, so a
-        // reintroduced pairwise scan fails here and not only at eight times
-        // the size.
-        assert_near_linear("interface join binding count", &samples);
-        for (count, work) in &samples {
-            assert!(
-                *work <= 6 * count + 16,
-                "interface join binding inheritance stopped being one pass per binding: {samples:?}"
-            );
-        }
-    }
-
     /// A contract-input view over parameter memory: symbolic base offset, so
     /// it never enters the concrete dyadic index and stays in its block's
     /// unindexed bucket.
@@ -16129,50 +15082,9 @@ mod loan_scaling_tests {
         memory
     }
 
-    #[test]
-    fn loop_head_havoc_work_over_cells_and_symbolic_loans() {
-        let mut samples = Vec::new();
-        for count in [8, 16, 32, 64] {
-            let ledger = symbolic_contract_input_ledger(count);
-            let memory = cells_in_the_symbolic_block(count);
-            let (havoced, work) = crate::instrumentation::measure_deterministic_work(|| {
-                memory.with_loop_memory_havoc_preserving_loans(
-                    Variable(7),
-                    &BTreeSet::new(),
-                    None,
-                    Some(&ledger),
-                )
-            });
-            // Validity: no cell was proven protected, so the havoc paid the
-            // complete query for each one. An early refusal would short the
-            // scan and make the curve look better than the checker is.
-            for index in 0..count {
-                assert!(
-                    !havoced.has_known_cell_at(&Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: PointerOffsetTerm::Constant(4 * index as i64),
-                    }),
-                    "a cell no loan protects must not survive the havoc"
-                );
-            }
-            samples.push((count, work));
-        }
-        // Measured, not aspirational: 65, 257, 1025, 4097 -- one query per
-        // cell, each walking every symbolic protected range in the block, so
-        // the curve is cells x symbolic loans and doubling costs four times
-        // as much. Nothing local fixes it: a symbolic base offset cannot
-        // enter the dyadic index, the block bucket already holds only the
-        // genuinely symbolic entries, and a cell's answer depends on the
-        // cell, so per-block hoisting cannot share it. This bound is recorded
-        // as a known violation in `docs/internals/verification-efficiency.md`;
-        // the assertion pins it from above so no further factor creeps in and
-        // so a later indexing change that makes it linear still passes.
-        for (count, work) in &samples {
-            assert!(
-                *work <= count * count + 4 * count + 16,
-                "loop-head havoc cells x symbolic loans exceeded its known quadratic bound: {samples:?}"
-            );
-        }
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/proof/execution/loan_scaling_tests.rs");
     }
 }
 
@@ -16275,98 +15187,9 @@ mod automatic_lifetime_tests {
         assert_eq!(event.advance_checked(&destroyed), Some(after));
     }
 
-    #[test]
-    fn automatic_lifetime_end_consumes_only_local_construction_ownership() {
-        let mut samples = Vec::new();
-        for size in [16, 64, 256, 1024] {
-            let pointer = CMemory::local_pointer("selected");
-            let owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
-                pointer,
-                0u32.into(),
-                16u32.into(),
-                1,
-            ));
-            let mut resources = ResourceContext::new().unchecked_with_fact(owner.clone());
-            for i in 0..size {
-                resources = resources.unchecked_with_fact(CResourceFact::own_token(
-                    format!("unrelated_{i}"),
-                    vec![],
-                ));
-            }
-            let state = CState::new()
-                .with_local("selected", int32(0))
-                .with_memory(CMemory::new().with_block("local:selected", 16))
-                .with_resource_context(resources);
-            let mut core =
-                ExecutionProofCore::at_entry(state.clone(), ExecutionFrontier::default());
-            let (after, work) = crate::instrumentation::measure_deterministic_work(|| {
-                core.record_automatic_lifetime_end(&state, &["selected".into()])
-                    .unwrap()
-            });
-            assert!(
-                !after
-                    .resources()
-                    .satisfies_fact(&owner, &PureFactContext::new())
-            );
-            assert!(after.resources().satisfies_fact(
-                &CResourceFact::own_token("unrelated_0".into(), vec![]),
-                &PureFactContext::new()
-            ));
-            assert!(!after.memory().has_block(&"local:selected".into()));
-            let events = core.execution_evidence[0].to_vec();
-            let CheckedExecutionEvent::AutomaticLifetimeEnd(end) = &events[0] else {
-                unreachable!()
-            };
-            assert_eq!(end.advance_checked(&state), Some(after.clone()));
-            let mut forged = end.clone();
-            forged.after_state = after.with_resource_context(state.resources().clone());
-            assert!(forged.advance_checked(&state).is_none());
-            samples.push((size, work));
-        }
-        eprintln!("local construction retirement (N, units): {samples:?}");
-        assert!(
-            samples.iter().all(|(_, work)| *work <= samples[0].1 + 64),
-            "{samples:?}"
-        );
-    }
-
-    #[test]
-    fn automatic_lifetime_event_ignores_unrelated_locals_and_checks_exact_states() {
-        let samples = [8, 16, 32, 64].map(|size| {
-            let mut state = CState::new()
-                .with_local("selected", int32(5))
-                .with_memory(CMemory::new().with_block("local:selected", 4));
-            for i in 0..size {
-                state = state.with_local(format!("other_{i}"), int32(9));
-            }
-            let mut core =
-                ExecutionProofCore::at_entry(state.clone(), ExecutionFrontier::default());
-            let (after, work) = crate::instrumentation::measure_deterministic_work(|| {
-                core.record_automatic_lifetime_end(&state, &["selected".to_string()])
-                    .unwrap()
-            });
-            assert!(after.locals().get("selected").is_none());
-            assert!(!after.memory().has_block(&"local:selected".into()));
-            assert_eq!(after.locals().get("other_0"), Some(&int32(9)));
-            let events = core.execution_evidence[0].to_vec();
-            let CheckedExecutionEvent::AutomaticLifetimeEnd(end) = &events[0] else {
-                panic!("missing lifetime evidence")
-            };
-            assert_eq!(end.advance_checked(&state), Some(after.clone()));
-            assert!(end.advance_checked(&after).is_none());
-            let mut forged = end.clone();
-            forged.after_state = state.clone();
-            assert!(forged.advance_checked(&state).is_none());
-            work
-        });
-        assert!(samples[0] > 0);
-        assert!(
-            samples
-                .iter()
-                .enumerate()
-                .all(|(i, work)| *work <= samples[0] + i),
-            "{samples:?}"
-        );
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/proof/execution/automatic_lifetime_tests.rs");
     }
 }
 
@@ -16909,101 +15732,6 @@ mod population_authority_rewrite_tests {
     }
 
     #[test]
-    fn private_member_facts_cannot_use_ambient_cell_ownership() {
-        use crate::kernel::{CMemorySegment, c_int32_literal, c_parameter, c_variable};
-        let (_, authority) = source_state();
-        let CResource::PopulationAuthority(description) = authority.resource() else {
-            unreachable!()
-        };
-        let member = CResourceFact::own(CResource::Composite {
-            name: "reference".into(),
-            arguments: description.arguments().to_vec().into(),
-        });
-        let [crate::kernel::AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments()
-        else {
-            unreachable!()
-        };
-        let pointer = pointer.pointer();
-        let memory = CMemory::new().with_block(pointer.block.clone(), 8).store(
-            pointer.offset_by_elements(1.into(), 4),
-            crate::kernel::int32(0),
-        );
-        let resources = ResourceContext::new().unchecked_with_facts([
-            CResourceFact::own_memory(CMemoryRange::new(pointer.clone(), 0.into(), 1.into())),
-            CResourceFact::own_memory(CMemoryRange::new(pointer.clone(), 1.into(), 2.into())),
-        ]);
-        let definition = CCompositeResourceDefinition::new(
-            "reference",
-            vec![c_parameter("p", CType::Int32Pointer)],
-            None,
-            false,
-            vec![CResourceSpec::owned_memory(CMemorySegment::new(
-                c_variable("p"),
-                c_int32_literal(0),
-                c_int32_literal(1),
-            ))],
-            vec![crate::kernel::SpecProposition::Comparison {
-                left: crate::kernel::SpecExpression::CExpression(crate::kernel::c_index(
-                    c_variable("p"),
-                    c_int32_literal(1),
-                )),
-                operator: crate::kernel::CComparisonOperator::Equal,
-                right: crate::kernel::SpecExpression::Value(crate::kernel::int32(0)),
-            }],
-        );
-        let assumptions = PureFactContext::default();
-        assert!(
-            crate::kernel::functions::instantiate_composite_resource_facts(
-                &member,
-                std::slice::from_ref(&definition),
-                &memory,
-                &resources,
-                &assumptions,
-            )
-            .is_some()
-        );
-        assert!(
-            crate::kernel::functions::instantiate_private_member_body_facts(
-                &member,
-                &definition,
-                &CState::new()
-                    .with_population_creation_tracking()
-                    .with_memory(memory.clone())
-                    .with_resource_context(resources.clone()),
-                &assumptions,
-            )
-            .is_none()
-        );
-        let work = [8, 32, 128, 512].map(|locals| {
-            let mut state = CState::new()
-                .with_population_creation_tracking()
-                .with_memory(memory.clone())
-                .with_resource_context(resources.clone());
-            for index in 0..locals {
-                state = state.with_local(format!("unrelated_{index}"), crate::kernel::int32(index));
-            }
-            let (instantiated, work) = crate::persistent::measure_persistent_work(|| {
-                crate::kernel::functions::instantiate_private_member_body_facts(
-                    &member,
-                    &definition,
-                    &state,
-                    &assumptions,
-                )
-            });
-            assert!(instantiated.is_none());
-            work
-        });
-        assert!(
-            work[0] > 0,
-            "member fact checking must charge work: {work:?}"
-        );
-        assert!(
-            work.iter().all(|sample| *sample <= work[0] + 128),
-            "member fact checking must not visit unrelated caller locals: {work:?}"
-        );
-    }
-
-    #[test]
     fn member_body_facts_require_checked_birth_and_reject_forged_consumption_facts() {
         let (state, authority) = source_state();
         let facts = ProofFacts::default();
@@ -17279,148 +16007,6 @@ mod population_authority_rewrite_tests {
     }
 
     #[test]
-    fn authority_count_observation_rejects_unchecked_deltas_and_scales() {
-        let work = [16usize, 64, 256].map(|size| {
-            let (state, authority) = source_state();
-            let facts = ProofFacts::default();
-            let (state, _) = state
-                .checked_population_authority_exchange(&authority, true, facts.assumptions())
-                .unwrap();
-            let CResource::PopulationAuthority(description) = authority.resource() else {
-                unreachable!()
-            };
-            let member = CResourceFact::own(CResource::Composite {
-                name: "reference".into(),
-                arguments: description.arguments().to_vec().into(),
-            });
-            let definition = CCompositeResourceDefinition::new(
-                "reference",
-                vec![crate::kernel::c_parameter("p", CType::Int32Pointer)],
-                None,
-                false,
-                vec![],
-                vec![],
-            )
-            .with_authorized(true);
-            let (mut state, _) = state
-                .checked_population_member_exchange(&member, true, &definition, facts.assumptions())
-                .unwrap();
-            let mut resources = state.resources().clone();
-            for index in 0..size {
-                state = state.with_local(
-                    format!("unrelated_{index}"),
-                    crate::kernel::int32(index as u32),
-                );
-                resources = resources.unchecked_with_fact(CResourceFact::own_token(
-                    format!("unrelated_{index}"),
-                    vec![],
-                ));
-            }
-            state = state.with_resource_context(resources);
-            let function = c_function(
-                CType::Void,
-                "observe",
-                vec![],
-                CStatement::Return(CExpression::Value(CValue::Void)),
-            )
-            .with_composite_resource_definitions(vec![definition]);
-            let bound = crate::kernel::api::checked_owned_resource_count_lower_bound(
-                &state,
-                &member,
-                facts.assumptions(),
-            )
-            .unwrap();
-            let after_facts = facts.with_fact(bound);
-            let (_, work) = crate::persistent::measure_persistent_work(|| {
-                let observation = CheckedResourceObservation::check(
-                    &function,
-                    &state,
-                    &facts,
-                    &member,
-                    &state,
-                    &after_facts,
-                    &PersistentOrderedSet::default(),
-                    &CheckedCallEvents::default(),
-                )
-                .unwrap();
-                assert!(observation.definition().is_none());
-                assert!(
-                    observation
-                        .advance_checked(&state, &facts, &CheckedCallEvents::default(),)
-                        .is_some()
-                );
-            });
-            let forged_facts = after_facts.with_fact(Proposition::Predicate {
-                name: "unproved_body_fact".into(),
-                arguments: vec![],
-            });
-            assert!(
-                CheckedResourceObservation::check(
-                    &function,
-                    &state,
-                    &facts,
-                    &member,
-                    &state,
-                    &forged_facts,
-                    &PersistentOrderedSet::default(),
-                    &CheckedCallEvents::default(),
-                )
-                .is_err()
-            );
-            let added_member = state.clone().with_resource_context(
-                state
-                    .resources()
-                    .clone()
-                    .unchecked_with_fact(CResourceFact::own_token("forged_child".into(), vec![])),
-            );
-            assert!(
-                CheckedResourceObservation::check(
-                    &function,
-                    &state,
-                    &facts,
-                    &member,
-                    &added_member,
-                    &after_facts,
-                    &PersistentOrderedSet::default(),
-                    &CheckedCallEvents::default(),
-                )
-                .is_err()
-            );
-            for missing in [&member, &authority] {
-                let missing = state.clone().with_resource_context(
-                    state
-                        .resources()
-                        .clone()
-                        .without_fact_incrementally(missing, facts.assumptions())
-                        .unwrap(),
-                );
-                assert!(
-                    CheckedResourceObservation::check(
-                        &function,
-                        &missing,
-                        &facts,
-                        &member,
-                        &missing,
-                        &after_facts,
-                        &PersistentOrderedSet::default(),
-                        &CheckedCallEvents::default(),
-                    )
-                    .is_err()
-                );
-            }
-            work
-        });
-        assert!(
-            work[0] > 0,
-            "count observation must charge checked work: {work:?}"
-        );
-        assert!(
-            work.iter().all(|sample| *sample <= work[0] + 64),
-            "count observation scanned unrelated state: {work:?}"
-        );
-    }
-
-    #[test]
     fn generic_resource_events_cannot_check_under_authority_history() {
         let (before, _) = source_state();
         let selected = CResourceFact::own_composite("reference".into(), Vec::new());
@@ -17481,6 +16067,13 @@ mod population_authority_rewrite_tests {
             Some(crate::kernel::ExecutionLimit::AuthorityCountNeedsExactPointer),
         );
     }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/proof/execution/population_authority_rewrite_tests.rs"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -17488,157 +16081,6 @@ mod authority_transfer_wrapper_scaling_tests {
     use super::*;
     use crate::kernel::{CResourceAccessMode, CResourceSpec, CType, c_function, int32};
 
-    #[test]
-    #[ignore = "nightly: 6s in the parallel gate"]
-    fn ordinary_authority_wrapper_checks_only_its_delta() {
-        let definition = CCompositeResourceDefinition::new(
-            "held",
-            vec![],
-            None,
-            false,
-            vec![CResourceSpec::token(
-                CResourceAccessMode::Own,
-                "member".into(),
-                vec![],
-                vec![],
-            )],
-            vec![],
-        );
-        let function = c_function(
-            CType::Void,
-            "wrapper_scaling",
-            vec![],
-            CStatement::Return(CExpression::Value(CValue::Void)),
-        )
-        .with_composite_resource_definitions(vec![definition]);
-        let selected = CResourceFact::own_composite("held".into(), vec![]);
-        let child = CResourceFact::own_token("member".into(), vec![]);
-        let samples = [64usize, 256, 1024].map(|size| {
-            let mut before = CState::new().with_population_creation_tracking();
-            let mut facts = ProofFacts::default();
-            let mut memory = CMemory::new();
-            let mut resources = ResourceContext::new().unchecked_with_fact(child.clone());
-            for index in 0..size {
-                let unrelated = CResourceFact::own_token(format!("other_{index}"), vec![]);
-                resources = resources.unchecked_with_fact(unrelated);
-                before = before.with_local(format!("local_{index}"), int32(index as u32));
-                memory = memory.with_block(format!("block_{index}"), 4);
-                resources =
-                    resources.unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
-                        Pointer {
-                            block: format!("block_{index}").into(),
-                            offset: crate::kernel::PointerOffsetTerm::Constant(0),
-                        },
-                        0.into(),
-                        1.into(),
-                    )));
-                facts = facts.with_fact(Proposition::ConditionIs(
-                    crate::kernel::ConditionTerm::Bitvector32Equal(
-                        Box::new(Bitvector32Term::Variable(Variable(index as u64 + 100))),
-                        Box::new(Bitvector32Term::Constant(index as u32)),
-                    ),
-                    true,
-                ));
-            }
-            before = before.with_memory(memory).with_resource_context(resources);
-            let folded_resources = before
-                .resources()
-                .clone()
-                .without_fact_incrementally(&child, facts.assumptions())
-                .unwrap()
-                .try_compose_with_facts_delaying_normalization(
-                    std::iter::once(selected.clone()),
-                    facts.assumptions(),
-                )
-                .unwrap();
-            let folded = before.clone().with_resource_context(folded_resources);
-            let unfolded_resources = folded
-                .resources()
-                .clone()
-                .without_fact_incrementally(&selected, facts.assumptions())
-                .unwrap()
-                .try_compose_with_facts_delaying_normalization(
-                    std::iter::once(child.clone()),
-                    facts.assumptions(),
-                )
-                .unwrap();
-            let unfolded = folded.clone().with_resource_context(unfolded_resources);
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                for (input, output) in [(&before, &folded), (&folded, &unfolded)] {
-                    CheckedResourceRewrite::check(
-                        &function,
-                        input,
-                        &facts,
-                        &selected,
-                        output,
-                        &facts,
-                        &CheckedCallEvents::default(),
-                    )
-                    .expect("one wrapper rewrite preserves its unrelated frame");
-                }
-            });
-            let unrelated = CResourceFact::own_token("other_0".into(), vec![]);
-            let forged = folded.clone().with_resource_context(
-                folded
-                    .resources()
-                    .clone()
-                    .without_fact_incrementally(&unrelated, facts.assumptions())
-                    .unwrap(),
-            );
-            assert!(
-                CheckedResourceRewrite::check(
-                    &function,
-                    &before,
-                    &facts,
-                    &selected,
-                    &forged,
-                    &facts,
-                    &CheckedCallEvents::default(),
-                )
-                .is_err(),
-                "the unrelated frame must remain authenticated"
-            );
-            let unrelated_memory = CResourceFact::own_memory(CMemoryRange::new(
-                Pointer {
-                    block: "block_0".into(),
-                    offset: crate::kernel::PointerOffsetTerm::Constant(0),
-                },
-                0.into(),
-                1.into(),
-            ));
-            for (input, output) in [(&before, &folded), (&folded, &unfolded)] {
-                let forged = output.clone().with_resource_context(
-                    output
-                        .resources()
-                        .clone()
-                        .without_fact_incrementally(&unrelated_memory, facts.assumptions())
-                        .unwrap(),
-                );
-                assert!(
-                    CheckedResourceRewrite::check(
-                        &function,
-                        input,
-                        &facts,
-                        &selected,
-                        &forged,
-                        &facts,
-                        &CheckedCallEvents::default(),
-                    )
-                    .is_err(),
-                    "a wrapper exchange cannot remove unrelated memory"
-                );
-            }
-            work
-        });
-        assert!(
-            samples[0] > 0,
-            "the measured checker must charge work: {samples:?}"
-        );
-        assert!(
-            samples.windows(2).all(|pair| pair[1] <= pair[0] + 128),
-            "wrapper work must grow at most logarithmically with its unrelated frame: {samples:?}"
-        );
-    }
     #[test]
     fn authority_named_memory_rewrite_preserves_population_ledger() {
         use crate::kernel::{ResourceFieldSchema, ResourceFieldType, ResourceInstance, Variable};
@@ -17748,6 +16190,13 @@ mod authority_transfer_wrapper_scaling_tests {
             "a named memory exchange cannot alter creation or population evidence"
         );
     }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/proof/execution/authority_transfer_wrapper_scaling_tests.rs"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -17798,48 +16247,6 @@ mod wide_range_reader_tests {
 mod checked_callee_dependency_tests {
     use super::*;
 
-    /// Reusing a wide summary must visit its syntax once, rather than once
-    /// per occurrence. Both the call count and reuse count grow here.
-    #[test]
-    fn checked_callee_summary_reuse_scales_with_input_not_product() {
-        let mut previous = None;
-        for size in [16, 64, 256, 1024] {
-            let mut body = CStatement::Skip;
-            for index in 0..size {
-                body = CStatement::Seq(
-                    Arc::new(body),
-                    Arc::new(crate::kernel::c_call(format!("callee_{index}"), vec![])),
-                );
-            }
-            let summary = crate::kernel::c_while(crate::kernel::c_int32_literal(1), vec![], body);
-            let events = (0..size)
-                .map(|_| {
-                    CheckedExecutionEvent::Statement(Theorem::new(
-                        Proposition::CStatementVerifies {
-                            state: Box::new(CState::new()),
-                            statement: Box::new(summary.clone()),
-                            outcome: CStatementOutcome::Normal(Box::new(CState::new())),
-                        },
-                    ))
-                })
-                .collect::<Vec<_>>();
-            let (calls, work) = crate::instrumentation::measure_deterministic_work(|| {
-                let mut calls = std::collections::BTreeSet::new();
-                collect_checked_callees(&events, &mut Default::default(), &mut calls);
-                calls
-            });
-            eprintln!("summary reuse size={size}, dependency work={work}");
-            assert_eq!(calls.len(), size);
-            assert!(calls.contains(&format!("callee_{}", size - 1)));
-            if let Some(before) = previous {
-                assert!(
-                    work <= 5 * before,
-                    "superlinear summary reuse: {before} -> {work}"
-                );
-            }
-            previous = Some(work);
-        }
-    }
     #[test]
     fn normal_evidence_completes_only_exhausted_void_function_source() {
         use crate::kernel::{CType, c_function};
@@ -17884,5 +16291,10 @@ mod checked_callee_dependency_tests {
             .unwrap();
             assert_eq!(core.evidence_completed, completes);
         }
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/proof/execution/checked_callee_dependency_tests.rs");
     }
 }

@@ -941,38 +941,6 @@ mod tests {
     }
 
     #[test]
-    fn scalar_reference_frontier_selected_alias_chain_scales_linearly() {
-        let mut samples = Vec::new();
-        for size in [16, 64, 256, 1024] {
-            let mut f = function();
-            let mir = f.mir.as_mut().unwrap();
-            let mut previous = "child".to_string();
-            for index in 0..size {
-                let name = format!("alias_{index}");
-                mir.locals.push(place(&name, reference_type()));
-                mir.blocks[0]
-                    .statements
-                    .insert(index + 1, assign(local(&name), local(&previous)));
-                previous = name;
-            }
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                certify_scalar_reference_end(&f, "test-source", point(0), point(size + 2)).unwrap()
-            });
-            samples.push((size, work));
-            assert!(
-                work <= size * 9 + 64,
-                "alias chain revisited prefixes: {samples:?}"
-            );
-        }
-        for pair in samples.windows(2) {
-            assert!(
-                pair[1].1 <= pair[0].1 * 4 + 48,
-                "superlinear alias checking: {samples:?}"
-            );
-        }
-    }
-
-    #[test]
     fn scalar_reference_frontier_checks_call_continuations_and_points() {
         let mut f = function();
         block_mut(&mut f).terminator = T::Call {
@@ -1119,41 +1087,6 @@ mod tests {
             ),
         );
         assert_eq!(refusal(&f, 3), FrontierRefusal::UnsupportedFlow);
-    }
-
-    #[test]
-    fn scalar_reference_accesses_index_and_lookup_scale_with_selected_operations() {
-        let mut samples = Vec::new();
-        for size in [16, 64, 256, 1024] {
-            let mut f = function();
-            block_mut(&mut f).statements = vec![assign(local("child"), borrow_parent())];
-            for _ in 0..size {
-                block_mut(&mut f)
-                    .statements
-                    .push(assign(deref("child"), E::Integer { value: 7 }));
-            }
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                let certificate =
-                    certify_scalar_reference_end(&f, "source", point(0), point(size + 1)).unwrap();
-                for index in 1..=size {
-                    let accesses = certificate.memory_accesses_at(point(index));
-                    assert_eq!(accesses.len(), 1);
-                    assert_eq!(accesses[0].point(), point(index));
-                    assert_eq!(accesses[0].kind(), ScalarReferenceAccessKind::Write);
-                }
-            });
-            samples.push(work);
-            assert!(
-                work <= size * 14 + 64,
-                "access indexing revisited prefixes: {samples:?}"
-            );
-        }
-        for pair in samples.windows(2) {
-            assert!(
-                pair[1] <= pair[0] * 4 + 48,
-                "superlinear access indexing: {samples:?}"
-            );
-        }
     }
 
     #[test]
@@ -1407,4 +1340,82 @@ mod tests {
         occurrences.sort();
         assert_eq!(occurrences, vec![0, 1, 2]);
     }
+
+    #[test]
+    fn scalar_lease_forest_matches_independent_frontier_checks() {
+        let reborrow = || E::Borrow {
+            place: Box::new(deref("child")),
+            value_type: reference_type(),
+        };
+        for statements in [
+            vec![
+                assign(local("child"), borrow_parent()),
+                assign(local("alias"), reborrow()),
+                assign(deref("alias"), E::Integer { value: 7 }),
+                assign(deref("parent"), E::Integer { value: 8 }),
+            ],
+            vec![
+                assign(local("child"), borrow_parent()),
+                assign(local("alias"), reborrow()),
+                assign(deref("alias"), E::Integer { value: 7 }),
+                assign(deref("child"), E::Integer { value: 8 }),
+                assign(deref("parent"), E::Integer { value: 9 }),
+            ],
+            vec![
+                assign(local("child"), borrow_parent()),
+                assign(local("alias"), reborrow()),
+                assign(deref("parent"), E::Integer { value: 8 }),
+            ],
+            vec![
+                assign(local("child"), borrow_parent()),
+                assign(local("alias"), local("child")),
+                assign(local("child"), local("other")),
+                assign(deref("alias"), E::Integer { value: 7 }),
+                assign(deref("parent"), E::Integer { value: 8 }),
+            ],
+        ] {
+            let mut f = function();
+            f.mir.as_mut().unwrap().blocks[0].statements = statements;
+            let forest = lease_forest::certify(&f, Some("locked")).unwrap();
+            for birth in forest.births.values() {
+                certify_scalar_reference_end(
+                    &f,
+                    "locked",
+                    point(birth.key.borrow),
+                    point(birth.key.end),
+                )
+                .unwrap();
+                for earlier in birth.key.borrow + 1..birth.key.end {
+                    assert!(
+                        certify_scalar_reference_end(
+                            &f,
+                            "locked",
+                            point(birth.key.borrow),
+                            point(earlier)
+                        )
+                        .is_err()
+                    );
+                }
+            }
+        }
+        let mut f = function();
+        f.mir.as_mut().unwrap().blocks[0].statements = vec![
+            assign(local("child"), borrow_parent()),
+            assign(local("alias"), reborrow()),
+            assign(deref("alias"), E::Integer { value: 7 }),
+        ];
+        let forest = lease_forest::certify(&f, Some("locked")).unwrap();
+        let endings = &forest.endings[&3];
+        assert_eq!(
+            endings.iter().map(|key| key.borrow).collect::<Vec<_>>(),
+            vec![1, 0]
+        );
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../../scaling_tests/languages/rust/borrow_frontiers/tests.rs");
+    }
 }
+
+pub(super) mod lease_forest;

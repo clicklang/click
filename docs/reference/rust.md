@@ -863,8 +863,29 @@ This frontend does not infer sidecar authority from a Rust reference. Contracts
 must provide the resources they use. Reborrows of caller storage retain the
 same modeled pointer: writes through the child are observed through its parent.
 The compiler establishes when parent reuse is legal; the kernel establishes
-that each modeled access is justified by the supplied resources. Explicit
-resource suspension/recovery remains roadmap work.
+that each modeled access is justified by the supplied resources.
+
+For supported scalar functions in one MIR block ending at return, locked
+lowering issues checked local lease births and explicit borrow-end operations.
+The supported pointees are `i32`, `u8`, `u16` and `u32`, with exact direct owned
+footprints. Local copies or moves retain the same lease identity; a reborrow
+creates a child that suspends its parent. Reads and writes use the ordinary
+memory producers and their authority checks.
+
+Ending frontiers follow scalar reads, writes, calculations and reference copies.
+An indexed source pass propagates descendant uses to parents and emits nested
+endings innermost first, including when several borrows end at one statement.
+The kernel resolves each ending through its current invocation's live handle;
+recovery does not depend on which alias name survives. Missing births, foreign
+source identities, duplicate endings and parent endings with live children are
+refused. Closing the outermost lease returns the original owned occurrence and
+preserves current memory. Expired aliases cannot use that returned owner.
+
+The source and sidecars require no additional lifetime annotations. Source
+observations remain read-only. Shared borrow graphs, aggregate or addressable
+reference transport, calls during an active lease, loops and wider control flow
+still need source integration; functions outside the activated subset retain
+their existing lowering and have no local lease coverage.
 
 The trusted boundary includes the pinned compiler, exporter, semantic artifact,
 and its translator. The lock detects stale or changed inputs; it is not an

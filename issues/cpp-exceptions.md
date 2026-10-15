@@ -136,7 +136,7 @@ the pinned input closure gains `src/streams.h` and its includes. Then:
   destination ownership, and a false decoded value.
 - Exceptional-exit footprint checks scale linearly with unrelated context;
   extend the deterministic scaling regression in
-  `src/surface/tests/scaling_tests.rs`.
+  `src/scaling_tests/surface/tests/scaling_tests.rs`.
 - [Supported C++](../docs/reference/cli/import.md) and the language
   reference describe the new boundary, and
   [cpp-support.md](cpp-support.md) points here for the bounded-bytes slice.

@@ -29,6 +29,11 @@ impl PureFactContext {
             ConditionTerm::PointerEqual(left, right) if left.blocks_proven_distinct(right) => {
                 Some(false)
             }
+            ConditionTerm::PointerEqual(left, right) if left.block == right.block => self
+                .decide_condition_for_simp(&ConditionTerm::pointer_offset_equal(
+                    left.offset.clone(),
+                    right.offset.clone(),
+                )),
             ConditionTerm::Bitvector64Equal(left, right)
                 if ConditionTerm::address_equality_as_pointer_equality(left, right).is_some() =>
             {

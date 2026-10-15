@@ -80,15 +80,16 @@ Click verifies function bodies copied byte for byte from Linux v6.8.12 (commit
   `struct rb_node *` rather than `const struct rb_node *`.
 - `__rb_insert_augmented` and `rb_insert_augmented` with callbacks that write
   nothing, and `rb_erase_augmented` for leaf deletion only.
-- Concrete `sized_node` metadata copy, bounded size recomputation, and the
-  specialized `RB_DECLARE_CALLBACKS` rotation body, with checked callable
-  contracts (`examples/rbtree-augmented`). These local metadata proofs are
-  not yet connected to the augmented entry points. A separate recursive
-  `sized_at` resource and checked proof procedure tie stored sizes to the
-  mathematical subtree count. The unchanged C recomputation helper now
-  restores that recursive invariant from a dirty root and valid children,
-  preserving the erased tree shape under the bounded-sum premises. Rotation,
-  propagation, and writable callback-table integration still need that invariant.
+- Concrete `sized_node` metadata copy, bounded recomputation, both rotation
+  directions, and arbitrary-length ancestor propagation restore a recursive
+  `sized_at` size invariant (`examples/rbtree-augmented`). Checked callback-table
+  dispatch connects the copy, rotation and propagation interfaces to the
+  generated size callbacks.
+- Sized insertion covers the no-parent root case, the immediate black-parent
+  exit, and both mirrored three-node single rotations at the root through
+  both augmented wrappers. The rotations check indirect writable callbacks
+  against `RotateTreeRight` or `RotateTreeLeft` and return the exact repaired
+  tree shape with valid cached sizes. General sized insertion and writable erase integration remain.
 
 The proofs establish memory safety and absence of undefined behavior,
 termination, red-black validity with a black root, parent-pointer consistency,
