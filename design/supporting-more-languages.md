@@ -47,10 +47,10 @@ and that boundary have evidence behind them. Avoid doing both frontends
 simultaneously for the first milestone.
 
 The bounded C++ slice and the safe-Rust Adler-32 checksum milestone have
-landed and are the launch demonstrations for those languages. The remaining
-P1 work for both is a well-designed front end, installed and located without
-a repository checkout; [cpp-support.md](../issues/cpp-support.md) and
-[rust-support.md](../issues/rust-support.md) own it.
+landed and are the launch demonstrations for those languages. The Rust frontend is
+[delivered for the Linux x86-64 GNU launch scope](rust-charon-assessment.md#completed-linux-frontend-delivery).
+The remaining C++ front-end pipeline is tracked by
+[cpp-support.md](../issues/cpp-support.md).
 The launch remains P1 -> unchanged Linux rbtree verification -> public launch
 with rbtree as the key demo. Broad C++ and Rust coverage remain later work.
 Neither a successful
@@ -446,9 +446,8 @@ trait objects, closures, async, unsafe code, interior-mutability libraries,
 standard-library verification, and threading to later slices. Returned field
 borrows remain an early design model requirement in the stable-views design record; actual Rust
 surface support follows when contracts can bind the escaping lifetime and
-connect the final borrowed value to the recovered owner. The requested
-[P1 Rust issue](../issues/rust-support.md) owns the initial support milestone
-and subsequent shared-specification checksum demonstration.
+connect the final borrowed value to the recovered owner. The initial Rust support milestone and subsequent shared-specification checksum
+demonstration are [complete for Linux](rust-charon-assessment.md#completed-linux-frontend-delivery).
 
 ## Later coverage and investigation gates
 

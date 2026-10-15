@@ -83,16 +83,17 @@ prioritized by launch need, not by label. A gap that only a different program
 would hit is normally P2. The
 selected control-flow, byte-representation, arena, and basic C++ milestones
 have landed with bounded support claims. By user direction (2026-10-14),
-C++ and Rust support are P1: the delivered Bitcoin Core slices and the
-adler2 Adler-32 checksum are sufficient demonstrations, and the P1 work is
-a well-designed front-end pipeline from an installed Click, not more
-examples. Broader language, synchronization, and graph coverage remain P2.
+C++ and Rust front-end delivery were made P1: the delivered Bitcoin Core
+slices and adler2 Adler-32 checksum are sufficient demonstrations. The
+[Rust frontend milestone](../design/rust-charon-assessment.md#completed-linux-frontend-delivery)
+is complete for the agreed Linux x86-64 GNU launch scope. The remaining C++
+front-end work concerns the installed pipeline, not more examples. Broader
+language, synchronization, and graph coverage remain P2.
 
 Program import and execution:
 
 - [Project configuration: one root file for units, targets, toolchains and locks](project-config.md)
 - [A well-designed C++ front end](cpp-support.md)
-- [A well-designed Rust front end](rust-support.md)
 
 The completed [basic C++ example](../examples/basic-cpp/README.md) verifies
 references, checked scoped cleanup, and a modular caller. Unchanged Bitcoin

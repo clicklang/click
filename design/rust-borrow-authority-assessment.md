@@ -1,7 +1,7 @@
 # Rust borrow authority: production evidence and next protocol
 
-This assessment addresses the borrow-authority requirement in
-[rust-support](../issues/rust-support.md). The independently checked checksum
+This assessment records the production borrow-authority boundary beyond the
+[completed Linux frontend milestone](rust-charon-assessment.md#completed-linux-frontend-delivery). The independently checked checksum
 proofs are complete within their published contracts. Borrow authority remains
 an architecture requirement, with the following production boundary.
 
