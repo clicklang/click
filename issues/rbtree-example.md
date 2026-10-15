@@ -1415,8 +1415,9 @@ callback table. Its copy dispatcher preserves independent structural ownership;
 its propagation dispatcher returns the whole repaired sized tree. Its rotation
 dispatcher selects the left or right dirty model and returns a valid sized
 subtree, with separately checked interfaces for both directions. The callback
-bodies remain unchanged. Writable callback-table integration with insertion
-and erasure remains.
+bodies remain unchanged. The concrete sized insertion cases below check
+selected writable callback-table paths; general insertion and writable erasure
+integration remain unfinished.
 
 
 ### Pinned source
@@ -1602,11 +1603,20 @@ arbitrary ancestor contexts and writable erase integration remain.
 The mirrored right-right root case and both wrappers also verify in
 `rbtree_size_insert_mirrored_rotation.click`, using `RotateTreeLeft` for the
 writable callback. All 17 expansion sites in each single-rotation sidecar
-pass. Double rotations, color flips, arbitrary ancestor contexts and writable
-erase integration remain.
+pass. Color flips, arbitrary ancestor contexts and writable erase integration
+remain; double-rotation progress is described below.
 
 `rbtree_size_model_unique.click` now proves that two recursively count-valid
 `SizedTree` values with equal erased shapes are equal, by induction on one
 model and exhaustive constructor matching on the other. This supplies the
-exact model transport needed between two writable rotation callbacks; it
-does not yet complete double-rotation insertion.
+exact model transport needed between two writable rotation callbacks.
+
+
+`rbtree_size_insert_double_rotation.click` checks the left-right three-node
+root insertion and both augmented insertion wrappers with writable callbacks.
+The first left rotation repairs the parent/focus sizes; model uniqueness
+identifies that returned subtree before the outer right rotation. The second
+callback repairs the final root and demoted grandparent sizes. The result owns
+the exact black-root/two-red-leaf shape with recursively valid subtree counts.
+The Linux C is unchanged. Mirrored double rotation, color flips, arbitrary
+ancestor contexts, and writable erase integration remain unfinished.

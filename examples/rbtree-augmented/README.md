@@ -142,15 +142,17 @@ count validity. `PropagateTree` and `sized_propagate_has_tree_contract` expose
 the checked callable interface for callback-table integration.
 
 This proves the recursive metadata invariant and its restoration through C
-recomputation, rotation, and full ancestor propagation. Connecting writable
-callbacks to the augmented entry-point contracts remains.
+recomputation, rotation, and full ancestor propagation. Writable insertion
+entry-point cases are described below; general ancestor and writable erase
+integration remain unfinished.
 
 This is an entry-point integration increment of
 [chunk 14](../../issues/rbtree-example.md#augmented), not the completed
-augmentation proof. The entry-point proofs still import callback contracts
-without writable footprints. The verified size callbacks and recursive
-augmentation invariant remain to be connected to the implementation proofs. Each imported module is
-verified separately; importing its contract does not rerun its proof.
+augmentation proof. The general structural entry-point proofs still import
+callback contracts without writable footprints. The concrete sized insertion
+cases below connect verified writable callbacks to selected paths. Each
+imported module is verified separately; importing its contract does not rerun
+its proof.
 
 Run `click verify examples/rbtree-augmented` to check these entry points.
 
@@ -235,12 +237,22 @@ contexts and writable erase integration remain unfinished.
 three-node root case through the same three entry points, using
 `RotateTreeLeft` for the writable callback. The returned model has the demoted
 grandparent on the left and the inserted node on the right, with recursively
-valid cached sizes. Both single-rotation directions are covered; double
-rotations, color flips and arbitrary ancestor contexts remain.
+valid cached sizes. Both single-rotation directions are covered; the double-rotation boundary is
+described below. Color flips and arbitrary ancestor contexts remain.
 
 `rbtree_size_model_unique.click` proves that recursively valid cached counts
 and an equal structural shape determine the entire `SizedTree` model. Its
 structural induction matches the second model without adding another induction
 hypothesis, and applies the original hypotheses to the two children. This
 provides an exact model equality when a writable rotation callback returns a
-repaired model whose shape is known. Double-rotation integration remains next.
+repaired model whose shape is known.
+
+
+`rbtree_size_insert_double_rotation.click` checks the left-right three-node
+root insertion and both augmented insertion wrappers with writable callbacks.
+The first left rotation repairs the parent/focus sizes; model uniqueness
+identifies that returned subtree before the outer right rotation. The second
+callback repairs the final root and demoted grandparent sizes. The result owns
+the exact black-root/two-red-leaf shape with recursively valid subtree counts.
+The Linux C is unchanged. Mirrored double rotation, color flips, arbitrary
+ancestor contexts, and writable erase integration remain unfinished.
