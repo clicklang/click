@@ -1001,6 +1001,20 @@ stated exact equality places the pointer in such a local.
 `a_symbolic_store_skips_locals_whose_address_is_never_taken`
 (`src/scaling_tests/kernel/tests/memory_scaling_tests.rs`) is the regression.
 
+A load through a `Symbolic` or `LoadedPointer` pointer reads the same map,
+which holds each reachable cell's value as well as its key
+(`CellStore::caught_up_pointer_reachable`). Such a load observes every
+reachable cell except, for a loaded pointer, locals declared after it was
+read, and cells of its own block at a disjoint constant offset, so
+`canonical_memory_for_pointer_load` starts from the shared map and asks its
+filters only about the `local:` cells and the load's own block
+(`CellStore::retain_for_unresolved_load`); the check for a common
+materialization source and `source_holds_cells_observable_by` walk the map
+too, so no slot a pointer cannot reach is visited. Without it, the
+projection rebuilt the cells of every other object at every such load.
+`unresolved_load_projection_ignores_earlier_objects_and_hidden_slots`
+(`src/scaling_tests/kernel/reasoning/memory_resolution.rs`) is the regression.
+
 `CMemory::without_possible_aliasing_cells` also asks the same law *first*, in
 an indexed form. Every pointer parameter shares the one `ExternalArgument`
 block, so neither `AliasCandidates` nor the block-pair separation index
