@@ -7,9 +7,11 @@
 //! resource partition.
 
 mod exclusive_calls;
+mod local_references;
 pub(crate) mod mutex_calls;
 
 use exclusive_calls::{ExclusiveCallBinding, ExclusiveCallId, ExclusiveCallRecord};
+use local_references::{LocalReferenceBinding, LocalReferenceId, LocalReferenceRecord};
 
 use super::functions::CCheckedResourceFact;
 use super::primitives::{
@@ -876,6 +878,8 @@ struct LoanLedgerData {
     arena: u64,
     exclusive_calls: PersistentMap<ExclusiveCallId, ExclusiveCallRecord>,
     exclusive_holders: PersistentMap<LoanParticipantId, ExclusiveCallId>,
+    local_references: PersistentMap<LocalReferenceId, LocalReferenceRecord>,
+    local_reference_roots: PersistentMap<ResourceOccurrenceId, LocalReferenceId>,
     next_scope: u64,
     next_loan: u64,
     next_share: u64,
@@ -1412,6 +1416,10 @@ impl LoanRefusal {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum LoanTransitionEvidence {
+    RegisterLocalReference(LocalReferenceBinding),
+    BorrowLocalReference(LocalReferenceBinding),
+    RecoverLocalReference(LocalReferenceBinding),
+    RetireLocalReferenceRoot(LocalReferenceBinding),
     OpenExclusiveCall(ExclusiveCallBinding),
     ReturnExclusiveCall {
         binding: ExclusiveCallBinding,
@@ -1847,7 +1855,11 @@ impl StableViewRecovery {
         self.transitions
             .last()
             .map(|transition| match &transition.evidence {
-                LoanTransitionEvidence::OpenExclusiveCall(_)
+                LoanTransitionEvidence::RegisterLocalReference(_)
+                | LoanTransitionEvidence::BorrowLocalReference(_)
+                | LoanTransitionEvidence::RecoverLocalReference(_)
+                | LoanTransitionEvidence::RetireLocalReferenceRoot(_)
+                | LoanTransitionEvidence::OpenExclusiveCall(_)
                 | LoanTransitionEvidence::ReturnExclusiveCall { .. } => LoanRefusalSubject::none(),
                 LoanTransitionEvidence::Lend {
                     scope,
@@ -4282,6 +4294,8 @@ impl LoanLedger {
                     arena,
                     exclusive_calls: PersistentMap::default(),
                     exclusive_holders: PersistentMap::default(),
+                    local_references: PersistentMap::default(),
+                    local_reference_roots: PersistentMap::default(),
                     next_scope: 0,
                     next_loan: 0,
                     next_share: 0,
@@ -4312,7 +4326,11 @@ impl LoanLedger {
 
     pub(crate) fn is_pristine(&self) -> bool {
         let data = &self.storage.data;
-        if !data.exclusive_calls.is_empty() || !data.exclusive_holders.is_empty() {
+        if !data.exclusive_calls.is_empty()
+            || !data.exclusive_holders.is_empty()
+            || !data.local_references.is_empty()
+            || !data.local_reference_roots.is_empty()
+        {
             return false;
         }
         data.next_scope == 0
@@ -5874,6 +5892,18 @@ impl LoanLedger {
         crate::instrumentation::record_deterministic_work(1);
         let mut data = self.storage.data.clone();
         match evidence {
+            LoanTransitionEvidence::RegisterLocalReference(binding) => {
+                self.apply_local_reference_registration(&mut data, binding)?
+            }
+            LoanTransitionEvidence::BorrowLocalReference(binding) => {
+                self.apply_local_reference_borrow(&mut data, binding)?
+            }
+            LoanTransitionEvidence::RecoverLocalReference(binding) => {
+                self.apply_local_reference_recovery(&mut data, binding)?
+            }
+            LoanTransitionEvidence::RetireLocalReferenceRoot(binding) => {
+                self.apply_local_reference_retirement(&mut data, binding)?
+            }
             LoanTransitionEvidence::OpenExclusiveCall(binding) => {
                 self.apply_exclusive_open(&mut data, binding)?
             }
@@ -6806,7 +6836,7 @@ impl LoanLedger {
 
     #[cfg(test)]
     fn invariant_holds(&self) -> bool {
-        if !self.exclusive_calls_invariant() {
+        if !self.exclusive_calls_invariant() || !self.local_references_invariant() {
             return false;
         }
         let data = &self.storage.data;

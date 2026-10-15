@@ -978,6 +978,24 @@ pub struct CPointerValue {
     c_type: CType,
     pointee_volatile: bool,
     pointee_constant: bool,
+    extent: Option<Arc<SubobjectExtent>>,
+}
+
+/// The subobject a pointer was formed from, narrower than its complete
+/// object (`design/pointer-subobject-extents.md`). C11 6.5.6p7-p8 and C++
+/// [expr.add] bound pointer arithmetic and access by the designated object,
+/// not by the enclosing allocation: `&pair.first + 1` is one past `first`,
+/// even though `pair.second` lives at that address.
+///
+/// The extent is absolute, `[start, start + width)` bytes, so it does not
+/// change as the pointer moves through arithmetic or loops. Respelling the
+/// pointer's address through a proven alias leaves it alone; a substitution
+/// of the variables the address mentions maps `start` the same way. A value
+/// without an extent is bounded only by its complete object, as before.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct SubobjectExtent {
+    pub(crate) start: Pointer,
+    pub(crate) width: u64,
 }
 
 impl CPointerValue {
@@ -991,6 +1009,7 @@ impl CPointerValue {
             c_type,
             pointee_volatile: false,
             pointee_constant: false,
+            extent: None,
         }
     }
 
@@ -1020,6 +1039,7 @@ impl CPointerValue {
             c_type,
             pointee_volatile: self.pointee_volatile,
             pointee_constant: self.pointee_constant,
+            extent: self.extent,
         }
     }
 
@@ -1033,8 +1053,47 @@ impl CPointerValue {
         self
     }
 
+    /// Respells the address as a proven-equal alias. The extent keeps its
+    /// own spelling: it names the same bytes either way, and the access
+    /// check resolves the address against it as it resolves a held range.
     pub(crate) fn replace_pointer(&mut self, pointer: Pointer) {
         self.pointer = pointer;
+    }
+
+    /// The same value at another address in the same subobject: the result
+    /// of pointer arithmetic, which keeps the type, qualifiers and extent.
+    pub(crate) fn with_address(mut self, pointer: Pointer) -> Self {
+        self.pointer = pointer;
+        self
+    }
+
+    pub(crate) fn extent(&self) -> Option<&SubobjectExtent> {
+        self.extent.as_deref()
+    }
+
+    pub(crate) fn with_extent(mut self, extent: Option<SubobjectExtent>) -> Self {
+        self.extent = extent.map(Arc::new);
+        self
+    }
+
+    /// Applies a substitution to every address the value mentions: its own
+    /// address and its extent's start. Use it where the rewrite maps
+    /// variables, not where it only respells the address.
+    pub(crate) fn map_pointers(&self, mut map: impl FnMut(&Pointer) -> Pointer) -> Self {
+        let mut result = self.clone();
+        result.pointer = map(&self.pointer);
+        if let Some(extent) = &self.extent {
+            result.extent = Some(Arc::new(SubobjectExtent {
+                start: map(&extent.start),
+                width: extent.width,
+            }));
+        }
+        result
+    }
+
+    /// Every address the value mentions, for variable collection.
+    pub(crate) fn pointers(&self) -> impl Iterator<Item = &Pointer> {
+        std::iter::once(&self.pointer).chain(self.extent.as_deref().map(|extent| &extent.start))
     }
 
     pub(crate) fn is_null(&self) -> bool {
@@ -1045,9 +1104,17 @@ impl CPointerValue {
 
 impl CPointerValue {
     /// Everything that is the value's identity: the address, the type it is
-    /// viewed through, and whether the pointee is volatile.
-    fn identity(&self) -> (&Pointer, &CType, bool) {
-        (&self.pointer, &self.c_type, self.pointee_volatile)
+    /// viewed through, whether the pointee is volatile, and the subobject it
+    /// designates. Two values at one address with different extents are
+    /// different values: address equality does not make a one-past pointer
+    /// designate the object that follows it.
+    fn identity(&self) -> (&Pointer, &CType, bool, Option<&SubobjectExtent>) {
+        (
+            &self.pointer,
+            &self.c_type,
+            self.pointee_volatile,
+            self.extent.as_deref(),
+        )
     }
 }
 
@@ -2895,6 +2962,7 @@ pub enum CStatement {
     Assign {
         name: String,
         expression: CExpression,
+        source: super::source_access::CStatementAssignSource,
     },
     CallAssign {
         target: String,
@@ -2950,6 +3018,8 @@ pub enum CStatement {
         volatile: bool,
         /// The destination pointer cell's declared pointee qualification.
         pointee_constant: bool,
+        /// Source provenance only; checked memory authority is still required.
+        source: super::CStatementStoreSource,
     },
     /// Evaluate a compound-assignment or increment target as one lvalue,
     /// read it, apply the operator with the operand, and write the result back.
@@ -3613,6 +3683,11 @@ pub struct CFunctionContractInterface {
     /// Explicit resource-instance binders introduced by a named contract.
     /// These are part of the application interface, not a body assumption.
     pub(crate) proof_parameters: std::sync::Arc<[CResourceSpec]>,
+    /// A named contract's value parameters, `let amount: int32;`. A fact
+    /// attaching the contract to a function value fixes them; a call binds
+    /// them beside the call's arguments. They are not part of the function
+    /// type the contract applies to.
+    pub(crate) value_parameters: Vec<CParameter>,
     pub(crate) resource_requires: Vec<CResourceSpec>,
     pub(crate) resource_ensures: Vec<CResourceSpec>,
     pub(crate) resource_constructors: Vec<CResourceSpec>,
@@ -4134,11 +4209,16 @@ pub struct CFunctionContract {
     /// of the contract identity and cannot alter callback behavior.
     pub(super) callee_name: String,
     pub(super) interface: CFunctionContractInterface,
+    /// The values a fact fixed for the interface's value parameters, when
+    /// this contract was found through one; empty for the declaration.
+    pub(super) value_arguments: Vec<CValue>,
 }
 
 impl PartialEq for CFunctionContract {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name && self.interface == other.interface
+        self.name == other.name
+            && self.interface == other.interface
+            && self.value_arguments == other.value_arguments
     }
 }
 
@@ -4148,6 +4228,7 @@ impl std::hash::Hash for CFunctionContract {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.name.hash(state);
         self.interface.hash(state);
+        self.value_arguments.hash(state);
     }
 }
 
@@ -4162,6 +4243,7 @@ impl Ord for CFunctionContract {
         self.name
             .cmp(&other.name)
             .then_with(|| self.interface.cmp(&other.interface))
+            .then_with(|| self.value_arguments.cmp(&other.value_arguments))
     }
 }
 
@@ -10725,6 +10807,7 @@ pub struct ExecutionPureFact {
     /// state, since the producer's snapshot and pointer are the authority.
     pub(super) generated_load_binding: Option<Box<GeneratedLoadBinding>>,
     pub(super) generated_load_source_events: GeneratedLoadSourceEvents,
+    pub(super) reference_observation: super::source_access::ReferenceObservationSource,
 }
 
 /// Source events are execution provenance, not part of the proposition's
@@ -10800,6 +10883,7 @@ pub(crate) enum GeneratedLoadBinding {
 pub(crate) struct LoadSourceId {
     pub(crate) owner: LoadSourceOwnerId,
     pub(crate) occurrence: u32,
+    pub(crate) reference_access: Option<Arc<super::ReferenceAccessSourceId>>,
 }
 
 /// Stable owner identity for source load occurrences.  The source unit and
@@ -10867,6 +10951,7 @@ pub(super) struct CertifiedMemoryStore {
     pub(super) pointer: Pointer,
     pub(super) value: CValue,
     pub(super) authorized_range: Option<CMemoryRange>,
+    pub(super) source: super::CStatementStoreSource,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

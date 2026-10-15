@@ -4581,9 +4581,8 @@ fn describe_unauthorized_entry_premise(
     parameter_binding: ParameterBinding<'_>,
     state: &CState,
 ) -> String {
-    use crate::surface::diagnostics::{
-        describe_click_proposition, describe_pure_fact_spelled, describe_resource_facts,
-    };
+    use crate::surface::diagnostics::{describe_click_proposition, describe_pure_fact_spelled};
+    use crate::surface::proof_diagnostics::render::render_resource_facts_diagnostic;
     let Some(premise) = premise else {
         return String::new();
     };
@@ -4598,7 +4597,7 @@ fn describe_unauthorized_entry_premise(
     let held = if matches!(premise, Proposition::CMemoryLoadable { .. }) {
         format!(
             "; the contract entry holds {}",
-            describe_resource_facts(entry_resources, parameter_binding)
+            render_resource_facts_diagnostic(entry_resources, parameter_binding)
         )
     } else {
         String::new()
@@ -5586,12 +5585,16 @@ pub(in crate::surface) fn build_function_environment(
                 ))
                 .at_declaration(definition.name())
         })?;
-        let contract = CFunctionContract::new(definition.name(), function).ok_or_else(|| {
-            ClickError::new(format!(
-                "named contract `{}` cannot be applied opaquely",
-                definition.name()
-            ))
-        })?;
+        let contract = CFunctionContract::new(definition.name(), function)
+            .and_then(|contract| {
+                contract.with_value_parameters(definition.value_parameters().len())
+            })
+            .ok_or_else(|| {
+                ClickError::new(format!(
+                    "named contract `{}` cannot be applied opaquely",
+                    definition.name()
+                ))
+            })?;
         let proof_parameters = definition
             .proof_parameters()
             .unwrap_or(&[])

@@ -49,30 +49,7 @@ const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] 
             HiddenPrerequisiteRoute::KernelCondition,
             "decide_with_facts",
         ),
-        66,
-    ),
-    ((HiddenPrerequisiteRoute::KernelCondition, "path facts"), 10),
-    // `issues/simplify-step.md` step 5 drives these to zero.
-    (
-        (
-            HiddenPrerequisiteRoute::TacticSearch,
-            "have separation away from the frontier",
-        ),
-        1,
-    ),
-    (
-        (
-            HiddenPrerequisiteRoute::TacticSearch,
-            "fold unspellable body fact",
-        ),
-        1,
-    ),
-    (
-        (
-            HiddenPrerequisiteRoute::TacticSearch,
-            "fold projected body fact",
-        ),
-        14,
+        40,
     ),
 ];
 

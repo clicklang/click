@@ -16,7 +16,7 @@ void bump(struct holder* h) {
 ```click
 resource holder_of(h: struct holder*) {
     owns *h;
-    let cell: int32* where h->target == cell and 0 <= h->count;
+    let cell: int32* where h->target == cell and (h->count < 200 or cell == 0);
 }
 
 verifying "unfold_rejects_a_name_for_a_missing_witness.c";

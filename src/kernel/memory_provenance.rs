@@ -361,9 +361,11 @@ fn canonical_c_memory_deep_uncached(memory: &CMemory) -> CMemory {
                 CValue::UInt128(term) => CValue::UInt128(canonicalize_atomic_loads(term)),
                 CValue::Float32(term) => CValue::Float32(canonicalize_atomic_loads(term)),
                 CValue::Float64(term) => CValue::Float64(canonicalize_atomic_loads(term)),
-                CValue::Pointer(pointer) => CValue::typed_pointer(
-                    canonicalize_pointer_loads(pointer.pointer()),
-                    pointer.c_type(),
+                CValue::Pointer(pointer) => CValue::Pointer(
+                    pointer
+                        .map_pointers(canonicalize_pointer_loads)
+                        .with_pointee_volatile(false)
+                        .with_pointee_constant(false),
                 ),
             };
             (key, value)
@@ -417,9 +419,11 @@ fn canonical_c_memory_deep_uncached(memory: &CMemory) -> CMemory {
             CValue::UInt128(term) => CValue::UInt128(canonicalize_atomic_loads(term)),
             CValue::Float32(term) => CValue::Float32(canonicalize_atomic_loads(term)),
             CValue::Float64(term) => CValue::Float64(canonicalize_atomic_loads(term)),
-            CValue::Pointer(pointer) => CValue::typed_pointer(
-                canonicalize_pointer_loads(pointer.pointer()),
-                pointer.c_type(),
+            CValue::Pointer(pointer) => CValue::Pointer(
+                pointer
+                    .map_pointers(canonicalize_pointer_loads)
+                    .with_pointee_volatile(false)
+                    .with_pointee_constant(false),
             ),
         };
         std::sync::Arc::make_mut(&mut canonical.union_cells).insert((key, *c_type), value);

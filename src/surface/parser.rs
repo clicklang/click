@@ -758,6 +758,12 @@ struct Parser {
     /// Set while a `contract` block's embedded function block is parsed: its
     /// signature names an interface, not a callable C function.
     in_contract_definition: bool,
+    /// The value parameters a named contract's body declares with
+    /// `let name: type;`, in declaration order, while its block is parsed.
+    contract_value_parameters: Vec<FunctionParameter>,
+    /// Each named contract's value parameter names, in declaration order,
+    /// for resolving `Name(f, { name: value })`.
+    contract_value_parameter_names: BTreeMap<String, Vec<String>>,
     in_function_block: bool,
 }
 
@@ -944,19 +950,22 @@ pub(super) struct ContractLetBinding {
 enum ContractLetBindingKind {
     Value(ContractExpression),
     Where(ClickProposition),
+    /// `let name: type;` in a named contract: a value parameter, bound where
+    /// the contract is attached to a function.
+    Parameter,
 }
 
 impl ContractLetBinding {
     pub(super) fn value(&self) -> Option<&ContractExpression> {
         match &self.kind {
             ContractLetBindingKind::Value(value) => Some(value),
-            ContractLetBindingKind::Where(_) => None,
+            ContractLetBindingKind::Where(_) | ContractLetBindingKind::Parameter => None,
         }
     }
 
     pub(super) fn where_condition(&self) -> Option<&ClickProposition> {
         match &self.kind {
-            ContractLetBindingKind::Value(_) => None,
+            ContractLetBindingKind::Value(_) | ContractLetBindingKind::Parameter => None,
             ContractLetBindingKind::Where(condition) => Some(condition),
         }
     }
@@ -1114,6 +1123,8 @@ impl Parser {
             callee_resource_binders: BTreeMap::new(),
             contract_resource_binders: BTreeMap::new(),
             in_contract_definition: false,
+            contract_value_parameters: Vec::new(),
+            contract_value_parameter_names: BTreeMap::new(),
             in_function_block: false,
             integer_literal_context: false,
         })
@@ -1509,9 +1520,18 @@ impl Parser {
             )));
         }
         let previous_in_contract = std::mem::replace(&mut self.in_contract_definition, true);
+        self.contract_value_parameters.clear();
         let function_block = self.parse_function_block(false);
         self.in_contract_definition = previous_in_contract;
         let function_block = function_block?;
+        let value_parameters = std::mem::take(&mut self.contract_value_parameters)
+            .into_iter()
+            .map(|parameter| parameter.name)
+            .collect::<Vec<_>>();
+        self.contract_value_parameter_names.insert(
+            function_block.signature().name().to_string(),
+            value_parameters.clone(),
+        );
         if function_block.decreases().is_some()
             || function_block.grouped_proof().is_some()
             || !function_block.constructs().is_empty()
@@ -1560,6 +1580,7 @@ impl Parser {
             .insert(function_block.signature().name().to_string(), bindings);
         Ok(ContractDefinition {
             proof_parameters: (!proof_parameters.is_empty()).then_some(proof_parameters),
+            value_parameters,
             function_block,
         })
     }
@@ -2827,6 +2848,11 @@ impl Parser {
                         ContractLetBindingKind::Where(condition) => {
                             ContractLetBindingKind::Where(condition)
                         }
+                        ContractLetBindingKind::Parameter => {
+                            return Err(self.error(
+                                "`let name: type;` declares a value parameter only in a named contract",
+                            ));
+                        }
                     };
                     contract_lets.push(ContractLetBinding { kind, ..binding });
                     if matches!(
@@ -3170,6 +3196,29 @@ impl Parser {
                             signature.name()
                         )));
                     }
+                    if binding.kind == ContractLetBindingKind::Parameter {
+                        let c_type = binding
+                            .click_type
+                            .as_ref()
+                            .and_then(ClickType::c_type)
+                            .filter(|c_type| !c_type.is_pointer() && *c_type != C0Type::Void)
+                            .ok_or_else(|| {
+                                self.error(format!(
+                                    "contract value parameter `{}` must have a scalar type",
+                                    binding.name
+                                ))
+                            })?;
+                        self.contract_value_parameters.push(FunctionParameter {
+                            click_type: ClickType::C(c_type),
+                            name: binding.name.clone(),
+                            struct_name: None,
+                            function_pointer_signature: None,
+                            constant: false,
+                            pointee_constant: false,
+                            reference: false,
+                        });
+                        continue;
+                    }
                     let substitutions = contract_let_substitutions(&contract_lets);
                     let kind = match binding.kind {
                         ContractLetBindingKind::Value(value) => ContractLetBindingKind::Value(
@@ -3178,6 +3227,11 @@ impl Parser {
                         ),
                         ContractLetBindingKind::Where(condition) => {
                             ContractLetBindingKind::Where(condition)
+                        }
+                        ContractLetBindingKind::Parameter => {
+                            return Err(self.error(
+                                "`let name: type;` declares a value parameter only in a named contract",
+                            ));
                         }
                     };
                     contract_lets.push(ContractLetBinding { kind, ..binding });
@@ -3647,6 +3701,14 @@ impl Parser {
             .get(signature.name())
             .cloned()
             .unwrap_or_default();
+        // A named contract's value parameters follow its C parameters, so its
+        // clauses read them as they read the C parameters.
+        let mut signature = signature;
+        if self.in_contract_definition {
+            signature
+                .parameters
+                .extend(self.contract_value_parameters.iter().cloned());
+        }
         Ok(FunctionBlock {
             c_object_names,
             recursion_peers,
@@ -3702,6 +3764,11 @@ impl Parser {
                 return Err(self.error("`let ... where` requires an explicit type annotation"));
             }
             ContractLetBindingKind::Where(self.parse_proposition()?)
+        } else if self.in_contract_definition
+            && self.peek() == Some(&Token::Semicolon)
+            && click_type.is_some()
+        {
+            ContractLetBindingKind::Parameter
         } else {
             return Err(self.error("expected `=` or `where` in `let` binding"));
         };
@@ -5868,6 +5935,12 @@ impl Parser {
             && typed_load_type_from_name(self.peek_ident()).is_none()
             && self.peek_next() == Some(&Token::LParen)
         {
+            if let Some(name) = self.peek_ident()
+                && let Some(value_parameters) = self.contract_value_parameter_names.get(name)
+                && !value_parameters.is_empty()
+            {
+                return self.parse_contract_value_application();
+            }
             let start = self.position;
             let (name, arguments) = self.parse_call_arguments("predicate or function name")?;
             if let Some(classification) = float_classification_from_name(&name) {
@@ -5922,6 +5995,60 @@ impl Parser {
         }
 
         self.parse_proposition_comparison()
+    }
+
+    /// A named contract with value parameters attached to a function value,
+    /// `Adds(f, { amount: k })`. The map names every value parameter once;
+    /// the proposition takes the values in declaration order.
+    fn parse_contract_value_application(&mut self) -> Result<ClickProposition, ClickError> {
+        let name = self.expect_ident("contract name")?;
+        let declared = self
+            .contract_value_parameter_names
+            .get(&name)
+            .cloned()
+            .unwrap_or_default();
+        self.expect(Token::LParen)?;
+        let function = self.parse_contract_expression()?;
+        if self.peek() != Some(&Token::Comma) {
+            return Err(self.error(format!(
+                "contract `{name}` takes its value parameters after the function, as in \
+                 `{name}(f, {{ {}: value }})`",
+                declared.join(": value, ")
+            )));
+        }
+        self.position += 1;
+        self.expect(Token::LBrace)?;
+        let mut values = BTreeMap::new();
+        while self.peek() != Some(&Token::RBrace) {
+            let parameter = self.expect_ident("contract value parameter")?;
+            if !declared.contains(&parameter) {
+                return Err(self.error(format!(
+                    "contract `{name}` has no value parameter `{parameter}`"
+                )));
+            }
+            self.expect(Token::Colon)?;
+            let value = self.parse_contract_expression()?;
+            if values.insert(parameter.clone(), value).is_some() {
+                return Err(self.error(format!(
+                    "contract value parameter `{parameter}` is bound twice"
+                )));
+            }
+            if self.peek() != Some(&Token::Comma) {
+                break;
+            }
+            self.position += 1;
+        }
+        self.expect(Token::RBrace)?;
+        self.expect(Token::RParen)?;
+        let mut arguments = vec![function];
+        for parameter in &declared {
+            arguments.push(values.remove(parameter).ok_or_else(|| {
+                self.error(format!(
+                    "contract `{name}` needs a value for its parameter `{parameter}`"
+                ))
+            })?);
+        }
+        Ok(ClickProposition::PredicateCall { name, arguments })
     }
 
     fn parse_quantifier_chain(&mut self) -> Result<ClickProposition, ClickError> {

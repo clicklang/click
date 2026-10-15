@@ -32,6 +32,9 @@ pub(in crate::kernel) struct UsedFacts {
     /// Nesting of citing decisions in progress; a decision that re-enters
     /// itself through a tag relation stops here instead of recursing.
     pub(in crate::kernel) depth: u32,
+    /// Leaves ask only the fast decisions (`fast_leaf_decision`), never the
+    /// general decision: the difference graph's fast path uses these rules.
+    pub(in crate::kernel) fast_only: bool,
 }
 
 /// How deep citing decisions may nest before falling back to the general
@@ -50,6 +53,15 @@ impl UsedFacts {
             premises: Vec::new(),
             complete: true,
             depth: 0,
+            fast_only: false,
+        }
+    }
+
+    /// A record whose leaves never ask the general decision.
+    pub(in crate::kernel) fn fast_only() -> Self {
+        Self {
+            fast_only: true,
+            ..Self::new()
         }
     }
 
@@ -143,7 +155,11 @@ impl PureFactContext {
                 return Some(decided);
             }
         }
-        let decided = self.decide(condition);
+        let decided = if used.fast_only {
+            self.fast_leaf_decision(condition, &[])
+        } else {
+            self.decide(condition)
+        };
         if decided.is_some() {
             used.complete = false;
         }

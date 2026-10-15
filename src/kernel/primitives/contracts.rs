@@ -740,6 +740,7 @@ impl CFunctionContractInterface {
             exceptional_signature: CExceptionalSignature::None,
             parameters,
             proof_parameters: Default::default(),
+            value_parameters: Vec::new(),
             resource_requires: Vec::new(),
             resource_ensures: Vec::new(),
             resource_constructors: Vec::new(),
@@ -800,6 +801,19 @@ impl CFunctionContractInterface {
     pub(crate) fn with_proof_parameters(mut self, parameters: Vec<CResourceSpec>) -> Self {
         self.proof_parameters = parameters.into();
         self
+    }
+
+    pub(crate) fn value_parameters(&self) -> &[CParameter] {
+        &self.value_parameters
+    }
+
+    /// This interface with its last `count` parameters as value parameters:
+    /// a named contract lowers its `let amount: int32;` declarations after
+    /// its call parameters.
+    pub(crate) fn with_trailing_value_parameters(mut self, count: usize) -> Option<Self> {
+        let call_count = self.parameters.len().checked_sub(count)?;
+        self.value_parameters = self.parameters.split_off(call_count);
+        Some(self)
     }
 
     pub fn resource_requires(&self) -> &[CResourceSpec] {
@@ -972,6 +986,7 @@ impl CFunctionContractInterface {
             && self.exceptional_signature == other.exceptional_signature
             && self.parameters == other.parameters
             && self.proof_parameters == other.proof_parameters
+            && self.value_parameters == other.value_parameters
             && self.resource_requires == other.resource_requires
             && self.resource_ensures == other.resource_ensures
             && self.resource_constructors == other.resource_constructors
@@ -2898,7 +2913,36 @@ impl CFunctionContract {
             name,
             callee_name,
             interface,
+            value_arguments: Vec::new(),
         })
+    }
+
+    /// This contract with its last `count` parameters as value parameters.
+    pub fn with_value_parameters(mut self, count: usize) -> Option<Self> {
+        self.interface = self.interface.with_trailing_value_parameters(count)?;
+        Some(self)
+    }
+
+    /// This contract as a fact attaching it to a function value found it:
+    /// its value parameters fixed to `values`. `None` when the values do not
+    /// have the parameters' number and types.
+    pub(crate) fn instantiated(&self, values: &[CValue]) -> Option<Self> {
+        let parameters = self.interface.value_parameters();
+        if values.len() != parameters.len()
+            || !values
+                .iter()
+                .zip(parameters)
+                .all(|(value, parameter)| value.c_type() == parameter.c_type())
+        {
+            return None;
+        }
+        let mut instantiated = self.clone();
+        instantiated.value_arguments = values.to_vec();
+        Some(instantiated)
+    }
+
+    pub(crate) fn value_arguments(&self) -> &[CValue] {
+        &self.value_arguments
     }
 
     pub fn name(&self) -> &str {

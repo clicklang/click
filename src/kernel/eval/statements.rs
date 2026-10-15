@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::CStatementStoreSource;
 use crate::kernel::loans::empty_checked_loan_evidence_sequence;
 mod scalar_arrays;
 
@@ -29,6 +30,24 @@ pub(in crate::kernel) fn execute_c_lvalue_assignment_paths(
     value: &CExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+    execute_c_lvalue_assignment_paths_with_source(
+        state,
+        target,
+        value,
+        assumptions,
+        budget,
+        Default::default(),
+    )
+}
+
+fn execute_c_lvalue_assignment_paths_with_source(
+    state: &CState,
+    target: &CExpression,
+    value: &CExpression,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+    store_source: CStatementStoreSource,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     let mut paths = Vec::new();
     for target_path in evaluate_c_lvalue_paths(state, target, assumptions, budget)? {
@@ -80,6 +99,7 @@ pub(in crate::kernel) fn execute_c_lvalue_assignment_paths(
                     obligations,
                     assumptions,
                     budget,
+                    store_source.clone(),
                 )?),
                 CExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
                     paths.push(CStatementExecutionPath::new(
@@ -260,6 +280,7 @@ fn execute_c_lvalue_update_paths(
                             obligations,
                             assumptions,
                             budget,
+                            Default::default(),
                         )?),
                         CExpressionOutcome::UndefinedBehavior(error) => {
                             paths.push(CStatementExecutionPath::new(
@@ -375,6 +396,7 @@ pub(in crate::kernel) fn write_c_lvalue_paths(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
+    store_source: CStatementStoreSource,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     write_c_lvalue_paths_for_initialization(
         state,
@@ -385,6 +407,7 @@ pub(in crate::kernel) fn write_c_lvalue_paths(
         assumptions,
         budget,
         false,
+        store_source,
     )
 }
 
@@ -397,6 +420,7 @@ fn write_c_lvalue_paths_for_initialization(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     initialization: bool,
+    store_source: CStatementStoreSource,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     if lvalue.is_constant() && !initialization {
         return Ok(vec![CStatementExecutionPath::new(
@@ -763,13 +787,19 @@ fn write_c_lvalue_paths_for_initialization(
                 ));
             }
             let mut facts = facts;
-            facts.push(ExecutionPureFact::certified_store(
+            let mut store_fact = ExecutionPureFact::certified_store(
                 before_memory,
                 state.memory.clone(),
                 written_pointer.clone(),
                 written_value.clone(),
                 authorized_range,
-            ));
+            );
+            store_fact
+                .certified_store
+                .as_mut()
+                .expect("fresh store certificate")
+                .source = store_source.clone();
+            facts.push(store_fact);
             // The checked store establishes the complete pointer value at
             // this exact snapshot. Retain its read equation so congruence
             // can use a different, proven-equal address spelling without
@@ -2151,7 +2181,7 @@ pub(crate) fn resolve_pending_heap_allocations(
                 } = binding
                     && pointer.pointer() == &base
                 {
-                    pointer.replace_pointer(resolved_base.clone());
+                    *pointer = rebase_resolved_allocation(pointer, &base, &resolved_base);
                 }
             }
             if !is_null {
@@ -2211,7 +2241,7 @@ pub(crate) fn resolve_pending_heap_allocations(
             } = binding
                 && pointer.pointer() == &base
             {
-                pointer.replace_pointer(resolved_base.clone());
+                *pointer = rebase_resolved_allocation(pointer, &base, &resolved_base);
             }
         }
         if !is_null {
@@ -2714,10 +2744,11 @@ fn execute_c_statement_leaf_paths(
                 }
                 return Ok(paths);
             }
-            CStatement::Assign { name, expression }
-                if matches!(expression, CExpression::Value(_) | CExpression::Variable(_))
-                    && state.locals.slot(name).is_some()
-                    && !pending.protects_local(state, name) =>
+            CStatement::Assign {
+                name, expression, ..
+            } if matches!(expression, CExpression::Value(_) | CExpression::Variable(_))
+                && state.locals.slot(name).is_some()
+                && !pending.protects_local(state, name) =>
             {
                 let mut bare = state.clone();
                 bare.pending_thread_create = None;
@@ -2918,6 +2949,7 @@ fn execute_c_statement_leaf_paths(
                                 assumptions,
                                 budget,
                                 true,
+                                Default::default(),
                             )?);
                         }
                         CExpressionOutcome::UndefinedBehavior(error) => {
@@ -3021,13 +3053,27 @@ fn execute_c_statement_leaf_paths(
             assumptions,
             budget,
         )?,
-        CStatement::Assign { name, expression } => execute_c_lvalue_assignment_paths(
-            state,
-            &c_variable(name.clone()),
+        CStatement::Assign {
+            name,
             expression,
-            assumptions,
-            budget,
-        )?,
+            source,
+        } => {
+            let mut paths = execute_c_lvalue_assignment_paths(
+                state,
+                &c_variable(name.clone()),
+                expression,
+                assumptions,
+                budget,
+            )?;
+            for path in &mut paths {
+                if let CStatementOutcome::Normal(after) = &path.outcome
+                    && let Some(fact) = source.completed(state, after, name)
+                {
+                    path.facts.push(fact);
+                }
+            }
+            paths
+        }
         CStatement::CallAssign {
             target,
             function_name,
@@ -3181,7 +3227,8 @@ fn execute_c_statement_leaf_paths(
             value_type,
             volatile,
             pointee_constant,
-        } => execute_c_lvalue_assignment_paths(
+            source,
+        } => execute_c_lvalue_assignment_paths_with_source(
             state,
             &CExpression::TypedLoad {
                 pointer: Box::new(pointer.clone()),
@@ -3193,6 +3240,7 @@ fn execute_c_statement_leaf_paths(
             value,
             assumptions,
             budget,
+            source.clone(),
         )?,
         CStatement::Update {
             target,
@@ -4568,4 +4616,25 @@ pub(in crate::kernel) fn sync_stack_local(state: &mut CState, name: &str, value:
     if state.memory.has_block(&pointer.block) {
         state.set_memory(state.memory.clone().store(pointer, value.clone()));
     }
+}
+
+/// A pointer value moved from a pending allocation's base to its resolved
+/// block. Its subobject extent, which names the same block, moves with it.
+fn rebase_resolved_allocation(
+    value: &CPointerValue,
+    base: &Pointer,
+    resolved: &Pointer,
+) -> CPointerValue {
+    value.map_pointers(|address| {
+        if address == base {
+            resolved.clone()
+        } else if address.block == base.block && base.offset == PointerOffsetTerm::Constant(0) {
+            Pointer {
+                block: resolved.block.clone(),
+                offset: PointerOffsetTerm::add(resolved.offset.clone(), address.offset.clone()),
+            }
+        } else {
+            address.clone()
+        }
+    })
 }

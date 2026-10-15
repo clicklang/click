@@ -174,7 +174,14 @@ that writes `int32` for such a source already writes the source's spelling.
    that capture nothing passed for a `fn` pointer, named
    `caller::{closure#0}`. Remaining: `std::function` in C++ (whose call
    operator throws when empty), and capturing closures, `impl Fn` and
-   `&dyn Fn` in Rust,
+   `&dyn Fn` in Rust. Decided 2026-10-14: a capturing closure's contract
+   names its captures as the body does (`ensures result == y + k;`), and a
+   callee states what it needs of the closure with a parameterized named
+   contract, whose value parameters are body clauses `let amount: i32;`
+   attached as `Adds(f, { amount: k })`. Parameterized contracts are done
+   for C and Rust function pointers, through automatic formation at
+   `&f`; refinement and execution theorems for them, and capturing
+   closures, remain,
    through the C++ exporter and Charon, with the same refinement check as C
    (`Comparator(&f)`).
 4. **Base-class and trait method interfaces.** A contract on a C++ virtual

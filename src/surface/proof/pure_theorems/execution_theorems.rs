@@ -111,6 +111,12 @@ pub(super) fn verify_execution_theorem(
         .predicates
         .contract_definition(target_name)
         .ok_or_else(|| error("the conclusion must name a function contract"))?;
+    if !target.value_parameters().is_empty() {
+        return Err(error(
+            "an execution theorem cannot yet conclude a contract with value parameters; \
+             Click checks such a contract where a call needs it",
+        ));
+    }
     let mut source_names = Vec::new();
     if let Some(callback) = callback {
         if callback.name() == "result"

@@ -6,6 +6,12 @@
 //! directly.
 //!
 pub(crate) mod api;
+mod source_access;
+pub use source_access::{CStatementAssignSource, CStatementStoreSource};
+pub(crate) use source_access::{
+    ExecutedReferenceAccess, ExecutedReferenceBoundary, ReferenceAccessKind,
+    ReferenceAccessSourceId, ReferenceBorrowSourceId,
+};
 
 /// Version of the resource and stable-view semantics used by proof
 /// artifacts.  This is deliberately separate from source and compiler

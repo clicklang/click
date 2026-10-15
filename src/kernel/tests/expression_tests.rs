@@ -3905,3 +3905,106 @@ fn unsigned_narrowing_distributes_constant_subtraction_modulo_the_low_word() {
         }
     }
 }
+
+/// A pointer at `pair + offset` whose subobject extent is `[pair + start,
+/// pair + start + width)`, as `&pair.first` would carry.
+fn subobject_pointer(offset: i64, start: i64, width: u64) -> CPointerValue {
+    CPointerValue::new(
+        Pointer {
+            block: "pair".into(),
+            offset: PointerOffsetTerm::Constant(offset),
+        },
+        CType::Int32Pointer,
+    )
+    .with_extent(Some(SubobjectExtent {
+        start: Pointer {
+            block: "pair".into(),
+            offset: PointerOffsetTerm::Constant(start),
+        },
+        width,
+    }))
+}
+
+fn evaluated_pointer(state: &CState, expression: CExpression) -> CPointerValue {
+    let theorem = prove_c_expression_evaluation(state.clone(), expression)
+        .expect("the pointer expression should evaluate");
+    let Proposition::CExpressionEvaluates {
+        outcome: CExpressionOutcome::Value(CValue::Pointer(value)),
+        ..
+    } = theorem.proposition()
+    else {
+        panic!("the pointer expression did not produce a pointer");
+    };
+    value.clone()
+}
+
+#[test]
+fn pointer_arithmetic_and_casts_keep_the_subobject_extent() {
+    let first = subobject_pointer(0, 0, 4);
+    let state = CState::new().with_local("p", CValue::Pointer(first.clone()));
+
+    // One past `first` is still `first`'s pointer: the extent does not move
+    // with the address, so the address it now shares with `second` does not
+    // make it designate `second`.
+    let next = evaluated_pointer(&state, c_add(c_variable("p"), c_int32_literal(1)));
+    assert_eq!(next.pointer().offset, PointerOffsetTerm::Constant(4));
+    assert_eq!(next.extent(), first.extent());
+    let back = evaluated_pointer(
+        &state,
+        c_subtract(
+            c_add(c_variable("p"), c_int32_literal(1)),
+            c_int32_literal(1),
+        ),
+    );
+    assert_eq!(back.extent(), first.extent());
+
+    let cast = evaluated_pointer(&state, c_cast(c_variable("p"), CType::Int64Pointer));
+    assert_eq!(cast.c_type(), CType::Int64Pointer);
+    assert_eq!(cast.extent(), first.extent());
+}
+
+#[test]
+fn equal_addresses_with_different_extents_are_different_values() {
+    let one_past_first = subobject_pointer(4, 0, 4);
+    let second = subobject_pointer(4, 4, 4);
+    assert_eq!(one_past_first.pointer(), second.pointer());
+    assert_ne!(one_past_first, second);
+    assert_ne!(
+        CPointerValue::new(second.pointer().clone(), CType::Int32Pointer),
+        second
+    );
+}
+
+#[test]
+fn substitution_maps_the_extent_start_with_the_address() {
+    let base = Variable(98_101);
+    let address = |delta: i64| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::add(
+            PointerOffsetTerm::Variable(base),
+            PointerOffsetTerm::Constant(delta),
+        ),
+    };
+    let value = CValue::Pointer(
+        CPointerValue::new(address(4), CType::Int32Pointer).with_extent(Some(SubobjectExtent {
+            start: address(0),
+            width: 4,
+        })),
+    );
+    let replacement = Bitvector32Term::Variable(Variable(98_102));
+    let CValue::Pointer(substituted) =
+        substitute_bitvector_variable_in_c_value(&value, base, &replacement)
+    else {
+        unreachable!();
+    };
+    let expected =
+        |delta: i64| substitute_bitvector_variable_in_pointer(&address(delta), base, &replacement);
+    assert_eq!(substituted.pointer(), &expected(4));
+    assert_eq!(
+        substituted.extent(),
+        Some(&SubobjectExtent {
+            start: expected(0),
+            width: 4,
+        })
+    );
+}

@@ -1,4 +1,7 @@
 use super::*;
+use crate::surface::proof_diagnostics::render::{
+    render_resource_diagnostic, render_resource_fact_diagnostic, render_resource_facts_diagnostic,
+};
 
 pub(in crate::surface) fn describe_proof_obligation_context(
     obligation: &ProofObligation,
@@ -457,7 +460,10 @@ fn compact_unspelled_facts(entries: &mut Vec<String>) {
     }
 }
 
-fn describe_bounded_list<T>(items: &[T], mut describe: impl FnMut(&T) -> String) -> String {
+pub(in crate::surface) fn describe_bounded_list<T>(
+    items: &[T],
+    mut describe: impl FnMut(&T) -> String,
+) -> String {
     if items.is_empty() {
         return "[]".to_string();
     }
@@ -759,7 +765,7 @@ pub(super) fn describe_available_facts(
             execution_pure_facts,
             parameter_binding
         ),
-        describe_resource_facts(resource_facts, parameter_binding)
+        render_resource_facts_diagnostic(resource_facts, parameter_binding)
     )
 }
 
@@ -795,7 +801,7 @@ pub(super) fn describe_missing_pure_fact(
     let available = describe_context_facts_labeled(pure_facts, execution_pure_facts, &mut labels);
     format!(
         "missing pure fact: {requirement}\n  available pure facts: {available}\n  available resource facts: {}{}",
-        describe_resource_facts(resource_facts, parameter_binding),
+        render_resource_facts_diagnostic(resource_facts, parameter_binding),
         labels.trace_legend()
     )
 }
@@ -835,7 +841,7 @@ pub(super) fn describe_missing_resource_fact(
     }
     format!(
         "missing resource fact `{}`{note}\n  {}",
-        describe_resource_fact(required, parameter_binding),
+        render_resource_fact_diagnostic(required, parameter_binding),
         describe_available_facts(
             pure_facts,
             resource_facts,
@@ -1024,7 +1030,7 @@ pub(super) fn describe_goal_proof_context(
     let pure = describe_context_facts_labeled(&relevant, &[], labels);
     format!(
         "{GOAL_PROOF_CONTEXT_HEADER}{case}\n  pure facts: {pure}\n  resource facts: {}{}",
-        describe_resource_facts(resource_facts, parameter_binding),
+        render_resource_facts_diagnostic(resource_facts, parameter_binding),
         labels.trace_legend()
     )
 }
@@ -1042,7 +1048,7 @@ pub(super) fn describe_proof_context(
             execution_pure_facts,
             parameter_binding
         ),
-        describe_resource_facts(resource_facts, parameter_binding)
+        render_resource_facts_diagnostic(resource_facts, parameter_binding)
     )
 }
 
@@ -1055,7 +1061,10 @@ pub(super) fn describe_loop_head_refusal(refusal: &crate::kernel::CLoopHeadRefus
             let (parameters, arguments) = local_naming_tables(state);
             return format!(
                 "loop declares a resource the enclosing function does not hold: `{}`",
-                describe_resource_fact(fact, ParameterBinding::new(&parameters, &arguments))
+                render_resource_fact_diagnostic(
+                    fact,
+                    ParameterBinding::new(&parameters, &arguments)
+                )
             );
         }
         crate::kernel::CLoopHeadRefusal::MissingPrerequisite {
@@ -1477,17 +1486,7 @@ pub(super) fn describe_runtime_error(
             describe_mutex_pointer(mutex, parameter_binding)
         ),
         crate::kernel::CRuntimeError::MissingMutexInvariant { resource, supplied } => {
-            let spell = |fact: &CResourceFact| match fact.resource() {
-                CResource::Instance(instance) => format!(
-                    "owns {}",
-                    format_declared_resource(
-                        instance.name(),
-                        instance.arguments(),
-                        parameter_binding
-                    )
-                ),
-                _ => describe_resource_fact(fact, parameter_binding),
-            };
+            let spell = |fact: &CResourceFact| render_resource_fact_diagnostic(fact, parameter_binding);
             match supplied {
                 Some(supplied) => format!(
                     "Requires {}; the selected state is {}",
@@ -1498,7 +1497,7 @@ pub(super) fn describe_runtime_error(
             }
         }
         crate::kernel::CRuntimeError::MissingResource { resource } => {
-            let fact = describe_resource_fact(resource, parameter_binding);
+            let fact = render_resource_fact_diagnostic(resource, parameter_binding);
             if matches!(resource.resource(), CResource::MutexGuard(_) | CResource::MutexLive(_) | CResource::MutexUse(_)) {
                 format!("Requires {fact}")
             } else {
@@ -1508,7 +1507,7 @@ pub(super) fn describe_runtime_error(
         crate::kernel::CRuntimeError::UnbackedReturnedView { view } => format!(
             "{}: `{}`",
             crate::kernel::CRuntimeError::UNBACKED_RETURNED_VIEW,
-            describe_resource_fact(view, parameter_binding)
+            render_resource_fact_diagnostic(view, parameter_binding)
         ),
         crate::kernel::CRuntimeError::MissingVerifiedFunctionRule(name) => format!(
             "cannot execute call to `{name}` opaquely: its contract has not been verified yet"
@@ -1531,7 +1530,7 @@ pub(super) fn describe_runtime_error(
             }
         }
         crate::kernel::CRuntimeError::ContractResourceDiagnostic { reason, held, required, memory } => {
-            use crate::surface::proof_diagnostics::render::SnapshotLabels;
+            use crate::surface::proof_diagnostics::render::{SnapshotLabels, render_resource_fact_labeled};
             let mut labels = SnapshotLabels::naming(parameter_binding);
             let mut message = format!("function contract could not be applied: {reason}");
             if let Some(memory) = memory {
@@ -1541,9 +1540,9 @@ pub(super) fn describe_runtime_error(
                 ));
             }
             if let Some(held) = held {
-                message.push_str(&format!("\n  held: {}", describe_resource_fact(held, parameter_binding)));
+                message.push_str(&format!("\n  held: {}", render_resource_fact_labeled(held, &mut labels)));
             }
-            message.push_str(&format!("\n  required: {}", describe_resource_fact(required, parameter_binding)));
+            message.push_str(&format!("\n  required: {}", render_resource_fact_labeled(required, &mut labels)));
             message.push_str(&labels.trace_legend());
             message
         }
@@ -1599,21 +1598,21 @@ pub(super) fn describe_runtime_error(
         } => {
             let mut message = format!(
                 "live allocation obligation was neither returned nor freed: `{}`",
-                describe_resource_fact(allocation, parameter_binding)
+                render_resource_fact_diagnostic(allocation, parameter_binding)
             );
             if let Some(resource) = resource {
                 message.push_str("; held by ");
-                message.push_str(&describe_resource_fact(resource, parameter_binding));
+                message.push_str(&render_resource_fact_diagnostic(resource, parameter_binding));
             }
             message
         }
         crate::kernel::CRuntimeError::StaleResourceAfterFree { resource } => format!(
             "resource would remain usable after its allocation is freed: `{}`",
-            describe_resource_fact(resource, parameter_binding)
+            render_resource_fact_diagnostic(resource, parameter_binding)
         ),
         crate::kernel::CRuntimeError::DuplicateResource { resource } => format!(
             "duplicate resource fact `{}`",
-            describe_resource_fact(resource, parameter_binding)
+            render_resource_fact_diagnostic(resource, parameter_binding)
         ),
         crate::kernel::CRuntimeError::OverlappingOwnedMemoryResources { left, right } => format!(
             "overlapping owned memory resource facts `owns {}` and `owns {}`",
@@ -1627,9 +1626,9 @@ pub(super) fn describe_runtime_error(
         } => format!(
             "produced composite `{}` overlaps a resource the caller already holds: \
              its body `{}` overlaps `{}`",
-            describe_c_resource(produced.resource(), parameter_binding),
-            describe_resource_fact(piece, parameter_binding),
-            describe_resource_fact(held, parameter_binding)
+            render_resource_diagnostic(produced.resource(), parameter_binding),
+            render_resource_fact_diagnostic(piece, parameter_binding),
+            render_resource_fact_diagnostic(held, parameter_binding)
         ),
         crate::kernel::CRuntimeError::LoanRefusal(diagnostic) => {
             describe_loan_refusal(diagnostic, parameter_binding)
@@ -1661,7 +1660,7 @@ fn describe_loan_conflict(
 ) -> Option<String> {
     let subject = diagnostic.subject();
     let conflicting = subject.conflicting_resource_fact()?;
-    let conflicting = describe_resource_fact(conflicting, parameter_binding);
+    let conflicting = render_resource_fact_diagnostic(conflicting, parameter_binding);
     if diagnostic.operation() == crate::kernel::LoanRefusalOperation::Entry {
         let viewed = subject.resource_fact()?;
         // This message follows the proof's own sentence about the contract
@@ -1669,7 +1668,7 @@ fn describe_loan_conflict(
         return Some(format!(
             "the contract's `views` clause overlaps its own `owns` clause: `{}` is already supported by `{conflicting}`; \
              a view must name authority the caller lends, not authority this contract owns",
-            describe_resource_fact(viewed, parameter_binding)
+            render_resource_fact_diagnostic(viewed, parameter_binding)
         ));
     }
     let attempted = subject.memory_range()?;
@@ -1735,7 +1734,7 @@ pub(in crate::surface) fn describe_loan_refusal(
     let subject = if let Some(resource) = subject.resource_fact() {
         format!(
             "; selected resource `{}`",
-            describe_resource_fact(resource, parameter_binding)
+            render_resource_fact_diagnostic(resource, parameter_binding)
         )
     } else if let Some(range) = subject.memory_range() {
         format!(
@@ -1788,111 +1787,6 @@ pub(in crate::surface) fn describe_loan_refusal(
     )
 }
 
-pub(super) fn describe_resource_facts(
-    resource_facts: &[CResourceFact],
-    parameter_binding: ParameterBinding<'_>,
-) -> String {
-    if resource_facts.is_empty() {
-        return "[]".to_string();
-    }
-    describe_bounded_list(resource_facts, |resource| {
-        describe_resource_fact(resource, parameter_binding)
-    })
-}
-
-pub(super) fn describe_resource_fact(
-    resource: &CResourceFact,
-    parameter_binding: ParameterBinding<'_>,
-) -> String {
-    if let Some(range) = resource.memory_view_range() {
-        return format!("views {}", describe_memory_range(range, parameter_binding));
-    }
-    if let Some(range) = resource.memory_own_range() {
-        return format!("owns {}", describe_memory_range(range, parameter_binding));
-    }
-    match resource {
-        CResourceFact::Own(CResource::MutexGuard(identity), _)
-        | CResourceFact::View(CResource::MutexGuard(identity)) => format!(
-            "{} mutex_guard({})",
-            if resource.is_own() { "owns" } else { "views" },
-            describe_mutex_pointer(identity.mutex(), parameter_binding)
-        ),
-        CResourceFact::Own(CResource::MutexLive(identity), _)
-        | CResourceFact::View(CResource::MutexLive(identity)) => format!(
-            "{} mutex_live({})",
-            if resource.is_own() { "owns" } else { "views" },
-            describe_mutex_pointer(identity.mutex(), parameter_binding)
-        ),
-        CResourceFact::Own(CResource::MutexUse(identity), _)
-        | CResourceFact::View(CResource::MutexUse(identity)) => format!(
-            "{} {}",
-            if resource.is_own() { "owns" } else { "views" },
-            format_mutex_use(identity, parameter_binding)
-        ),
-        CResourceFact::Own(CResource::Publication(right), _)
-        | CResourceFact::View(CResource::Publication(right)) => format!(
-            "{} {}",
-            if resource.is_own() { "owns" } else { "views" },
-            format_publication_right(right, parameter_binding)
-        ),
-        CResourceFact::Own(CResource::PopulationAuthority(description), _)
-        | CResourceFact::View(CResource::PopulationAuthority(description)) => format!(
-            "{} authority({})",
-            if resource.is_own() { "owns" } else { "views" },
-            format_population_description(description, parameter_binding)
-        ),
-        CResourceFact::Own(CResource::Instance(instance), _)
-        | CResourceFact::View(CResource::Instance(instance)) => format!(
-            "{} {}",
-            if resource.is_own() { "owns" } else { "views" },
-            format_declared_resource(instance.name(), instance.arguments(), parameter_binding)
-        ),
-        CResourceFact::Own(
-            CResource::Composite {
-                name,
-                arguments: resource_arguments,
-            }
-            | CResource::Token {
-                name,
-                arguments: resource_arguments,
-            },
-            quantity,
-        ) => {
-            let resource = format_declared_resource(name, resource_arguments, parameter_binding);
-            if quantity.as_const() == Some(1) {
-                format!("owns {resource}")
-            } else {
-                format!(
-                    "owns {resource} (quantity {})",
-                    describe_bitvector_with_context(quantity, parameter_binding)
-                )
-            }
-        }
-        CResourceFact::View(
-            CResource::Composite {
-                name,
-                arguments: resource_arguments,
-            }
-            | CResource::Token {
-                name,
-                arguments: resource_arguments,
-            },
-        ) => format!(
-            "views {}",
-            format_declared_resource(name, resource_arguments, parameter_binding)
-        ),
-        CResourceFact::Own(CResource::Iterated(iterated), _)
-        | CResourceFact::View(CResource::Iterated(iterated)) => format!(
-            "{} {}",
-            if resource.is_own() { "owns" } else { "views" },
-            describe_iterated_memory(iterated, parameter_binding)
-        ),
-        CResourceFact::Own(CResource::Memory(_), _) | CResourceFact::View(CResource::Memory(_)) => {
-            unreachable!("memory resources handled above")
-        }
-    }
-}
-
 /// One iterated guarded-ownership fact, spelled as the clause it came from:
 /// the bounded index, the guard, and the element range at that index, plus
 /// the indices currently taken out.
@@ -1940,43 +1834,6 @@ pub(in crate::surface) fn describe_iterated_memory(
     text
 }
 
-fn describe_c_resource(resource: &CResource, parameter_binding: ParameterBinding<'_>) -> String {
-    match resource {
-        CResource::Instance(instance) => {
-            format!("instance {}#{}", instance.name(), instance.identity().0)
-        }
-        CResource::Memory(range) => {
-            format!(
-                "memory({})",
-                describe_memory_range(range, parameter_binding)
-            )
-        }
-        CResource::Composite {
-            name,
-            arguments: resource_arguments,
-        }
-        | CResource::Token {
-            name,
-            arguments: resource_arguments,
-        } => format_declared_resource(name, resource_arguments, parameter_binding),
-        CResource::MutexGuard(identity) => format!(
-            "mutex_guard({})",
-            describe_mutex_pointer(identity.mutex(), parameter_binding)
-        ),
-        CResource::MutexLive(identity) => format!(
-            "mutex_live({})",
-            describe_mutex_pointer(identity.mutex(), parameter_binding)
-        ),
-        CResource::MutexUse(identity) => format_mutex_use(identity, parameter_binding),
-        CResource::Publication(right) => format_publication_right(right, parameter_binding),
-        CResource::PopulationAuthority(description) => format!(
-            "authority({})",
-            format_population_description(description, parameter_binding)
-        ),
-        CResource::Iterated(iterated) => describe_iterated_memory(iterated, parameter_binding),
-    }
-}
-
 fn describe_resource_subject(resource: &ResourceSubject) -> String {
     match resource {
         ResourceSubject::Memory(segment) => {
@@ -1993,65 +1850,6 @@ fn describe_resource_subject(resource: &ResourceSubject) -> String {
                 .join(", ")
         ),
     }
-}
-
-fn format_mutex_use(
-    identity: &crate::kernel::MutexUseIdentity,
-    parameter_binding: ParameterBinding<'_>,
-) -> String {
-    let mutex = describe_mutex_pointer(identity.mutex(), parameter_binding);
-    match identity.protected_type() {
-        Some(resource_type) => format!(
-            "mutex_use({mutex}, {})",
-            format_declared_resource(
-                resource_type.family(),
-                resource_type.arguments(),
-                parameter_binding
-            )
-        ),
-        None => format!("mutex_use({mutex})"),
-    }
-}
-
-fn format_publication_right(
-    right: &crate::kernel::PublicationRight,
-    parameter_binding: ParameterBinding<'_>,
-) -> String {
-    let right_text = format!(
-        "{}({}, {})",
-        right.side().keyword(),
-        describe_mutex_pointer(right.flag(), parameter_binding),
-        format_declared_resource(
-            right.payload().family(),
-            right.payload().arguments(),
-            parameter_binding
-        )
-    );
-    if right.observed().is_some() {
-        format!("{right_text}, read by an acquire load whose value no C branch has tested yet")
-    } else {
-        right_text
-    }
-}
-
-pub(super) fn format_declared_resource(
-    name: &str,
-    resource_arguments: &[AlgebraicValue],
-    parameter_binding: ParameterBinding<'_>,
-) -> String {
-    format!(
-        "{name}({})",
-        resource_arguments
-            .iter()
-            .map(|argument| match argument {
-                AlgebraicValue::C(value) => describe_c_value(value, parameter_binding),
-                AlgebraicValue::Integer(value) => describe_integer_term(value),
-                AlgebraicValue::Algebraic(value) =>
-                    format!("<{} model>", value.algebraic_type.name),
-            })
-            .collect::<Vec<_>>()
-            .join(", ")
-    )
 }
 
 /// Recover whole structs or contiguous field slots from byte coordinates.
@@ -2517,7 +2315,7 @@ pub(super) fn describe_missing_range_end_note(
                 "after reserving {} for an earlier requirement of this call, ",
                 describe_bounded_list(&miss.reserved, |fact| format!(
                     "`{}`",
-                    describe_resource_fact(fact, parameter_binding)
+                    render_resource_fact_diagnostic(fact, parameter_binding)
                 ))
             ),
         ),
@@ -2608,7 +2406,7 @@ pub(super) fn describe_missing_range_end_note(
                 describe_memory_range(required, parameter_binding),
                 describe_bounded_list(&miss.remaining, |fact| format!(
                     "`{}`",
-                    describe_resource_fact(fact, parameter_binding)
+                    render_resource_fact_diagnostic(fact, parameter_binding)
                 ))
             ),
             None => String::new(),
@@ -2627,7 +2425,7 @@ pub(super) fn describe_missing_range_end_note(
             .expect("found a refuted side above");
         return format!(
             "\n  note: {reserved_prefix}held `{}` does not cover `{}`: `{} <= {}` is false{coordinate_note}",
-            describe_resource_fact(held_fact, parameter_binding),
+            render_resource_fact_diagnostic(held_fact, parameter_binding),
             describe_memory_range(required, parameter_binding),
             describe_bitvector_with_context(lower, parameter_binding),
             describe_bitvector_with_context(upper, parameter_binding),
@@ -2649,7 +2447,7 @@ pub(super) fn describe_missing_range_end_note(
     }
     format!(
         "\n  note: {reserved_prefix}held `{}` covers `{}` only when {}{coordinate_note}",
-        describe_resource_fact(held_fact, parameter_binding),
+        render_resource_fact_diagnostic(held_fact, parameter_binding),
         describe_memory_range(required, parameter_binding),
         conditions.join(" and "),
     )
@@ -4285,7 +4083,10 @@ pub(super) fn describe_memory_block(
 
 /// Spell mutex storage as an address, including a field at offset zero, rather
 /// than rendering the containing object or an array-element value.
-fn describe_mutex_pointer(pointer: &Pointer, parameter_binding: ParameterBinding<'_>) -> String {
+pub(in crate::surface) fn describe_mutex_pointer(
+    pointer: &Pointer,
+    parameter_binding: ParameterBinding<'_>,
+) -> String {
     for (parameter, argument) in parameter_binding
         .parameters
         .iter()
@@ -5500,10 +5301,14 @@ pub(super) fn describe_c_statement_head(statement: &CStatement) -> String {
             describe_c_expression(target),
             describe_c_expression(source)
         ),
-        CStatement::Assign { name, expression } if is_call_result_temporary(name) => {
+        CStatement::Assign {
+            name, expression, ..
+        } if is_call_result_temporary(name) => {
             format!("{};", describe_c_expression(expression))
         }
-        CStatement::Assign { name, expression } => {
+        CStatement::Assign {
+            name, expression, ..
+        } => {
             format!("{name} = {};", describe_c_expression(expression))
         }
         CStatement::CallAssign {
@@ -6983,25 +6788,6 @@ fn describe_float_condition(condition: &CFloatCondition) -> String {
             value,
         } => format!("is{classification:?}({})", describe_bitvector(value)),
     }
-}
-
-fn format_population_description(
-    description: &crate::kernel::ResourceDescription,
-    parameter_binding: ParameterBinding<'_>,
-) -> String {
-    let mut result = format_declared_resource(
-        description.family(),
-        description.arguments(),
-        parameter_binding,
-    );
-    if let Some(arity) = description.population_arity() {
-        result.pop();
-        for _ in 1..arity {
-            result.push_str(", _");
-        }
-        result.push(')');
-    }
-    result
 }
 
 #[cfg(test)]

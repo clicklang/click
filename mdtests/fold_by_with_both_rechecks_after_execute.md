@@ -17,10 +17,9 @@ void bump(struct holder* h) {
 ```
 
 ```click
-import click::machine_integer;
 resource holder_of(h: struct holder*) {
     owns *h;
-    let cell: int32* where h->target == cell and 0 <= h->count;
+    let cell: int32* where h->target == cell and (h->count < 200 or cell == 0);
 }
 
 verifying "fold_by_with_both_rechecks_after_execute.c";
@@ -37,12 +36,19 @@ void bump(struct holder* h) {
         both {
             assumption();
         } and {
-            extract(at(function.entry, 0) <= at(function.entry, h->count));
-            extract(h->target == p);
-            apply(int32_increment_lower_bound(at(function.entry, h->count), at(function.entry, 0), at(function.entry, 100))) using {
-                at(function.entry, 0) <= at(function.entry, h->count);
-                at(function.entry, h->count < 100);
+            have h->count < 200 by {
+                arithmetic_certificate signed_int32 {
+                    premise 0: at(function.entry, h->count < 100) => at(function.entry, h->count < 100);
+                    interval_from_affine 0 (at(function.entry, h->count)) (-2147483648) (99);
+                    interval_atom (1) (1) (1);
+                    interval_add_bounded 1, 2 (-2147483647) (100);
+                    trivial => -99 <= 0;
+                    add 0, 4 => (at(function.entry, h->count) + -99) < (at(function.entry, 100) + 0);
+                    affine_conclusion 5 3 => h->count < 200;
+                    conclusion 6;
+                }
             }
+            assumption();
         }
     }
     assumption();

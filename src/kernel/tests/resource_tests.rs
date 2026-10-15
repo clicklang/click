@@ -9152,3 +9152,22 @@ fn owned_range_validity_is_linear_in_stated_aliases_of_its_base() {
         );
     }
 }
+
+#[test]
+fn first_state_difference_names_the_resource_held_on_one_side() {
+    let authority = CResourceFact::own_composite("authority".to_string(), Vec::new());
+    let holding = CState::new()
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(authority.clone()));
+    let empty = CState::new();
+    assert_eq!(holding.first_difference(&holding.clone()), None);
+    let before = holding.first_difference(&empty).unwrap();
+    assert!(
+        before.contains("owns authority(") && before.contains("only before"),
+        "{before}"
+    );
+    let published = empty.first_difference(&holding).unwrap();
+    assert!(
+        published.contains("owns authority(") && published.contains("published state"),
+        "{published}"
+    );
+}

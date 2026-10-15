@@ -104,7 +104,7 @@ retire copies of the original reference.
 
 The native `set_seven` fixture checks this certificate against actual exported
 MIR, checks its import identity and rejects an ending before the child store.
-Eleven bounded unit regressions cover alias copies, storage markers, replacement,
+Fourteen bounded unit regressions cover alias copies, storage markers, replacement,
 parent reassignment, capture, unsupported paths, call continuations and invalid
 points. A deterministic 16/64/256/1024 alias-chain regression bounds work to the
 selected input, up to indexing factors. The native fixture also binds its child
@@ -121,17 +121,104 @@ produce a mutable reborrow. A scalar read used to choose another address is
 refused as alias transport rather than binding that new address to the original
 footprint. A second 16/64/256/1024 regression checks access indexing and lookup.
 
+Locked Rust preparation now carries MIR point, expression-node and reference
+identities into typed loads and stores. Lowering indexes only the current
+statement's immutable expression nodes, in the same order as the source checker;
+it does not use structural expression keys or search other functions.
+`CheckedScalarReferenceEnd::bind_executed_accesses` joins its indexed accesses
+with completed kernel producer observations from the selected execution. It
+checks import identity, function, point, node, reference local and access kind,
+then retains the actual pointer and execution alongside the original borrow.
+
+Stores retain source provenance in their existing checked store certificate,
+after memory checks succeed. Completed reads retain a private receipt even when
+a cached scalar returns without minting a new load variable. Read receipts match
+their exact memory snapshot, pointer and type; rewritten facts discard that
+provenance. These private consequences are not path selectors. Source-bearing
+producer records survive composition as a selected delta, without deduplicating
+two operations that happen to have the same semantic memory proposition.
+Source metadata remains outside statement/fact comparison and grants no resource
+right. Regressions check actual read/write producers, rejection of a different
+lock identity, absence of a store observation on a failed write, and distinct
+cached reads in one statement.
+
 This read-only certificate proves absence of future selected-reference uses in
 that subset. It does not grant memory authority, end a production loan or
 change ordinary import/verification acceptance. An unsupported ending query
 does not itself reject the Rust program.
 
+## Checked local-reference lifecycle
+
+`src/kernel/loans/local_references.rs` adds the local-reference lifecycle to
+the existing immutable `LoanLedger` and its sealed, predecessor-bound checked
+transitions. This is a kernel protocol increment; ordinary Rust lowering does
+not yet issue these transitions or use their access checks.
+
+Registration checks an exact live owned occurrence for one scalar (`i32`,
+`u8`, `u16` or `u32`) and retains its holder, footprint and type. It reserves
+one root identity for that occurrence. A reborrow has a fresh reference identity
+and the exact parent's shared backing; names and pointer equality cannot
+substitute for it. While the child is active, the protocol refuses parent
+access, another child from that parent, and parent retirement. Nested borrowing
+suspends the intermediate reference too. Independent scalar roots remain usable.
+
+Recovery requires the exact live child, original holder, live ownership support
+and absence of a dependent child. It retires that child once and restores its
+parent's lifecycle custody. A copied child binding remains expired even after
+a new borrow of the same address. Root retirement also waits for its child;
+registering the same support afterward creates a fresh identity. Reused checked
+transitions require the exact predecessor; altered evidence is refused.
+
+The protocol neither partitions nor mints ownership, stores memory contents,
+or rolls memory back. Its access check additionally requires the exact scalar
+pointer and type; normal checked memory producers must still establish their
+ordinary authority. Whole scalars are the initial subset: aggregate subranges,
+fragment joining, shared aliases and call transport need their own integration.
+Regression tests cover nested order, copied stale bindings, disjoint roots,
+wrong holders/arenas/types/pointers, missing or replaced supports, duplicate
+recovery and stale or altered transitions. A test-only invariant walk checks
+the dependency/root indexes. Deterministic measurements at 16, 64, 256 and 1024
+unrelated roots bound selected lifecycle operations by persistent indexed
+lookups; production transitions do not walk the ledger or resource context.
+
+## Executed scalar-reference boundaries
+
+Rust lowering now attaches private source provenance to the assignment for a
+direct mutable scalar reborrow. The ordinary assignment producer emits a
+private receipt only after successful assignment, checking the actual parent's
+pointer before the assignment against the child's pointer and pointer type
+afterward. Failed assignments and ordinary untagged pointer copies emit no
+borrow receipt. Source provenance stays outside statement/fact comparison;
+rewritten facts discard the receipt.
+
+`CheckedScalarReferenceEnd::bind_executed_endings` joins a completed borrow
+receipt with a checked child store immediately preceding the selected ending.
+It checks the locked import, function, exact MIR points, parent/child source
+bindings, indexed store operation and actual pointer. Both receipts must occur
+in order on the same execution path. Exactly one matching birth and ending
+must exist on that path; repeated observations are refused instead of being
+combined across possible dynamic invocations. Endings after other statement
+kinds currently have no execution binding. Neither source labels nor a store
+without the selected borrow receipt suffice.
+
+These receipts are execution evidence, not recovery rights. They do not yet
+carry a local-reference lease or establish a dynamic invocation identity, and
+ordinary memory producers still use their existing authority checks. Private
+provenance tags remain comparison-neutral; recovery must additionally establish
+the selected operation's membership in the locked source plan. Private
+receipt deltas retain each producer occurrence without scanning ambient facts;
+the existing 16/64/256/1024 regression now also checks borrow receipts.
+
 ## Remaining local-reference work
 
-A call-scoped child identity does not close local-reference lifetime handling.
-The frontend still must carry these checked access identities through C0
-lowering, bind them to actual memory authority, and connect checked borrow-end
-frontiers to kernel recovery. The ending certificate
+A checked kernel lifecycle does not by itself enforce local references in
+ordinary Rust execution. The verifier still must issue births from actual
+source execution, preserve reference identity through copies and accesses,
+validate the exact ending frontier and invocation, and connect checked
+borrow-end frontiers to kernel recovery. Runtime enforcement must also cover
+pointer casts, untagged aliases, call transfer and memory havoc. An access observation is not
+evidence that every supported ending frontier has executed. The new restricted
+boundary binding supplies a completed borrow/store pair, while the ending certificate
 alone is insufficient: recovery must also match the source identity, reference
 access, borrowed footprint and exact program frontier. Neither last-use guesses nor `StorageDead`
 alone may authorize early recovery, and a live pointer alias must not revive
@@ -147,6 +234,7 @@ With the pinned tools activated and `CLICK_CHARON` set to the pinned exporter:
 cargo test --lib rust_correspondence_
 cargo test --lib correspondence_calls_production_
 cargo test --lib exclusive_call_
+cargo test --lib local_reference_
 cargo test --lib scalar_reference_
 cargo test --test rust_import rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop -- --ignored
 cargo test --test rust_import rust_owned_field_parent_can_write_after_explicit_child_drop -- --ignored

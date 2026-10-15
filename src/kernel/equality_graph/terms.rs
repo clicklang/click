@@ -411,10 +411,12 @@ impl TermClasses {
         let group = match (&key, source.proposition()) {
             (
                 PointerFactKey::FunctionContracts,
-                crate::kernel::Proposition::Predicate { name, .. },
-            ) => crate::kernel::CFunctionContract::surface_name_from_predicate(name)
-                .expect("contract predicate")
-                .to_string(),
+                crate::kernel::Proposition::Predicate { name, arguments },
+            ) => function_contract_group(
+                crate::kernel::CFunctionContract::surface_name_from_predicate(name)
+                    .expect("contract predicate"),
+                &arguments[2..],
+            ),
             _ => String::new(),
         };
         let bucket = groups.get(&group).cloned().unwrap_or_default();
@@ -1621,6 +1623,20 @@ impl TermClasses {
         }
         changed
     }
+}
+
+/// Separates a contract's name from its values in a function-contract group.
+pub(super) const CONTRACT_VALUES_SEPARATOR: char = '\u{1f}';
+
+/// The group a contract fact belongs to: the contract's name, then the
+/// values it fixes for the contract's value parameters, so one group holds
+/// the facts that call the same contract with the same values. A contract
+/// with no value parameters is grouped by its name alone.
+fn function_contract_group(name: &str, values: &[crate::kernel::Term]) -> String {
+    if values.is_empty() {
+        return name.to_string();
+    }
+    format!("{name}{CONTRACT_VALUES_SEPARATOR}{values:?}")
 }
 
 #[cfg(test)]

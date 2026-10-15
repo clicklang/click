@@ -488,7 +488,9 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
                 initializer: Some(expression),
                 ..
             }
-            | CStatement::Assign { name, expression } => Ok(paths
+            | CStatement::Assign {
+                name, expression, ..
+            } => Ok(paths
                 .into_iter()
                 .map(|mut path| {
                     let expression = resolve_c_expression_aliases(expression, &path.aliases);
@@ -3851,10 +3853,13 @@ fn diverging_contract_objects(
                 if !diverging_contracts.contains(contract) {
                     return;
                 }
+                // The function value comes first; any values after it fix
+                // the contract's value parameters.
                 let [
                     SpecPredicateArgument::Value(SpecExpression::CExpression(
                         CExpression::Variable(object),
                     )),
+                    ..,
                 ] = arguments.as_slice()
                 else {
                     return;
@@ -5145,6 +5150,7 @@ mod address_escape_tests {
     fn store_through_escaped_address_is_detected() {
         // p = &i; *p = q;
         let escape = CStatement::Assign {
+            source: Default::default(),
             name: "p".to_string(),
             expression: address_of("i"),
         };
@@ -5172,6 +5178,7 @@ mod address_escape_tests {
     #[test]
     fn escape_inside_a_loop_or_branch_body_is_detected() {
         let escape = CStatement::Assign {
+            source: Default::default(),
             name: "p".to_string(),
             expression: CExpression::Add(Box::new(address_of("n")), Box::new(variable("k"))),
         };
@@ -6185,6 +6192,7 @@ mod local_descent_tests {
             body = CStatement::Seq(
                 Arc::new(body),
                 Arc::new(CStatement::Assign {
+                    source: Default::default(),
                     name: "slot".to_string(),
                     expression: crate::kernel::c_function_address(*taken),
                 }),

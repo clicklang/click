@@ -1089,3 +1089,61 @@ fn an_unsigned_difference_that_cannot_wrap_is_at_most_its_minuend() {
     // `b` may exceed `a`, and then the difference wraps past `a`.
     assert_eq!(graph(&[]).decide(&at_most), None);
 }
+
+/// Alignment facts give an address's low bits, and they survive the
+/// wrapping 64-bit sums a tagged word is built from: an 8-aligned `addr`
+/// gives `(addr + 1) & 3 == 1`, a word stated equal to `addr + 1` has its
+/// low bit set, `addr + 1 != other` for another aligned `other`, and the
+/// address of `p` displaced by a whole number of 16-byte elements stays
+/// 8-aligned while one byte off does not.
+#[test]
+fn low_bits_from_alignment_survive_tagged_word_arithmetic() {
+    use crate::kernel::{Pointer, PointerOffsetTerm as O};
+    use Bitvector32Term as T;
+    let u = T::UInt64Constant;
+    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let pointer = |offset| Pointer {
+        block: crate::kernel::PointerBlock::ExternalArgument,
+        offset,
+    };
+    let scaled = |index, byte_width| O::Int32Scaled {
+        value: Box::new(variable(index)),
+        byte_width,
+    };
+    let address = |pointer: Pointer| T::PointerAddress(Box::new(pointer));
+    let and = |a: &Bitvector32Term, mask| T::UInt64BitwiseAnd(boxed(a), Box::new(u(mask)));
+    let add = |a: &Bitvector32Term, b: &Bitvector32Term| T::UInt64Add(boxed(a), boxed(b));
+    let equal = |a: &Bitvector32Term, b: &Bitvector32Term| {
+        ConditionTerm::Bitvector64Equal(boxed(a), boxed(b))
+    };
+    let (p, q) = (
+        address(pointer(scaled(0, 4))),
+        address(pointer(scaled(1, 4))),
+    );
+    let aligned = |a: &Bitvector32Term| (equal(&and(a, 7), &u(0)), true);
+    let graph = super::tests::graph(&[aligned(&p), aligned(&q)]);
+    let tagged = add(&p, &u(1));
+    assert_eq!(graph.decide(&equal(&and(&tagged, 3), &u(1))), Some(true));
+    assert_eq!(graph.decide(&equal(&and(&tagged, 3), &u(0))), Some(false));
+    assert_eq!(graph.decide(&equal(&tagged, &q)), Some(false));
+    // Equal low bits do not make two addresses equal.
+    assert_eq!(graph.decide(&equal(&p, &q)), None);
+    // Bits above the known ones stay unknown.
+    assert_eq!(graph.decide(&equal(&and(&tagged, 15), &u(1))), None);
+    let word = variable(5);
+    let stated = super::tests::graph(&[aligned(&p), (equal(&word, &tagged), true)]);
+    assert_eq!(stated.decide(&equal(&and(&word, 1), &u(1))), Some(true));
+    let displaced = |offset| address(pointer(O::Add(Box::new(scaled(0, 4)), Box::new(offset))));
+    assert_eq!(
+        graph.decide(&equal(&and(&displaced(scaled(2, 16)), 7), &u(0))),
+        Some(true)
+    );
+    assert_eq!(
+        graph.decide(&equal(&and(&displaced(O::Constant(1)), 7), &u(0))),
+        Some(false)
+    );
+    assert_eq!(
+        graph.decide(&equal(&and(&displaced(scaled(2, 4)), 7), &u(0))),
+        None
+    );
+}

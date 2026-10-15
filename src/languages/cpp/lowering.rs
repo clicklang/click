@@ -1527,6 +1527,7 @@ impl LoweringContext<'_> {
                                 function: self.function_name.into(),
                             },
                             occurrence,
+                            reference_access: None,
                         }),
                     ))
                 }
@@ -1678,6 +1679,7 @@ impl LoweringContext<'_> {
                     function: self.function_name.into(),
                 },
                 occurrence,
+                reference_access: None,
             }),
         ))
     }

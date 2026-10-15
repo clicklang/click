@@ -398,6 +398,11 @@ refuses unsafe or foreign function pointers, pointers of non-scalar
 parameters, and `dyn Fn`
 ([`design/charon-trial/function-pointers`](https://github.com/clicklang/click/blob/master/design/charon-trial/function-pointers/callback.click)).
 
+A named contract's value parameter is written with a Rust type,
+`contract fn Adds(x: i32) -> i32 { let amount: i32; ensures result == x +
+amount; }`, and attached with `requires Adds(f, { amount: k });`, as in C
+([`design/charon-trial/parameterized-contracts`](https://github.com/clicklang/click/blob/master/design/charon-trial/parameterized-contracts/adds.click)).
+
 A closure that captures nothing can be passed for such a pointer,
 `apply(|y| y + y, x)`. The sidecar names it as rustc does, by its enclosing
 function and its index there: `fn closures::caller::{closure#0}(y: i32) ->

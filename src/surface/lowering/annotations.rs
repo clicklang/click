@@ -3717,10 +3717,22 @@ impl AnnotationLowerer<'_> {
                     });
                 }
                 if let Some(signature) = self.spec_definitions.predicates.contract_signature(name) {
-                    let [function] = arguments.as_slice() else {
-                        return Err(format!(
-                            "contract `{name}` expects one function-pointer argument"
-                        ));
+                    let value_count = self
+                        .spec_definitions
+                        .predicates
+                        .contract_definition(name)
+                        .map_or(0, |definition| definition.value_parameters().len());
+                    let Some((function, values)) = arguments
+                        .split_first()
+                        .filter(|(_, values)| values.len() == value_count)
+                    else {
+                        return Err(if value_count == 0 {
+                            format!("contract `{name}` expects one function-pointer argument")
+                        } else {
+                            format!(
+                                "contract `{name}` expects a function pointer and its {value_count} value parameter(s)"
+                            )
+                        });
                     };
                     let function = match contract_expression_function_address(function) {
                         Some(target) => {
@@ -3736,10 +3748,16 @@ impl AnnotationLowerer<'_> {
                         }
                         None => self.lower_contract_expression_to_spec(function, environment)?,
                     };
+                    let mut contract_arguments = vec![SpecPredicateArgument::Value(function)];
+                    for value in values {
+                        contract_arguments.push(SpecPredicateArgument::Value(
+                            self.lower_contract_expression_to_spec(value, environment)?,
+                        ));
+                    }
                     return Ok(SpecProposition::Predicate {
                         resource_state_dependent: false,
                         name: CFunctionContract::predicate_name_for(name),
-                        arguments: vec![SpecPredicateArgument::Value(function)],
+                        arguments: contract_arguments,
                     });
                 }
                 let definition = self

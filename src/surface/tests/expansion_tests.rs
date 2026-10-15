@@ -17892,15 +17892,15 @@ int32 caller(int32 a, int32 b) {
 
 #[test]
 fn a_bare_fold_expands_its_body_fact_proof_and_needs_it() {
-    let c_source = "void make(int32 x) { }\n";
+    let c_source = "void make(int32 x, int32 y) { }\n";
     let click_source = r#"
 verifying "make.c";
-resource positive(n: int32) { fact n > 0; }
-void make(int32 x) {
-    requires x >= 1;
-    produces positive(x);
+resource either(n: int32, m: int32) { fact n > 0 or m > 0; }
+void make(int32 x, int32 y) {
+    requires x > 0;
+    produces either(x, y);
 } by {
-    fold(positive(x));
+    fold(either(x, y));
     execute();
     simp();
 }
@@ -17909,26 +17909,29 @@ void make(int32 x) {
     let expanded = expand_c0_claim_source(click_source, &c_sources, "make", CProofClaim::Grouped)
         .expect("the bare fold should expand");
     assert!(
-        expanded.contains("fold(positive(x)) by {"),
+        expanded.contains("fold(either(x, y)) by {"),
         "the implicit `auto`'s proof of the open body fact should print as the fold's `by`: {expanded}"
     );
     crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &c_sources))
         .expect("the expansion should reverify cold");
     let start = expanded
-        .find("fold(positive(x)) by {")
+        .find("fold(either(x, y)) by {")
         .expect("the expanded fold");
     let body_end = expanded[start..]
         .find("\n    }\n")
         .map(|offset| start + offset + "\n    }\n".len())
         .expect("the fold's `by` closes");
     let mut without_proof = expanded.clone();
-    without_proof.replace_range(start..body_end, "fold(positive(x));\n");
+    without_proof.replace_range(start..body_end, "fold(either(x, y));\n");
     let error = crate::surface::proof::without_implicit_auto(|| {
         verify_c0_sources(&without_proof, &c_sources)
     })
     .expect_err("with the implicit `auto` off, the fold refuses its unproved body fact");
     assert!(
-        error.message().contains("x > 0"),
+        error
+            .message()
+            .replace(['(', ')'], "")
+            .contains("x > 0 or y > 0"),
         "the refusal should name the body fact: {}",
         error.message()
     );

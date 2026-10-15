@@ -875,7 +875,12 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(statement: &CStatement, s:
             }
             statement
         }
-        CStatement::Assign { name, expression } => CStatement::Assign {
+        CStatement::Assign {
+            name,
+            expression,
+            source,
+        } => CStatement::Assign {
+            source: source.clone(),
             name: name.clone(),
             expression: s.c_expression(expression),
         },
@@ -943,12 +948,14 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(statement: &CStatement, s:
             value_type,
             volatile,
             pointee_constant,
+            source,
         } => CStatement::TypedStore {
             pointer: s.c_expression(pointer),
             value: s.c_expression(value),
             value_type: *value_type,
             volatile: *volatile,
             pointee_constant: *pointee_constant,
+            source: source.clone(),
         },
         CStatement::CopyAggregate {
             target,
@@ -2351,7 +2358,11 @@ fn collect_c_value_bound_variables(value: &CValue, variables: &mut BTreeSet<Vari
         | CValue::UInt128(bits)
         | CValue::Float32(bits)
         | CValue::Float64(bits) => collect_bitvector_bound_variables(bits, variables),
-        CValue::Pointer(pointer) => collect_pointer_bound_variables(pointer, variables),
+        CValue::Pointer(pointer) => {
+            for address in pointer.pointers() {
+                collect_pointer_bound_variables(address, variables);
+            }
+        }
         CValue::Void => {}
     }
 }
@@ -5468,12 +5479,11 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_value(
         CValue::UInt128(bits) => CValue::UInt128(substitute_bitvector_variable(bits, from, to)),
         CValue::Float32(bits) => CValue::Float32(substitute_bitvector_variable(bits, from, to)),
         CValue::Float64(bits) => CValue::Float64(substitute_bitvector_variable(bits, from, to)),
-        CValue::Pointer(pointer) => CValue::typed_pointer(
-            substitute_bitvector_variable_in_pointer(pointer.pointer(), from, to),
-            pointer.c_type(),
-        )
-        .with_pointer_pointee_volatile(pointer.pointee_volatile())
-        .with_pointer_pointee_constant(pointer.pointee_constant()),
+        CValue::Pointer(pointer) => {
+            CValue::Pointer(pointer.map_pointers(|address| {
+                substitute_bitvector_variable_in_pointer(address, from, to)
+            }))
+        }
     }
 }
 

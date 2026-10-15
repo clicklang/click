@@ -237,10 +237,23 @@ needed to finish a claim already made:
   - parent reuse after the child's last use;
   - the read-only import-bound checker for same-block scalar reborrows,
     with indexed access certificates and scaling checks.
+  - operation identities carried through lowering into completed kernel reads
+    and stores, including cached scalar reads; indexed bindings retain the
+    actual pointer and reject another locked import identity. Failed writes
+    produce no store observation, and source deltas have ambient-scaling checks.
+  - the checked kernel lifecycle for exclusive scalar-reference identities:
+    parent suspension, nested dependencies and one-time child recovery, with
+    exact owned-support checks and indexed scaling regressions. Rust execution
+    does not yet issue or consume these local-reference transitions.
+  - completed scalar-reborrow assignment receipts and execution-bound endings
+    immediately after selected child stores. Bindings require both operations
+    on one path, check the source and actual pointer, and refuse ambiguous
+    repeated observations. These receipts do not yet carry local-loan leases
+    or authorize recovery.
 
-  Those identities must still travel through C0 lowering and bind actual
-  memory permission. Local reference access binding and kernel recovery at
-  checked frontiers also remain open. A reproduced false acceptance here
+  Those executed observations must still bind the local-reference lifecycle,
+  live memory permission and the actual ending frontier/invocation. Recovery
+  at checked frontiers remains open. A reproduced false acceptance here
   would be `unsound`, and so P1, under the [issue rules](README.md).
 - **Stable proof observations.** Provide source-facing slice, array and
   iterator observations, so that contracts need not depend on compiler

@@ -2,7 +2,8 @@
 
 `holder_of`'s body binds the witness `cell`. Naming it at the unfold gives the
 proof a name for its value, so when the increment leaves the fold's body fact
-`h->target == cell and 0 <= h->count` unstated, the fold spells that fact with
+`h->target == cell and (h->count < 200 or cell == 0)` unstated, and the
+disjunction is no condition the kernel decides, the fold spells that fact with
 `p` and the implicit `auto` proves it. Without the name the witness has no
 source spelling and the fold falls back to the counted search.
 
@@ -20,7 +21,7 @@ void bump(struct holder* h) {
 ```click
 resource holder_of(h: struct holder*) {
     owns *h;
-    let cell: int32* where h->target == cell and 0 <= h->count;
+    let cell: int32* where h->target == cell and (h->count < 200 or cell == 0);
 }
 
 verifying "unfold_names_a_witness_for_a_fold_body_fact.c";

@@ -2058,12 +2058,8 @@ pub(in crate::kernel) fn apply_c_subtract(
                     value: false,
                 }
             };
-            let pointer_type = pointer.c_type();
-            let volatile = pointer.pointee_volatile();
             let guarded = apply_pointer_formation_guards(
-                pointer.into_pointer(),
-                pointer_type,
-                volatile,
+                pointer,
                 vec![guard],
                 facts,
                 obligations,
@@ -2196,9 +2192,8 @@ fn pointer_offset_by_elements_paths(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
-    let pointer_type = pointer.c_type();
-    let pointee_volatile = pointer.pointee_volatile();
-    let pointer = pointer.into_pointer();
+    let value = pointer;
+    let pointer = value.pointer().clone();
 
     // C11 6.5.6p8 defines additive pointer arithmetic only for a pointer that
     // designates an element of an array object or one past its end. A null
@@ -2316,9 +2311,7 @@ fn pointer_offset_by_elements_paths(
     }
 
     owed.extend(apply_pointer_formation_guards(
-        result,
-        pointer_type,
-        pointee_volatile,
+        value.with_address(result),
         guards,
         facts,
         obligations,
@@ -2381,9 +2374,8 @@ pub(in crate::kernel) fn pointer_offset_by_bytes_paths(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
-    let pointer_type = pointer.c_type();
-    let pointee_volatile = pointer.pointee_volatile();
-    let pointer = pointer.into_pointer();
+    let value = pointer;
+    let pointer = value.pointer().clone();
     if pointer.block.is_function() && bytes != 0 {
         return vec![CExpressionPath {
             outcome: CExpressionOutcome::RuntimeError(CRuntimeError::IndeterminatePointeeType),
@@ -2396,9 +2388,7 @@ pub(in crate::kernel) fn pointer_offset_by_bytes_paths(
         return Vec::new();
     };
     apply_pointer_formation_guards(
-        result,
-        pointer_type,
-        pointee_volatile,
+        value.with_address(result),
         guards,
         facts,
         obligations,
@@ -3018,21 +3008,19 @@ fn simplify_c_int32_add_operand(
         .unwrap_or(simplified)
 }
 
+/// Splits the paths on the formation guards. The formed value keeps the
+/// operand's type, volatility and subobject extent. It drops the operand's
+/// `const` pointee qualifier, as formation always has; the write-through-const
+/// check reads the lvalue's static type.
 fn apply_pointer_formation_guards(
-    pointer: Pointer,
-    pointer_type: CType,
-    pointee_volatile: bool,
+    pointer: CPointerValue,
     guards: Vec<PointerFormationGuard>,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
     let mut normal = vec![CExpressionPath {
-        outcome: CExpressionOutcome::Value(CValue::typed_pointer_with_pointee_volatile(
-            pointer,
-            pointer_type,
-            pointee_volatile,
-        )),
+        outcome: CExpressionOutcome::Value(CValue::Pointer(pointer.with_pointee_constant(false))),
         facts,
         obligations,
     }];

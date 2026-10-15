@@ -3,6 +3,9 @@ use crate::kernel::ExecutionFactSource;
 use crate::kernel::ResourceInstance;
 use crate::surface::planning::proposition_search::proves_by_tactic_search;
 use crate::surface::proof::execution_planning::refuse_or_record_open_obligation;
+use crate::surface::proof_diagnostics::render::{
+    render_resource_fact_diagnostic, render_resource_facts_diagnostic,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ResourceBodyAccess {
@@ -2591,7 +2594,7 @@ fn append_composite_resource_declared_facts<F: ResourcePureFacts>(
                 definition.name(),
                 describe_click_proposition(&fact),
                 describe_pure_facts(&propositions.materialize()),
-                describe_resource_facts(contained_resources.facts(), parameter_binding)
+                render_resource_facts_diagnostic(contained_resources.facts(), parameter_binding)
             )
         })?;
         for fact in facts {
@@ -2632,7 +2635,7 @@ fn describe_resource_context_validity_error(
         ResourceContextValidityError::DuplicateOwnedResourceFact(resource) => {
             format!(
                 "duplicate resource fact `{}`",
-                describe_resource_fact(&resource, parameter_binding)
+                render_resource_fact_diagnostic(&resource, parameter_binding)
             )
         }
         ResourceContextValidityError::OverlappingOwnedMemoryResources { left, right } => {
@@ -2942,6 +2945,27 @@ pub(super) fn declared_resource_witness_values(
             _ => None,
         })
         .collect())
+}
+
+/// Whether the kernel's condition decision settles `required`: a condition,
+/// a negated condition, or a conjunction of them.
+fn decided_by_kernel_condition_decision(
+    assumptions: &PureFactContext,
+    required: &Proposition,
+) -> bool {
+    match required {
+        Proposition::And(left, right) => {
+            decided_by_kernel_condition_decision(assumptions, left)
+                && decided_by_kernel_condition_decision(assumptions, right)
+        }
+        Proposition::ConditionIs(condition, value) => assumptions.decide(condition) == Some(*value),
+        Proposition::Not(body) => matches!(
+            body.as_ref(),
+            Proposition::ConditionIs(condition, value)
+                if assumptions.decide(condition) == Some(!*value)
+        ),
+        _ => false,
+    }
 }
 
 fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
@@ -4016,8 +4040,12 @@ fn fold_composite_resources_on_outcome_with_facts(
             // work proportional to the fact being checked, so an exactly
             // available body fact never rides on the open-ended kernel search
             // below, which can consume a large share of the fold's budget.
-            let exactly_available =
-                pure_facts.exact_available_across_effects(&required, execution_pure_facts);
+            // The kernel's condition decision settles a condition body fact
+            // as it settles a step's: the difference graph, then the
+            // decision's checked rules (a tagged pointer word's low bits, say).
+            let exactly_available = pure_facts
+                .exact_available_across_effects(&required, execution_pure_facts)
+                || decided_by_kernel_condition_decision(&body_assumptions, &required);
             // A body fact the exact checks miss is a requirement of this
             // `fold`, spelled as the definition's fact over the arguments as
             // written; the fold never searches the proof context for it
@@ -4243,7 +4271,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                             return Err(ClickError::new(format!(
                                 "`{claim_label}` path {path_index}: `fold({})` body views memory this context owns: `{}` is backed by an owner that can still write it, so the folded facts would not be stable; own it in the body or borrow it through a call",
                                 describe_resource_clause(resource),
-                                describe_resource_fact(&lowered, parameter_binding)
+                                render_resource_fact_diagnostic(&lowered, parameter_binding)
                             )));
                         }
                         body_has_unbound_view = true;

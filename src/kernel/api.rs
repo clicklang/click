@@ -2277,6 +2277,7 @@ pub fn c_assign(name: impl Into<String>, expression: CExpression) -> CStatement 
     CStatement::Assign {
         name: name.into(),
         expression,
+        source: Default::default(),
     }
 }
 
@@ -2560,6 +2561,7 @@ pub(crate) fn c_qualified_typed_store(
         value_type,
         pointee_constant,
         volatile,
+        source: Default::default(),
     }
 }
 

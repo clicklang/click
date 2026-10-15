@@ -39,7 +39,9 @@ enum BindingCarrier {
 #[derive(Clone)]
 pub(crate) enum TypedCReplacement {
     Bitvector(Bitvector32Term),
-    Pointer(Pointer),
+    /// The whole value: a use of the bound variable's address adopts its
+    /// subobject extent.
+    Pointer(CPointerValue),
 }
 
 struct TypedVariableReplacements<'a> {
@@ -153,7 +155,7 @@ fn typed_c_replacement(value: &CValue) -> Option<TypedCReplacement> {
         | CValue::UInt128(term)
         | CValue::Float32(term)
         | CValue::Float64(term) => Some(TypedCReplacement::Bitvector(term.clone())),
-        CValue::Pointer(pointer) => Some(TypedCReplacement::Pointer(pointer.pointer().clone())),
+        CValue::Pointer(pointer) => Some(TypedCReplacement::Pointer(pointer.clone())),
         CValue::Void => None,
     }
 }
@@ -264,12 +266,20 @@ fn replace_binding_variable(
                     PointerBlock::Symbolic(_) | PointerBlock::FunctionSymbolic(_)
                 ) =>
             {
-                let mut replaced = pointer.pointer().clone();
-                replaced.block = match replaced.block {
+                // Rename the binder's block wherever the value names it: in
+                // its address and in its extent's start.
+                let old = pointer.block.clone();
+                let new = match old {
                     PointerBlock::FunctionSymbolic(_) => PointerBlock::FunctionSymbolic(variable),
                     _ => PointerBlock::Symbolic(variable),
                 };
-                pointer.replace_pointer(replaced);
+                *pointer = pointer.map_pointers(|address| {
+                    let mut renamed = address.clone();
+                    if renamed.block == old {
+                        renamed.block = new.clone();
+                    }
+                    renamed
+                });
             }
             _ => {}
         },
@@ -2502,9 +2512,15 @@ impl<'a> TermRewrite<'a> {
             CValue::Float32(v) => CValue::Float32(self.bits(v)),
             CValue::Float64(v) => CValue::Float64(self.bits(v)),
             CValue::Pointer(v) => {
-                let mut result = v.clone();
-                result.replace_pointer(self.pointer(v.pointer()));
-                CValue::Pointer(result)
+                let adopted = match v.extent() {
+                    None => self.replaced_pointer_extent(v.pointer()),
+                    Some(_) => None,
+                };
+                let mapped = v.map_pointers(|address| self.pointer(address));
+                CValue::Pointer(match adopted {
+                    Some(extent) => mapped.with_extent(Some(extent)),
+                    None => mapped,
+                })
             }
         };
         if self.checked_work_exhausted() {
@@ -3515,7 +3531,9 @@ impl<'a> TermRewrite<'a> {
                         collect_bitvector_carriers(value, &mut variables)
                     }
                     TypedCReplacement::Pointer(pointer) => {
-                        collect_pointer_carriers(pointer, &mut variables);
+                        for address in pointer.pointers() {
+                            collect_pointer_carriers(address, &mut variables);
+                        }
                     }
                 }
                 if variables.exhausted() {
@@ -3591,6 +3609,22 @@ impl<'a> TermRewrite<'a> {
         } else {
             crate::instrumentation::record_deterministic_work(work);
         }
+    }
+
+    /// The extent a value at `p` adopts when `p`'s block is a typed
+    /// variable replaced by a pointer value with an extent.
+    fn replaced_pointer_extent(&self, p: &Pointer) -> Option<crate::kernel::SubobjectExtent> {
+        let (PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable)) =
+            &p.block
+        else {
+            return None;
+        };
+        let Some(TypedCReplacement::Pointer(replacement)) =
+            self.typed_variables.as_ref()?.c.get(variable)
+        else {
+            return None;
+        };
+        replacement.extent().cloned()
     }
 
     fn pointer(&mut self, p: &Pointer) -> Pointer {
@@ -4913,7 +4947,13 @@ mod tests {
         assert_eq!(small_work, large_work);
 
         let mut c_replacements = BTreeMap::new();
-        c_replacements.insert(source, TypedCReplacement::Pointer(replacement.clone()));
+        c_replacements.insert(
+            source,
+            TypedCReplacement::Pointer(CPointerValue::new(
+                replacement.clone(),
+                CType::Int32Pointer,
+            )),
+        );
         let empty_integer_replacements = BTreeMap::new();
         let empty_algebraic_replacements = BTreeMap::new();
         let mut typed_rewrite = TermRewrite::for_typed_variables(

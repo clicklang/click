@@ -394,3 +394,13 @@ introduced regressions are closed, the acceptance evidence and supported limits
 are documented, and remaining excluded features belong to their existing
 roadmaps. Preserve durable design and delivery records, then delete this issue
 under the normal issue lifecycle.
+
+### Buffer-join recovery checkpoint
+
+`477784302` preserves the selected supplier-coordinate repair described in the
+[recovery audit](../design/object-model-recovery-audit.md#checked-coordinate-buffer-join-repair).
+Both original buffer pipelines and the reduction pass all four proof modes;
+86 selected kernel controls pass. The example stage improves to 41/52 with no
+new failures. This supersedes the earlier unconfirmed split-buffer attribution.
+Next assess an independent upstream extraction, then reduce the remaining eleven
+compatibility failures. Do not activate the archive as a whole.

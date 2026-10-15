@@ -1613,6 +1613,29 @@ the C call, not from the proof application. The retired forms
 `contract Name(handle: R(...)) for T(...)`, `step(Name())`, and
 `step(Name(instance))` are refused with their replacements.
 
+A named contract can also take values that are fixed where it is attached to
+a function, declared in its body as `let name: type;`, with a scalar type and
+no initializer. In declaration order these are its value parameters. They are
+not part of the function type the contract applies to:
+
+<!-- verified-example: mdtests/named_contract_value_parameter.md -->
+```click
+contract int32 Adds(int32 x) {
+    let amount: int32;
+    requires 0 <= x and x <= 1000;
+    requires 0 <= amount and amount <= 1000;
+    ensures result == x + amount;
+}
+```
+
+Attaching the contract names every value parameter once, as a map after the
+function: `requires Adds(f, { amount: k });`. A call through `f` then binds
+`amount` to `k` beside the call's arguments. Passing `&add3` where
+`Adds(f, { amount: 3 })` is needed checks `add3`'s contract against `Adds`
+with `amount` fixed to `3`. An unknown, missing, or repeated name is refused.
+A refinement or execution theorem cannot yet conclude a contract with value
+parameters; formation at `&f` checks it automatically.
+
 A top-level `contract` block defines a reusable behavioral interface without
 declaring a concrete C function:
 

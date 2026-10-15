@@ -212,10 +212,21 @@ Each step is its own pull request.
        no `path facts` decisions, measured on master `d7501d30f` with
        `branching_graph_dfs` masked. That fixture now explicitly retains
        its old child-index bounds and passes in the full corpus.
+   - *Tag bits:* the graph tracks known low bits of 64-bit values
+     (`x ≡ r mod 2^k`) from `x & (2^k - 1) == c` facts and 64-bit
+     equalities. Residues survive the wrapping sums a tagged word is built
+     from, scaled offsets contribute `0 mod 2^tz(w)`, and `addr(p + o)` is
+     `addr(p) + o`. A 64-bit word equality the graph leaves open goes to the
+     existing pointer-tag rules (`decide_pointer_word_equality_citing`),
+     whose leaves then ask only the fast decisions. With the general
+     decision dropped, every mdtest and example the assessment listed now
+     verifies, except the tag-free `rbtree-augmented` guard below.
    - *Left:*
-     - tag bits in pointer words (the rbtree parent/colour word, `& 1`,
-       `& 7`, `== (uint64)node`, alignment), which is bit-level reasoning on
-       addresses, not difference logic;
+     - a sum bounded by its guard, `a <= INT_MAX - b`, which is not a
+       difference constraint. Simple checking deliberately does not
+       rediscover it: `explicit_nonnegative_add_definedness_certifies_the_whole_contract`
+       requires the lemma `int32_nonnegative_add_within_max_is_defined`.
+       `rbtree-augmented` relies on the general decision for it;
      - certain overflows, which the graph does not answer.
    - *Landed after the assessment:* a narrow integer cast (`int8`,
      `uint8`, `int16`, `uint16`, `int32` as `int32` values) links to its
@@ -237,13 +248,15 @@ Each step is its own pull request.
      8 of the 20 mdtests and 3 of the 5 examples. The rest are listed under
      *Left* above. The `step` refusals among them ("got 2 feasible condition
      paths") are expected under this phase, which keeps both branches.
-   - *The loop bug is not in these sites.* With every kernel-site general
-     decision dropped, `scripts/step-scaling-hunt.py loops` charges the same
-     4,598 / 15,260 / 59,046 / 132,782 units at N = 4 / 8 / 16 / 24. 93% of
-     that time is the smart `loop` clause's own search, which calls
-     `PureFactContext::decide` directly. Closing the bug means changing what
-     that search asks, or having it read the difference graph, in addition
-     to this phase.
+   - *The loop bug is in these sites.* An earlier measurement here
+     filtered the general decision's answers but still ran it, so it could
+     not see its cost. With the call itself skipped at the four sites,
+     `scripts/step-scaling-hunt.py loops` charges the largest loop clause
+     1,847 / 2,485 / 3,759 / 5,031 units at N = 4 / 8 / 16 / 24, against
+     4,596 / 15,258 / 59,044 / 132,780 with it. The quadratic part is the
+     general decision (`has_lower_bound_above` deciding each earlier loop's
+     dead copy of `i`). About 160 units per earlier loop remain, linear,
+     which the bug's acceptance (constant) still needs removed.
 
 ## Acceptance criteria
 
