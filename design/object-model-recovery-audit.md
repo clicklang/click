@@ -797,3 +797,25 @@ at final postconditions; a control without backing ownership is rejected while
 checking its resource's read authority. The filtered Markdown harness passes
 (2.77s); the fixture is classified nightly, and only this named fixture was run.
 No kernel rule or diagnostic presentation changes are included in this slice.
+
+### Bounded resource-query shortcuts
+
+A separate cleanup classifies literal resource quantities directly as signed
+int32 values, retaining the existing bounded decision route for symbolic
+quantities. A view-occurrence query returns immediately when the maintained
+ownership count establishes that every held fact is owned; mixed inputs skip
+owned candidates before aligning viewed requirements. These shortcuts neither
+publish pointer equalities nor grant authority.
+
+All 12 selected current-upstream quantity, view-dependency and fold-body controls
+pass (0.50s harness). The new deterministic controls cover 0, 16, 64 and 256
+unrelated facts/owners, signed count boundaries, symbolic counts, and view
+insertion/removal/forks. This is not the archive fold repair: the same fold
+still exhausts its budget. Private probes narrow that failure to lowering the
+`terminated_at` body fact, after the preceding exact bound checks succeed.
+PR #1038 merged, and its final pushed commit `e3175f36b` is verified upstream.
+
+The cleanup's rebuilt upstream CLI/library also pass the split-field fixture's
+fresh, expanded, rewritten and retained checks. Its filtered nightly-fixture
+harness passes (3.14s). Formatting, mdBook, docs lint and whitespace checks pass;
+Vale is unavailable, so advisory prose lint is skipped.
