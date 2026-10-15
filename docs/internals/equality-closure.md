@@ -196,6 +196,17 @@ equalities, addition congruence, and registered same-snapshot int32 load congrue
 wide expressions. Further sorts and consumers remain separate work. `pointer_is_classed` and `pointer_spellings` are explicitly
 pointer-specific compatibility helpers for legacy consumers.
 
+Term interning and affine decomposition run under the graph mutex and do not
+canonicalize memory or traverse its history. Public scalar and offset equality
+queries normalize their selected scalar indices before locking while preserving
+the offset expression's addition nodes. A raw scalar read can
+receive an exact-snapshot observation name with its recorded kind and access
+width; that internal definition introduces no path proposition or read authority.
+A different snapshot still needs the existing checked normalization or frame
+bridge. `raw_read_address_registration_does_not_walk_memory_history` measures
+selected registration beside 0, 16, 64 and 256 unrelated classes. The existing
+snapshot/support regression separately checks raw/named equality and withdrawal.
+
 Kernel consumers use `PureFactContext::pointers_known_equal(left, right)`
 for equality already established by this trusted graph. It neither searches
 arithmetic facts nor walks an alias component. `false` means unknown.

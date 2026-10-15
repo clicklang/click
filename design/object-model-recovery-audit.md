@@ -861,3 +861,27 @@ nightly suite are left to CI.
 The full archive string project gets past push; a focused pop adaptation also
 checks, but the full project still stops at clear's zero-value claim. No new
 52-project audit or bounded-model completion is claimed.
+
+### CI graph-lock boundary follow-up
+
+PR #1051's bounded order checks expose an existing graph reentry path in
+`equivalent_field_derived_bases_frame_symbolic_index_store`. The failed library
+partition reproduces locally: 944 of 945 tests pass and that case times out.
+A debugger shows the graph mutex held by address registration while term
+canonicalization starts a cell-epoch walk that queries the same mutex.
+
+The repair keeps term interning and affine decomposition structural. Scalar and
+offset query adapters perform selected normalization before locking; internal
+raw-read names retain their exact snapshot, kind and access width. A new
+multi-size raw-read registration regression complements the existing
+snapshot/support and complete-width controls. Final validation is in progress.
+
+The recovery archive's full original string project and focused original pop
+and clear reductions now pass all four proof modes. Checkpoint `5570f876c`
+preserves the one-line clear predicate elimination and the completed normal
+example audit: **42/52 pass**, 10 fail, exit 100, 176.3s harness. Remaining projects
+are arena, binary-tree, input-cursor, multifile-registry, owned-vector,
+rbtree-augmented, refcount, ring-buffer, rust-byte-sum and rust-chunks-exact.
+This is not a green archive verdict. The expensive first returned-resource
+assumption has a separate preserved report at that checkpoint; the fold budget
+failure itself no longer reproduces on the final indexed-order archive variant.
