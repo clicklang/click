@@ -2354,17 +2354,20 @@ impl<'a> Proof<'a> {
         let selected = &checked.selected;
         execution
             .core
-            .record_resource_rewrite(
+            .record_resource_rewrite_with_loan_holds(
                 context.function,
                 context.arguments,
                 &before_facts,
                 selected,
                 &checked.state,
                 &checked.facts,
+                None,
+                &checked.loan_holds,
             )
-            .map_err(|message| {
+            .map_err(|error| {
                 self.step_error(format!(
-                    "kernel rejected checked resource `fold`: {message}"
+                    "kernel rejected checked resource `fold`: {}",
+                    error.message
                 ))
             })?;
         execution.core.state = checked.state.into();
