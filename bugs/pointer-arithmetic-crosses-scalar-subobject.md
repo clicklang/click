@@ -18,9 +18,11 @@ rejects the in-function variants: the original C and C++ reads, the pointer
 local, formation past the one-past end, a stored and reloaded member pointer,
 and a loop walking past a member array. The fixtures are
 `mdtests/a_one_past_scalar_member_pointer_cannot_read_its_sibling.md` and its
-siblings. Still accepted: passing a member pointer to a modular helper
-(step 3), and reaching another object through address equality inside a
-callee or from a pointer loaded at function entry (Phase B).
+siblings. Step 3 refuses passing a member pointer to a callee, or folding it
+into a resource, whose clause claims more than the member
+(`mdtests/a_member_pointer_cannot_be_passed_as_a_longer_range.md`). Still
+accepted: reaching another object through address equality inside a callee,
+or from a pointer loaded at function entry (Phase B).
 
 ## Reproduction
 

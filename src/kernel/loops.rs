@@ -8932,7 +8932,7 @@ pub(super) fn evaluate_loop_effect_segment(
         "segment base",
         budget,
     )? {
-        Ok(CValue::Pointer(pointer)) => pointer.into_pointer(),
+        Ok(CValue::Pointer(pointer)) => pointer,
         Ok(value) => {
             return Ok(Err(format!(
                 "segment base evaluated to a {} value, not a pointer",
@@ -8941,6 +8941,8 @@ pub(super) fn evaluate_loop_effect_segment(
         }
         Err(message) => return Ok(Err(message)),
     };
+    let base_value = base;
+    let base = base_value.pointer().clone();
     let start_value = evaluate_loop_effect_segment_value(
         state,
         &segment.start,
@@ -8960,13 +8962,17 @@ pub(super) fn evaluate_loop_effect_segment(
     if let (Ok(start), Ok(end)) = (&start_value, &end_value)
         && let Some((start, end)) = crate::kernel::wide_range_bounds(start, end)
     {
-        return Ok(Ok(EvaluatedMemorySegment {
+        let evaluated = EvaluatedMemorySegment {
             base,
             start,
             end,
             element_width: segment.element_width,
             kind: RangeIndexKind::UInt64,
-        }));
+        };
+        if let Some(refusal) = segment_extent_refusal(&base_value, &evaluated, assumptions) {
+            return Ok(Err(refusal));
+        }
+        return Ok(Ok(evaluated));
     }
     let start = match start_value {
         Ok(CValue::Int32(value)) => value,
@@ -8996,13 +9002,17 @@ pub(super) fn evaluate_loop_effect_segment(
     };
     let element_width = segment.element_width;
 
-    Ok(Ok(EvaluatedMemorySegment {
+    let evaluated = EvaluatedMemorySegment {
         base,
         start,
         end,
         element_width,
         kind: RangeIndexKind::Int32,
-    }))
+    };
+    if let Some(refusal) = segment_extent_refusal(&base_value, &evaluated, assumptions) {
+        return Ok(Err(refusal));
+    }
+    Ok(Ok(evaluated))
 }
 
 pub(super) fn evaluate_loop_effect_segment_with_facts(
@@ -9033,7 +9043,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         Ok(Ok(value))
     };
     let base = match evaluate(&segment.base, "segment base")? {
-        Ok(CValue::Pointer(pointer)) => pointer.into_pointer(),
+        Ok(CValue::Pointer(pointer)) => pointer,
         Ok(value) => {
             return Ok(Err(format!(
                 "segment base evaluated to a {} value, not a pointer",
@@ -9042,6 +9052,8 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         }
         Err(message) => return Ok(Err(message)),
     };
+    let base_value = base;
+    let base = base_value.pointer().clone();
     let start_value = evaluate(&segment.start, "segment start")?;
     let end_value = evaluate(&segment.end, "segment end")?;
     // A range with a 64-bit bound retains that bound's width.
@@ -9049,16 +9061,18 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     if let (Ok(start), Ok(end)) = (&start_value, &end_value)
         && let Some((start, end)) = crate::kernel::wide_range_bounds(start, end)
     {
-        return Ok(Ok((
-            EvaluatedMemorySegment {
-                base,
-                start,
-                end,
-                element_width: segment.element_width,
-                kind: RangeIndexKind::UInt64,
-            },
-            facts.into(),
-        )));
+        let evaluated = EvaluatedMemorySegment {
+            base,
+            start,
+            end,
+            element_width: segment.element_width,
+            kind: RangeIndexKind::UInt64,
+        };
+        let context = assumptions_with_path_context(assumptions, &facts, &[]);
+        if let Some(refusal) = segment_extent_refusal(&base_value, &evaluated, &context) {
+            return Ok(Err(refusal));
+        }
+        return Ok(Ok((evaluated, facts.into())));
     }
     let start = match start_value {
         Ok(CValue::Int32(value)) => value,
@@ -9087,16 +9101,18 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         Err(message) => return Ok(Err(message)),
     };
     let element_width = segment.element_width;
-    Ok(Ok((
-        EvaluatedMemorySegment {
-            base,
-            start,
-            end,
-            element_width,
-            kind: RangeIndexKind::Int32,
-        },
-        facts.into(),
-    )))
+    let evaluated = EvaluatedMemorySegment {
+        base,
+        start,
+        end,
+        element_width,
+        kind: RangeIndexKind::Int32,
+    };
+    let context = assumptions_with_path_context(assumptions, &facts, &[]);
+    if let Some(refusal) = segment_extent_refusal(&base_value, &evaluated, &context) {
+        return Ok(Err(refusal));
+    }
+    Ok(Ok((evaluated, facts.into())))
 }
 
 pub(super) fn evaluate_loop_effect_segment_value(
@@ -10570,5 +10586,116 @@ fn with_retained_extent(fresh: CValue, previous: Option<&CValue>) -> CValue {
             CValue::Pointer(pointer.with_extent(Some(extent.clone())))
         }
         (fresh, _) => fresh,
+    }
+}
+
+/// A memory clause names its range through a pointer, and so claims that the
+/// pointer designates that range (`design/pointer-subobject-extents.md`, D1).
+/// Through a pointer narrowed to a member, the range must lie inside the
+/// member: passing `&pair.first` where a callee views `p[0..2]` would
+/// otherwise let the callee read `pair.second` through it. An empty range
+/// claims nothing. A pointer without an extent is bounded by its complete
+/// object, as before.
+fn segment_extent_refusal(
+    base: &CPointerValue,
+    segment: &EvaluatedMemorySegment,
+    assumptions: &PureFactContext,
+) -> Option<String> {
+    range_extent_refusal(
+        base,
+        &segment.start,
+        &segment.end,
+        segment.element_width,
+        segment.kind,
+        assumptions,
+    )
+}
+
+/// [`segment_extent_refusal`] for a lowered range: a proof step's clause
+/// names its range through the same pointer value.
+pub(crate) fn memory_range_extent_refusal(
+    base: &CPointerValue,
+    range: &CMemoryRange,
+    assumptions: &PureFactContext,
+) -> Option<String> {
+    let (start, end) = match range.wide_bounds() {
+        Some(bounds) => bounds,
+        None => (range.start(), range.end()),
+    };
+    range_extent_refusal(
+        base,
+        start,
+        end,
+        range.element_width(),
+        range.kind(),
+        assumptions,
+    )
+}
+
+fn range_extent_refusal(
+    base: &CPointerValue,
+    start: &Bitvector32Term,
+    end: &Bitvector32Term,
+    element_width: u32,
+    kind: RangeIndexKind,
+    assumptions: &PureFactContext,
+) -> Option<String> {
+    let extent = base.extent()?;
+    let refusal = || {
+        Some(format!(
+            "the clause's range of {}-byte elements reaches outside the {}-byte subobject its pointer designates",
+            element_width, extent.width
+        ))
+    };
+    let Some(offset) =
+        crate::kernel::reasoning::pointer_byte_offset_from_base(base.pointer(), &extent.start)
+    else {
+        return refusal();
+    };
+    let Ok(width) = i64::try_from(extent.width) else {
+        return refusal();
+    };
+    let element_width = i64::from(element_width);
+    let proves = |condition: ConditionTerm| assumptions.decide(&condition) == Some(true);
+    let offset = Bitvector32Term::int64_from_32(offset);
+    match kind {
+        RangeIndexKind::Int32 => {
+            let start = Bitvector32Term::int64_from_32(start.clone());
+            let end = Bitvector32Term::int64_from_32(end.clone());
+            if proves(ConditionTerm::int64_signed_less_equal(
+                end.clone(),
+                start.clone(),
+            )) {
+                return None;
+            }
+            let byte = |index: Bitvector32Term| {
+                Bitvector32Term::int64_add(
+                    offset.clone(),
+                    Bitvector32Term::int64_multiply(
+                        index,
+                        Bitvector32Term::Int64Constant(element_width),
+                    ),
+                )
+            };
+            let inside = proves(ConditionTerm::int64_signed_less_equal(
+                Bitvector32Term::Int64Constant(0),
+                byte(start),
+            )) && proves(ConditionTerm::int64_signed_less_equal(
+                byte(end),
+                Bitvector32Term::Int64Constant(width),
+            ));
+            (!inside).then(refusal).flatten()
+        }
+        // An unsigned 64-bit range is inside when its constant offset leaves
+        // room for its end; its start is never below zero.
+        RangeIndexKind::UInt64 => {
+            let offset = offset.int64_as_const()?.max(0);
+            let room = u64::try_from((width - offset) / element_width.max(1)).ok()?;
+            let inside = proves(ConditionTerm::uint64_less_equal(
+                end.clone(),
+                Bitvector32Term::UInt64Constant(room),
+            ));
+            (!inside).then(refusal).flatten()
+        }
     }
 }
