@@ -25,7 +25,8 @@ remain in [C++ object model and shared memory semantics](https://github.com/lack
 construction/return protocol. Their implementation claims must be checked
 against the revision they describe before being presented as upstream behavior.
 [cpp-support.md](cpp-support.md) owns subsequent C++ coverage and Bitcoin Core
-milestones; [rust-support.md](rust-support.md) owns Rust coverage.
+milestones; [the Rust reference](../docs/reference/rust.md) records the supported Rust subset;
+its [Linux frontend milestone](../design/rust-charon-assessment.md#completed-linux-frontend-delivery) is complete.
 
 ## Recovery starting point
 

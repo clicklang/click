@@ -25,8 +25,8 @@ P1 does not require more examples or broader C++ coverage.
 
 The P1 work is the front-end pipeline. Getting from a C++ project to a
 verified sidecar should be well designed, not ad hoc. The
-[Rust front end](rust-support.md) has the same scope; the two share the
-design in [Shared front-end design](#shared-front-end-design) below.
+[completed Linux Rust front end](../design/rust-charon-assessment.md#completed-linux-frontend-delivery)
+uses the [shared front-end design](#shared-front-end-design) below.
 
 ## Goal
 
@@ -143,9 +143,10 @@ this lands.
 ## Shared front-end design
 
 This section is the shared design for the C++ and
-[Rust](rust-support.md) front ends. Rust's file references it rather than
-repeating it. [project-config.md](project-config.md) covers project
-configuration and the lock format for all three languages.
+[Rust](../design/rust-charon-assessment.md#completed-linux-frontend-delivery) front ends.
+Rust delivery is complete for Linux; its installed workflow uses this design.
+[project-config.md](project-config.md) covers project configuration and the lock
+format for all three languages.
 
 - **Install layout and versioning.** Each Click version pins exactly one
   version of each front end. Front ends install beside that version of

@@ -22,8 +22,8 @@ what it builds, for which target and with which toolchain.
 By user direction (2026-10-15), C, C++ and Rust are all launch languages, and
 a project configuration is the foundation the front-end work builds on. This
 issue owns the configuration model. [cpp-support.md](cpp-support.md) and
-[rust-support.md](rust-support.md) own their front ends' identity and
-coverage. [multiple-compilers.md](multiple-compilers.md) owns ABI and layout
+[the completed Linux Rust frontend](../design/rust-charon-assessment.md#completed-linux-frontend-delivery)
+record their front ends' identity and coverage. [multiple-compilers.md](multiple-compilers.md) owns ABI and layout
 validation. Those front ends consume the units defined here.
 
 ## Current state
