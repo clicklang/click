@@ -4307,6 +4307,8 @@ mod function_pointers;
 mod impl_fn;
 #[path = "rust_import/parameterized_contracts.rs"]
 mod parameterized_contracts;
+#[path = "rust_import/trait_methods.rs"]
+mod trait_methods;
 
 #[path = "rust_import/loop_headers.rs"]
 mod loop_headers;

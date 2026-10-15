@@ -62,6 +62,11 @@ pub enum Type {
     Record {
         name: String,
     },
+    /// What a reference to a type parameter bound by a crate trait, `&T`
+    /// for `T: Shape`, or a `&dyn Shape` refers to: a value of a type the
+    /// function does not know, which it reaches only through the trait's
+    /// methods. It is never a value by itself.
+    TraitObject,
     /// A safe Rust-ABI function pointer of scalar parameters and result,
     /// `fn(i32) -> i32`.
     FnPointer {
@@ -109,6 +114,11 @@ pub struct Function {
     /// fixed where an instance of it is created.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub captures: usize,
+    /// A crate trait method's implementation: the external function that
+    /// stands for the trait method, `traits::Shape::area`, whose contract
+    /// this function must refine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub implements: Option<String>,
     pub span: Span,
 }
 

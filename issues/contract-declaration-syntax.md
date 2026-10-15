@@ -198,7 +198,14 @@ that writes `int32` for such a source already writes the source's spelling.
    override or `impl` is checked against it with the named-contract
    refinement judgment. Dynamic dispatch through a base pointer or
    `dyn Trait` uses the interface. Standalone `contract` declarations remain
-   for function values.
+   for function values. Done for Rust: a sidecar `trait crate::Shape { fn
+   area(&self, ...) { ... } }` states the interface, calls through a trait
+   bound or `&dyn Shape` are checked against it, and each `impl` method,
+   named `<crate::Square as crate::Shape>::area`, must refine it by the
+   automatic check. Remaining: interfaces that read the receiver's state
+   (an abstract model of `Self`), an explicit refinement proof for an
+   implementation the automatic check misses, generic traits and default
+   methods, and C++ virtual methods.
 
 ## Intended regressions
 
