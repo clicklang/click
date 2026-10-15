@@ -863,24 +863,7 @@ fn example_catalog_only_names_checked_fixtures() {
 }
 
 fn markdown_links(source: &str) -> Vec<String> {
-    let mut links = Vec::new();
-    let bytes = source.as_bytes();
-    let mut index = 0;
-    while index + 1 < bytes.len() {
-        if bytes[index] == b']' && bytes[index + 1] == b'(' {
-            let start = index + 2;
-            if let Some(end_offset) = source[start..].find(')') {
-                let value = source[start..start + end_offset].trim();
-                let value = value.split_whitespace().next().unwrap_or(value);
-                if !value.is_empty() {
-                    links.push(value.trim_matches(['<', '>']).to_string());
-                }
-                index = start + end_offset;
-            }
-        }
-        index += 1;
-    }
-    links
+    ai_reference::markdown_links(source)
 }
 
 /// Every Click library module under `library/`, concatenated in path order.

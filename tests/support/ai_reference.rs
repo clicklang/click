@@ -288,6 +288,42 @@ fn plain_text(markdown: &str) -> String {
 /// Rewrites relative links outside inline code and fenced code blocks.
 /// An in-page anchor `#x` becomes `page.md#x`.
 fn rewrite_links(docs: &Path, page: &str, source: &str) -> Result<String, String> {
+    let directory = Path::new(page).parent().unwrap_or(Path::new(""));
+    map_links(source, &mut |target| {
+        let rewritten = rewrite_target(page, directory, target)?;
+        let local = !(rewritten.is_empty()
+            || rewritten.contains("://")
+            || rewritten.starts_with("mailto:")
+            || rewritten.starts_with('/'));
+        let file = rewritten.split('#').next().unwrap_or_default();
+        if local && !docs.join(file).is_file() {
+            return Err(format!(
+                "link {target} does not resolve to a file under docs/"
+            ));
+        }
+        Ok(rewritten)
+    })
+}
+
+/// Inline link destinations outside code, shared with the documentation checker.
+pub fn markdown_links(source: &str) -> Vec<String> {
+    let mut links = Vec::new();
+    map_links(source, &mut |target| {
+        let value = target.trim();
+        let value = value.split_whitespace().next().unwrap_or(value);
+        if !value.is_empty() {
+            links.push(value.trim_matches(['<', '>']).to_string());
+        }
+        Ok(target.to_string())
+    })
+    .expect("collecting link destinations cannot fail");
+    links
+}
+
+fn map_links(
+    source: &str,
+    rewrite: &mut impl FnMut(&str) -> Result<String, String>,
+) -> Result<String, String> {
     let mut output = String::new();
     let mut prose = String::new();
     let mut fence = None;
@@ -303,7 +339,7 @@ fn rewrite_links(docs: &Path, page: &str, source: &str) -> Result<String, String
         } else if let Some((character, length, tail)) = marker
             && (character != b'`' || !tail.contains('`'))
         {
-            output.push_str(&rewrite_prose_links(docs, page, &prose)?);
+            output.push_str(&rewrite_prose_links(&prose, rewrite)?);
             prose.clear();
             output.push_str(line);
             fence = Some((character, length));
@@ -311,7 +347,7 @@ fn rewrite_links(docs: &Path, page: &str, source: &str) -> Result<String, String
             prose.push_str(line);
         }
     }
-    output.push_str(&rewrite_prose_links(docs, page, &prose)?);
+    output.push_str(&rewrite_prose_links(&prose, rewrite)?);
     Ok(output)
 }
 
@@ -328,8 +364,10 @@ fn fence_marker(line: &str) -> Option<(u8, usize, &str)> {
     (length >= 3).then_some((character, length, &trimmed[length..]))
 }
 
-fn rewrite_prose_links(docs: &Path, page: &str, source: &str) -> Result<String, String> {
-    let directory = Path::new(page).parent().unwrap_or(Path::new(""));
+fn rewrite_prose_links(
+    source: &str,
+    rewrite: &mut impl FnMut(&str) -> Result<String, String>,
+) -> Result<String, String> {
     let mut output = String::new();
     let mut rest = source;
     while let Some(start) = rest.find(['`', '\\', ']']) {
@@ -371,18 +409,7 @@ fn rewrite_prose_links(docs: &Path, page: &str, source: &str) -> Result<String, 
             continue;
         };
         let target = &rest[..length];
-        let rewritten = rewrite_target(page, directory, target)?;
-        let local = !(rewritten.is_empty()
-            || rewritten.contains("://")
-            || rewritten.starts_with("mailto:")
-            || rewritten.starts_with('/'));
-        let file = rewritten.split('#').next().unwrap_or_default();
-        if local && !docs.join(file).is_file() {
-            return Err(format!(
-                "link {target} does not resolve to a file under docs/"
-            ));
-        }
-        output.push_str(&rewritten);
+        output.push_str(&rewrite(target)?);
         rest = &rest[length..];
     }
     output.push_str(rest);
@@ -474,6 +501,10 @@ mod tests {
             );
         }
         assert!(rewrite("`[](x)` [missing](missing.md)").is_err());
+        assert_eq!(
+            markdown_links("`[](x)` [real](target.md)\n~~~cpp\n[](y)\n~~~\n"),
+            ["target.md"]
+        );
     }
 
     #[test]
