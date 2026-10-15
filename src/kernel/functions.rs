@@ -19237,7 +19237,14 @@ fn composite_definition_facts_hold(
         for load in &path.facts {
             established = established.assume_proposition(load.proposition().clone());
         }
-        if !contract_refinement_proves(&established, &path.proposition) {
+        // The same exact routes a fold and a reassembled composite use
+        // (`assembled_composite_body_facts_hold`): a quantified fact the
+        // caller states is the body's up to its binder and the registered
+        // loads that binder names.
+        if !(contract_refinement_proves(&established, &path.proposition)
+            || established.settles_exactly(&path.proposition)
+            || resource_body_fact_is_established(&established, &path.proposition))
+        {
             return Ok(false);
         }
     }
