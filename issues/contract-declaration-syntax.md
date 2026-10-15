@@ -212,7 +212,14 @@ that writes `int32` for such a source already writes the source's spelling.
    importer packs the struct into the object at generic instantiation and
    `dyn` coercion. Remaining: `&mut self` object state, implementations of
    function-free traits that rename the interface's parameters, generic
-   traits and default methods, and C++ virtual methods.
+   traits and default methods, and C++ virtual methods. Done for C++
+   virtual methods without object state: a virtual method's contract is the
+   interface a call through it assumes, each override in the source
+   inherits it and is checked to refine it, a pure virtual method's contract
+   is written `extern`, and polymorphic classes with one polymorphic base
+   are admitted by reference. Remaining for C++: interfaces reading the
+   object's state (as Rust trait `function`s do), constructing polymorphic
+   objects, and virtual destructors.
 
 ## Intended regressions
 
