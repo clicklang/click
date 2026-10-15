@@ -85,6 +85,16 @@ predicate cstr_readable(bytes: uint8[]) {
     }
 }
 
+// A borrowed C string: a view of the bytes of `p` through its first
+// terminator, with the facts that make them the C string of length `len`.
+resource cstr_at(p: const uint8*, len: uint64) {
+    views p[0..len + 1u64];
+    fact len < 18446744073709551615u64;
+    fact forall (k: uint64) { 0u64 <= k and k < len implies p[k] != '\0' };
+    fact p[len] == '\0';
+    fact forall (k: uint64) { 0u64 <= k and k < len + 1u64 implies defined(p[k]) };
+}
+
 predicate cstr_bounded(bytes: uint8[], max: uint64) {
     exists (k: uint64) { k < max and bytes[k] == '\0' }
 }

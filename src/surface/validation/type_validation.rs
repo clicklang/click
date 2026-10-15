@@ -2602,6 +2602,10 @@ pub(in crate::surface) fn click_types_compatible(actual: C0Type, expected: C0Typ
     }
 }
 
+/// Whether `actual` may be passed for parameter `index` of resource `name`.
+/// A resource argument follows the predicate rule,
+/// [`click_argument_types_compatible`]: a character pointer is passed as
+/// `uint8` bytes, so `cstr_at(s, n)` takes a C `char *s`.
 fn resource_types_compatible(name: &str, index: usize, actual: C0Type, expected: C0Type) -> bool {
     if name == CResourceFact::ALLOCATION_RESOURCE_NAME
         && index == 0
@@ -2650,7 +2654,7 @@ fn resource_types_compatible(name: &str, index: usize, actual: C0Type, expected:
                 | C0Type::Float64Array(_)
         );
     }
-    click_types_compatible(actual, expected)
+    click_argument_types_compatible(actual, expected)
 }
 
 pub(super) fn infer_contract_expression_type(

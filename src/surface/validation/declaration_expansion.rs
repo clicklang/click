@@ -40,6 +40,10 @@ struct DeclaredResourceScope {
     /// allocated them an instance identity before the field was known.
     field_binders: std::cell::RefCell<BTreeSet<Variable>>,
     unowned_resource_parameters: std::cell::RefCell<BTreeMap<Variable, String>>,
+    /// The enclosing C function's parameters of signed character pointer
+    /// type. A resource argument naming one, passed to `uint8` bytes, is
+    /// read through its explicit byte view, as a predicate argument is.
+    character_parameters: std::cell::RefCell<BTreeSet<String>>,
     /// Fills in the type arguments of constructors that leave them out.
     constructors: ConstructorTypes,
 }
@@ -55,6 +59,40 @@ impl DeclaredResourceScope {
         self.instances.borrow_mut().clear();
         self.field_binders.borrow_mut().clear();
         self.unowned_resource_parameters.borrow_mut().clear();
+        self.character_parameters.borrow_mut().clear();
+    }
+
+    /// `arguments` of a resource whose parameters have `parameter_types`,
+    /// expanded, with the C-string bridge of a predicate argument: a bare
+    /// name of a signed character pointer parameter passed to `uint8` bytes
+    /// becomes its explicit byte view
+    /// ([`crate::surface::lowering::character_byte_view`]).
+    fn expand_arguments(
+        &self,
+        arguments: Vec<ContractExpression>,
+        parameter_types: &[C0Type],
+    ) -> Result<Vec<ContractExpression>, ClickError> {
+        let character_parameters = self.character_parameters.borrow();
+        arguments
+            .into_iter()
+            .enumerate()
+            .map(|(index, argument)| {
+                let named = match &argument {
+                    ContractExpression::CFragment(CExpression::Variable(name))
+                    | ContractExpression::Binding(name)
+                    | ContractExpression::CBinding(name) => Some(name.as_str()),
+                    _ => None,
+                };
+                match (named, parameter_types.get(index)) {
+                    (Some(name), Some(C0Type::UInt8Pointer | C0Type::UInt8Array(_)))
+                        if character_parameters.contains(name) =>
+                    {
+                        Ok(crate::surface::lowering::character_byte_view(name))
+                    }
+                    _ => expand_declared_resource_expression(argument, self),
+                }
+            })
+            .collect()
     }
 
     fn get(&self, name: &str) -> Option<&DeclaredResourceInfo> {
@@ -664,10 +702,19 @@ fn expand_declared_resource_clauses_with_rules(
     if family_rules {
         super::validate_resource_fields(&file)?;
     }
+    // A verification unit sees the resources of the library modules it sees,
+    // as it sees their predicates and functions; the file's own declarations
+    // follow them. The standard library's own expansion has its resources in
+    // `file` already.
+    let library_resources = if family_rules {
+        file_library(&file)?.file.resource_definitions()
+    } else {
+        &[]
+    };
     let field_environment = if family_rules
-        && file
-            .resource_definitions()
+        && library_resources
             .iter()
+            .chain(file.resource_definitions())
             .any(|definition| !definition.is_fieldless())
     {
         Some(ClickFunctionEnvironment::with_algebraic_types(
@@ -677,9 +724,9 @@ fn expand_declared_resource_clauses_with_rules(
     } else {
         None
     };
-    let mut resource_definitions = file
-        .resource_definitions()
+    let mut resource_definitions = library_resources
         .iter()
+        .chain(file.resource_definitions())
         .map(|definition| {
             Ok((
                 definition.name().to_string(),
@@ -836,6 +883,7 @@ fn expand_declared_resource_clauses_with_rules(
         instances: Default::default(),
         field_binders: Default::default(),
         unowned_resource_parameters: Default::default(),
+        character_parameters: Default::default(),
         constructors,
     };
 
@@ -949,6 +997,18 @@ fn expand_declared_resources_in_function_block(
             .map(|(name, c_type)| (name, ClickType::C(c_type))),
     );
     crate::surface::enter_ambient_declaration(function.signature().name());
+    *resource_definitions.character_parameters.borrow_mut() = function
+        .signature()
+        .parameters()
+        .iter()
+        .filter(|parameter| {
+            crate::surface::lowering::needs_character_byte_view(
+                parameter.c_type(),
+                crate::kernel::CType::UInt8Pointer,
+            )
+        })
+        .map(|parameter| parameter.name().to_string())
+        .collect();
     let declared_binders = function
         .requires
         .iter()
@@ -2383,10 +2443,8 @@ fn expand_declared_resource_clause(
                     access: ResourceAccessMode::Own,
                     kind: info.kind,
                     name,
-                    arguments: arguments
-                        .into_iter()
-                        .map(|arg| expand_declared_resource_expression(arg, resource_definitions))
-                        .collect::<Result<_, _>>()?,
+                    arguments: resource_definitions
+                        .expand_arguments(arguments, &info.parameter_types)?,
                     parameter_types: info.parameter_types,
                 }),
             })
@@ -2448,12 +2506,8 @@ fn expand_declared_resource_clause(
                 access,
                 kind: info.kind,
                 name,
-                arguments: arguments
-                    .into_iter()
-                    .map(|argument| {
-                        expand_declared_resource_expression(argument, resource_definitions)
-                    })
-                    .collect::<Result<_, _>>()?,
+                arguments: resource_definitions
+                    .expand_arguments(arguments, &info.parameter_types)?,
                 parameter_types: info.parameter_types,
             })
         }
@@ -2594,12 +2648,8 @@ fn expand_declared_resource_subject(
             Ok(ResourceSubject::Declared {
                 kind: info.kind,
                 name,
-                arguments: arguments
-                    .into_iter()
-                    .map(|argument| {
-                        expand_declared_resource_expression(argument, resource_definitions)
-                    })
-                    .collect::<Result<_, _>>()?,
+                arguments: resource_definitions
+                    .expand_arguments(arguments, &info.parameter_types)?,
                 parameter_types: info.parameter_types,
             })
         }
@@ -3469,7 +3519,10 @@ fn declared_resource_info_with_fields(
     allow_fields: bool,
 ) -> Result<DeclaredResourceInfo, ClickError> {
     let Some(info) = resource_definitions.get(name) else {
-        return Err(ClickError::new(format!("unknown resource `{name}`")));
+        return Err(ClickError::new(format!(
+            "unknown resource `{name}`{}",
+            library_import_hint(name)
+        )));
     };
     let expected = info.parameter_types.len() + info.resource_parameter_families.len();
     if expected != actual {
