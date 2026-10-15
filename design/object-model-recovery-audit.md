@@ -950,3 +950,28 @@ earlier loadability proof cannot warm the equality being tested. Changed
 parents/bounds, ambiguous sources and an upper-half overwrite reject. Formatting,
 mdBook, docs lint and whitespace checks pass; the full gate and nightly remain
 CI work. No native input promise or allocation-token equivalence is broadened.
+
+### Indexed allocation discovery before retirement
+
+The recovery refold-and-free reduction exposed allocation discovery in `free`
+materializing and scanning the whole resource context. Independently of the
+archive's native pointer model, upstream can select allocation-token candidates
+through the existing token-shape and pointer-root index. The final exact raw-base
+check remains unchanged; this delivery does not admit new pointer aliases,
+allocation identities or authority. Token consumption, full backing ownership,
+live-loan checks and lifetime retirement continue through their existing checks.
+
+The recovery native-input repair is separately preserved at `576012956`: a
+uniquely indexed live witness retains its original coordinates through checked
+complete-read frames. Its refold-and-return reduction verifies three proofs and
+passes fresh, expanded, rewritten and retained checking; all 220 related controls
+pass. The refold-and-free reduction still rejects, and the original vector and
+ten-failure archive audit remain open. This delivery is a selected lookup repair,
+not activation of that archive model. PR #1058's final head `19b3739ea` is verified
+in upstream history.
+
+All 46 selected heap tests pass, including the 0/16/64/256 unrelated-allocation
+regression (1.74s harness). Existing double/interior-free, missing-authority,
+view, loan and external-allocation controls remain green. Formatting, included
+scaling-file formatting, mdBook and whitespace checks pass; advisory Vale is
+unavailable. The full gate and nightly remain CI work.

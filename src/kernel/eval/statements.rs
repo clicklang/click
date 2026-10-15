@@ -2065,11 +2065,14 @@ fn execute_c_heap_free_paths(
             continue;
         }
 
+        // Discovery uses the token shape and pointer-root index. The exact
+        // allocation-base check below remains the authority boundary.
+        let allocation_query = CResourceFact::own_allocation(pointer.pointer().clone(), 0);
         let declared_allocation = state
             .resources
-            .facts()
-            .iter()
-            .filter_map(|fact| fact.allocation())
+            .direct_match_candidates_for(&allocation_query, &effective_assumptions)
+            .into_iter()
+            .filter_map(CResourceFact::allocation)
             .find(|(base, _)| **base == *pointer.pointer())
             .map(|(_, bytes)| bytes.clone());
         let element_width = pointer
