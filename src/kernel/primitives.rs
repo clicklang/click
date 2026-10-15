@@ -4940,6 +4940,12 @@ pub enum CRuntimeError {
     UnsupportedOpaqueFunctionContract(String),
     AbstractFunctionPointerCall(String),
     FunctionContract(String),
+    /// A resource clause's value could not be evaluated for want of a value
+    /// it reads: a cell, field or argument the state does not yet hold.
+    /// Another clause's authority may supply it, so a contract's resource
+    /// evaluator retries the clause after the others. Otherwise it is a
+    /// [`Self::FunctionContract`] refusal and is reported as one.
+    UnsuppliedResourceValue(String),
     /// Candidate loan recovery refused while these exact checked path
     /// obligations remain. Retained for diagnostics, never admitted as facts.
     PendingCallObligations(Arc<[ProofObligation]>),
@@ -5163,6 +5169,17 @@ impl CRuntimeError {
     /// parameter names are at hand, so it names no pointer: the kernel's
     /// spelling of an address is lowering state, not anything the reader
     /// wrote. The surface describers spell pointers through the parameters.
+    /// The message of a function-contract refusal, including one whose
+    /// resource value another clause may still supply.
+    pub fn function_contract_message(&self) -> Option<&str> {
+        match self {
+            Self::FunctionContract(message) | Self::UnsuppliedResourceValue(message) => {
+                Some(message)
+            }
+            _ => None,
+        }
+    }
+
     pub fn kernel_summary(&self) -> String {
         match self {
             CRuntimeError::LoadTypeMismatch {

@@ -155,7 +155,7 @@ fn source_mutex(
     let pointer = match result {
         Ok(CValue::Pointer(pointer)) => pointer,
         Ok(_) => return Err("conditional loop guard requires a mutex pointer".into()),
-        Err(message) => return Err(message),
+        Err(message) => return Err(message.into()),
     };
     Ok(pointer.pointer().clone())
 }
