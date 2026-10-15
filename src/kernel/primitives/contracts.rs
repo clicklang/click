@@ -1715,6 +1715,66 @@ impl CCompositeResourceDefinition {
             })
     }
 
+    /// Whether the memory this body owns is a function of the composite's
+    /// arguments alone: no condition, matched arm, witness, recursion,
+    /// population authority or instance schema, and every clause an
+    /// unguarded owned memory segment spelled from parameters and constants
+    /// by casts, arithmetic and byte offsets, never by a load, with its base
+    /// rooted at a pointer parameter. Opening such a body reads neither memory
+    /// nor facts, so its ranges are the same wherever its fact is held, and a
+    /// question about one address needs only the composites whose arguments
+    /// spell its base (`memory_state::CallKeptRanges::range_holding`).
+    pub(in crate::kernel) fn has_argument_direct_body(&self) -> bool {
+        let parameter = |name: &str| self.parameters.iter().any(|p| p.name() == name);
+        fn direct(expression: &CExpression, parameter: &dyn Fn(&str) -> bool) -> bool {
+            match expression {
+                CExpression::Variable(name) => parameter(name),
+                CExpression::Value(value) => !matches!(value, CValue::Pointer(_)),
+                CExpression::Cast { expression, .. } => direct(expression, parameter),
+                CExpression::PointerOffsetBytes { pointer, .. } => direct(pointer, parameter),
+                CExpression::Add(left, right)
+                | CExpression::Subtract(left, right)
+                | CExpression::Multiply(left, right) => {
+                    direct(left, parameter) && direct(right, parameter)
+                }
+                _ => false,
+            }
+        }
+        fn rooted(expression: &CExpression, parameter: &dyn Fn(&str) -> bool) -> bool {
+            match expression {
+                CExpression::Variable(name) => parameter(name),
+                CExpression::Cast { expression, .. } => rooted(expression, parameter),
+                CExpression::PointerOffsetBytes { pointer, .. } => rooted(pointer, parameter),
+                CExpression::Add(left, _) | CExpression::Subtract(left, _) => {
+                    rooted(left, parameter)
+                }
+                _ => false,
+            }
+        }
+        self.witnesses.is_empty()
+            && self.condition.is_none()
+            && self.matched.is_none()
+            && self.instance_schema.is_none()
+            && !self.recursive
+            && !self.matched_recursive
+            && !self.owns_population_authority()
+            && !self.contains.is_empty()
+            && self.contains.iter().all(|child| {
+                let CResourceTerm::Memory(segment) = child.term() else {
+                    return false;
+                };
+                child.access() == CResourceAccessMode::Own
+                    && child.quantity() == &CResourceQuantity::One
+                    && child.guard().is_none()
+                    && child.resource_arguments().is_empty()
+                    && segment.guard.is_none()
+                    && rooted(&segment.base, &parameter)
+                    && direct(&segment.base, &parameter)
+                    && direct(&segment.start, &parameter)
+                    && direct(&segment.end, &parameter)
+            })
+    }
+
     pub fn witnesses(&self) -> &[CParameter] {
         &self.witnesses
     }

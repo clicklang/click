@@ -33,6 +33,7 @@ mod constant_classes;
 use super::equality_graph::EqualityGraph;
 pub(in crate::kernel) use constant_classes::ConstantClasses;
 mod memory_reasoning;
+pub(in crate::kernel) use memory_reasoning::additive_base_spellings;
 pub(crate) use memory_reasoning::arm_frame_composite_definitions;
 pub(crate) use memory_reasoning::clear_frame_expansion_memo;
 pub(in crate::kernel) use memory_reasoning::parameter_partition_root;

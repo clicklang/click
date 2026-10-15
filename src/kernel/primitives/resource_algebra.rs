@@ -356,8 +356,22 @@ impl ResourceContextIndex {
         }
         if fact.is_own() {
             result.owned_count += 1;
-            if matches!(fact.resource(), CResource::Composite { .. }) {
+            if let CResource::Composite { arguments, .. } = fact.resource() {
                 result.owned_composite_count += 1;
+                let count = result.owned_composite_facts.get(fact).copied().unwrap_or(0);
+                result.owned_composite_facts.insert(fact.clone(), count + 1);
+                for pointer in algebraic_pointer_arguments(arguments) {
+                    result.owned_composites_by_pointer_argument = insert_resource_index_entry(
+                        &result.owned_composites_by_pointer_argument,
+                        pointer.clone(),
+                        entry,
+                    );
+                    result.owned_composites_by_argument_block = insert_resource_index_entry(
+                        &result.owned_composites_by_argument_block,
+                        pointer.block.clone(),
+                        entry,
+                    );
+                }
             }
         }
         if let CResource::MutexGuard(identity) = fact.resource() {
@@ -569,8 +583,30 @@ impl ResourceContextIndex {
         }
         if fact.is_own() {
             result.owned_count -= 1;
-            if matches!(fact.resource(), CResource::Composite { .. }) {
+            if let CResource::Composite { arguments, .. } = fact.resource() {
                 result.owned_composite_count -= 1;
+                let count = result
+                    .owned_composite_facts
+                    .get(fact)
+                    .copied()
+                    .expect("owned composite count exists");
+                if count == 1 {
+                    result.owned_composite_facts.remove(fact);
+                } else {
+                    result.owned_composite_facts.insert(fact.clone(), count - 1);
+                }
+                for pointer in algebraic_pointer_arguments(arguments) {
+                    result.owned_composites_by_pointer_argument = remove_resource_index_entry(
+                        &result.owned_composites_by_pointer_argument,
+                        pointer,
+                        entry,
+                    );
+                    result.owned_composites_by_argument_block = remove_resource_index_entry(
+                        &result.owned_composites_by_argument_block,
+                        &pointer.block,
+                        entry,
+                    );
+                }
             }
         }
         if let CResource::MutexGuard(identity) = fact.resource() {
@@ -2467,6 +2503,94 @@ impl ResourceContext {
             })
     }
 
+    /// The owned folded composites with a C pointer argument equal to `base`,
+    /// read from the argument index: one unit to position and one per
+    /// composite returned.
+    pub(in crate::kernel) fn owned_composites_with_pointer_argument<'a>(
+        &'a self,
+        base: &Pointer,
+    ) -> impl Iterator<Item = &'a CResourceFact> + 'a {
+        crate::instrumentation::record_deterministic_work(1);
+        self.storage
+            .index
+            .owned_composites_by_pointer_argument
+            .get(base)
+            .into_iter()
+            .flat_map(ResourceEntryIds::iter)
+            .map(|entry| {
+                crate::instrumentation::record_deterministic_work(1);
+                self.fact(*entry)
+            })
+    }
+
+    /// The owned folded composites with a C pointer argument in `block`.
+    pub(in crate::kernel) fn owned_composites_with_argument_block<'a>(
+        &'a self,
+        block: &PointerBlock,
+    ) -> impl Iterator<Item = &'a CResourceFact> + 'a {
+        crate::instrumentation::record_deterministic_work(1);
+        self.storage
+            .index
+            .owned_composites_by_argument_block
+            .get(block)
+            .into_iter()
+            .flat_map(ResourceEntryIds::iter)
+            .map(|entry| {
+                crate::instrumentation::record_deterministic_work(1);
+                self.fact(*entry)
+            })
+    }
+
+    /// The owned folded composites with their multiplicity, as one
+    /// content-hashed persistent map.
+    pub(in crate::kernel) fn owned_composite_facts(&self) -> &SnapshotMap<CResourceFact, usize> {
+        &self.storage.index.owned_composite_facts
+    }
+
+    /// The owned folded composites, grouped by family name, from the shape
+    /// index: a caller that answers a whole family at once never visits its
+    /// facts.
+    pub(in crate::kernel) fn owned_composite_families<'a>(
+        &'a self,
+    ) -> impl Iterator<Item = (&'a str, impl Iterator<Item = &'a CResourceFact> + 'a)> + 'a {
+        self.storage
+            .index
+            .exact_shapes
+            .iter()
+            .skip_while(|((family, _, _), _)| *family < ResourceFamily::Composite)
+            .take_while(|((family, _, _), _)| *family == ResourceFamily::Composite)
+            .map(move |((_, name, _), entries)| {
+                crate::instrumentation::record_deterministic_work(1);
+                (
+                    name.as_str(),
+                    entries
+                        .iter()
+                        .map(move |entry| {
+                            crate::instrumentation::record_deterministic_work(1);
+                            self.fact(*entry)
+                        })
+                        .filter(|fact| fact.is_own()),
+                )
+            })
+    }
+
+    /// The owned field-bearing instances of this context, from the instance
+    /// index. Charges one work unit per visited fact.
+    pub(in crate::kernel) fn owned_instances<'a>(
+        &'a self,
+    ) -> impl Iterator<Item = &'a CResourceFact> + 'a {
+        self.storage
+            .index
+            .instances
+            .iter()
+            .flat_map(|(_, entries)| entries.iter())
+            .map(|entry| {
+                crate::instrumentation::record_deterministic_work(1);
+                self.fact(*entry)
+            })
+            .filter(|fact| fact.is_own())
+    }
+
     /// Whether this context holds any owned instance with a C pointer
     /// argument: the constant-time gate before any cell asks the index.
     pub(in crate::kernel) fn has_owned_instances_with_pointer_arguments(&self) -> bool {
@@ -2475,36 +2599,6 @@ impl ResourceContext {
             .index
             .owned_instances_by_pointer_argument
             .is_empty()
-    }
-
-    /// The owned field-bearing instances and folded composites of this
-    /// context, drawn from the instance and shape indexes rather than a scan
-    /// of every fact: flat memory, tokens, iterated facts and views are never
-    /// visited. Charges one work unit per visited fact.
-    pub(in crate::kernel) fn owned_instances_and_composites<'a>(
-        &'a self,
-    ) -> impl Iterator<Item = &'a CResourceFact> + 'a {
-        let composites = self
-            .storage
-            .index
-            .exact_shapes
-            .iter()
-            .skip_while(|((family, _, _), _)| *family < ResourceFamily::Composite)
-            .take_while(|((family, _, _), _)| *family == ResourceFamily::Composite)
-            .flat_map(|(_, entries)| entries.iter());
-        let instances = self
-            .storage
-            .index
-            .instances
-            .iter()
-            .flat_map(|(_, entries)| entries.iter());
-        composites
-            .chain(instances)
-            .map(|entry| {
-                crate::instrumentation::record_deterministic_work(1);
-                self.fact(*entry)
-            })
-            .filter(|fact| fact.is_own())
     }
 
     /// The facts `CResourceFact::may_refer_to_memory_block` selects for
@@ -6833,13 +6927,15 @@ impl ResourceNormalizationIndex {
 
 /// The C pointer arguments of an instance, as its index keys them.
 fn instance_pointer_arguments(instance: &ResourceInstance) -> impl Iterator<Item = &Pointer> {
-    instance
-        .arguments
-        .iter()
-        .filter_map(|argument| match argument {
-            AlgebraicValue::C(CValue::Pointer(pointer)) => Some(pointer.pointer()),
-            _ => None,
-        })
+    algebraic_pointer_arguments(&instance.arguments)
+}
+
+/// The C pointer arguments among `arguments`, in order.
+fn algebraic_pointer_arguments(arguments: &[AlgebraicValue]) -> impl Iterator<Item = &Pointer> {
+    arguments.iter().filter_map(|argument| match argument {
+        AlgebraicValue::C(CValue::Pointer(pointer)) => Some(pointer.pointer()),
+        _ => None,
+    })
 }
 
 /// The block of a token or composite's first argument when that argument is
