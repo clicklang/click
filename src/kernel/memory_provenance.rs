@@ -2608,7 +2608,13 @@ fn pointer_read_stored_value(
             crate::instrumentation::record_deterministic_work(1);
             let source = canonical_load_projection_source(&memory, &address)
                 .unwrap_or_else(|| memory.clone());
-            memory_dag_cell_source_with_hop_limit(&source, &address, bytes, assumptions, limit)
+            // A retained read's reasoning walk may cross cache-forgetting
+            // edges: they discard knowledge but write no program bytes.
+            // Keep the ambient naming walk conservative and the explicit
+            // read query bounded by its existing hop limit.
+            with_extended_dag_bridging(|| {
+                memory_dag_cell_source_with_hop_limit(&source, &address, bytes, assumptions, limit)
+            })
         }
         None => memory_dag_cell_source(&memory, &address, bytes, assumptions, true),
     }?;
@@ -6204,6 +6210,70 @@ mod opaque_pointer_frame_tests {
     }
 
     #[test]
+    fn bounded_pointer_read_preserves_value_across_forgotten_cache() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Constant(128),
+        };
+        let possible_write = Pointer::loaded(
+            PointerBlock::ExternalArgument,
+            Bitvector32Term::Variable(Variable(9_880_201)),
+            4,
+        );
+        let stored = Pointer::symbolic(Variable(9_880_202));
+        let memory = CMemory::new().store(
+            field.clone(),
+            CValue::typed_pointer(stored.clone(), CType::Int32Pointer),
+        );
+        let memory =
+            memory.without_possible_aliasing_cells(&possible_write, 4, &PureFactContext::new());
+        let snapshot = intern_c_memory(memory);
+        assert!(matches!(
+            snapshot.derivation().as_deref(),
+            Some(CMemoryDerivation::CellsForgotten { .. })
+        ));
+        let read = Pointer::loaded_value(&snapshot, &field);
+        let context = PureFactContext::new();
+        context
+            .equality_graph
+            .register_pointer_read_definition(&read, &snapshot, &field);
+        assert!(pointer_read_has_recorded_value(&read, &stored, &context));
+        let read_from = |memory| {
+            let snapshot = intern_c_memory(memory);
+            let read = Pointer::loaded_value(&snapshot, &field);
+            context
+                .equality_graph
+                .register_pointer_read_definition(&read, &snapshot, &field);
+            read
+        };
+        let replacement = Pointer::symbolic(Variable(9_880_203));
+        let changed = read_from(snapshot.memory().clone().store(
+            field.clone(),
+            CValue::typed_pointer(replacement.clone(), CType::Int32Pointer),
+        ));
+        assert!(!pointer_read_has_recorded_value(
+            &changed, &stored, &context
+        ));
+        assert!(pointer_read_has_recorded_value(
+            &changed,
+            &replacement,
+            &context
+        ));
+        for address in [field.clone(), field.offset_by_bytes(4), possible_write] {
+            let changed = read_from(
+                snapshot
+                    .memory()
+                    .clone()
+                    .store(address, CValue::Int32(Bitvector32Term::Constant(7))),
+            );
+            assert!(!pointer_read_has_recorded_value(
+                &changed, &stored, &context
+            ));
+        }
+    }
+
+    #[test]
     fn opaque_pointer_transport_requires_unchanged_field_bytes() {
         let (field, _, argument, _, separation) = setup();
         let before = intern_c_memory(CMemory::default().with_block("local:opaque-frame", 8));
@@ -6242,6 +6312,11 @@ mod opaque_pointer_frame_tests {
             .clone()
             .store(field, CValue::pointer(argument));
         assert!(prove_c_condition_fact_transport(&source, &changed, &assumptions).is_none());
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/memory_provenance/opaque_pointer_frame_tests.rs");
     }
 }
 
