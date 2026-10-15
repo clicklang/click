@@ -19,7 +19,7 @@ impl Parser {
         }
         self.expect_ident_spelling("fn")?;
         let path = self.expect_rust_path("function name")?;
-        self.skip_rust_lifetime_parameters()?;
+        let callable_parameters = self.parse_rust_generic_parameters()?;
         let name = if self.rust_impl_type.is_some() {
             // A method's own name; an item inside it, `compute::LIMIT`,
             // follows as the importer writes path segments.
@@ -89,11 +89,36 @@ impl Parser {
             }
             let dyn_fn = self.peek() == Some(&Token::Amp)
                 && matches!(self.tokens.get(self.position + 1), Some(Token::Ident(word)) if word == "dyn");
+            // `f: F` of a `<F: Fn(i32) -> i32>` parameter.
+            if let Some(word) = self.peek_ident()
+                && let Some((c_type, signature)) = callable_parameters.get(word).cloned()
+                && matches!(self.peek_next(), Some(Token::Comma | Token::RParen))
+            {
+                self.position += 1;
+                parameters.push(FunctionParameter {
+                    click_type: ClickType::C(c_type),
+                    name: parameter_name,
+                    struct_name: None,
+                    function_pointer_signature: Some(signature),
+                    constant: false,
+                    pointee_constant: false,
+                    reference: false,
+                });
+                if self.peek() != Some(&Token::Comma) {
+                    break;
+                }
+                self.position += 1;
+                continue;
+            }
+            let impl_fn = self.peek_ident() == Some("impl");
             if dyn_fn
+                || impl_fn
                 || (self.peek_ident() == Some("fn") && self.peek_next() == Some(&Token::LParen))
             {
                 let (c_type, signature) = if dyn_fn {
                     self.parse_rust_dyn_fn_type()?
+                } else if impl_fn {
+                    self.parse_rust_impl_fn_type()?
                 } else {
                     self.parse_rust_fn_pointer_type()?
                 };
@@ -301,18 +326,47 @@ impl Parser {
         }
     }
 
-    /// The generic parameters after a function's name, `<'a, 'b: 'a>`, when
-    /// they are all lifetimes. The importer refuses a generic function, so a
-    /// type parameter is refused here too.
-    pub(super) fn skip_rust_lifetime_parameters(&mut self) -> Result<(), ClickError> {
+    /// The generic parameters after a function's name: lifetimes, `<'a, 'b:
+    /// 'a>`, which a contract does not use, and callable type parameters,
+    /// `<F: Fn(i32) -> i32>`, by name. The importer refuses other generic
+    /// functions, so other type parameters are refused here too.
+    #[allow(clippy::type_complexity)]
+    pub(super) fn parse_rust_generic_parameters(
+        &mut self,
+    ) -> Result<BTreeMap<String, (C0Type, syntax::C0FunctionPointerSignature)>, ClickError> {
+        let mut callable = BTreeMap::new();
         if self.peek() != Some(&Token::LessThan) {
-            return Ok(());
+            return Ok(callable);
         }
         self.position += 1;
         loop {
+            if let Some(word) = self.peek_ident()
+                && self.peek_next() == Some(&Token::Colon)
+            {
+                let name = word.to_string();
+                self.position += 2;
+                if self.peek_ident() != Some("Fn") {
+                    return Err(self.error(
+                        "a `fn` signature's type parameter is supported only with an `Fn(...) -> ...` bound",
+                    ));
+                }
+                self.position += 1;
+                let signature = self.parse_rust_callable_signature()?;
+                if callable.insert(name, signature).is_some() {
+                    return Err(self.error("a type parameter is declared twice"));
+                }
+                if self.peek() == Some(&Token::Comma) {
+                    self.position += 1;
+                }
+                if self.peek() == Some(&Token::GreaterThan) {
+                    self.position += 1;
+                    return Ok(callable);
+                }
+                continue;
+            }
             let Some(Token::Lifetime(_)) = self.peek() else {
                 return Err(self.error(
-                    "a `fn` signature's generic parameters may only be lifetimes, such as `<'a>`; a generic function is not supported",
+                    "a `fn` signature's generic parameters may only be lifetimes, such as `<'a>`, and `Fn` type parameters, such as `<F: Fn(i32) -> i32>`",
                 ));
             };
             self.position += 1;
@@ -331,7 +385,7 @@ impl Parser {
             }
             if self.peek() == Some(&Token::GreaterThan) {
                 self.position += 1;
-                return Ok(());
+                return Ok(callable);
             }
         }
     }
@@ -529,6 +583,18 @@ impl Parser {
         self.expect_ident_spelling("dyn")?;
         if self.peek_ident() != Some("Fn") {
             return Err(self.error("a `&dyn` parameter is supported only for `Fn(...) -> ...`"));
+        }
+        self.position += 1;
+        self.parse_rust_callable_signature()
+    }
+
+    /// An `impl Fn(i32) -> i32`, a callable value as `&dyn Fn` is.
+    fn parse_rust_impl_fn_type(
+        &mut self,
+    ) -> Result<(C0Type, syntax::C0FunctionPointerSignature), ClickError> {
+        self.expect_ident_spelling("impl")?;
+        if self.peek_ident() != Some("Fn") {
+            return Err(self.error("an `impl` parameter is supported only for `Fn(...) -> ...`"));
         }
         self.position += 1;
         self.parse_rust_callable_signature()

@@ -2471,6 +2471,27 @@ fn cpp_declarator_name_ending_at(tokens: &[SourceToken], end: usize) -> String {
     }
 }
 
+/// The `>` closing the generic list opened at `open`. The scanner reads
+/// `->` as `-` and `>`, which closes nothing.
+fn rust_generic_list_end(tokens: &[SourceToken], open: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for at in open..tokens.len() {
+        match tokens[at].text.as_str() {
+            "<" => depth += 1,
+            ">" if at > 0 && tokens[at - 1].text == "-" => {}
+            ">" => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(at);
+                }
+            }
+            "{" | ";" => return None,
+            _ => {}
+        }
+    }
+    None
+}
+
 fn rust_path_ending_at(tokens: &[SourceToken], end: usize) -> Vec<&str> {
     let mut segments = vec![tokens[end].text.as_str()];
     let mut at = end;
@@ -4368,6 +4389,24 @@ fn declaration_source_index(
             }
             "theorem" | "tactic" => {
                 candidate = tokens.get(index + 1).map(|token| token.text.clone());
+            }
+            // A Rust head's generic parameters, `fn apply<F: Fn(i32) ->
+            // i32>(`, follow the name; the function is the path before them.
+            "<" if candidate.is_none() && !cpp && index > 0 => {
+                let path = rust_path_ending_at(tokens, index - 1);
+                let path_start = index - 1 - 3 * (path.len() - 1);
+                if path_start
+                    .checked_sub(1)
+                    .is_some_and(|before| tokens[before].text == "fn")
+                    && let Some(close) = rust_generic_list_end(tokens, index)
+                {
+                    candidate = Some(match &impl_block {
+                        Some(_) => crate::languages::rust::names::method_path_name(&path),
+                        None => crate::languages::rust::names::path_name(&path),
+                    });
+                    index = close + 1;
+                    continue;
+                }
             }
             "(" => {
                 if candidate.is_none() {

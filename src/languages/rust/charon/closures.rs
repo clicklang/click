@@ -333,6 +333,57 @@ fn whole_local(operand: &a::Operand) -> Option<a::LocalId> {
     }
 }
 
+/// The captured locals of a closure state built from `fields`: a shared
+/// borrow `t = &k` captures `k`, and a field moved in is captured by value.
+fn state_captures(
+    definitions: &BTreeMap<a::LocalId, &a::Rvalue>,
+    fields: &[a::Operand],
+    plumbing: &mut ClosurePlumbing,
+) -> Result<Vec<a::LocalId>, String> {
+    let mut captures = Vec::new();
+    for field in fields {
+        let field_local =
+            whole_local(field).ok_or_else(|| unsupported("closure capture other than a local"))?;
+        match definitions.get(&field_local) {
+            Some(a::Rvalue::Ref {
+                place,
+                kind: a::BorrowKind::Shared,
+                ..
+            }) => {
+                let a::PlaceKind::Local(captured) = place.kind else {
+                    return Err(unsupported("closure capture of a projection"));
+                };
+                plumbing.elided.insert(field_local);
+                captures.push(captured);
+            }
+            Some(a::Rvalue::Ref { .. }) => {
+                return Err(unsupported("closure capture by mutable reference"));
+            }
+            _ => captures.push(field_local),
+        }
+    }
+    Ok(captures)
+}
+
+/// The clause of the function's own generics a trait reference under a
+/// constraint's region binder reaches through parent clauses,
+/// `TraitClause1::ImpliedClause1`.
+fn root_clause(trait_ref: &a::TraitRef) -> Option<a::TraitClauseId> {
+    match &trait_ref.kind {
+        a::TraitRefKind::Clause(a::DeBruijnVar::Bound(depth, id)) if depth.index == 1 => Some(*id),
+        a::TraitRefKind::ParentClause(parent, _) => root_clause(parent),
+        _ => None,
+    }
+}
+
+/// Whether a callable value may take or return `ty`.
+fn callable_scalar(ty: &Type) -> bool {
+    matches!(
+        ty,
+        Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Usize | Type::Bool
+    )
+}
+
 /// The local a place dereferences, `*l`.
 fn dereferenced_local(place: &a::Place) -> Option<a::LocalId> {
     match &place.kind {
@@ -463,29 +514,7 @@ impl Adapter<'_> {
                 ) {
                     return Err(unsupported("unsized value other than a closure"));
                 }
-                let mut captures = Vec::new();
-                for field in fields {
-                    let field_local = whole_local(field)
-                        .ok_or_else(|| unsupported("closure capture other than a local"))?;
-                    // A capture by shared reference, `t = &k`, or by value.
-                    match definitions.get(&field_local) {
-                        Some(a::Rvalue::Ref {
-                            place,
-                            kind: a::BorrowKind::Shared,
-                            ..
-                        }) => {
-                            let a::PlaceKind::Local(captured) = place.kind else {
-                                return Err(unsupported("closure capture of a projection"));
-                            };
-                            plumbing.elided.insert(field_local);
-                            captures.push(captured);
-                        }
-                        Some(a::Rvalue::Ref { .. }) => {
-                            return Err(unsupported("closure capture by mutable reference"));
-                        }
-                        _ => captures.push(field_local),
-                    }
-                }
+                let captures = state_captures(&definitions, fields, &mut plumbing)?;
                 plumbing.elided.insert(state);
                 plumbing.elided.extend(chain);
                 plumbing
@@ -514,10 +543,185 @@ impl Adapter<'_> {
                 plumbing.dyn_arguments.insert(tuple, operands.clone());
             }
         }
+        // A closure state built and not borrowed for a `&dyn Fn` is passed
+        // by value, for an `impl Fn` parameter: the state is the callable.
+        for block in body.body.iter() {
+            for statement in &block.statements {
+                if let u::StatementKind::Assign(target, value) = &statement.kind
+                    && let a::PlaceKind::Local(state) = target.kind
+                    && !plumbing.elided.contains(&state)
+                    && let a::Rvalue::Aggregate(
+                        a::AggregateKind::Adt(state_type, None, None),
+                        fields,
+                    ) = value
+                    && self.closure_state(state_type.id)
+                {
+                    let captures = state_captures(&definitions, fields, &mut plumbing)?;
+                    plumbing.creations.insert(state, (state_type.id, captures));
+                }
+            }
+        }
         Ok(plumbing)
     }
 
-    /// Whether `pointer` is `Fn::call` on a `dyn Fn`.
+    /// The parameter types of `callee`, its `impl Fn` parameters read under
+    /// its own bounds.
+    pub(super) fn callee_signature_types(&self, callee: &a::FunDecl) -> Result<Vec<Type>, String> {
+        let callable = self.callable_type_parameters(&callee.generics)?;
+        let current = std::mem::replace(&mut *self.callable_parameters.borrow_mut(), callable);
+        let types = callee
+            .signature
+            .inputs
+            .iter()
+            .map(|ty| self.ty(ty))
+            .collect::<Result<Vec<_>, _>>();
+        *self.callable_parameters.borrow_mut() = current;
+        types
+    }
+
+    /// A crate function item's type as a callable value.
+    pub(super) fn function_item_type(&self, pointer: &a::FnPtr) -> Result<Type, String> {
+        if !pointer.generics.types.is_empty() {
+            return Err(unsupported("function item of a generic function"));
+        }
+        let item = self
+            .krate
+            .fun_decls
+            .get(self.resolve(pointer)?)
+            .ok_or_else(|| unsupported("missing function item"))?;
+        let parameters = item
+            .signature
+            .inputs
+            .iter()
+            .map(|ty| self.ty(ty))
+            .collect::<Result<Vec<_>, _>>()?;
+        let result = self.ty(&item.signature.output)?;
+        if !parameters.iter().all(callable_scalar)
+            || !(callable_scalar(&result) || result == Type::Unit)
+        {
+            return Err(unsupported(
+                "function item of non-scalar parameters or result",
+            ));
+        }
+        Ok(Type::FnPointer {
+            parameters,
+            result: Box::new(result),
+        })
+    }
+
+    /// Whether `id` is a closure's state type.
+    pub(super) fn closure_state(&self, id: a::TypeDeclId) -> bool {
+        self.krate
+            .type_decls
+            .get(id)
+            .is_some_and(|state| matches!(state.src, a::TypeSource::Closure { .. }))
+    }
+
+    /// A closure's type as a callable value, from its `Fn::call` signature.
+    pub(super) fn closure_state_type(&self, state: a::TypeDeclId) -> Result<Type, String> {
+        let call = self
+            .closure_calls
+            .iter()
+            .find(|(_, closure)| **closure == state)
+            .map(|(id, _)| &self.krate.fun_decls[*id])
+            .ok_or_else(|| unsupported("closure without a Fn::call"))?;
+        let [_, tuple] = call.signature.inputs.as_slice() else {
+            return Err(unsupported("closure call arity"));
+        };
+        let a::TyKind::Adt(tuple) = tuple.kind() else {
+            return Err(unsupported("closure arguments other than a tuple"));
+        };
+        let parameters = tuple
+            .generics
+            .types
+            .iter()
+            .map(|ty| self.ty(ty))
+            .collect::<Result<Vec<_>, _>>()?;
+        let result = self.ty(&call.signature.output)?;
+        if !parameters.iter().all(callable_scalar)
+            || !(callable_scalar(&result) || result == Type::Unit)
+        {
+            return Err(unsupported("closure of non-scalar parameters or result"));
+        }
+        Ok(Type::FnPointer {
+            parameters,
+            result: Box::new(result),
+        })
+    }
+
+    /// The callable type of each type parameter of `generics`: one bound by
+    /// `Fn(A, ...)` with its output fixed, `impl Fn(i32) -> i32`, and
+    /// otherwise only `Sized` and `Destruct`.
+    pub(super) fn callable_type_parameters(
+        &self,
+        generics: &a::GenericParams,
+    ) -> Result<Vec<Option<Type>>, String> {
+        let mut callable = vec![None; generics.types.len()];
+        for clause in generics.trait_clauses.iter() {
+            let trait_ref = &clause.trait_.skip_binder;
+            let Some(a::TyKind::TypeVar(a::DeBruijnVar::Bound(depth, id))) =
+                trait_ref.generics.types.first().map(|ty| ty.kind())
+            else {
+                return Err(unsupported("trait bound on a type other than a parameter"));
+            };
+            // The clause is under its own region binder, so the item's
+            // type parameters are one binder out.
+            if depth.index != 1 {
+                return Err(unsupported("nested trait bound"));
+            }
+            let lang_item = self
+                .krate
+                .trait_decls
+                .get(trait_ref.id)
+                .and_then(|decl| decl.item_meta.lang_item.clone());
+            match lang_item {
+                Some(LangItem::Sized | LangItem::MetaSized | LangItem::Destruct) => {}
+                Some(LangItem::Fn) => {
+                    let Some(a::TyKind::Adt(tuple)) =
+                        trait_ref.generics.types.get(1).map(|ty| ty.kind())
+                    else {
+                        return Err(unsupported("Fn bound arguments other than a tuple"));
+                    };
+                    let parameters = tuple
+                        .generics
+                        .types
+                        .iter()
+                        .map(|ty| self.ty(ty))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let outputs = generics
+                        .trait_type_constraints
+                        .iter()
+                        .filter(|constraint| {
+                            root_clause(&constraint.skip_binder.trait_ref) == Some(clause.clause_id)
+                        })
+                        .collect::<Vec<_>>();
+                    let [output] = outputs.as_slice() else {
+                        return Err(unsupported("Fn bound without one output type"));
+                    };
+                    let result = self.ty(&output.skip_binder.ty)?;
+                    if !parameters.iter().all(callable_scalar)
+                        || !(callable_scalar(&result) || result == Type::Unit)
+                    {
+                        return Err(unsupported("Fn bound of non-scalar parameters or result"));
+                    }
+                    if callable[id.index()]
+                        .replace(Type::FnPointer {
+                            parameters,
+                            result: Box::new(result),
+                        })
+                        .is_some()
+                    {
+                        return Err(unsupported("type parameter with two Fn bounds"));
+                    }
+                }
+                _ => return Err(unsupported("trait bound other than Fn")),
+            }
+        }
+        Ok(callable)
+    }
+
+    /// Whether `pointer` is `Fn::call` on a `dyn Fn` or an `impl Fn`
+    /// parameter's type.
     pub(super) fn is_dyn_fn_call(&self, pointer: &a::FnPtr) -> bool {
         let a::FnPtrKind::Trait(trait_ref, _) = pointer.kind.as_ref() else {
             return false;
@@ -535,7 +739,7 @@ impl Adapter<'_> {
                     .types
                     .first()
                     .map(|ty| ty.kind()),
-                Some(a::TyKind::DynTrait(_))
+                Some(a::TyKind::DynTrait(_) | a::TyKind::TypeVar(_))
             )
     }
 }
@@ -584,6 +788,19 @@ impl BodyAdapter<'_, '_> {
                     return Ok(Some(Some(S::Assign {
                         target: self.place(target)?,
                         value,
+                    })));
+                }
+                // `r = &f` of an `impl Fn` parameter is the same value.
+                if let a::TyKind::Ref(_, pointee, a::RefKind::Shared) = target.ty.kind()
+                    && matches!(pointee.kind(), a::TyKind::TypeVar(_))
+                    && let a::Rvalue::Ref { place, .. } = value
+                    && let a::PlaceKind::Local(source) = place.kind
+                {
+                    return Ok(Some(Some(S::Assign {
+                        target: self.place(target)?,
+                        value: E::Local {
+                            name: self.local(source)?,
+                        },
                     })));
                 }
                 // `r = &(*f)`: a reborrow of a `&dyn Fn` is the same value.
