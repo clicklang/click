@@ -201,9 +201,16 @@ C++ items were chosen explicitly; the rest are the recommended defaults.
   separately locked today, both verify against one extraction). Charon comes
   from `CLICK_CHARON` at lock time only. Crate files are recorded per file so a
   changed one is named.
+- **C++ units.** A `"language": "c++"` unit gives Clang arguments of its own,
+  written into a compilation database Click synthesizes, and each source
+  lists its `functions`. The exporter (artifact schema 60) exports every
+  listed function into one artifact, so one sidecar verifies several
+  functions of a file. Preprocessor inputs under the unit or project roots
+  are rechecked relative to them and outside inputs are pinned by digest, so
+  C++ unit locks load after the checkout moves.
 - **Remaining:** the module root still comes from imports rather than the
-  project file; C++ units; the shared lock envelope; migrating existing
-  configs; the flag policy.
+  project file; the shared lock envelope; migrating existing configs; the
+  optimization level and flag policy.
 
 ## Intended regressions
 

@@ -6,7 +6,7 @@ Soundness: soundness-adjacent. No false acceptance is known, and unsupported
 C++ constructs are refused. The Clang exporter is a documented trusted front
 end, but Click does not establish which exporter it trusted. `click import
 lock` runs whatever executable the config's `exporter` path names. It checks
-only that the output is artifact schema 59 and that the exporter's
+only that the output is artifact schema 60 and that the exporter's
 self-reported `frontend_version` contains `19.1.7`
 (`src/languages/cpp/schema.rs`). The lock records the SHA-256 of a locally
 built binary, but nothing compares that hash with a released exporter. A
@@ -63,7 +63,7 @@ Audit of the current path, from a user's point of view:
    checkout. The tests use the environment variable (`tests/cpp_import.rs`,
    `tests/bitcoin_core_money_range.rs`, `tests/libcxx_span.rs`).
 3. **There is no version handshake.** The exporter has no version command.
-   The artifact schema number is hard-coded twice: `artifact["schema"] = 59`
+   The artifact schema number is hard-coded twice: `artifact["schema"] = 60`
    in `main.cpp` and `EXPORT_SCHEMA` in `src/languages/cpp/schema.rs`. The
    Clang version is checked only as a substring of a string the exporter
    reports about itself (see Soundness). The lock's `exporter_sha256` is the

@@ -1065,7 +1065,8 @@ Both new deterministic controls pass at 0/16/64/256 unrelated-fact sizes;
 retained lookup costs less than re-lowering. They reject a spelling without
 its fact, a missing instantiation guard, and reuse after rebinding a proof name.
 All 107 selected logical/expansion/index controls pass on current upstream.
-The normal Markdown audit is running separately. The recovery return-frontier
+The initial normal Markdown audit passed all 3,990 fixture records before
+the CI correction below. The recovery return-frontier
 repair is checkpointed at `3712a8fb2`; the original vector remains incomplete,
 and the last archive audit remains 42/52.
 
@@ -1079,4 +1080,8 @@ source-index storage is unchanged. All 46 normal fixed-state recovery controls
 pass with the gate stack setting (16 nightly tests skipped), and the exact
 upstream sidecar that failed CI now verifies unchanged. The initial broader
 recovery run omitted the gate stack setting and overflowed a deep case test;
-its gate-setting rerun passes. Broader upstream checking continues separately.
+its gate-setting rerun passes. PR #1081 merged, and both pushed commits `346b87a69` and `76b262027`
+are verified upstream. After the correction, all 52 normal example projects,
+46 normal fixed-state controls, and library Clippy with warnings denied pass.
+The full Markdown corpus was not repeated after that correction. These are
+upstream checks; the recovery archive still has ten known example failures.

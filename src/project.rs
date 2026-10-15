@@ -14,7 +14,11 @@
 //! A sidecar selects a unit's source with an ordinary `verifying` path,
 //! relative to the sidecar, that names a file the unit lists.
 //!
-//! A C unit lists translation units that its compiler preprocesses. A Rust
+//! A C unit lists translation units that its compiler preprocesses. A C++
+//! unit lists logical sources and the functions selected from each; the
+//! pinned exporter named by `CLICK_CPP_EXPORTER` exports them at lock time
+//! from a compilation database Click synthesizes from the unit's arguments.
+//! A Rust
 //! unit is one crate and lists its root; the pinned Charon named by
 //! The pinned Rust frontend extracts it at lock time, and the crate's `roots` are the
 //! entry points every sidecar verifying it sees.
@@ -29,6 +33,7 @@ use sha2::{Digest, Sha256};
 use crate::languages::PreparedProgram;
 use crate::languages::c::compiler_import::{self, PreparedCImport, UnitConfig, UnitSource};
 use crate::languages::c::target::CTarget;
+use crate::languages::cpp::{self as cpp_import, CppExceptionBehavior, CppLibraryAssertion};
 use crate::languages::rust::{self as rust_import, CrateConfig};
 
 /// The project file's name.
@@ -59,6 +64,10 @@ struct UnitJson {
     /// A Rust unit's crate description.
     #[serde(default, rename = "crate")]
     crate_config: Option<CrateConfig>,
+    /// Whether a C++ unit is compiled with exceptions.
+    exceptions: Option<bool>,
+    /// Whether a C++ unit is compiled with RTTI.
+    rtti: Option<bool>,
     sources: BTreeMap<String, SourceJson>,
 }
 
@@ -81,6 +90,28 @@ struct SourceJson {
     #[serde(default)]
     args: Vec<String>,
     projection: Option<String>,
+    /// A C++ source's translation unit, when the logical source is a header
+    /// it includes; by default the source itself.
+    translation_unit: Option<String>,
+    /// The functions a C++ source exports.
+    #[serde(default)]
+    functions: Vec<String>,
+    /// A C++ source's locked header dependencies, relative to the unit root.
+    #[serde(default)]
+    dependencies: Vec<String>,
+    #[serde(default)]
+    library_assertions: Vec<CppLibraryAssertion>,
+    exception_behavior: Option<CppExceptionBehavior>,
+}
+
+impl SourceJson {
+    fn has_cpp_fields(&self) -> bool {
+        self.translation_unit.is_some()
+            || !self.functions.is_empty()
+            || !self.dependencies.is_empty()
+            || !self.library_assertions.is_empty()
+            || self.exception_behavior.is_some()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -270,6 +301,42 @@ impl Project {
         })
     }
 
+    pub(crate) fn cpp_unit(
+        &self,
+        name: &str,
+    ) -> Result<(cpp_import::UnitConfig, Vec<cpp_import::UnitSource>), String> {
+        let unit = &self.units[name];
+        let config = cpp_import::UnitConfig {
+            unit_name: name.to_string(),
+            project_root: self.root.clone(),
+            unit_digest: self.unit_digest(name)?,
+            root: self.root.join(&unit.spec.root),
+            exceptions: unit.spec.exceptions.unwrap_or(false),
+            rtti: unit.spec.rtti.unwrap_or(false),
+            args: unit.spec.args.clone(),
+            lock_path: self.lock_path(),
+        };
+        let sources = unit
+            .spec
+            .sources
+            .iter()
+            .map(|(path, source)| cpp_import::UnitSource {
+                logical_source: path.clone(),
+                translation_unit: source
+                    .translation_unit
+                    .clone()
+                    .unwrap_or_else(|| path.clone()),
+                functions: source.functions.clone(),
+                dependencies: source.dependencies.clone(),
+                library_assertions: source.library_assertions.clone(),
+                exception_behavior: source.exception_behavior.unwrap_or_default(),
+                args: source.args.clone(),
+                artifact: format!("{ARTIFACT_DIRECTORY}/{name}/{path}.click-cpp.json"),
+            })
+            .collect();
+        Ok((config, sources))
+    }
+
     /// Prepares every unit and writes the project lock and its artifacts.
     pub fn lock(&self) -> Result<(), String> {
         if !self.has_units() {
@@ -282,6 +349,21 @@ impl Project {
         let mut artifacts = Vec::new();
         for (name, unit) in &self.units {
             let (language, lock, unit_artifacts) = match unit.spec.language.as_str() {
+                "c++" => {
+                    let (config, sources) = self.cpp_unit(name)?;
+                    let exporter = std::env::var_os("CLICK_CPP_EXPORTER").ok_or_else(|| {
+                        format!(
+                            "set CLICK_CPP_EXPORTER to the pinned C++ exporter to prepare C++ unit `{name}`"
+                        )
+                    })?;
+                    for source in &sources {
+                        create_parent(&self.root.join(&source.artifact))?;
+                    }
+                    let (lock, artifacts) =
+                        cpp_import::prepare_unit(&config, &sources, Path::new(&exporter))
+                            .map_err(|error| format!("unit `{name}`: {error}"))?;
+                    ("c++", lock, artifacts)
+                }
                 "rust" => {
                     let unit = self.rust_unit(name)?;
                     let (lock, artifacts) = rust_import::prepare_unit(&unit)
@@ -342,17 +424,24 @@ impl Project {
             ));
         }
         let lock = self.read_lock()?;
-        if let Some((spelling, unit, _)) = selected
+        if let Some((spelling, unit, relative)) = selected
             .iter()
-            .find(|(_, unit, _)| self.units[*unit].spec.language == "rust")
+            .find(|(_, unit, _)| self.units[*unit].spec.language != "c")
         {
             if selected.len() != 1 {
                 return Err(format!(
-                    "`verifying \"{spelling}\"` selects the crate of Rust unit `{unit}`, which a sidecar verifies on its own"
+                    "`verifying \"{spelling}\"` selects a source of {} unit `{unit}`, which a sidecar verifies on its own",
+                    self.units[*unit].spec.language
                 ));
             }
-            let import = self.load_rust_unit(unit, &lock)?;
-            return Ok(Some(UnitSelection::Program(import.named(spelling).into())));
+            let program: PreparedProgram = if self.units[*unit].spec.language == "rust" {
+                self.load_rust_unit(unit, &lock)?.named(spelling).into()
+            } else {
+                self.load_cpp_unit(unit, relative, &lock)?
+                    .named(spelling)
+                    .into()
+            };
+            return Ok(Some(UnitSelection::Program(program)));
         }
         let mut loaded = BTreeMap::<&str, BTreeMap<String, PreparedCImport>>::new();
         let mut prepared = Vec::with_capacity(selected.len());
@@ -460,6 +549,22 @@ impl Project {
             .map_err(|error| format!("unit `{name}`: {error}"))
     }
 
+    fn load_cpp_unit(
+        &self,
+        name: &str,
+        logical_source: &str,
+        lock: &serde_json::Value,
+    ) -> Result<cpp_import::PreparedCppImport, String> {
+        let unit_lock = self.lock_entry(name, "c++", lock)?;
+        let (config, sources) = self.cpp_unit(name)?;
+        let source = sources
+            .iter()
+            .find(|source| source.logical_source == logical_source)
+            .expect("the unit lists the selected source");
+        cpp_import::load_unit(&config, source, unit_lock)
+            .map_err(|error| format!("unit `{name}`: {error}"))
+    }
+
     fn load_rust_unit(
         &self,
         name: &str,
@@ -488,8 +593,33 @@ fn validate_unit_name(name: &str) -> Result<(), String> {
 fn validate_unit(name: &str, unit: &UnitJson) -> Result<(), String> {
     match unit.language.as_str() {
         "c" => {
-            if unit.crate_config.is_some() {
-                return Err(format!("C unit `{name}` cannot describe a `crate`"));
+            if unit.crate_config.is_some() || unit.exceptions.is_some() || unit.rtti.is_some() {
+                return Err(format!(
+                    "C unit `{name}` takes no `crate`, `exceptions` or `rtti`"
+                ));
+            }
+            if unit.sources.values().any(SourceJson::has_cpp_fields) {
+                return Err(format!(
+                    "C unit `{name}` sources take only `args` and `projection`"
+                ));
+            }
+        }
+        "c++" => {
+            if unit.crate_config.is_some()
+                || unit.compiler.is_some()
+                || !unit.environment.is_empty()
+                || unit.option_profile.is_some()
+            {
+                return Err(format!(
+                    "C++ unit `{name}` takes no `crate`, `compiler`, `environment` or `option_profile`; the pinned exporter prepares it"
+                ));
+            }
+            for (path, source) in &unit.sources {
+                if source.functions.is_empty() || source.projection.is_some() {
+                    return Err(format!(
+                        "C++ unit `{name}` source `{path}` lists its `functions` and takes no `projection`"
+                    ));
+                }
             }
         }
         "rust" => {
@@ -500,26 +630,24 @@ fn validate_unit(name: &str, unit: &UnitJson) -> Result<(), String> {
                 || !unit.environment.is_empty()
                 || unit.option_profile.is_some()
                 || !unit.args.is_empty()
+                || unit.exceptions.is_some()
+                || unit.rtti.is_some()
             {
                 return Err(format!(
-                    "Rust unit `{name}` takes no `compiler`, `environment`, `option_profile` or `args`; the pinned Charon prepares it"
+                    "Rust unit `{name}` takes no `compiler`, `environment`, `option_profile`, `args`, `exceptions` or `rtti`; the pinned Charon prepares it"
                 ));
             }
             if unit.sources.len() != 1
-                || unit
-                    .sources
-                    .values()
-                    .any(|source| !source.args.is_empty() || source.projection.is_some())
+                || unit.sources.values().any(|source| {
+                    !source.args.is_empty()
+                        || source.projection.is_some()
+                        || source.has_cpp_fields()
+                })
             {
                 return Err(format!(
                     "Rust unit `{name}` lists exactly its crate root in `sources`, with no arguments"
                 ));
             }
-        }
-        "c++" => {
-            return Err(format!(
-                "unit `{name}`: C++ units are not supported in `click.project.json` yet; use a per-sidecar import config"
-            ));
         }
         other => return Err(format!("unit `{name}` has unsupported language `{other}`")),
     }
@@ -618,7 +746,12 @@ mod tests {
         for (units, expected) in [
             (
                 r#"{"cpp": {"language": "c++", "sources": {"a.cpp": {}}}}"#,
-                "not supported in `click.project.json` yet",
+                "lists its `functions`",
+            ),
+            (
+                r#"{"c": {"language": "c", "compiler": "/usr/bin/gcc",
+                    "sources": {"a.c": {"functions": ["f"]}}}}"#,
+                "take only `args` and `projection`",
             ),
             (
                 r#"{"rs": {"language": "rust", "sources": {"src/lib.rs": {}}}}"#,

@@ -7,9 +7,9 @@ independent checker), M2 (no written semantics) and M3 (`memcpy` reading under
 `viewable`) are trust questions without a known false acceptance. Each item that becomes a reproduced false acceptance is filed in
 `bugs/` with its own label.
 
-Depends on [smt-auto.md](smt-auto.md). Items P1–P4, W4 and W5 are expected to
-be fixed by its stages; rule on them after its stage-1 measurements land.
-Also depends on [simplify-step.md](simplify-step.md), which now holds the
+Items P1–P4, W4 and W5 waited on the SMT-backed `auto`
+([design/smt-auto-stage1.md](../design/smt-auto-stage1.md)), which landed;
+P3 is done and the others are ruled below. Also depends on [simplify-step.md](simplify-step.md), which now holds the
 critique that "simple" `step()` is not simple (formerly W3).
 
 On 2026-10-12 Click was reviewed the way an expert launch audience would
@@ -94,28 +94,9 @@ and hand-written `arithmetic_certificate` blocks: about 270 lines of
 ACSL, Dafny and Verus specs use mathematical integers by default.
 
 Proposed fix: specification arithmetic is over `Integer` by default; C
-semantics are written explicitly where a spec means them
-([smt-auto.md](smt-auto.md) stage 4).
+semantics are written explicitly where a spec means them.
 
 Done when: decided, and if fixed, the examples shrink accordingly.
-
-Decision: open.
-
-### P3. Little automation behind `simp`
-
-Today: symmetric equalities, transitivity and width bridges are proved by
-hand (`modeled_binary_tree.click`, `have left_model == l.model by {
-rewrite(l.model == left_model); normalize(); }`), and `simp` is described by
-heuristic limits ("up to eight variables", "nested at most twice",
-`docs/reference/tactics/index.md`).
-
-Proposed fix: [smt-auto.md](smt-auto.md) stage 1: a solver-backed decision
-procedure for linear integer arithmetic plus congruence closure behind `simp`
-and `arithmetic`, whose results are reconstructed as kernel-checked
-certificates.
-
-Done when: decided; if fixed, the procedure's certificates are kernel-checked
-and a representative example shrinks.
 
 Decision: open.
 
@@ -126,14 +107,15 @@ Today: "`have` takes no label, and a later step cites it by restating `P`"
 `using { ... }` (`examples/rust-byte-sum/sum.click`), and `rewrite(` appears
 about 6,900 times across rbtree-erase and arena.
 
-Proposed fix: `have h: P` and `using { h; }`. Unsat-core premise selection
-([smt-auto.md](smt-auto.md) stage 2) removes most citations, so rule on this
-after that stage.
+Proposed fix: `have h: P` and `using { h; }`. `auto` and a bare `apply` now
+select their premises themselves, but on 2026-10-15 the examples still cite
+facts by restating them: 3,066 `rewrite(` and 1,042 `using {`, many in
+committed expansions, which a name would also shorten.
 
 Done when: decided; if fixed, documented with an mdtest, and
 `mdtests/have_takes_no_label.md` updated.
 
-Decision: open.
+Decision: fix (maintainer, 2026-10-15): `have name: P`, cited by name.
 
 ### P5. Copy-paste across case files and sidecars
 
@@ -169,34 +151,26 @@ re-`have`d after steps (the deeper-successor arms of
 Proposed fix: facts about values a step cannot change carry across steps
 automatically; the back edge closes implicitly.
 
-Decision: fix (maintainer, 2026-10-14), after smt-auto stage 1.
+Decision: fix (maintainer, 2026-10-14), after the SMT-backed `auto`, which has
+landed.
 
 ## W. Proof workflow and tooling
 
-### W4. Expansion output is hard to read and gets committed
+### W4. Expansion output is hard to read
 
 Today: expanded arithmetic certificates use numbered nodes and repeat
 identical blocks (`mdtests/bubble_sort3_two_pass_sorted.md`); committed
 expansions keep noise such as `have 0 == 0 by normalize();` and runs of
 `assumption();` (`examples/vector-push/vector_push.click`).
 
-Proposed fix: named, deduplicated certificate nodes; keep the
-smart source and cache certificates instead of committing expansions
-([smt-auto.md](smt-auto.md) stage 3).
+Proposed fix: named, deduplicated certificate nodes, and expansions that
+drop the noise.
 
-Decision: open.
-
-### W5. Performance limits the large proofs
-
-Today: rbtree-insert takes about 118 s on 20 cores and rbtree-erase minutes
-(`tests/examples.rs`), both outside the gate; the erase README reports about
-43 sidecar lines per second; a full audit takes about 20 minutes
-(`docs/internals/testing.md`).
-
-Proposed fix: per-claim incremental caching by default
-([smt-auto.md](smt-auto.md) stage 3); budgets reported in work units.
-
-Decision: open.
+Decision: split (maintainer, 2026-10-15). Committing expansions is intended:
+expansion is how a slow smart site is made fast, so the certificate cache
+the review proposed instead is ruled out (see W5 in
+[design/proof-language-rulings.md](../design/proof-language-rulings.md)).
+That makes readable expansion output matter more; it stays open.
 
 ### W6. Some diagnostic lines still print kernel notation
 

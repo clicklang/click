@@ -1,6 +1,21 @@
 name: Rust frontend release
 
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/rust-frontend.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'scripts/build-charon.sh'
+      - 'scripts/package-rust-frontend*'
+      - 'src/languages/rust/runtime.rs'
+      - 'src/languages/rust/charon-profile.json'
+      - 'src/bin/click/version*.rs'
+      - 'tests/rust_release_install.rs'
+      - 'tests/support/rust_frontend.rs'
+      - 'tests/support/release_assets.rs'
+      - 'examples/basic-rust/**'
+      - 'design/charon-trial/adler2/**'
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+*']
   workflow_dispatch:
@@ -11,7 +26,7 @@ on:
         type: string
 
 concurrency:
-  group: rust-frontend-${{ inputs.tag || github.ref_name }}
+  group: rust-frontend-${{ github.event_name }}-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 permissions:
@@ -27,35 +42,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref_name }}
+          ref: ${{ inputs.tag || github.sha }}
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Check release version
+        if: github.event_name != 'pull_request'
         run: |
           python3 - <<'PY'
           import os, pathlib, tomllib
           version = tomllib.loads(pathlib.Path('Cargo.toml').read_text())['package']['version']
           assert os.environ['RELEASE_TAG'] == 'v' + version, 'release tag must match Click version'
           PY
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: rust-frontend-release
+          cache-directories: target/charon/release
       - name: Build pinned release frontend
         run: scripts/build-charon.sh --install-toolchain --release
       - name: Assemble frontend and compiler runtime
         run: |
           source scripts/charon-toolchain.sh
-          python3 scripts/package-rust-frontend.py target/rust-release/rust \
-            --charon-bin target/charon/release --sysroot "$CHARON_SYSROOT" \
-            --charon-license target/charon-source/LICENSE.md
-          cd target/rust-release
-          archive=click-rust-frontend-x86_64-unknown-linux-gnu.tar.gz
-          tar -czf "$archive" rust
-          sha256sum "$archive" > "$archive.sha256"
+          scripts/package-rust-frontend-archive.sh target/rust-release target/charon/release "$CHARON_SYSROOT"
+      - name: Install the release archive and verify external Rust projects
+        env:
+          CLICK_RUST_FRONTEND_ARCHIVE: ${{ github.workspace }}/target/rust-release/click-rust-frontend-x86_64-unknown-linux-gnu.tar.gz
+          RUST_MIN_STACK: '8388608'
+        run: cargo test --test rust_release_install rust_release_archive_installs_and_verifies -- --ignored
       - uses: actions/upload-artifact@v4
         with:
           name: rust-frontend-x86_64-unknown-linux-gnu
           path: target/rust-release/*.tar.gz*
       - name: Attach to the Click release
+        if: github.event_name != 'pull_request'
         run: |
           # The main release workflow creates the release independently. Keep
           # the assets if it fails, so this job can be rerun after it is fixed.

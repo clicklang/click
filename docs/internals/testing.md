@@ -1460,3 +1460,29 @@ When adding a feature, prefer this order:
 4. Update the relevant docs.
 
 Mdtests are the main executable documentation for Click's proof surface.
+
+## Rust release archive installation
+
+The Rust frontend release workflow builds pinned Charon in release mode,
+assembles one archive and checksum with the production packaging script, and
+runs `tests/rust_release_install.rs` against those same files before upload.
+Relevant packaging pull requests run the same check without publishing.
+This dedicated target is outside the normal gate and full nightly fixture
+list because it needs a release artifact explicitly; its ignored test fails
+when `CLICK_RUST_FRONTEND_ARCHIVE` is absent rather than substituting debug
+binaries. Run it locally with the pinned compiler installed:
+
+```sh
+scripts/build-charon.sh --release
+source scripts/charon-toolchain.sh
+scripts/package-rust-frontend-archive.sh target/rust-release target/charon/release "$CHARON_SYSROOT"
+CLICK_RUST_FRONTEND_ARCHIVE="$PWD/target/rust-release/click-rust-frontend-x86_64-unknown-linux-gnu.tar.gz" \
+  cargo test --test rust_release_install rust_release_archive_installs_and_verifies -- --ignored
+```
+
+The test uses the real installer with a local fixture transport for curl;
+checksum validation, archive extraction and installation are production code.
+After installation the transport is removed. The installed Click then locks
+and verifies the unchanged basic Rust source and adler2 saved-checksum proof
+outside the checkout with no rustup or compiler on PATH, and checks offline
+verification after deleting the frontend.

@@ -5723,7 +5723,56 @@ impl std::hash::Hash for CMemory {
 }
 
 impl Ord for CMemory {
+    /// By a content hash first, then structurally. The structural order walks
+    /// the entries two snapshots share, and snapshots along one path share
+    /// almost all of them, so ordered collections keyed by memories (fact
+    /// sets, premise sets) paid for the whole memory on every comparison
+    /// (`issues/scaling.md`). The cached content hash is O(1) and, being a
+    /// function of the entries under fixed hash keys, as deterministic as
+    /// the structural order; equal snapshots have equal hashes, so the
+    /// structural walk runs only for equal snapshots in unshared storage
+    /// and on hash collisions, and the order stays consistent with `Eq`.
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        if std::sync::Arc::ptr_eq(&self.blocks, &other.blocks)
+            && std::sync::Arc::ptr_eq(&self.cells, &other.cells)
+            && std::sync::Arc::ptr_eq(&self.union_cells, &other.union_cells)
+            && std::sync::Arc::ptr_eq(&self.forgotten, &other.forgotten)
+            && std::sync::Arc::ptr_eq(&self.heap, &other.heap)
+        {
+            return std::cmp::Ordering::Equal;
+        }
+        c_memory_ordering_key(self)
+            .cmp(&c_memory_ordering_key(other))
+            .then_with(|| self.structural_cmp(other))
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Structural memory and resource-context comparisons run on this
+    /// thread, for the regressions that ordering does not walk snapshots.
+    static STRUCTURAL_COMPARISONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// The structural memory and resource-context comparisons `run` performed.
+#[cfg(test)]
+pub(crate) fn count_structural_comparisons<T>(run: impl FnOnce() -> T) -> (T, usize) {
+    let before = STRUCTURAL_COMPARISONS.with(std::cell::Cell::get);
+    let result = run();
+    (
+        result,
+        STRUCTURAL_COMPARISONS.with(std::cell::Cell::get) - before,
+    )
+}
+
+fn count_structural_comparison() {
+    #[cfg(test)]
+    STRUCTURAL_COMPARISONS.with(|count| count.set(count.get() + 1));
+}
+
+impl CMemory {
+    fn structural_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        count_structural_comparison();
         self.blocks
             .cmp(&other.blocks)
             .then_with(|| self.cells.cmp(&other.cells))
@@ -5940,10 +5989,11 @@ pub struct CBlock {
 /// An interned, immutable memory snapshot for embedding inside terms.
 ///
 /// Equality and hashing are O(1) via the arena identity and a precomputed
-/// content hash; ordering keeps a same-identity fast path but falls back to
-/// structural comparison so BTreeMap iteration order stays the structural
-/// order (proof search is sensitive to iteration order, and arena-insertion
-/// order would be nondeterministic across checks).
+/// content hash. Ordering keeps a same-identity fast path, then orders by
+/// the content hash and only then structurally, as `CMemory` does: proof
+/// search is sensitive to iteration order, and the content hash is as
+/// deterministic as the structure, where arena-insertion order would be
+/// nondeterministic across checks.
 #[derive(Clone)]
 pub struct SharedCMemory {
     arena: u32,
@@ -6017,7 +6067,9 @@ impl Ord for SharedCMemory {
         if self.arena == other.arena && self.id == other.id {
             return std::cmp::Ordering::Equal;
         }
-        self.memory.cmp(&other.memory)
+        self.content_hash
+            .cmp(&other.content_hash)
+            .then_with(|| self.memory.structural_cmp(&other.memory))
     }
 }
 
@@ -6648,6 +6700,38 @@ fn recorded_child_matching(result: &CMemory, base: &SharedCMemory) -> Option<CMe
     })
 }
 
+/// A content hash of `memory` for ordering: the components' cached hashes
+/// combined by a multiply-rotate mix rather than SipHash, which costs more
+/// than the rest of a comparison and runs twice per comparison. Like the
+/// content hash it depends only on the entries, so it is deterministic and
+/// equal for equal snapshots; a collision costs only the structural walk.
+fn c_memory_ordering_key(memory: &CMemory) -> u64 {
+    use std::hash::{Hash, Hasher};
+    #[derive(Default)]
+    struct OrderingHasher(u64);
+    impl Hasher for OrderingHasher {
+        fn finish(&self) -> u64 {
+            self.0
+        }
+        fn write(&mut self, bytes: &[u8]) {
+            for chunk in bytes.chunks(8) {
+                let mut word = [0u8; 8];
+                word[..chunk.len()].copy_from_slice(chunk);
+                self.write_u64(u64::from_le_bytes(word));
+            }
+        }
+        fn write_u64(&mut self, word: u64) {
+            self.0 = (self.0.rotate_left(5) ^ word).wrapping_mul(0x517c_c1b7_2722_0a95);
+        }
+        fn write_usize(&mut self, word: usize) {
+            self.write_u64(word as u64);
+        }
+    }
+    let mut hasher = OrderingHasher::default();
+    memory.hash(&mut hasher);
+    hasher.finish()
+}
+
 fn c_memory_content_hash(memory: &CMemory) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -7275,6 +7359,10 @@ pub(super) struct ResourceContextChange {
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct ResourceContextIndex {
+    /// The sum of the held facts' hashes, a content hash of the fact
+    /// multiset kept as facts are inserted and removed, so ordering two
+    /// contexts need not walk their facts (`ResourceContext::cmp`).
+    pub(super) fact_hash: u64,
     pub(super) memory_facts: SnapshotMap<CResourceFact, ()>,
     pub(super) owned_memory_ranges: SnapshotMap<CMemoryRange, ()>,
     pub(super) owned_memory_range_counts: PersistentMap<CMemoryRange, usize>,
@@ -7468,7 +7556,32 @@ impl std::hash::Hash for ResourceContext {
 }
 
 impl Ord for ResourceContext {
+    /// By the fact multiset's cached content hash first, then structurally.
+    /// The structural order walks the facts two contexts share, and the
+    /// snapshots a path states share almost all of them, so a set of stated
+    /// compositions paid for a whole context per comparison
+    /// (`issues/scaling.md`). Equal contexts hold equal facts and so equal
+    /// hashes, and the hash depends only on the facts, so the order is
+    /// consistent with `Eq` and deterministic.
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        if std::sync::Arc::ptr_eq(&self.storage, &other.storage)
+            && std::sync::Arc::ptr_eq(&self.loan_dependencies, &other.loan_dependencies)
+        {
+            return std::cmp::Ordering::Equal;
+        }
+        let key = |context: &Self| {
+            let index = &context.storage.index;
+            (index.fact_hash, index.exact.len())
+        };
+        key(self)
+            .cmp(&key(other))
+            .then_with(|| self.structural_cmp(other))
+    }
+}
+
+impl ResourceContext {
+    fn structural_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        count_structural_comparison();
         self.facts()
             .cmp(other.facts())
             .then_with(|| {

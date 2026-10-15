@@ -932,6 +932,36 @@ impl PureFactContext {
             .map(|known| known == constant)
     }
 
+    /// Decide a signed byte comparison from the exact equality bucket of
+    /// its unsigned read. Frozen execution cites that original equality;
+    /// exact membership and arbitrary cast operands remain unchanged.
+    pub(in crate::kernel) fn decide_signed_byte_equality_from_exact_fact(
+        &self,
+        condition: &ConditionTerm,
+    ) -> Option<bool> {
+        let ConditionTerm::Bitvector32Equal(left, right) = condition else {
+            return None;
+        };
+        let (byte, target) = if let Some(byte) = left.signed_byte_operand() {
+            (byte, right.as_ref())
+        } else {
+            (right.signed_byte_operand()?, left.as_ref())
+        };
+        if !matches!(
+            crate::kernel::eval::viewed_as_memory_load(byte),
+            Some(Bitvector32Term::MemoryLoad(_, _, LoadKind::UInt8))
+        ) {
+            return None;
+        }
+        let target = signed_bitvector_constant(target)?;
+        let (unsigned, source) = self.indexed_exact_int32_constant(byte)?;
+        let unsigned = u8::try_from(unsigned).ok()?;
+        let signed = Bitvector32Term::signed_byte(Bitvector32Term::Constant(u32::from(unsigned)))
+            .as_const()? as i32;
+        record_implicit_reasoning_provenance(self, &source);
+        Some(i64::from(signed) == target)
+    }
+
     /// Integer strict and inclusive bounds differ by one. Keep the frozen
     /// bounded term intact and look up only the equivalent recorded bound.
     /// The signed endpoints are handled before incrementing or decrementing.
