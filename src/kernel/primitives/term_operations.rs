@@ -3409,6 +3409,7 @@ impl CLValue {
         pointee_volatile: bool,
     ) -> Self {
         Self {
+            local_reference: None,
             storage: CLValueStorage::Local { name: name.into() },
             value_type,
             volatile,
@@ -3433,6 +3434,7 @@ impl CLValue {
         pointee_volatile: bool,
     ) -> Self {
         Self {
+            local_reference: None,
             storage: CLValueStorage::Memory { pointer },
             value_type,
             volatile,
@@ -3440,6 +3442,14 @@ impl CLValue {
             constant: false,
             pointee_constant: false,
         }
+    }
+
+    pub(in crate::kernel) fn with_local_reference(
+        mut self,
+        reference: Option<super::super::loans::LocalScalarReference>,
+    ) -> Self {
+        self.local_reference = reference;
+        self
     }
 
     pub(in crate::kernel) fn with_constant(mut self, constant: bool) -> Self {

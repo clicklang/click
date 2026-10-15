@@ -332,6 +332,16 @@ pub(in crate::kernel) fn memory_write_permission_outcome(
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> Option<CStatementOutcome> {
+    memory_write_permission_outcome_for_local(state, pointer, bytes, assumptions, false)
+}
+
+fn memory_write_permission_outcome_for_local(
+    state: &CState,
+    pointer: &Pointer,
+    bytes: u32,
+    assumptions: &PureFactContext,
+    private_local: bool,
+) -> Option<CStatementOutcome> {
     let range = CMemoryRange::new_with_element_width(
         pointer.clone(),
         Bitvector32Term::Constant(0),
@@ -344,7 +354,8 @@ pub(in crate::kernel) fn memory_write_permission_outcome(
     if let Some(outcome) = stable_loan_memory_range_outcome(state, &range, assumptions) {
         return Some(outcome);
     }
-    if state.memory.requires_explicit_scalar_ownership(pointer)
+    if (state.memory.requires_explicit_scalar_ownership(pointer)
+        || (state.has_local_scalar_references() && !private_local))
         && state
             .resources()
             .memory_write_range(pointer, bytes, assumptions)
@@ -412,6 +423,97 @@ pub(in crate::kernel) fn write_c_lvalue_paths(
 }
 
 fn write_c_lvalue_paths_for_initialization(
+    state: &CState,
+    lvalue: CLValue,
+    value: CValue,
+    facts: ExecutionFacts,
+    obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+    initialization: bool,
+    store_source: CStatementStoreSource,
+) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+    // Local copies preserve the lease. Addressable pointer slots and aggregate
+    // transport require a separate reference-storage protocol.
+    if matches!(&value, CValue::Pointer(pointer) if pointer.local_reference().is_some())
+        && !matches!(&lvalue.storage, CLValueStorage::Local { name }
+            if state.locals.slot(name).is_none_or(|pointer|
+                crate::kernel::block_is_never_address_taken_local(&pointer.block)))
+    {
+        return Ok(vec![CStatementExecutionPath::new(
+            CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(Box::new(
+                crate::kernel::loans::LoanRefusal::UnsupportedResource
+                    .diagnostic(crate::kernel::LoanRefusalOperation::MemoryAccess),
+            ))),
+            facts,
+            obligations,
+        )]);
+    }
+    if let Some(reference) = &lvalue.local_reference {
+        let effective_assumptions =
+            assumptions_with_path_context(assumptions, &facts, &obligations);
+        let result = lvalue
+            .pointer(state)
+            .ok_or(crate::kernel::loans::LoanRefusal::InvalidEvidence)
+            .and_then(|pointer| {
+                state.local_scalar_access_resources(
+                    reference,
+                    &pointer,
+                    lvalue.value_type,
+                    &effective_assumptions,
+                )
+            });
+        let (resources, occurrence) = match result {
+            Ok(result) => result,
+            Err(error) => {
+                return Ok(vec![CStatementExecutionPath::new(
+                    CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(Box::new(
+                        error.diagnostic(crate::kernel::LoanRefusalOperation::MemoryAccess),
+                    ))),
+                    facts,
+                    obligations,
+                )]);
+            }
+        };
+        let state = state.clone().with_resource_context(resources);
+        let mut paths = write_c_lvalue_paths_without_local_reference(
+            &state,
+            lvalue,
+            value,
+            facts,
+            obligations,
+            assumptions,
+            budget,
+            initialization,
+            store_source,
+        )?;
+        for path in &mut paths {
+            if let CStatementOutcome::Normal(state) = &mut path.outcome {
+                let resources = state
+                    .resources()
+                    .clone()
+                    .without_memory_views_supported_by_occurrence(occurrence)
+                    .without_exact_representation_for_occurrence(occurrence)
+                    .expect("scalar store retains its temporary owner");
+                **state = (**state).clone().with_resource_context(resources);
+            }
+        }
+        return Ok(paths);
+    }
+    write_c_lvalue_paths_without_local_reference(
+        state,
+        lvalue,
+        value,
+        facts,
+        obligations,
+        assumptions,
+        budget,
+        initialization,
+        store_source,
+    )
+}
+
+fn write_c_lvalue_paths_without_local_reference(
     state: &CState,
     lvalue: CLValue,
     value: CValue,
@@ -504,11 +606,12 @@ fn write_c_lvalue_paths_for_initialization(
                 )]);
             }
             if let Some(pointer) = state.locals.slot(&name).cloned()
-                && let Some(outcome) = memory_write_permission_outcome(
+                && let Some(outcome) = memory_write_permission_outcome_for_local(
                     state,
                     &pointer,
                     value.byte_width(),
                     &effective_assumptions,
+                    crate::kernel::block_is_never_address_taken_local(&pointer.block),
                 )
             {
                 return Ok(vec![CStatementExecutionPath::new(
@@ -2300,7 +2403,14 @@ fn live_mutex_return_refusal() -> CStatementOutcome {
 
 /// The same authority obligations apply to explicit returns and void fallthrough.
 pub(in crate::kernel) fn return_authority_refusal(state: &CState) -> Option<CStatementOutcome> {
-    if has_live_thread_completion(state) {
+    if state.has_local_scalar_references() {
+        Some(CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(
+            Box::new(
+                crate::kernel::loans::LoanRefusal::ActiveDependency
+                    .diagnostic(crate::kernel::LoanRefusalOperation::Recovery),
+            ),
+        )))
+    } else if has_live_thread_completion(state) {
         Some(live_thread_return_refusal())
     } else if has_live_mutex(state) {
         Some(live_mutex_return_refusal())
@@ -2803,6 +2913,33 @@ fn execute_c_statement_leaf_paths(
     // and counted every straight-line source statement twice.
     if !matches!(statement, CStatement::Seq(_, _)) {
         budget.consume_statement_step()?;
+    }
+    // The private scalar lease adapter supports direct scalar execution only.
+    // Until transfer and havoc carry custody, refuse these paths before they
+    // can publish a state or a call boundary without the reserved authority.
+    if state.has_local_scalar_references()
+        && matches!(
+            statement,
+            CStatement::Call { .. }
+                | CStatement::CallAssign { .. }
+                | CStatement::While { .. }
+                | CStatement::ForStep { .. }
+                | CStatement::CopyAggregate { .. }
+                | CStatement::InitializeScalarArray { .. }
+                | CStatement::DeclareAggregate { .. }
+                | CStatement::HeapAllocate { .. }
+                | CStatement::HeapFree { .. }
+                | CStatement::EndAutomaticLifetimes { .. }
+        )
+    {
+        return Ok(vec![CStatementExecutionPath::new(
+            CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(Box::new(
+                crate::kernel::loans::LoanRefusal::UnsupportedResource
+                    .diagnostic(crate::kernel::LoanRefusalOperation::Transition),
+            ))),
+            Vec::new().into(),
+            Vec::new(),
+        )]);
     }
     let paths = match statement {
         CStatement::Skip => vec![CStatementExecutionPath::new(
