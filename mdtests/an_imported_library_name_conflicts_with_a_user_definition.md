@@ -2,11 +2,13 @@
 
 The negative twin of
 [`an_unimported_library_name_is_free_for_a_user_definition.md`](an_unimported_library_name_is_free_for_a_user_definition.md).
-After `import click::permutation;` the library's `permutation` is visible, so
-a user `permutation` is a duplicate definition.
+`import click::permutation::{permutation};` brings the library's
+`permutation` into scope by its bare name, so a user `permutation` clashes
+with it. A module import alone, `import click::permutation;`, brings only
+the path `permutation::permutation`, and leaves the bare name free.
 
 ```click
-import click::permutation;
+import click::permutation::{permutation};
 
 predicate permutation(x: int32) {
     x == 1
@@ -14,5 +16,5 @@ predicate permutation(x: int32) {
 ```
 
 ```expect
-fail: duplicate predicate definition `permutation`
+fail: `permutation` is imported from `click::permutation` and also declared in this file
 ```

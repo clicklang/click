@@ -1022,11 +1022,11 @@ theorem docs_use_int32_greater_equal_and_not_greater_than_implies_equal(left: in
 }
 
 predicate docs_use_count(p: int32[], lo: int32, hi: int32, x: int32) {
-    count(p, lo, hi, x) == count(p, lo, hi, x)
+    permutation::count(p, lo, hi, x) == permutation::count(p, lo, hi, x)
 }
 
 predicate docs_use_permutation(a: int32[], b: int32[], lo: int32, hi: int32) {
-    permutation(a, b, lo, hi)
+    permutation::permutation(a, b, lo, hi)
 }
 
 predicate docs_use_byte_count(bytes: uint8[], lo: int32, hi: int32, value: uint8) {

@@ -11975,9 +11975,9 @@ fn outcome_predicate_unfold_provenance_survives_nested_have_expansion() {
 
         int32 sort_three_cells(int32 p[3]) {
             consumes p[0..3];
-            ensures permutation(p, old(p), 0, 3) by {
+            ensures permutation::permutation(p, old(p), 0, 3) by {
                 execute();
-                unfold(permutation);
+                unfold(permutation::permutation);
                 simp();
             }
         }
@@ -12000,11 +12000,14 @@ fn outcome_predicate_unfold_provenance_survives_nested_have_expansion() {
     )
     .expect("the retained nested predicate proof should expand");
     assert!(
-        expanded.contains("have permutation(p, old(p), 0, 3) by {"),
+        expanded.contains("have permutation::permutation(p, old(p), 0, 3) by {"),
         "{expanded}"
     );
     assert!(expanded.contains("normalize();"), "{expanded}");
-    assert!(expanded.contains("unfold(permutation);"), "{expanded}");
+    assert!(
+        expanded.contains("unfold(permutation::permutation);"),
+        "{expanded}"
+    );
     let (reverified, expanded_flat_units) =
         proof::count_flat_proof_units(|| verify_c0_sources(&expanded, &sources));
     assert_eq!(

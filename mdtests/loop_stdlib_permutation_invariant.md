@@ -30,21 +30,21 @@ verifying "loop_stdlib_permutation_invariant.c";
 
 int32 loop_stdlib_permutation_invariant(int32 p[3]) {
     requires viewable(p[0..3]);
-    ensures permutation_after_loop: permutation(p, old(p), 0, 3);
+    ensures permutation_after_loop: permutation::permutation(p, old(p), 0, 3);
 } by {
     step();
     step();
     loop {
         decreases 3 - i;
         invariant i >= 0 and i <= 3;
-        invariant permutation(p, old(p), 0, 3);
+        invariant permutation::permutation(p, old(p), 0, 3);
         initialize by {
-            unfold(permutation);
+            unfold(permutation::permutation);
             simp();
         }
         preserve by {
             mark iteration;
-            unfold(permutation);
+            unfold(permutation::permutation);
             step();
             have i >= 0 and i <= 3;
             close_invariants by {
@@ -54,7 +54,7 @@ int32 loop_stdlib_permutation_invariant(int32 p[3]) {
         }
     }
     step();
-    unfold(permutation);
+    unfold(permutation::permutation);
     simp();
 }
 ```

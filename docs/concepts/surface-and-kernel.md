@@ -128,13 +128,13 @@ So:
 
 <!-- verified-example: mdtests/compare_swap2_permutation.md -->
 ```click
-permutation(p, old(p), 0, 2)
+permutation::permutation(p, old(p), 0, 2)
 ```
 
 means:
 
 ```text
-permutation(
+click::permutation::permutation(
   ClickArrayRef { memory: post_memory, pointer: p, element_type: int32 },
   ClickArrayRef { memory: pre_memory, pointer: p, element_type: int32 },
   0,
