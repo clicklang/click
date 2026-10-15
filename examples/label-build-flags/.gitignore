@@ -1,3 +1,0 @@
-# Written by `click import lock`; the examples gate refreshes them.
-*.i
-*.import.lock.json
