@@ -1171,21 +1171,6 @@ fn run_example_in_thread(project: &Path) -> Result<(), String> {
 }
 
 fn run_example_project(project: &Path) -> Result<(), String> {
-    let prepare = project.join("prepare.py");
-    if prepare.is_file() {
-        let output = Command::new("python3")
-            .arg(&prepare)
-            .output()
-            .map_err(|error| format!("failed to prepare `{}`: {error}", project.display()))?;
-        if !output.status.success() {
-            return Err(format!(
-                "failed to prepare `{}`: {}{}",
-                project.display(),
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            ));
-        }
-    }
     let source_status = verify_source_integrity(project)?;
     if let Some(status) = source_status {
         eprintln!(

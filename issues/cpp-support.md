@@ -54,8 +54,9 @@ Audit of the current path, from a user's point of view:
    names the exporter by a path relative to the config. Every checked-in
    config points into the repository's build output:
    `../../target/cpp-exporter/click-cpp-exporter` in
-   `examples/basic-cpp/*.click.import.json` and
    `integrations/bitcoin-core-money-range/MoneyRange.click.import.json`.
+   Project units, such as `examples/basic-cpp`, take the exporter from
+   `CLICK_CPP_EXPORTER` at lock time only.
    C++ mdtests take a different route: they read `CLICK_CPP_EXPORTER`. If it
    is unset they fall back to `CARGO_MANIFEST_DIR/target/cpp-exporter/...`,
    a path compiled into the binary (`prepare_mdtest_inputs` in

@@ -221,7 +221,12 @@ C++ items were chosen explicitly; the rest are the recommended defaults.
   zlib fixture keeps its per-sidecar configs: its `zconf.h` includes
   `<stdarg.h>` and `<sys/types.h>`, which Click's modeled headers refuse, so
   current Click cannot re-lock it.
-- **Remaining:** migrating zlib and the C++ configs, then refusing per-sidecar
+- **C++ migration.** `examples/basic-cpp` is a project with one C++ unit and
+  committed, portable locks: `prepare.py` and the compilation-database
+  template are gone, and it rejoins the nightly audit. The Bitcoin Core
+  integration still uses per-sidecar configs: its real command names the
+  machine's Clang resource directory, which a unit should not have to state.
+- **Remaining:** migrating zlib and the Bitcoin Core integration, then refusing per-sidecar
   configs in the command line and deleting their loaders; the module root still comes
   from imports rather than the project file; the shared lock envelope; the
   optimization level and flag policy.
