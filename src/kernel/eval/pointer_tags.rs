@@ -19,6 +19,52 @@
 use super::operators::CBitwiseOperation;
 use super::*;
 
+/// A cast can recover only its own retained full origin. Numeric equations
+/// can prove restoration of that address, never choose or manufacture origin.
+pub(in crate::kernel) fn cast_pointer_integer_to_pointer(
+    value: &CPointerIntegerValue,
+    assumptions: &PureFactContext,
+    obligations: &mut Vec<ProofObligation>,
+) -> Result<CPointerValue, String> {
+    if assumptions.decide(&ConditionTerm::uint64_equal(
+        value.bits().clone(),
+        Bitvector32Term::UInt64Constant(0),
+    )) == Some(true)
+    {
+        return Ok(CPointerValue::new(Pointer::null(), CType::VoidPointer));
+    }
+    let origin = assumptions.promised_pointer_origin(value).ok_or_else(|| {
+        "integer-to-pointer cast requires a pointer_origin input promise".to_string()
+    })?;
+    // The numeric tag checker supplies restoration conditions only. Its
+    // pointer spelling never supplies or replaces the retained geometry.
+    if let Some(address) = cast_tagged_address_to_pointer(value.bits(), assumptions, obligations)?
+        && pointers_proven_equal_for_memory_resolution(&address, origin.pointer(), assumptions)
+    {
+        return Ok(origin);
+    }
+    let condition = ConditionTerm::uint64_equal(
+        value.bits().clone(),
+        Bitvector32Term::pointer_address(origin.pointer().clone()),
+    );
+    let context =
+        "integer-to-pointer cast requires the retained pointer's original address restored";
+    match assumptions.decide(&condition) {
+        Some(true) => Ok(origin.clone()),
+        Some(false) => Err(format!("{context}, which is refuted")),
+        None => {
+            add_proof_obligation_with_context(
+                obligations,
+                assumptions,
+                Proposition::ConditionIs(condition, true),
+                Some(context),
+            )
+            .ok_or_else(|| format!("{context}, which is refuted"))?;
+            Ok(origin.clone())
+        }
+    }
+}
+
 pub(in crate::kernel) struct TaggedAddress {
     pub(in crate::kernel) pointer: Pointer,
     pub(in crate::kernel) tag: Bitvector32Term,
@@ -65,10 +111,12 @@ enum Undecided<'a> {
     /// Leave the word unrecognized.
     Reject,
     /// Record the condition as an obligation and continue.
+    #[cfg_attr(not(test), allow(dead_code))]
     Oblige(&'a mut Vec<ProofObligation>),
 }
 
 /// A refuted condition names what the operation needed.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(in crate::kernel) struct Refuted(pub(in crate::kernel) String);
 
 /// A tag sum with a zero side is the other side, so a tag read from a fact

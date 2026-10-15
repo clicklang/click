@@ -3696,6 +3696,23 @@ impl AnnotationLowerer<'_> {
                         )],
                     });
                 }
+                if name == "pointer_origin" {
+                    let [word, pointer] = arguments.as_slice() else {
+                        return Err("pointer_origin expects an integer and a pointer".into());
+                    };
+                    return Ok(SpecProposition::Predicate {
+                        resource_state_dependent: false,
+                        name: crate::kernel::POINTER_ORIGIN_PREDICATE_NAME.to_string(),
+                        arguments: vec![
+                            SpecPredicateArgument::Value(
+                                self.lower_contract_expression_to_spec(word, environment)?,
+                            ),
+                            SpecPredicateArgument::Value(
+                                self.lower_contract_expression_to_spec(pointer, environment)?,
+                            ),
+                        ],
+                    });
+                }
                 if name == "same_object" {
                     let [left, right] = arguments.as_slice() else {
                         return Err(format!(
@@ -4635,10 +4652,14 @@ impl AnnotationLowerer<'_> {
                     .ok_or_else(|| {
                         "to_integer expects a signed or unsigned machine integer".to_string()
                     })?;
-                    let (crate::kernel::integer_c_value!(bits)) = value else {
-                        return Err(
-                            "to_integer expects a signed or unsigned machine integer".into()
-                        );
+                    let bits = match value {
+                        CValue::PointerInteger(value) => value.bits(),
+                        crate::kernel::integer_c_value!(bits) => bits,
+                        _ => {
+                            return Err(
+                                "to_integer expects a signed or unsigned machine integer".into()
+                            );
+                        }
                     };
                     // An already evaluated value carries no evaluation effects.
                     // Keep its observation in the shared Integer DAG so aliases
@@ -6616,7 +6637,7 @@ impl AnnotationLowerer<'_> {
                 },
                 environment,
             ),
-            CExpression::PointerOffsetBytes { pointer, bytes } => {
+            CExpression::PointerOffsetBytes { pointer, bytes, .. } => {
                 Ok(SpecExpression::PointerOffset {
                     pointer: Box::new(self.lower_c_fragment_to_spec(pointer, environment)?),
                     elements: Box::new(SpecExpression::Value(int32(*bytes))),

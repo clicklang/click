@@ -982,10 +982,15 @@ fn symbolic_construction_storage_respects_known_aliases() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = Pointer::symbolic(Variable(870_005));
     let alias = Pointer::symbolic(Variable(870_006));
-    let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(source.clone(), alias.clone()),
-        true,
-    );
+    let assumptions = PureFactContext::new()
+        .assume_proposition(crate::kernel::pointer_origin_fact(
+            CValue::pointer(alias.clone()),
+            CValue::pointer(source.clone()),
+        ))
+        .assume_condition(
+            ConditionTerm::pointer_equal(source.clone(), alias.clone()),
+            true,
+        );
     for forgotten in [false, true] {
         for written in [false, true] {
             for read in [&source, &alias] {

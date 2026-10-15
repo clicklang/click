@@ -1706,6 +1706,7 @@ impl Printer<'_> {
         use crate::kernel::CValue;
         if !self.source_mode() {
             return match value {
+                CValue::PointerInteger(value) => self.cvalue(&value.numeric_value(), depth),
                 CValue::Bool(Bitvector32Term::Constant(0)) => Some(atom("false")),
                 CValue::Bool(Bitvector32Term::Constant(1)) => Some(atom("true")),
                 CValue::Bool(value) | CValue::Int64(value) | CValue::UInt64(value) => {
@@ -1734,6 +1735,8 @@ impl Printer<'_> {
             })
         };
         match value {
+            CValue::PointerInteger(value) => self.cvalue(&value.numeric_value(), depth),
+
             CValue::Void => Some(atom("void")),
             CValue::Bool(Bitvector32Term::Constant(0)) => Some(atom("false")),
             CValue::Bool(Bitvector32Term::Constant(1)) => Some(atom("true")),

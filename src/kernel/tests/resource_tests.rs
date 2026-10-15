@@ -4775,11 +4775,22 @@ fn composite_resource_arguments_respect_proven_pointer_equality() {
         name: "list".to_string(),
         arguments: vec![CValue::pointer(right_pointer.clone()).into()].into(),
     });
-    let assumptions = PureFactContext::new().assume_condition(
+    let origin = crate::kernel::pointer_origin_fact(
+        CValue::pointer(left_pointer.clone()),
+        CValue::pointer(right_pointer.clone()),
+    );
+    let numeric_only = PureFactContext::new().assume_condition(
         ConditionTerm::pointer_equal(left_pointer, right_pointer),
         true,
     );
 
+    assert!(
+        ResourceContext::new()
+            .unchecked_with_fact(left.clone())
+            .without_fact(&right, &numeric_only)
+            .is_none()
+    );
+    let assumptions = numeric_only.assume_proposition(origin);
     let remaining = ResourceContext::new()
         .unchecked_with_fact(left.clone())
         .without_fact(&right, &assumptions)

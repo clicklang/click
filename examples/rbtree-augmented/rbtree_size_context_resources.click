@@ -25,11 +25,13 @@ resource sized_context_at(child: struct rb_node*, root: struct rb_node*,
             owns up: sized_context_at(node, root, stop, value);
             fact node != 0;
             fact node != stop;
+            fact pointer_origin(node->rb_left, child);
             fact node->rb_left == child;
             fact node->rb_left != node;
             fact node->rb_right != node;
             fact aligned(node, 8);
             fact aligned(parent, 8);
+            fact pointer_origin(node->__rb_parent_color, parent);
             fact node->__rb_parent_color == address(parent) + (node->__rb_parent_color & 1);
             fact (node->__rb_parent_color & 1) == color_bit(color);
             fact metadata.value == value;
@@ -48,11 +50,13 @@ resource sized_context_at(child: struct rb_node*, root: struct rb_node*,
             owns up: sized_context_at(node, root, stop, value);
             fact node != 0;
             fact node != stop;
+            fact pointer_origin(node->rb_right, child);
             fact node->rb_right == child;
             fact node->rb_left != node;
             fact node->rb_right != node;
             fact aligned(node, 8);
             fact aligned(parent, 8);
+            fact pointer_origin(node->__rb_parent_color, parent);
             fact node->__rb_parent_color == address(parent) + (node->__rb_parent_color & 1);
             fact (node->__rb_parent_color & 1) == color_bit(color);
             fact metadata.value == value;

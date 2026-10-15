@@ -18,6 +18,7 @@ resource leaf_links(rb: struct rb_node*, stop: struct rb_node*) {
     fact rb->rb_left == 0;
     fact rb->rb_right == 0;
     fact aligned(stop, 8);
+    fact pointer_origin(rb->__rb_parent_color, stop);
     fact rb->__rb_parent_color == address(stop) + (rb->__rb_parent_color & 1);
 }
 
@@ -36,12 +37,19 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
         invariant old(rb) != stop;
         invariant links.word == old(links.word);
         invariant rb == old(rb) or rb == stop;
+        invariant (rb == old(rb) and pointer_origin(rb, old(rb))) or rb == stop;
         invariant metadata.value == 1 or rb == old(rb);
         initialize by simp;
         preserve by {
             have rb == old(rb) by {
                 cases {
                     rb == old(rb) => { assumption(); }
+                    rb == stop => { contradiction(rb == stop); }
+                }
+            }
+            have pointer_origin(rb, old(rb)) by {
+                cases {
+                    rb == old(rb) and pointer_origin(rb, old(rb)) => { assumption(); }
                     rb == stop => { contradiction(rb == stop); }
                 }
             }

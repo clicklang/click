@@ -1199,6 +1199,10 @@ impl<'a> Proof<'a> {
         // body before substitution. Build the substituted body from the
         // selected requirement, preserving the original binder identity.
         let instantiated = match (&checked_source, chosen) {
+            (Proposition::Exists { var, body, .. }, CValue::PointerInteger(value)) => {
+                substitute_int32_variable_in_proposition(body, *var, value.bits().clone())
+            }
+
             (Proposition::Exists { var, body, .. }, crate::kernel::integer_c_value!(value)) => {
                 substitute_int32_variable_in_proposition(body, *var, value.clone())
             }

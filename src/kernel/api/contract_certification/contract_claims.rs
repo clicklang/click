@@ -919,6 +919,13 @@ fn materialized_load_is_unchanged(
         _ => None,
     };
     let load = match value {
+        CValue::PointerInteger(value)
+            if value.is_input_origin()
+                && CPointerIntegerValue::from_input(value.bits().clone(), value.c_type())
+                    .is_some_and(|input| input.origin() == value.origin()) =>
+        {
+            load_of(value.bits())
+        }
         crate::kernel::integer64_c_value!(bits) => load_of(bits),
         // A pointer-typed cell materialized from a load scales the load (or
         // its load variable) by the pointee width, as the kernel's own
@@ -2584,6 +2591,8 @@ fn literal_completion_key(outcome: &CFunctionOutcome) -> Option<(bool, CValue)> 
         _ => return None,
     };
     let term = match value {
+        CValue::PointerInteger(_) => return None,
+
         CValue::Void => return Some((exceptional, CValue::Void)),
         CValue::Bool(term)
         | CValue::Int8(term)
@@ -2668,6 +2677,8 @@ pub(crate) fn c_verified_function_contract_claims_with_checked_propositions(
             }
             let load_equalities = load_equality_capture.finish();
             holds.then(|| CVerifiedFunctionContractClaim {
+                pointer_result_domain: None,
+                pointer_store_effects: Default::default(),
                 function: function.clone(),
                 key: claim.key().clone(),
                 load_equalities,
@@ -2700,7 +2711,234 @@ pub(crate) fn c_verified_function_contract_claims_with_checked_propositions(
     }) {
         return None;
     }
-    claims
+    let mut claims = claims?;
+    if (function.return_type().is_pointer()
+        || matches!(function.return_type(), CType::Int64 | CType::UInt64))
+        && function.return_aggregate_layout().is_none()
+    {
+        let candidate = crate::kernel::functions::pointer_domain_inference::candidate(function);
+        let candidate_uses_integer_origin = function.return_type().is_object_pointer()
+            && match &candidate {
+                CPointerResultDomain::Argument(index)
+                | CPointerResultDomain::ArgumentOffset(index, _) => {
+                    function.parameters().get(*index).is_some_and(|parameter| {
+                        matches!(parameter.c_type(), CType::Int64 | CType::UInt64)
+                    })
+                }
+                _ => false,
+            };
+        let effect = if loaded_result_candidate(&candidate) || candidate_uses_integer_origin {
+            if !loaded_result_is_checked(function, &cases, &candidate) {
+                return None;
+            }
+            candidate.clone()
+        } else {
+            infer_pointer_result_domain(function, &cases)
+        };
+        if candidate != CPointerResultDomain::Unknown && candidate != effect {
+            return None;
+        }
+        let effect = std::sync::Arc::new(effect);
+        for claim in &mut claims {
+            claim.pointer_result_domain = Some(effect.clone());
+        }
+    }
+    let stores = crate::kernel::functions::pointer_store_effects::candidates(function);
+    if !stores.is_empty() {
+        for alternatives in &cases {
+            let paths = alternatives
+                .iter()
+                .find_map(|view| view.prepared(function).as_ref().ok())?;
+            for path in paths {
+                let CFunctionOutcome::Return { state, .. } = &path.outcome else {
+                    continue;
+                };
+                let arguments = function
+                    .parameters()
+                    .iter()
+                    .map(|parameter| path.entry_state.locals().get(parameter.name()).cloned())
+                    .collect::<Option<Vec<_>>>()?;
+                for effect in &stores {
+                    let destination = crate::kernel::functions::pointer_store_effects::destination(
+                        effect, &arguments,
+                    )?;
+                    let value =
+                        crate::kernel::functions::pointer_store_effects::value(effect, &arguments)?;
+                    if state.memory().known_value(&destination).as_ref() != Some(&value) {
+                        return None;
+                    }
+                }
+            }
+        }
+    }
+    let stores = Arc::new(stores);
+    for claim in &mut claims {
+        claim.pointer_store_effects = stores.clone();
+    }
+    Some(claims)
+}
+
+fn loaded_result_candidate(effect: &CPointerResultDomain) -> bool {
+    match effect {
+        CPointerResultDomain::Loaded { .. } => true,
+        CPointerResultDomain::Integer(inner) => loaded_result_candidate(inner),
+        _ => false,
+    }
+}
+
+fn loaded_result_is_checked(
+    function: &CFunction,
+    cases: &[Vec<ContractPathSetView<'_>>],
+    effect: &CPointerResultDomain,
+) -> bool {
+    for alternatives in cases {
+        let Some(paths) = alternatives
+            .iter()
+            .find_map(|view| view.prepared(function).as_ref().ok())
+        else {
+            return false;
+        };
+        for path in paths {
+            let CFunctionOutcome::Return { value, .. } = &path.outcome else {
+                continue;
+            };
+            // A nullable summary describes the non-null designation. Null
+            // returns supply no domain and cannot justify displacement.
+            if matches!(value, CValue::Pointer(pointer) if pointer.is_null()) {
+                continue;
+            }
+            let Some(arguments) = function
+                .parameters()
+                .iter()
+                .map(|parameter| path.entry_state.locals().get(parameter.name()).cloned())
+                .collect::<Option<Vec<_>>>()
+            else {
+                return false;
+            };
+            let origin = match effect {
+                CPointerResultDomain::Integer(inner) => inner,
+                effect => effect,
+            };
+            let Some(expected) = crate::kernel::functions::instantiate_result_pointer_value(
+                origin,
+                &path.entry_state,
+                &arguments,
+                &path.assumptions,
+            ) else {
+                return false;
+            };
+            let agrees = match (value, &expected) {
+                (CValue::PointerInteger(left), CValue::PointerInteger(right)) => {
+                    crate::kernel::functions::pointer_integer_origins_match(
+                        left,
+                        right,
+                        &path.assumptions,
+                    )
+                }
+                (CValue::Pointer(left), _) => {
+                    crate::kernel::functions::instantiate_result_pointer_geometry(
+                        origin,
+                        &path.entry_state,
+                        &arguments,
+                        &path.assumptions,
+                    )
+                    .is_some_and(|right| {
+                        crate::kernel::reasoning::c_pointer_values_proven_equal(
+                            left,
+                            &right,
+                            &path.assumptions,
+                        )
+                    })
+                }
+                _ => false,
+            };
+            if !agrees {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Select one complete checked frontier per guard case. Every normal return
+/// must establish the same effect; an unknown arm cannot disappear in a join.
+fn infer_pointer_result_domain(
+    function: &CFunction,
+    cases: &[Vec<ContractPathSetView<'_>>],
+) -> CPointerResultDomain {
+    let mut effects = Vec::new();
+    for alternatives in cases {
+        let Some(paths) = alternatives
+            .iter()
+            .find_map(|view| view.prepared(function).as_ref().ok())
+        else {
+            return CPointerResultDomain::Unknown;
+        };
+        for path in paths {
+            let CFunctionOutcome::Return { value, .. } = &path.outcome else {
+                continue;
+            };
+            let effect = match value {
+                CValue::Pointer(pointer) => {
+                    if pointer.is_null() {
+                        continue;
+                    }
+                    infer_return_pointer_origin(function, path, pointer)
+                }
+                CValue::PointerInteger(word) => {
+                    let argument = function.parameters().iter().position(|parameter| matches!(path.entry_state.locals().get(parameter.name()), Some(CValue::PointerInteger(input)) if input.is_input_origin() == word.is_input_origin() && input.origin() == word.origin()));
+                    let origin = if let Some(index) = argument {
+                        CPointerResultDomain::Argument(index)
+                    } else if let Some(pointer) = path.assumptions.promised_pointer_origin(word) {
+                        infer_return_pointer_origin(function, path, &pointer)
+                    } else {
+                        CPointerResultDomain::Unknown
+                    };
+                    CPointerResultDomain::Integer(Box::new(origin))
+                }
+                _ => CPointerResultDomain::Unknown,
+            };
+            effects.push(effect);
+        }
+    }
+    crate::kernel::functions::pointer_domain_inference::join_returns(effects)
+}
+
+fn infer_return_pointer_origin(
+    function: &CFunction,
+    path: &CertifiedFunctionClaimPath,
+    pointer: &CPointerValue,
+) -> CPointerResultDomain {
+    let argument = function
+        .parameters()
+        .iter()
+        .enumerate()
+        .find_map(|(index, parameter)| {
+            let CValue::Pointer(input) = path.entry_state.locals().get(parameter.name())? else {
+                return None;
+            };
+            let PointerOffsetTerm::Constant(offset) =
+                pointer.origin().offset_from_base(input.origin())?
+            else {
+                return None;
+            };
+            Some((index, offset))
+        });
+    if let Some(domain) = pointer.domain() {
+        if domain.position.max_variable().is_some() {
+            return CPointerResultDomain::Unknown;
+        }
+        CPointerResultDomain::Selected {
+            domain: domain.clone(),
+            argument,
+        }
+    } else {
+        match argument {
+            Some((index, 0)) => CPointerResultDomain::Argument(index),
+            Some((index, offset)) => CPointerResultDomain::ArgumentOffset(index, offset),
+            None => CPointerResultDomain::Unknown,
+        }
+    }
 }
 
 /// One path set of a contract execution, prepared for claim checking the
@@ -2973,6 +3211,10 @@ pub fn c_verified_function_rule(
         CLoopSemantics::Verify
     };
     Some(CVerifiedFunctionRule {
+        pointer_store_effects: proofs.first()?.pointer_store_effects.clone(),
+        pointer_result_domain: proofs
+            .iter()
+            .find_map(|proof| proof.pointer_result_domain.clone()),
         function,
         loop_semantics,
         checked_callees: crate::kernel::termination::merge_checked_callees(
@@ -3037,6 +3279,12 @@ pub(crate) fn c_recursive_function_contract_hypothesis(
         && !function.contract_claims().is_empty()
         && function_contract_claims_are_complete(&function))
     .then_some(CVerifiedFunctionRule {
+        pointer_store_effects: Arc::new(
+            crate::kernel::functions::pointer_store_effects::candidates(&function),
+        ),
+        pointer_result_domain: Some(std::sync::Arc::new(
+            crate::kernel::functions::pointer_domain_inference::candidate(&function),
+        )),
         function,
         // A hypothesis certified nothing, so it says nothing about loops.
         loop_semantics: CLoopSemantics::Verify,

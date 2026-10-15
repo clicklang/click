@@ -2338,6 +2338,11 @@ fn collect_sequence_bound_variables(sequence: &SequenceTerm, variables: &mut BTr
 
 fn collect_c_value_bound_variables(value: &CValue, variables: &mut BTreeSet<Variable>) {
     match value {
+        CValue::PointerInteger(value) => {
+            collect_bitvector_bound_variables(value.bits(), variables);
+            collect_c_value_bound_variables(&CValue::Pointer(value.origin().clone()), variables);
+        }
+
         CValue::Int8(bits) => collect_bitvector_bound_variables(bits, variables),
         CValue::Bool(bits)
         | CValue::Int16(bits)
@@ -4170,7 +4175,12 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
         CExpression::CheckedObjectAddress(body) => CExpression::CheckedObjectAddress(Box::new(
             substitute_bitvector_variable_in_c_expression(body, from, to),
         )),
-        CExpression::PointerOffsetBytes { pointer, bytes } => CExpression::PointerOffsetBytes {
+        CExpression::PointerOffsetBytes {
+            pointer,
+            bytes,
+            object_bytes,
+        } => CExpression::PointerOffsetBytes {
+            object_bytes: *object_bytes,
             pointer: Box::new(substitute_bitvector_variable_in_c_expression(
                 pointer, from, to,
             )),
@@ -5454,6 +5464,20 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_value(
     to: &Bitvector32Term,
 ) -> CValue {
     match value {
+        CValue::PointerInteger(value) => {
+            let CValue::Pointer(origin) = substitute_bitvector_variable_in_c_value(
+                &CValue::Pointer(value.origin().clone()),
+                from,
+                to,
+            ) else {
+                unreachable!("pointer substitution preserves the full carrier")
+            };
+            CValue::PointerInteger(std::sync::Arc::new(value.with_parts(
+                substitute_bitvector_variable(value.bits(), from, to),
+                origin,
+            )))
+        }
+
         CValue::Void => CValue::Void,
         CValue::Bool(bits) => CValue::Bool(substitute_bitvector_variable(bits, from, to)),
         CValue::Int8(bits) => int8(substitute_bitvector_variable(bits, from, to)),
@@ -5473,7 +5497,17 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_value(
             pointer.c_type(),
         )
         .with_pointer_pointee_volatile(pointer.pointee_volatile())
-        .with_pointer_pointee_constant(pointer.pointee_constant()),
+        .with_pointer_pointee_constant(pointer.pointee_constant())
+        .with_pointer_origin(
+            pointer
+                .retained_origin()
+                .map(|origin| substitute_bitvector_variable_in_pointer(origin, from, to)),
+        )
+        .with_pointer_domain(pointer.domain().map(|domain| CPointerDomain {
+            bytes: domain.bytes,
+            position:
+                substitute_bitvector_variable_in_integer(domain.position.as_ref(), from, to).into(),
+        })),
     }
 }
 
@@ -5746,7 +5780,12 @@ fn substitute_pointer_variable_in_c_expression(
         CExpression::CheckedObjectAddress(body) => CExpression::CheckedObjectAddress(Box::new(
             substitute_pointer_variable_in_c_expression(body, from, to),
         )),
-        CExpression::PointerOffsetBytes { pointer, bytes } => CExpression::PointerOffsetBytes {
+        CExpression::PointerOffsetBytes {
+            pointer,
+            bytes,
+            object_bytes,
+        } => CExpression::PointerOffsetBytes {
+            object_bytes: *object_bytes,
             pointer: Box::new(substitute_pointer_variable_in_c_expression(
                 pointer, from, to,
             )),

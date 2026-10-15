@@ -233,8 +233,15 @@ impl TermClasses {
                                 pointer.pointer().offset.clone(),
                             )
                             .0;
-                        let tag = self
-                            .intern_node(Node::ArgumentTag(ArgumentTag::Value(pointer.c_type())));
+                        let tag = if pointer.c_type().is_object_pointer() {
+                            let mut geometry = pointer.clone().seal_origin();
+                            geometry.replace_pointer(crate::kernel::Pointer::null());
+                            self.opaque_argument(&A::Value(CValue::Pointer(geometry)))
+                        } else {
+                            self.intern_node(Node::ArgumentTag(ArgumentTag::Value(
+                                pointer.c_type(),
+                            )))
+                        };
                         Node::Apply(tag, address)
                     } else {
                         values.push(self.opaque_argument(&A::Value(value.clone())));

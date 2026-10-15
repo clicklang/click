@@ -778,9 +778,12 @@ enum AlphaPureFunctionArgumentKey {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaCValueKey {
+    PointerInteger(bool, CType, AlphaBitvectorKey, Box<AlphaCValueKey>),
     Void,
     Scalar(CType, AlphaBitvectorKey),
     Pointer {
+        domain: Option<crate::kernel::CPointerDomain>,
+        origin: Option<AlphaPointerKey>,
         c_type: CType,
         pointee_volatile: bool,
         pointee_constant: bool,
@@ -1748,8 +1751,25 @@ fn alpha_c_value_key_with_bindings<const ALLOW_LOADS: bool>(
 ) -> Option<AlphaCValueKey> {
     alpha_work_checkpoint(bindings, 1)?;
     Some(match value {
+        CValue::PointerInteger(value) => AlphaCValueKey::PointerInteger(
+            value.is_input_origin(),
+            value.c_type(),
+            alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(value.bits(), bindings, next_binder)?,
+            Box::new(alpha_c_value_key_with_bindings::<ALLOW_LOADS>(
+                &CValue::Pointer(value.origin().clone()),
+                bindings,
+                next_binder,
+            )?),
+        ),
+
         CValue::Void => AlphaCValueKey::Void,
         CValue::Pointer(pointer) => AlphaCValueKey::Pointer {
+            domain: pointer.domain().cloned(),
+            origin: Some(alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
+                pointer.origin(),
+                bindings,
+                next_binder,
+            )?),
             c_type: pointer.c_type(),
             pointee_volatile: pointer.pointee_volatile(),
             pointee_constant: pointer.pointee_constant(),
@@ -1761,6 +1781,8 @@ fn alpha_c_value_key_with_bindings<const ALLOW_LOADS: bool>(
         },
         other => {
             let (ty, term) = match other {
+                CValue::PointerInteger(_) => unreachable!(),
+
                 CValue::Int128(term) => (CType::Int128, term),
                 CValue::UInt128(term) => (CType::UInt128, term),
 

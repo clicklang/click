@@ -11,7 +11,7 @@ pub(crate) mod api;
 /// artifacts.  This is deliberately separate from source and compiler
 /// identities: changing the authority interpretation must invalidate an old
 /// certificate even when its inputs are byte-identical.
-pub const RESOURCE_SEMANTICS_VERSION: u32 = 64;
+pub const RESOURCE_SEMANTICS_VERSION: u32 = 65;
 
 pub(crate) mod assumptions;
 mod difference_graph;
@@ -450,3 +450,15 @@ impl Drop for VerificationSession {
 
 mod execution_facts;
 pub use execution_facts::{ExecutionFactSource, ExecutionFacts, ExecutionFactsIter};
+
+#[cfg(test)]
+pub(crate) fn pointer_origin_fact(input: CValue, origin: CValue) -> Proposition {
+    Proposition::Predicate {
+        name: POINTER_ORIGIN_PREDICATE_NAME.into(),
+        arguments: vec![
+            Term::CState(Box::new(CState::new())),
+            Term::CValue(input),
+            Term::CValue(origin),
+        ],
+    }
+}

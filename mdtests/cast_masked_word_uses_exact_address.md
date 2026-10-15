@@ -13,6 +13,7 @@ struct node *clear_tag(unsigned long word, struct node *p) {
 ```click
 verifying "cast_masked_word_uses_exact_address.c";
 struct node* clear_tag(unsigned long word, struct node* p) {
+    requires pointer_origin(word, p);
     requires (word & ~3) == address(p);
     ensures result == p;
 } by { execute(); simp(); }

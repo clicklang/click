@@ -1547,6 +1547,7 @@ mod tests {
                 field: "items".into(),
                 lowered: CExpression::TypedLoad {
                     pointer: Box::new(CExpression::PointerOffsetBytes {
+                        object_bytes: None,
                         pointer: Box::new(CExpression::Variable("p".into())),
                         bytes: 4,
                     }),

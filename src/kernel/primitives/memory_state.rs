@@ -5001,6 +5001,37 @@ impl CMemory {
         self
     }
 
+    /// Cache a full final pointer-cell equation exported by a checked call.
+    /// Initialization must already follow from the call's storage effect;
+    /// this equation neither initializes bytes nor grants write permission.
+    pub(in crate::kernel) fn with_certified_pointer_cell(
+        mut self,
+        pointer: Pointer,
+        value: CValue,
+        assumptions: &PureFactContext,
+    ) -> Option<Self> {
+        if !value.c_type().is_object_pointer()
+            || (self.may_read_uninitialized_object(&pointer, value.byte_width())
+                && !self.has_initialized_bytes_under(&pointer, value.byte_width(), assumptions))
+        {
+            return None;
+        }
+        if self.known_value(&pointer).as_ref() == Some(&value) {
+            return Some(self);
+        }
+        let base = intern_derivation_base(&mut self);
+        Arc::make_mut(&mut self.cells).insert(pointer.clone(), value.clone());
+        record_c_memory_derivation(
+            &mut self,
+            CMemoryDerivation::Store {
+                base,
+                pointer,
+                value,
+            },
+        );
+        Some(self)
+    }
+
     /// Writes one cell. The transition's fact context is not recorded on the
     /// store edge: a later load of another cell of the same base crosses the
     /// edge only with distinctness evidence checked in the querying context.
@@ -6318,18 +6349,24 @@ impl CMemory {
     }
 
     pub(in crate::kernel) fn symbolic_int64_load(&self, pointer: &Pointer) -> CValue {
-        CValue::Int64(Bitvector32Term::MemoryLoad(
+        let bits = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
             LoadKind::Bits64,
+        );
+        CValue::PointerInteger(Arc::new(
+            CPointerIntegerValue::from_input(bits, CType::Int64).expect("typed input read"),
         ))
     }
 
     pub(in crate::kernel) fn symbolic_uint64_load(&self, pointer: &Pointer) -> CValue {
-        CValue::UInt64(Bitvector32Term::MemoryLoad(
+        let bits = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
             LoadKind::Bits64,
+        );
+        CValue::PointerInteger(Arc::new(
+            CPointerIntegerValue::from_input(bits, CType::UInt64).expect("typed input read"),
         ))
     }
 

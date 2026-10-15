@@ -32,11 +32,13 @@ resource sized_rotation_left_at(rb_old: struct rb_node*, rb_new: struct rb_node*
             owns other: sized_at(rb_new->rb_right);
             fact metadata.value == value;
             fact rb_new != 0;
+            fact pointer_origin(rb_new, identity);
             fact rb_new == identity;
             fact rb_new->rb_left != rb_new;
             fact rb_new->rb_right != rb_new;
             fact aligned(rb_new, 8);
             fact aligned(parent, 8);
+            fact pointer_origin(rb_new->__rb_parent_color, parent);
             fact rb_new->__rb_parent_color == address(parent) + (rb_new->__rb_parent_color & 1);
             fact (rb_new->__rb_parent_color & 1) == color_bit(color);
             fact sized_parent_is(left_model, rb_new) == 1;
@@ -626,11 +628,13 @@ resource sized_rotation_right_at(rb_old: struct rb_node*, rb_new: struct rb_node
             owns demoted: sized_recompute_at(rb_new->rb_right);
             fact metadata.value == value;
             fact rb_new != 0;
+            fact pointer_origin(rb_new, identity);
             fact rb_new == identity;
             fact rb_new->rb_left != rb_new;
             fact rb_new->rb_right != rb_new;
             fact aligned(rb_new, 8);
             fact aligned(parent, 8);
+            fact pointer_origin(rb_new->__rb_parent_color, parent);
             fact rb_new->__rb_parent_color == address(parent) + (rb_new->__rb_parent_color & 1);
             fact (rb_new->__rb_parent_color & 1) == color_bit(color);
             fact sized_parent_is(left_model, rb_new) == 1;

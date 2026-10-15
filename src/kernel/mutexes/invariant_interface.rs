@@ -357,13 +357,18 @@ mod tests {
             .err(),
             Some(MutexTransitionError::MissingInvariant(original))
         );
-        let equality = assumptions.assume_condition(
-            crate::kernel::ConditionTerm::PointerEqual(
-                Box::new(Pointer::symbolic(Variable(70))),
-                Box::new(other),
-            ),
-            true,
-        );
+        let equality = assumptions
+            .assume_proposition(crate::kernel::pointer_origin_fact(
+                CValue::pointer(other.clone()),
+                CValue::pointer(Pointer::symbolic(Variable(70))),
+            ))
+            .assume_condition(
+                crate::kernel::ConditionTerm::PointerEqual(
+                    Box::new(Pointer::symbolic(Variable(70))),
+                    Box::new(other),
+                ),
+                true,
+            );
         let released = held.release(guard, replacement.clone(), &equality).unwrap();
         let (acquired, _) = released.acquire(&address(), &equality).unwrap();
         assert!(

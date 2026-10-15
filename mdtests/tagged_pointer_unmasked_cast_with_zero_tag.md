@@ -19,6 +19,7 @@ int32 red_parent_is(unsigned long word, struct node* next, uint64 color) {
 verifying "tagged_pointer_unmasked_cast_with_zero_tag.c";
 
 int32 red_parent_is(unsigned long word, struct node* next, uint64 color) {
+    requires pointer_origin(word, next);
     requires word == address(next) + color;
     requires color == 0;
     ensures result == 1;

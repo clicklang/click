@@ -5961,7 +5961,8 @@ fn c0_tagged_union_member_addresses_preserve_member_type_and_offset() {
     };
     assert!(matches!(
         pointer.as_ref(),
-        crate::kernel::CExpression::PointerOffsetBytes { bytes, .. } if *bytes == payload_offset
+        crate::kernel::CExpression::PointerOffsetBytes { pointer, bytes: 0, object_bytes: Some(4) }
+            if matches!(pointer.as_ref(), crate::kernel::CExpression::PointerOffsetBytes { bytes, .. } if *bytes == payload_offset)
     ));
 
     let address_pointer = functions
@@ -9936,7 +9937,8 @@ fn c0_struct_field_lowering_uses_explicit_byte_offsets() {
     };
     assert!(matches!(
         pointer.as_ref(),
-        crate::kernel::CExpression::PointerOffsetBytes { bytes: 8, .. }
+        crate::kernel::CExpression::PointerOffsetBytes { pointer, bytes: 0, object_bytes: Some(8) }
+            if matches!(pointer.as_ref(), crate::kernel::CExpression::PointerOffsetBytes { bytes: 8, object_bytes: None, .. })
     ));
 }
 
@@ -10123,6 +10125,7 @@ fn c0_struct_field_address_lowering_preserves_nested_byte_offset() {
     let syntax::C0Expression::PointerOffsetBytes {
         pointer: inner_pointer,
         bytes: inner_offset,
+        ..
     } = pointer.as_ref()
     else {
         panic!("nested field address should include the inner field offset")
@@ -10148,8 +10151,17 @@ fn c0_struct_field_address_lowering_preserves_nested_byte_offset() {
         panic!("nested field address should preserve the leaf load type")
     };
     let crate::kernel::CExpression::PointerOffsetBytes {
+        pointer,
+        bytes: 0,
+        object_bytes: Some(4),
+    } = pointer.as_ref()
+    else {
+        panic!("leaf member must select its scalar object domain")
+    };
+    let crate::kernel::CExpression::PointerOffsetBytes {
         pointer: inner_pointer,
         bytes: inner_offset,
+        ..
     } = pointer.as_ref()
     else {
         panic!("nested field address should include the inner field offset")
@@ -13334,7 +13346,7 @@ fn c0_union_pointer_member_preserves_pointee_constness() {
 #[test]
 fn c0_const_pointer_fields_alias_proof_expands_and_reverifies() {
     let c = "struct holder { const int *value; }; int update(struct holder *h, int *p) { *p = 7; return h->value[0]; }";
-    let proof = "verifying \"fields.c\"; int update(struct holder *h, int *p) { views h->value; owns p[0..1]; requires h->value == p; ensures result == 7 by auto; }";
+    let proof = "verifying \"fields.c\"; int update(struct holder *h, int *p) { views h->value; owns p[0..1]; requires pointer_origin(h->value, p); requires h->value == p; ensures result == 7 by auto; }";
     crate::surface::verify_c0_sources(proof, &[("fields.c", c)]).unwrap();
     let expanded = crate::surface::expand_c0_claim_source_by_label(
         proof,

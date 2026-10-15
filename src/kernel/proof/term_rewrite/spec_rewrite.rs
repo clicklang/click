@@ -1617,7 +1617,12 @@ impl<'a> TermRewrite<'a> {
             CExpression::CheckedObjectAddress(value) => {
                 CExpression::CheckedObjectAddress(Box::new(self.rewrite_c_expression(value)?))
             }
-            CExpression::PointerOffsetBytes { pointer, bytes } => CExpression::PointerOffsetBytes {
+            CExpression::PointerOffsetBytes {
+                pointer,
+                bytes,
+                object_bytes,
+            } => CExpression::PointerOffsetBytes {
+                object_bytes: *object_bytes,
                 pointer: Box::new(self.rewrite_c_expression(pointer)?),
                 bytes: *bytes,
             },

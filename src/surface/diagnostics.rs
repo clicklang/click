@@ -278,6 +278,7 @@ fn strip_byte_offsets(mut pointer: &CExpression) -> Option<(&CExpression, u32)> 
     while let CExpression::PointerOffsetBytes {
         pointer: base,
         bytes,
+        ..
     } = pointer
     {
         offset_bytes = offset_bytes.checked_add(*bytes)?;
@@ -2716,6 +2717,8 @@ fn unresolved_load_kind(value: &CValue) -> Option<crate::kernel::LoadKind> {
         .then_some(crate::kernel::LoadKind::Int8);
     }
     let term = match value {
+        CValue::PointerInteger(value) => value.bits(),
+
         CValue::Int8(term)
         | CValue::Bool(term)
         | CValue::Int16(term)
@@ -2755,6 +2758,8 @@ fn describe_load_kind(kind: crate::kernel::LoadKind) -> &'static str {
 
 pub(super) fn unresolved_load(value: &CValue) -> Option<(SharedCMemory, Pointer)> {
     let term = match value {
+        CValue::PointerInteger(value) => value.bits(),
+
         // A signed byte read is the conversion of the byte's unsigned read,
         // so it reads that read's address.
         CValue::Int8(term) => term.signed_byte_operand().unwrap_or(term),
@@ -4828,6 +4833,10 @@ fn typed_literal_spelling(spelled: String, suffix: &str) -> String {
 
 pub(super) fn describe_c_value(value: &CValue, parameter_binding: ParameterBinding<'_>) -> String {
     match value {
+        CValue::PointerInteger(value) => {
+            describe_c_value(&value.numeric_value(), parameter_binding)
+        }
+
         CValue::Void => "void".to_string(),
         CValue::Bool(Bitvector32Term::Constant(0)) => "false".to_string(),
         CValue::Bool(Bitvector32Term::Constant(1)) => "true".to_string(),
@@ -5100,7 +5109,7 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
         CExpression::CheckedObjectAddress(target) => {
             format!("address of live object `{}`", describe_c_expression(target))
         }
-        CExpression::PointerOffsetBytes { pointer, bytes } => {
+        CExpression::PointerOffsetBytes { pointer, bytes, .. } => {
             format!("byte_offset({}, {bytes})", describe_c_expression(pointer))
         }
         CExpression::LessThan(left, right) => describe_binary_c_expression(left, "<", right),

@@ -3739,7 +3739,12 @@ pub(in crate::surface) fn substitute_c_fragment_in(
         CExpression::CheckedObjectAddress(body) => Ok(CExpression::CheckedObjectAddress(Box::new(
             substitute_c_fragment_in(body, substitutions)?,
         ))),
-        CExpression::PointerOffsetBytes { pointer, bytes } => Ok(CExpression::PointerOffsetBytes {
+        CExpression::PointerOffsetBytes {
+            pointer,
+            bytes,
+            object_bytes,
+        } => Ok(CExpression::PointerOffsetBytes {
+            object_bytes: *object_bytes,
             pointer: Box::new(substitute_c_fragment_in(pointer, substitutions)?),
             bytes: *bytes,
         }),

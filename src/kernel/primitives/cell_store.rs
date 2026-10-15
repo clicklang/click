@@ -503,6 +503,13 @@ impl CellRun {
         let pointer = self.slot_pointer(index);
         match &self.mode {
             RunValueMode::Load => {
+                if let Some(value) = self
+                    .source
+                    .known_value(&pointer)
+                    .and_then(|value| self.element_type.read_cell(&value))
+                {
+                    return value;
+                }
                 let load = crate::kernel::canonical_form_of_load(
                     self.source.clone(),
                     pointer.clone(),
@@ -521,6 +528,13 @@ impl CellRun {
             RunValueMode::Constant(value) => value.clone(),
             RunValueMode::Copy { source_base } => {
                 let source_pointer = source_base.offset_by_bytes(index * self.element_width);
+                if let Some(value) = self
+                    .source
+                    .known_value(&source_pointer)
+                    .and_then(|value| self.element_type.read_cell(&value))
+                {
+                    return value;
+                }
                 let load = crate::kernel::canonical_form_of_load(
                     self.source.clone(),
                     source_pointer.clone(),
@@ -750,9 +764,13 @@ pub(crate) fn cell_run_value(
         CType::UInt8 => CValue::UInt8(load),
         CType::UInt16 => CValue::UInt16(load),
         CType::UInt32 => CValue::UInt32(load),
-        CType::Int64 => CValue::Int64(load),
+        CType::Int64 => super::CPointerIntegerValue::from_input(load.clone(), element_type)
+            .map(|value| CValue::PointerInteger(std::sync::Arc::new(value)))
+            .unwrap_or(CValue::Int64(load)),
         CType::Int128 => CValue::Int128(load),
-        CType::UInt64 => CValue::UInt64(load),
+        CType::UInt64 => super::CPointerIntegerValue::from_input(load.clone(), element_type)
+            .map(|value| CValue::PointerInteger(std::sync::Arc::new(value)))
+            .unwrap_or(CValue::UInt64(load)),
         CType::UInt128 => CValue::UInt128(load),
         CType::Float32 => CValue::Float32(load),
         CType::Float64 => CValue::Float64(load),
@@ -3644,5 +3662,95 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod pointer_domain_copy_tests {
+    use super::*;
+    use crate::kernel::primitives::{CPointerDomain, IntegerTerm};
+    use crate::kernel::{CMemory, CPointerValue};
+
+    #[test]
+    fn typed_runs_preserve_complete_pointer_cells_with_indexed_work() {
+        let source_at = Pointer::symbolic(Variable(9_470_000));
+        let destination = Pointer::symbolic(Variable(9_470_001));
+        let pointer = CPointerValue::new(
+            Pointer::symbolic(Variable(9_470_002)).offset_by_bytes(4),
+            CType::Int32Pointer,
+        )
+        .with_domain(Some(CPointerDomain {
+            bytes: 4,
+            position: IntegerTerm::constant_i64(4).into(),
+        }));
+        let expected = CValue::Pointer(pointer);
+        let mut costs = Vec::new();
+        for size in [16, 64, 256, 1024] {
+            let mut memory = CMemory::new().store(source_at.clone(), expected.clone());
+            for index in 0..size {
+                memory = memory.store(
+                    Pointer::symbolic(Variable(9_480_000 + index)),
+                    CValue::Int32(Bitvector32Term::Constant(7)),
+                );
+            }
+            let snapshot = crate::kernel::intern_c_memory(memory);
+            let load = CellRun::new(
+                source_at.clone(),
+                8,
+                CType::Int32Pointer,
+                1,
+                snapshot.clone(),
+                IndexIntervals::default(),
+            );
+            let copy = CellRun::new_with_mode(
+                destination.clone(),
+                8,
+                CType::Int32Pointer,
+                1,
+                snapshot,
+                RunValueMode::Copy {
+                    source_base: source_at.clone(),
+                },
+                IndexIntervals::default(),
+            );
+            let (_, work) = crate::persistent::measure_persistent_work(|| {
+                assert_eq!(load.value(0), expected);
+                assert_eq!(copy.value(0), expected);
+            });
+            costs.push(work);
+        }
+        assert!(costs[3] <= costs[0] * 4 + 32, "{costs:?}");
+    }
+
+    #[test]
+    fn unknown_word_runs_issue_input_identity_but_numeric_stores_do_not_restore_it() {
+        let address = Pointer::symbolic(Variable(9_490_000));
+        let source = crate::kernel::intern_c_memory(CMemory::new());
+        let run = CellRun::new(
+            address.clone(),
+            8,
+            CType::UInt64,
+            1,
+            source,
+            IndexIntervals::default(),
+        );
+        let CValue::PointerInteger(word) = run.value(0) else {
+            panic!("opaque word input");
+        };
+        assert!(word.is_input_origin());
+        // A deliberately originless numeric value stays originless, even
+        // when its bits happen to be a registered word-load variable.
+        let numeric = word.numeric_value();
+        let snapshot =
+            crate::kernel::intern_c_memory(CMemory::new().store(address.clone(), numeric.clone()));
+        let run = CellRun::new(
+            address,
+            8,
+            CType::UInt64,
+            1,
+            snapshot,
+            IndexIntervals::default(),
+        );
+        assert_eq!(run.value(0), numeric);
     }
 }

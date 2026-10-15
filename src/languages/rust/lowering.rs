@@ -1434,7 +1434,7 @@ impl Context<'_> {
                 record,
                 field,
             } => {
-                let (offset, _) = *self
+                let (offset, field_type) = *self
                     .fields
                     .get(&(record.as_str(), field.as_str()))
                     .ok_or("unknown Rust field")?;
@@ -1443,7 +1443,10 @@ impl Context<'_> {
                     E::Deref { reference, .. } => self.expr(reference)?,
                     _ => self.expr(base)?,
                 };
-                Ok(c_pointer_offset_bytes(pointer, offset))
+                Ok(crate::kernel::c_selected_object_pointer(
+                    c_pointer_offset_bytes(pointer, offset),
+                    field_type.byte_width(),
+                ))
             }
             E::Local { name } if self.owned_locals.contains(name) => {
                 Ok(c_cast(c_variable(name), CType::Int32Pointer))

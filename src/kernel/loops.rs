@@ -4459,6 +4459,8 @@ fn equation_states_nothing(equation: &Proposition) -> bool {
 /// The scalar term a C value carries, for the one-variable renaming above.
 fn scalar_bitvector(value: &CValue) -> Option<&Bitvector32Term> {
     match value {
+        CValue::PointerInteger(value) => Some(value.bits()),
+
         CValue::Int8(term) => Some(term),
         CValue::Bool(term)
         | CValue::Int16(term)
@@ -8905,6 +8907,7 @@ pub(super) fn evaluate_loop_effect_segment(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<EvaluatedMemorySegment, String>> {
+    let _logical_reads = super::eval::SpecificationReadScope::enter();
     let base = match evaluate_loop_effect_segment_value(
         state,
         &segment.base,
@@ -8912,7 +8915,7 @@ pub(super) fn evaluate_loop_effect_segment(
         "segment base",
         budget,
     )? {
-        Ok(CValue::Pointer(pointer)) => pointer.into_pointer(),
+        Ok(CValue::Pointer(pointer)) => pointer,
         Ok(value) => {
             return Ok(Err(format!(
                 "segment base evaluated to a {} value, not a pointer",
@@ -8935,6 +8938,20 @@ pub(super) fn evaluate_loop_effect_segment(
         "segment end",
         budget,
     )?;
+    if let (Some(domain), Ok(start), Ok(end)) = (base.domain(), &start_value, &end_value) {
+        if !super::eval::pointer_domain_range_within(
+            domain,
+            start,
+            end,
+            segment.element_width,
+            assumptions,
+        ) {
+            return Ok(Err(
+                "memory range leaves the pointer's selected object domain".into(),
+            ));
+        }
+    }
+    let base = base.into_pointer();
     // A range with a 64-bit bound retains that bound's width.
     // Evaluate each endpoint only once.
     if let (Ok(start), Ok(end)) = (&start_value, &end_value)
@@ -8991,6 +9008,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<(EvaluatedMemorySegment, ExecutionFacts), String>> {
+    let _logical_reads = super::eval::SpecificationReadScope::enter();
     let mut facts = Vec::new();
     let mut evaluate = |expression: &CExpression, label: &str| {
         let local_assumptions = assumptions_with_path_context(assumptions, &facts, &[]);
@@ -9013,7 +9031,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         Ok(Ok(value))
     };
     let base = match evaluate(&segment.base, "segment base")? {
-        Ok(CValue::Pointer(pointer)) => pointer.into_pointer(),
+        Ok(CValue::Pointer(pointer)) => pointer,
         Ok(value) => {
             return Ok(Err(format!(
                 "segment base evaluated to a {} value, not a pointer",
@@ -9024,6 +9042,20 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     };
     let start_value = evaluate(&segment.start, "segment start")?;
     let end_value = evaluate(&segment.end, "segment end")?;
+    if let (Some(domain), Ok(start), Ok(end)) = (base.domain(), &start_value, &end_value)
+        && !super::eval::pointer_domain_range_within(
+            domain,
+            start,
+            end,
+            segment.element_width,
+            &assumptions_with_path_context(assumptions, &facts, &[]),
+        )
+    {
+        return Ok(Err(
+            "memory range leaves the pointer's selected object domain".into(),
+        ));
+    }
+    let base = base.into_pointer();
     // A range with a 64-bit bound retains that bound's width.
     // Evaluate each endpoint only once.
     if let (Ok(start), Ok(end)) = (&start_value, &end_value)

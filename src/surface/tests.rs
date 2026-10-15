@@ -2868,3 +2868,5 @@ fn named_contract_output_patterns_round_trip_and_check_binders() {
         );
     }
 }
+
+mod pointer_domain_tests;

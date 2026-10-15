@@ -13,11 +13,14 @@ Kernel memory is a map of named byte-sized blocks plus known cells. A
 pointer is a semantic object:
 
 ```text
-Pointer { block, offset }
+CPointerValue { pointer: { block, offset }, type, qualifiers, domain, origin }
 ```
 
-The pointer block carries provenance. Pointer offsets are separate terms, not
-raw integers. C pointer arithmetic is scaled by the pointee type: `int32*`
+The pointer block carries allocation provenance. A selected object also carries
+its byte extent and exact relative position. Its origin identifies the current
+designation independently of address-only rewrites. Real arithmetic moves that
+designation; comparing or rewriting equal addresses does not select another
+object. Pointer offsets are separate terms, not raw integers. C pointer arithmetic is scaled by the pointee type: `int32*`
 adds four bytes per element, while `uint8*` adds one byte per element.
 
 Click's integer constant `0` converts to a single canonical null pointer in
@@ -49,13 +52,20 @@ address bit. Evaluation never rewrites a word; equality decisions apply these
 rules when their conditions are decided, and the cast back to a pointer
 records undecided ones as obligations, fails promptly on a refuted one, and
 additionally requires the tag proven zero, by a mask or by any other fact. A
-word whose tagged form is known only through a contract or resource equality,
-such as `node->word == address(next) + tag`, gets the same treatment. An exact
-address equation can also name the complete expression being cast, such as
-`(word & ~3) == address(next)`. The lookup still applies when `word` itself has
-no recorded address form (`mdtests/cast_masked_word_uses_exact_address.md`);
-clearing bits without that evidence gives no pointer origin
-(`mdtests/cast_masked_word_requires_pointer_origin.md`).
+word supplied as an opaque input additionally needs an explicit
+`pointer_origin(word, next)` promise in its contract or resource. The numeric
+relation `node->word == address(next) + tag` supplies address and tag evidence;
+it does not identify the pointer domain. An exact masked address equation,
+such as `(word & ~3) == address(next)`, likewise needs the origin promise
+(`mdtests/cast_masked_word_uses_exact_address.md`). The corresponding
+`*_without_origin.md` fixtures reject numeric-only recovery.
+
+A pointer-to-64-bit-integer conversion retains the complete pointer domain.
+Whole supported value copies and reversible tag operations preserve that
+carrier; narrowing or extracting low tag bits drops it. Restoring the address
+bits restores the retained domain, including a scalar's one-past position.
+An input-origin promise cannot replace a known selected domain with an equal
+address's domain. Ordinary integer comparisons still compare numeric values.
 
 Alignment is evidence, not a property of the pointee type. `aligned(p, n)`
 holds when the address of `p` is a multiple of `n`; Click derives it from a
@@ -76,6 +86,15 @@ such as `load(node->right)`.
 Branch failures retain source layouts for current pointer locals, including
 reassigned parameters and local aliases. A pointer whose source declaration
 is unavailable uses explicitly identified byte units.
+
+Taking a scalar member's address selects that member as a one-element domain.
+For `struct Pair { int32 first; int32 second; }`, `&p->first + 1` may be formed
+and compared with `&p->second`, but dereferencing it is refused. `&p->first + 2`
+is refused at formation. Direct selection of `&p->second` has its own domain.
+An array member selects its complete array extent, permitting real traversal.
+These bounds survive pointer locals, stored values, integer round trips, and
+inferred modular return and pointer-cell effects. Effects come from complete
+checked returns and final cells, never from numeric address postconditions.
 
 Pointer arithmetic stays inside the pointed-to object (C11 6.5.6p8): the
 result must designate an element of the object or the position one past its

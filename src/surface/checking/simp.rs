@@ -416,6 +416,12 @@ pub(in crate::surface) fn simp_terms_equal(left: &Term, right: &Term) -> Option<
 
 pub(in crate::surface) fn simp_term(term: &Term) -> Term {
     match term {
+        Term::CValue(CValue::PointerInteger(value)) => {
+            Term::CValue(CValue::PointerInteger(std::sync::Arc::new(
+                value.with_parts(simp_bitvector(value.bits()), value.origin().clone()),
+            )))
+        }
+
         Term::Condition(condition) => match simp_condition_without_assumptions(condition) {
             Some(value) => Term::Condition(ConditionTerm::Constant(value)),
             None => term.clone(),

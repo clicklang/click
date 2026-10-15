@@ -283,19 +283,25 @@ fn algebraic_closure_pointer_payloads_share_the_existing_address_classes() {
         block: name.into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let node = |p: Pointer| {
+    let node = |p: Pointer, origin: Pointer| {
         constructor(
             &ty,
             "Node",
-            vec![AlgebraicValue::C(CValue::Pointer(CPointerValue::new(
-                p,
-                CType::Int32Pointer,
-            )))],
+            vec![AlgebraicValue::C(CValue::Pointer(
+                CPointerValue::new(p, CType::Int32Pointer).with_origin(origin),
+            ))],
         )
     };
     let mut graph = EqualityGraph::default();
     graph.add_equality(&pointer("a"), &pointer("b"));
-    assert!(graph.are_algebraic_equal(&node(pointer("a")), &node(pointer("b"))));
+    assert!(!graph.are_algebraic_equal(
+        &node(pointer("a"), pointer("a")),
+        &node(pointer("b"), pointer("b"))
+    ));
+    assert!(graph.are_algebraic_equal(
+        &node(pointer("a"), pointer("a")),
+        &node(pointer("b"), pointer("a"))
+    ));
 }
 
 #[test]

@@ -210,6 +210,26 @@ fn validate_proposition_expression_types_one(
             validate_proposition_expression_types(body, &body_variables, click_functions, context)
         }
         ClickProposition::PredicateCall { name, arguments } => {
+            if name == "pointer_origin" {
+                let [word, pointer] = arguments.as_slice() else {
+                    return Err(ClickError::new(
+                        "pointer_origin expects two arguments: an input and an object pointer",
+                    ));
+                };
+                let word_type =
+                    infer_contract_expression_type(word, variables, click_functions, context)?;
+                let pointer_type =
+                    infer_contract_expression_type(pointer, variables, click_functions, context)?;
+                if !(matches!(word_type, Some(C0Type::Int64(_) | C0Type::UInt64(_)))
+                    || word_type.is_some_and(C0Type::is_object_pointer))
+                    || !pointer_type.is_some_and(C0Type::is_object_pointer)
+                {
+                    return Err(ClickError::new(
+                        "pointer_origin expects a 64-bit integer or object pointer input, followed by an object pointer",
+                    ));
+                }
+                return Ok(());
+            }
             if name == "held" {
                 let [mutex] = arguments.as_slice() else {
                     return Err(ClickError::new(format!(
@@ -226,7 +246,7 @@ fn validate_proposition_expression_types_one(
                 }
                 return Ok(());
             }
-            if name == "same_object" {
+            if name == "same_object" || name == "pointer_origin" {
                 let [left, right] = arguments.as_slice() else {
                     return Err(ClickError::new(format!(
                         "same_object expects two pointer arguments in {context}, got {}",
@@ -3020,6 +3040,10 @@ fn infer_c_expression_type(
     variables: &BTreeMap<String, C0Type>,
 ) -> Option<C0Type> {
     match expression {
+        CExpression::Value(CValue::PointerInteger(value)) => Some(
+            crate::surface::generics::c0_type_from_kernel(value.c_type()),
+        ),
+
         CExpression::Value(CValue::Int128(_)) => Some(C0Type::Int128),
         CExpression::Value(CValue::UInt128(_)) => Some(C0Type::UInt128),
 
@@ -3693,7 +3717,7 @@ fn validate_predicate_calls_in_proposition_one(
                 }
                 return validate_contract_expression_calls(&arguments[0], click_functions, context);
             }
-            if name == "same_object" {
+            if name == "same_object" || name == "pointer_origin" {
                 if arguments.len() != 2 {
                     return Err(ClickError::new(format!(
                         "same_object expects two pointer arguments in {context}, got {}",

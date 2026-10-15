@@ -1597,6 +1597,14 @@ fn canonicalized_symbolic_load_value_with_identity(
     // load variable, with the defining fact beside it, so every fact,
     // offset, and range built from the value is canonical.
     match &value {
+        CValue::PointerInteger(carrier)
+            if matches!(carrier.bits(), Bitvector32Term::MemoryLoad(..)) =>
+        {
+            let fresh = mint_load_variable(carrier.bits(), facts, assumptions, source)?;
+            return Some(CValue::PointerInteger(std::sync::Arc::new(
+                carrier.with_parts(Bitvector32Term::Variable(fresh), carrier.origin().clone()),
+            )));
+        }
         // A signed byte read names the byte's unsigned read.
         CValue::Int8(bits) => {
             if let Some(unsigned @ Bitvector32Term::MemoryLoad(_, _, _)) =
@@ -1640,11 +1648,15 @@ fn canonicalized_symbolic_load_value_with_identity(
         }
         CValue::Int64(bits @ Bitvector32Term::MemoryLoad(_, _, _)) => {
             let fresh = mint_load_variable(bits, facts, assumptions, source)?;
-            return Some(CValue::Int64(Bitvector32Term::Variable(fresh)));
+            return Some(CValue::PointerInteger(std::sync::Arc::new(
+                CPointerIntegerValue::from_input(Bitvector32Term::Variable(fresh), CType::Int64)?,
+            )));
         }
         CValue::UInt64(bits @ Bitvector32Term::MemoryLoad(_, _, _)) => {
             let fresh = mint_load_variable(bits, facts, assumptions, source)?;
-            return Some(CValue::UInt64(Bitvector32Term::Variable(fresh)));
+            return Some(CValue::PointerInteger(std::sync::Arc::new(
+                CPointerIntegerValue::from_input(Bitvector32Term::Variable(fresh), CType::UInt64)?,
+            )));
         }
         CValue::Int128(bits @ Bitvector32Term::MemoryLoad(_, _, _)) => {
             let fresh = mint_load_variable(bits, facts, assumptions, source)?;
@@ -1687,7 +1699,9 @@ fn canonicalized_symbolic_load_value_with_identity(
         source,
         (purpose == LoadPurpose::Program).then_some(&pointer),
     );
-    Some(CValue::typed_pointer(pointer, pointer_value.c_type()))
+    let mut value = pointer_value.clone().with_origin(pointer.clone());
+    value.replace_pointer(pointer);
+    Some(CValue::Pointer(value))
 }
 
 const LOAD_VARIABLE_BASE: u64 = 1 << 40;
@@ -3836,8 +3850,18 @@ pub(in crate::kernel) fn cached_symbolic_storage_cell_value(
         CType::UInt8 => (LoadKind::UInt8, CValue::UInt8),
         CType::UInt16 => (LoadKind::UInt16, CValue::UInt16),
         CType::UInt32 => (LoadKind::Bits32, CValue::UInt32),
-        CType::Int64 => (LoadKind::Bits64, CValue::Int64),
-        CType::UInt64 => (LoadKind::Bits64, CValue::UInt64),
+        CType::Int64 => (LoadKind::Bits64, |bits| {
+            CValue::PointerInteger(std::sync::Arc::new(
+                CPointerIntegerValue::from_input(bits, CType::Int64)
+                    .expect("cached input identity"),
+            ))
+        }),
+        CType::UInt64 => (LoadKind::Bits64, |bits| {
+            CValue::PointerInteger(std::sync::Arc::new(
+                CPointerIntegerValue::from_input(bits, CType::UInt64)
+                    .expect("cached input identity"),
+            ))
+        }),
         _ if c_type.is_object_pointer() => {
             let load = Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(memory.clone()),
@@ -3846,7 +3870,9 @@ pub(in crate::kernel) fn cached_symbolic_storage_cell_value(
             );
             return LOAD_VARIABLE_CACHE.with(|cache| {
                 let variable = cache.borrow().get(&load)?.0;
-                Some(CValue::typed_pointer(Pointer::symbolic(variable), c_type))
+                Some(CValue::Pointer(
+                    CPointerValue::new(Pointer::symbolic(variable), c_type).seal_origin(),
+                ))
             });
         }
         _ => return None,
@@ -3892,7 +3918,9 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
             crate::kernel::equality_graph::EqualityGraph::default()
                 .register_pointer_read_definition(&value, &snapshot, &address);
         }
-        return Some(CValue::typed_pointer(value, c_type));
+        return Some(CValue::Pointer(
+            CPointerValue::new(value, c_type).seal_origin(),
+        ));
     }
     // The cell holds the load of this storage at its symbolic base, and a
     // term is canonical at creation: name the load as its load variable,
@@ -3905,6 +3933,9 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
         symbolic_load_value_unrecorded(memory, pointer, c_type)
     };
     value.map(|value| match value {
+        CValue::PointerInteger(carrier) => CValue::PointerInteger(std::sync::Arc::new(
+            carrier.with_parts(canonical_term(carrier.bits()), carrier.origin().clone()),
+        )),
         CValue::Int8(bits) => CValue::Int8(canonical_term(&bits)),
         CValue::Int16(bits) => CValue::Int16(canonical_term(&bits)),
         CValue::Int32(bits) => CValue::Int32(canonical_term(&bits)),
@@ -3987,13 +4018,10 @@ mod tests {
             assert!(!path.facts.has_path_conditions());
             let required = Pointer::loaded_value(&intern_c_memory_ref(&memory), &alias);
             let equal = |facts: &PureFactContext| {
-                crate::kernel::resource_arguments_proven_equal(
-                    &AlgebraicValue::C(CValue::typed_pointer(model.clone(), CType::Int64Pointer)),
-                    &AlgebraicValue::C(CValue::typed_pointer(
-                        required.clone(),
-                        CType::Int64Pointer,
-                    )),
-                    facts,
+                // This evidence identifies the read's numeric value. It
+                // supplies no complete pointer-origin promise for `model`.
+                crate::kernel::prelude::pointers_proven_equal_for_memory_resolution(
+                    &model, &required, facts,
                 )
             };
             assert!(
@@ -4144,9 +4172,9 @@ mod tests {
             panic!("a pointer-valued read");
         };
         let arguments_equal = |facts: &PureFactContext| {
-            crate::kernel::resource_arguments_proven_equal(
-                &AlgebraicValue::C(CValue::typed_pointer(model.clone(), CType::Int64Pointer)),
-                &AlgebraicValue::C(CValue::Pointer(value.clone())),
+            crate::kernel::prelude::pointers_proven_equal_for_memory_resolution(
+                &model,
+                value.pointer(),
                 facts,
             )
         };
@@ -4238,11 +4266,16 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        assert!(crate::kernel::resource_arguments_proven_equal(
-            &AlgebraicValue::C(CValue::typed_pointer(model, CType::Int64Pointer)),
-            &AlgebraicValue::C(value),
-            &argument_context,
-        ));
+        let CValue::Pointer(value) = value else {
+            panic!("pointer argument");
+        };
+        assert!(
+            crate::kernel::prelude::pointers_proven_equal_for_memory_resolution(
+                &model,
+                value.pointer(),
+                &argument_context,
+            )
+        );
     }
 
     /// Naming a load after a call whose kept memory shares the load's block

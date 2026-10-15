@@ -97,6 +97,8 @@ pub(in crate::kernel) struct ContainingIntegerCell {
 /// The byte width of an integer cell, or `None` for a cell with no byte view.
 fn integer_cell_width(value: &CValue) -> Option<u32> {
     match value {
+        CValue::PointerInteger(_) => Some(8),
+
         CValue::Int8(_) | CValue::UInt8(_) => Some(1),
         CValue::Int16(_) | CValue::UInt16(_) => Some(2),
         CValue::Int32(_) | CValue::UInt32(_) => Some(4),

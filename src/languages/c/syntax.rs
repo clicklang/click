@@ -5439,7 +5439,10 @@ impl C0Expression {
                 source,
                 ..
             } => crate::kernel::c_qualified_typed_load_with_source(
-                pointer.lower_expression(),
+                crate::kernel::c_selected_object_pointer(
+                    pointer.lower_expression(),
+                    field_type.to_kernel_type().byte_width(),
+                ),
                 field_type.to_kernel_type(),
                 *pointee_constant,
                 source.as_ref().and_then(|source| {
@@ -5458,9 +5461,13 @@ impl C0Expression {
                 pointer,
                 field_type,
                 ..
-            } => {
-                crate::kernel::c_typed_load(pointer.lower_expression(), field_type.to_kernel_type())
-            }
+            } => crate::kernel::c_typed_load(
+                crate::kernel::c_selected_object_pointer(
+                    pointer.lower_expression(),
+                    field_type.to_kernel_type().byte_width(),
+                ),
+                field_type.to_kernel_type(),
+            ),
             Self::Index(base, index) => {
                 crate::kernel::c_index(base.lower_expression(), index.lower_expression())
             }

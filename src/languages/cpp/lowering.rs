@@ -1650,13 +1650,32 @@ impl LoweringContext<'_> {
 
     fn lower_place(&self, place: &CppPlaceReference) -> Result<CExpression, String> {
         let root = self.place(place)?;
-        let (_, offset) = self
+        let (value_type, offset) = self
             .records
             .resolve_path(&root.value_type, &place.projections)?;
-        Ok(c_pointer_offset_bytes(
-            c_variable(self.variable_name(place)),
-            offset,
-        ))
+        let pointer = c_pointer_offset_bytes(c_variable(self.variable_name(place)), offset);
+        if place.projections.is_empty() {
+            Ok(pointer)
+        } else {
+            Ok(crate::kernel::c_selected_object_pointer(
+                pointer,
+                self.object_byte_width(value_type)?,
+            ))
+        }
+    }
+
+    fn object_byte_width(&self, value_type: &CppType) -> Result<u32, String> {
+        match value_type {
+            CppType::Record { name, .. } => Ok(self.record_layout(name)?.size_bytes()),
+            CppType::Array { element, length } => self
+                .object_byte_width(element)?
+                .checked_mul(*length)
+                .ok_or_else(|| "C++ array object width overflow".into()),
+            value => Ok(match Scalar::of(value) {
+                Some(scalar) => scalar.kind.kernel_type().byte_width(),
+                None => cpp_scalar_kernel_type(value)?.byte_width(),
+            }),
+        }
     }
 
     fn lower_typed_load(
@@ -1697,7 +1716,10 @@ impl LoweringContext<'_> {
                 .chain(std::iter::once(super::schema::ProjectionRef::Field(field))),
         )?;
         Ok((
-            c_pointer_offset_bytes(c_variable(self.variable_name(object)), offset),
+            crate::kernel::c_selected_object_pointer(
+                c_pointer_offset_bytes(c_variable(self.variable_name(object)), offset),
+                cpp_scalar_kernel_type(value_type)?.byte_width(),
+            ),
             cpp_scalar_kernel_type(value_type)?,
         ))
     }

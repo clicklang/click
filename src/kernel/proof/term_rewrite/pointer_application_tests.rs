@@ -217,8 +217,19 @@ fn pure_pointer_legacy_scalar_substitution_visits_the_shared_dag_once() {
             ))],
         );
         for _ in 0..depth {
+            let carrier = |raw: Pointer, origin: Pointer| {
+                PureFunctionArgument::Value(CValue::Pointer(
+                    CPointerValue::new(raw, CType::Int32Pointer).with_origin(origin),
+                ))
+            };
+            expected = call(
+                "pair",
+                vec![
+                    carrier(expected.clone(), input.clone()),
+                    carrier(expected, input.clone()),
+                ],
+            );
             input = call("pair", vec![argument(input.clone()), argument(input)]);
-            expected = call("pair", vec![argument(expected.clone()), argument(expected)]);
         }
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::prelude::substitute_bitvector_variable_in_pointer(
@@ -248,9 +259,12 @@ fn pure_pointer_projection_does_not_replace_a_program_spelling() {
         crate::kernel::arm_binding_program_spelling(&value, &projection_only),
         None
     );
-    let with_program = projection_only.assume_proposition(equality(binding, program.clone()));
+    let with_program =
+        projection_only.assume_proposition(equality(binding.clone(), program.clone()));
     assert_eq!(
         crate::kernel::arm_binding_program_spelling(&value, &with_program),
-        Some(CValue::typed_pointer(program, CType::Int32Pointer)),
+        Some(CValue::Pointer(
+            CPointerValue::new(program, CType::Int32Pointer).with_origin(binding)
+        )),
     );
 }

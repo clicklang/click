@@ -18,5 +18,5 @@ struct node* clear_tag(unsigned long word, struct node* p) {
 ```
 
 ```expect
-fail: integer without pointer origin cannot become a pointer
+fail: pointer_origin input promise
 ```

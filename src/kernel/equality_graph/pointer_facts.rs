@@ -22,6 +22,9 @@ impl EqualityGraph {
         let Proposition::Predicate { name, arguments } = proposition else {
             return None;
         };
+        if name == crate::kernel::POINTER_ORIGIN_PREDICATE_NAME {
+            return None;
+        }
         let (position, pointer) =
             arguments
                 .iter()
@@ -98,6 +101,7 @@ impl EqualityGraph {
     pub(in crate::kernel) fn knows_pointer_predicate(
         &self,
         proposition: &crate::kernel::Proposition,
+        assumptions: &crate::kernel::PureFactContext,
     ) -> bool {
         use crate::kernel::{CValue, Proposition, Term};
         let Some((pointer, key)) = Self::pointer_predicate_key(proposition) else {
@@ -131,7 +135,11 @@ impl EqualityGraph {
                             ) => {
                                 left.c_type() == right.c_type()
                                     && left.pointee_volatile() == right.pointee_volatile()
-                                    && self.are_equal(left.pointer(), right.pointer())
+                                    && crate::kernel::reasoning::c_pointer_values_proven_equal(
+                                        left,
+                                        right,
+                                        assumptions,
+                                    )
                             }
                             _ => left == right,
                         }

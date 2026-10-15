@@ -10,7 +10,9 @@ import "../rbtree-model/rbtree_context_depth.click";
 resource rb_child_links(p: struct rb_node*, left: struct rb_node*, right: struct rb_node*) {
     owns p->rb_left;
     owns p->rb_right;
+    fact pointer_origin(p->rb_left, left);
     fact p->rb_left == left;
+    fact pointer_origin(p->rb_right, right);
     fact p->rb_right == right;
 }
 
@@ -31,16 +33,19 @@ resource rb_saved_link(slot: struct rb_node**) {
 
 resource rb_written_right_link(p: struct rb_node*, child: struct rb_node*) {
     owns p->rb_right;
+    fact pointer_origin(p->rb_right, child);
     fact p->rb_right == child;
 }
 
 resource rb_written_left_link(p: struct rb_node*, child: struct rb_node*) {
     owns p->rb_left;
+    fact pointer_origin(p->rb_left, child);
     fact p->rb_left == child;
 }
 
 resource rb_red_parent_tag(p: struct rb_node*, up: struct rb_node*) {
     owns p->__rb_parent_color;
+    fact pointer_origin(p->__rb_parent_color, up);
     fact p->__rb_parent_color == address(up);
 }
 
@@ -1640,9 +1645,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         owns first_near: rb_at(tmp1);
                                                         fact first_near.model == rb_reparent(ilm, sid);
                                                         fact parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color);
+                                                        fact pointer_origin(parent->rb_right, node);
                                                         fact parent->rb_right == node;
+                                                        fact pointer_origin(parent->rb_left, iid);
                                                         fact parent->rb_left == iid;
+                                                        fact pointer_origin(iid->rb_left, sid);
                                                         fact iid->rb_left == sid;
+                                                        fact pointer_origin(sid->rb_right, tmp1);
                                                         fact sid->rb_right == tmp1;
                                                         fact sid->rb_left == at(inner_inputs, sid->rb_left);
                                                         fact iid->rb_right == at(inner_inputs, iid->rb_right);
@@ -1706,10 +1715,15 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         owns near: rb_at(tmp2);
                                                         fact near.model == rb_reparent(irm, parent);
                                                         fact parent->__rb_parent_color == at(outer_inputs, parent->__rb_parent_color);
+                                                        fact pointer_origin(parent->rb_right, node);
                                                         fact parent->rb_right == node;
+                                                        fact pointer_origin(parent->rb_left, tmp2);
                                                         fact parent->rb_left == tmp2;
+                                                        fact pointer_origin(iid->rb_right, parent);
                                                         fact iid->rb_right == parent;
+                                                        fact pointer_origin(iid->rb_left, sid);
                                                         fact iid->rb_left == sid;
+                                                        fact pointer_origin(sid->__rb_parent_color, iid);
                                                         fact sid->__rb_parent_color == (address(iid) | 1);
                                                     } {
                                                         RbTree::Empty => {
@@ -1876,10 +1890,15 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     owns near: rb_at(tmp2);
                                                     fact near.model == rb_reparent(slm, parent);
                                                     fact parent->__rb_parent_color == at(outer_inputs, parent->__rb_parent_color);
+                                                    fact pointer_origin(parent->rb_right, node);
                                                     fact parent->rb_right == node;
+                                                    fact pointer_origin(parent->rb_left, tmp2);
                                                     fact parent->rb_left == tmp2;
+                                                    fact pointer_origin(sid->rb_right, parent);
                                                     fact sid->rb_right == parent;
+                                                    fact pointer_origin(sid->rb_left, rid);
                                                     fact sid->rb_left == rid;
+                                                    fact pointer_origin(rid->__rb_parent_color, sid);
                                                     fact rid->__rb_parent_color == (address(sid) | 1);
                                                 } {
                                                     RbTree::Empty => {
@@ -2293,9 +2312,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                 owns first_near: rb_at(tmp1);
                                                                 fact first_near.model == rb_reparent(ilm, zid);
                                                                 fact parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color);
+                                                                fact pointer_origin(parent->rb_right, node);
                                                                 fact parent->rb_right == node;
+                                                                fact pointer_origin(parent->rb_left, iid);
                                                                 fact parent->rb_left == iid;
+                                                                fact pointer_origin(iid->rb_left, zid);
                                                                 fact iid->rb_left == zid;
+                                                                fact pointer_origin(zid->rb_right, tmp1);
                                                                 fact zid->rb_right == tmp1;
                                                                 fact zid->rb_left == at(inner_inputs, zid->rb_left);
                                                                 fact iid->rb_right == at(inner_inputs, iid->rb_right);
@@ -2364,10 +2387,15 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                 owns near: rb_at(tmp2);
                                                                 fact near.model == rb_reparent(irm, parent);
                                                                 fact parent->__rb_parent_color == at(outer_inputs, parent->__rb_parent_color);
+                                                                fact pointer_origin(parent->rb_right, node);
                                                                 fact parent->rb_right == node;
+                                                                fact pointer_origin(parent->rb_left, tmp2);
                                                                 fact parent->rb_left == tmp2;
+                                                                fact pointer_origin(iid->rb_right, parent);
                                                                 fact iid->rb_right == parent;
+                                                                fact pointer_origin(iid->rb_left, zid);
                                                                 fact iid->rb_left == zid;
+                                                                fact pointer_origin(zid->__rb_parent_color, iid);
                                                                 fact zid->__rb_parent_color == (address(iid) | 1);
                                                             } {
                                                                 RbTree::Empty => {
@@ -3017,9 +3045,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         owns first_near: rb_at(tmp1);
                                                         fact first_near.model == rb_reparent(irm, sid);
                                                         fact parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color);
+                                                        fact pointer_origin(parent->rb_left, node);
                                                         fact parent->rb_left == node;
+                                                        fact pointer_origin(parent->rb_right, iid);
                                                         fact parent->rb_right == iid;
+                                                        fact pointer_origin(iid->rb_right, sid);
                                                         fact iid->rb_right == sid;
+                                                        fact pointer_origin(sid->rb_left, tmp1);
                                                         fact sid->rb_left == tmp1;
                                                         fact sid->rb_right == at(inner_inputs, sid->rb_right);
                                                         fact iid->rb_left == at(inner_inputs, iid->rb_left);
@@ -3083,10 +3115,15 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         owns near: rb_at(tmp2);
                                                         fact near.model == rb_reparent(ilm, parent);
                                                         fact parent->__rb_parent_color == at(outer_inputs, parent->__rb_parent_color);
+                                                        fact pointer_origin(parent->rb_left, node);
                                                         fact parent->rb_left == node;
+                                                        fact pointer_origin(parent->rb_right, tmp2);
                                                         fact parent->rb_right == tmp2;
+                                                        fact pointer_origin(iid->rb_left, parent);
                                                         fact iid->rb_left == parent;
+                                                        fact pointer_origin(iid->rb_right, sid);
                                                         fact iid->rb_right == sid;
+                                                        fact pointer_origin(sid->__rb_parent_color, iid);
                                                         fact sid->__rb_parent_color == (address(iid) | 1);
                                                     } {
                                                         RbTree::Empty => {
@@ -3255,10 +3292,15 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     owns near: rb_at(tmp2);
                                                     fact near.model == rb_reparent(slm, parent);
                                                     fact parent->__rb_parent_color == at(outer_inputs, parent->__rb_parent_color);
+                                                    fact pointer_origin(parent->rb_left, node);
                                                     fact parent->rb_left == node;
+                                                    fact pointer_origin(parent->rb_right, tmp2);
                                                     fact parent->rb_right == tmp2;
+                                                    fact pointer_origin(sid->rb_left, parent);
                                                     fact sid->rb_left == parent;
+                                                    fact pointer_origin(sid->rb_right, rid);
                                                     fact sid->rb_right == rid;
+                                                    fact pointer_origin(rid->__rb_parent_color, sid);
                                                     fact rid->__rb_parent_color == (address(sid) | 1);
                                                 } {
                                                     RbTree::Empty => {
@@ -3677,9 +3719,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                 owns first_near: rb_at(tmp1);
                                                                 fact first_near.model == rb_reparent(ilm, zid);
                                                                 fact parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color);
+                                                                fact pointer_origin(parent->rb_left, node);
                                                                 fact parent->rb_left == node;
+                                                                fact pointer_origin(parent->rb_right, iid);
                                                                 fact parent->rb_right == iid;
+                                                                fact pointer_origin(iid->rb_right, zid);
                                                                 fact iid->rb_right == zid;
+                                                                fact pointer_origin(zid->rb_left, tmp1);
                                                                 fact zid->rb_left == tmp1;
                                                                 fact zid->rb_right == at(inner_inputs, zid->rb_right);
                                                                 fact iid->rb_left == at(inner_inputs, iid->rb_left);
@@ -3748,10 +3794,15 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                 owns near: rb_at(tmp2);
                                                                 fact near.model == rb_reparent(irm, parent);
                                                                 fact parent->__rb_parent_color == at(outer_inputs, parent->__rb_parent_color);
+                                                                fact pointer_origin(parent->rb_left, node);
                                                                 fact parent->rb_left == node;
+                                                                fact pointer_origin(parent->rb_right, tmp2);
                                                                 fact parent->rb_right == tmp2;
+                                                                fact pointer_origin(iid->rb_left, parent);
                                                                 fact iid->rb_left == parent;
+                                                                fact pointer_origin(iid->rb_right, zid);
                                                                 fact iid->rb_right == zid;
+                                                                fact pointer_origin(zid->__rb_parent_color, iid);
                                                                 fact zid->__rb_parent_color == (address(iid) | 1);
                                                             } {
                                                                 RbTree::Empty => {

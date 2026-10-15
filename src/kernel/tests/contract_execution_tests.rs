@@ -1508,6 +1508,8 @@ fn verified_function_rule_applies_contract_without_executing_body() {
     let environment = CExecutionEnvironment::new()
         .with_function(helper.clone())
         .with_verified_function_rule(CVerifiedFunctionRule {
+            pointer_result_domain: None,
+            pointer_store_effects: Default::default(),
             function: helper,
             loop_semantics: CLoopSemantics::Verify,
             checked_callees: None,
@@ -1609,6 +1611,8 @@ fn verified_function_rule_coerces_null_constants_in_contract_views() {
     let environment = CExecutionEnvironment::new()
         .with_function(helper.clone())
         .with_verified_function_rule(CVerifiedFunctionRule {
+            pointer_result_domain: None,
+            pointer_store_effects: Default::default(),
             function: helper,
             loop_semantics: CLoopSemantics::Verify,
             checked_callees: None,
@@ -1682,6 +1686,8 @@ fn verified_function_rule_does_not_publish_one_spec_alias_path() {
     let environment = CExecutionEnvironment::new()
         .with_function(helper.clone())
         .with_verified_function_rule(CVerifiedFunctionRule {
+            pointer_result_domain: None,
+            pointer_store_effects: Default::default(),
             function: helper,
             loop_semantics: CLoopSemantics::Verify,
             checked_callees: None,
@@ -1741,6 +1747,8 @@ fn opaque_pointer_result_can_alias_its_argument() {
     let environment = CExecutionEnvironment::new()
         .with_function(helper.clone())
         .with_verified_function_rule(CVerifiedFunctionRule {
+            pointer_result_domain: None,
+            pointer_store_effects: Default::default(),
             function: helper,
             loop_semantics: CLoopSemantics::Verify,
             checked_callees: None,
@@ -1811,6 +1819,8 @@ fn verified_immutable_calls_allocate_distinct_results() {
     let environment = CExecutionEnvironment::new()
         .with_function(helper.clone())
         .with_verified_function_rule(CVerifiedFunctionRule {
+            pointer_result_domain: None,
+            pointer_store_effects: Default::default(),
             function: helper,
             loop_semantics: CLoopSemantics::Verify,
             checked_callees: None,
@@ -1871,6 +1881,8 @@ fn separate_statement_verification_calls_preserve_fresh_identity_progress() {
     let environment = CExecutionEnvironment::new()
         .with_function(helper.clone())
         .with_verified_function_rule(CVerifiedFunctionRule {
+            pointer_result_domain: None,
+            pointer_store_effects: Default::default(),
             function: helper,
             loop_semantics: CLoopSemantics::Verify,
             checked_callees: None,
@@ -5116,6 +5128,8 @@ fn call_requirement_obligations_carry_their_lowering_record() {
     let environment = CExecutionEnvironment::new()
         .with_function(helper.clone())
         .with_verified_function_rule(CVerifiedFunctionRule {
+            pointer_result_domain: None,
+            pointer_store_effects: Default::default(),
             function: helper,
             loop_semantics: CLoopSemantics::Verify,
             checked_callees: None,
@@ -5199,6 +5213,8 @@ fn opaque_rule_environment(function: CFunction) -> CExecutionEnvironment {
     CExecutionEnvironment::new()
         .with_function(function.clone())
         .with_verified_function_rule(CVerifiedFunctionRule {
+            pointer_result_domain: None,
+            pointer_store_effects: Default::default(),
             function,
             loop_semantics: CLoopSemantics::Verify,
             checked_callees: None,
@@ -5318,6 +5334,8 @@ fn an_anchor_ranks_only_calls_to_the_function_it_names() {
         opaque_rule_environment(drain.clone())
             .with_function(other.clone())
             .with_verified_function_rule(CVerifiedFunctionRule {
+                pointer_result_domain: None,
+                pointer_store_effects: Default::default(),
                 function: other,
                 loop_semantics: CLoopSemantics::Verify,
                 checked_callees: None,

@@ -2472,6 +2472,11 @@ fn integer_carrier_in_bitvector(term: &Bitvector32Term, variable: Variable) -> b
 
 fn integer_carrier_in_c_value(value: &CValue, variable: Variable) -> bool {
     match value {
+        CValue::PointerInteger(value) => {
+            integer_carrier_in_bitvector(value.bits(), variable)
+                || integer_carrier_in_c_value(&CValue::Pointer(value.origin().clone()), variable)
+        }
+
         CValue::Pointer(pointer) => integer_carrier_in_pointer(pointer, variable),
         CValue::Void => false,
         CValue::Int8(term) => integer_carrier_in_bitvector(term, variable),
@@ -2703,7 +2708,15 @@ fn evaluate_spec_integer_range_fold_indices_in(
                         continue;
                     };
                     // Each kind takes endpoints of its own type only.
-                    let index = match (start_path.value.clone(), end_path.value, unsigned64) {
+                    let numeric = |value: CValue| match value {
+                        CValue::PointerInteger(value) => value.numeric_value(),
+                        value => value,
+                    };
+                    let index = match (
+                        numeric(start_path.value.clone()),
+                        numeric(end_path.value),
+                        unsigned64,
+                    ) {
                         (CValue::Int32(start), CValue::Int32(end), false) => {
                             IntegerRangeFoldIndex::Int32 {
                                 start: SharedIntegerRangeEndpoint::intern(start),
@@ -3129,8 +3142,8 @@ fn rewrite_integer_match_typed_fields(
                     if c_replacements
                         .insert(
                             *from,
-                            crate::kernel::proof::term_rewrite::TypedCReplacement::Pointer(
-                                to.pointer().clone(),
+                            crate::kernel::proof::term_rewrite::TypedCReplacement::PointerValue(
+                                to.clone(),
                             ),
                         )
                         .is_some()
@@ -4198,7 +4211,12 @@ pub(super) fn integer_sequence_element_equality(
     left: &CValue,
     right: &CValue,
 ) -> Option<Proposition> {
-    if left.c_type() != right.c_type() || !matches!(left, crate::kernel::integer64_c_value!(_)) {
+    if left.c_type() != right.c_type()
+        || !matches!(
+            left,
+            crate::kernel::integer64_c_value!(_) | CValue::PointerInteger(_)
+        )
+    {
         return None;
     }
     c_value_comparison_proposition(left, CComparisonOperator::Equal, right)
@@ -6139,6 +6157,40 @@ fn lower_spec_predicate_proposition_at_state_in(
         paths = next_paths;
     }
 
+    if name == POINTER_ORIGIN_PREDICATE_NAME {
+        for path in &mut paths {
+            let Proposition::Predicate { arguments, .. } = &mut path.proposition else {
+                unreachable!()
+            };
+            let [
+                Term::CState(_),
+                Term::CValue(word),
+                Term::CValue(CValue::Pointer(_pointer)),
+            ] = arguments.as_mut_slice()
+            else {
+                return Ok(Vec::new());
+            };
+            if let CValue::Pointer(value) = word {
+                *value = value.clone().seal_origin();
+                continue;
+            }
+            let CValue::PointerInteger(carrier) = word else {
+                path.proposition = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
+                continue;
+            };
+            let bits = if carrier.is_input_origin() {
+                match carrier.origin().block {
+                    PointerBlock::Symbolic(variable) => Bitvector32Term::Variable(variable),
+                    _ => return Ok(Vec::new()),
+                }
+            } else {
+                Bitvector32Term::pointer_address(carrier.origin().pointer().clone())
+            };
+            *word = CValue::PointerInteger(std::sync::Arc::new(
+                carrier.with_parts(bits, carrier.origin().clone()),
+            ));
+        }
+    }
     if name == SAME_OBJECT_PREDICATE_NAME {
         for path in &mut paths {
             let Proposition::Predicate { arguments, .. } = &path.proposition else {
@@ -6636,6 +6688,13 @@ fn evaluate_resource_count_paths(
                         .find_map(|alias| {
                             crate::instrumentation::record_deterministic_work(1);
                             let mut value = pointer.clone();
+                            if let Some(origin) =
+                                path_assumptions.promised_pointer_input_origin(pointer)
+                            {
+                                value = value
+                                    .with_domain(origin.domain().cloned())
+                                    .with_origin(origin.origin().clone());
+                            }
                             value.replace_pointer(alias);
                             let candidate = description
                                 .map_values(|_| AlgebraicValue::C(CValue::Pointer(value.clone())));
@@ -7622,7 +7681,9 @@ fn evaluate_spec_pure_function_argument_paths_in(
             Ok(paths
                 .into_iter()
                 .map(|path| SpecPureFunctionArgumentPath {
-                    value: PureFunctionArgument::Value(path.value),
+                    value: PureFunctionArgument::Value(
+                        super::eval::recover_promised_pointer_input(path.value, assumptions),
+                    ),
                     facts: path.facts,
                     obligations: path.obligations,
                 })
@@ -7665,22 +7726,25 @@ fn evaluate_spec_pure_function_argument_paths_in(
                 budget,
             )?
             .into_iter()
-            .map(|path| SpecPureFunctionArgumentPath {
-                value: PureFunctionArgument::ArrayRef {
-                    // The argument names the snapshot it reads, and that
-                    // snapshot is compared structurally, so the live one
-                    // would make this argument -- and every fact about a
-                    // function of it -- different after any step at all.
-                    // `array_ref_argument_memory` gives the latest snapshot
-                    // that still agrees with this one about everything the
-                    // function can observe through this pointer, so a fact
-                    // survives exactly the steps that cannot touch the array.
-                    memory: array_ref_argument_memory(memory, &path.value),
-                    pointer: path.value,
-                    element_type: *element_type,
-                },
-                facts: path.facts,
-                obligations: path.obligations,
+            .map(|mut path| {
+                path.value = super::eval::recover_promised_pointer_input(path.value, assumptions);
+                SpecPureFunctionArgumentPath {
+                    value: PureFunctionArgument::ArrayRef {
+                        // The argument names the snapshot it reads, and that
+                        // snapshot is compared structurally, so the live one
+                        // would make this argument -- and every fact about a
+                        // function of it -- different after any step at all.
+                        // `array_ref_argument_memory` gives the latest snapshot
+                        // that still agrees with this one about everything the
+                        // function can observe through this pointer, so a fact
+                        // survives exactly the steps that cannot touch the array.
+                        memory: array_ref_argument_memory(memory, &path.value),
+                        pointer: path.value,
+                        element_type: *element_type,
+                    },
+                    facts: path.facts,
+                    obligations: path.obligations,
+                }
             })
             .collect())
         }
@@ -7710,6 +7774,8 @@ fn array_ref_argument_memory(memory: &CMemory, pointer: &CValue) -> CMemory {
 
 pub(in crate::kernel) fn c_value_bitvector_term(value: &CValue) -> Option<Bitvector32Term> {
     match value {
+        CValue::PointerInteger(value) => Some(value.bits().clone()),
+
         CValue::Bool(term) => Some(term.clone()),
         CValue::Int8(term) => Some(term.clone()),
         CValue::Int16(term)
@@ -7779,8 +7845,6 @@ fn evaluate_spec_pointer_offset_paths_in(
         let CValue::Pointer(pointer) = pointer_path.value else {
             continue;
         };
-        let pointer_type = pointer.c_type();
-        let pointer = pointer.into_pointer();
         let element_assumptions = assumptions_with_path_context(
             assumptions,
             &pointer_path.facts,
@@ -7792,7 +7856,11 @@ fn evaluate_spec_pointer_offset_paths_in(
             &element_assumptions,
             budget,
         )? {
-            let (elements, unsigned, wide) = match element_path.value {
+            let numeric = match element_path.value {
+                CValue::PointerInteger(value) => value.numeric_value(),
+                value => value,
+            };
+            let (elements, unsigned, wide) = match numeric {
                 CValue::Int32(elements) => (elements, false, false),
                 CValue::Int64(elements) => (elements, false, true),
                 CValue::UInt64(elements) => (elements, true, true),
@@ -7813,11 +7881,37 @@ fn evaluate_spec_pointer_offset_paths_in(
             } else {
                 canonicalized_offset_index_term(elements, &mut facts)
             };
+            let kind = match (wide, unsigned) {
+                (false, false) => MachineIntegerType::Int32,
+                (false, true) => MachineIntegerType::UInt32,
+                (true, false) => MachineIntegerType::Int64,
+                (true, true) => MachineIntegerType::UInt64,
+            };
+            let mut result = pointer.clone().map_domain(|domain| CPointerDomain {
+                bytes: domain.bytes,
+                position: IntegerTerm::add(
+                    domain.position.as_ref().clone(),
+                    IntegerTerm::multiply(
+                        IntegerTerm::from_machine(kind, elements.clone()).expect("typed index"),
+                        IntegerTerm::constant_i64(i64::from(byte_width)),
+                    ),
+                )
+                .into(),
+            });
+            let origin = result.origin().offset_by_typed_elements(
+                elements.clone(),
+                byte_width,
+                unsigned,
+                wide,
+            );
+            result = result.with_origin(origin);
+            result.replace_pointer(
+                pointer
+                    .pointer()
+                    .offset_by_typed_elements(elements, byte_width, unsigned, wide),
+            );
             paths.push(SpecExpressionPath {
-                value: CValue::typed_pointer(
-                    pointer.offset_by_typed_elements(elements, byte_width, unsigned, wide),
-                    pointer_type,
-                ),
+                value: CValue::Pointer(result),
                 facts,
                 obligations,
             });
@@ -8567,6 +8661,12 @@ pub(super) fn c_value_comparison_proposition(
     operator: CComparisonOperator,
     right: &CValue,
 ) -> Option<Proposition> {
+    if let CValue::PointerInteger(value) = left {
+        return c_value_comparison_proposition(&value.numeric_value(), operator, right);
+    }
+    if let CValue::PointerInteger(value) = right {
+        return c_value_comparison_proposition(left, operator, &value.numeric_value());
+    }
     if matches!(left, CValue::Int128(_) | CValue::UInt128(_))
         || matches!(right, CValue::Int128(_) | CValue::UInt128(_))
     {
@@ -8750,6 +8850,8 @@ pub(super) fn c_value_comparison_proposition(
 
 fn c_value_int32_term(value: &CValue) -> Option<Bitvector32Term> {
     match value {
+        CValue::PointerInteger(_) => None,
+
         CValue::Int8(value) => Some(value.clone()),
         CValue::Bool(value)
         | CValue::Int16(value)
@@ -8770,6 +8872,8 @@ fn c_value_int32_term(value: &CValue) -> Option<Bitvector32Term> {
 
 fn c_value_int64_term(value: &CValue) -> Option<Bitvector32Term> {
     match value {
+        CValue::PointerInteger(value) => c_value_int64_term(&value.numeric_value()),
+
         CValue::Int64(value) => Some(value.clone()),
         CValue::Bool(value) => Some(Bitvector32Term::int64_from_32(value.clone())),
         CValue::Int8(value) => Some(Bitvector32Term::int64_from_32(value.clone())),
@@ -8790,6 +8894,8 @@ fn c_value_int64_term(value: &CValue) -> Option<Bitvector32Term> {
 
 fn c_value_uint64_term(value: &CValue) -> Option<Bitvector32Term> {
     match value {
+        CValue::PointerInteger(value) => c_value_uint64_term(&value.numeric_value()),
+
         CValue::UInt64(value) => Some(value.clone()),
         CValue::Bool(value) => Some(Bitvector32Term::uint64_from_32(value.clone())),
         CValue::Int64(value) => Some(Bitvector32Term::uint64_from_int64(value.clone())),

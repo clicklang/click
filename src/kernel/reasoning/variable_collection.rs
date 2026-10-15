@@ -850,13 +850,27 @@ fn collect_c_value_bound_identities(
     _integer_seen: &mut SeenTerms,
 ) {
     match value {
+        CValue::PointerInteger(value) => {
+            collect_bitvector_integer_variables(value.bits(), variables);
+            collect_c_value_bound_identities(
+                &CValue::Pointer(value.origin().clone()),
+                variables,
+                _integer_seen,
+            );
+        }
+
         CValue::Void => {}
         CValue::Pointer(pointer) => {
-            if let PointerBlock::PureFunctionApplication(application) = &pointer.block
-                && _integer_seen.pointers.insert(application.id())
-            {
-                for argument in application.arguments() {
-                    collect_pure_argument_bound_identities(argument, variables, _integer_seen);
+            if let Some(domain) = pointer.domain() {
+                collect_shared_integer_bound_identities(&domain.position, variables, _integer_seen);
+            }
+            for designation in [pointer.pointer(), pointer.origin()] {
+                if let PointerBlock::PureFunctionApplication(application) = &designation.block
+                    && _integer_seen.pointers.insert(application.id())
+                {
+                    for argument in application.arguments() {
+                        collect_pure_argument_bound_identities(argument, variables, _integer_seen);
+                    }
                 }
             }
         }
@@ -2085,6 +2099,15 @@ fn collect_c_value_integer_variables(
         return;
     }
     match value {
+        CValue::PointerInteger(value) => {
+            collect_bitvector_integer_variables_seen(value.bits(), variables, seen);
+            collect_c_value_integer_variables(
+                &CValue::Pointer(value.origin().clone()),
+                variables,
+                seen,
+            );
+        }
+
         CValue::Void => {}
         CValue::Int8(value) => collect_bitvector_integer_variables_seen(value, variables, seen),
         CValue::Bool(value)
@@ -2101,7 +2124,15 @@ fn collect_c_value_integer_variables(
         | CValue::Float64(value) => {
             collect_bitvector_integer_variables_seen(value, variables, seen)
         }
-        CValue::Pointer(_) => {}
+        CValue::Pointer(pointer) => {
+            collect_pointer_integer_variables(pointer.pointer(), variables, seen);
+            if pointer.origin() != pointer.pointer() {
+                collect_pointer_integer_variables(pointer.origin(), variables, seen);
+            }
+            if let Some(domain) = pointer.domain() {
+                collect_integer_variables_seen(domain.position.as_ref(), variables, seen);
+            }
+        }
     }
 }
 
@@ -2689,6 +2720,15 @@ fn collect_capture_variables_in_c_value(
         return;
     }
     match value {
+        CValue::PointerInteger(value) => {
+            collect_bitvector_capture_variables_seen(value.bits(), variables, integer_seen);
+            collect_capture_variables_in_c_value(
+                &CValue::Pointer(value.origin().clone()),
+                variables,
+                integer_seen,
+            );
+        }
+
         CValue::Void => {}
         CValue::Int8(bits) => {
             collect_bitvector_capture_variables_seen(bits, variables, integer_seen)
@@ -2708,7 +2748,15 @@ fn collect_capture_variables_in_c_value(
             collect_bitvector_capture_variables_seen(bits, variables, integer_seen)
         }
         CValue::Pointer(pointer) => {
-            collect_pointer_capture_variables(pointer.pointer(), variables, integer_seen)
+            collect_pointer_capture_variables(pointer.pointer(), variables, integer_seen);
+            collect_pointer_capture_variables(pointer.origin(), variables, integer_seen);
+            if let Some(domain) = pointer.domain() {
+                collect_shared_integer_bitvector_capture_variables(
+                    &domain.position,
+                    variables,
+                    integer_seen,
+                );
+            }
         }
     }
 }
@@ -3361,6 +3409,15 @@ fn collect_c_value_scope_summary(
         return IntegerScopeSummary::default();
     }
     match value {
+        CValue::PointerInteger(value) => {
+            let mut summary = collect_bitvector_scope_summary(value.bits(), summaries);
+            summary.merge(collect_c_value_scope_summary(
+                &CValue::Pointer(value.origin().clone()),
+                summaries,
+            ));
+            summary
+        }
+
         CValue::Void => IntegerScopeSummary::default(),
         CValue::Int8(term) => collect_bitvector_scope_summary(term, summaries),
         CValue::Bool(term)
@@ -3375,7 +3432,17 @@ fn collect_c_value_scope_summary(
         | CValue::UInt128(term)
         | CValue::Float32(term)
         | CValue::Float64(term) => collect_bitvector_scope_summary(term, summaries),
-        CValue::Pointer(pointer) => collect_pointer_scope_summary(pointer.pointer(), summaries),
+        CValue::Pointer(pointer) => {
+            let mut summary = collect_pointer_scope_summary(pointer.pointer(), summaries);
+            summary.merge(collect_pointer_scope_summary(pointer.origin(), summaries));
+            if let Some(domain) = pointer.domain() {
+                summary.merge(collect_integer_scope_summary_shared(
+                    &domain.position,
+                    summaries,
+                ));
+            }
+            summary
+        }
     }
 }
 
@@ -4023,6 +4090,21 @@ fn collect_binder_variables_in_c_value(
         return;
     }
     match value {
+        CValue::PointerInteger(value) => {
+            collect_bitvector_binder_variables_seen(
+                value.bits(),
+                integer_variables,
+                bitvector_variables,
+                integer_seen,
+            );
+            collect_binder_variables_in_c_value(
+                &CValue::Pointer(value.origin().clone()),
+                integer_variables,
+                bitvector_variables,
+                integer_seen,
+            );
+        }
+
         CValue::Void => {}
         CValue::Int8(bits) => collect_bitvector_binder_variables_seen(
             bits,
@@ -4047,12 +4129,28 @@ fn collect_binder_variables_in_c_value(
             bitvector_variables,
             integer_seen,
         ),
-        CValue::Pointer(pointer) => collect_pointer_binder_variables(
-            pointer.pointer(),
-            integer_variables,
-            bitvector_variables,
-            integer_seen,
-        ),
+        CValue::Pointer(pointer) => {
+            collect_pointer_binder_variables(
+                pointer.pointer(),
+                integer_variables,
+                bitvector_variables,
+                integer_seen,
+            );
+            collect_pointer_binder_variables(
+                pointer.origin(),
+                integer_variables,
+                bitvector_variables,
+                integer_seen,
+            );
+            if let Some(domain) = pointer.domain() {
+                collect_integer_binder_variables_shared(
+                    &domain.position,
+                    integer_variables,
+                    bitvector_variables,
+                    integer_seen,
+                );
+            }
+        }
     }
 }
 
@@ -4988,6 +5086,14 @@ pub(crate) fn collect_c_value_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match value {
+        CValue::PointerInteger(value) => {
+            collect_bitvector_variables(value.bits(), variables);
+            collect_c_value_bitvector_variables(
+                &CValue::Pointer(value.origin().clone()),
+                variables,
+            );
+        }
+
         CValue::Void => {}
         CValue::Int8(bits) => collect_bitvector_variables(bits, variables),
         CValue::Bool(bits)
@@ -5002,7 +5108,15 @@ pub(crate) fn collect_c_value_bitvector_variables(
         | CValue::UInt128(bits)
         | CValue::Float32(bits)
         | CValue::Float64(bits) => collect_bitvector_variables(bits, variables),
-        CValue::Pointer(pointer) => collect_pointer_bitvector_variables(pointer, variables),
+        CValue::Pointer(pointer) => {
+            collect_pointer_bitvector_variables(pointer, variables);
+            if let Some(origin) = pointer.retained_origin() {
+                collect_pointer_bitvector_variables(origin, variables);
+            }
+            if let Some(domain) = pointer.domain() {
+                collect_integer_capture_bitvector_variables(domain.position.as_ref(), variables);
+            }
+        }
     }
 }
 

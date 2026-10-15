@@ -11952,7 +11952,21 @@ fn pointer_predicate_matching_preserves_types_arguments_snapshots_and_scope() {
         !first.contains_known(&goal),
         "every pointer argument needs equality"
     );
-    let joined = first.assume_proposition(cd.clone());
+    let numeric_only = first.assume_proposition(cd.clone());
+    assert!(!numeric_only.contains_known(&goal));
+    let origins = [
+        crate::kernel::pointer_origin_fact(
+            CValue::typed_pointer(b.clone(), ty),
+            CValue::typed_pointer(a.clone(), ty),
+        ),
+        crate::kernel::pointer_origin_fact(
+            CValue::typed_pointer(d.clone(), ty),
+            CValue::typed_pointer(c.clone(), ty),
+        ),
+    ];
+    let joined = numeric_only
+        .assume_proposition(origins[0].clone())
+        .assume_proposition(origins[1].clone());
     assert!(joined.contains_known(&goal));
     assert!(!joined.contains_assumed_exact(&goal));
     assert!(!base.contains_known(&goal));
@@ -11960,6 +11974,8 @@ fn pointer_predicate_matching_preserves_types_arguments_snapshots_and_scope() {
     assert!(!joined.without_exact_fact(&cd).contains_known(&goal));
     assert!(!joined.without_exact_fact(&source).contains_known(&goal));
     let before = PureFactContext::new()
+        .assume_proposition(origins[0].clone())
+        .assume_proposition(origins[1].clone())
         .assume_proposition(ab)
         .assume_proposition(cd)
         .assume_proposition(source);

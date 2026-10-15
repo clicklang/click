@@ -25,7 +25,9 @@ fn pointer(name: &str) -> Pointer {
 fn array(memory: &CMemory, p: Pointer, element_type: CType) -> PureFunctionArgument {
     PureFunctionArgument::ArrayRef {
         memory: memory.clone(),
-        pointer: CValue::Pointer(CPointerValue::new(p, CType::Int32Pointer)),
+        pointer: CValue::Pointer(
+            CPointerValue::new(p, CType::Int32Pointer).with_origin(pointer("array-origin")),
+        ),
         element_type,
     }
 }
@@ -168,7 +170,8 @@ fn fact_lookup_uses_pointer_read_congruence_after_a_late_address_alias() {
         call(
             "tag",
             vec![PureFunctionArgument::Value(CValue::Pointer(
-                CPointerValue::new(Pointer::loaded_value(&memory, address), CType::Int32Pointer),
+                CPointerValue::new(Pointer::loaded_value(&memory, address), CType::Int32Pointer)
+                    .with_origin(Pointer::symbolic(Variable(74))),
             ))],
         )
     };

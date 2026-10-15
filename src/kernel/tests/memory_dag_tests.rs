@@ -3302,9 +3302,15 @@ fn pointer_read_producer_admits_one_separate_store_into_the_shared_graph() {
     assert!(pointers_proven_equal_for_memory_resolution(
         &left, &right, &context
     ));
-    let argument = |value| AlgebraicValue::C(CValue::typed_pointer(value, CType::Int32Pointer));
+    // The typed producer retains this shared designation while spelling
+    // the value through either checked read presentation.
+    let argument = |value| {
+        AlgebraicValue::C(CValue::Pointer(
+            CPointerValue::new(value, CType::Int32Pointer).with_origin(left.clone()),
+        ))
+    };
     assert!(
-        resource_arguments_proven_equal(&argument(left), &argument(right), &context),
+        resource_arguments_proven_equal(&argument(left.clone()), &argument(right), &context),
         "fold's existing argument checker must see the same graph equality"
     );
 }

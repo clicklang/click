@@ -20,11 +20,13 @@ resource sized_recompute_at(p: struct rb_node*) {
             fact left.model == left_model;
             fact right.model == right_model;
             fact p != 0;
+            fact pointer_origin(p, identity);
             fact p == identity;
             fact p->rb_left != p;
             fact p->rb_right != p;
             fact aligned(p, 8);
             fact aligned(parent, 8);
+            fact pointer_origin(p->__rb_parent_color, parent);
             fact p->__rb_parent_color == address(parent) + (p->__rb_parent_color & 1);
             fact (p->__rb_parent_color & 1) == color_bit(color);
             fact sized_parent_is(left_model, p) == 1;

@@ -1595,6 +1595,7 @@ fn unfolding_composite_accepts_propositionally_equal_arguments() {
         verifying "preserve.c";
 
         int32 preserve(int32* left, int32* right) {
+            requires pointer_origin(right, left);
             requires left == right;
             owns cell(left);
             ensures result == 0;
@@ -1608,6 +1609,13 @@ fn unfolding_composite_accepts_propositionally_equal_arguments() {
 
     verify_c0_sources(click_source, &[("preserve.c", c_source)])
         .expect("unfold should retain its equality-aware resource-consumption fallback");
+    assert!(
+        verify_c0_sources(
+            &click_source.replace("requires pointer_origin(right, left);", ""),
+            &[("preserve.c", c_source)]
+        )
+        .is_err()
+    );
 }
 
 #[test]

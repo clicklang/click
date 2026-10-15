@@ -123,6 +123,8 @@ fn float64_to_float32_bits(bits: u64) -> u32 {
 
 fn integer_constant_as_sign_magnitude(value: &CValue) -> Option<(bool, u128)> {
     match value {
+        CValue::PointerInteger(value) => integer_constant_as_sign_magnitude(&value.numeric_value()),
+
         CValue::Bool(bits) => Some((false, u128::from(bits.as_const()?))),
         CValue::Int8(bits) => {
             let value = bits.as_const()? as i32;
@@ -257,6 +259,8 @@ fn float64_to_integer_value(bits: u64, target_type: CType) -> Option<CValue> {
 
 fn integer_to_float_value(value: CValue, target_type: CType) -> Option<CValue> {
     let (source_name, term) = match &value {
+        CValue::PointerInteger(_) => return None,
+
         CValue::Bool(term) => ("bool", term),
         CValue::Int8(term) => ("int8", term),
         CValue::Int16(term) => ("int16", term),
@@ -489,6 +493,41 @@ thread_local! {
 /// nothing new about it, so it files no range and gains no guard.
 pub(in crate::kernel) struct SpecificationReadScope(());
 
+pub(in crate::kernel) fn recover_promised_pointer_input(
+    mut value: CValue,
+    assumptions: &PureFactContext,
+) -> CValue {
+    if let CValue::Pointer(pointer) = &mut value
+        && pointer.pointer() != pointer.origin()
+        && assumptions.pointers_known_equal(pointer.pointer(), pointer.origin())
+    {
+        let origin = pointer.origin().clone();
+        pointer.replace_pointer(origin);
+    }
+    let CValue::Pointer(pointer) = &value else {
+        return value;
+    };
+    let Some(origin) = assumptions.promised_pointer_input_origin(pointer) else {
+        return value;
+    };
+    if assumptions.decide(&ConditionTerm::pointer_equal(
+        pointer.pointer().clone(),
+        origin.pointer().clone(),
+    )) != Some(true)
+    {
+        return value;
+    }
+    let result = origin
+        .with_type(pointer.c_type())
+        .with_pointee_constant(pointer.pointee_constant())
+        .with_pointee_volatile(pointer.pointee_volatile());
+    CValue::Pointer(result)
+}
+
+pub(super) fn specification_read_active() -> bool {
+    SPECIFICATION_READS.with(|depth| depth.get() > 0)
+}
+
 impl SpecificationReadScope {
     pub(in crate::kernel) fn enter() -> Self {
         SPECIFICATION_READS.with(|depth| depth.set(depth.get() + 1));
@@ -546,6 +585,8 @@ pub(in crate::kernel) fn add_narrow_integer_range_execution_pure_facts(
 
 pub(in crate::kernel) fn promote_c_int32_path_value(value: CValue) -> Option<Bitvector32Term> {
     match value {
+        CValue::PointerInteger(_) => None,
+
         CValue::Int128(_) | CValue::UInt128(_) => None,
 
         CValue::Void => None,
@@ -562,6 +603,8 @@ pub(in crate::kernel) fn promote_c_int32_path_value(value: CValue) -> Option<Bit
 
 pub(in crate::kernel) fn promote_c_uint32_path_value(value: CValue) -> Option<Bitvector32Term> {
     match value {
+        CValue::PointerInteger(_) => None,
+
         CValue::Bool(value) | CValue::Int32(value) | CValue::UInt32(value) => Some(value),
         CValue::Int8(value) => Some(value),
         CValue::Int16(value) => Some(value),
@@ -580,6 +623,8 @@ pub(in crate::kernel) fn promote_c_uint32_path_value(value: CValue) -> Option<Bi
 
 pub(in crate::kernel) fn promote_c_int64_path_value(value: CValue) -> Option<Bitvector32Term> {
     match value {
+        CValue::PointerInteger(value) => promote_c_int64_path_value(value.numeric_value()),
+
         CValue::Int64(value) => Some(value),
         CValue::Bool(value) => Some(Bitvector32Term::int64_from_32(value)),
         CValue::Int8(value) => Some(Bitvector32Term::int64_from_32(value)),
@@ -600,6 +645,8 @@ pub(in crate::kernel) fn promote_c_int64_path_value(value: CValue) -> Option<Bit
 
 pub(in crate::kernel) fn promote_c_uint64_path_value(value: CValue) -> Option<Bitvector32Term> {
     match value {
+        CValue::PointerInteger(value) => promote_c_uint64_path_value(value.numeric_value()),
+
         CValue::UInt64(value) => Some(value),
         CValue::Bool(value) => Some(Bitvector32Term::uint64_from_32(value)),
         CValue::UInt8(value) | CValue::UInt16(value) | CValue::UInt32(value) => {
@@ -655,6 +702,22 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Option<CValue> {
+    if let CValue::PointerInteger(carrier) = value {
+        let numeric = coerce_c_value_to_type_as(
+            carrier.numeric_value(),
+            target_type,
+            conversion,
+            obligations,
+            assumptions,
+        )?;
+        return if matches!(target_type, CType::Int64 | CType::UInt64) {
+            Some(CValue::PointerInteger(std::sync::Arc::new(
+                carrier.with_numeric_value(numeric)?,
+            )))
+        } else {
+            Some(numeric)
+        };
+    }
     if target_type == CType::Bool && matches!(value.c_type(), CType::Int128 | CType::UInt128) {
         let source = MachineIntegerType::from_c_type(value.c_type())?;
         let observed = IntegerTerm::from_machine(source, c_value_bitvector_term(&value)?)?;
@@ -1052,6 +1115,18 @@ pub(in crate::kernel) fn cast_c_value_to_type(
 ) -> Result<CValue, CRuntimeError> {
     if target_type.is_pointer() {
         match value {
+            CValue::PointerInteger(carrier)
+                if !matches!(target_type, CType::FunctionPointer(_)) =>
+            {
+                let pointer = super::pointer_tags::cast_pointer_integer_to_pointer(
+                    &carrier,
+                    assumptions,
+                    obligations,
+                )
+                .map_err(CRuntimeError::PointerConversion)?;
+                return Ok(CValue::Pointer(pointer.with_type(target_type)));
+            }
+
             CValue::Pointer(pointer) => {
                 return Ok(CValue::Pointer(pointer.with_type(target_type)));
             }
@@ -1071,20 +1146,9 @@ pub(in crate::kernel) fn cast_c_value_to_type(
                 {
                     return Ok(CValue::typed_pointer(Pointer::null(), target_type));
                 }
-                return match super::pointer_tags::cast_tagged_address_to_pointer(
-                    &term,
-                    assumptions,
-                    obligations,
-                ) {
-                    Ok(Some(pointer)) => Ok(CValue::typed_pointer(pointer, target_type)),
-                    Ok(None) => Err(CRuntimeError::PointerConversion(
-                        "integer-to-pointer cast requires a value that is a recorded pointer \
-                         address or zero; an integer without pointer origin cannot become a \
-                         pointer"
-                            .to_string(),
-                    )),
-                    Err(message) => Err(CRuntimeError::PointerConversion(message)),
-                };
+                return Err(CRuntimeError::PointerConversion(
+                    "integer-to-pointer cast requires retained pointer origin or zero".to_string(),
+                ));
             }
             value => {
                 return coerce_c_value_to_type_as(
@@ -1114,11 +1178,9 @@ pub(in crate::kernel) fn cast_c_value_to_type(
                 "function addresses do not convert to integers".to_string(),
             ));
         }
-        let address = Bitvector32Term::pointer_address(pointer.pointer().clone());
-        return Ok(match target_type {
-            CType::UInt64 => CValue::UInt64(address),
-            _ => CValue::Int64(address),
-        });
+        return CPointerIntegerValue::from_pointer(pointer.clone(), target_type)
+            .map(|value| CValue::PointerInteger(std::sync::Arc::new(value)))
+            .ok_or(CRuntimeError::TypeMismatch);
     }
     coerce_c_value_to_type_as(value, target_type, conversion, obligations, assumptions)
         .ok_or(CRuntimeError::TypeMismatch)
@@ -1232,7 +1294,10 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
             let mut facts = ExecutionFacts::new();
             add_narrow_integer_range_execution_pure_facts(&mut facts, assumptions, value);
             vec![CExpressionPath {
-                outcome: CExpressionOutcome::Value(value.clone()),
+                outcome: CExpressionOutcome::Value(recover_promised_pointer_input(
+                    value.clone(),
+                    assumptions,
+                )),
                 facts,
                 obligations: Vec::new(),
             }]
@@ -1399,11 +1464,22 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
             }
             paths
         }
-        CExpression::PointerOffsetBytes { pointer, bytes } => {
-            evaluate_c_expression_paths(state, pointer, assumptions, budget)?
+        CExpression::PointerOffsetBytes {
+            pointer,
+            bytes,
+            object_bytes,
+        } => {
+            let paths = evaluate_c_expression_paths(state, pointer, assumptions, budget)?
                 .into_iter()
                 .flat_map(|path| match path.outcome {
                     CExpressionOutcome::Value(CValue::Pointer(pointer)) => {
+                        if *bytes == 0 && object_bytes.is_some() {
+                            return vec![CExpressionPath {
+                                outcome: CExpressionOutcome::Value(CValue::Pointer(pointer)),
+                                facts: path.facts,
+                                obligations: path.obligations,
+                            }];
+                        }
                         pointer_offset_by_bytes_paths(
                             state,
                             pointer,
@@ -1429,7 +1505,11 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
                         obligations: path.obligations,
                     }],
                 })
-                .collect()
+                .collect();
+            match object_bytes {
+                Some(bytes) => select_pointer_object_paths(state, paths, *bytes, assumptions),
+                None => paths,
+            }
         }
         CExpression::LessThan(left, right) => evaluate_c_comparison_paths(
             state,
@@ -1691,11 +1771,41 @@ fn evaluate_c_cast_paths(
                     IntegerConversion::Checked
                 };
                 let coerced = if integer_mode == CIntegerCastMode::Modulo {
-                    MachineIntegerType::from_c_type(target_type)
-                        .and_then(|destination| destination.convert_modulo_value(value))
-                        .ok_or(CRuntimeError::TypeMismatch)
+                    {
+                        let carrier = match &value {
+                            CValue::PointerInteger(carrier) => Some(carrier.clone()),
+                            _ => None,
+                        };
+                        let numeric = carrier
+                            .as_ref()
+                            .map_or(value, |carrier| carrier.numeric_value());
+                        MachineIntegerType::from_c_type(target_type)
+                            .and_then(|destination| destination.convert_modulo_value(numeric))
+                            .and_then(|numeric| match carrier {
+                                Some(carrier)
+                                    if matches!(target_type, CType::Int64 | CType::UInt64) =>
+                                {
+                                    carrier.with_numeric_value(numeric).map(|value| {
+                                        CValue::PointerInteger(std::sync::Arc::new(value))
+                                    })
+                                }
+                                _ => Some(numeric),
+                            })
+                            .ok_or(CRuntimeError::TypeMismatch)
+                    }
                 } else if integer_mode == CIntegerCastMode::UInt64BitsToInt64 {
                     match (target_type, value) {
+                        (CType::Int64, CValue::PointerInteger(carrier))
+                            if carrier.c_type() == CType::UInt64 =>
+                        {
+                            carrier
+                                .with_numeric_value(CValue::Int64(
+                                    Bitvector32Term::int64_from_uint64_bits(carrier.bits().clone()),
+                                ))
+                                .map(|v| CValue::PointerInteger(std::sync::Arc::new(v)))
+                                .ok_or(CRuntimeError::TypeMismatch)
+                        }
+
                         (CType::Int64, CValue::UInt64(bits)) => {
                             Ok(CValue::Int64(Bitvector32Term::int64_from_uint64_bits(bits)))
                         }
@@ -2016,6 +2126,7 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
                                 value_type,
                                 pointer.pointee_volatile(),
                             )
+                            .with_pointer_domain(&pointer)
                             .with_constant(pointer.pointee_constant()),
                         ),
                         facts: pointer_path.facts,
@@ -2059,6 +2170,7 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
                                 *value_type,
                                 *volatile || pointer.pointee_volatile(),
                             )
+                            .with_pointer_domain(&pointer)
                             .with_constant(pointer.pointee_constant())
                             .with_pointee_constant(*pointee_constant),
                         ),
@@ -2102,6 +2214,7 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
                                 value_type,
                                 pointer.pointee_volatile(),
                             )
+                            .with_pointer_domain(&pointer)
                             .with_constant(pointer.pointee_constant()),
                         ),
                         facts: pointer_path.facts,
@@ -2182,6 +2295,40 @@ pub(in crate::kernel) fn read_c_lvalue_paths(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CExpressionPath>> {
+    if let CLValueOutcome::LValue(lvalue) = &outcome {
+        if pointer_domain_conditions(
+            lvalue.pointer_domain.as_deref(),
+            lvalue.value_type.byte_width(),
+        )
+        .iter()
+        .any(|condition| decide_with_facts(assumptions, &facts, condition) != Some(true))
+        {
+            return Ok(vec![CExpressionPath {
+                outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
+                facts,
+                obligations,
+            }]);
+        }
+    }
+    let input_domain_valid = specification_read_active()
+        || match &outcome {
+            CLValueOutcome::LValue(lvalue) if lvalue.pointer_domain.is_none() => {
+                match (&lvalue.storage, &lvalue.pointer_origin) {
+                    (CLValueStorage::Memory { pointer }, Some(origin)) => {
+                        pointer_input_domain_allows(
+                            state,
+                            pointer,
+                            origin,
+                            lvalue.value_type.byte_width(),
+                            false,
+                            &assumptions_with_path_context(assumptions, &facts, &obligations),
+                        )
+                    }
+                    _ => true,
+                }
+            }
+            _ => true,
+        };
     let mut paths = read_c_lvalue_paths_without_ranges(
         state,
         outcome,
@@ -2192,9 +2339,17 @@ pub(in crate::kernel) fn read_c_lvalue_paths(
         budget,
     )?;
     for path in &mut paths {
-        let CExpressionOutcome::Value(value) = &path.outcome else {
+        let CExpressionOutcome::Value(value) = &mut path.outcome else {
             continue;
         };
+        if !input_domain_valid {
+            path.outcome = CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory);
+            continue;
+        }
+        *value = recover_promised_pointer_input(
+            value.clone(),
+            &assumptions_with_path_context(assumptions, &path.facts, &path.obligations),
+        );
         add_narrow_integer_range_execution_pure_facts(&mut path.facts, assumptions, value);
     }
     Ok(paths)
@@ -2435,7 +2590,9 @@ pub(in crate::kernel) fn address_of_lvalue_paths(
                                         pointer_type,
                                         lvalue.is_volatile(),
                                     )
-                                    .with_pointer_pointee_constant(lvalue.is_constant()),
+                                    .with_pointer_pointee_constant(lvalue.is_constant())
+                                    .with_pointer_domain(lvalue.pointer_domain.as_deref().cloned())
+                                    .with_pointer_origin(lvalue.pointer_origin.as_deref().cloned()),
                                 ),
                                 facts,
                                 obligations: lvalue_path.obligations,
@@ -2639,6 +2796,10 @@ pub(in crate::kernel) fn c_truthiness_paths(
     assumptions: &PureFactContext,
 ) -> Vec<CTruthinessPath> {
     match value {
+        CValue::PointerInteger(value) => {
+            c_truthiness_paths(value.numeric_value(), facts, obligations, assumptions)
+        }
+
         CValue::Void => unreachable!("void truthiness must be rejected by the caller"),
         CValue::Bool(bits) => {
             let is_zero = ConditionTerm::equal(bits, Bitvector32Term::Constant(0));

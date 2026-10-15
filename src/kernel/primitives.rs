@@ -14,6 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, OnceLock};
 
+pub(crate) const POINTER_ORIGIN_PREDICATE_NAME: &str = "__click_pointer_origin";
 pub(crate) const SAME_OBJECT_PREDICATE_NAME: &str = "__click_same_object";
 pub(crate) const MUTEX_HELD_PREDICATE_NAME: &str = "__click_mutex_held";
 
@@ -316,6 +317,8 @@ impl LoadKind {
     /// a read of any other kind at the cell's address does not.
     pub fn of_value(value: &CValue) -> Option<Self> {
         Some(match value {
+            CValue::PointerInteger(_) => Self::Bits64,
+
             CValue::Void => return None,
             CValue::Bool(_) | CValue::UInt8(_) => Self::UInt8,
             CValue::Int8(_) => Self::Int8,
@@ -978,6 +981,46 @@ pub struct CPointerValue {
     c_type: CType,
     pointee_volatile: bool,
     pointee_constant: bool,
+    domain: Option<Arc<CPointerDomain>>,
+    origin: Option<Arc<Pointer>>,
+}
+
+/// Arithmetic bounds selected by an object address, independent of address equality.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(crate) struct CPointerDomain {
+    pub(crate) bytes: u32,
+    pub(crate) position: SharedIntegerTerm,
+}
+
+/// A result-domain effect inferred from every checked normal return.
+/// Address-only postconditions are never evidence for this effect.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum CPointerResultDomain {
+    Selected {
+        domain: CPointerDomain,
+        argument: Option<(usize, i64)>,
+    },
+    ArgumentOffset(usize, i64),
+    Loaded {
+        argument: usize,
+        offset: i64,
+        value_type: CType,
+    },
+    Meet {
+        fixed: Option<CPointerDomain>,
+        arguments: Vec<(usize, i64, i64)>,
+    },
+    Integer(Box<CPointerResultDomain>),
+    Argument(usize),
+    Unknown,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CPointerStoreEffect {
+    pub(crate) destination: usize,
+    pub(crate) offset: i64,
+    pub(crate) value_type: CType,
+    pub(crate) value: CPointerResultDomain,
 }
 
 impl CPointerValue {
@@ -987,10 +1030,12 @@ impl CPointerValue {
             "C pointer values require a pointer type"
         );
         Self {
+            origin: None,
             pointer,
             c_type,
             pointee_volatile: false,
             pointee_constant: false,
+            domain: None,
         }
     }
 
@@ -1020,6 +1065,8 @@ impl CPointerValue {
             c_type,
             pointee_volatile: self.pointee_volatile,
             pointee_constant: self.pointee_constant,
+            domain: self.domain,
+            origin: self.origin,
         }
     }
 
@@ -1033,7 +1080,58 @@ impl CPointerValue {
         self
     }
 
+    pub(crate) fn origin(&self) -> &Pointer {
+        self.origin.as_deref().unwrap_or(&self.pointer)
+    }
+    pub(crate) fn with_retained_origin(mut self, origin: Option<Pointer>) -> Self {
+        self.origin = origin.map(Arc::new);
+        self
+    }
+    pub(crate) fn retained_origin(&self) -> Option<&Pointer> {
+        self.origin.as_deref()
+    }
+    pub(crate) fn same_complete_origin(&self, other: &Self) -> bool {
+        self.pointer == other.pointer && self.origins_match(other) && self.domain == other.domain
+    }
+    pub(crate) fn seal_origin(self) -> Self {
+        if self.origin.is_none() {
+            let origin = self.pointer.clone();
+            self.with_origin(origin)
+        } else {
+            self
+        }
+    }
+    pub(crate) fn origins_match(&self, other: &Self) -> bool {
+        (!self.c_type.is_object_pointer() && !other.c_type.is_object_pointer())
+            || self.origin() == other.origin()
+    }
+    pub(crate) fn with_origin(mut self, origin: Pointer) -> Self {
+        self.origin = Some(Arc::new(origin));
+        self
+    }
+    pub(crate) fn domain(&self) -> Option<&CPointerDomain> {
+        self.domain.as_deref()
+    }
+
+    pub(crate) fn with_domain(mut self, domain: Option<CPointerDomain>) -> Self {
+        self.domain = domain.map(Arc::new);
+        self
+    }
+
+    pub(crate) fn map_domain(
+        mut self,
+        map: impl FnOnce(&CPointerDomain) -> CPointerDomain,
+    ) -> Self {
+        if let Some(domain) = &self.domain {
+            self.domain = Some(Arc::new(map(domain)));
+        }
+        self
+    }
+
     pub(crate) fn replace_pointer(&mut self, pointer: Pointer) {
+        if self.origin.is_none() && pointer != self.pointer {
+            self.origin = Some(Arc::new(self.pointer.clone()));
+        }
         self.pointer = pointer;
     }
 
@@ -1046,8 +1144,22 @@ impl CPointerValue {
 impl CPointerValue {
     /// Everything that is the value's identity: the address, the type it is
     /// viewed through, and whether the pointee is volatile.
-    fn identity(&self) -> (&Pointer, &CType, bool) {
-        (&self.pointer, &self.c_type, self.pointee_volatile)
+    fn identity(
+        &self,
+    ) -> (
+        &Pointer,
+        &CType,
+        bool,
+        &Option<Arc<CPointerDomain>>,
+        &Pointer,
+    ) {
+        (
+            &self.pointer,
+            &self.c_type,
+            self.pointee_volatile,
+            &self.domain,
+            self.origin(),
+        )
     }
 }
 
@@ -1389,6 +1501,7 @@ pub enum CValue {
     UInt32(Bitvector32Term),
     Int64(Bitvector32Term),
     UInt64(Bitvector32Term),
+    PointerInteger(Arc<CPointerIntegerValue>),
     Int128(Bitvector32Term),
     UInt128(Bitvector32Term),
     /// IEEE-754 binary32 payload represented in the shared checked term arena.
@@ -1396,6 +1509,109 @@ pub enum CValue {
     /// IEEE-754 binary64 payload represented in the shared checked term arena.
     Float64(Bitvector32Term),
     Pointer(CPointerValue),
+}
+
+/// Executable origin is separate from numeric bits and survives only checked
+/// whole-value transport and the explicitly supported integer operations.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct CPointerIntegerValue {
+    input_origin: bool,
+    bits: Bitvector32Term,
+    signed: bool,
+    origin: CPointerValue,
+}
+
+impl CPointerIntegerValue {
+    pub(in crate::kernel) fn from_pointer(origin: CPointerValue, c_type: CType) -> Option<Self> {
+        let signed = match c_type {
+            CType::Int64 => true,
+            CType::UInt64 => false,
+            _ => return None,
+        };
+        Some(Self {
+            input_origin: false,
+            bits: Bitvector32Term::pointer_address(origin.pointer().clone()),
+            signed,
+            origin,
+        })
+    }
+
+    /// An opaque input has an immutable origin identity distinct from its
+    /// numeric bits. Only an explicit checked input promise resolves it.
+    pub(crate) fn from_input(bits: Bitvector32Term, c_type: CType) -> Option<Self> {
+        let identity = match &bits {
+            Bitvector32Term::Variable(variable) => *variable,
+            Bitvector32Term::MemoryLoad(memory, pointer, LoadKind::Bits64) => {
+                let Bitvector32Term::Variable(variable) = crate::kernel::canonical_form_of_load(
+                    memory.clone(),
+                    pointer.as_ref().clone(),
+                    LoadKind::Bits64,
+                ) else {
+                    return None;
+                };
+                variable
+            }
+            _ => return None,
+        };
+        let signed = match c_type {
+            CType::Int64 => true,
+            CType::UInt64 => false,
+            _ => return None,
+        };
+        Some(Self {
+            input_origin: true,
+            bits,
+            signed,
+            origin: CPointerValue::new(Pointer::symbolic(identity), CType::VoidPointer),
+        })
+    }
+    pub(crate) fn is_input_origin(&self) -> bool {
+        self.input_origin
+    }
+    pub(crate) fn bits(&self) -> &Bitvector32Term {
+        &self.bits
+    }
+    pub(crate) fn origin(&self) -> &CPointerValue {
+        &self.origin
+    }
+    pub(crate) fn c_type(&self) -> CType {
+        if self.signed {
+            CType::Int64
+        } else {
+            CType::UInt64
+        }
+    }
+    pub(crate) fn numeric_value(&self) -> CValue {
+        if self.signed {
+            CValue::Int64(self.bits.clone())
+        } else {
+            CValue::UInt64(self.bits.clone())
+        }
+    }
+
+    pub(crate) fn with_numeric_value(&self, value: CValue) -> Option<Self> {
+        let (bits, signed) = match value {
+            CValue::Int64(bits) => (bits, true),
+            CValue::UInt64(bits) => (bits, false),
+            _ => return None,
+        };
+        Some(Self {
+            input_origin: self.input_origin,
+            bits,
+            signed,
+            origin: self.origin.clone(),
+        })
+    }
+
+    /// Structural binder/substitution transport, never numeric-origin recovery.
+    pub(crate) fn with_parts(&self, bits: Bitvector32Term, origin: CPointerValue) -> Self {
+        Self {
+            input_origin: self.input_origin,
+            bits,
+            signed: self.signed,
+            origin,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -1604,6 +1820,8 @@ impl CExceptionalSignature {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CLValue {
+    pub(super) pointer_origin: Option<Arc<Pointer>>,
+    pub(super) pointer_domain: Option<Arc<CPointerDomain>>,
     pub(super) storage: CLValueStorage,
     pub(super) value_type: CType,
     pub(super) volatile: bool,
@@ -1685,6 +1903,8 @@ pub enum CExpression {
     PointerOffsetBytes {
         pointer: Box<CExpression>,
         bytes: u32,
+        /// Select an object domain after the byte offset; no access authority.
+        object_bytes: Option<u32>,
     },
     LessThan(Box<CExpression>, Box<CExpression>),
     LessEqual(Box<CExpression>, Box<CExpression>),
@@ -2400,6 +2620,12 @@ impl AlgebraicTerm {
                     }
                 },
                 Node::Value(value) => match value {
+                    CValue::PointerInteger(value) => {
+                        visit(value.bits());
+                        let origin = value.origin();
+                        pending.push(Node::Offset(&origin.pointer().offset));
+                    }
+
                     CValue::Void => {}
                     CValue::Bool(v) => visit(v),
                     CValue::Pointer(v) => pending.push(Node::Offset(&v.pointer().offset)),
@@ -4094,6 +4320,8 @@ impl<'a> CExecutionContext<'a> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CVerifiedFunctionRule {
+    pub(super) pointer_result_domain: Option<Arc<CPointerResultDomain>>,
+    pub(super) pointer_store_effects: Arc<Vec<CPointerStoreEffect>>,
     pub(super) function: CFunction,
     /// The loop semantics every claim of this rule was certified under, or
     /// `Verify` when any was, or when the rule is a recursion hypothesis
@@ -4501,6 +4729,8 @@ impl CVerifiedFunctionTerminationRule {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CVerifiedFunctionContractClaim {
+    pub(super) pointer_result_domain: Option<Arc<CPointerResultDomain>>,
+    pub(super) pointer_store_effects: Arc<Vec<CPointerStoreEffect>>,
     pub(super) function: CFunction,
     pub(super) key: CFunctionContractClaimKey,
     /// Exact load equalities consumed while checking this claim. Keeping the
@@ -7128,6 +7358,7 @@ pub(super) struct ResourceContextIndex {
     /// equalities can then find only the facts whose bases they identify,
     /// without scanning every resource in an aliased block.
     pub(super) memory_by_base: PersistentMap<Pointer, ResourceEntryIds>,
+    pub(super) memory_by_origin: PersistentMap<Pointer, ResourceEntryIds>,
     /// Raw address anchors maintained during resource publication, for queries
     /// before a proof boundary has paired the input with an equality graph.
     /// Structural candidates maintained at resource publication, independent
@@ -10308,6 +10539,14 @@ impl ReasoningPolicy {
 
 #[derive(Clone, Debug, Default)]
 pub struct PureFactContext {
+    pub(super) pointer_value_input_origins: crate::persistent::PersistentMap<
+        Pointer,
+        crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
+    >,
+    pub(super) pointer_input_origins: crate::persistent::PersistentMap<
+        CPointerValue,
+        crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
+    >,
     /// Shared ordered projection used when checked paths publish this context.
     pub(super) execution_fact_projection: super::execution_facts::ContextFacts,
     /// Persistent syntax adjacency for atomic certificate planning. Unlike

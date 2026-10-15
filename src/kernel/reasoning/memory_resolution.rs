@@ -2094,6 +2094,19 @@ pub(in crate::kernel) fn c_values_proven_equal_for_memory_resolution(
     assumptions: &PureFactContext,
 ) -> bool {
     match (left, right) {
+        (CValue::PointerInteger(left), CValue::PointerInteger(right)) => {
+            // Numeric equations cannot exchange the retained source pointer.
+            // Stored-value matching requires the complete origin as well.
+            left.c_type() == right.c_type()
+                && left.is_input_origin() == right.is_input_origin()
+                && left.origin() == right.origin()
+                && bitvector_terms_proven_equal_for_memory_resolution(
+                    left.bits(),
+                    right.bits(),
+                    assumptions,
+                )
+        }
+
         (CValue::Void, CValue::Void) => true,
         (CValue::Int8(left), CValue::Int8(right)) => {
             bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
@@ -2112,14 +2125,29 @@ pub(in crate::kernel) fn c_values_proven_equal_for_memory_resolution(
             bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
         }
         (CValue::Pointer(left), CValue::Pointer(right)) => {
-            pointers_proven_equal_for_memory_resolution(
-                left.pointer(),
-                right.pointer(),
-                assumptions,
-            )
+            c_pointer_values_proven_equal(left, right, assumptions)
         }
         _ => false,
     }
+}
+
+pub(in crate::kernel) fn c_pointer_values_proven_equal(
+    left: &CPointerValue,
+    right: &CPointerValue,
+    assumptions: &PureFactContext,
+) -> bool {
+    let geometry_matches = |left: &CPointerValue, right: &CPointerValue| {
+        left.origins_match(right) && left.domain() == right.domain()
+    };
+    let same_geometry = geometry_matches(left, right)
+        || assumptions
+            .promised_pointer_input_origin(left)
+            .is_some_and(|origin| geometry_matches(&origin, right))
+        || assumptions
+            .promised_pointer_input_origin(right)
+            .is_some_and(|origin| geometry_matches(left, &origin));
+    same_geometry
+        && pointers_proven_equal_for_memory_resolution(left.pointer(), right.pointer(), assumptions)
 }
 
 /// The only `local:` block a snapshot comparison with **no load pointer** may
@@ -4451,6 +4479,8 @@ impl StoreByteInterval {
 /// load means.
 fn materialized_cell_source(cell_pointer: &Pointer, value: &CValue) -> Option<SharedCMemory> {
     let bits = match value {
+        CValue::PointerInteger(_) => return None,
+
         CValue::Int8(bits)
         | CValue::Bool(bits)
         | CValue::Int16(bits)

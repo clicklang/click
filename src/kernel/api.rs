@@ -2078,7 +2078,17 @@ pub fn c_pointer_offset_bytes(pointer: CExpression, bytes: u32) -> CExpression {
         CExpression::PointerOffsetBytes {
             pointer: Box::new(pointer),
             bytes,
+            object_bytes: None,
         }
+    }
+}
+
+/// Select the complete scalar or array object whose address was lowered from a place.
+pub fn c_selected_object_pointer(pointer: CExpression, bytes: u32) -> CExpression {
+    CExpression::PointerOffsetBytes {
+        pointer: Box::new(pointer),
+        bytes: 0,
+        object_bytes: Some(bytes),
     }
 }
 

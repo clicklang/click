@@ -1218,10 +1218,14 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                                 owns moved_link: erase_left_at(parent);
                                                                 fact moved_link.model == rb_reparent(rb_recolor(mr, Color::Black), mp);
                                                                 fact child->rb_right == at(transplant, child->rb_right);
+                                                                fact pointer_origin(child->__rb_parent_color, mid);
                                                                 fact child->__rb_parent_color == address(mid) + (child->__rb_parent_color & 1);
                                                                 fact (child->__rb_parent_color & 1) == color_bit(rc);
+                                                                fact pointer_origin(child->__rb_parent_color, mid);
                                                                 fact child->__rb_parent_color == address(mid) + color_bit(rc);
+                                                                fact pointer_origin(mid->rb_left, lid);
                                                                 fact mid->rb_left == lid;
+                                                                fact pointer_origin(mid->rb_right, child);
                                                                 fact mid->rb_right == child;
                                                             } {
                                                                 RbTree::Empty => {

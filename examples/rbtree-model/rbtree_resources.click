@@ -67,9 +67,11 @@ resource rb_at(p: struct rb_node*) {
             owns left: rb_at(p->rb_left);
             owns right: rb_at(p->rb_right);
             fact p != 0;
+            fact pointer_origin(p, identity);
             fact p == identity;
             fact aligned(p, 8);
             fact aligned(parent, 8);
+            fact pointer_origin(p->__rb_parent_color, parent);
             fact p->__rb_parent_color == address(parent) + (p->__rb_parent_color & 1);
             fact (p->__rb_parent_color & 1) == color_bit(color);
             fact left.model == left_model;
@@ -86,6 +88,7 @@ resource ctx_at(child: struct rb_node*, root: struct rb_root*) {
         Context::Top => {
             owns root->rb_node;
             fact root != 0;
+            fact pointer_origin(root->rb_node, child);
             fact root->rb_node == child;
         },
         Context::Left(identity, grandparent, color, sibling_model, up_model) => {
@@ -97,6 +100,7 @@ resource ctx_at(child: struct rb_node*, root: struct rb_root*) {
             fact identity != 0;
             fact aligned(identity, 8);
             fact aligned(grandparent, 8);
+            fact pointer_origin(identity->rb_left, child);
             fact identity->rb_left == child;
             fact identity->__rb_parent_color
                 == address(grandparent) + (identity->__rb_parent_color & 1);
@@ -116,6 +120,7 @@ resource ctx_at(child: struct rb_node*, root: struct rb_root*) {
             fact identity != 0;
             fact aligned(identity, 8);
             fact aligned(grandparent, 8);
+            fact pointer_origin(identity->rb_right, child);
             fact identity->rb_right == child;
             fact identity->__rb_parent_color
                 == address(grandparent) + (identity->__rb_parent_color & 1);

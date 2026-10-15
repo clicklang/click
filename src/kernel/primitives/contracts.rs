@@ -2639,6 +2639,12 @@ pub(crate) fn wide_range_bounds(
     start: &CValue,
     end: &CValue,
 ) -> Option<(Bitvector32Term, Bitvector32Term)> {
+    if let CValue::PointerInteger(value) = start {
+        return wide_range_bounds(&value.numeric_value(), end);
+    }
+    if let CValue::PointerInteger(value) = end {
+        return wide_range_bounds(start, &value.numeric_value());
+    }
     let widened = |value: &CValue| match value {
         CValue::UInt64(term) => Some(term.clone()),
         // A signed bound is read as its sign extension, the same bits as an

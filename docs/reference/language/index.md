@@ -1392,6 +1392,19 @@ must establish the relationship from its concrete pointer objects, a nonempty
 requirement. An empty viewable or memory range does not establish that its
 base has object provenance.
 
+`pointer_origin(input, pointer)` promises the complete domain and current
+designation of an opaque object-pointer or 64-bit integer input. It is a
+built-in proposition accepted in `requires`, resource `fact`, and witness
+`where` clauses. For example, an opaque tagged word may require both
+`pointer_origin(word, p)` and `word == address(p) + 1`. The address equation
+and alignment justify the numeric conversion; the origin promise preserves
+which object the resulting pointer designates. It grants no memory permission.
+A pointer copied to an integer retains its origin without a new promise.
+Known scalar and one-past domains cannot be upgraded through this predicate,
+equality rewriting, or an equal sibling address. Source-function return domains
+are inferred from verified return paths; address-only postconditions do not
+create them. See [the memory model](../../concepts/memory-model.md).
+
 `aligned(pointer, n)` states that the pointer's address is a multiple of `n`,
 a power of two. It is sugar for `(address(pointer) & (n - 1)) == 0`. Click
 decides it from how the pointer was formed, never from its pointee type: a
@@ -3270,7 +3283,8 @@ has no pointer origin stays undecided. Rewriting the pointer to null reduces
 its address to `uint64` zero, also inside arithmetic with symbolic operands.
 Contracts use it to describe words that hold a pointer in integer form,
 such as `ensures node->word == address(next)`
-or, for a tagged word, `requires node->word == address(next) + 1`. Tag
+or, for a tagged word, `requires node->word == address(next) + 1` together with
+`requires pointer_origin(node->word, next)` for an opaque input. Tag
 operations on such words (`+`, `|`, `& ~m`, `& m`) and the cast back to a
 pointer are checked rewrites whose obligations come from `aligned`; the
 memory model describes the rules. The tag set with `|` may be a constant or

@@ -333,6 +333,8 @@ pub(in crate::kernel) fn memory_range_anchor(range: &CMemoryRange) -> Option<Poi
 
 pub(super) fn resources_equal_ignoring_memories(left: &CResource, right: &CResource) -> bool {
     let values_match = |left: &CValue, right: &CValue| match (left, right) {
+        (CValue::PointerInteger(left), CValue::PointerInteger(right)) => left == right,
+
         (CValue::Int32(left), CValue::Int32(right))
         | (CValue::UInt8(left), CValue::UInt8(right)) => {
             terms_equal_with_load_atoms(left, right, &load_atoms_equal_ignoring_memories)
@@ -345,7 +347,9 @@ pub(super) fn resources_equal_ignoring_memories(left: &CResource, right: &CResou
             terms_equal_with_load_atoms(left, right, &load_atoms_equal_ignoring_memories)
         }
         (CValue::Pointer(left), CValue::Pointer(right)) => {
-            pointers_equal_ignoring_memories(left.pointer(), right.pointer())
+            left.origins_match(right)
+                && left.domain() == right.domain()
+                && pointers_equal_ignoring_memories(left.pointer(), right.pointer())
         }
         _ => false,
     };
@@ -2111,6 +2115,22 @@ fn collect_cvalue_memory_loads(
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
     match value {
+        CValue::PointerInteger(value) => {
+            collect_bitvector_memory_loads_with_width(
+                value.bits(),
+                current_memory,
+                loads,
+                Some(8),
+                seen_integers,
+            )?;
+            collect_cvalue_memory_loads(
+                &CValue::Pointer(value.origin().clone()),
+                current_memory,
+                loads,
+                seen_integers,
+            )
+        }
+
         CValue::Int128(term) | CValue::UInt128(term) => collect_bitvector_memory_loads_with_width(
             term,
             current_memory,
@@ -4226,6 +4246,8 @@ impl PureFactContext {
     fn clear_proposition_facts_with_graph_rebuild(&mut self, rebuild_graph: bool) {
         self.prop_facts = imbl::OrdSet::new();
         self.equality_graph.clear_pointer_predicates();
+        self.pointer_input_origins = Default::default();
+        self.pointer_value_input_origins = Default::default();
         self.execution_fact_projection = self
             .execution_fact_projection
             .iter()
@@ -4292,7 +4314,107 @@ impl PureFactContext {
         self.rebuild_algebraic_graph_equalities();
     }
 
+    pub(in crate::kernel) fn promised_pointer_origin(
+        &self,
+        value: &CPointerIntegerValue,
+    ) -> Option<CPointerValue> {
+        if !value.is_input_origin() {
+            return Some(value.origin().clone());
+        }
+        let premise = self
+            .pointer_input_origins
+            .get(value.origin())?
+            .iter()
+            .next()?
+            .as_ref();
+        let Proposition::Predicate { arguments, .. } = premise else {
+            return None;
+        };
+        let Term::CValue(CValue::Pointer(pointer)) = arguments.last()? else {
+            return None;
+        };
+        record_implicit_reasoning_provenance(self, premise);
+        Some(pointer.clone())
+    }
+    pub(in crate::kernel) fn promised_pointer_input_origin(
+        &self,
+        value: &CPointerValue,
+    ) -> Option<CPointerValue> {
+        if value.domain().is_some() {
+            return None;
+        }
+        let premise = self
+            .pointer_value_input_origins
+            .get(value.origin())?
+            .iter()
+            .next()?
+            .as_ref();
+        let Proposition::Predicate { arguments, .. } = premise else {
+            return None;
+        };
+        let Term::CValue(CValue::Pointer(pointer)) = arguments.last()? else {
+            return None;
+        };
+        record_implicit_reasoning_provenance(self, premise);
+        Some(pointer.clone())
+    }
     fn adjust_pointer_predicate_fact(&mut self, proposition: &Proposition, insert: bool) {
+        if let Proposition::Predicate { name, arguments } = proposition
+            && name == POINTER_ORIGIN_PREDICATE_NAME
+            && let [
+                Term::CState(_),
+                Term::CValue(CValue::Pointer(value)),
+                Term::CValue(CValue::Pointer(_)),
+            ] = arguments.as_slice()
+            && value.domain().is_none()
+        {
+            let mut origins = self
+                .pointer_value_input_origins
+                .get(value.origin())
+                .cloned()
+                .unwrap_or_default();
+            let source = SharedIndexFact::new(proposition.clone());
+            origins = if insert {
+                origins.with_value(source)
+            } else {
+                origins.without_value(&source)
+            };
+            if origins.is_empty() {
+                self.pointer_value_input_origins.remove(value.origin());
+            } else {
+                self.pointer_value_input_origins
+                    .insert(value.origin().clone(), origins);
+            }
+            return;
+        }
+        if let Proposition::Predicate { name, arguments } = proposition
+            && name == POINTER_ORIGIN_PREDICATE_NAME
+            && let [
+                Term::CState(_),
+                Term::CValue(CValue::PointerInteger(word)),
+                Term::CValue(CValue::Pointer(_pointer)),
+            ] = arguments.as_slice()
+            && word.is_input_origin()
+        {
+            let mut origins = self
+                .pointer_input_origins
+                .get(word.origin())
+                .cloned()
+                .unwrap_or_default();
+            let source = SharedIndexFact::new(proposition.clone());
+            origins = if insert {
+                origins.with_value(source)
+            } else {
+                origins.without_value(&source)
+            };
+            if origins.is_empty() {
+                self.pointer_input_origins.remove(word.origin());
+            } else {
+                self.pointer_input_origins
+                    .insert(word.origin().clone(), origins);
+            }
+            return;
+        }
         if !matches!(proposition, Proposition::Predicate { .. }) {
             return;
         }
@@ -5318,9 +5440,31 @@ impl PureFactContext {
             Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => {
                 self.equality_graph.are_algebraic_equal(a, b)
             }
-            Proposition::Predicate { .. } => {
-                self.equality_graph.knows_pointer_predicate(proposition)
+            Proposition::Predicate { name, arguments } if name == POINTER_ORIGIN_PREDICATE_NAME => {
+                match arguments.as_slice() {
+                    [
+                        Term::CState(_),
+                        Term::CValue(CValue::PointerInteger(word)),
+                        Term::CValue(CValue::Pointer(pointer)),
+                    ] => self
+                        .promised_pointer_origin(word)
+                        .is_some_and(|origin| origin.same_complete_origin(pointer)),
+                    [
+                        Term::CState(_),
+                        Term::CValue(CValue::Pointer(value)),
+                        Term::CValue(CValue::Pointer(pointer)),
+                    ] => {
+                        value.same_complete_origin(pointer)
+                            || self
+                                .promised_pointer_input_origin(value)
+                                .is_some_and(|origin| origin.same_complete_origin(pointer))
+                    }
+                    _ => false,
+                }
             }
+            Proposition::Predicate { .. } => self
+                .equality_graph
+                .knows_pointer_predicate(proposition, self),
             Proposition::ConditionIs(condition, value) => {
                 self.equality_graph.knows_condition(condition, *value)
             }
@@ -8503,5 +8647,58 @@ mod dynamic_current_load_tests {
             arguments: Vec::new(),
         });
         assert!(current_memory_loads_in_term(&term, &memory).is_err());
+    }
+}
+
+#[cfg(test)]
+mod pointer_origin_index_tests {
+    use super::*;
+
+    #[test]
+    fn input_origin_queries_are_indexed_and_follow_premise_lifetime() {
+        let mut costs = Vec::new();
+        for size in [16, 64, 256, 1024] {
+            let input =
+                CPointerValue::new(Pointer::symbolic(Variable(8_870_000)), CType::Int32Pointer);
+            let target =
+                CPointerValue::new(Pointer::symbolic(Variable(8_870_001)), CType::Int32Pointer);
+            let fact = crate::kernel::pointer_origin_fact(
+                CValue::Pointer(input.clone()),
+                CValue::Pointer(target.clone()),
+            );
+            let parent = PureFactContext::new();
+            let mut context = parent.clone().assume_proposition(fact.clone());
+            for index in 0..size {
+                context = context.assume_proposition(crate::kernel::pointer_origin_fact(
+                    CValue::pointer(Pointer::symbolic(Variable(8_880_000 + index))),
+                    CValue::pointer(Pointer::symbolic(Variable(8_890_000 + index))),
+                ));
+            }
+            let (_, work) = crate::persistent::measure_persistent_work(|| {
+                assert_eq!(
+                    context.promised_pointer_input_origin(&input),
+                    Some(target.clone())
+                );
+            });
+            costs.push(work);
+            assert!(parent.promised_pointer_input_origin(&input).is_none());
+            assert!(
+                context
+                    .without_exact_fact(&fact)
+                    .promised_pointer_input_origin(&input)
+                    .is_none()
+            );
+            assert_eq!(
+                context.promised_pointer_input_origin(&input),
+                Some(target.clone())
+            );
+            let mut cleared = context.clone();
+            cleared.clear_proposition_facts();
+            assert!(cleared.promised_pointer_input_origin(&input).is_none());
+            // Rebuilding another theory's graph must not drop this index.
+            context.rebuild_algebraic_graph_equalities();
+            assert_eq!(context.promised_pointer_input_origin(&input), Some(target));
+        }
+        assert!(costs[3] <= costs[0] * 4 + 16, "{costs:?}");
     }
 }

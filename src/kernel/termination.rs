@@ -99,7 +99,12 @@ fn substitute_c_expression_variables(
             .unwrap_or_else(|| expression.clone()),
         AddressOf(body) => AddressOf(unary(body)),
         CheckedObjectAddress(body) => CheckedObjectAddress(unary(body)),
-        PointerOffsetBytes { pointer, bytes } => PointerOffsetBytes {
+        PointerOffsetBytes {
+            pointer,
+            bytes,
+            object_bytes,
+        } => PointerOffsetBytes {
+            object_bytes: *object_bytes,
             pointer: unary(pointer),
             bytes: *bytes,
         },
@@ -630,6 +635,9 @@ fn evaluate_structural_c_expression(
     assumptions: &mut PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> Option<CValue> {
+    // This compares a logical resource witness, not a C access. Actual
+    // execution independently checks the call argument's object domain.
+    let _logical_reads = super::eval::SpecificationReadScope::enter();
     let paths = evaluate_c_expression_paths(state, expression, assumptions, budget).ok()?;
     let [path] = paths.as_slice() else {
         return None;
@@ -1978,7 +1986,7 @@ fn termination_measure_key(measure: &CExpression) -> String {
         TypedLoad { pointer, .. } | Load(pointer) => {
             format!("*({})", termination_measure_key(pointer))
         }
-        PointerOffsetBytes { pointer, bytes } => {
+        PointerOffsetBytes { pointer, bytes, .. } => {
             format!("{} + {bytes} bytes", termination_measure_key(pointer))
         }
         Index(base, index) => format!(
@@ -2044,7 +2052,7 @@ fn termination_measure_display(measure: &CExpression) -> String {
         TypedLoad { pointer, .. } | Load(pointer) => {
             format!("*({})", termination_measure_display(pointer))
         }
-        PointerOffsetBytes { pointer, bytes } => {
+        PointerOffsetBytes { pointer, bytes, .. } => {
             format!("{} + {bytes} bytes", termination_measure_display(pointer))
         }
         Index(base, index) => format!(
@@ -2341,6 +2349,8 @@ struct RankingMachineTerm {
 impl RankingMachineTerm {
     fn from_value(value: &CValue) -> Option<Self> {
         let (machine_type, term) = match value {
+            CValue::PointerInteger(value) => return Self::from_value(&value.numeric_value()),
+
             CValue::Bool(term)
             | CValue::Int8(term)
             | CValue::Int16(term)
@@ -5858,6 +5868,8 @@ mod local_descent_tests {
             body = CStatement::Seq(Arc::new(body), Arc::new(summarized_loop(1)));
         }
         CVerifiedFunctionRule {
+            pointer_result_domain: None,
+            pointer_store_effects: Default::default(),
             function: CFunction::new(CType::Void, name, Vec::new(), body),
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
@@ -6051,6 +6063,8 @@ mod local_descent_tests {
                 body = CStatement::Seq(Arc::new(body), Arc::new(summarized_loop(1)));
             }
             CVerifiedFunctionRule {
+                pointer_result_domain: None,
+                pointer_store_effects: Default::default(),
                 loop_semantics: CLoopSemantics::ApplyVerifiedRules,
                 checked_callees: None,
                 applied_tactics: Default::default(),
@@ -6204,6 +6218,8 @@ mod local_descent_tests {
             None => Vec::new(),
         };
         CVerifiedFunctionRule {
+            pointer_result_domain: None,
+            pointer_store_effects: Default::default(),
             function: CFunction::new(CType::Void, name, parameters, body),
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
@@ -6395,6 +6411,8 @@ mod local_descent_tests {
     #[test]
     fn a_loop_certification_executed_to_its_exit_owes_no_measure() {
         let bare = |name: &str| CVerifiedFunctionRule {
+            pointer_result_domain: None,
+            pointer_store_effects: Default::default(),
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -6582,6 +6600,8 @@ mod local_descent_tests {
             };
             body = CStatement::Seq(Arc::new(body), Arc::new(guarded_call(argument)));
             [CVerifiedFunctionRule {
+                pointer_result_domain: None,
+                pointer_store_effects: Default::default(),
                 loop_semantics: CLoopSemantics::ApplyVerifiedRules,
                 checked_callees: None,
                 applied_tactics: Default::default(),
@@ -6725,6 +6745,8 @@ mod local_descent_tests {
             function = function.with_inline_body();
         }
         CVerifiedFunctionRule {
+            pointer_result_domain: None,
+            pointer_store_effects: Default::default(),
             function,
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
@@ -6758,6 +6780,8 @@ mod local_descent_tests {
             }]);
         }
         CVerifiedFunctionRule {
+            pointer_result_domain: None,
+            pointer_store_effects: Default::default(),
             function,
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
@@ -6941,6 +6965,8 @@ mod local_descent_tests {
             }),
         );
         CVerifiedFunctionRule {
+            pointer_result_domain: None,
+            pointer_store_effects: Default::default(),
             function: CFunction::new(CType::Void, name, Vec::new(), body)
                 .with_recursion_measure(vec![declared_component()]),
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
@@ -7146,6 +7172,8 @@ mod termination_scaling_tests {
     /// measures.
     fn rule(name: &str, callees: &[String]) -> CVerifiedFunctionRule {
         CVerifiedFunctionRule {
+            pointer_result_domain: None,
+            pointer_store_effects: Default::default(),
             function: CFunction::new(CType::Void, name, Vec::new(), calls_body(callees)),
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
@@ -7403,6 +7431,8 @@ mod checked_callee_certification_tests {
     #[test]
     fn checked_callee_graph_distinguishes_missing_and_empty_evidence() {
         let rule = |checked_callees| CVerifiedFunctionRule {
+            pointer_result_domain: None,
+            pointer_store_effects: Default::default(),
             function: CFunction::new(
                 CType::Void,
                 "caller",

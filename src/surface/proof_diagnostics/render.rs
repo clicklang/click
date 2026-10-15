@@ -134,6 +134,8 @@ impl SnapshotLabels {
                 labels.immutable_pointer_name(pointer.pointer(), parameter.name());
             }
             let term = match value {
+                crate::kernel::CValue::PointerInteger(value) => value.bits(),
+
                 crate::kernel::CValue::Bool(term)
                 | crate::kernel::CValue::Int8(term)
                 | crate::kernel::CValue::Int16(term)
@@ -1992,6 +1994,8 @@ impl Renderer<'_> {
     }
     fn cvalue(&mut self, value: &crate::kernel::CValue) {
         match value {
+            crate::kernel::CValue::PointerInteger(value) => self.cvalue(&value.numeric_value()),
+
             crate::kernel::CValue::Void => self.push("void"),
             crate::kernel::CValue::Bool(v) => {
                 self.push("bool(");

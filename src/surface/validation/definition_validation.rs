@@ -34,11 +34,15 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         )?;
         if matches!(
             definition.name(),
-            "same_object" | crate::kernel::SAME_OBJECT_PREDICATE_NAME
+            "same_object"
+                | crate::kernel::SAME_OBJECT_PREDICATE_NAME
+                | "pointer_origin"
+                | crate::kernel::POINTER_ORIGIN_PREDICATE_NAME
         ) {
-            return Err(ClickError::new(
-                "`same_object` is a built-in proposition and cannot be redefined",
-            ));
+            return Err(ClickError::new(format!(
+                "`{}` is a built-in proposition and cannot be redefined",
+                definition.name(),
+            )));
         }
         if matches!(
             definition.name(),
@@ -69,11 +73,15 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         crate::surface::enter_ambient_declaration(definition.name());
         if matches!(
             definition.name(),
-            "same_object" | crate::kernel::SAME_OBJECT_PREDICATE_NAME
+            "same_object"
+                | crate::kernel::SAME_OBJECT_PREDICATE_NAME
+                | "pointer_origin"
+                | crate::kernel::POINTER_ORIGIN_PREDICATE_NAME
         ) {
-            return Err(ClickError::new(
-                "`same_object` is a built-in proposition and cannot be redefined",
-            ));
+            return Err(ClickError::new(format!(
+                "`{}` is a built-in proposition and cannot be redefined",
+                definition.name(),
+            )));
         }
         if matches!(
             definition.name(),
@@ -103,6 +111,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         }
     }
     let mut proposition_calls = predicates.clone();
+    proposition_calls.insert("pointer_origin".to_string(), 2);
     proposition_calls.insert("same_object".to_string(), 2);
     proposition_calls.insert("held".to_string(), 1);
     proposition_calls.extend(contracts.keys().map(|name| (name.clone(), 1)));

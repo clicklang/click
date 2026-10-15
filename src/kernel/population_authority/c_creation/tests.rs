@@ -2998,10 +2998,15 @@ fn count_alias_uses_only_a_checked_owned_authority_anchor() {
             )),
         );
     Arc::make_mut(&mut state.population_effects).creation = Some(events);
-    let equal = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(alias, anchor.pointer().clone()),
-        true,
-    );
+    let equal = PureFactContext::new()
+        .assume_proposition(crate::kernel::pointer_origin_fact(
+            CValue::pointer(alias.clone()),
+            CValue::Pointer(anchor.clone()),
+        ))
+        .assume_condition(
+            ConditionTerm::pointer_equal(alias, anchor.pointer().clone()),
+            true,
+        );
     let evaluate = |state: &CState, assumptions: &PureFactContext| {
         crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
             state,
@@ -3052,10 +3057,15 @@ fn count_alias_lookup_does_not_scan_unrelated_authority_heads() {
         name: "reference".into(),
         arguments: vec![Some(SpecExpression::Value(CValue::pointer(alias.clone())))],
     };
-    let equal = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(alias, anchor.pointer().clone()),
-        true,
-    );
+    let equal = PureFactContext::new()
+        .assume_proposition(crate::kernel::pointer_origin_fact(
+            CValue::pointer(alias.clone()),
+            CValue::Pointer(anchor.clone()),
+        ))
+        .assume_condition(
+            ConditionTerm::pointer_equal(alias, anchor.pointer().clone()),
+            true,
+        );
     let samples = [64usize, 256, 1024].map(|size| {
         let events = CreationEvents::new()
             .import_opaque_contract_population_inner(

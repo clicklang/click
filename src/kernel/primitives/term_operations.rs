@@ -3135,6 +3135,12 @@ impl CType {
             Bitvector32Term::machine_integer_cast(source, destination, term.clone())
         };
         match (self, stored) {
+            (Self::Int64 | Self::UInt64, CValue::PointerInteger(carrier)) => {
+                let numeric = self.read_cell(&carrier.numeric_value())?;
+                Some(CValue::PointerInteger(Arc::new(
+                    carrier.with_numeric_value(numeric)?,
+                )))
+            }
             (Self::UInt8, CValue::Int8(term)) => Some(CValue::UInt8(reinterpret(
                 MachineIntegerType::Int8,
                 MachineIntegerType::UInt8,
@@ -3169,6 +3175,8 @@ impl CType {
 
     pub(crate) fn accepts(self, value: &CValue) -> bool {
         match (self, value) {
+            (ty, CValue::PointerInteger(value)) => ty == value.c_type(),
+
             (Self::Int128, CValue::Int128(term)) => {
                 MachineIntegerType::Int128.accepts_wide_term(term)
             }
@@ -3339,6 +3347,22 @@ impl CValue {
         }
     }
 
+    pub(crate) fn with_pointer_origin(self, origin: Option<Pointer>) -> Self {
+        match self {
+            Self::Pointer(pointer) => Self::Pointer(match origin {
+                Some(origin) => pointer.with_origin(origin),
+                None => pointer,
+            }),
+            value => value,
+        }
+    }
+    pub(crate) fn with_pointer_domain(self, domain: Option<CPointerDomain>) -> Self {
+        match self {
+            Self::Pointer(pointer) => Self::Pointer(pointer.with_domain(domain)),
+            value => value,
+        }
+    }
+
     pub(crate) fn with_pointer_pointee_volatile(self, pointee_volatile: bool) -> Self {
         match self {
             Self::Pointer(pointer) => {
@@ -3359,6 +3383,8 @@ impl CValue {
 
     pub(crate) fn c_type(&self) -> CType {
         match self {
+            Self::PointerInteger(value) => value.c_type(),
+
             Self::Void => CType::Void,
             Self::Bool(_) => CType::Bool,
             Self::Int8(_) => CType::Int8,
@@ -3379,6 +3405,8 @@ impl CValue {
 
     pub(in crate::kernel) fn byte_width(&self) -> u32 {
         match self {
+            Self::PointerInteger(_) => 8,
+
             Self::Void => 0,
             Self::Bool(_) => 1,
             Self::Int8(_) => 1,
@@ -3409,6 +3437,8 @@ impl CLValue {
         pointee_volatile: bool,
     ) -> Self {
         Self {
+            pointer_origin: None,
+            pointer_domain: None,
             storage: CLValueStorage::Local { name: name.into() },
             value_type,
             volatile,
@@ -3433,6 +3463,8 @@ impl CLValue {
         pointee_volatile: bool,
     ) -> Self {
         Self {
+            pointer_origin: None,
+            pointer_domain: None,
             storage: CLValueStorage::Memory { pointer },
             value_type,
             volatile,
@@ -3440,6 +3472,12 @@ impl CLValue {
             constant: false,
             pointee_constant: false,
         }
+    }
+
+    pub(in crate::kernel) fn with_pointer_domain(mut self, pointer: &CPointerValue) -> Self {
+        self.pointer_domain = pointer.domain.clone();
+        self.pointer_origin = Some(Arc::new(pointer.origin().clone()));
+        self
     }
 
     pub(in crate::kernel) fn with_constant(mut self, constant: bool) -> Self {

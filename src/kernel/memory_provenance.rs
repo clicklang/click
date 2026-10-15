@@ -63,6 +63,10 @@ pub(crate) fn c_resources_directly_match(
         return true;
     }
     let values_match = |left: &CValue, right: &CValue| match (left, right) {
+        (CValue::PointerInteger(_), CValue::PointerInteger(_)) => {
+            c_values_proven_equal_for_memory_resolution(left, right, assumptions)
+        }
+
         (CValue::Void, CValue::Void) => true,
         (CValue::Int32(left), CValue::Int32(right)) => crate::instrumentation::measure_operation(
             "kernel",
@@ -148,6 +152,30 @@ pub(crate) fn c_resources_directly_match(
                             )
                         },
                     ))
+        }
+        (
+            CResource::Token {
+                name: left_name,
+                arguments: left,
+            },
+            CResource::Token {
+                name: right_name,
+                arguments: right,
+            },
+        ) if left_name == CResourceFact::ALLOCATION_RESOURCE_NAME && left_name == right_name => {
+            match (left.as_ref(), right.as_ref()) {
+                (
+                    [AlgebraicValue::C(CValue::Pointer(left)), left_bytes],
+                    [AlgebraicValue::C(CValue::Pointer(right)), right_bytes],
+                ) => {
+                    pointers_proven_equal_for_memory_resolution(
+                        left.pointer(),
+                        right.pointer(),
+                        assumptions,
+                    ) && resource_arguments_proven_equal(left_bytes, right_bytes, assumptions)
+                }
+                _ => false,
+            }
         }
         (CResource::Instance(left), CResource::Instance(right)) => {
             left.identity() == right.identity()
@@ -347,6 +375,13 @@ fn canonical_c_memory_deep_uncached(memory: &CMemory) -> CMemory {
         |pointer, value| {
             let key = canonicalize_pointer_loads(pointer);
             let value = match value {
+                CValue::PointerInteger(v) => {
+                    let mut origin = v.origin().clone();
+                    origin.replace_pointer(canonicalize_pointer_loads(origin.pointer()));
+                    CValue::PointerInteger(std::sync::Arc::new(
+                        v.with_parts(canonicalize_atomic_loads(v.bits()), origin),
+                    ))
+                }
                 CValue::Void => CValue::Void,
                 CValue::Bool(term) => CValue::Bool(canonicalize_atomic_loads(term)),
                 CValue::Int8(term) => CValue::Int8(canonicalize_atomic_loads(term)),
@@ -361,10 +396,11 @@ fn canonical_c_memory_deep_uncached(memory: &CMemory) -> CMemory {
                 CValue::UInt128(term) => CValue::UInt128(canonicalize_atomic_loads(term)),
                 CValue::Float32(term) => CValue::Float32(canonicalize_atomic_loads(term)),
                 CValue::Float64(term) => CValue::Float64(canonicalize_atomic_loads(term)),
-                CValue::Pointer(pointer) => CValue::typed_pointer(
-                    canonicalize_pointer_loads(pointer.pointer()),
-                    pointer.c_type(),
-                ),
+                CValue::Pointer(pointer) => {
+                    let mut value = pointer.clone();
+                    value.replace_pointer(canonicalize_pointer_loads(pointer.pointer()));
+                    CValue::Pointer(value)
+                }
             };
             (key, value)
         },
@@ -403,6 +439,13 @@ fn canonical_c_memory_deep_uncached(memory: &CMemory) -> CMemory {
     for ((pointer, c_type), value) in union_cells.iter() {
         let key = canonicalize_pointer_loads(pointer);
         let value = match value {
+            CValue::PointerInteger(v) => {
+                let mut origin = v.origin().clone();
+                origin.replace_pointer(canonicalize_pointer_loads(origin.pointer()));
+                CValue::PointerInteger(std::sync::Arc::new(
+                    v.with_parts(canonicalize_atomic_loads(v.bits()), origin),
+                ))
+            }
             CValue::Void => CValue::Void,
             CValue::Bool(term) => CValue::Bool(canonicalize_atomic_loads(term)),
             CValue::Int8(term) => CValue::Int8(canonicalize_atomic_loads(term)),
@@ -417,10 +460,11 @@ fn canonical_c_memory_deep_uncached(memory: &CMemory) -> CMemory {
             CValue::UInt128(term) => CValue::UInt128(canonicalize_atomic_loads(term)),
             CValue::Float32(term) => CValue::Float32(canonicalize_atomic_loads(term)),
             CValue::Float64(term) => CValue::Float64(canonicalize_atomic_loads(term)),
-            CValue::Pointer(pointer) => CValue::typed_pointer(
-                canonicalize_pointer_loads(pointer.pointer()),
-                pointer.c_type(),
-            ),
+            CValue::Pointer(pointer) => {
+                let mut value = pointer.clone();
+                value.replace_pointer(canonicalize_pointer_loads(pointer.pointer()));
+                CValue::Pointer(value)
+            }
         };
         std::sync::Arc::make_mut(&mut canonical.union_cells).insert((key, *c_type), value);
     }
@@ -4133,6 +4177,8 @@ fn cell_integer_for_read(
     // the same bits (`LoadKind::read_cell`).
     let cell = kind.read_cell(&cell)?;
     match cell {
+        CValue::PointerInteger(value) if value.bits() != load => Some(value.bits().clone()),
+
         crate::kernel::integer64_c_value!(value) if &value != load => Some(value),
         _ => None,
     }
@@ -4916,6 +4962,8 @@ pub(crate) fn certified_store_equations(
         .filter_map(|fact| {
             let store = fact.certified_store_data()?;
             let value = match &store.value {
+                CValue::PointerInteger(value) => value.bits().clone(),
+
                 CValue::Int8(term) => term.clone(),
                 CValue::Bool(term)
                 | CValue::Int16(term)
@@ -4958,6 +5006,8 @@ pub(crate) fn certified_store_loadability_facts(
             // The store materializes one cell of the value's own width; a
             // pointer is `C_POINTER_BYTE_WIDTH` bytes, not four.
             let byte_width = match &store.value {
+                CValue::PointerInteger(_) => 8,
+
                 CValue::Void => return None,
                 value => value.byte_width(),
             };
@@ -6299,6 +6349,7 @@ mod canonical_numeric_run_tests {
                             | CValue::UInt128(bits)
                             | CValue::Float32(bits)
                             | CValue::Float64(bits) => bits,
+                            CValue::PointerInteger(value) => value.bits(),
                             _ => unreachable!("numeric cell"),
                         };
                         assert_eq!(canonicalize_atomic_loads(bits), *bits);

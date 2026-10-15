@@ -20,6 +20,7 @@ resource sized_metadata_at(p: struct rb_node*) {
             owns right: sized_metadata_at(sized_identity(right_model));
             fact left.model == left_model;
             fact right.model == right_model;
+            fact pointer_origin(p, identity);
             fact p == identity;
             fact p != 0;
             fact value_cell.value == value;

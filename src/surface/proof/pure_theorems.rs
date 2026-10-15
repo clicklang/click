@@ -2663,6 +2663,12 @@ fn verify_kernel_standard_theorem_axiom(
         let parameter = |index: usize| {
             let parameter = &theorem.parameters()[index];
             match context.values.get(parameter.name()) {
+                Some(CValue::PointerInteger(value))
+                    if value.c_type() == crate::kernel::CType::UInt64 =>
+                {
+                    Ok(value.bits().clone())
+                }
+
                 Some(CValue::UInt64(value)) => Ok(value.clone()),
                 _ => Err(ClickError::new(format!(
                     "`{claim_label}` kernel parameter `{}` must be uint64",
@@ -2688,6 +2694,12 @@ fn verify_kernel_standard_theorem_axiom(
         let parameter = |index: usize| {
             let parameter = &theorem.parameters()[index];
             match context.values.get(parameter.name()) {
+                Some(CValue::PointerInteger(value))
+                    if value.c_type() == crate::kernel::CType::Int64 =>
+                {
+                    Ok(value.bits().clone())
+                }
+
                 Some(CValue::Int64(value)) => Ok(value.clone()),
                 _ => Err(ClickError::new(format!(
                     "`{claim_label}` kernel parameter `{}` must be int64",

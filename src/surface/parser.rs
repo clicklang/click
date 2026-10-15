@@ -10169,7 +10169,10 @@ impl Parser {
             return Ok(CExpression::Load(Box::new(base)));
         };
         Ok(CExpression::TypedLoad {
-            pointer: Box::new(self.offset_field_pointer(base, field.offset_bytes)),
+            pointer: Box::new(crate::kernel::c_selected_object_pointer(
+                self.offset_field_pointer(base, field.offset_bytes),
+                field.c_type.to_kernel_type().byte_width(),
+            )),
             value_type: field.c_type.to_kernel_type(),
             volatile: false,
             pointee_constant: field.pointee_constant,
@@ -10724,6 +10727,7 @@ impl Parser {
                 return Ok(crate::surface::lowering::contract_c_unary(
                     source_base,
                     CExpression::PointerOffsetBytes {
+                        object_bytes: None,
                         pointer: Box::new(base),
                         bytes: *offset_bytes,
                     },
@@ -11518,6 +11522,7 @@ impl Parser {
             return Ok(crate::surface::lowering::contract_c_unary(
                 source_pointer,
                 CExpression::PointerOffsetBytes {
+                    object_bytes: None,
                     pointer: Box::new(pointer),
                     bytes,
                 },

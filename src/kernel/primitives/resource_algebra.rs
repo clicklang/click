@@ -471,6 +471,11 @@ impl ResourceContextIndex {
                 insert_resource_index_entry(&result.memory_by_block, block.clone(), entry);
             result.memory_by_base =
                 insert_resource_index_entry(&result.memory_by_base, range.base().clone(), entry);
+            result.memory_by_origin = insert_resource_index_entry(
+                &result.memory_by_origin,
+                range.base().object_base(),
+                entry,
+            );
             result.structural_memory.update(range.base(), entry, true);
             result
                 .memory_addresses
@@ -704,6 +709,11 @@ impl ResourceContextIndex {
                 remove_resource_index_entry(&result.memory_by_block, &block, entry);
             result.memory_by_base =
                 remove_resource_index_entry(&result.memory_by_base, range.base(), entry);
+            result.memory_by_origin = remove_resource_index_entry(
+                &result.memory_by_origin,
+                &range.base().object_base(),
+                entry,
+            );
             result.structural_memory.update(range.base(), entry, false);
             result
                 .memory_addresses
@@ -3790,6 +3800,107 @@ impl ResourceContext {
     /// then the members returned. Unlike a block bucket, the answer does not
     /// grow with the other objects the composition owns in the same block,
     /// which for `ExternalArgument` is every object reached from a parameter.
+    pub(in crate::kernel) fn pointer_input_domain_has_object(
+        &self,
+        origin: &Pointer,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        crate::instrumentation::record_deterministic_work(1);
+        self.storage
+            .index
+            .memory_by_origin
+            .get(&origin.object_base())
+            .into_iter()
+            .flat_map(ResourceEntryIds::iter)
+            .any(|entry| {
+                crate::instrumentation::record_deterministic_work(1);
+                let fact = self.fact(*entry);
+                if fact.is_own() && !fact.has_proven_positive_quantity(assumptions) {
+                    return false;
+                }
+                let Some(range) = fact.memory_range() else {
+                    return false;
+                };
+                if range.element_width() == 0 {
+                    return false;
+                }
+                let (start, end) = range.bound_terms();
+                let nonempty = if range.wide_bounds().is_some() {
+                    ConditionTerm::uint64_less_than(start.clone(), end.clone())
+                } else {
+                    ConditionTerm::signed_less_than(start.clone(), end.clone())
+                };
+                assumptions.decide(&nonempty) == Some(true)
+            })
+    }
+
+    /// Authenticate a call's opaque input against the supplier's designation,
+    /// before numeric resource alignment creates the callee's input view.
+    pub(in crate::kernel) fn pointer_input_domain_contains_fact(
+        &self,
+        required: &CResourceFact,
+        origin: &Pointer,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        let Some(range) = required.memory_range() else {
+            return true;
+        };
+        if memory_range_is_proven_empty(range, assumptions)
+            || required
+                .owned_quantity_term()
+                .is_some_and(|quantity| resource_quantity_is_zero(quantity, assumptions))
+        {
+            return true;
+        }
+        let candidates = self.memory_fact_candidates(range, required.is_own(), assumptions);
+        candidates.entries.iter().any(|entry| {
+            crate::instrumentation::record_deterministic_work(1);
+            let available = self.fact(entry);
+            let Some(range) = available.memory_range() else {
+                return false;
+            };
+            if range.base().offset_from_base(origin).is_none()
+                && origin.offset_from_base(range.base()).is_none()
+            {
+                return false;
+            }
+            candidates
+                .requirement(entry, required)
+                .is_some_and(|aligned| resource_fact_entails(available, &aligned, assumptions))
+        })
+    }
+
+    pub(in crate::kernel) fn pointer_input_domain_covers(
+        &self,
+        pointer: &Pointer,
+        origin: &Pointer,
+        bytes: u32,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        let Some(mut entries) = self.read_access_entries(pointer, bytes, assumptions) else {
+            return false;
+        };
+        while let Some(entry) = entries.next() {
+            crate::instrumentation::record_deterministic_work(1);
+            let fact = self.fact(entry);
+            if fact.is_own() && !fact.has_proven_positive_quantity(assumptions) {
+                continue;
+            }
+            let (Some(range), Some(address)) = (fact.memory_range(), entries.address(entry)) else {
+                continue;
+            };
+            // Address classes select candidates, but only a resource rooted
+            // in this designation can authenticate an opaque input domain.
+            if (range.base().offset_from_base(origin).is_some()
+                || origin.offset_from_base(range.base()).is_some())
+                && assumptions.pointer_access_in_memory_range(&address, bytes, range)
+            {
+                return true;
+            }
+        }
+        false
+    }
+
     pub(in crate::kernel) fn owned_memory_members_with_base<'a>(
         &'a self,
         base: &Pointer,
@@ -6944,6 +7055,35 @@ fn exact_resources_proven_equal(
         return true;
     }
     match (left, right) {
+        (
+            CResource::Token {
+                name: left_name,
+                arguments: left,
+            },
+            CResource::Token {
+                name: right_name,
+                arguments: right,
+            },
+        ) if left_name == CResourceFact::ALLOCATION_RESOURCE_NAME && left_name == right_name => {
+            // Storage lifetime tokens carry no typed pointer designation.
+            match (left.as_ref(), right.as_ref()) {
+                (
+                    [AlgebraicValue::C(CValue::Pointer(left)), left_bytes],
+                    [AlgebraicValue::C(CValue::Pointer(right)), right_bytes],
+                ) => {
+                    crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+                        left.pointer(),
+                        right.pointer(),
+                        assumptions,
+                    ) && crate::kernel::resource_arguments_proven_equal(
+                        left_bytes,
+                        right_bytes,
+                        assumptions,
+                    )
+                }
+                _ => false,
+            }
+        }
         (CResource::Iterated(left), CResource::Iterated(right)) => {
             iterated_memories_proven_equal(left, right, assumptions)
         }
@@ -10448,4 +10588,86 @@ fn symbolic_struct_coverage_uses_exact_element_indices() {
         &required(distant, 8u32.into()),
         &first
     ));
+}
+
+#[cfg(test)]
+#[test]
+fn allocation_tokens_ignore_typed_domain_but_ordinary_tokens_retain_it() {
+    let pointer = Pointer {
+        block: "allocation-anchor".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let selected = CPointerValue::new(pointer.clone(), CType::Int32Pointer).with_domain(Some(
+        CPointerDomain {
+            bytes: 4,
+            position: IntegerTerm::constant_i64(0).into(),
+        },
+    ));
+    let assumptions = PureFactContext::new();
+    let allocation = CResourceFact::own_allocation(pointer.clone(), Bitvector32Term::Constant(4));
+    let selected_allocation = CResourceFact::own_token(
+        CResourceFact::ALLOCATION_RESOURCE_NAME.into(),
+        vec![
+            CValue::Pointer(selected.clone()),
+            int32(Bitvector32Term::Constant(4)),
+        ],
+    );
+    assert!(
+        ResourceContext::new()
+            .unchecked_with_fact(allocation)
+            .satisfies_fact(&selected_allocation, &assumptions)
+    );
+    let ordinary = CResourceFact::own_token("typed".into(), vec![CValue::pointer(pointer)]);
+    let selected_ordinary =
+        CResourceFact::own_token("typed".into(), vec![CValue::Pointer(selected)]);
+    assert!(
+        !ResourceContext::new()
+            .unchecked_with_fact(ordinary)
+            .satisfies_fact(&selected_ordinary, &assumptions)
+    );
+}
+
+#[cfg(test)]
+#[test]
+#[ignore = "nightly: four-size call-domain supplier index checks"]
+fn call_input_domain_queries_ignore_unrelated_suppliers() {
+    let pointer = |name: String| Pointer {
+        block: name.into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let target = pointer("target".into());
+    let alias = pointer("alias".into());
+    let fact = |pointer| {
+        CResourceFact::own_memory(CMemoryRange::new(
+            pointer,
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(1),
+        ))
+    };
+    let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        ConditionTerm::pointer_equal(target.clone(), alias.clone()),
+        true,
+    ));
+    let mut costs = Vec::new();
+    for count in [16, 64, 256, 1024] {
+        let mut resources = ResourceContext::new_with_equalities(&assumptions);
+        for index in 0..count {
+            resources = resources.unchecked_with_fact(fact(pointer(format!("unrelated{index}"))));
+        }
+        resources = resources.unchecked_with_fact(fact(target.clone()));
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert!(resources.pointer_input_domain_contains_fact(
+                &fact(target.clone()),
+                &target,
+                &assumptions
+            ));
+            assert!(!resources.pointer_input_domain_contains_fact(
+                &fact(target.clone()),
+                &alias,
+                &assumptions
+            ));
+        });
+        costs.push(work);
+    }
+    assert!(costs.iter().all(|cost| *cost <= costs[0] + 64), "{costs:?}");
 }

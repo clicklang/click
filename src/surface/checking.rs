@@ -396,6 +396,8 @@ pub(super) fn apply_witness_tactic(
         && !expected.accepts(&witness_value)
     {
         let actual = match &witness_value {
+            CValue::PointerInteger(value) => value.c_type(),
+
             CValue::Void => CType::Void,
             CValue::Bool(_) => CType::Bool,
             CValue::Int8(_) => CType::Int8,
@@ -423,6 +425,8 @@ pub(super) fn apply_witness_tactic(
     let result = match (sort, witness_value) {
         (sort, value) if sort.machine_integer_type().is_some() => {
             let value = match value {
+                CValue::PointerInteger(value) => value.bits().clone(),
+
                 crate::kernel::integer_c_value!(v) => v,
                 _ => unreachable!("witness type was checked above"),
             };

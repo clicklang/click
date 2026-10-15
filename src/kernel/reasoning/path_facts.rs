@@ -222,6 +222,21 @@ pub(in crate::kernel) fn memory_effect_execution_facts(
 
 pub(crate) fn solve_builtin_prop(proposition: &Proposition) -> bool {
     match proposition {
+        Proposition::Predicate { name, arguments } if name == POINTER_ORIGIN_PREDICATE_NAME => {
+            match arguments.as_slice() {
+                [
+                    Term::CState(_),
+                    Term::CValue(CValue::PointerInteger(word)),
+                    Term::CValue(CValue::Pointer(pointer)),
+                ] => !word.is_input_origin() && word.origin().same_complete_origin(pointer),
+                [
+                    Term::CState(_),
+                    Term::CValue(CValue::Pointer(value)),
+                    Term::CValue(CValue::Pointer(pointer)),
+                ] => value.same_complete_origin(pointer),
+                _ => false,
+            }
+        }
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
             algebraic_terms_equal(left, right)
         }

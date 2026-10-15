@@ -451,6 +451,7 @@ impl GuardedTermSpeller<'_, '_> {
             .fields()
             .get(access.field_index)?
         {
+            AlgebraicValue::C(CValue::PointerInteger(value)) => Some(value.bits()),
             AlgebraicValue::C(crate::kernel::integer64_c_value!(value)) => Some(value),
             _ => None,
         }

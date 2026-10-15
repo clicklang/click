@@ -20,6 +20,7 @@ int32 parent_value(struct node* node, struct node* next) {
 verifying "tagged_pointer_from_field_fact.c";
 
 int32 parent_value(struct node* node, struct node* next) {
+    requires pointer_origin(node->word, next);
     requires node != 0;
     requires next != 0;
     requires aligned(next, 8);

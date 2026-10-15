@@ -1186,6 +1186,12 @@ fn cell_value_is_exactly_load(
     pointer: &crate::kernel::Pointer,
 ) -> bool {
     match value {
+        CValue::PointerInteger(value) => {
+            value.is_input_origin()
+                && value.bits() == load
+                && crate::kernel::CPointerIntegerValue::from_input(load.clone(), value.c_type())
+                    .is_some_and(|expected| expected.origin() == value.origin())
+        }
         CValue::Int8(term) => term == load,
         CValue::Int16(term)
         | CValue::Int32(term)
@@ -1205,7 +1211,9 @@ fn cell_value_is_exactly_load(
         }
         CValue::Pointer(value) => {
             let target = value.pointer();
-            target.block == pointer.block
+            value.domain().is_none()
+                && value.origin() == target
+                && target.block == pointer.block
                 && matches!(
                     &target.offset,
                     crate::kernel::PointerOffsetTerm::Int32Scaled { value, .. }

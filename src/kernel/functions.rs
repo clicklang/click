@@ -15,6 +15,8 @@ use std::sync::Arc;
 #[cfg(test)]
 mod aggregate_return_tests;
 mod construction_return;
+pub(crate) mod pointer_domain_inference;
+pub(crate) mod pointer_store_effects;
 
 fn execute_c_function_body_paths(
     state: &CState,
@@ -4627,6 +4629,8 @@ pub(super) fn execute_c_function_call_paths(
         return execute_verified_function_applications(
             caller_state,
             &[CFunctionContractApplication {
+                pointer_result_domain: None,
+                pointer_store_effects: &[],
                 name: rule.function.name(),
                 interface_name: rule.function.name(),
                 interface: rule.function.contract_interface(),
@@ -5067,6 +5071,8 @@ fn execute_verified_function_rule(
     execute_verified_function_applications(
         caller_state,
         &[CFunctionContractApplication {
+            pointer_result_domain: rule.pointer_result_domain.as_deref(),
+            pointer_store_effects: &rule.pointer_store_effects,
             name: rule.function.name(),
             interface_name: rule.function.name(),
             interface: rule.function.contract_interface(),
@@ -5109,6 +5115,8 @@ pub(super) fn suspend_verified_worker(
     let paths = execute_verified_function_applications_with_suspension(
         caller_state,
         &[CFunctionContractApplication {
+            pointer_result_domain: rule.pointer_result_domain.as_deref(),
+            pointer_store_effects: &rule.pointer_store_effects,
             name: rule.function.name(),
             interface_name: rule.function.name(),
             interface: rule.function.contract_interface(),
@@ -5245,6 +5253,8 @@ fn instance_binder_shape(parameter: &CResourceSpec) -> Option<(&str, usize)> {
 /// proof evidence.
 #[derive(Clone, Copy)]
 struct CFunctionContractApplication<'a> {
+    pointer_result_domain: Option<&'a CPointerResultDomain>,
+    pointer_store_effects: &'a [CPointerStoreEffect],
     /// Concrete callee name used for diagnostics and call provenance.
     name: &'a str,
     /// Nominal interface name used to distinguish candidates and their source
@@ -5865,7 +5875,78 @@ fn execute_verified_function_applications_with_suspension(
             };
             result
         } else {
-            symbolic_contract_result(interface, result_identity)
+            let result = symbolic_contract_result(interface, result_identity);
+            match result {
+                CValue::Pointer(pointer)
+                    if !matches!(pointer.c_type(), CType::FunctionPointer(_))
+                        && interface.return_aggregate_layout().is_none() =>
+                {
+                    let origin = application.pointer_result_domain.and_then(|effect| {
+                        instantiate_result_pointer_geometry(
+                            effect,
+                            &entry_state,
+                            &argument_values,
+                            &effective_assumptions,
+                        )
+                    });
+                    let domain = if let Some(origin) = &origin {
+                        origin.domain().cloned()
+                    } else {
+                        match application.pointer_result_domain {
+                            Some(CPointerResultDomain::Selected { domain, .. }) => {
+                                Some(domain.clone())
+                            }
+                            Some(effect @ CPointerResultDomain::Meet { .. }) => Some(
+                                instantiate_result_domain_meet(
+                                    effect,
+                                    &argument_values,
+                                    interface,
+                                    &effective_assumptions,
+                                )
+                                .unwrap_or(CPointerDomain {
+                                    bytes: 0,
+                                    position: IntegerTerm::constant_i64(0).into(),
+                                }),
+                            ),
+                            Some(CPointerResultDomain::Argument(_))
+                            | Some(CPointerResultDomain::ArgumentOffset(..))
+                            | None => None,
+                            _ => Some(CPointerDomain {
+                                bytes: 0,
+                                position: IntegerTerm::constant_i64(0).into(),
+                            }),
+                        }
+                    };
+                    CValue::Pointer(pointer.with_domain(domain).with_retained_origin(
+                        origin.as_ref().map(|pointer| pointer.origin().clone()),
+                    ))
+                }
+                CValue::PointerInteger(result) => match application.pointer_result_domain {
+                    Some(CPointerResultDomain::Integer(origin)) => {
+                        let actual = instantiate_result_pointer_value(
+                            origin,
+                            &entry_state,
+                            &argument_values,
+                            &effective_assumptions,
+                        )
+                        .and_then(|value| match value {
+                            CValue::PointerInteger(value) => Some(value.as_ref().clone()),
+                            CValue::Pointer(pointer) => {
+                                CPointerIntegerValue::from_pointer(pointer, result.c_type())
+                            }
+                            _ => None,
+                        });
+                        match actual
+                            .and_then(|actual| actual.with_numeric_value(result.numeric_value()))
+                        {
+                            Some(value) => CValue::PointerInteger(Arc::new(value)),
+                            None => result.numeric_value(),
+                        }
+                    }
+                    _ => CValue::PointerInteger(result),
+                },
+                result => result,
+            }
         };
         let mut post_state = entry_state.clone().with_memory(memory);
         if interface.aggregate_return_mode() == CAggregateReturnMode::Construction
@@ -5873,6 +5954,25 @@ fn execute_verified_function_applications_with_suspension(
         {
             construction_return::initialize_summary(&mut post_state, &entry_contract_state);
         }
+        if !application.pointer_store_effects.is_empty() {
+            let Some(memory) = pointer_store_effects::apply(
+                &post_state,
+                &argument_values,
+                application.pointer_store_effects,
+                &effective_assumptions,
+            ) else {
+                paths.push(CFunctionPath::new(
+                    CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                        "checked pointer-cell effect lacks initialized caller storage".into(),
+                    )),
+                    facts,
+                    obligations,
+                ));
+                continue;
+            };
+            post_state = post_state.with_memory(memory);
+        }
+
         // Construction initialization is part of this checked call effect,
         // so its endpoint must include the initialized value fields.
         if !worker_effects.is_empty() {
@@ -8841,6 +8941,8 @@ pub(super) fn execute_c_function_contracts_paths(
     let applications = contracts
         .iter()
         .map(|contract| CFunctionContractApplication {
+            pointer_result_domain: None,
+            pointer_store_effects: &[],
             name: contract.callee_name(),
             interface_name: contract.name(),
             interface: contract.interface(),
@@ -13905,7 +14007,7 @@ impl ParameterAccessRange {
 fn c_expression_parameter_offset(expression: &CExpression, parameter_name: &str) -> Option<u32> {
     match expression {
         CExpression::Variable(variable) if variable == parameter_name => Some(0),
-        CExpression::PointerOffsetBytes { pointer, bytes } => {
+        CExpression::PointerOffsetBytes { pointer, bytes, .. } => {
             c_expression_parameter_offset(pointer, parameter_name)?.checked_add(*bytes)
         }
         CExpression::Cast { expression, .. } => {
@@ -13920,6 +14022,8 @@ fn spec_expression_constant(expression: &SpecExpression) -> Option<u32> {
         return None;
     };
     match value {
+        CValue::PointerInteger(value) => value.bits().as_const(),
+
         CValue::Int8(term) => term.as_const(),
         CValue::Int16(term)
         | CValue::Int32(term)
@@ -15650,6 +15754,280 @@ fn symbolic_contract_result(interface: &CFunctionContractInterface, variable: Va
         .with_pointer_pointee_constant(interface.return_pointee_is_constant())
 }
 
+pub(crate) fn pointer_integer_origins_match(
+    left: &CPointerIntegerValue,
+    right: &CPointerIntegerValue,
+    assumptions: &PureFactContext,
+) -> bool {
+    if left.is_input_origin() != right.is_input_origin() {
+        return false;
+    }
+    if left.origin() == right.origin() {
+        return true;
+    }
+    if !left.is_input_origin() {
+        return false;
+    }
+    let source = |value: &CPointerIntegerValue| match value.origin().pointer() {
+        Pointer {
+            block: PointerBlock::Symbolic(variable),
+            offset: PointerOffsetTerm::Constant(0),
+        } => crate::kernel::registered_load_origin_term_for_variable(variable),
+        _ => None,
+    };
+    let (Some(left), Some(right)) = (source(left), source(right)) else {
+        return false;
+    };
+    let (
+        Bitvector32Term::MemoryLoad(left_memory, left_address, LoadKind::Bits64),
+        Bitvector32Term::MemoryLoad(right_memory, right_address, LoadKind::Bits64),
+    ) = (&left, &right)
+    else {
+        return false;
+    };
+    pointers_proven_equal_for_memory_resolution(left_address, right_address, assumptions)
+        && !crate::kernel::reasoning::load_equality_refuted_by_history(&left, &right, assumptions)
+        && crate::kernel::reasoning::memories_match_for_pointer_load_under_assumptions(
+            left_memory,
+            right_memory,
+            left_address,
+            assumptions,
+        )
+}
+
+pub(crate) fn instantiate_result_pointer_value(
+    effect: &CPointerResultDomain,
+    state: &CState,
+    arguments: &[CValue],
+    assumptions: &PureFactContext,
+) -> Option<CValue> {
+    match effect {
+        CPointerResultDomain::Loaded {
+            argument,
+            offset,
+            value_type,
+        } => {
+            let CValue::Pointer(base) = arguments.get(*argument)? else {
+                return None;
+            };
+            let address = Pointer {
+                block: base.block.clone(),
+                offset: PointerOffsetTerm::add(
+                    base.offset.clone(),
+                    PointerOffsetTerm::Constant(*offset),
+                ),
+            };
+            let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
+                state.memory(),
+                address,
+                *value_type,
+                ExecutionFacts::new(),
+                Vec::new(),
+                assumptions,
+            );
+            let [path] = paths.as_slice() else {
+                return None;
+            };
+            let CExpressionOutcome::Value(value) = &path.outcome else {
+                return None;
+            };
+            Some(value.clone())
+        }
+        CPointerResultDomain::Argument(index) => arguments.get(*index).cloned(),
+        _ => instantiate_result_pointer_origin(effect, arguments).map(CValue::Pointer),
+    }
+}
+
+pub(crate) fn instantiate_result_pointer_geometry(
+    effect: &CPointerResultDomain,
+    state: &CState,
+    arguments: &[CValue],
+    assumptions: &PureFactContext,
+) -> Option<CPointerValue> {
+    match instantiate_result_pointer_value(effect, state, arguments, assumptions)? {
+        CValue::Pointer(pointer) => Some(
+            assumptions
+                .promised_pointer_input_origin(&pointer)
+                .unwrap_or(pointer),
+        ),
+        CValue::PointerInteger(value) => assumptions.promised_pointer_origin(&value),
+        _ => None,
+    }
+}
+
+/// A conditional resource body grants this span whenever its sole pointer
+/// argument is non-null. Inspect only the interface's explicit input clauses.
+fn argument_input_span(interface: &CFunctionContractInterface, index: usize) -> Option<u32> {
+    let parameter = interface.parameters().get(index)?;
+    for spec in interface.resource_requires() {
+        let CResourceTerm::Composite {
+            name, arguments, ..
+        } = spec.term()
+        else {
+            continue;
+        };
+        if !matches!(arguments.as_slice(), [CExpression::Variable(name)] if name == parameter.name())
+        {
+            continue;
+        }
+        let Some(definition) = interface.composite_resource_definition(name) else {
+            continue;
+        };
+        let [formal] = definition.parameters() else {
+            continue;
+        };
+        let guarded_nonnull = match definition.condition() {
+            None => true,
+            Some(SpecProposition::Comparison {
+                left: SpecExpression::CExpression(CExpression::Variable(name)),
+                operator: CComparisonOperator::NotEqual,
+                right:
+                    SpecExpression::Value(CValue::Int32(Bitvector32Term::Constant(0)))
+                    | SpecExpression::CExpression(CExpression::Value(CValue::Int32(
+                        Bitvector32Term::Constant(0),
+                    ))),
+            }) => name == formal.name(),
+            _ => false,
+        };
+        if !guarded_nonnull {
+            continue;
+        }
+        for child in definition.contains() {
+            if child.guard().is_some() || child.quantity() != &CResourceQuantity::One {
+                continue;
+            }
+            let CResourceTerm::Memory(segment) = child.term() else {
+                continue;
+            };
+            if segment.guard.is_none()
+                && matches!(&segment.base, CExpression::Variable(name) if name == formal.name())
+                && matches!(
+                    &segment.start,
+                    CExpression::Value(CValue::Int32(Bitvector32Term::Constant(0)))
+                )
+                && matches!(
+                    &segment.end,
+                    CExpression::Value(CValue::Int32(Bitvector32Term::Constant(1)))
+                )
+            {
+                return Some(segment.element_width);
+            }
+        }
+    }
+    None
+}
+
+fn instantiate_result_domain_meet(
+    effect: &CPointerResultDomain,
+    arguments: &[CValue],
+    interface: &CFunctionContractInterface,
+    assumptions: &PureFactContext,
+) -> Option<CPointerDomain> {
+    use num_traits::ToPrimitive;
+    let CPointerResultDomain::Meet {
+        fixed,
+        arguments: sources,
+    } = effect
+    else {
+        return None;
+    };
+    let mut lower = i64::MIN;
+    let mut upper = i64::MAX;
+    let mut bounded = false;
+    let mut meet = |domain: &CPointerDomain, low: i64, high: i64| -> Option<()> {
+        let position = domain.position.as_const()?.to_i64()?;
+        lower = lower.max(position.checked_neg()?.checked_sub(low)?);
+        upper = upper.min(
+            i64::from(domain.bytes)
+                .checked_sub(position)?
+                .checked_sub(high)?,
+        );
+        bounded = true;
+        Some(())
+    };
+    if let Some(domain) = fixed {
+        meet(domain, 0, 0)?;
+    }
+    for (index, low, high) in sources {
+        let CValue::Pointer(pointer) = arguments.get(*index)? else {
+            return None;
+        };
+        if assumptions.decide(&super::eval::pointer_is_null_condition(
+            pointer.pointer().clone(),
+        )) == Some(true)
+        {
+            continue;
+        }
+        let fallback = pointer
+            .domain()
+            .is_none()
+            .then(|| argument_input_span(interface, *index))
+            .flatten()
+            .map(|bytes| CPointerDomain {
+                bytes,
+                position: IntegerTerm::constant_i64(0).into(),
+            });
+        meet(pointer.domain().or(fallback.as_ref())?, *low, *high)?;
+    }
+    drop(meet);
+    if !bounded {
+        return None;
+    }
+    if lower > upper {
+        return Some(CPointerDomain {
+            bytes: 0,
+            position: IntegerTerm::constant_i64(0).into(),
+        });
+    }
+    Some(CPointerDomain {
+        bytes: u32::try_from(upper.checked_sub(lower)?).ok()?,
+        position: IntegerTerm::constant_i64(lower.checked_neg()?).into(),
+    })
+}
+
+fn instantiate_result_pointer_origin(
+    effect: &CPointerResultDomain,
+    arguments: &[CValue],
+) -> Option<CPointerValue> {
+    let (index, offset, domain) = match effect {
+        CPointerResultDomain::Argument(index) => (*index, 0, None),
+        CPointerResultDomain::ArgumentOffset(index, offset) => (*index, *offset, None),
+        CPointerResultDomain::Selected {
+            domain,
+            argument: Some((index, offset)),
+        } => (*index, *offset, Some(domain)),
+        _ => return None,
+    };
+    let CValue::Pointer(pointer) = arguments.get(index)? else {
+        return None;
+    };
+    let mut result = pointer.clone();
+    let origin = Pointer {
+        block: pointer.origin().block.clone(),
+        offset: PointerOffsetTerm::add(
+            pointer.origin().offset.clone(),
+            PointerOffsetTerm::Constant(offset),
+        ),
+    };
+    result = result.with_origin(origin);
+    result.replace_pointer(Pointer {
+        block: pointer.block.clone(),
+        offset: PointerOffsetTerm::add(pointer.offset.clone(), PointerOffsetTerm::Constant(offset)),
+    });
+    result = result.map_domain(|domain| CPointerDomain {
+        bytes: domain.bytes,
+        position: IntegerTerm::add(
+            domain.position.as_ref().clone(),
+            IntegerTerm::constant_i64(offset),
+        )
+        .into(),
+    });
+    if let Some(domain) = domain {
+        result = result.with_domain(Some(domain.clone()));
+    }
+    Some(result)
+}
+
 pub(crate) fn symbolic_call_result(c_type: CType, variable: Variable) -> CValue {
     match c_type {
         CType::Void => CValue::Void,
@@ -15663,8 +16041,14 @@ pub(crate) fn symbolic_call_result(c_type: CType, variable: Variable) -> CValue 
         CType::UInt8 => CValue::UInt8(Bitvector32Term::Variable(variable)),
         CType::UInt16 => CValue::UInt16(Bitvector32Term::Variable(variable)),
         CType::UInt32 => CValue::UInt32(Bitvector32Term::Variable(variable)),
-        CType::Int64 => CValue::Int64(Bitvector32Term::Variable(variable)),
-        CType::UInt64 => CValue::UInt64(Bitvector32Term::Variable(variable)),
+        CType::Int64 => CValue::PointerInteger(Arc::new(
+            CPointerIntegerValue::from_input(Bitvector32Term::Variable(variable), c_type)
+                .expect("64-bit input"),
+        )),
+        CType::UInt64 => CValue::PointerInteger(Arc::new(
+            CPointerIntegerValue::from_input(Bitvector32Term::Variable(variable), c_type)
+                .expect("64-bit input"),
+        )),
         CType::Int128 => CValue::Int128(Bitvector32Term::Variable(variable)),
         CType::UInt128 => CValue::UInt128(Bitvector32Term::Variable(variable)),
         CType::Float32 => CValue::Float32(Bitvector32Term::Variable(variable)),
@@ -19819,6 +20203,47 @@ fn prepare_contract_resource_transfer_unexplained(
     } else {
         caller_state.resources().clone()
     };
+    if purpose.lends() {
+        let _logical_reads = super::eval::SpecificationReadScope::enter();
+        for checked in &checked_required_resources {
+            // These use the existing checked local/intrinsic loan path;
+            // they have no explicit resource supplier to authenticate here.
+            if local_read_views.contains(checked) || intrinsic_read_views.contains(checked) {
+                continue;
+            }
+            let Some(spec) = checked
+                .section_index
+                .and_then(|index| interface.resource_requires().get(index))
+            else {
+                continue;
+            };
+            let CResourceTerm::Memory(segment) = spec.term() else {
+                continue;
+            };
+            let pointer = evaluate_loop_effect_segment_value(
+                callee_state,
+                &segment.base,
+                assumptions,
+                "call input domain",
+                budget,
+            )?;
+            let pointer = match pointer {
+                Ok(CValue::Pointer(pointer)) => pointer,
+                _ => continue,
+            };
+            if pointer.domain().is_none()
+                && !planning_resources.pointer_input_domain_contains_fact(
+                    &checked.fact,
+                    pointer.origin(),
+                    assumptions,
+                )
+            {
+                return Ok(Err(CRuntimeError::FunctionContract(
+                    "call memory range lacks the argument's original domain".into(),
+                )));
+            }
+        }
+    }
     let stable_view_plan = if purpose.lends() {
         let (ledger, caller) = match (
             caller_state.loan_ledger().cloned(),
@@ -21607,9 +22032,9 @@ pub(super) fn prepare_function_contract_entry_state_with_values(
 }
 
 /// Binds a composite definition's existential witnesses as locals of the
-/// body-evaluation state, after its parameters. A witness related to a word
-/// by a `where` fact of the shape `word == address(witness) + tag` is bound
-/// to that word's recorded origin, so folding and unfolding the same body
+/// body-evaluation state, after its parameters. A witness named by an
+/// explicit input-origin promise is bound to the complete word carrier's
+/// authenticated origin, so folding and unfolding the same body
 /// agree on it; a witness with no recorded origin yet (an unfold whose facts
 /// are about to introduce it) is bound to a fresh symbolic pointer chosen
 /// deterministically from the variables already in use.
@@ -21655,19 +22080,22 @@ pub(super) fn bind_composite_witnesses_with_held(
                     return None;
                 };
                 match &path.value {
-                    CValue::UInt64(term) | CValue::Int64(term) => Some(term.clone()),
+                    value @ (CValue::PointerInteger(_) | CValue::UInt64(_) | CValue::Int64(_)) => {
+                        Some(value.clone())
+                    }
                     _ => None,
                 }
             });
         let origin = word
             .as_ref()
-            .and_then(|term| {
-                if term.uint64_as_const() == Some(0) {
-                    return Some(Pointer::null());
+            .and_then(|value| match value {
+                CValue::PointerInteger(value) => assumptions.promised_pointer_origin(value),
+                CValue::UInt64(term) | CValue::Int64(term)
+                    if term.bitvector64_as_const() == Some(0) =>
+                {
+                    Some(CPointerValue::new(Pointer::null(), witness.c_type()))
                 }
-                let mut used = super::eval::pointer_tags::UsedFacts::new();
-                super::eval::pointer_tags::tagged_address_form(term, assumptions, &mut used)
-                    .map(|form| form.pointer)
+                _ => None,
             })
             // A body that contains a composite resource under the witness
             // names it through the resource context: when exactly one held
@@ -21694,11 +22122,24 @@ pub(super) fn bind_composite_witnesses_with_held(
             // the snapshot it was read from, so the key is the same before
             // and after the body's cells are materialized.
             word.as_ref()
-                .map(super::eval::canonical_term)
+                .map(|value| match value {
+                    CValue::PointerInteger(value) => {
+                        CValue::PointerInteger(Arc::new(value.with_parts(
+                            super::eval::canonical_term(value.bits()),
+                            value.origin().clone(),
+                        )))
+                    }
+                    CValue::UInt64(bits) => CValue::UInt64(super::eval::canonical_term(bits)),
+                    CValue::Int64(bits) => CValue::Int64(super::eval::canonical_term(bits)),
+                    value => value.clone(),
+                })
                 .hash(&mut hasher);
-            Pointer::symbolic(Variable(4_000_000_000 + hasher.finish() % 4_000_000_000))
+            CPointerValue::new(
+                Pointer::symbolic(Variable(4_000_000_000 + hasher.finish() % 4_000_000_000)),
+                witness.c_type(),
+            )
         });
-        let value = CValue::typed_pointer(pointer, witness.c_type());
+        let value = CValue::Pointer(pointer.with_type(witness.c_type()));
         state
             .locals
             .set_typed(witness.name().to_string(), value.clone(), witness.c_type());
@@ -21716,7 +22157,7 @@ fn held_child_witness(
     arguments: &[AlgebraicValue],
     resources: &ResourceContext,
     assumptions: &PureFactContext,
-) -> Option<Pointer> {
+) -> Option<CPointerValue> {
     // The body's own instance is never its own child.
     let own_pointers = arguments
         .iter()
@@ -21737,9 +22178,7 @@ fn held_child_witness(
         .filter_map(|fact| match fact.resource() {
             CResource::Composite { name, arguments } if name == child_name => {
                 match arguments.as_ref() {
-                    [AlgebraicValue::C(CValue::Pointer(pointer))] => {
-                        Some(pointer.pointer().clone())
-                    }
+                    [AlgebraicValue::C(CValue::Pointer(pointer))] => Some(pointer.clone()),
                     _ => None,
                 }
             }
@@ -21750,9 +22189,10 @@ fn held_child_witness(
         .filter(|pointer| {
             own_pointers.iter().all(|own| {
                 own.block != pointer.block
-                    || assumptions
-                        .decide(&ConditionTerm::pointer_equal(pointer.clone(), own.clone()))
-                        == Some(false)
+                    || assumptions.decide(&ConditionTerm::pointer_equal(
+                        pointer.pointer().clone(),
+                        own.clone(),
+                    )) == Some(false)
             })
         });
     let first = candidates.next()?;
@@ -21780,6 +22220,17 @@ fn witness_origin_word<'a>(fact: &'a SpecProposition, witness: &str) -> Option<&
         SpecProposition::And(left, right) => {
             witness_origin_word(left, witness).or_else(|| witness_origin_word(right, witness))
         }
+        SpecProposition::Predicate {
+            name, arguments, ..
+        } if name == POINTER_ORIGIN_PREDICATE_NAME => match arguments.as_slice() {
+            [
+                SpecPredicateArgument::Value(word),
+                SpecPredicateArgument::Value(SpecExpression::CExpression(CExpression::Variable(
+                    name,
+                ))),
+            ] if name == witness => Some(word),
+            _ => None,
+        },
         SpecProposition::Comparison {
             left,
             operator: CComparisonOperator::Equal,
@@ -28855,7 +29306,7 @@ fn resolve_retained_aggregate_fields(
             CExpression::Variable(name) => {
                 Some((name, SpecExpression::CExpression(expression.clone())))
             }
-            CExpression::PointerOffsetBytes { pointer, bytes } => {
+            CExpression::PointerOffsetBytes { pointer, bytes, .. } => {
                 let (name, pointer) = projection(pointer)?;
                 Some((
                     name,
@@ -29967,6 +30418,17 @@ fn evaluate_function_declared_resource_spec(
                 "resource `{name}` argument {index} has the wrong type"
             ))));
         }
+        // Allocation tokens describe storage lifetime at a numeric anchor.
+        // They grant no typed designation and must not depend on the
+        // selected subobject domain carried by the spelling of that anchor.
+        let value = if accepts_allocation_pointer {
+            let CValue::Pointer(pointer) = value else {
+                unreachable!()
+            };
+            CValue::pointer(pointer.pointer().clone())
+        } else {
+            value
+        };
         values.push(value);
     }
     let resource = match family {
@@ -32338,6 +32800,8 @@ mod verified_call_initialization_tests {
     fn apply(function: CFunction, state: &CState, pointer: &Pointer) -> Vec<CFunctionPath> {
         let environment =
             CExecutionEnvironment::new().with_verified_function_rule(CVerifiedFunctionRule {
+                pointer_result_domain: None,
+                pointer_store_effects: Default::default(),
                 function: function.clone(),
                 loop_semantics: CLoopSemantics::Verify,
                 checked_callees: None,
@@ -32638,6 +33102,8 @@ mod stable_view_call_tests {
 
     fn environment(function: &CFunction) -> CExecutionEnvironment {
         CExecutionEnvironment::new().with_verified_function_rule(CVerifiedFunctionRule {
+            pointer_result_domain: None,
+            pointer_store_effects: Default::default(),
             function: function.clone(),
             loop_semantics: CLoopSemantics::Verify,
             checked_callees: None,
@@ -33229,6 +33695,8 @@ mod stable_view_call_tests {
         let function = view_and_produce_reader("view_and_produce");
         let environment =
             CExecutionEnvironment::new().with_verified_function_rule(CVerifiedFunctionRule {
+                pointer_result_domain: None,
+                pointer_store_effects: Default::default(),
                 function: function.clone(),
                 loop_semantics: CLoopSemantics::Verify,
                 checked_callees: None,
@@ -33986,6 +34454,8 @@ mod stable_view_call_tests {
         let environment = CExecutionEnvironment::new()
             .with_function(inner.clone())
             .with_verified_function_rule(CVerifiedFunctionRule {
+                pointer_result_domain: None,
+                pointer_store_effects: Default::default(),
                 function: inner,
                 loop_semantics: CLoopSemantics::Verify,
                 checked_callees: None,
@@ -35427,9 +35897,9 @@ mod composite_pointer_body_fact_tests {
                 ConditionTerm::Bitvector32Equal(
                     Box::new(Bitvector32Term::ClickFunctionApplication {
                         name: "parent_is".into(),
-                        arguments: vec![PureFunctionArgument::Value(CValue::typed_pointer(
-                            pointer.clone(),
-                            CType::Int32Pointer,
+                        arguments: vec![PureFunctionArgument::Value(CValue::Pointer(
+                            CPointerValue::new(pointer.clone(), CType::Int32Pointer)
+                                .with_origin(model.clone()),
                         ))],
                     }),
                     Box::new(Bitvector32Term::Constant(value)),

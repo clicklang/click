@@ -190,6 +190,7 @@ fn owner_field_pointer(base: &CExpression, offset_bytes: u32) -> CExpression {
         base.clone()
     } else {
         CExpression::PointerOffsetBytes {
+            object_bytes: None,
             pointer: Box::new(base.clone()),
             bytes: offset_bytes,
         }
@@ -738,6 +739,9 @@ pub(in crate::surface) fn synthesize_surface_value(
             state,
             &BTreeMap::new(),
         ),
+        CValue::PointerInteger(value) => {
+            synthesize_surface_bitvector(value.bits(), parameter_binding, state, &BTreeMap::new())
+        }
         CValue::Int32(term) => {
             synthesize_surface_bitvector(term, parameter_binding, state, &BTreeMap::new())
         }
@@ -1739,6 +1743,15 @@ fn synthesize_surface_atomic_proposition(
                     )?));
                     index += 1;
                 }
+                Term::CValue(CValue::PointerInteger(value)) => {
+                    call_arguments.push(synthesize_surface_bitvector(
+                        value.bits(),
+                        parameter_binding,
+                        state,
+                        bound_variables,
+                    )?);
+                    index += 1;
+                }
                 Term::CValue(crate::kernel::int_promoted_c_value!(value)) => {
                     call_arguments.push(synthesize_surface_bitvector(
                         value,
@@ -1752,7 +1765,11 @@ fn synthesize_surface_atomic_proposition(
             }
         }
         return Some(ClickProposition::PredicateCall {
-            name: name.clone(),
+            name: if name == crate::kernel::POINTER_ORIGIN_PREDICATE_NAME {
+                "pointer_origin".to_string()
+            } else {
+                name.clone()
+            },
             arguments: call_arguments,
         });
     }
@@ -2394,6 +2411,7 @@ fn synthesize_parameter_field_pointer_value(
                 base_expression.clone()
             } else {
                 CExpression::PointerOffsetBytes {
+                    object_bytes: None,
                     pointer: Box::new(base_expression.clone()),
                     bytes: field.offset_bytes(),
                 }
@@ -2523,6 +2541,9 @@ fn synthesize_surface_bitvector(
     if let Some((name, _)) = state.locals().object_values().find(|(_, value)| {
         if matches!(value, CValue::Bool(_)) {
             crate::instrumentation::record_deterministic_work(1);
+        }
+        if let CValue::PointerInteger(value) = value {
+            return value.bits() == term;
         }
         matches!(
             value,
@@ -3266,6 +3287,8 @@ fn synthesize_local_struct_pointer_field(
                 continue;
             };
             let loaded = match loaded {
+                CValue::PointerInteger(value) => value.bits().clone(),
+
                 CValue::Int8(value) => value,
                 CValue::Bool(value)
                 | CValue::Int16(value)
@@ -3338,6 +3361,8 @@ fn synthesize_local_aggregate_field(
                         return None;
                     };
                     let value_term = match value {
+                        CValue::PointerInteger(value) => value.bits().clone(),
+
                         CValue::Int8(value) => value,
                         CValue::Bool(value)
                         | CValue::Int16(value)
@@ -3362,6 +3387,7 @@ fn synthesize_local_aggregate_field(
                         base.clone()
                     } else {
                         CExpression::PointerOffsetBytes {
+                            object_bytes: None,
                             pointer: Box::new(base.clone()),
                             bytes: field.offset_bytes(),
                         }
@@ -3568,6 +3594,7 @@ fn synthesize_parameter_field_load(
             base.clone()
         } else {
             CExpression::PointerOffsetBytes {
+                object_bytes: None,
                 pointer: Box::new(base.clone()),
                 bytes: offset_bytes,
             }

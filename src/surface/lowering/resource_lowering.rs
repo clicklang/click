@@ -321,13 +321,15 @@ pub(in crate::surface) fn initial_call_state(
                 )));
             }
             C0Type::Int64(_) => {
-                arguments.push(CExpression::Value(CValue::Int64(
-                    Bitvector32Term::Variable(Variable(arguments.len() as u64)),
+                arguments.push(CExpression::Value(crate::kernel::symbolic_call_result(
+                    CType::Int64,
+                    Variable(arguments.len() as u64),
                 )));
             }
             C0Type::UInt64(_) => {
-                arguments.push(CExpression::Value(CValue::UInt64(
-                    Bitvector32Term::Variable(Variable(arguments.len() as u64)),
+                arguments.push(CExpression::Value(crate::kernel::symbolic_call_result(
+                    CType::UInt64,
+                    Variable(arguments.len() as u64),
                 )));
             }
             C0Type::Float32 => {
@@ -369,6 +371,16 @@ pub(in crate::surface) fn initial_call_state(
                     parameter.name()
                 )));
             }
+        }
+    }
+
+    // Complete opaque pointer inputs retain their entry identity before
+    // either resource elaboration or execution sees them.
+    for argument in &mut arguments {
+        if let CExpression::Value(CValue::Pointer(pointer)) = argument
+            && pointer.c_type().is_object_pointer()
+        {
+            *pointer = pointer.clone().seal_origin();
         }
     }
 

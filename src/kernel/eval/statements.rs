@@ -398,6 +398,22 @@ fn write_c_lvalue_paths_for_initialization(
     budget: &mut ExecutionBudget,
     initialization: bool,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+    let input_designation = (lvalue.pointer_domain.is_none())
+        .then(|| lvalue.pointer_origin.clone())
+        .flatten();
+    if pointer_domain_conditions(
+        lvalue.pointer_domain.as_deref(),
+        lvalue.value_type.byte_width(),
+    )
+    .iter()
+    .any(|condition| decide_with_facts(assumptions, &facts, condition) != Some(true))
+    {
+        return Ok(vec![CStatementExecutionPath::new(
+            CStatementOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
+            facts,
+            obligations,
+        )]);
+    }
     if lvalue.is_constant() && !initialization {
         return Ok(vec![CStatementExecutionPath::new(
             CStatementOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
@@ -629,6 +645,22 @@ fn write_c_lvalue_paths_for_initialization(
             ) {
                 return Ok(vec![CStatementExecutionPath::new(
                     outcome,
+                    facts,
+                    obligations,
+                )]);
+            }
+            if let Some(origin) = input_designation.as_deref()
+                && !pointer_input_domain_allows(
+                    state,
+                    &pointer,
+                    origin,
+                    value.byte_width(),
+                    false,
+                    &effective_assumptions,
+                )
+            {
+                return Ok(vec![CStatementExecutionPath::new(
+                    CStatementOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
                     facts,
                     obligations,
                 )]);
@@ -1212,6 +1244,8 @@ struct AllocationSize {
 /// cannot be safely narrowed into a memory block extent yet.
 fn allocation_size_value(value: CValue, assumptions: &PureFactContext) -> Option<AllocationSize> {
     match value {
+        CValue::PointerInteger(value) => allocation_size_value(value.numeric_value(), assumptions),
+
         CValue::Bool(term) => Some(AllocationSize {
             term,
             unsigned: true,
@@ -2151,6 +2185,19 @@ pub(crate) fn resolve_pending_heap_allocations(
                 } = binding
                     && pointer.pointer() == &base
                 {
+                    *pointer = pointer.clone().with_origin(resolved_base.clone());
+                    if !is_null {
+                        if let Some(bytes) = bytes
+                            .bitvector64_as_const()
+                            .or_else(|| bytes.as_const().map(u64::from))
+                            .and_then(|bytes| u32::try_from(bytes).ok())
+                        {
+                            *pointer = pointer.clone().with_domain(Some(CPointerDomain {
+                                bytes,
+                                position: IntegerTerm::constant_i64(0).into(),
+                            }));
+                        }
+                    }
                     pointer.replace_pointer(resolved_base.clone());
                 }
             }
@@ -2211,6 +2258,19 @@ pub(crate) fn resolve_pending_heap_allocations(
             } = binding
                 && pointer.pointer() == &base
             {
+                *pointer = pointer.clone().with_origin(resolved_base.clone());
+                if !is_null {
+                    if let Some(bytes) = bytes
+                        .bitvector64_as_const()
+                        .or_else(|| bytes.as_const().map(u64::from))
+                        .and_then(|bytes| u32::try_from(bytes).ok())
+                    {
+                        *pointer = pointer.clone().with_domain(Some(CPointerDomain {
+                            bytes,
+                            position: IntegerTerm::constant_i64(0).into(),
+                        }));
+                    }
+                }
                 pointer.replace_pointer(resolved_base.clone());
             }
         }

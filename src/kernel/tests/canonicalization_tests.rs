@@ -21,6 +21,14 @@ fn collect_offset_load_variables_from_value(
     load_variables: &mut BTreeSet<Variable>,
 ) {
     match value {
+        CValue::PointerInteger(value) => {
+            collect_offset_load_variables_from_term(value.bits(), load_variables);
+            collect_offset_load_variables_from_value(
+                &CValue::Pointer(value.origin().clone()),
+                load_variables,
+            );
+        }
+
         CValue::Void => {}
         crate::kernel::arithmetic_c_value!(term) => {
             collect_offset_load_variables_from_term(term, load_variables);

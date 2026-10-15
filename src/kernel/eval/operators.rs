@@ -337,6 +337,20 @@ pub(in crate::kernel) fn apply_c_add(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
+    if matches!(&left, CValue::PointerInteger(_)) || matches!(&right, CValue::PointerInteger(_)) {
+        let origin = single_pointer_integer_origin(&left, &right);
+        let paths = apply_c_add(
+            state,
+            numeric_pointer_integer_value(left),
+            numeric_pointer_integer_value(right),
+            left_step_width,
+            right_step_width,
+            facts,
+            obligations,
+            assumptions,
+        );
+        return retain_pointer_integer_origin(paths, origin);
+    }
     if let Some((left, right, target_type, obligations)) =
         coerce_c_float_operands(&left, &right, &obligations, assumptions)
     {
@@ -790,6 +804,8 @@ pub(in crate::kernel) fn apply_c_multiply(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
+    let left = numeric_pointer_integer_value(left);
+    let right = numeric_pointer_integer_value(right);
     if matches!(left, CValue::Int128(_)) || matches!(right, CValue::Int128(_)) {
         return apply_c_int128_multiply(left, right, facts, obligations, assumptions);
     }
@@ -1257,6 +1273,8 @@ pub(in crate::kernel) fn apply_c_divide(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
+    let left = numeric_pointer_integer_value(left);
+    let right = numeric_pointer_integer_value(right);
     if matches!(left, CValue::Int128(_) | CValue::UInt128(_))
         || matches!(right, CValue::Int128(_) | CValue::UInt128(_))
     {
@@ -1309,6 +1327,8 @@ pub(in crate::kernel) fn apply_c_remainder(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
+    let left = numeric_pointer_integer_value(left);
+    let right = numeric_pointer_integer_value(right);
     if matches!(left, CValue::Int128(_) | CValue::UInt128(_))
         || matches!(right, CValue::Int128(_) | CValue::UInt128(_))
     {
@@ -1357,6 +1377,32 @@ pub(in crate::kernel) fn apply_c_bitwise_binary(
     _assumptions: &PureFactContext,
     operation: CBitwiseOperation,
 ) -> Vec<CExpressionPath> {
+    if matches!(&left, CValue::PointerInteger(_)) || matches!(&right, CValue::PointerInteger(_)) {
+        let mut origin = single_pointer_integer_origin(&left, &right);
+        if matches!(operation, CBitwiseOperation::And) {
+            let mask = match (&left, &right) {
+                (CValue::PointerInteger(_), other) | (other, CValue::PointerInteger(_)) => {
+                    promote_c_uint64_path_value(numeric_pointer_integer_value(other.clone()))
+                        .and_then(|bits| bits.bitvector64_as_const())
+                }
+                _ => None,
+            };
+            // Reading low tag bits destroys the address representation.
+            // Only a known high-bit-preserving mask retains this origin.
+            if mask.is_none_or(|mask| mask & (1u64 << 63) == 0) {
+                origin = None;
+            }
+        }
+        let paths = apply_c_bitwise_binary(
+            numeric_pointer_integer_value(left),
+            numeric_pointer_integer_value(right),
+            facts,
+            obligations,
+            _assumptions,
+            operation,
+        );
+        return retain_pointer_integer_origin(paths, origin);
+    }
     let (left, right) = promote_c_bool_scalar_operands(left, right);
     if let Some(width @ (ScalarWidth::Int64 | ScalarWidth::UInt64)) = scalar_width(&left, &right) {
         let facts = facts;
@@ -1427,6 +1473,7 @@ pub(in crate::kernel) fn apply_c_bitwise_not(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
 ) -> Vec<CExpressionPath> {
+    let value = numeric_pointer_integer_value(value);
     match value {
         CValue::Bool(value) => vec![CExpressionPath {
             outcome: CExpressionOutcome::Value(int32(Bitvector32Term::bitwise_not(value))),
@@ -1823,6 +1870,8 @@ fn apply_c_comparison(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
+    let left = numeric_pointer_integer_value(left);
+    let right = numeric_pointer_integer_value(right);
     if matches!(left, CValue::Int128(_) | CValue::UInt128(_))
         || matches!(right, CValue::Int128(_) | CValue::UInt128(_))
     {
@@ -1952,6 +2001,27 @@ pub(in crate::kernel) fn apply_c_subtract(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
+    if matches!(&left, CValue::PointerInteger(_)) || matches!(&right, CValue::PointerInteger(_)) {
+        let origin = match (&left, &right) {
+            (CValue::PointerInteger(origin), right)
+                if !matches!(right, CValue::PointerInteger(_)) =>
+            {
+                Some(origin.clone())
+            }
+            _ => None,
+        };
+        let paths = apply_c_subtract(
+            state,
+            numeric_pointer_integer_value(left),
+            numeric_pointer_integer_value(right),
+            left_step_width,
+            right_step_width,
+            facts,
+            obligations,
+            assumptions,
+        );
+        return retain_pointer_integer_origin(paths, origin);
+    }
     if let Some((left, right, target_type, obligations)) =
         coerce_c_float_operands(&left, &right, &obligations, assumptions)
     {
@@ -2058,12 +2128,8 @@ pub(in crate::kernel) fn apply_c_subtract(
                     value: false,
                 }
             };
-            let pointer_type = pointer.c_type();
-            let volatile = pointer.pointee_volatile();
             let guarded = apply_pointer_formation_guards(
-                pointer.into_pointer(),
-                pointer_type,
-                volatile,
+                pointer,
                 vec![guard],
                 facts,
                 obligations,
@@ -2149,6 +2215,10 @@ fn pointer_index_term(
     assumptions: &PureFactContext,
 ) -> Option<(Bitvector32Term, bool, bool)> {
     match value {
+        CValue::PointerInteger(value) => {
+            pointer_index_term(value.numeric_value(), facts, assumptions)
+        }
+
         value @ (CValue::Bool(_)
         | CValue::Int8(_)
         | CValue::Int16(_)
@@ -2196,9 +2266,24 @@ fn pointer_offset_by_elements_paths(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
-    let pointer_type = pointer.c_type();
-    let pointee_volatile = pointer.pointee_volatile();
-    let pointer = pointer.into_pointer();
+    let mut value = pointer;
+    let index_type = match (wide, unsigned) {
+        (false, false) => MachineIntegerType::Int32,
+        (false, true) => MachineIntegerType::UInt32,
+        (true, false) => MachineIntegerType::Int64,
+        (true, true) => MachineIntegerType::UInt64,
+    };
+    value = value.map_domain(|domain| {
+        let displacement = IntegerTerm::multiply(
+            IntegerTerm::from_machine(index_type, offset.clone()).expect("typed pointer index"),
+            IntegerTerm::constant_i64(i64::from(byte_width)),
+        );
+        CPointerDomain {
+            bytes: domain.bytes,
+            position: IntegerTerm::add(domain.position.as_ref().clone(), displacement).into(),
+        }
+    });
+    let pointer = value.pointer().clone();
 
     // C11 6.5.6p8 defines additive pointer arithmetic only for a pointer that
     // designates an element of an array object or one past its end. A null
@@ -2215,11 +2300,26 @@ fn pointer_offset_by_elements_paths(
         }];
     }
 
-    let result = match byte_stride_index(&offset, byte_width, unsigned, wide, &facts, assumptions) {
-        Some((index, stride)) => pointer.offset_by_typed_elements(index, stride, false, false),
+    let displacement = byte_stride_index(&offset, byte_width, unsigned, wide, &facts, assumptions);
+    let displace = |pointer: &Pointer| match &displacement {
+        Some((index, stride)) => {
+            pointer.offset_by_typed_elements(index.clone(), *stride, false, false)
+        }
         None => pointer.offset_by_typed_elements(offset.clone(), byte_width, unsigned, wide),
     };
+    let result = displace(&pointer);
+    // Arithmetic moves the designation. An address equality rewrite, in
+    // contrast, preserves it through replace_pointer.
+    let origin = displace(value.origin());
+    value = value.with_origin(origin);
     let displaces = offset != Bitvector32Term::Constant(0);
+    let zero_index = if wide {
+        ConditionTerm::uint64_equal(offset.clone(), Bitvector32Term::UInt64Constant(0))
+    } else {
+        ConditionTerm::equal(offset.clone(), Bitvector32Term::Constant(0))
+    };
+    let requires_object = value.domain().is_some()
+        && decide_with_facts(assumptions, &facts, &zero_index) != Some(true);
     let mut guards = Vec::new();
     let mut owed = Vec::new();
 
@@ -2315,15 +2415,31 @@ fn pointer_offset_by_elements_paths(
         }
     }
 
-    owed.extend(apply_pointer_formation_guards(
-        result,
-        pointer_type,
-        pointee_volatile,
-        guards,
-        facts,
-        obligations,
-        assumptions,
-    ));
+    guards.extend(
+        pointer_domain_conditions(value.domain(), 0)
+            .into_iter()
+            .map(|condition| PointerFormationGuard {
+                condition,
+                value: true,
+            }),
+    );
+    value.replace_pointer(result);
+    let form = |facts, obligations| {
+        apply_pointer_formation_guards(value, guards, facts, obligations, assumptions)
+    };
+    owed.extend(if requires_object {
+        apply_pointer_object_nonnull_guard(
+            state,
+            &pointer,
+            pointer_is_null_condition(pointer.clone()),
+            facts,
+            obligations,
+            assumptions,
+            form,
+        )
+    } else {
+        form(facts, obligations)
+    });
     owed
 }
 
@@ -2381,9 +2497,8 @@ pub(in crate::kernel) fn pointer_offset_by_bytes_paths(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
-    let pointer_type = pointer.c_type();
-    let pointee_volatile = pointer.pointee_volatile();
-    let pointer = pointer.into_pointer();
+    let mut value = pointer;
+    let pointer = value.pointer().clone();
     if pointer.block.is_function() && bytes != 0 {
         return vec![CExpressionPath {
             outcome: CExpressionOutcome::RuntimeError(CRuntimeError::IndeterminatePointeeType),
@@ -2392,18 +2507,29 @@ pub(in crate::kernel) fn pointer_offset_by_bytes_paths(
         }];
     }
     let result = pointer.offset_by_bytes(bytes);
-    let Some(guards) = pointer_block_bounds(state, &result, 1) else {
+    let origin = value.origin().offset_by_bytes(bytes);
+    value = value.with_origin(origin);
+    let Some(mut guards) = pointer_block_bounds(state, &result, 1) else {
         return Vec::new();
     };
-    apply_pointer_formation_guards(
-        result,
-        pointer_type,
-        pointee_volatile,
-        guards,
-        facts,
-        obligations,
-        assumptions,
-    )
+    value = value.map_domain(|domain| CPointerDomain {
+        bytes: domain.bytes,
+        position: IntegerTerm::add(
+            domain.position.as_ref().clone(),
+            IntegerTerm::constant_i64(i64::from(bytes)),
+        )
+        .into(),
+    });
+    guards.extend(
+        pointer_domain_conditions(value.domain(), 0)
+            .into_iter()
+            .map(|condition| PointerFormationGuard {
+                condition,
+                value: true,
+            }),
+    );
+    value.replace_pointer(result);
+    apply_pointer_formation_guards(value, guards, facts, obligations, assumptions)
 }
 
 fn pointer_index_from_offset(pointer: &Pointer, byte_width: u32) -> Option<Bitvector32Term> {
@@ -3019,20 +3145,14 @@ fn simplify_c_int32_add_operand(
 }
 
 fn apply_pointer_formation_guards(
-    pointer: Pointer,
-    pointer_type: CType,
-    pointee_volatile: bool,
+    pointer: CPointerValue,
     guards: Vec<PointerFormationGuard>,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
     let mut normal = vec![CExpressionPath {
-        outcome: CExpressionOutcome::Value(CValue::typed_pointer_with_pointee_volatile(
-            pointer,
-            pointer_type,
-            pointee_volatile,
-        )),
+        outcome: CExpressionOutcome::Value(CValue::Pointer(pointer)),
         facts,
         obligations,
     }];
@@ -3541,6 +3661,8 @@ fn apply_c_uint32_division_like(
 
 fn promote_c_shift_count(value: CValue) -> Option<(Bitvector32Term, bool, bool)> {
     match value {
+        CValue::PointerInteger(value) => promote_c_shift_count(value.numeric_value()),
+
         CValue::Bool(value) => Some((value, false, false)),
         CValue::UInt32(value) => Some((value, true, false)),
         CValue::Int32(value) => Some((value, false, false)),
@@ -3566,11 +3688,17 @@ pub(in crate::kernel) fn apply_c_shift_left(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
+    let left = numeric_pointer_integer_value(left);
+    let right = numeric_pointer_integer_value(right);
     let facts = facts;
     let Some((right, unsigned_count, right_is_64_bit)) = promote_c_shift_count(right) else {
         return vec![c_type_mismatch_expression_path(facts, obligations)];
     };
     match left {
+        CValue::PointerInteger(_) => {
+            vec![c_type_mismatch_expression_path(facts, obligations)]
+        }
+
         CValue::Int64(left) => apply_c_int64_with_valid_shift_count(
             left,
             right,
@@ -3677,11 +3805,17 @@ pub(in crate::kernel) fn apply_c_shift_right(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
+    let left = numeric_pointer_integer_value(left);
+    let right = numeric_pointer_integer_value(right);
     let facts = facts;
     let Some((right, unsigned_count, right_is_64_bit)) = promote_c_shift_count(right) else {
         return vec![c_type_mismatch_expression_path(facts, obligations)];
     };
     match left {
+        CValue::PointerInteger(_) => {
+            vec![c_type_mismatch_expression_path(facts, obligations)]
+        }
+
         CValue::Int64(left) => apply_c_int64_with_valid_shift_count(
             left,
             right,
@@ -4361,6 +4495,8 @@ fn apply_c_equality(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
+    let left = numeric_pointer_integer_value(left);
+    let right = numeric_pointer_integer_value(right);
     let negated = operator == CComparisonOperator::NotEqual;
     if matches!(left, CValue::Int128(_) | CValue::UInt128(_))
         || matches!(right, CValue::Int128(_) | CValue::UInt128(_))
@@ -4883,4 +5019,396 @@ mod wide_range_reader_tests {
             &ExecutionFacts::new()
         ));
     }
+}
+
+/// A domain is a bound on a pointer value, never a fact about its address class.
+pub(in crate::kernel) fn pointer_domain_conditions(
+    domain: Option<&CPointerDomain>,
+    access_bytes: u32,
+) -> Vec<ConditionTerm> {
+    let Some(domain) = domain else {
+        return Vec::new();
+    };
+    let Some(last) = domain.bytes.checked_sub(access_bytes) else {
+        return vec![ConditionTerm::Constant(false)];
+    };
+    if let IntegerTerm::Constant(position) = domain.position.as_ref() {
+        use num_traits::ToPrimitive;
+        return vec![ConditionTerm::Constant(
+            position.to_u32().is_some_and(|position| position <= last),
+        )];
+    }
+    if let Some((machine, scale, shift)) = pointer_domain_linear_position(domain.position.as_ref())
+    {
+        // Solve byte bounds in mathematical integers before emitting native
+        // comparisons. No wrapping multiplication is introduced by the check.
+        let lower = -shift;
+        let upper = i128::from(last) - shift;
+        let (lower, upper) = if scale > 0 {
+            (
+                -pointer_domain_floor_div(-lower, scale),
+                pointer_domain_floor_div(upper, scale),
+            )
+        } else if scale < 0 {
+            (
+                -pointer_domain_floor_div(-upper, scale),
+                pointer_domain_floor_div(lower, scale),
+            )
+        } else {
+            return vec![ConditionTerm::Constant(
+                0 <= shift && shift <= i128::from(last),
+            )];
+        };
+        return vec![
+            pointer_domain_machine_bound(&machine, lower, true),
+            pointer_domain_machine_bound(&machine, upper, false),
+        ];
+    }
+    vec![
+        ConditionTerm::integer_greater_equal(
+            domain.position.as_ref().clone(),
+            IntegerTerm::constant_i64(0),
+        ),
+        ConditionTerm::integer_less_equal(
+            domain.position.as_ref().clone(),
+            IntegerTerm::constant_i64(i64::from(last)),
+        ),
+    ]
+}
+
+pub(in crate::kernel) fn select_pointer_object_paths(
+    state: &CState,
+    paths: Vec<CExpressionPath>,
+    bytes: u32,
+    assumptions: &PureFactContext,
+) -> Vec<CExpressionPath> {
+    paths
+        .into_iter()
+        .flat_map(|path| {
+            let CExpressionOutcome::Value(CValue::Pointer(pointer)) = path.outcome else {
+                return vec![path];
+            };
+            if pointer.domain().is_none()
+                && !super::expression::specification_read_active()
+                && !pointer_input_domain_allows(
+                    state,
+                    pointer.pointer(),
+                    pointer.origin(),
+                    bytes,
+                    true,
+                    &assumptions_with_path_context(assumptions, &path.facts, &path.obligations),
+                )
+            {
+                return vec![CExpressionPath {
+                    outcome: CExpressionOutcome::UndefinedBehavior(
+                        CUndefinedBehavior::InvalidMemory,
+                    ),
+                    facts: path.facts,
+                    obligations: path.obligations,
+                }];
+            }
+            let guards = pointer_domain_conditions(pointer.domain(), bytes)
+                .into_iter()
+                .map(|condition| PointerFormationGuard {
+                    condition,
+                    value: true,
+                })
+                .collect();
+            let pointer = pointer.with_domain(Some(CPointerDomain {
+                bytes,
+                position: IntegerTerm::constant_i64(0).into(),
+            }));
+            apply_pointer_formation_guards(
+                pointer,
+                guards,
+                path.facts,
+                path.obligations,
+                assumptions,
+            )
+        })
+        .collect()
+}
+
+fn numeric_pointer_integer_value(value: CValue) -> CValue {
+    match value {
+        CValue::PointerInteger(value) => value.numeric_value(),
+        value => value,
+    }
+}
+fn single_pointer_integer_origin(
+    left: &CValue,
+    right: &CValue,
+) -> Option<std::sync::Arc<CPointerIntegerValue>> {
+    match (left, right) {
+        (CValue::PointerInteger(value), right) if !matches!(right, CValue::PointerInteger(_)) => {
+            Some(value.clone())
+        }
+        (left, CValue::PointerInteger(value)) if !matches!(left, CValue::PointerInteger(_)) => {
+            Some(value.clone())
+        }
+        _ => None,
+    }
+}
+fn retain_pointer_integer_origin(
+    mut paths: Vec<CExpressionPath>,
+    origin: Option<std::sync::Arc<CPointerIntegerValue>>,
+) -> Vec<CExpressionPath> {
+    if let Some(origin) = origin {
+        for path in &mut paths {
+            if let CExpressionOutcome::Value(value) = &path.outcome
+                && let Some(value) = origin.with_numeric_value(value.clone())
+            {
+                path.outcome =
+                    CExpressionOutcome::Value(CValue::PointerInteger(std::sync::Arc::new(value)));
+            }
+        }
+    }
+    paths
+}
+
+/// A single native index with an exact byte scale and constant displacement.
+/// Visiting only the selected value's expression keeps unrelated state opaque.
+fn pointer_domain_linear_position(
+    term: &IntegerTerm,
+) -> Option<(SharedMachineIntegerTerm, i128, i128)> {
+    use num_traits::ToPrimitive;
+    match term {
+        IntegerTerm::Machine(value) => Some((value.clone(), 1, 0)),
+        IntegerTerm::Add(left, right) | IntegerTerm::Subtract(left, right) => {
+            let sign = if matches!(term, IntegerTerm::Subtract(..)) {
+                -1
+            } else {
+                1
+            };
+            if let IntegerTerm::Constant(c) = right.as_ref() {
+                let (machine, scale, shift) = pointer_domain_linear_position(left.as_ref())?;
+                Some((machine, scale, shift.checked_add(sign * c.to_i128()?)?))
+            } else if let IntegerTerm::Constant(c) = left.as_ref() {
+                let (machine, scale, shift) = pointer_domain_linear_position(right.as_ref())?;
+                Some((
+                    machine,
+                    sign * scale,
+                    c.to_i128()?.checked_add(sign * shift)?,
+                ))
+            } else {
+                None
+            }
+        }
+        IntegerTerm::Multiply(left, right) => {
+            let (inner, constant) = match (left.as_ref(), right.as_ref()) {
+                (IntegerTerm::Constant(c), inner) | (inner, IntegerTerm::Constant(c)) => {
+                    (inner, c.to_i128()?)
+                }
+                _ => return None,
+            };
+            let (machine, scale, shift) = pointer_domain_linear_position(inner)?;
+            Some((
+                machine,
+                scale.checked_mul(constant)?,
+                shift.checked_mul(constant)?,
+            ))
+        }
+        _ => None,
+    }
+}
+fn pointer_domain_machine_bound(
+    machine: &SharedMachineIntegerTerm,
+    bound: i128,
+    lower: bool,
+) -> ConditionTerm {
+    use num_traits::ToPrimitive;
+    let ty = machine.ty();
+    let (min, max) = ty.format().bounds();
+    let (min, max) = (
+        min.to_i128().expect("native index lower bound"),
+        max.to_i128().expect("native index upper bound"),
+    );
+    if bound < min {
+        return ConditionTerm::Constant(lower);
+    }
+    if bound > max {
+        return ConditionTerm::Constant(!lower);
+    }
+    let value = machine.value().clone();
+    match ty {
+        MachineIntegerType::UInt64 => {
+            if lower {
+                ConditionTerm::uint64_greater_equal(
+                    value,
+                    Bitvector32Term::UInt64Constant(bound as u64),
+                )
+            } else {
+                ConditionTerm::uint64_less_equal(
+                    value,
+                    Bitvector32Term::UInt64Constant(bound as u64),
+                )
+            }
+        }
+        MachineIntegerType::Int64 => {
+            if lower {
+                ConditionTerm::int64_signed_greater_equal(
+                    value,
+                    Bitvector32Term::Int64Constant(bound as i64),
+                )
+            } else {
+                ConditionTerm::int64_signed_less_equal(
+                    value,
+                    Bitvector32Term::Int64Constant(bound as i64),
+                )
+            }
+        }
+        MachineIntegerType::UInt32 => {
+            if lower {
+                ConditionTerm::unsigned_greater_equal(
+                    value,
+                    Bitvector32Term::Constant(bound as u32),
+                )
+            } else {
+                ConditionTerm::unsigned_less_equal(value, Bitvector32Term::Constant(bound as u32))
+            }
+        }
+        _ => {
+            if lower {
+                ConditionTerm::signed_greater_equal(value, Bitvector32Term::Constant(bound as u32))
+            } else {
+                ConditionTerm::signed_less_equal(value, Bitvector32Term::Constant(bound as u32))
+            }
+        }
+    }
+}
+
+fn pointer_domain_floor_div(value: i128, divisor: i128) -> i128 {
+    let quotient = value / divisor;
+    let remainder = value % divisor;
+    quotient - i128::from(remainder != 0 && (remainder < 0) != (divisor < 0))
+}
+
+/// A symbolic input needs its own typed resource promise. An equal address
+/// from another parameter grants byte permission but cannot establish domain.
+/// Only the original root and an explicitly selected member are queried.
+pub(in crate::kernel) fn pointer_input_domain_allows(
+    state: &CState,
+    pointer: &Pointer,
+    origin: &Pointer,
+    bytes: u32,
+    selecting: bool,
+    assumptions: &PureFactContext,
+) -> bool {
+    let Some(displacement) = pointer.offset_from_base(origin) else {
+        return false;
+    };
+    if state.memory().has_block(&origin.block)
+        || state.memory().live_heap_block_size(origin).is_some()
+    {
+        return true;
+    }
+    if selecting
+        && state
+            .resources()
+            .pointer_input_domain_has_object(origin, assumptions)
+    {
+        return true;
+    }
+    if let Some(cell) = state.memory().known_value(&origin.object_base())
+        && let Some(PointerOffsetTerm::Constant(offset)) =
+            pointer.offset_from_base(&origin.object_base())
+        && offset >= 0
+        && u64::try_from(offset)
+            .ok()
+            .and_then(|offset| offset.checked_add(u64::from(bytes)))
+            .is_some_and(|end| end <= u64::from(cell.byte_width()))
+    {
+        return true;
+    }
+    if state
+        .resources()
+        .pointer_input_domain_covers(pointer, origin, bytes, assumptions)
+    {
+        return true;
+    }
+    // A producer-retained typed read may have two presentation forms.
+    // Canonicalize its exact snapshot/read identity, never its address class.
+    if let Some(Bitvector32Term::MemoryLoad(memory, address, kind)) =
+        crate::kernel::equality_graph::logical_pointer_read_term(origin)
+        && let Bitvector32Term::Variable(variable) =
+            super::memory_loads::canonical_form_of_load(memory, *address, kind)
+    {
+        let canonical_origin = Pointer::symbolic(variable);
+        let canonical_pointer = Pointer {
+            block: canonical_origin.block.clone(),
+            offset: PointerOffsetTerm::add(canonical_origin.offset.clone(), displacement),
+        };
+        return selecting
+            && state
+                .resources()
+                .pointer_input_domain_has_object(&canonical_origin, assumptions)
+            || state.resources().pointer_input_domain_covers(
+                &canonical_pointer,
+                &canonical_origin,
+                bytes,
+                assumptions,
+            );
+    }
+    false
+}
+
+pub(in crate::kernel) fn pointer_domain_range_within(
+    domain: &CPointerDomain,
+    start: &CValue,
+    end: &CValue,
+    width: u32,
+    assumptions: &PureFactContext,
+) -> bool {
+    use num_traits::ToPrimitive;
+    fn constant(value: &CValue) -> Option<i128> {
+        match value {
+            CValue::PointerInteger(value) => constant(&value.numeric_value()),
+            CValue::Int32(Bitvector32Term::Constant(value)) => Some(i128::from(*value as i32)),
+            CValue::UInt32(Bitvector32Term::Constant(value)) => Some(i128::from(*value)),
+            CValue::Int64(value) => value.int64_as_const().map(i128::from),
+            CValue::UInt64(value) => value.uint64_as_const().map(i128::from),
+            _ => None,
+        }
+    }
+    // Native-width constants need only bounded machine arithmetic. In
+    // particular, checking a million-element array does not build BigInts
+    // for its literal endpoints at every resource boundary.
+    if let (IntegerTerm::Constant(position), Some(start), Some(end)) =
+        (domain.position.as_ref(), constant(start), constant(end))
+    {
+        crate::instrumentation::record_deterministic_work(1);
+        if let Some(position) = position.to_i128() {
+            return [start, end].into_iter().all(|index| {
+                index
+                    .checked_mul(i128::from(width))
+                    .and_then(|offset| position.checked_add(offset))
+                    .is_some_and(|position| 0 <= position && position <= i128::from(domain.bytes))
+            });
+        }
+        return false;
+    }
+    [start, end].into_iter().all(|endpoint| {
+        let Some(ty) = MachineIntegerType::from_c_type(endpoint.c_type()) else {
+            return false;
+        };
+        let Some(bits) = super::super::spec::c_value_bitvector_term(endpoint) else {
+            return false;
+        };
+        let Some(index) = IntegerTerm::from_machine(ty, bits) else {
+            return false;
+        };
+        let position = IntegerTerm::add(
+            domain.position.as_ref().clone(),
+            IntegerTerm::multiply(index, IntegerTerm::constant_i64(i64::from(width))),
+        );
+        pointer_domain_conditions(
+            Some(&CPointerDomain {
+                bytes: domain.bytes,
+                position: position.into(),
+            }),
+            0,
+        )
+        .iter()
+        .all(|condition| assumptions.decide(condition) == Some(true))
+    })
 }

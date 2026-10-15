@@ -39,7 +39,8 @@ enum BindingCarrier {
 #[derive(Clone)]
 pub(crate) enum TypedCReplacement {
     Bitvector(Bitvector32Term),
-    Pointer(Pointer),
+    PointerValue(CPointerValue),
+    ScalarValue(CValue),
 }
 
 struct TypedVariableReplacements<'a> {
@@ -117,6 +118,10 @@ impl CarrierVariables {
 
 fn c_value_variable(value: &CValue) -> Option<Variable> {
     match value {
+        CValue::PointerInteger(value) if value.is_input_origin() => match value.bits() {
+            Bitvector32Term::Variable(v) => Some(*v),
+            _ => None,
+        },
         CValue::Int8(Bitvector32Term::Variable(variable)) => Some(*variable),
         CValue::Bool(Bitvector32Term::Variable(variable))
         | CValue::Int16(Bitvector32Term::Variable(variable))
@@ -140,6 +145,8 @@ fn c_value_variable(value: &CValue) -> Option<Variable> {
 
 fn typed_c_replacement(value: &CValue) -> Option<TypedCReplacement> {
     match value {
+        CValue::PointerInteger(_) => Some(TypedCReplacement::ScalarValue(value.clone())),
+
         CValue::Int8(term) => Some(TypedCReplacement::Bitvector(term.clone())),
         CValue::Bool(term)
         | CValue::Int16(term)
@@ -153,7 +160,7 @@ fn typed_c_replacement(value: &CValue) -> Option<TypedCReplacement> {
         | CValue::UInt128(term)
         | CValue::Float32(term)
         | CValue::Float64(term) => Some(TypedCReplacement::Bitvector(term.clone())),
-        CValue::Pointer(pointer) => Some(TypedCReplacement::Pointer(pointer.pointer().clone())),
+        CValue::Pointer(pointer) => Some(TypedCReplacement::PointerValue(pointer.clone())),
         CValue::Void => None,
     }
 }
@@ -204,6 +211,10 @@ fn typed_binding_variable(
 
 fn c_value_declaration_variable(value: &CValue) -> Option<Variable> {
     match value {
+        CValue::PointerInteger(value) if value.is_input_origin() => match value.bits() {
+            Bitvector32Term::Variable(v) => Some(*v),
+            _ => None,
+        },
         CValue::Int8(Bitvector32Term::Variable(variable)) => Some(*variable),
         CValue::Bool(Bitvector32Term::Variable(variable))
         | CValue::Int16(Bitvector32Term::Variable(variable))
@@ -447,6 +458,11 @@ fn collect_c_value_carriers(value: &CValue, variables: &mut CarrierVariables) {
         return;
     }
     match value {
+        CValue::PointerInteger(value) => {
+            collect_bitvector_carriers(value.bits(), variables);
+            collect_c_value_carriers(&CValue::Pointer(value.origin().clone()), variables);
+        }
+
         CValue::Void => {}
         CValue::Int8(term) => collect_bitvector_carriers(term, variables),
         CValue::Bool(term)
@@ -461,7 +477,15 @@ fn collect_c_value_carriers(value: &CValue, variables: &mut CarrierVariables) {
         | CValue::UInt128(term)
         | CValue::Float32(term)
         | CValue::Float64(term) => collect_bitvector_carriers(term, variables),
-        CValue::Pointer(pointer) => collect_pointer_carriers(pointer, variables),
+        CValue::Pointer(pointer) => {
+            collect_pointer_carriers(pointer, variables);
+            if let Some(origin) = pointer.retained_origin() {
+                collect_pointer_carriers(origin, variables);
+            }
+            if let Some(domain) = pointer.domain() {
+                collect_integer_carriers(domain.position.as_ref(), variables, &mut BTreeSet::new());
+            }
+        }
     }
 }
 
@@ -1062,6 +1086,8 @@ fn exhausted_offset() -> PointerOffsetTerm {
 
 fn exhausted_c_value(value: &CValue) -> CValue {
     match value {
+        CValue::PointerInteger(value) => CValue::PointerInteger(value.clone()),
+
         CValue::Void => CValue::Void,
         CValue::Bool(_) => CValue::Bool(Bitvector32Term::Constant(0)),
         CValue::Int8(_) => CValue::Int8(Bitvector32Term::Constant(0)),
@@ -2486,7 +2512,53 @@ impl<'a> TermRewrite<'a> {
         if self.checked_work_exhausted() {
             return exhausted_c_value(v);
         }
+        if let Some(variable) = c_value_variable(v)
+            && let Some(TypedCReplacement::ScalarValue(value)) = self
+                .typed_variables
+                .as_ref()
+                .and_then(|map| map.c.get(&variable))
+        {
+            return value.clone();
+        }
         let result = match v {
+            CValue::PointerInteger(value) => {
+                if value.is_input_origin()
+                    && let PointerBlock::Symbolic(variable) = value.origin().block
+                    && let Some(replacement) = self
+                        .typed_variables
+                        .as_ref()
+                        .and_then(|map| map.c.get(&variable))
+                        .cloned()
+                {
+                    let bits = self.bits(value.bits());
+                    return match replacement {
+                        TypedCReplacement::ScalarValue(CValue::PointerInteger(actual)) => {
+                            CValue::PointerInteger(std::sync::Arc::new(
+                                actual.with_parts(bits, actual.origin().clone()),
+                            ))
+                        }
+                        _ => match value.c_type() {
+                            CType::Int64 => CValue::Int64(bits),
+                            _ => CValue::UInt64(bits),
+                        },
+                    };
+                }
+                let bits = self.bits(value.bits());
+                // Only structural full-pointer substitution transports origin.
+                // A numeric equality replacement supplies bits, never an origin.
+                let origin = if self.typed_variables.is_some() || !self.scope.c.is_empty() {
+                    let CValue::Pointer(origin) =
+                        self.value(&CValue::Pointer(value.origin().clone()))
+                    else {
+                        unreachable!("pointer rewrite preserves pointer sort")
+                    };
+                    origin
+                } else {
+                    value.origin().clone()
+                };
+                CValue::PointerInteger(std::sync::Arc::new(value.with_parts(bits, origin)))
+            }
+
             CValue::Void => CValue::Void,
             CValue::Bool(v) => CValue::Bool(self.bits(v)),
             CValue::Int8(v) => CValue::Int8(self.bits(v)),
@@ -2503,8 +2575,57 @@ impl<'a> TermRewrite<'a> {
             CValue::Float64(v) => CValue::Float64(self.bits(v)),
             CValue::Pointer(v) => {
                 let mut result = v.clone();
+                if let PointerBlock::Symbolic(variable) = &v.block
+                    && v.domain().is_none()
+                    && let Some(TypedCReplacement::PointerValue(replacement)) = self
+                        .typed_variables
+                        .as_ref()
+                        .and_then(|map| map.c.get(variable))
+                {
+                    let domain = replacement.domain().map(|domain| CPointerDomain {
+                        bytes: domain.bytes,
+                        position: match v.offset.as_const() {
+                            Some(offset) => IntegerTerm::add(
+                                domain.position.as_ref().clone(),
+                                IntegerTerm::constant_i64(offset),
+                            )
+                            .into(),
+                            // An unmodeled offset cannot erase a known bound.
+                            None => IntegerTerm::constant_i64(-1).into(),
+                        },
+                    });
+                    result = result.with_domain(domain);
+                }
+                if self.typed_variables.is_some()
+                    || !self.scope.c.is_empty()
+                    || self.pointer_variable.is_some()
+                {
+                    let mapped_origin = if let Pointer {
+                        block: PointerBlock::Symbolic(variable),
+                        offset,
+                    } = v.origin()
+                        && let Some(TypedCReplacement::PointerValue(replacement)) = self
+                            .typed_variables
+                            .as_ref()
+                            .and_then(|map| map.c.get(variable))
+                    {
+                        Pointer {
+                            block: replacement.origin().block.clone(),
+                            offset: PointerOffsetTerm::add(
+                                replacement.origin().offset.clone(),
+                                self.offset(offset),
+                            ),
+                        }
+                    } else {
+                        self.pointer(v.origin())
+                    };
+                    result = result.with_origin(mapped_origin);
+                }
                 result.replace_pointer(self.pointer(v.pointer()));
-                CValue::Pointer(result)
+                CValue::Pointer(result.map_domain(|domain| CPointerDomain {
+                    bytes: domain.bytes,
+                    position: self.integer(domain.position.as_ref()).into(),
+                }))
             }
         };
         if self.checked_work_exhausted() {
@@ -3511,11 +3632,14 @@ impl<'a> TermRewrite<'a> {
         {
             for replacement in replacements.c.values() {
                 match replacement {
+                    TypedCReplacement::ScalarValue(value) => {
+                        collect_c_value_carriers(value, &mut variables)
+                    }
                     TypedCReplacement::Bitvector(value) => {
                         collect_bitvector_carriers(value, &mut variables)
                     }
-                    TypedCReplacement::Pointer(pointer) => {
-                        collect_pointer_carriers(pointer, &mut variables);
+                    TypedCReplacement::PointerValue(pointer) => {
+                        collect_c_value_carriers(&CValue::Pointer(pointer.clone()), &mut variables);
                     }
                 }
                 if variables.exhausted() {
@@ -3624,7 +3748,10 @@ impl<'a> TermRewrite<'a> {
         if let PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) =
             &p.block
             && let Some(replacements) = &self.typed_variables
-            && let Some(TypedCReplacement::Pointer(replacement)) = replacements.c.get(variable)
+            && let Some(replacement) = replacements.c.get(variable).and_then(|value| match value {
+                TypedCReplacement::PointerValue(pointer) => Some(pointer.pointer()),
+                _ => None,
+            })
         {
             self.changed = true;
             let offset = self.offset(&p.offset);
@@ -3954,10 +4081,16 @@ impl<'a> TermRewrite<'a> {
         }
         if let Bitvector32Term::Variable(variable) = v
             && let Some(replacements) = &self.typed_variables
-            && let Some(TypedCReplacement::Bitvector(replacement)) = replacements.c.get(variable)
+            && let Some(replacement) = replacements.c.get(variable).and_then(|value| match value {
+                TypedCReplacement::Bitvector(value) => Some(value.clone()),
+                TypedCReplacement::ScalarValue(value) => {
+                    crate::kernel::spec::c_value_bitvector_term(value)
+                }
+                _ => None,
+            })
         {
             self.changed = true;
-            return replacement.clone();
+            return replacement;
         }
         if let Some((from, to)) = self.bitvector
             && !self.source_disabled
@@ -4913,7 +5046,13 @@ mod tests {
         assert_eq!(small_work, large_work);
 
         let mut c_replacements = BTreeMap::new();
-        c_replacements.insert(source, TypedCReplacement::Pointer(replacement.clone()));
+        c_replacements.insert(
+            source,
+            TypedCReplacement::PointerValue(CPointerValue::new(
+                replacement.clone(),
+                CType::Int32Pointer,
+            )),
+        );
         let empty_integer_replacements = BTreeMap::new();
         let empty_algebraic_replacements = BTreeMap::new();
         let mut typed_rewrite = TermRewrite::for_typed_variables(
