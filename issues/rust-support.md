@@ -92,7 +92,12 @@ installed frontend. Rust project units resolve a development override followed
 by that installed bundle. Explicit manifest paths and runtime version checks
 remove rustup and the user's toolchain from installed extraction. A relocated
 installed-layout regression covers extraction, verification, repeated locks,
-version refusal and offline verification after removing the bundle.
+version refusal and offline verification after removing the bundle. The
+release archive now has a separate installer-driven regression: release-built
+Charon is packaged once, the real installer consumes that archive/checksum,
+and the relocated installation locks/verifies the basic example and adler2
+outside the checkout. Packaging pull requests and tagged releases run this
+check before publication.
 
 Other host bundles, release identity contributions to the shared project lock,
 removing historical trial names, and richer crate-closure diagnostics remain.
