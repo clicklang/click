@@ -5761,14 +5761,13 @@ pub(in crate::surface) fn build_function_environment(
             }
             None => function.to_kernel_function(),
         };
-        let unwritten_coercion = function_block.is_none()
-            && crate::languages::rust::names::is_object_coercion(function.name());
+        let unwritten_coercion = function_block.is_none() && is_object_coercion(function.name());
         if closure_captures > 0 {
             environment = with_closure_instance(environment, &function, closure_captures)?;
         }
-        // A trait's object carries no state when the trait declares no
-        // functions: making one from a struct reference, or the reference
-        // back, moves nothing.
+        // A trait's or class's object carries no state when its sidecar
+        // declares no functions: making one from a reference to the struct
+        // or derived class, or the reference back, moves nothing.
         if unwritten_coercion {
             let no_op = function.clone().with_contract(
                 vec![],
@@ -5779,7 +5778,7 @@ pub(in crate::surface) fn build_function_environment(
             );
             let rule = crate::kernel::c_external_function_rule(no_op.clone()).ok_or_else(|| {
                 ClickError::new(format!(
-                    "trait object coercion `{}` cannot be applied opaquely",
+                    "object coercion `{}` cannot be applied opaquely",
                     function.name()
                 ))
             })?;
@@ -5903,14 +5902,24 @@ fn check_trait_method_implementations(
         let interface_name = parsed_sources
             .get(interface)
             .map_or(interface, |(_, function)| function.source_name());
-        // A trait whose object carries state states each implementation's
-        // interface on that implementation's own memory.
+        // A trait or class whose object carries state states each
+        // implementation's interface on that implementation's own memory. A
+        // C++ override of a method that is itself stated so also refines that
+        // method's own contract: a call through it may reach the override.
         let iface = crate::surface::parser::implementation_interface_contract(function.name());
-        let contract = if environment.get_function_contract(&iface).is_some() {
-            iface.as_str()
-        } else {
-            interface
-        };
+        let on_memory = environment.get_function_contract(&iface).is_some();
+        let overridden_on_memory = environment
+            .get_function_contract(&crate::surface::parser::implementation_interface_contract(
+                interface,
+            ))
+            .is_some();
+        let mut contracts = Vec::new();
+        if on_memory {
+            contracts.push(Some(iface.as_str()));
+        }
+        if !on_memory || (!rust && overridden_on_memory) {
+            contracts.push(verified_interface.is_none().then_some(interface));
+        }
         // An implementation without its own contract is never verified, so
         // no interface may stand for it.
         if !function_blocks
@@ -5935,17 +5944,21 @@ fn check_trait_method_implementations(
         let Some(implementation) = environment.get_function(function.name()) else {
             continue;
         };
-        let refines = match verified_interface {
-            Some(interface) => {
-                crate::kernel::c_function_refines_function_contract(interface, implementation)
+        let mut refines = true;
+        for contract in contracts {
+            refines &= match (contract, verified_interface) {
+                (None, Some(interface)) => {
+                    crate::kernel::c_function_refines_function_contract(interface, implementation)
+                }
+                (contract, _) => crate::kernel::c_function_refines_named_contract(
+                    environment,
+                    contract.unwrap_or(interface),
+                    implementation,
+                ),
             }
-            None => crate::kernel::c_function_refines_named_contract(
-                environment,
-                contract,
-                implementation,
-            ),
-        };
-        if !refines.map_err(ClickError::new)? {
+            .map_err(ClickError::new)?;
+        }
+        if !refines {
             let (name, interface) = if rust {
                 (
                     function.name(),
@@ -5970,15 +5983,23 @@ fn check_trait_method_implementations(
 }
 
 /// The functions that turn a crate struct reference into a crate trait's
-/// object and back. Each returns at once: it only moves resources.
+/// object, or a C++ class reference into its base's, and back. Each returns
+/// at once: it only moves resources.
 fn object_coercion_names(
     parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
 ) -> impl Iterator<Item = String> + '_ {
     parsed_sources
         .values()
         .map(|(_, function)| function.name())
-        .filter(|name| crate::languages::rust::names::is_object_coercion(name))
+        .filter(|name| is_object_coercion(name))
         .map(str::to_string)
+}
+
+/// Whether `name` is a function an importer places where a reference
+/// becomes a Rust trait's or a C++ base class's object, or back.
+fn is_object_coercion(name: &str) -> bool {
+    crate::languages::rust::names::is_object_coercion(name)
+        || crate::languages::cpp::names::is_object_coercion(name)
 }
 
 /// The functions that make instances of the program's capturing closures.

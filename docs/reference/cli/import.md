@@ -1491,8 +1491,9 @@ int Square::area(int scale) const {
 } by { execute(); simp(); }
 ```
 
-The interface reads nothing through `this` and holds none of its resources,
-so an override whose contract needs its fields does not refine it. A
+Without object state the interface reads nothing through `this` and holds
+none of its resources, so an override whose contract needs its fields does
+not refine it. A
 reachable virtual method brings every method of the translation unit that
 overrides it into the artifact, each checked, and refuses one outside the
 selected and dependency sources; a call through a virtual
@@ -1510,6 +1511,58 @@ unsupported
 (`mdtests/cpp_virtual_override_rejects_narrower_requires.md`,
 `mdtests/cpp_virtual_override_keeps_the_inherited_guarantee.md`,
 `tests/cpp_import.rs::virtual_dispatch_refuses_construction_recursion_and_other_class_shapes`).
+
+A polymorphic class's object may carry state, as a Rust trait's does
+([Rust reference](../rust.md#trait-object-state)). A `class` block declares
+model functions of the object, and each direct subclass passed as one
+defines them on its own memory:
+
+<!-- verified-example: mdtests/cpp_class_object_state.md -->
+```click
+class Shape {
+    function size(this) -> int32;
+}
+extern int Shape::area(int scale) const {
+    requires 0 <= scale and scale <= 100;
+    requires 0 <= size(this) and size(this) <= 100;
+    ensures result == size(this) + scale;
+}
+class Square : Shape {
+    function size(this) -> int32 { this->side }
+}
+int Square::area(int scale) const {
+} by { execute(); simp(); }
+```
+
+The object is the sealed abstract resource `Shape__object`, with a field for
+each function. A `const` method of `Shape`, and a function's `const Shape&`
+parameter, hold it with no clause written, read `size(this)` or `size(shape)`
+as its field, and keep it, so an `ensures` reads it as it was at entry. A
+method of `Square` is stated on `Square`'s memory, `owns *this`, with
+`size(this)` read as the definition. An override of a `Shape` method
+inherits that method's clauses read the same way, labeled
+`Square_area.interface_ensures_0`. Its refinement is checked against the
+`contract` `Square_area_iface` that states them on that memory. Where a
+call converts a `Square` reference to a `Shape` one, as an argument or a
+receiver, the importer places `Square__click_pack__Shape` before the call
+and `Square__click_unpack__Shape` after it. The pack consumes the memory
+and produces the object, with the definitions as its fields; the unpack
+returns the memory with the definitions equal to the fields. A caller
+passing a `Square` therefore knows the object's `size` is its `side`.
+
+Limits:
+- An override in a class without a defining `class` block is refused.
+- A `class` block naming a base other than the object class is refused,
+  since a further subclass would run its base's methods on an object its own
+  definitions describe.
+- Overriding a defining class's method is refused.
+- A non-`const` method of the object class, or a non-`const` reference to
+  it, is refused.
+- A call through the interface inside a larger expression is an expression
+  observer, whose contract must be read-only, so the object's call is
+  written as its own statement
+  (`mdtests/cpp_class_object_state_override_keeps_the_interface.md`,
+  `tests/cpp_import.rs::class_object_state_refuses_undefined_and_nested_overrides`).
 
 Discarded-result trivial copy assignment between live lvalues of the same
 nominal record lowers to shared C aggregate field copies. Clang must resolve a
