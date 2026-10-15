@@ -230,12 +230,16 @@ context that theorem was proved under; a proof-level case split records its
 arm on every trace it creates and forks the traces with the candidates when
 it forks paths after execution; an exhaustive C branch records one nested
 node with both arm deltas; a composite `observe`, `fold`, `unfold`, or
-scoped open records the checked resource rewrite. Each record call checks
-what it records: a statement or condition theorem must prove the source
-statement the evidence has yet to consume, from the state the evidence has
-reached, under premises the retained facts and context vouch for, and the
-core advances that state and source from the theorem itself; a record call
-the proof object refuses fails the tactic that made it. At function exit
+scoped open records the resource rewrite. A statement or condition theorem
+must prove the source statement the evidence has yet to consume, from the
+state the evidence has reached, and the core advances that state and source
+from the theorem itself; a record call the proof object refuses fails the
+tactic that made it. Recording does not re-validate what the session
+produced (`AGENTS.md`, construct valid proofs): a theorem's premises are its
+own path facts and obligations beside the recorded context, and are not
+looked up again, and a plain composite `fold` or `unfold` is recorded from
+the kernel producer's result without re-expanding the definition or
+comparing the resource contexts. At function exit
 the proof object composes the checked function execution that claim and
 contract certification consume (`ExecutionProofCore::checked_function_execution`):
 one path per trace, its completing theorem under the contract's exit rule.

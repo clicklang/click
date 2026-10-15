@@ -9484,6 +9484,7 @@ impl Proposition {
     }
 
     /// The parent and the child range of a containment of a memory resource.
+    #[cfg(test)]
     pub(crate) fn memory_containment(&self) -> Option<(&CResource, &CMemoryRange)> {
         match self {
             Self::CResourceContains { parent, child } => match &**child {

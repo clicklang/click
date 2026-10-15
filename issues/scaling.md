@@ -105,9 +105,12 @@ instead of from what the step changed.
    N = 64, and a mean step of 18.7 to 6.4 ms at N = 256. Still open, under
    the rule in `AGENTS.md` (construct valid proofs; never produce-then-check):
    a step still runs its executor up to three times (a probe before
-   obligations, and a call before its `return`), fold and unfold re-run
-   their producer to check it, joins re-walk their arms, and condition and
-   function-level theorems still list their contexts.
+   obligations, and a call before its `return`), instance, observation and
+   population rewrites still re-check their producer's result, joins re-walk
+   their arms, and condition and function-level theorems still list their
+   contexts. A plain composite `fold` or `unfold` is recorded from its
+   producer's result without re-expanding or comparing (2.84 billion
+   instructions at N = 64; fold work at N = 256 137,981 to 22,782).
 5. **Fixed: satisfying a composite checked every held one of its shape.**
    `ResourceContext::satisfies_fact` tried entailment against every held
    `boxed(..)` when the required pointer was spelled differently, so each
