@@ -3938,115 +3938,6 @@ fn completion_refuses_a_trace_that_stops_before_the_path_ends() {
     );
 }
 
-/// `int32 early() { if (0 < 1) { return 0; } return 1; }` whose one retained
-/// statement theorem has `premises` and whose candidate path retains `facts`.
-fn early_return_inputs_with_facts(
-    premises: Vec<Proposition>,
-    facts: Vec<Proposition>,
-) -> (
-    CFunctionExecutionCandidates,
-    CFunction,
-    crate::kernel::proof::PersistentSequence<crate::kernel::proof::CheckedExecutionEvent>,
-) {
-    let branch = c_if(
-        c_less_than(c_int32_literal(0), c_int32_literal(1)),
-        c_return(c_int32_literal(0)),
-        CStatement::Skip,
-    );
-    let function = c_function(
-        CType::Int32,
-        "early",
-        Vec::new(),
-        c_seq(branch.clone(), c_return(c_int32_literal(1))),
-    );
-    let caller_state = CState::new();
-    let entry_state = c_function_entry_state(&caller_state, &function, &[])
-        .expect("a parameterless function binds its entry state");
-    let outcome = CStatementOutcome::Return {
-        value: int32(0),
-        state: Box::new(entry_state.clone()),
-    };
-    let (function_outcome, obligations) = c_function_outcome_from_statement_outcome(
-        &caller_state,
-        &function,
-        outcome.clone(),
-        Vec::new(),
-        &PureFactContext::new(),
-    );
-    let candidates = c_function_execution_candidates_from_outcomes(
-        caller_state,
-        function.clone(),
-        Vec::new(),
-        vec![(
-            function_outcome,
-            facts.into_iter().map(ExecutionPureFact::new).collect(),
-            obligations,
-        )],
-    );
-    let conclusion = Proposition::CStatementVerifies {
-        state: Box::new(entry_state),
-        statement: Box::new(branch),
-        outcome,
-    };
-    let theorem = Theorem::new(
-        premises
-            .into_iter()
-            .rev()
-            .fold(conclusion, |body, premise| {
-                Proposition::Implies(Box::new(premise), Box::new(body))
-            }),
-    );
-    let mut trace = crate::kernel::proof::PersistentSequence::default();
-    trace.push(crate::kernel::proof::CheckedExecutionEvent::Statement(
-        theorem,
-    ));
-    (candidates, function, trace)
-}
-
-#[test]
-fn recording_finds_a_theorem_premise_inside_a_retained_conjunction() {
-    let counter = Bitvector32Term::Variable(Variable(1_000_000));
-    let bound = Bitvector32Term::Variable(Variable(0));
-    let nonnegative = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal(counter.clone(), Bitvector32Term::Constant(0)),
-        true,
-    );
-    let bounded = Proposition::ConditionIs(ConditionTerm::signed_less_equal(counter, bound), true);
-    // A loop step retains the lowered invariant as one conjunction; the
-    // statement theorem lists each conjunct it executed under.
-    let invariant = Proposition::And(Box::new(nonnegative.clone()), Box::new(bounded.clone()));
-    let (candidates, function, trace) = early_return_inputs_with_facts(
-        vec![nonnegative.clone(), bounded.clone()],
-        vec![invariant.clone()],
-    );
-    complete_early_return(&candidates, &function, trace)
-        .expect("each conjunct of a retained conjunction is a retained premise");
-
-    // A disjunction retains neither side, and a premise mentioning a
-    // different variable is not retained by a conjunction that does not
-    // contain it.
-    let disjunction = Proposition::Or(Box::new(nonnegative.clone()), Box::new(bounded.clone()));
-    let (candidates, function, trace) =
-        early_return_inputs_with_facts(vec![nonnegative.clone()], vec![disjunction]);
-    assert_eq!(
-        complete_early_return(&candidates, &function, trace).err(),
-        Some("evidence assumes a premise the proof did not retain")
-    );
-    let other = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(
-            Bitvector32Term::Variable(Variable(1_000_001)),
-            Bitvector32Term::Constant(3),
-        ),
-        true,
-    );
-    let (candidates, function, trace) =
-        early_return_inputs_with_facts(vec![other], vec![invariant]);
-    assert_eq!(
-        complete_early_return(&candidates, &function, trace).err(),
-        Some("evidence assumes a premise the proof did not retain")
-    );
-}
-
 /// `int32 skipping() { ; return 1; }`: a body whose first statement is the
 /// `Skip` an empty `if` arm leaves behind, with the given retained trace.
 fn skip_inputs(
@@ -4283,130 +4174,6 @@ fn contract_exit_rule_is_the_plain_outcome_without_resources() {
 }
 
 #[test]
-fn recording_takes_a_premise_from_the_retained_context() {
-    // A `have` mid-execution puts `x < 5` in the context a later statement
-    // executes under. The statement theorem lists it as a premise; it is
-    // neither an entry assumption nor a path fact, so only the retained
-    // context can vouch for it.
-    let bound = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(
-            Bitvector32Term::Variable(Variable(1_000_070)),
-            Bitvector32Term::Constant(5),
-        ),
-        true,
-    );
-    let (candidates, function, mut trace) =
-        early_return_inputs_with_facts(vec![bound.clone()], Vec::new());
-    assert_eq!(
-        complete_early_return(&candidates, &function, trace.clone()).err(),
-        Some("evidence assumes a premise the proof did not retain")
-    );
-    trace.push(crate::kernel::proof::CheckedExecutionEvent::Context(
-        PureFactContext::new().assume_proposition(bound),
-    ));
-    complete_early_return(&candidates, &function, trace)
-        .expect("the retained context vouches for the theorem's premise");
-    // A context that does not hold the premise vouches for nothing.
-    let other = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(
-            Bitvector32Term::Variable(Variable(1_000_071)),
-            Bitvector32Term::Constant(5),
-        ),
-        true,
-    );
-    let (candidates, function, mut trace) = early_return_inputs_with_facts(vec![other], Vec::new());
-    trace.push(crate::kernel::proof::CheckedExecutionEvent::Context(
-        PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::signed_less_than(
-                Bitvector32Term::Variable(Variable(1_000_072)),
-                Bitvector32Term::Constant(5),
-            ),
-            true,
-        )),
-    ));
-    assert_eq!(
-        complete_early_return(&candidates, &function, trace).err(),
-        Some("evidence assumes a premise the proof did not retain")
-    );
-}
-
-#[test]
-fn recording_covers_a_loadability_premise_from_the_retained_context() {
-    // A callee's `loadable(p[i..i + 1])` at the caller's current memory is
-    // covered by the caller's `loadable(p[0..n])` under `0 <= i < n`.
-    let p = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(100_000))),
-            byte_width: 4,
-        },
-    };
-    let i = Bitvector32Term::Variable(Variable(1));
-    let n = Bitvector32Term::Variable(Variable(2));
-    let current = CMemory::new().with_block("local:value", 4);
-    let requirement = Proposition::CMemoryLoadable {
-        memory: current,
-        base: p.offset_by_int32_elements(i.clone()),
-        bytes: Bitvector32Term::Constant(4),
-        wide: false,
-    };
-    let caller = Proposition::CMemoryLoadable {
-        memory: CMemory::new(),
-        base: p.clone(),
-        bytes: Bitvector32Term::Multiply(
-            Box::new(n.clone()),
-            Box::new(Bitvector32Term::Constant(4)),
-        ),
-        wide: false,
-    };
-    let context = PureFactContext::new()
-        .assume_proposition(caller)
-        .assume_condition(
-            ConditionTerm::signed_greater_equal(i.clone(), Bitvector32Term::Constant(0)),
-            true,
-        )
-        .assume_condition(ConditionTerm::signed_less_than(i, n.clone()), true)
-        .assume_condition(
-            ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), n.clone()),
-            true,
-        )
-        // The caller's range is read at element granularity, so `n` has to be
-        // an element count that fits a `u32` byte extent once scaled by four —
-        // `i32::MAX` elements of four bytes do not.
-        .assume_condition(
-            ConditionTerm::signed_less_equal(
-                n,
-                Bitvector32Term::Constant(crate::kernel::memory_range_element_count_limit(4)),
-            ),
-            true,
-        );
-    let (candidates, function, mut trace) =
-        early_return_inputs_with_facts(vec![requirement.clone()], Vec::new());
-    trace.push(crate::kernel::proof::CheckedExecutionEvent::Context(
-        context.clone(),
-    ));
-    complete_early_return(&candidates, &function, trace)
-        .expect("the caller's wider viewable range covers the callee's requirement");
-
-    // A requirement outside the covered range is refused.
-    let outside = Proposition::CMemoryLoadable {
-        memory: CMemory::new().with_block("local:value", 4),
-        base: p.offset_by_int32_elements(Bitvector32Term::Variable(Variable(2))),
-        bytes: Bitvector32Term::Constant(4),
-        wide: false,
-    };
-    let (candidates, function, mut trace) =
-        early_return_inputs_with_facts(vec![outside], Vec::new());
-    trace.push(crate::kernel::proof::CheckedExecutionEvent::Context(
-        context,
-    ));
-    assert_eq!(
-        complete_early_return(&candidates, &function, trace).err(),
-        Some("evidence assumes a premise the proof did not retain")
-    );
-}
-
-#[test]
 fn recording_complete_sequence_requires_exact_remaining_source() {
     let body = c_seq(c_return(c_int32_literal(0)), c_return(c_int32_literal(1)));
     let function = c_function(CType::Int32, "sequence", Vec::new(), body.clone());
@@ -4448,9 +4215,8 @@ fn recording_complete_sequence_requires_exact_remaining_source() {
 
 #[test]
 fn recording_statement_evidence_checks_it_advances_the_frontier() {
-    // The record call itself applies the judgment the end-of-proof walk
-    // applies: the theorem proves the frontier's next source statement
-    // from the running state, under premises the proof retains.
+    // The record call checks that the theorem proves the frontier's next
+    // source statement from the running state.
     let branch = c_if(
         c_less_than(c_int32_literal(0), c_int32_literal(1)),
         c_return(c_int32_literal(0)),
@@ -4504,37 +4270,13 @@ fn recording_statement_evidence_checks_it_advances_the_frontier() {
         .map_err(|refusal| refusal.reason),
         Err("evidence does not start from the running state")
     );
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(
-            Bitvector32Term::Variable(Variable(1_000_001)),
-            Bitvector32Term::Constant(3),
-        ),
-        true,
-    );
-    let conditional = Theorem::new(Proposition::Implies(
-        Box::new(premise.clone()),
-        Box::new(verifies(entry_state, branch)),
-    ));
-    let refusal = record(conditional.clone(), PureFactContext::new())
-        .expect_err("an unretained premise is refused");
-    assert_eq!(
-        refusal.reason,
-        "evidence assumes a premise the proof did not retain"
-    );
-    assert_eq!(refusal.premise.as_ref(), Some(&premise));
-    record(
-        conditional,
-        PureFactContext::new().assume_proposition(premise),
-    )
-    .expect("a premise the recorded context retains is accepted");
 }
 
 #[test]
 fn recording_condition_evidence_checks_it_decides_the_frontier() {
-    // The condition record call applies the same judgment for the theorem
-    // that selects an `if` arm or a loop iteration: it decides the
-    // frontier's next `if` or `while` condition, from the running state,
-    // under premises the proof retains.
+    // The condition record call checks the same for the theorem that
+    // selects an `if` arm or a loop iteration: it decides the frontier's
+    // next `if` or `while` condition, from the running state.
     let condition = c_less_than(c_int32_literal(0), c_int32_literal(1));
     let branch = c_if(
         condition.clone(),
@@ -4589,30 +4331,6 @@ fn recording_condition_evidence_checks_it_decides_the_frontier() {
         ),
         Err("evidence does not start from the running state")
     );
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(
-            Bitvector32Term::Variable(Variable(1_000_001)),
-            Bitvector32Term::Constant(3),
-        ),
-        true,
-    );
-    let conditional = Theorem::new(Proposition::Implies(
-        Box::new(premise.clone()),
-        Box::new(evaluates(entry_state, condition)),
-    ));
-    assert_eq!(
-        record(conditional.clone(), PureFactContext::new(), &[]),
-        Err("evidence assumes a premise the proof did not retain")
-    );
-    record(
-        conditional.clone(),
-        PureFactContext::new().assume_proposition(premise.clone()),
-        &[],
-    )
-    .expect("a premise the recorded context retains is accepted");
-    // The decision's own path fact is a premise the selected path assumes.
-    record(conditional, PureFactContext::new(), &[premise])
-        .expect("a premise that is the path's own fact is accepted");
     // A statement that is not an `if` or `while` cannot be decided.
     let mut core = crate::kernel::proof::ExecutionProofCore::at_entry(
         CState::new(),

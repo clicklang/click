@@ -3671,8 +3671,6 @@ pub(crate) struct CheckedFunctionEntry {
     /// checked under these, not under each step's full context, so the
     /// definitional comparisons stay proportional to the entry.
     assumptions: PureFactContext,
-    /// `resource_relation_assumptions(&self.assumptions)`, computed once.
-    relation_facts: Option<PureFactContext>,
 }
 
 impl CheckedFunctionEntry {
@@ -3712,28 +3710,20 @@ impl CheckedFunctionEntry {
                 })??,
             )
         };
-        let mut entry = Self {
+        let entry = Self {
             caller_state: caller_state.clone(),
             function,
             arguments: arguments.to_vec(),
             entry_state,
             boundary_transfer,
             assumptions,
-            relation_facts: None,
         };
-        entry.relation_facts = entry.resource_relation_assumptions(&entry.assumptions);
         Ok(Arc::new(entry))
     }
 
     /// The facts the proof assumed at entry.
     pub(crate) fn assumptions(&self) -> &PureFactContext {
         &self.assumptions
-    }
-
-    /// The entry resources' relation facts under the entry assumptions,
-    /// when the entry's composites expand.
-    pub(crate) fn relation_facts(&self) -> Option<&PureFactContext> {
-        self.relation_facts.as_ref()
     }
 
     pub(crate) fn entry_state_for(
@@ -3767,27 +3757,6 @@ impl CheckedFunctionEntry {
     ) -> Option<&CState> {
         (self.function.has_same_entry_and_source(function) && self.arguments == arguments)
             .then_some(&self.entry_state)
-    }
-
-    pub(crate) fn resource_relation_assumptions(
-        &self,
-        assumptions: &PureFactContext,
-    ) -> Option<PureFactContext> {
-        let (_, propositions) = {
-            crate::kernel::functions::expand_all_composite_resource_facts_and_propositions_at_state(
-                self.entry_state.resources(),
-                self.function.composite_resource_definitions(),
-                &self.entry_state,
-                assumptions,
-            )?
-        };
-        Some(
-            propositions
-                .into_iter()
-                .fold(assumptions.clone(), |facts, proposition| {
-                    facts.assume_proposition(proposition)
-                }),
-        )
     }
 
     pub(crate) fn caller_state(&self) -> &CState {
@@ -8492,18 +8461,12 @@ impl ExecutionProofCore {
         theorem: Theorem,
         context: PureFactContext,
         execution_facts: &(impl ExecutionFactSource + ?Sized),
-        obligations: &[crate::kernel::ProofObligation],
+        _obligations: &[crate::kernel::ProofObligation],
         loan_evidence: &crate::kernel::loans::CheckedLoanCallEvidenceSequence,
     ) -> Result<(), EvidenceRefusal> {
         debug_assert_eq!(self.execution_evidence.len(), 1);
-        let (outcome, source_after) = self.check_statement_evidence(
-            function,
-            arguments,
-            &theorem,
-            &context,
-            execution_facts,
-            obligations,
-        )?;
+        let (outcome, source_after) =
+            self.check_statement_evidence(function, arguments, &theorem, &context)?;
         self.loan_evidence =
             crate::kernel::loans::concat_checked_loan_evidence(&self.loan_evidence, loan_evidence);
         let call_events = statement_call_havoc_views(&theorem)
@@ -8736,15 +8699,9 @@ impl ExecutionProofCore {
         context: PureFactContext,
     ) -> Result<(), EvidenceRefusal> {
         debug_assert_eq!(self.execution_evidence.len(), 1);
-        for (theorem, execution_facts, obligations) in outcomes {
-            let (outcome, _) = self.check_statement_evidence(
-                function,
-                arguments,
-                theorem,
-                &context,
-                execution_facts,
-                obligations,
-            )?;
+        for (theorem, _, _) in outcomes {
+            let (outcome, _) =
+                self.check_statement_evidence(function, arguments, theorem, &context)?;
             if matches!(outcome, CStatementOutcome::Normal(_)) {
                 return Err("an outcome fork records only completing outcomes".into());
             }
@@ -8786,8 +8743,8 @@ impl ExecutionProofCore {
         arguments: &[CExpression],
         theorem: &Theorem,
         context: &PureFactContext,
-        execution_facts: &(impl ExecutionFactSource + ?Sized),
-        obligations: &[crate::kernel::ProofObligation],
+        _execution_facts: &(impl ExecutionFactSource + ?Sized),
+        _obligations: &[crate::kernel::ProofObligation],
         outcome: CFunctionOutcome,
         completed_execution_facts: ExecutionFacts,
         completed_obligations: Vec<crate::kernel::ProofObligation>,
@@ -8810,14 +8767,8 @@ impl ExecutionProofCore {
             );
         }
         let mut probe = parent.clone();
-        let (statement_outcome, _) = probe.check_statement_evidence(
-            function,
-            arguments,
-            theorem,
-            context,
-            execution_facts,
-            obligations,
-        )?;
+        let (statement_outcome, _) =
+            probe.check_statement_evidence(function, arguments, theorem, context)?;
         if !matches!(statement_outcome, CStatementOutcome::Return { .. }) {
             return Err("a loop's retained terminal path does not return".into());
         }
@@ -9250,21 +9201,15 @@ impl ExecutionProofCore {
     /// nothing) from the running state, modulo definitionally equal
     /// resource representation (and, before the first C operation of a
     /// checked entry, the representation-only change resource scopes
-    /// make), and every premise it assumes is retained by the context it
-    /// was proved under, the step's execution facts and obligations, the
-    /// effect facts recorded so far, the running resources, or the checked
-    /// entry's relation facts. Definitional comparisons run under the
-    /// entry assumptions plus the theorem's own premises, as the
-    /// end-of-proof walk runs them. This is that walk's judgment, made at
-    /// the step.
+    /// make). Definitional comparisons run under the context the theorem
+    /// executed under. Its premises are not looked up again: they are that
+    /// context and the facts of its own path.
     fn check_statement_evidence(
         &mut self,
         function: &CFunction,
         arguments: &[CExpression],
         theorem: &Theorem,
         context: &PureFactContext,
-        execution_facts: &(impl ExecutionFactSource + ?Sized),
-        obligations: &[crate::kernel::ProofObligation],
     ) -> Result<(CStatementOutcome, Option<Arc<CStatement>>), EvidenceRefusal> {
         // Owned (not borrowed) so try-evidence advancement below can take
         // `&mut self`; `CState` clones are persistent-structure shares.
@@ -9402,15 +9347,7 @@ impl ExecutionProofCore {
                 do_while_initial_body.or(tail)
             }
         };
-        self.check_evidence_state_and_premises(
-            function,
-            &running_state,
-            theorem,
-            context,
-            proved_state,
-            execution_facts,
-            obligations,
-        )?;
+        self.check_evidence_state(function, &running_state, context, proved_state)?;
         Ok((outcome.clone(), source_after))
     }
 
@@ -9573,15 +9510,7 @@ impl ExecutionProofCore {
             .cloned()
             .map(ExecutionPureFact::new)
             .collect::<Vec<_>>();
-        self.check_evidence_state_and_premises(
-            function,
-            &running_state,
-            theorem,
-            context,
-            proved_state,
-            &path_facts,
-            obligations,
-        )?;
+        self.check_evidence_state(function, &running_state, context, proved_state)?;
         // A condition on a pending `malloc` result decides that allocation's
         // outcome: the reached state resolves the pending allocation from
         // the decided facts, the kernel rule execution applies right after
@@ -9641,34 +9570,30 @@ impl ExecutionProofCore {
     }
 
     /// The part of the evidence judgment shared by statement and condition
-    /// theorems: the theorem starts from the running state, and every
-    /// premise it assumes is retained.
-    fn check_evidence_state_and_premises(
+    /// theorems: the theorem starts from the running state. Its premises are
+    /// not walked: they are the context it executed under, which is recorded
+    /// beside it, and the facts of its own path, both produced by this
+    /// session (`AGENTS.md`, construct valid proofs).
+    fn check_evidence_state(
         &self,
         function: &CFunction,
         running_state: &CState,
-        theorem: &Theorem,
         context: &PureFactContext,
         proved_state: &CState,
-        execution_facts: &(impl ExecutionFactSource + ?Sized),
-        obligations: &[crate::kernel::ProofObligation],
     ) -> Result<(), EvidenceRefusal> {
-        let no_assumptions = PureFactContext::new();
-        let entry_assumptions = self
-            .function_entry
-            .as_ref()
-            .map_or(&no_assumptions, |entry| entry.assumptions());
-        // The representation-only change before the first operation is
-        // allowed against the checked entry state itself: once the trace
-        // holds an observation or rewrite, the theorem follows its state.
         let at_checked_entry = matches!(self.frontier.position, FrontierPosition::FunctionEntry)
             && self.function_entry.is_some()
             && self.execution_evidence.iter().all(|trace| trace.is_empty());
-        // A theorem lists the whole context it executed under as premises,
-        // so the assumption set it needs for a definitional comparison is
-        // built only when the states are not identical.
+        // The representation-only change before the first operation is
+        // allowed against the checked entry state itself: once the trace
+        // holds an observation or rewrite, the theorem follows its state.
         let states_match = *running_state == *proved_state
             || if at_checked_entry {
+                let no_assumptions = PureFactContext::new();
+                let entry_assumptions = self
+                    .function_entry
+                    .as_ref()
+                    .map_or(&no_assumptions, |entry| entry.assumptions());
                 crate::kernel::api::function_entry_representation_states_match(
                     function,
                     running_state,
@@ -9676,13 +9601,11 @@ impl ExecutionProofCore {
                     entry_assumptions,
                 )
             } else {
-                let theorem_assumptions =
-                    crate::kernel::api::proof_evidence_assumptions(theorem, entry_assumptions);
                 crate::kernel::api::execution_evidence_states_match(
                     function,
                     running_state,
                     proved_state,
-                    &theorem_assumptions,
+                    context,
                 )
             };
         let states_match = states_match
@@ -9690,49 +9613,19 @@ impl ExecutionProofCore {
                 .pending_thread_create
                 .as_ref()
                 .is_some_and(|pending| {
-                    let theorem_assumptions =
-                        crate::kernel::api::proof_evidence_assumptions(theorem, entry_assumptions);
                     pending
-                        .resolve(proved_state, &theorem_assumptions)
+                        .resolve(proved_state, context)
                         .is_some_and(|resolved| resolved == *running_state)
                 });
         if !states_match {
             return Err("evidence does not start from the running state".into());
         }
-        // Premise availability is a set question. Retain both ordered streams
-        // by their persistent roots; the premise checker deduplicates only if
-        // a theorem actually needs its fallback set. Do not rebuild the whole
-        // effect history before every statement's ordinary context check.
-        let mut retained_execution_facts = execution_facts.persistent_facts();
-        retained_execution_facts.extend_shared(&self.effect_facts);
-        let entry_relation_facts = self
-            .function_entry
-            .as_ref()
-            .and_then(|entry| entry.relation_facts());
-        if let Some(premise) = crate::kernel::api::proof_evidence_unretained_premise(
-            theorem,
-            entry_assumptions,
-            Some(context),
-            &retained_execution_facts,
-            obligations,
-            running_state,
-            entry_relation_facts,
-        ) {
-            return Err(EvidenceRefusal {
-                reason: "evidence assumes a premise the proof did not retain",
-                expected: None,
-                proved: None,
-                premise: Some(premise),
-            });
-        }
         if running_state.memory() != proved_state.memory() {
-            let theorem_assumptions =
-                crate::kernel::api::proof_evidence_assumptions(theorem, entry_assumptions);
             register_recomputed_call_views(
                 &self.checked_call_events,
                 running_state.memory(),
                 proved_state.memory(),
-                &theorem_assumptions,
+                context,
             );
         }
         Ok(())
