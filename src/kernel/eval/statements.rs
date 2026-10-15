@@ -3223,12 +3223,12 @@ fn execute_c_statement_leaf_paths(
         }
         CStatement::DeclareAggregate { name, layout, kind } => {
             let declared = match kind {
-                CAggregateDeclarationKind::Local => declare_aggregate_local(state, name, layout),
+                CAggregateDeclarationKind::Local
+                | CAggregateDeclarationKind::ConstructionDestination => {
+                    declare_aggregate_local(state, name, layout)
+                }
                 CAggregateDeclarationKind::Constructor => {
                     begin_aggregate_construction(state, name, layout, budget)?
-                }
-                CAggregateDeclarationKind::ConstructionDestination => {
-                    allocate_aggregate_destination(state, name, layout)
                 }
             };
             let outcome = match declared {
@@ -4642,21 +4642,11 @@ pub(in crate::kernel) fn declare_aggregate_local(
     );
     state
         .locals
-        .set_aggregate_object_at(name.to_string(), layout.clone(), pointer);
-    Ok(state)
-}
-
-fn allocate_aggregate_destination(
-    state: &CState,
-    name: &str,
-    layout: &CAggregateLayout,
-) -> Result<CState, CRuntimeError> {
-    let mut state = declare_aggregate_local(state, name, layout)?;
-    let pointer = state
-        .locals
-        .slot(name)
-        .expect("aggregate destination has a declared stack slot")
-        .clone();
+        .set_aggregate_object_at(name.to_string(), layout.clone(), pointer.clone());
+    // Every automatic record owns its complete storage, just like a scalar
+    // local or a construction destination. A modular pointer result can name
+    // this storage through a symbolic address, where implicit local access
+    // alone cannot provide the caller's field-read permission.
     state.resources = state
         .resources
         .clone()
@@ -4677,7 +4667,7 @@ fn begin_aggregate_construction(
     layout: &CAggregateLayout,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<CState, CRuntimeError>> {
-    let mut state = match allocate_aggregate_destination(state, name, layout) {
+    let mut state = match declare_aggregate_local(state, name, layout) {
         Ok(state) => state,
         Err(refusal) => return Ok(Err(refusal)),
     };

@@ -617,8 +617,12 @@ Copyable by-value structs are the first exception to that address-first
 boundary. Click retains each leaf field name, byte offset, and kernel type in a
 flattened `CAggregateLayout`; embedded fields use qualified names such as
 `inner.value`. The kernel binds a value to an `AggregateObject` with its own
-local block. Parameter binding, local assignment, and aggregate return
-materialization allocate fresh blocks and recursively copy the modeled scalar,
+local block. Each automatic aggregate declaration owns its complete byte range,
+including ordinary C record locals as well as construction destinations. This
+lets a modular pointer result use the existing address equality and resource
+coverage rules to access the caller's record; ownership alone does not
+initialize its fields or establish an alias. Parameter binding, local
+assignment, and aggregate return materialization allocate fresh blocks and recursively copy the modeled scalar,
 array, fixed-dimensional embedded-struct-array leaf, and data-pointer fields.
 Multidimensional embedded-struct arrays are expanded in declared row-major
 order, so each nested leaf retains its complete element stride. Pointer fields are
