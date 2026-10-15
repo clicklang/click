@@ -1,8 +1,9 @@
-//! Checked same-block scalar lease births and ending frontiers. Reference
+//! Checked scalar lease births and common ending frontiers. Reference
 //! aliases name one node; reborrows add a dependency edge. A reverse tree pass
 //! propagates descendant uses, avoiding one whole-function scan per borrow.
 use super::*;
 use crate::kernel::{ScalarReferencePlanFamily, ScalarReferencePlanKey};
+mod regions;
 
 pub(in crate::languages::rust) struct CheckedBirth {
     pub parent: String,
@@ -11,15 +12,15 @@ pub(in crate::languages::rust) struct CheckedBirth {
     pub key: ScalarReferencePlanKey,
 }
 pub(in crate::languages::rust) struct CheckedForest {
-    pub births: BTreeMap<usize, CheckedBirth>,
-    pub endings: BTreeMap<usize, Vec<ScalarReferencePlanKey>>,
+    pub births: BTreeMap<MirPoint, CheckedBirth>,
+    pub endings: BTreeMap<MirPoint, Vec<ScalarReferencePlanKey>>,
 }
 struct Node {
     parent: Option<usize>,
     name: String,
     child: String,
     pointee: Type,
-    birth: usize,
+    birth: MirPoint,
     last: usize,
 }
 fn scalar(ty: &Type) -> bool {
@@ -76,12 +77,11 @@ fn value(
 pub(in crate::languages::rust) fn certify(
     function: &Function,
     identity: Option<&str>,
+    joins: &[usize],
 ) -> Option<CheckedForest> {
     let identity = identity?;
     let mir = function.mir.as_ref()?;
-    if mir.blocks.len() != 1 || !matches!(mir.blocks[0].terminator, T::Return) {
-        return None;
-    }
+    let events = regions::project(mir, joins)?;
     let mut types = BTreeMap::new();
     let parameters: BTreeSet<_> = function
         .parameters
@@ -105,13 +105,25 @@ pub(in crate::languages::rust) fn certify(
     }
     let mut aliases = BTreeMap::new();
     let mut nodes: Vec<Node> = vec![];
-    for (point, statement) in mir.blocks[0].statements.iter().enumerate() {
+    for (point, event) in events.iter().enumerate() {
         crate::instrumentation::record_deterministic_work(1);
+        let statement = match event.operation {
+            regions::Operation::Statement(statement) => statement,
+            regions::Operation::Condition(condition) => {
+                if !value(condition, point, &types, &aliases, &mut nodes) {
+                    return None;
+                }
+                continue;
+            }
+        };
         match statement {
             S::Assign {
                 target: E::Local { name: child },
                 value: E::Borrow { place, value_type },
             } => {
+                if event.in_arm {
+                    return None;
+                }
                 let Type::Reference {
                     mutable: true,
                     pointee: ty,
@@ -148,7 +160,7 @@ pub(in crate::languages::rust) fn certify(
                     name: parent.clone(),
                     child: child.clone(),
                     pointee: ty.as_ref().clone(),
-                    birth: point,
+                    birth: event.source,
                     last: point,
                 });
             }
@@ -158,6 +170,9 @@ pub(in crate::languages::rust) fn certify(
             } => {
                 let ty = *types.get(name.as_str())?;
                 if matches!(ty, Type::Reference { .. }) {
+                    if event.in_arm {
+                        return None;
+                    }
                     let E::Local { name: source } = expr else {
                         return None;
                     };
@@ -211,15 +226,17 @@ pub(in crate::languages::rust) fn certify(
     }
     let family = ScalarReferencePlanFamily::new(identity, &function.name);
     let mut births = BTreeMap::new();
-    let mut endings: BTreeMap<usize, Vec<_>> = BTreeMap::new();
+    let mut endings: BTreeMap<MirPoint, Vec<_>> = BTreeMap::new();
     for node in nodes.into_iter().rev() {
+        let end = events[node.last].frontier;
         let key = ScalarReferencePlanKey {
             family: family.clone(),
-            block: 0,
-            borrow: node.birth,
-            end: node.last + 1,
+            block: node.birth.block,
+            borrow: node.birth.statement,
+            end_block: end.block,
+            end: end.statement,
         };
-        endings.entry(key.end).or_default().push(key.clone());
+        endings.entry(end).or_default().push(key.clone());
         births.insert(
             node.birth,
             CheckedBirth {

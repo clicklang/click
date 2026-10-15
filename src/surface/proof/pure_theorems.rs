@@ -446,6 +446,11 @@ fn collect_structural_induction_arguments(
                 collect_structural_induction_arguments(&both.left_tactics, hypothesis, collected);
                 collect_structural_induction_arguments(&both.right_tactics, hypothesis, collected);
             }
+            ProofTactic::Match(proof_match) => {
+                for arm in &proof_match.arms {
+                    collect_structural_induction_arguments(&arm.tactics, hypothesis, collected);
+                }
+            }
             ProofTactic::Cases(proof_cases) => {
                 for arm in proof_cases.arms() {
                     collect_structural_induction_arguments(arm.tactics(), hypothesis, collected);
@@ -793,6 +798,29 @@ fn prepare_structural_induction_arm_tactics(
                 Ok(ProofTactic::Cases(proof_cases.try_map_tactics(
                     |tactics| prepare_structural_induction_arm_tactics(tactics, setup, bindings),
                 )?))
+            }
+            ProofTactic::Match(proof_match) => {
+                Ok(ProofTactic::Match(std::sync::Arc::new(ProofMatch {
+                    scrutinee: substitute_contract_expression(&proof_match.scrutinee, bindings)
+                        .map_err(ClickError::new)?,
+                    ensuring: proof_match.ensuring.clone(),
+                    arms: proof_match
+                        .arms
+                        .iter()
+                        .map(|arm| {
+                            Ok(ProofInductionArm {
+                                type_name: arm.type_name.clone(),
+                                variant: arm.variant.clone(),
+                                bindings: arm.bindings.clone(),
+                                tactics: prepare_structural_induction_arm_tactics(
+                                    &arm.tactics,
+                                    setup,
+                                    bindings,
+                                )?,
+                            })
+                        })
+                        .collect::<Result<_, ClickError>>()?,
+                })))
             }
             ProofTactic::StructuralInduct { .. } | ProofTactic::Induct { .. } => Err(
                 ClickError::new("nested induction is not supported in a structural induction arm"),

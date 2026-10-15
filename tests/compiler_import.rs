@@ -2196,3 +2196,127 @@ fn pinned_zlib_incremental_c_matches_checked_shared_specification_offline() {
         assert!(verify_c0_prepared_sources(&invalid, &imports).is_err());
     }
 }
+
+/// A full-sidecar project: the proofs live in their own directory, and a
+/// `click.project.json` unit reads an external tree in its own layout. The
+/// tree gains no files, the committed lock still loads after the whole
+/// checkout moves, and changed inputs are refused.
+#[test]
+#[ignore = "nightly: 4s in the parallel gate"]
+fn project_unit_verifies_an_external_tree_in_place() {
+    assert!(
+        Path::new("/usr/bin/gcc").is_file(),
+        "compiler fixture requires GCC at /usr/bin/gcc; provision it before scripts/check.sh"
+    );
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let base = std::env::temp_dir().join(format!(
+        "click-project-unit-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let root = base.join("checkout");
+    let upstream = root.join("vendor/label-1.0");
+    let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/label-build-flags");
+    for (from, to) in [
+        ("label_fit.c", "src/label_fit.c"),
+        ("label_copy.c", "src/label_copy.c"),
+        ("label.h", "src/label.h"),
+        ("include/label_config.h", "src/include/label_config.h"),
+    ] {
+        let to = upstream.join(to);
+        fs::create_dir_all(to.parent().unwrap()).unwrap();
+        fs::copy(example.join(from), to).unwrap();
+    }
+    let proof = fs::read_to_string(example.join("label.click"))
+        .unwrap()
+        .replace(
+            "verifying \"label_fit.c\";",
+            "verifying \"../../vendor/label-1.0/src/label_fit.c\";",
+        )
+        .replace(
+            "verifying \"label_copy.c\";",
+            "verifying \"../../vendor/label-1.0/src/label_copy.c\";",
+        );
+    let sidecar = root.join("proofs/checks/label.click");
+    fs::create_dir_all(sidecar.parent().unwrap()).unwrap();
+    fs::write(&sidecar, &proof).unwrap();
+    let project_file = root.join("proofs/click.project.json");
+    let describe = |capacity: u32| {
+        json!({
+            "target": "x86_64-linux-userspace",
+            "units": {"label": {
+                "language": "c",
+                "root": "../vendor/label-1.0",
+                "compiler": "/usr/bin/gcc",
+                "environment": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+                "args": ["-Isrc/include", format!("-DLABEL_CAPACITY={capacity}")],
+                "sources": {"src/label_fit.c": {}, "src/label_copy.c": {}}
+            }}
+        })
+    };
+    fs::write(&project_file, describe(32).to_string()).unwrap();
+    let tree = |root: &Path| {
+        let mut files = Vec::new();
+        let mut pending = vec![root.to_path_buf()];
+        while let Some(directory) = pending.pop() {
+            for entry in fs::read_dir(&directory).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    pending.push(path);
+                } else {
+                    files.push(path.strip_prefix(root).unwrap().to_path_buf());
+                }
+            }
+        }
+        files.sort();
+        files
+    };
+    let before = tree(&upstream);
+
+    click::project::Project::find(sidecar.parent().unwrap())
+        .unwrap()
+        .expect("the project above the sidecar")
+        .lock()
+        .expect("lock the external unit");
+    assert_eq!(tree(&upstream), before, "the external tree gains no files");
+    let load = |sidecar: &Path| match click::cli::read_c_inputs(sidecar, &proof)? {
+        click::cli::CInput::Prepared(imports) => Ok(imports),
+        _ => Err("expected the unit's prepared sources".to_string()),
+    };
+    let imports = load(&sidecar).expect("load the locked unit");
+    assert_eq!(
+        imports
+            .iter()
+            .map(|import| import.logical_source())
+            .collect::<Vec<_>>(),
+        [
+            "../../vendor/label-1.0/src/label_fit.c",
+            "../../vendor/label-1.0/src/label_copy.c"
+        ]
+    );
+    verify_c0_prepared_sources(&proof, &imports).expect("the external unit verifies");
+
+    let moved = base.join("moved");
+    fs::rename(&root, &moved).unwrap();
+    let sidecar = moved.join("proofs/checks/label.click");
+    load(&sidecar).expect("the lock loads after the checkout moves");
+
+    let header = moved.join("vendor/label-1.0/src/include/label_config.h");
+    let original = fs::read_to_string(&header).unwrap();
+    fs::write(&header, format!("{original}/* edited */\n")).unwrap();
+    let error = load(&sidecar).unwrap_err();
+    assert!(
+        error.contains("label_config.h") && error.contains("differs from its import lock"),
+        "{error}"
+    );
+    fs::write(&header, original).unwrap();
+
+    fs::write(
+        moved.join("proofs/click.project.json"),
+        describe(16).to_string(),
+    )
+    .unwrap();
+    let error = load(&sidecar).unwrap_err();
+    assert!(error.contains("does not match its description"), "{error}");
+    let _ = fs::remove_dir_all(&base);
+}

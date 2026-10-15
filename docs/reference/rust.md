@@ -865,8 +865,9 @@ same modeled pointer: writes through the child are observed through its parent.
 The compiler establishes when parent reuse is legal; the kernel establishes
 that each modeled access is justified by the supplied resources.
 
-For supported scalar functions in one MIR block ending at return, locked
-lowering issues checked local lease births and explicit borrow-end operations.
+For supported scalar functions, locked lowering issues checked local lease
+births and explicit borrow-end operations. Straight-line code and structured
+acyclic branches with a shared continuation are supported.
 The supported pointees are `i32`, `u8`, `u16` and `u32`, with exact direct owned
 footprints. Local copies or moves retain the same lease identity; a reborrow
 creates a child that suspends its parent. Reads and writes use the ordinary
@@ -881,11 +882,21 @@ source identities, duplicate endings and parent endings with live children are
 refused. Closing the outermost lease returns the original owned occurrence and
 preserves current memory. Expired aliases cannot use that returned owner.
 
+Across an `if`, both arms preserve the exact live loan ledger. Scalar reads,
+writes and calculations, including nested branches and condition reads, keep
+the borrow live through the common continuation. An arm's last use ends at the
+outermost enclosing continuation; a later use can extend that ending further.
+Nested borrows end innermost first. Births and reference copies or reassignment
+must occur on the shared path outside branch arms. Reusing a suspended parent
+in just one arm requires branch-specific recovery and remains outside this
+protocol.
+
 The source and sidecars require no additional lifetime annotations. Source
-observations remain read-only. Shared borrow graphs, aggregate or addressable
-reference transport, calls during an active lease, loops and wider control flow
-still need source integration; functions outside the activated subset retain
-their existing lowering and have no local lease coverage.
+observations remain read-only. Branch-local births or reference reassignment,
+early returns, shared borrow graphs, aggregate or addressable reference
+transport, calls and loops still need source integration. Functions outside
+the activated subset retain their existing lowering and have no local lease
+coverage.
 
 The trusted boundary includes the pinned compiler, exporter, semantic artifact,
 and its translator. The lock detects stale or changed inputs; it is not an

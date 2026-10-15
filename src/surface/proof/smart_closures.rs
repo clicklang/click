@@ -7684,6 +7684,94 @@ impl<'a> Proof<'a> {
             .map(Some)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn run_pure_match_group(
+        &self,
+        plan: &super::proof_object::PureMatchPlan,
+        source: &ProofMatch,
+        indices: &[usize],
+        arm_tactics: &[Vec<ProofTactic>],
+        arm_sites: &[Vec<ProofStepSite>],
+        certificates: &mut Vec<ProofCertificate>,
+        trace: &mut Option<crate::surface::proof_trace::TraceMatch>,
+        mut unfinished: Option<&mut Option<Self>>,
+    ) -> Result<Option<Self>, ClickError> {
+        if let [index] = indices {
+            let arm = self.enter_pure_match_case(plan, *index)?;
+            let marker = arm.checkpoint();
+            let written = source.arms[*index].tactics.len();
+            let mut pending = Some(arm.clone());
+            let closed = if written == 0 {
+                None
+            } else {
+                arm.run_addressed_linear_script(
+                    &arm_tactics[*index][..written],
+                    &arm_sites[*index][..written],
+                    &mut None,
+                    Some(&mut pending),
+                )?
+            };
+            let Some(body_done) = closed.or(pending) else {
+                return Ok(None);
+            };
+            let body_done = body_done.leave_pure_match_case(plan);
+            let done = if written < arm_tactics[*index].len() {
+                let Some(done) = body_done.run_addressed_linear_script(
+                    &arm_tactics[*index][written..],
+                    &arm_sites[*index][written..],
+                    &mut None,
+                    unfinished,
+                )?
+                else {
+                    return Ok(None);
+                };
+                done
+            } else if body_done.focused_discharged() {
+                body_done
+            } else {
+                if let Some(unfinished) = unfinished {
+                    *unfinished = Some(body_done);
+                }
+                return Ok(None);
+            };
+            certificates.push(done.certificate_since(&marker)?);
+            if let Some(trace) = trace {
+                trace.arms[*index] = Some(done.pure_match_arm_trace(&arm, &marker, source, *index));
+            }
+            return Ok(Some(done.leave_pure_match_case(plan)));
+        }
+        let middle = indices.len() / 2;
+        let (split_proof, split, ids) = self.split_pure_match_group()?;
+        let marker = split_proof.checkpoint();
+        let Some(left_done) = split_proof.focus_branch(ids[0])?.run_pure_match_group(
+            plan,
+            source,
+            &indices[..middle],
+            arm_tactics,
+            arm_sites,
+            certificates,
+            trace,
+            unfinished.as_deref_mut(),
+        )?
+        else {
+            return Ok(None);
+        };
+        let Some(done) = left_done.focus_branch(ids[1])?.run_pure_match_group(
+            plan,
+            source,
+            &indices[middle..],
+            arm_tactics,
+            arm_sites,
+            certificates,
+            trace,
+            unfinished,
+        )?
+        else {
+            return Ok(None);
+        };
+        done.join_focused_both(&marker, split, ids).map(Some)
+    }
+
     fn run_addressed_linear_script(
         &self,
         tactics: &[ProofTactic],
@@ -7929,6 +8017,46 @@ impl<'a> Proof<'a> {
                     proof = both_done
                         .join_focused_both(&marker, split, ids)?
                         .at_site(&sites[index]);
+                }
+                ProofTactic::Match(source) if pure_source => {
+                    let marker = proof.checkpoint();
+                    let (prepared, plan) = proof.prepare_pure_match(source)?;
+                    let bodies = source
+                        .arms
+                        .iter()
+                        .map(|arm| {
+                            script_arm_with_continuation(&arm.tactics, &tactics[index + 1..])
+                                .into_owned()
+                        })
+                        .collect::<Vec<_>>();
+                    let addressed = source
+                        .arms
+                        .iter()
+                        .enumerate()
+                        .map(|(arm, body)| arm_sites(index, arm, "case", body.tactics.len()))
+                        .collect::<Vec<_>>();
+                    let mut certificates = Vec::new();
+                    let mut trace = proof.new_pure_match_trace(source);
+                    let Some(done) = prepared.run_pure_match_group(
+                        &plan,
+                        source,
+                        &(0..source.arms.len()).collect::<Vec<_>>(),
+                        &bodies,
+                        &addressed,
+                        &mut certificates,
+                        &mut trace,
+                        unfinished.as_deref_mut(),
+                    )?
+                    else {
+                        *declined = Some(LinearScriptDecline::Step(index));
+                        return Ok(None);
+                    };
+                    proof = done
+                        .finish_execution_match(&marker, source, certificates, trace)?
+                        .at_site(&sites[index]);
+                    proof
+                        .note_trace_join_continuation_arm((index + 1 < tactics.len()).then_some(0));
+                    return Ok(finish(proof, unfinished));
                 }
                 ProofTactic::Cases(proof_cases) => {
                     // Each arm runs its own tactics and then the rest of the

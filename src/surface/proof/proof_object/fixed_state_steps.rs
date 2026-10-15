@@ -399,8 +399,15 @@ impl<'a> Proof<'a> {
         let state = CState::new().with_memory(context.theorem_context.memory.clone());
         let recorded_snapshots = RecordedSnapshots::new();
         let mut integer_values = context.theorem_context.integer_values.clone();
-        for (name, value) in self.local_integer_values().iter() {
-            integer_values = integer_values.with_inserted(name.clone(), value.clone());
+        for name in application
+            .arguments
+            .iter()
+            .flat_map(contract_expression_referenced_names)
+            .collect::<BTreeSet<_>>()
+        {
+            if let Some(value) = self.local_integer_values().get(&name) {
+                integer_values = integer_values.with_inserted(name, value.clone());
+            }
         }
         let algebraic_values = application
             .arguments
@@ -1955,7 +1962,7 @@ impl<'a> Proof<'a> {
         ))
     }
 
-    fn capture_pure_algebraic_witness(
+    pub(super) fn capture_pure_algebraic_witness(
         &self,
         expression: &ContractExpression,
     ) -> Result<crate::kernel::AlgebraicTerm, ClickError> {

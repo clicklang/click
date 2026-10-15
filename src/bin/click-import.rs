@@ -1,8 +1,18 @@
 use std::path::{Path, PathBuf};
 
 use click::languages::refresh_compiler_import;
+use click::project::{FILE_NAME, Project};
 
-const USAGE: &str = "usage: click import lock <sidecar.click>\n\nRefreshes the checked compiler import artifact and its input lock.";
+const USAGE: &str = "usage: click import lock [<project-dir> | <sidecar.click>]\n\nPrepares the units of the nearest `click.project.json` into its lock, or refreshes a sidecar's own import config and its input lock.";
+
+/// What `click import lock` prepares.
+#[derive(Debug, PartialEq, Eq)]
+enum LockTarget {
+    /// The project found from this directory.
+    Project(PathBuf),
+    /// A sidecar: its own import config if it has one, else its project.
+    Sidecar(PathBuf),
+}
 
 pub(crate) fn entry_with(arguments: impl IntoIterator<Item = String>) -> Result<(), String> {
     let arguments = arguments.into_iter().collect::<Vec<_>>();
@@ -10,24 +20,64 @@ pub(crate) fn entry_with(arguments: impl IntoIterator<Item = String>) -> Result<
         println!("{USAGE}");
         return Ok(());
     }
-    let path = parse_arguments(arguments)?;
-    refresh_compiler_import(&path)
+    match parse_arguments(arguments)? {
+        LockTarget::Project(directory) => lock_project(&directory),
+        LockTarget::Sidecar(sidecar) => {
+            let config = import_config_path(&sidecar);
+            if config.exists() {
+                return refresh_compiler_import(&config);
+            }
+            match Project::find(click::cli::containing_directory(&sidecar))? {
+                Some(project) if project.has_units() => project.lock(),
+                _ => refresh_compiler_import(&config),
+            }
+        }
+    }
 }
 
-fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<PathBuf, String> {
+fn lock_project(directory: &Path) -> Result<(), String> {
+    match Project::find(directory)? {
+        Some(project) => project.lock(),
+        None => Err(format!(
+            "no `{FILE_NAME}` in `{}` or any directory above it",
+            directory.display()
+        )),
+    }
+}
+
+fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<LockTarget, String> {
     let arguments = arguments.into_iter().collect::<Vec<_>>();
-    let (command, sidecar, positional) = match arguments.as_slice() {
-        [command, separator, sidecar] if separator == "--" => (command, sidecar, true),
-        [command, sidecar] => (command, sidecar, false),
-        _ => return Err(format!("expected `lock <sidecar.click>`\n{USAGE}")),
+    let (command, target, positional) = match arguments.as_slice() {
+        [command] => return lock_command(command).map(|()| LockTarget::Project(".".into())),
+        [command, separator, target] if separator == "--" => (command, target, true),
+        [command, target] => (command, target, false),
+        _ => {
+            return Err(format!(
+                "expected `lock [<project-dir> | <sidecar.click>]`\n{USAGE}"
+            ));
+        }
     };
+    lock_command(command)?;
+    if target.is_empty() || (!positional && target.starts_with('-')) {
+        return Err("the project directory or sidecar.click path must be a non-option path".into());
+    }
+    let path = PathBuf::from(target);
+    if path.is_dir() {
+        return Ok(LockTarget::Project(path));
+    }
+    if path.file_name().is_some_and(|name| name == FILE_NAME) {
+        return Ok(LockTarget::Project(
+            click::cli::containing_directory(&path).to_path_buf(),
+        ));
+    }
+    Ok(LockTarget::Sidecar(path))
+}
+
+fn lock_command(command: &str) -> Result<(), String> {
     if command != "lock" {
         return Err(format!("unsupported import command `{command}`\n{USAGE}"));
     }
-    if sidecar.is_empty() || (!positional && sidecar.starts_with('-')) {
-        return Err("sidecar.click path must be a non-option path".into());
-    }
-    Ok(import_config_path(Path::new(sidecar)))
+    Ok(())
 }
 
 fn import_config_path(sidecar: &Path) -> PathBuf {
@@ -51,12 +101,20 @@ mod tests {
     }
 
     #[test]
-    fn requires_lock_command_and_sidecar() {
+    fn requires_lock_command() {
         assert!(parse_arguments(Vec::<String>::new()).is_err());
         assert!(parse_arguments(["refresh".into(), "demo.click".into()]).is_err());
         assert_eq!(
             parse_arguments(["lock".into(), "demo.click".into()]).unwrap(),
-            PathBuf::from("demo.click.import.json")
+            LockTarget::Sidecar(PathBuf::from("demo.click"))
+        );
+        assert_eq!(
+            parse_arguments(["lock".into()]).unwrap(),
+            LockTarget::Project(PathBuf::from("."))
+        );
+        assert_eq!(
+            parse_arguments(["lock".into(), "demo/click.project.json".into()]).unwrap(),
+            LockTarget::Project(PathBuf::from("demo"))
         );
     }
 }

@@ -5489,6 +5489,37 @@ impl ResourceContext {
         }
     }
 
+    /// Description comparison for a checked resource rewrite, not call/lend
+    /// authority. Existing read cores may jointly cover a view even when their
+    /// separate support/loan bindings forbid merging actual supplier entries.
+    /// Only a boolean escapes; no binding is dropped from the real context.
+    pub(in crate::kernel) fn read_core_description_entails(
+        &self,
+        fact: &CResourceFact,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        if self.satisfies_fact(fact, assumptions) {
+            return true;
+        }
+        let Some(range) = fact.memory_view_range() else {
+            return false;
+        };
+        let candidates = self.memory_fact_candidates(range, false, assumptions);
+        let mut cores = Self::new_with_equalities(assumptions);
+        for entry in candidates.entries.iter() {
+            let supplier = candidates
+                .supplier_at_base(entry, range.base())
+                .unwrap_or_else(|| self.fact(entry).clone());
+            if let Some(core) = supplier.core_with_assumptions(assumptions) {
+                cores.insert_fact(core);
+            }
+        }
+        cores
+            .normalized_with_byte_endpoints(assumptions, true)
+            .directly_supporting_fact(fact, assumptions)
+            .is_some()
+    }
+
     pub fn satisfies_fact(&self, fact: &CResourceFact, assumptions: &PureFactContext) -> bool {
         if !fact.has_valid_exclusive_access() {
             return false;
@@ -10651,5 +10682,86 @@ fn absent_view_queries_ignore_owned_frames_and_track_view_lifecycle() {
             work, 0,
             "removing the last view restores empty lookup: size={size}"
         );
+    }
+}
+
+#[cfg(test)]
+mod read_core_description_tests {
+    use super::*;
+    use crate::kernel::loans::{LoanLedger, LoanViewBinding};
+
+    #[test]
+    fn bound_read_descriptions_compose_without_merging_loan_authority() {
+        let base = Pointer::symbolic(Variable(956_001));
+        let range = |start, end| CMemoryRange::new(base.clone(), start, end);
+        let whole = CResourceFact::own_memory(range(0.into(), 4.into()));
+        let backing = ResourceContext::new().unchecked_with_fact(whole.clone());
+        let support = backing.owned_occurrences_for_fact(&whole)[0];
+        let ledger = LoanLedger::new();
+        let owner = ledger.fresh_participant().unwrap();
+        let reader = ledger.fresh_participant().unwrap();
+        let opening = ledger.lend(owner, reader, support, whole).unwrap();
+        let ledger = ledger.apply(&opening.transition).unwrap();
+        let facts = PureFactContext::new();
+        let required = CResourceFact::view_memory(range(0.into(), 4.into()));
+        for gap in [false, true] {
+            let mut samples = Vec::new();
+            for count in [0, 16, 64, 256] {
+                let mut context = ResourceContext::new();
+                for piece in [
+                    CResourceFact::view_memory(range(0.into(), (if gap { 1 } else { 2 }).into())),
+                    CResourceFact::view_memory(range(2.into(), 4.into())),
+                ] {
+                    context = context.unchecked_with_fact(piece.clone());
+                    let occurrence = context.view_occurrences_for_fact(&piece, &facts)[0];
+                    let binding = LoanViewBinding {
+                        loan: opening.loan,
+                        scope: opening.scope,
+                        share: opening.root_share,
+                        support,
+                        viewed: piece,
+                        hold: None,
+                    };
+                    ledger
+                        .validate_view_binding(binding.clone(), reader)
+                        .unwrap();
+                    context = context.with_loan_dependency(occurrence, binding);
+                }
+                for index in 0..count {
+                    context =
+                        context.unchecked_with_fact(CResourceFact::view_memory(CMemoryRange::new(
+                            Pointer {
+                                block: PointerBlock::Heap(956_100 + index),
+                                offset: PointerOffsetTerm::Constant(0),
+                            },
+                            0.into(),
+                            4.into(),
+                        )));
+                }
+                let bindings = context.loan_dependency_state();
+                assert!(
+                    !context.satisfies_fact(&required, &facts),
+                    "actual suppliers retain their separate loan bindings"
+                );
+                let (covered, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    context.read_core_description_entails(&required, &facts)
+                });
+                assert_eq!(covered, !gap);
+                assert_eq!(context.loan_dependency_state().identity, bindings.identity);
+                assert!(!context.read_core_description_entails(
+                    &CResourceFact::own_memory(range(0.into(), 4.into())),
+                    &facts
+                ));
+                assert!(!context.read_core_description_entails(
+                    &CResourceFact::view_memory(range(0.into(), 5.into())),
+                    &facts
+                ));
+                samples.push(work);
+            }
+            assert!(
+                samples.windows(2).all(|pair| pair[1] <= pair[0] + 64),
+                "{samples:?}"
+            );
+        }
     }
 }
