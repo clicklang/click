@@ -978,6 +978,24 @@ pub struct CPointerValue {
     c_type: CType,
     pointee_volatile: bool,
     pointee_constant: bool,
+    extent: Option<Arc<SubobjectExtent>>,
+}
+
+/// The subobject a pointer was formed from, narrower than its complete
+/// object (`design/pointer-subobject-extents.md`). C11 6.5.6p7-p8 and C++
+/// [expr.add] bound pointer arithmetic and access by the designated object,
+/// not by the enclosing allocation: `&pair.first + 1` is one past `first`,
+/// even though `pair.second` lives at that address.
+///
+/// The extent is absolute, `[start, start + width)` bytes, so it does not
+/// change as the pointer moves through arithmetic or loops. Respelling the
+/// pointer's address through a proven alias leaves it alone; a substitution
+/// of the variables the address mentions maps `start` the same way. A value
+/// without an extent is bounded only by its complete object, as before.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct SubobjectExtent {
+    pub(crate) start: Pointer,
+    pub(crate) width: u64,
 }
 
 impl CPointerValue {
@@ -991,6 +1009,7 @@ impl CPointerValue {
             c_type,
             pointee_volatile: false,
             pointee_constant: false,
+            extent: None,
         }
     }
 
@@ -1020,6 +1039,7 @@ impl CPointerValue {
             c_type,
             pointee_volatile: self.pointee_volatile,
             pointee_constant: self.pointee_constant,
+            extent: self.extent,
         }
     }
 
@@ -1033,8 +1053,47 @@ impl CPointerValue {
         self
     }
 
+    /// Respells the address as a proven-equal alias. The extent keeps its
+    /// own spelling: it names the same bytes either way, and the access
+    /// check resolves the address against it as it resolves a held range.
     pub(crate) fn replace_pointer(&mut self, pointer: Pointer) {
         self.pointer = pointer;
+    }
+
+    /// The same value at another address in the same subobject: the result
+    /// of pointer arithmetic, which keeps the type, qualifiers and extent.
+    pub(crate) fn with_address(mut self, pointer: Pointer) -> Self {
+        self.pointer = pointer;
+        self
+    }
+
+    pub(crate) fn extent(&self) -> Option<&SubobjectExtent> {
+        self.extent.as_deref()
+    }
+
+    pub(crate) fn with_extent(mut self, extent: Option<SubobjectExtent>) -> Self {
+        self.extent = extent.map(Arc::new);
+        self
+    }
+
+    /// Applies a substitution to every address the value mentions: its own
+    /// address and its extent's start. Use it where the rewrite maps
+    /// variables, not where it only respells the address.
+    pub(crate) fn map_pointers(&self, mut map: impl FnMut(&Pointer) -> Pointer) -> Self {
+        let mut result = self.clone();
+        result.pointer = map(&self.pointer);
+        if let Some(extent) = &self.extent {
+            result.extent = Some(Arc::new(SubobjectExtent {
+                start: map(&extent.start),
+                width: extent.width,
+            }));
+        }
+        result
+    }
+
+    /// Every address the value mentions, for variable collection.
+    pub(crate) fn pointers(&self) -> impl Iterator<Item = &Pointer> {
+        std::iter::once(&self.pointer).chain(self.extent.as_deref().map(|extent| &extent.start))
     }
 
     pub(crate) fn is_null(&self) -> bool {
@@ -1045,9 +1104,17 @@ impl CPointerValue {
 
 impl CPointerValue {
     /// Everything that is the value's identity: the address, the type it is
-    /// viewed through, and whether the pointee is volatile.
-    fn identity(&self) -> (&Pointer, &CType, bool) {
-        (&self.pointer, &self.c_type, self.pointee_volatile)
+    /// viewed through, whether the pointee is volatile, and the subobject it
+    /// designates. Two values at one address with different extents are
+    /// different values: address equality does not make a one-past pointer
+    /// designate the object that follows it.
+    fn identity(&self) -> (&Pointer, &CType, bool, Option<&SubobjectExtent>) {
+        (
+            &self.pointer,
+            &self.c_type,
+            self.pointee_volatile,
+            self.extent.as_deref(),
+        )
     }
 }
 

@@ -852,11 +852,13 @@ fn collect_c_value_bound_identities(
     match value {
         CValue::Void => {}
         CValue::Pointer(pointer) => {
-            if let PointerBlock::PureFunctionApplication(application) = &pointer.block
-                && _integer_seen.pointers.insert(application.id())
-            {
-                for argument in application.arguments() {
-                    collect_pure_argument_bound_identities(argument, variables, _integer_seen);
+            for address in pointer.pointers() {
+                if let PointerBlock::PureFunctionApplication(application) = &address.block
+                    && _integer_seen.pointers.insert(application.id())
+                {
+                    for argument in application.arguments() {
+                        collect_pure_argument_bound_identities(argument, variables, _integer_seen);
+                    }
                 }
             }
         }
@@ -2708,7 +2710,9 @@ fn collect_capture_variables_in_c_value(
             collect_bitvector_capture_variables_seen(bits, variables, integer_seen)
         }
         CValue::Pointer(pointer) => {
-            collect_pointer_capture_variables(pointer.pointer(), variables, integer_seen)
+            for address in pointer.pointers() {
+                collect_pointer_capture_variables(address, variables, integer_seen);
+            }
         }
     }
 }
@@ -3375,7 +3379,13 @@ fn collect_c_value_scope_summary(
         | CValue::UInt128(term)
         | CValue::Float32(term)
         | CValue::Float64(term) => collect_bitvector_scope_summary(term, summaries),
-        CValue::Pointer(pointer) => collect_pointer_scope_summary(pointer.pointer(), summaries),
+        CValue::Pointer(pointer) => {
+            let mut summary = IntegerScopeSummary::default();
+            for address in pointer.pointers() {
+                summary.merge(collect_pointer_scope_summary(address, summaries));
+            }
+            summary
+        }
     }
 }
 
@@ -4047,12 +4057,16 @@ fn collect_binder_variables_in_c_value(
             bitvector_variables,
             integer_seen,
         ),
-        CValue::Pointer(pointer) => collect_pointer_binder_variables(
-            pointer.pointer(),
-            integer_variables,
-            bitvector_variables,
-            integer_seen,
-        ),
+        CValue::Pointer(pointer) => {
+            for address in pointer.pointers() {
+                collect_pointer_binder_variables(
+                    address,
+                    integer_variables,
+                    bitvector_variables,
+                    integer_seen,
+                );
+            }
+        }
     }
 }
 
@@ -5002,7 +5016,11 @@ pub(crate) fn collect_c_value_bitvector_variables(
         | CValue::UInt128(bits)
         | CValue::Float32(bits)
         | CValue::Float64(bits) => collect_bitvector_variables(bits, variables),
-        CValue::Pointer(pointer) => collect_pointer_bitvector_variables(pointer, variables),
+        CValue::Pointer(pointer) => {
+            for address in pointer.pointers() {
+                collect_pointer_bitvector_variables(address, variables);
+            }
+        }
     }
 }
 

@@ -1,6 +1,6 @@
 # Pointer subobject extents: closing the scalar-subobject P1
 
-Status: proposal for review. It targets
+Status: approved 2026-10-15; decisions D1-D5 accepted as recommended. It targets
 [the scalar-subobject bug](../bugs/pointer-arithmetic-crosses-scalar-subobject.md)
 on current master. It does not revive the archived object model. It reuses that
 model's semantic conclusions (`design/cpp-object-model.md` at `e3d84a785`) where they
@@ -180,7 +180,7 @@ using authority held by another, related only by a C comparison. Those proofs
 are unsound under C rules unless the pointer is otherwise known not to be
 one-past.
 
-## Decisions needed
+## Decisions (approved as recommended)
 
 - **D1. Resource clauses double as extent claims at calls and folds.**
   - Recommended: yes. There's no new syntax, and the meaning matches
