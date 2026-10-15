@@ -3,15 +3,12 @@
 Priority: P1.
 
 Soundness: soundness-adjacent. No false acceptance is known; unsupported Rust
-is refused, and the pinned Charon front end is a documented trusted
-dependency. The gap concerns how that dependency is identified. Refresh runs
-the executable at the config's `exporter` path, plus a file named
-`charon-driver` next to it. It checks only their self-reported `charon
-version` and the commit that `rustup run <toolchain> rustc -vV` reports
-(`src/languages/rust/charon.rs`). Locks hash locally built binaries that
-nothing compares with a released build. A second gap is recorded under
-After launch below: rustc's borrow checking alone does not establish that
-Click rejects forged sidecar authority.
+is refused, and the pinned Charon front end remains a documented trusted
+dependency. Installed extraction checks explicit Charon, paired-driver and
+compiler identities. Rust locks bind the release and semantic profile rather
+than machine-specific executable hashes. Host coverage is still limited to
+Linux x86-64 GNU. The separate borrow-authority work recorded under After launch
+concerns rejection of forged sidecar authority beyond compiler borrow checking.
 
 ## Ruling and scope
 
@@ -110,69 +107,39 @@ Rust lock schema 9 now contributes the pinned release/compiler and complete
 profile identity instead of machine-specific Charon executable hashes.
 Single-file metadata paths are portable, and release installation checks compare
 refreshed basic/adler2 locks with committed locks. Schema-8 locks remain readable;
-refresh is explicit. Other host bundles remain.
-The audit below records the original pipeline; legacy per-sidecar/source-build
-paths remain available during the project-config migration.
+refresh is explicit. The installed C/Rust demonstration now has a documented
+preparation command and checks all producer/helper bodies outside the checkout.
+Other host bundles remain; no broader host matrix is claimed.
 
-## Today's pipeline
+## Current pipeline and remaining delivery scope
 
-Audit of the current path, from a user's point of view:
+- Rust project units use `CLICK_CHARON` as an explicit contributor override,
+  then the versioned installed frontend. Committed Rust fixtures use project
+  units; legacy per-sidecar configs remain readable for compatibility.
+- Installed extraction uses the bundle's explicit manifest and pinned compiler
+  runtime. It needs no rustup or ambient user compiler. The driver pairing,
+  compiler commit, version and host checks run before extraction.
+- Rust lock schema 9 binds source/configuration/artifact digests to the Click
+  release and full extraction/semantic profile. Release and debug-built Charon
+  reproduce the same locks; schema-8 identities remain readable offline.
+- Crate-closure errors name bounded missing/extra entries, and missing module
+  diagnostics retain the compiler filename. Frontend errors give the appropriate
+  installed-bundle or contributor-override recovery action. Historical product
+  spellings remain only as documented compatibility aliases or artifact metadata.
+- The release archive is installed through the real installer and relocated.
+  Its checks cover committed basic/adler2 locks, the complete C/Rust checksum
+  demonstration, and verification after removing the frontend and emptying PATH.
+  The preparation script copies sources/locks and assembles unchanged proof
+  fragments; the installed CLI checks producer, helper and correspondence bodies.
+- Only `x86_64-unknown-linux-gnu` currently has a packaged Rust host/runtime and
+  modeled extraction target. Other Click hosts report that Rust extraction is
+  unavailable. Additional host bundles remain the delivery decision; this work
+  does not choose that matrix or expand language coverage.
 
-1. **Charon is built from source.** `scripts/build-charon.sh` clones
-   `AeneasVerif/charon` into `target/charon-source` and checks out the
-   pinned revision `5d6b812e…`. It builds debug `charon` and `charon-driver`
-   binaries into `target/charon/debug` with `cargo +nightly-2026-09-17`, and
-   needs that nightly toolchain with `rustc-dev`, `rust-src` and the
-   `x86_64-unknown-linux-gnu` target (`--install-toolchain`). The installer
-   ships neither the binaries nor the toolchain. CI already packages both
-   binaries and the pinned sysroot to share them between shards
-   (`scripts/check.sh` and `scripts/charon-runtime.sh pack|restore`), but
-   releases do not include them.
-2. **Runtime discovery is implicit.** At refresh, Click finds `rustup` by
-   scanning `PATH` and runs the pinned toolchain through it
-   (`extract_crate` in `charon.rs`). It finds the driver as a file named
-   `charon-driver` beside the configured exporter (`refresh_import` in
-   `src/languages/rust/import.rs`). Neither requirement is documented to
-   users, beyond "run `scripts/build-charon.sh`".
-3. **There is no single way to locate Charon.** Legacy per-sidecar configs
-   may name the exporter by a path into the repository's build output; the
-   committed fixtures no longer do, since they are project units, which
-   resolve Charon through `CLICK_CHARON` or the installed bundle.
-4. **Pinning is good, but the identity is per machine.**
-   `src/languages/rust/charon-profile.json` is compiled in. It pins the
-   extractor revision and version, the rustc commit, the toolchain, the
-   flags and the named semantic versions, and a unit test ties it to the
-   `charon` Cargo dependency's revision. The C++ front end should adopt this
-   model. However, the lock and its import identity include hashes of the
-   locally built `charon` and `charon-driver`. Refreshing unchanged inputs
-   on another machine therefore rewrites the lock, even though loading never
-   checks those hashes.
-5. **Historical "trial" naming reaches users.** Examples:
-   - the profile identity `click-charon-trial-v1`;
-   - `TrialArtifact`;
-   - the refusal "Charon trial requires its pinned extractor revision";
-   - the accepted `"backend": "charon-trial"` spelling;
-   - the configuration-error text about retired legacy extraction.
-
-   The canonical evidence lives under `design/charon-trial/`.
-6. **Crate closure errors are vague.** Schema 4 requires every file rustc
-   reads to appear in `files`. When the list is wrong, the refusal "Rust
-   compiler source closure differs from configured crate files" does not
-   say which files are missing or extra. Where that list lives moves to
-   [project-config.md](project-config.md); the diagnostic stays here.
-7. **The target and host are fixed.** Extraction targets only
-   `x86_64-unknown-linux-gnu`. Releases build `click` for eight targets,
-   including macOS, Windows and aarch64 (`Cargo.toml`), and the Charon
-   toolchain must exist for whichever of those hosts are supported.
-
-What already works and should be kept:
-
-- refresh is separate from offline loading, and locks are checked in and
-  portable;
-- the compiler runs on a private snapshot of the sources;
-- the environment is reduced to runtime selectors;
-- extraction runs as a bounded process;
-- the semantic profile is versioned per named semantics.
+The shared unit/lock format and migration of remaining C fixture configuration
+belong to [project-config.md](project-config.md). In particular, the demonstration
+verifies the existing locked zlib inputs offline; it does not pretend that the
+Rust bundle supplies GCC or refresh the legacy C compiler inputs.
 
 ## Design requirements
 
@@ -229,22 +196,21 @@ A user who installs a Click release can verify a supported Rust crate with
 that release alone. The trusted extractor and compiler are identified by the
 release, and a lock depends only on the project and the pinned front end.
 
-## Acceptance criteria
+## Acceptance criteria and current evidence
 
-- Releases ship, or Click fetches and verifies, a pinned `charon`,
-  `charon-driver` and rustc runtime for each supported host, installed into
-  the versioned layout.
-- Front ends are located only by the shared resolution order. No checked-in
-  user config names a repository build path, and `rustup` on `PATH` is not
-  required.
-- Locks record release identities and are byte-identical across machines.
-- No "trial" spellings remain in user-facing names or diagnostics, except
-  documented compatibility aliases.
-- Crate-closure diagnostics name the differing files.
-- The installed-layout regression and its negative cases pass. The
-  [Rust reference](../docs/reference/rust.md),
-  [Language coverage](../docs/reference/coverage.md) and the basic Rust
-  README describe the installed workflow.
+| Criterion | Status |
+| --- | --- |
+| Pinned frontend/compiler bundle for each supported Rust host | Delivered for Linux x86-64 GNU; additional host coverage remains open. |
+| Shared resolution order, no repository build path in Rust project units, no ambient rustup requirement | Delivered; relocated installed-runtime and release-archive checks. |
+| Locks record release identities and reproduce across builds/locations | Delivered; schema 9, release/debug equality and committed-lock comparisons. |
+| Historical product spellings only as documented compatibility aliases | Delivered; stable serialized metadata retained without reinterpretation. |
+| Crate-closure diagnostics name differing files | Delivered; positive and omitted/extra input checks preserve old outputs. |
+| Installed demonstration and negative cases | Delivered; original basic/adler2, full C/Rust producer/helper proofs, version/missing/closure refusals and offline checks. |
+| Reference, coverage and basic README describe installed use | Delivered for the supported subset/host; checksum preparation and exact CLI commands are documented. |
+
+The next substantial scope choice is additional host delivery versus wider
+supported Rust. The after-launch items below are preserved as existing context,
+not prerequisites for the completed checksum claims.
 
 ## After launch (not P1)
 

@@ -533,3 +533,57 @@ The narrower cursor-take caller recorded in the carrier bug also fails on
 upstream-based `2c484f457`, for missing borrowing-composite loan backing. Keep
 that baseline limitation separate from archive compatibility regressions;
 the original input-cursor project is restored on the recovery branch.
+
+The ring-buffer regression is repaired in recovery checkpoint `9d2c9dbc4` by
+freezing one load-naming snapshot across each composite body unfold/open.
+Later clauses still lower their selectors through earlier cached fields, but
+cached reads no longer create a new naming epoch. This is the existing body
+instantiation rule, applied consistently; the kernel acceptance rule, object
+representation, original C, contracts and resources are unchanged.
+
+The original ring-buffer pipeline and its nested-resource reduction pass all
+four proof modes on the archive. The reduction also passes all four modes on
+the upstream-based tree. The new nested-resource fixture and existing resource
+unfold/child-overwrite controls pass upstream. On the archive, eight of nine
+existing resource-unfold fixtures pass; the unmatched-body fixture's later
+loop-exit fold failure is also reproduced with the prior `f936e47d8` executable.
+
+The full normal recovery audit now passes **45/52** in 109.05 seconds,
+restoring ring-buffer with no new failure. Remaining projects: arena,
+multifile-registry, owned-vector, rbtree-augmented, refcount, rust-byte-sum and
+rust-chunks-exact. No full green-gate or native-feature activation is claimed.
+
+Recovery checkpoint `0822e0f20` restores multifile-registry by completing an
+incomplete global array's executable row metadata from the compatible linked
+definition. Scalar type, rank and inner dimensions must match; source-resolved
+shadowing locals retain their own shapes. The kernel's strict shape checks are
+unchanged. Shared immutable/mutable exhaustive C AST child walks keep this
+source preparation linear in visited syntax with indexed declaration lookups.
+Three new completion controls, ten addressability controls and eleven selected
+array-row controls pass on the archive, including ambient-global scaling and
+existing strict shape rejections.
+
+The new upstream controls cover the extern reader, a shadowing local and an
+out-of-bounds row. All three pass on both trees; master refuses the last case
+for missing read authority and the archive rejects the invalid row before
+access. The two positive controls pass fresh, expanded, rewritten and retained
+checking upstream; the original registry result proof passes all four modes on
+the archive and all five original project proofs verify. The normal archive
+audit is **46/52** in 106.44 seconds, with no new failing project. The six
+remaining failures are arena, owned-vector, rbtree-augmented, refcount,
+rust-byte-sum and rust-chunks-exact. No full green gate or activation is claimed.
+
+The separate archive trace defect is preserved in
+[the refcount trace reproduction](https://github.com/lacker/click/blob/db1cc4541/bugs/archive-refcount-failure-loses-proof-trace.md).
+Its original post-call pure comparison loses the checked trace prefix; investigate
+that recording defect before guessing at its missing count relation.
+
+The refcount trace defect also reproduces upstream with a minimal false
+`have x == 2 by auto` after a helper proved `x == 1`. The early source-have
+refusal dropped the checked proof's diagnostic provider. Attaching the same
+provider used by its other refusal paths preserves the existing message and
+restores the checked trace prefix; failed smart candidates add no facts.
+The new regression and all 73 active diagnostic controls pass (nine ignored).
+On the archive, the original refcount trace now records the post-retain read
+equal to `1 + amount`; its functional failure still needs diagnosis. Retain
+the 46/52 audit count.

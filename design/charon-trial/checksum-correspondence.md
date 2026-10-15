@@ -56,18 +56,52 @@ nonnull update preserves the supplied state and is not a reset request.
 
 ## Reproduce
 
-Run from the repository root with its pinned tools activated. The existing
-prepared imports and locks bind source closures, extraction/compiler identity,
-target layout, flags and supported models. The offline tests relocate those
-fixtures and check dependency bodies; a standalone `click verify` selects
-only the named file's proofs and treats imported contracts as assumptions.
-For Rust fixture commands, set `CLICK_CHARON` to the pinned exporter from
-`scripts/build-charon.sh` (and install its pinned compiler if needed):
+Install Click, then run these preparation commands from the repository root:
 
 ```sh
-export CLICK_CHARON="$(scripts/build-charon.sh)"
-export RUST_MIN_STACK=8388608
+click install VERSION --rust
+python3 scripts/prepare-adler32-demo.py /tmp/click-adler32-demo
 ```
+
+Replace `VERSION` with the matching Click release. The destination must not
+exist. The script copies the original sources, licenses, prepared artifacts and
+locks. It assembles the canonical Rust proof fragments into complete sidecars
+and includes the C producers' helper bodies in their own sidecars. It runs no
+compiler or verifier and changes no computation or proof claim. Python is needed
+only for this preparation step.
+
+The resulting directory is self-contained and may be moved outside the checkout.
+With the installed `click`, verify every producer body and the result/reset
+correspondence using ordinary bounds:
+
+```sh
+cd /tmp/click-adler32-demo
+click verify design/charon-trial/zlib/canonical-demo.click
+click verify design/charon-trial/zlib/incremental-demo.click
+click verify design/charon-trial/zlib/reset-demo.click
+click verify design/charon-trial/adler2/public-demo.click
+click verify design/charon-trial/adler2/incremental-demo.click
+click verify design/charon-trial/adler2/resumed-demo.click
+click verify design/charon-trial/adler2/correspondence.click
+```
+
+Verification uses the committed locks offline; it needs neither GCC, Charon,
+rustc, Python nor the original checkout. Do not run `click import lock` over the C
+fixtures without their recorded compiler setup. Rust refresh is a separate
+operation through the installed bundle. Importing a theorem or function contract
+does not verify its body: the assembled producer sidecars include those bodies,
+and the correspondence theorem is checked separately. This remains composition
+through a shared specification, with the matched-input and length conditions
+above, rather than verification of an FFI boundary.
+
+The release-archive regression executes these commands after relocating the
+prepared demonstration and installed Click, with an empty `PATH`, no user Rust
+toolchain, and the installed frontend removed. A differential regression checks
+that the assembled Rust sidecars retain the canonical proof tokens.
+
+For contributor-only live extraction, install pinned Charon and set
+`CLICK_CHARON` using `scripts/build-charon.sh --install-toolchain`. From the
+repository root, the existing targeted regressions remain available below.
 
 The bounded normal regression checks correspondence bodies and rejects
 missing byte matching, mismatched initial state, an incorrect result, and a

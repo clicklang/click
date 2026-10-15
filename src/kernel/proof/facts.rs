@@ -3683,6 +3683,61 @@ mod held_separation_tests {
     }
 
     #[test]
+    fn held_separation_uses_transitive_address_classes_without_leaking_scope() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = |index| {
+            let CResource::Memory(range) = cell(index) else {
+                unreachable!()
+            };
+            range.base().clone()
+        };
+        let link = |a, b| {
+            Proposition::ConditionIs(ConditionTerm::pointer_equal(pointer(a), pointer(b)), true)
+        };
+        let first = link(0, 2);
+        let second = link(2, 3);
+        let facts = ProofFacts::from_ordered(&[first.clone(), second]);
+        assert!(
+            facts
+                .assumptions()
+                .pointers_known_equal(&pointer(0), &pointer(3))
+        );
+        let resources = ResourceContext::new_with_equalities(facts.assumptions())
+            .unchecked_with_facts([
+                CResourceFact::own(range(0, 0, 6, 4)),
+                CResourceFact::own(range(1, 0, 3, 8)),
+            ]);
+        let state = CState::new().with_resource_context(resources);
+        let goal = separation(range(3, 1, 2, 8), range(1, 0, 1, 8));
+        assert!(
+            facts
+                .with_selected_held_resource_separation(&goal, &state)
+                .contains(&goal)
+        );
+        let withdrawn = ProofFacts::from_ordered(&[first]);
+        assert!(
+            !withdrawn
+                .with_selected_held_resource_separation(&goal, &state)
+                .contains(&goal)
+        );
+        assert!(
+            facts
+                .with_selected_held_resource_separation(&goal, &state)
+                .contains(&goal)
+        );
+        for refused in [
+            separation(range(3, 0, 1, 8), range(0, 1, 2, 8)),
+            separation(range(3, 2, 4, 8), range(1, 0, 1, 8)),
+        ] {
+            assert!(
+                !facts
+                    .with_selected_held_resource_separation(&refused, &state)
+                    .contains(&refused)
+            );
+        }
+    }
+
+    #[test]
     fn held_separation_covers_wide_fields_and_explicit_aliases() {
         let state =
             CState::new().with_resource_context(ResourceContext::new().unchecked_with_facts([

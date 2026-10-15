@@ -6389,3 +6389,122 @@ fn automatic_scalar_ownership_is_exact_and_required_for_all_accesses() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/tests/contract_execution_tests.rs");
 }
+
+/// A contract that `produces` a composite from pieces publishes the body's
+/// facts with it. Certification assembles the composite from the exit's
+/// pieces only when each body fact holds there; a C store that falsified a
+/// fact leaves the claim uncertified, and the same store of the stated value
+/// certifies it (`bugs/` regression: an ordinary exit produced a composite
+/// without its body facts).
+#[test]
+fn a_produced_composite_is_certified_only_when_the_exit_establishes_its_body_facts() {
+    let pointer = Pointer {
+        block: "produced-composite-cell".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let cell = || c_index(c_variable("p"), c_int32_literal(0));
+    let definition = CCompositeResourceDefinition::new(
+        "zero_cell",
+        vec![c_parameter("p", CType::Int32Pointer)],
+        None,
+        false,
+        vec![CResourceSpec::owned_memory(CMemorySegment::new(
+            c_variable("p"),
+            c_int32_literal(0),
+            c_int32_literal(1),
+        ))],
+        vec![SpecProposition::Comparison {
+            left: SpecExpression::CExpression(cell()),
+            operator: CComparisonOperator::Equal,
+            right: SpecExpression::Value(int32(0)),
+        }],
+    );
+    let certified = |stored: u32| {
+        let function = c_function(
+            CType::Void,
+            "produce_zero_cell",
+            vec![c_parameter("p", CType::Int32Pointer)],
+            c_seq(
+                c_store(c_variable("p"), c_int32_literal(stored)),
+                c_return(c_void_value()),
+            ),
+        )
+        .with_resource_summary(
+            vec![CResourceSpec::owned_memory(CMemorySegment::new(
+                c_variable("p"),
+                c_int32_literal(0),
+                c_int32_literal(1),
+            ))],
+            vec![CResourceSpec::composite(
+                CResourceAccessMode::Own,
+                "zero_cell".into(),
+                vec![c_variable("p")],
+                vec![CType::Int32Pointer],
+            )],
+        )
+        .with_composite_resource_definitions(vec![definition.clone()])
+        .with_contract(
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            vec![CFunctionContractClaim::ensure_resource(0, 0)],
+            true,
+        );
+        let state = CState::new()
+            .with_memory(
+                CMemory::new()
+                    .with_block(pointer.block.clone(), 4)
+                    .store(pointer.clone(), int32(7)),
+            )
+            .with_resource_context(ResourceContext::new().unchecked_with_fact(
+                CResourceFact::own_memory(CMemoryRange::new(pointer.clone(), 0.into(), 1.into())),
+            ));
+        let arguments = vec![c_pointer_value(pointer.clone())];
+        let execution = certify_contract_with_kernel_artifacts(
+            state.clone(),
+            function.clone(),
+            arguments.clone(),
+            Vec::new(),
+            CExecutionEnvironment::new(),
+            CExecutionSemantics::EXECUTE_BODIES,
+            CFunctionContractExecutionMode::VerifyLoops,
+        );
+        let claims = c_unverified_function_contract_claims(&function, &execution)
+            .expect("the exit frontier is available to claims");
+        // The kernel's exit transition is the publication the Surface reads
+        // a produced resource through; it must refuse exactly when
+        // certification does.
+        let path = &execution.cases()[0][0].paths[0];
+        let mut proposition = path.theorem.proposition();
+        while let Proposition::Implies(_, body) = proposition {
+            proposition = body;
+        }
+        let (Proposition::CFunctionExecutes {
+            state: caller_state,
+            outcome,
+            ..
+        }
+        | Proposition::CFunctionVerifies {
+            state: caller_state,
+            outcome,
+            ..
+        }) = proposition
+        else {
+            panic!("a contract path concludes a function execution: {proposition:?}");
+        };
+        let transition = crate::kernel::api::checked_c_function_contract_resource_transition(
+            caller_state,
+            &function,
+            &arguments,
+            outcome.clone(),
+            &path.assumptions,
+        );
+        assert_eq!(claims.is_empty(), transition.is_ok(), "{transition:?}");
+        claims.is_empty()
+    };
+    assert!(
+        !certified(9),
+        "a store of 9 falsifies `p[0] == 0`: the composite must not be produced"
+    );
+    assert!(certified(0), "a store of 0 establishes the body fact");
+}

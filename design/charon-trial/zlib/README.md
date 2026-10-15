@@ -60,9 +60,10 @@ establish termination through the shared signed length limit.
 `reset.click` checks the original null-buffer reset path for any seed and every
 length except one, returning 1 without byte-read authority. The original
 one-byte fast path precedes its null check, so null with length one is excluded;
-the negative regression rejects a claim covering that read. Connecting this
-reset behavior to the Rust constructor and general incremental processing is
-still pending.
+the negative regression rejects a claim covering that read. The checked [correspondence demonstration](../checksum-correspondence.md)
+connects this reset behavior to the Rust constructors and checks general
+incremental processing. Its installed commands also select the producer and
+helper bodies.
 
 The [moving-cursor byte-sum reduction](../../../mdtests/loop_entry_memory_capture_byte_sum.md)
 checks actual `*p++` reads, termination, signed addition bounds, and preservation

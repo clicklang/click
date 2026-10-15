@@ -1,0 +1,905 @@
+{
+  "constants": [],
+  "dependencies": [],
+  "exception_behavior": "normal_only",
+  "functions": [
+    {
+      "body": [
+        {
+          "initializer": {
+            "arguments": [
+              {
+                "kind": "value",
+                "value": {
+                  "kind": "address_of",
+                  "place": {
+                    "declaration_id": "c:with_restore.cpp@220@F@with_restore#b#&I#@value",
+                    "name": "value",
+                    "span": {
+                      "end_column": 25,
+                      "end_line": 15,
+                      "file": "with_restore.cpp",
+                      "start_column": 20,
+                      "start_line": 15
+                    }
+                  },
+                  "span": {
+                    "end_column": 25,
+                    "end_line": 15,
+                    "file": "with_restore.cpp",
+                    "start_column": 19,
+                    "start_line": 15
+                  },
+                  "value_type": {
+                    "kind": "pointer",
+                    "pointee": {
+                      "bits": 32,
+                      "is_const": false,
+                      "kind": "integer",
+                      "signed": true,
+                      "source_aliases": []
+                    }
+                  }
+                }
+              }
+            ],
+            "callee": {
+              "declaration_id": "c:@S@Restore@F@Restore#*I#",
+              "name": "Restore_constructor",
+              "span": {
+                "end_column": 26,
+                "end_line": 15,
+                "file": "with_restore.cpp",
+                "start_column": 13,
+                "start_line": 15
+              }
+            },
+            "kind": "constructor",
+            "span": {
+              "end_column": 26,
+              "end_line": 15,
+              "file": "with_restore.cpp",
+              "start_column": 13,
+              "start_line": 15
+            }
+          },
+          "kind": "declare",
+          "local": {
+            "declaration_id": "c:with_restore.cpp@247@F@with_restore#b#&I#@guard",
+            "name": "guard",
+            "span": {
+              "end_column": 26,
+              "end_line": 15,
+              "file": "with_restore.cpp",
+              "start_column": 5,
+              "start_line": 15
+            },
+            "value_type": {
+              "declaration_id": "c:@S@Restore",
+              "is_const": false,
+              "kind": "record",
+              "name": "Restore"
+            }
+          },
+          "span": {
+            "end_column": 27,
+            "end_line": 15,
+            "file": "with_restore.cpp",
+            "start_column": 5,
+            "start_line": 15
+          }
+        },
+        {
+          "condition": {
+            "kind": "load",
+            "place": {
+              "declaration_id": "c:with_restore.cpp@208@F@with_restore#b#&I#@early",
+              "name": "early",
+              "span": {
+                "end_column": 14,
+                "end_line": 16,
+                "file": "with_restore.cpp",
+                "start_column": 9,
+                "start_line": 16
+              }
+            },
+            "span": {
+              "end_column": 14,
+              "end_line": 16,
+              "file": "with_restore.cpp",
+              "start_column": 9,
+              "start_line": 16
+            },
+            "value_type": {
+              "bits": 8,
+              "is_const": false,
+              "kind": "boolean"
+            }
+          },
+          "else_branch": [],
+          "kind": "if",
+          "span": {
+            "end_column": 6,
+            "end_line": 18,
+            "file": "with_restore.cpp",
+            "start_column": 5,
+            "start_line": 16
+          },
+          "then_branch": [
+            {
+              "cleanups": [
+                {
+                  "callee": {
+                    "declaration_id": "c:@S@Restore@F@~Restore#",
+                    "name": "Restore_destructor",
+                    "span": {
+                      "end_column": 13,
+                      "end_line": 9,
+                      "file": "with_restore.cpp",
+                      "start_column": 5,
+                      "start_line": 9
+                    }
+                  },
+                  "kind": "destructor",
+                  "object": {
+                    "declaration_id": "c:with_restore.cpp@247@F@with_restore#b#&I#@guard",
+                    "name": "guard",
+                    "span": {
+                      "end_column": 26,
+                      "end_line": 15,
+                      "file": "with_restore.cpp",
+                      "start_column": 5,
+                      "start_line": 15
+                    }
+                  },
+                  "span": {
+                    "end_column": 21,
+                    "end_line": 17,
+                    "file": "with_restore.cpp",
+                    "start_column": 9,
+                    "start_line": 17
+                  }
+                }
+              ],
+              "kind": "return",
+              "span": {
+                "end_column": 21,
+                "end_line": 17,
+                "file": "with_restore.cpp",
+                "start_column": 9,
+                "start_line": 17
+              },
+              "value": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:with_restore.cpp@220@F@with_restore#b#&I#@value",
+                  "name": "value",
+                  "span": {
+                    "end_column": 21,
+                    "end_line": 17,
+                    "file": "with_restore.cpp",
+                    "start_column": 16,
+                    "start_line": 17
+                  }
+                },
+                "span": {
+                  "end_column": 21,
+                  "end_line": 17,
+                  "file": "with_restore.cpp",
+                  "start_column": 16,
+                  "start_line": 17
+                },
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              }
+            }
+          ]
+        },
+        {
+          "kind": "assign",
+          "span": {
+            "end_column": 14,
+            "end_line": 19,
+            "file": "with_restore.cpp",
+            "start_column": 5,
+            "start_line": 19
+          },
+          "target": {
+            "declaration_id": "c:with_restore.cpp@220@F@with_restore#b#&I#@value",
+            "name": "value",
+            "span": {
+              "end_column": 10,
+              "end_line": 19,
+              "file": "with_restore.cpp",
+              "start_column": 5,
+              "start_line": 19
+            }
+          },
+          "value": {
+            "kind": "integer_literal",
+            "span": {
+              "end_column": 14,
+              "end_line": 19,
+              "file": "with_restore.cpp",
+              "start_column": 13,
+              "start_line": 19
+            },
+            "value": "9",
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        },
+        {
+          "cleanups": [
+            {
+              "callee": {
+                "declaration_id": "c:@S@Restore@F@~Restore#",
+                "name": "Restore_destructor",
+                "span": {
+                  "end_column": 13,
+                  "end_line": 9,
+                  "file": "with_restore.cpp",
+                  "start_column": 5,
+                  "start_line": 9
+                }
+              },
+              "kind": "destructor",
+              "object": {
+                "declaration_id": "c:with_restore.cpp@247@F@with_restore#b#&I#@guard",
+                "name": "guard",
+                "span": {
+                  "end_column": 26,
+                  "end_line": 15,
+                  "file": "with_restore.cpp",
+                  "start_column": 5,
+                  "start_line": 15
+                }
+              },
+              "span": {
+                "end_column": 17,
+                "end_line": 20,
+                "file": "with_restore.cpp",
+                "start_column": 5,
+                "start_line": 20
+              }
+            }
+          ],
+          "kind": "return",
+          "span": {
+            "end_column": 17,
+            "end_line": 20,
+            "file": "with_restore.cpp",
+            "start_column": 5,
+            "start_line": 20
+          },
+          "value": {
+            "kind": "load",
+            "place": {
+              "declaration_id": "c:with_restore.cpp@220@F@with_restore#b#&I#@value",
+              "name": "value",
+              "span": {
+                "end_column": 17,
+                "end_line": 20,
+                "file": "with_restore.cpp",
+                "start_column": 12,
+                "start_line": 20
+              }
+            },
+            "span": {
+              "end_column": 17,
+              "end_line": 20,
+              "file": "with_restore.cpp",
+              "start_column": 12,
+              "start_line": 20
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@with_restore#b#&I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "with_restore",
+      "parameters": [
+        {
+          "declaration_id": "c:with_restore.cpp@208@F@with_restore#b#&I#@early",
+          "name": "early",
+          "span": {
+            "end_column": 28,
+            "end_line": 14,
+            "file": "with_restore.cpp",
+            "start_column": 18,
+            "start_line": 14
+          },
+          "value_type": {
+            "bits": 8,
+            "is_const": false,
+            "kind": "boolean"
+          }
+        },
+        {
+          "declaration_id": "c:with_restore.cpp@220@F@with_restore#b#&I#@value",
+          "name": "value",
+          "span": {
+            "end_column": 40,
+            "end_line": 14,
+            "file": "with_restore.cpp",
+            "start_column": 30,
+            "start_line": 14
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 2,
+        "end_line": 21,
+        "file": "with_restore.cpp",
+        "start_column": 1,
+        "start_line": 14
+      }
+    }
+  ],
+  "language": "c++",
+  "logical_source": "with_restore.cpp",
+  "preprocessor_files": [
+    {
+      "accessed_path": "/home/user/click-lib/examples/basic-cpp/with_restore.cpp",
+      "canonical_path": "/home/user/click-lib/examples/basic-cpp/with_restore.cpp"
+    }
+  ],
+  "profile": {
+    "compilation_command": [
+      "clang++",
+      "-x",
+      "c++",
+      "-std=c++20",
+      "--target=x86_64-unknown-linux-gnu",
+      "-fno-exceptions",
+      "-fno-rtti",
+      "-funsigned-char",
+      "-ffreestanding",
+      "-nostdinc",
+      "-nostdinc++",
+      "-Wno-reorder-ctor",
+      "-c",
+      "with_restore.cpp",
+      "-o",
+      "with_restore.o"
+    ],
+    "compilation_directory": "/home/user/click-lib/examples/basic-cpp",
+    "compilation_file": "with_restore.cpp",
+    "exceptions": false,
+    "frontend": "clang",
+    "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+    "rtti": false,
+    "standard": "c++20",
+    "target": "x86_64-unknown-linux-gnu"
+  },
+  "reachable_functions": [
+    {
+      "body": [
+        {
+          "kind": "store",
+          "pointer": {
+            "field": {
+              "declaration_id": "c:@S@Restore@FI@p",
+              "name": "p",
+              "record_declaration_id": "c:@S@Restore",
+              "span": {
+                "end_column": 11,
+                "end_line": 10,
+                "file": "with_restore.cpp",
+                "start_column": 10,
+                "start_line": 10
+              }
+            },
+            "kind": "member_load",
+            "object": {
+              "declaration_id": "c:@S@Restore@F@~Restore#@this",
+              "name": "self",
+              "span": {
+                "end_column": 13,
+                "end_line": 9,
+                "file": "with_restore.cpp",
+                "start_column": 5,
+                "start_line": 9
+              }
+            },
+            "span": {
+              "end_column": 11,
+              "end_line": 10,
+              "file": "with_restore.cpp",
+              "start_column": 10,
+              "start_line": 10
+            },
+            "value_type": {
+              "kind": "pointer",
+              "pointee": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            }
+          },
+          "span": {
+            "end_column": 19,
+            "end_line": 10,
+            "file": "with_restore.cpp",
+            "start_column": 9,
+            "start_line": 10
+          },
+          "value": {
+            "field": {
+              "declaration_id": "c:@S@Restore@FI@saved",
+              "name": "saved",
+              "record_declaration_id": "c:@S@Restore",
+              "span": {
+                "end_column": 19,
+                "end_line": 10,
+                "file": "with_restore.cpp",
+                "start_column": 14,
+                "start_line": 10
+              }
+            },
+            "kind": "member_load",
+            "object": {
+              "declaration_id": "c:@S@Restore@F@~Restore#@this",
+              "name": "self",
+              "span": {
+                "end_column": 13,
+                "end_line": 9,
+                "file": "with_restore.cpp",
+                "start_column": 5,
+                "start_line": 9
+              }
+            },
+            "span": {
+              "end_column": 19,
+              "end_line": 10,
+              "file": "with_restore.cpp",
+              "start_column": 14,
+              "start_line": 10
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@S@Restore@F@~Restore#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "destructor",
+        "record_declaration_id": "c:@S@Restore",
+        "record_name": "Restore"
+      },
+      "name": "Restore_destructor",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Restore@F@~Restore#@this",
+          "name": "self",
+          "span": {
+            "end_column": 13,
+            "end_line": 9,
+            "file": "with_restore.cpp",
+            "start_column": 5,
+            "start_line": 9
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Restore",
+              "is_const": false,
+              "kind": "record",
+              "name": "Restore"
+            }
+          }
+        }
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 6,
+        "end_line": 11,
+        "file": "with_restore.cpp",
+        "start_column": 5,
+        "start_line": 9
+      }
+    },
+    {
+      "body": [
+        {
+          "field": {
+            "declaration_id": "c:@S@Restore@FI@p",
+            "name": "p",
+            "record_declaration_id": "c:@S@Restore",
+            "span": {
+              "end_column": 11,
+              "end_line": 2,
+              "file": "with_restore.cpp",
+              "start_column": 5,
+              "start_line": 2
+            }
+          },
+          "kind": "member_store",
+          "object": {
+            "declaration_id": "c:@S@Restore@F@Restore#*I#@this",
+            "name": "self",
+            "span": {
+              "end_column": 21,
+              "end_line": 5,
+              "file": "with_restore.cpp",
+              "start_column": 14,
+              "start_line": 5
+            }
+          },
+          "span": {
+            "end_column": 51,
+            "end_line": 5,
+            "file": "with_restore.cpp",
+            "start_column": 44,
+            "start_line": 5
+          },
+          "value": {
+            "kind": "load",
+            "place": {
+              "declaration_id": "c:with_restore.cpp@66@S@Restore@F@Restore#*I#@slot",
+              "name": "slot",
+              "span": {
+                "end_column": 50,
+                "end_line": 5,
+                "file": "with_restore.cpp",
+                "start_column": 46,
+                "start_line": 5
+              }
+            },
+            "span": {
+              "end_column": 50,
+              "end_line": 5,
+              "file": "with_restore.cpp",
+              "start_column": 46,
+              "start_line": 5
+            },
+            "value_type": {
+              "kind": "pointer",
+              "pointee": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            }
+          }
+        },
+        {
+          "field": {
+            "declaration_id": "c:@S@Restore@FI@saved",
+            "name": "saved",
+            "record_declaration_id": "c:@S@Restore",
+            "span": {
+              "end_column": 14,
+              "end_line": 3,
+              "file": "with_restore.cpp",
+              "start_column": 5,
+              "start_line": 3
+            }
+          },
+          "kind": "member_store",
+          "object": {
+            "declaration_id": "c:@S@Restore@F@Restore#*I#@this",
+            "name": "self",
+            "span": {
+              "end_column": 21,
+              "end_line": 5,
+              "file": "with_restore.cpp",
+              "start_column": 14,
+              "start_line": 5
+            }
+          },
+          "span": {
+            "end_column": 65,
+            "end_line": 5,
+            "file": "with_restore.cpp",
+            "start_column": 53,
+            "start_line": 5
+          },
+          "value": {
+            "kind": "dereference",
+            "pointer": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:with_restore.cpp@66@S@Restore@F@Restore#*I#@slot",
+                "name": "slot",
+                "span": {
+                  "end_column": 64,
+                  "end_line": 5,
+                  "file": "with_restore.cpp",
+                  "start_column": 60,
+                  "start_line": 5
+                }
+              },
+              "span": {
+                "end_column": 64,
+                "end_line": 5,
+                "file": "with_restore.cpp",
+                "start_column": 60,
+                "start_line": 5
+              },
+              "value_type": {
+                "kind": "pointer",
+                "pointee": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              }
+            },
+            "span": {
+              "end_column": 64,
+              "end_line": 5,
+              "file": "with_restore.cpp",
+              "start_column": 59,
+              "start_line": 5
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        },
+        {
+          "kind": "store",
+          "pointer": {
+            "field": {
+              "declaration_id": "c:@S@Restore@FI@p",
+              "name": "p",
+              "record_declaration_id": "c:@S@Restore",
+              "span": {
+                "end_column": 11,
+                "end_line": 6,
+                "file": "with_restore.cpp",
+                "start_column": 10,
+                "start_line": 6
+              }
+            },
+            "kind": "member_load",
+            "object": {
+              "declaration_id": "c:@S@Restore@F@Restore#*I#@this",
+              "name": "self",
+              "span": {
+                "end_column": 21,
+                "end_line": 5,
+                "file": "with_restore.cpp",
+                "start_column": 14,
+                "start_line": 5
+              }
+            },
+            "span": {
+              "end_column": 11,
+              "end_line": 6,
+              "file": "with_restore.cpp",
+              "start_column": 10,
+              "start_line": 6
+            },
+            "value_type": {
+              "kind": "pointer",
+              "pointee": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            }
+          },
+          "span": {
+            "end_column": 15,
+            "end_line": 6,
+            "file": "with_restore.cpp",
+            "start_column": 9,
+            "start_line": 6
+          },
+          "value": {
+            "kind": "integer_literal",
+            "span": {
+              "end_column": 15,
+              "end_line": 6,
+              "file": "with_restore.cpp",
+              "start_column": 14,
+              "start_line": 6
+            },
+            "value": "7",
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@S@Restore@F@Restore#*I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "constructor",
+        "record_declaration_id": "c:@S@Restore",
+        "record_name": "Restore"
+      },
+      "name": "Restore_constructor",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Restore@F@Restore#*I#@this",
+          "name": "self",
+          "span": {
+            "end_column": 21,
+            "end_line": 5,
+            "file": "with_restore.cpp",
+            "start_column": 14,
+            "start_line": 5
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Restore",
+              "is_const": false,
+              "kind": "record",
+              "name": "Restore"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:with_restore.cpp@66@S@Restore@F@Restore#*I#@slot",
+          "name": "slot",
+          "span": {
+            "end_column": 31,
+            "end_line": 5,
+            "file": "with_restore.cpp",
+            "start_column": 22,
+            "start_line": 5
+          },
+          "value_type": {
+            "kind": "pointer",
+            "pointee": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 6,
+        "end_line": 7,
+        "file": "with_restore.cpp",
+        "start_column": 5,
+        "start_line": 5
+      }
+    }
+  ],
+  "records": [
+    {
+      "alignment_bytes": 8,
+      "byte_template_arguments": [],
+      "declaration_id": "c:@S@Restore",
+      "destructor": {
+        "declaration_id": "c:@S@Restore@F@~Restore#",
+        "name": "Restore_destructor",
+        "span": {
+          "end_column": 13,
+          "end_line": 9,
+          "file": "with_restore.cpp",
+          "start_column": 5,
+          "start_line": 9
+        }
+      },
+      "fields": [
+        {
+          "declaration_id": "c:@S@Restore@FI@p",
+          "name": "p",
+          "offset_bytes": 0,
+          "size_bytes": 8,
+          "span": {
+            "end_column": 11,
+            "end_line": 2,
+            "file": "with_restore.cpp",
+            "start_column": 5,
+            "start_line": 2
+          },
+          "value_type": {
+            "kind": "pointer",
+            "pointee": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        },
+        {
+          "declaration_id": "c:@S@Restore@FI@saved",
+          "name": "saved",
+          "offset_bytes": 8,
+          "size_bytes": 4,
+          "span": {
+            "end_column": 14,
+            "end_line": 3,
+            "file": "with_restore.cpp",
+            "start_column": 5,
+            "start_line": 3
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "name": "Restore",
+      "size_bytes": 16,
+      "span": {
+        "end_column": 2,
+        "end_line": 12,
+        "file": "with_restore.cpp",
+        "start_column": 1,
+        "start_line": 1
+      }
+    }
+  ],
+  "schema": 60
+}

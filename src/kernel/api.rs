@@ -3765,6 +3765,25 @@ pub fn c_function_contract_entry_state(
     }
 }
 
+/// Whether `state` holds `required` by its definition alone, the law
+/// contract certification applies to a returned resource: held directly, or
+/// assembled from pieces only where every assembled composite's body facts
+/// hold under `assumptions`.
+pub(crate) fn c_resource_definitionally_established(
+    state: &CState,
+    required: &CResourceFact,
+    definitions: &[CCompositeResourceDefinition],
+    assumptions: &PureFactContext,
+) -> bool {
+    super::functions::resource_context_satisfies_definitional_fact(
+        state.resources(),
+        required,
+        definitions,
+        state.memory(),
+        assumptions,
+    )
+}
+
 /// Whether a body outcome establishes every resource the contract returns,
 /// by the rule contract certification applies to a `produces` claim. A proof
 /// consults this before reading the outcome through the contract's resource
@@ -3832,6 +3851,24 @@ pub(crate) fn checked_c_function_contract_resource_transition(
     outcome: CFunctionOutcome,
     assumptions: &PureFactContext,
 ) -> Result<CFunctionOutcome, String> {
+    // The transition replaces the body's resources with the ones the
+    // contract returns, so it publishes them, a produced composite included.
+    // Publish only what the body establishes by the rule certification
+    // applies, which assembles a composite from pieces only when its body
+    // facts hold on this path.
+    if matches!(outcome, CFunctionOutcome::Return { .. })
+        && !function_return_resources_definitionally_established(
+            caller_state,
+            function,
+            arguments,
+            &outcome,
+            assumptions,
+        )
+    {
+        return Err(
+            "the body outcome does not establish the contract's returned resources".to_string(),
+        );
+    }
     let (outcome, obligations) = apply_c_function_contract_resource_transition(
         caller_state,
         function,

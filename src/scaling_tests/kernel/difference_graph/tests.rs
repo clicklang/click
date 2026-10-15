@@ -123,3 +123,60 @@ fn a_bound_on_a_shared_value_costs_the_same_beside_any_number_of_dependents() {
         "work on a shared value should not grow with its dependents: {samples:?}"
     );
 }
+
+/// Written bounds must remain available beyond the graph walk's edge cap.
+/// Both directions and strictness use only the selected edge, not its hub.
+#[test]
+#[ignore = "nightly: 1.4s multi-domain high-degree bound scaling"]
+fn written_order_queries_are_flat_beside_a_high_degree_bound() {
+    let order = |domain, strict, left: &Bitvector32Term, right: &Bitvector32Term| {
+        let (left, right) = (Box::new(left.clone()), Box::new(right.clone()));
+        match (domain, strict) {
+            (Domain::Int32, true) => ConditionTerm::Bitvector32SignedLessThan(left, right),
+            (Domain::Int32, false) => ConditionTerm::Bitvector32SignedLessEqual(left, right),
+            (Domain::Int64, true) => ConditionTerm::Bitvector64SignedLessThan(left, right),
+            (Domain::Int64, false) => ConditionTerm::Bitvector64SignedLessEqual(left, right),
+            (Domain::UInt64, true) => ConditionTerm::Bitvector64UnsignedLessThan(left, right),
+            (Domain::UInt64, false) => ConditionTerm::Bitvector64UnsignedLessEqual(left, right),
+        }
+    };
+    for domain in [Domain::Int32, Domain::Int64, Domain::UInt64] {
+        for strict in [false, true] {
+            let mut samples = Vec::new();
+            for size in [16, 33, 64, 256, 1024] {
+                let length = variable(0);
+                let mut graph = DifferenceGraph::new();
+                for index in 0..size {
+                    graph.assume_condition(
+                        &order(domain, strict, &variable(1 + index), &length),
+                        true,
+                    );
+                }
+                let mut work = Vec::new();
+                for index in [0, size / 2, size - 1] {
+                    let index = variable(1 + index);
+                    let (answer, cost) =
+                        graph_work(|| graph.decide(&order(domain, strict, &index, &length)));
+                    assert_eq!(answer, Some(true), "{domain:?}, {strict}, {size}");
+                    work.push(cost);
+                    let (answer, cost) =
+                        graph_work(|| graph.decide(&order(domain, !strict, &length, &index)));
+                    assert_eq!(answer, Some(false), "{domain:?}, {strict}, {size}");
+                    work.push(cost);
+                    if !strict {
+                        assert_eq!(
+                            graph.decide(&order(domain, true, &index, &length)),
+                            None,
+                            "a non-strict premise cannot establish a strict bound"
+                        );
+                    }
+                }
+                samples.push(work);
+            }
+            assert!(
+                samples.windows(2).all(|pair| pair[0] == pair[1]),
+                "{domain:?}, {strict}: {samples:?}"
+            );
+        }
+    }
+}
