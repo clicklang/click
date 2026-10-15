@@ -631,3 +631,12 @@ Original Rust and contracts are unchanged. Its result proof passes fresh,
 expanded, rewritten and retained checking on both the archive and this
 upstream-based branch. The last complete archive audit remains **48/52**;
 byte-sum is individually restored pending the next complete audit.
+
+The next shared repair makes iterated ownership use checked read equality both
+when selecting an element and when comparing complete iterated holdings. The
+same pointer slot read across an unrelated store remains the same address;
+wrong-slot and changed-slot controls reject, and element widths and guard
+locations remain strict. Nine focused upstream controls pass (four ignored),
+including the existing flat-work checks at four range sizes. The corresponding
+seven archive controls pass (one ignored). Arena now gets past `take`; its
+window fold is still under diagnosis. Retain the last full **48/52** audit.
