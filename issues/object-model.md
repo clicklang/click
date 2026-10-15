@@ -28,6 +28,12 @@ against the revision they describe before being presented as upstream behavior.
 milestones; [the Rust reference](../docs/reference/rust.md) records the supported Rust subset;
 its [Linux frontend milestone](../design/rust-charon-assessment.md#completed-linux-frontend-delivery) is complete.
 
+Pointer-field compatibility recovery is complete in candidate `ebe4f69a1` on
+`codex/pointer-field-recovery`: the original vector and string projects verify
+all 13 and 15 proofs with unchanged C, contracts, resources and limits. See the
+[closure evidence](../design/object-model-recovery-audit.md#pointer-field-postcondition-closure).
+This does not activate the archived model or change the last full audit count.
+
 ## Recovery starting point
 
 The preserved implementation checkpoint is `b92deef95` on
@@ -649,15 +655,13 @@ migrated `sum-proof.click`; it now matches the explicit canonical proof. Both
 failing Rust parity checks pass locally. The original frozen sidecar and its
 hash are unchanged.
 
-The remaining pointer-field postcondition report is closed by recovery candidate
-`ebe4f69a1` on `codex/pointer-field-recovery` (based on `80d5584ac`). The original
-vector and string projects verify all 13 and 15 proofs, respectively, with C,
-contracts, resources and limits unchanged. The vector caller now explicitly uses
-push's exact call-exit prefix guarantee and frames its two sides separately.
-Structural branch joins also retain their already walked statement-effect
-records, restoring `vector_replace_if` after complete-pointer call refinement.
-The affected caller, branch reduction and string push/clear audits pass expansion,
-cold and retained checks. See the
-[closure evidence](../design/object-model-recovery-audit.md#pointer-field-postcondition-closure).
-This is an independently preserved recovery candidate and a shared upstream
-repair, not archived object-model activation or a new full example-audit count.
+[PR #1144](https://github.com/clicklang/click/pull/1144) merged; all four pushed
+commits are verified on upstream. The next bounded proof repair completes
+Rust chunks-exact with existing native-to-Integer conversion lemmas and explicit
+cursor/last-byte formation and read bounds. Original Rust and contracts are
+unchanged, and the migrated sidecar remains synchronized with its canonical
+copy. Fresh, expanded, rewritten and retained checks pass on the archive and
+upstream-based `95fe8cbd1`. The active migration inventory control and the
+specifically selected source/obligation control pass; the other two ignored
+chunk tool controls were not run. The last complete archive audit remains
+**49/52** pending a rerun; arena and owned-vector are the other failures.

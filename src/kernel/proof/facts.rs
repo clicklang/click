@@ -1693,8 +1693,29 @@ impl ProofFacts {
         // identity drops the repeat without comparing payloads.
         let mut seen = BTreeSet::new();
         let mut equalities = Vec::new();
-        for atom in atoms {
-            if let Some(bucket) = self.bitvector_equalities_by_atom.get(&atom) {
+        // Exact pointer operands select their own equalities before a
+        // shared base nominates every older pointer into that object.
+        // Literals never nominate aliases: automatic rewriting reduces
+        // symbolic operands to literals, not a literal to an unrelated
+        // symbolic value which happens to equal it.
+        let mut exact_pointers = atoms
+            .iter()
+            .filter(|atom| matches!(atom, BitvectorEqualityAtomKey::PointerReadSource(_)))
+            .collect::<Vec<_>>();
+        exact_pointers.sort_by_key(|atom| {
+            self.bitvector_equalities_by_atom
+                .get(*atom)
+                .map_or(0, PersistentSequence::len)
+        });
+        let other_operands = atoms.iter().filter(|atom| {
+            !matches!(
+                atom,
+                BitvectorEqualityAtomKey::PointerReadSource(_)
+                    | BitvectorEqualityAtomKey::Constant(_)
+            )
+        });
+        for atom in exact_pointers.into_iter().chain(other_operands) {
+            if let Some(bucket) = self.bitvector_equalities_by_atom.get(atom) {
                 for equality in bucket.iter() {
                     if seen.insert(Arc::as_ptr(equality) as usize) {
                         equalities.push(equality.clone());

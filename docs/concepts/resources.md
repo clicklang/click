@@ -1191,7 +1191,14 @@ they name the state the execution has reached. After `root = root->left` a
 and a body fact such as `fact parent->left == child` instantiates to the link
 the body just walked. The fold's field values are read the same way, so one
 tactic never straddles two states
-(`mdtests/fold_argument_reads_current_cursor.md`).
+(`mdtests/fold_argument_reads_current_cursor.md`). An explicit `old(...)`
+argument selects function entry even in a fold with explicit fields: after
+`p = q`, `fold(saved_at(old(p)), { model: old(saved.model) })` keeps the
+entry-indexed instance, while `fold(saved_at(p), ...)` selects the current
+pointer. The argument and field initializer retain their own snapshot selectors
+(`mdtests/fielded_resource_fold_keeps_entry_arguments.md`); a current-pointer
+model cannot establish the old instance's body
+(`mdtests/fielded_resource_fold_rejects_current_model_for_entry_argument.md`).
 A resource argument may also read an owned field through a proved model-pointer
 alias. Named folds retain the facts already checked at that point when
 evaluating those arguments; a model pointer without read authority is refused

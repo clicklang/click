@@ -265,3 +265,16 @@ grandparent on the left and the original parent on the right. Both double
 rotation directions now check two writable callbacks in sequence. Together
 with the single rotations, all four three-node root rotation shapes are
 covered with recursively valid cached sizes.
+
+
+`rbtree_size_insert_color_flip.click` and
+`rbtree_size_insert_mirrored_color_flip.click` check the four-node color-flip
+path in both orientations, including `__rb_insert` and both augmented wrappers.
+The red parent and uncle become black, the focus moves to the grandparent,
+and the loop continues before blackening that new root. The owned
+`sized_context_at` chain has two ancestor frames before the flip and none
+afterwards; its actual `sized_context_depth` supplies the decreasing measure.
+All cached sizes and links are preserved, and the returned resource describes
+the exact recolored sized tree. This path invokes no callback and accepts any
+correctly typed rotation pointer. These are root-reaching flips; continuing
+through arbitrary ancestors and writable erase integration remain unfinished.
