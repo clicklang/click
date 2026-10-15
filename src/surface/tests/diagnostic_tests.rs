@@ -3426,6 +3426,25 @@ mod scaling_tests {
     include!("../../scaling_tests/surface/tests/diagnostic_tests.rs");
 }
 
+#[test]
+#[ignore = "nightly: repeated-retain source diagnostic took 0.63s in parallel"]
+fn a_failed_retain_names_the_population_count_requirement() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/repeated_child_retains_require_enough_count_capacity.md");
+    let markdown = std::fs::read_to_string(&path).unwrap();
+    let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let error = verify_c0_sources(fixture.click_source.as_deref().unwrap(), &sources)
+        .expect_err("the caller does not establish the helper's stricter count bound");
+    let (report, _) = error.concise_report_parts();
+    assert!(report.contains("count(child_ref(obj)) < 8"), "{report}");
+    assert!(!report.contains("*obj"), "{report}");
+}
+
 /// A written auto miss keeps the same checked prefix as other have failures.
 /// The failed smart candidates must not become facts in that prefix.
 #[test]

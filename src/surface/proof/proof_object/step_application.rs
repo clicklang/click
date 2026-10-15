@@ -85,7 +85,9 @@ fn signed_atom_matches(
     left: &crate::kernel::Bitvector32Term,
     right: &crate::kernel::Bitvector32Term,
 ) -> bool {
-    let mut pending = vec![(left, right)];
+    let left = crate::kernel::canonical_term(left);
+    let right = crate::kernel::canonical_term(right);
+    let mut pending = vec![(&left, &right)];
     let mut visited = 0usize;
     while let Some((left, right)) = pending.pop() {
         visited += 1;
@@ -1976,6 +1978,7 @@ impl<'a> Proof<'a> {
                         .step_error("signed_int32 certificate term must be an int32 expression"));
                 }
             };
+            let term = crate::kernel::canonical_term(&term);
             if SignedArithmeticAtom::from_term(&term).is_none() {
                 return Err(proof.step_error(
                     "signed_int32 certificate term is unsupported or exceeds the verification budget",

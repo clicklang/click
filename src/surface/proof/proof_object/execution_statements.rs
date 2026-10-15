@@ -1637,24 +1637,48 @@ impl<'a> Proof<'a> {
         let recorded = recorded.recorded;
         let open = distinct_requirements(recorded.clone());
         let open = open.iter().collect::<Vec<_>>();
-        let (proved, mut entries) =
-            match self.prove_obligations_by_auto_or_name_the_first_missed(&step, &open)? {
-                Ok(proved) => proved,
-                // Refuse at the obligation the implicit `auto` missed, with
-                // the fast path's own diagnostic for it; another open
-                // obligation it did prove is not what is wrong.
-                Err(missed) => {
-                    return match recorded.iter().position(|requirement| {
-                        crate::kernel::proof::propositions_are_alpha_equal(
-                            &requirement.proposition,
-                            &open[missed].proposition,
-                        )
-                    }) {
-                        Some(position) if position > 0 => Err(refusals[position].clone()),
-                        _ => refused(),
+        let (proved, mut entries) = match self
+            .prove_obligations_by_auto_or_name_the_first_missed(&step, &open)?
+        {
+            Ok(proved) => proved,
+            // Refuse at the obligation the implicit `auto` missed, with
+            // the fast path's own diagnostic for it; another open
+            // obligation it did prove is not what is wrong.
+            Err(missed) => {
+                let refused = match recorded.iter().position(|requirement| {
+                    crate::kernel::proof::propositions_are_alpha_equal(
+                        &requirement.proposition,
+                        &open[missed].proposition,
+                    )
+                }) {
+                    Some(position) if position > 0 => Err(refusals[position].clone()),
+                    _ => refused(),
+                };
+                return refused.map_err(|error| {
+                    // The numeric count carrier can also be a C field
+                    // read. Name the authoritative source requirement.
+                    let Ok(Some(spelling)) = self.requirement_surface(open[missed], &step) else {
+                        return error;
                     };
-                }
-            };
+                    if matches!(
+                        &spelling.surface,
+                        ClickProposition::Comparison {
+                            left: ContractExpression::ResourceCount(_),
+                            ..
+                        } | ClickProposition::Comparison {
+                            right: ContractExpression::ResourceCount(_),
+                            ..
+                        }
+                    ) {
+                        error.with_missing_tactic_requirement(
+                            crate::surface::printing::source_click_proposition(&spelling.surface),
+                        )
+                    } else {
+                        error
+                    }
+                });
+            }
+        };
         let stepped = proved.apply_fast_simple_step(&step)?;
         let proof = if entries.len() == 1 {
             StepProofCertificate::By(Box::new(entries.pop().expect("one entry").proof))

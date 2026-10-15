@@ -18338,3 +18338,28 @@ fn modular_buffer_ranges_rejoin_in_all_proof_modes() {
             .unwrap_or_else(|error| panic!("retained {function}: {}", error.report()));
     }
 }
+
+#[test]
+#[ignore = "nightly: repeated-retain whole-proof and four selected-call expansions took 11.4s in parallel"]
+fn repeated_retains_expand_with_checked_count_bounds() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/repeated_child_retains_keep_the_entry_count_bound.md");
+    let markdown = std::fs::read_to_string(&path).unwrap();
+    let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(source, &sources).expect("the four original retain calls verify");
+    let expanded = expand_c0_claim_source(source, &sources, "retain_many", CProofClaim::Grouped)
+        .expect("retain bounds should expand as checked obligation proofs");
+    verify_c0_sources(&expanded, &sources).expect("the expanded retain proof rechecks");
+    for (offset, _) in source.match_indices("step(child_retain(obj), {});") {
+        let position = expansion::position_at_offset(source, offset);
+        let expanded = expand_c0_tactic_source_at(source, &sources, position.line, position.column)
+            .expect("each retained call's implicit proof should expand");
+        verify_c0_sources(&expanded, &sources).expect("the selected call expansion rechecks");
+    }
+}

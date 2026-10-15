@@ -208,6 +208,7 @@ const NIGHTLY: &[&str] = &[
     "rb_replace_node_keeps_parent_link.md",                                    // 0.9s
     "rb_replace_node_with_children.md",                                        // 2.5s
     "reallocation_frees_old_cells_beside_their_owner.md",                      // 1.4s
+    "repeated_child_retains_keep_the_entry_count_bound.md",                    // 0.8s
     "resource_arm_binding_struct_base.md",                                     // 0.9s
     "resource_field_memory_endpoint.md",                                       // 0.5s
     "resource_fold_copied_packed_word.md",                                     // 0.6s

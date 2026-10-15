@@ -885,6 +885,16 @@ rules (`PureFactContext::difference_decision`). The general decision
 leaves open keeps both branches, and a requirement it leaves open needs a
 proof step that states it.
 
+Signed-arithmetic planning and source-certificate term matching use the kernel's
+canonical load identities. A raw read and its registered load variable are the
+same arithmetic atom; comparing their surface representations must not lose a
+population-count bound after a call. Bound selection starts from these canonical
+goal variables and follows only their indexed bounds. The resulting arithmetic
+certificate remains explicit and is checked normally. Population-count
+comparisons try that indexed arithmetic path before memory-equality rewrites,
+so successive retains do not search every earlier call snapshot to rediscover
+the unchanged entry-count bound.
+
 The graph's nodes are `int32`, `int64` and `uint64` values keyed by term, and
 its edges are constraints `x - y <= c`; a constant bound is an edge to a zero
 node, so facts about unrelated values never meet at a shared constant.

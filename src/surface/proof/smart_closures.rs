@@ -228,7 +228,9 @@ fn signed_surface_terms_equal(
     left: &crate::kernel::Bitvector32Term,
     right: &crate::kernel::Bitvector32Term,
 ) -> bool {
-    let mut pending = vec![(left, right)];
+    let left = crate::kernel::canonical_term(left);
+    let right = crate::kernel::canonical_term(right);
+    let mut pending = vec![(&left, &right)];
     let mut visited = 0usize;
     while let Some((left, right)) = pending.pop() {
         visited += 1;
@@ -2147,6 +2149,31 @@ impl<'a> Proof<'a> {
         if let Some(proof) = self.try_unsigned_order_lemma() {
             return Ok(Some(proof));
         }
+        // Population bounds are arithmetic on the authority's count, even
+        // when that count shares a carrier with a C field. Try its indexed
+        // bounds before searching memory equalities and recorded snapshots.
+        let population_count_comparison = matches!(
+            self.surface_goal(),
+            Some(
+                ClickProposition::Comparison {
+                    left: ContractExpression::ResourceCount(_),
+                    ..
+                } | ClickProposition::Comparison {
+                    right: ContractExpression::ResourceCount(_),
+                    ..
+                }
+            )
+        );
+        if population_count_comparison
+            && let Some(proof) = crate::instrumentation::measure_operation(
+                "surface",
+                "simp closure",
+                "simp closure: indexed bounds",
+                || self.try_execution_signed_arithmetic(),
+            )
+        {
+            return Ok(Some(proof));
+        }
         // Integer arithmetic has its own compact, locally checked evidence
         // path. Keep it ahead of the legacy signed arithmetic derivation so
         // a mathematical Integer goal cannot accidentally enter the machine
@@ -2498,10 +2525,9 @@ impl<'a> Proof<'a> {
         // Signed arithmetic over the selected premises is the final
         // fallback. All established equality, transport, quantifier,
         // structural, and function-unfold routes must get first choice so
-        // their selected proof steps remain visible in expansion. Only the
-        // pure form above, which selects its own bounds from the goal's
-        // buckets, runs earlier, and only ahead of the case split it would
-        // otherwise be hidden behind.
+        // their selected proof steps remain visible in expansion. Population
+        // comparisons already tried indexed bounds before memory rewriting;
+        // pure arithmetic ran ahead of the case split it would hide behind.
         if let Some(surface_goal) = self.surface_goal()
             && let Some(goal) = self.goal()
             && !anchored_pairs.is_empty()
@@ -2521,12 +2547,14 @@ impl<'a> Proof<'a> {
         {
             return Ok(Some(proof));
         }
-        if let Some(arithmetic) = crate::instrumentation::measure_operation(
-            "surface",
-            "simp closure",
-            "simp closure: indexed bounds",
-            || self.try_execution_signed_arithmetic(),
-        ) {
+        if !population_count_comparison
+            && let Some(arithmetic) = crate::instrumentation::measure_operation(
+                "surface",
+                "simp closure",
+                "simp closure: indexed bounds",
+                || self.try_execution_signed_arithmetic(),
+            )
+        {
             return Ok(Some(arithmetic));
         }
         // The pure signed certificate already ran above on this same proof
@@ -2598,7 +2626,11 @@ impl<'a> Proof<'a> {
         let is_pure = matches!(self.context.as_ref(), ProofContext::Pure(_));
         let mut available = BTreeSet::new();
         let mut visited = BTreeSet::new();
-        let mut pending = crate::kernel::proposition_variables(goal)
+        // Count lowering can leave a read expression where the bounds index
+        // names its registered load variable. Seed from that canonical value,
+        // not from variables in the read's address or memory snapshot.
+        let canonical_goal = crate::kernel::canonical_condition_fact(goal);
+        let mut pending = crate::kernel::proposition_variables(&canonical_goal)
             .into_iter()
             .collect::<std::collections::VecDeque<_>>();
         while let Some(variable) = pending.pop_front() {
@@ -2633,9 +2665,11 @@ impl<'a> Proof<'a> {
                 }
                 if found {
                     pending.extend(
-                        crate::kernel::proposition_variables(&fact)
-                            .into_iter()
-                            .filter(|next| !visited.contains(next)),
+                        crate::kernel::proposition_variables(
+                            &crate::kernel::canonical_condition_fact(&fact),
+                        )
+                        .into_iter()
+                        .filter(|next| !visited.contains(next)),
                     );
                 }
             }
