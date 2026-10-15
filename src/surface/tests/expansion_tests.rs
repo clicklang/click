@@ -12233,9 +12233,16 @@ fn assert_bound_universal_fixture_has_no_outcome_fallbacks(filename: &str, funct
         "expanded proof from `{}` omitted the checked upper-bound split",
         path.display()
     );
+    // Expansion spells the library theorem by its bare name and imports its
+    // module.
     assert!(
-        expanded.contains("click::machine_integer::int32_less_than_increment_implies_less_equal"),
+        expanded.contains("int32_less_than_increment_implies_less_equal("),
         "expanded proof from `{}` omitted the split's explicit bound theorem",
+        path.display()
+    );
+    assert!(
+        expanded.contains("import click::machine_integer;"),
+        "expanded proof from `{}` does not import the bound theorem's module",
         path.display()
     );
     verify_c0_sources(&expanded, &c_sources).unwrap_or_else(|error| {
