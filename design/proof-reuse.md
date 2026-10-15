@@ -4,7 +4,7 @@ Design for [design-review](../issues/design-review.md) item P5 ("copy-paste
 across case files and sidecars"). It measures where the repetition in
 `examples/rbtree-erase` comes from, compares that with what Dafny, Verus,
 Lean and separation-logic tools do, and lists what Click needs. It assumes
-[smt-auto.md](../issues/smt-auto.md) lands. Measurements are from master at
+[SMT-backed `auto`](smt-auto-stage1.md) lands; it has. Measurements are from master at
 `101ad5c7`.
 
 ## Summary
@@ -99,7 +99,7 @@ some of those run to over 1,000 characters.
 | Technique | Dafny | Verus | Viper / VeriFast | Lean / Coq / Isabelle | Click |
 |---|---|---|---|---|---|
 | One verification condition covers every path; no per-step script | yes | yes | yes | no | no; each arm is scripted |
-| Congruence and linear arithmetic per step | SMT | SMT | SMT | `simp`, `omega` | hand-written; [smt-auto.md](../issues/smt-auto.md) |
+| Congruence and linear arithmetic per step | SMT | SMT | SMT | `simp`, `omega` | `auto` ([smt-auto-stage1.md](smt-auto-stage1.md)) |
 | Recursive spec functions unfold automatically | fuel, default 1–2 levels | fuel | heuristics | `simp [f]` equation lemmas | explicit `unfold` |
 | Heap facts carry across steps (framing) | `modifies`/`reads` | ownership types | permissions | n/a | partly; facts restated |
 | Data-structure predicates open and close themselves | n/a, no separation logic | ownership types | Viper explicit; VeriFast auto-open/close | n/a | explicit `fold`/`unfold` |
@@ -271,7 +271,8 @@ checked rewrite in the expansion. This removes most of the 70 explicit unfolds
 per arm, and most model-term restating, because the solver can see through
 `plug` and `rb_reparent`.
 
-[smt-auto.md](../issues/smt-auto.md) keeps recursive predicates out of scope.
+The SMT-backed `auto` ([smt-auto-stage1.md](smt-auto-stage1.md)) keeps
+recursive predicates out of scope.
 This item is different: it covers pure functions over constructors, which are
 bounded and decidable at fixed fuel. It can be added as a stage of that issue
 or done separately.
@@ -319,7 +320,7 @@ trusted component.
 These are estimates, to be replaced by measurements.
 
 - R1 removes about 29,000 lines.
-- In the general proof, [smt-auto.md](../issues/smt-auto.md) stage 1, R3 and
+- In the general proof, the SMT-backed `auto`, R3 and
   R4 target about 400 of 1,377 lines per arm: the 222 one-line equalities,
   the recursive unfolds and the resource bookkeeping. Facts that no longer
   need restating should account for a large share of the remaining `have`s.

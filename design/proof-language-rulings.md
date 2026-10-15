@@ -22,6 +22,12 @@ only by the tests that read them.
   is Rust's cast. Arithmetic-certificate step names are words only inside
   `arithmetic_certificate { ... }` and are listed apart from the general
   word index.
+- No certificate cache (closed 2026-10-15, launch review W4 and W5). The
+  review proposed keeping `by auto` in sidecars and caching each claim's
+  reconstructed certificate beside them, so verification would not search.
+  Expansion already does this: `click expand` turns a slow smart site into
+  the simple steps it found, which check without search, and the expansion
+  is committed. A cache would be a second, hidden copy of the same proof.
 - `owns p` for a pointer is the pointer's own slot. `owns *p` is what it
   points at.
 - A separate tactic for conjunction and disjunction goals was dropped;
