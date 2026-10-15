@@ -4,12 +4,17 @@
     "chunks": {
       "language": "rust",
       "lock": {
-        "artifact": "a2d398464be5af965f4dfc788dbf49b969fdb7dab8930ee0389f0f76c4506d4f",
-        "charon_driver": "645ab4b0456083642cafa05da8b1d58aca0c6d3349c2b7921b0820cbb465fb72",
+        "artifact": "1675617c07c9d0ca49e2ff056114d474431fff7869d7f7179f3032d87c97cc54",
         "config": "2bd402cdcb5cf5458b9ec48afb8a527a62f340c57cc7f7aec58d6b4cb79d541c",
-        "exporter": "c6cc5acf5bb7e4d4bb6bef5265639d1b05b0138e3072767825cc2aa62a5040e4",
-        "identity": "566f4117b748df2e839e552579228fa4259e1ac19f9c65e7690c4d4729355e5d",
-        "schema": 8,
+        "frontend": {
+          "click_version": "0.1.0",
+          "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+          "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+          "extractor_version": "0.1.279",
+          "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+        },
+        "identity": "cd4c345742e6501b2fa417ec16fb45040a7eaa7d8c6c7fb55f267d17589fbedf",
+        "schema": 9,
         "source": "8e06f0311715da73c6328a862d5bf4a1c36cb612ea46fc1ac65cd2202f0620c4",
         "source_files": {
           "chunks.rs": "8e06f0311715da73c6328a862d5bf4a1c36cb612ea46fc1ac65cd2202f0620c4"

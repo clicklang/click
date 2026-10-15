@@ -94,6 +94,23 @@ fn installed_rust_frontend_extracts_and_verifies_without_rustup() {
         lock
     );
 
+    // Different executable bytes with the same pinned runtime handshake must
+    // contribute the same release identity. ELF permits trailing build metadata.
+    for name in ["charon", "charon-driver"] {
+        use std::io::Write;
+        fs::OpenOptions::new()
+            .append(true)
+            .open(bundle.join("bin").join(name))
+            .unwrap()
+            .write_all(b"\nClick test build metadata\n")
+            .unwrap();
+    }
+    success(cli(&binary, &home, &source, &["import", "lock"]));
+    assert_eq!(
+        fs::read(source.join("click.project.lock.json")).unwrap(),
+        lock
+    );
+
     // The existing launch proof also uses the external-crate configuration.
     let adler = t.path().join("adler-proof");
     examples::adler_project(&adler);

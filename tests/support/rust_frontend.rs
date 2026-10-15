@@ -1,6 +1,7 @@
 //! Shared installed-Rust examples and isolated CLI invocation.
 use std::{fs, path::Path, process::Command};
 
+#[allow(dead_code)] // Used by the installed-runtime test, not the release-archive test.
 pub fn project(root: &Path) {
     fs::create_dir_all(root).unwrap();
     fs::write(
@@ -45,6 +46,7 @@ pub fn success(output: std::process::Output) {
     );
 }
 
+#[allow(dead_code)] // Used by the installed-runtime test, not the release-archive test.
 pub fn adler_project(root: &Path) {
     let vendor = root.parent().unwrap().join("vendor/adler2");
     fs::create_dir_all(root).unwrap();
@@ -73,4 +75,21 @@ pub fn adler_project(root: &Path) {
         .to_string(),
     )
     .unwrap();
+}
+
+/// Copy an unchanged committed project, including its lock and native artifacts.
+#[allow(dead_code)]
+pub fn committed_project(root: &Path, directory: &str) {
+    fn copy(from: &Path, to: &Path) {
+        fs::create_dir_all(to).unwrap();
+        for entry in fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_dir() {
+                copy(&entry.path(), &to.join(entry.file_name()));
+            } else {
+                fs::copy(entry.path(), to.join(entry.file_name())).unwrap();
+            }
+        }
+    }
+    copy(&Path::new(env!("CARGO_MANIFEST_DIR")).join(directory), root);
 }

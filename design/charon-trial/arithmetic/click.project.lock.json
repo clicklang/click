@@ -4,12 +4,17 @@
     "arithmetic": {
       "language": "rust",
       "lock": {
-        "artifact": "878d21062798aa0ee91cb119447f6fc069f5a5a0d5bee37a18b51ba18d15a974",
-        "charon_driver": "645ab4b0456083642cafa05da8b1d58aca0c6d3349c2b7921b0820cbb465fb72",
+        "artifact": "9efe274ee10c6ee4023af4e27d51140992ee5d9965038d715f958c4a10c6b039",
         "config": "24729c6898ca2ac6d323ab4191a0333daa61a76410972a84d9c14572a72c0b8d",
-        "exporter": "c6cc5acf5bb7e4d4bb6bef5265639d1b05b0138e3072767825cc2aa62a5040e4",
-        "identity": "d86d38baf55f29551eec0d9ad2117d8e2a8c00604859e86fb89d938715cdfb39",
-        "schema": 8,
+        "frontend": {
+          "click_version": "0.1.0",
+          "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+          "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+          "extractor_version": "0.1.279",
+          "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+        },
+        "identity": "3db5d92b05491a3072ca1d3db4538d322c8054ec4c906a13a7ac0dbf1d9dd1d2",
+        "schema": 9,
         "source": "3e5a2854d65d6b28bcfb5c805f8eaa4cf5bb4b78cec427bcacc8cbacf1869a0a",
         "source_files": {
           "arithmetic.rs": "3e5a2854d65d6b28bcfb5c805f8eaa4cf5bb4b78cec427bcacc8cbacf1869a0a"

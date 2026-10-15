@@ -5,11 +5,16 @@
       "language": "rust",
       "lock": {
         "artifact": "55ad03e9e411fe70bb0b927fc9e45e1653f8d45ce04a68867703ccced6509d8c",
-        "charon_driver": "645ab4b0456083642cafa05da8b1d58aca0c6d3349c2b7921b0820cbb465fb72",
         "config": "ca2a2807846ba7a0fef121595821cf20e2d8f16e3c4d610d600ebbbf33428bc1",
-        "exporter": "c6cc5acf5bb7e4d4bb6bef5265639d1b05b0138e3072767825cc2aa62a5040e4",
-        "identity": "900f33d78e56dd0443cfc44597c1d8333bb1d6cf120fa6e0f101a2fa0bd681dd",
-        "schema": 8,
+        "frontend": {
+          "click_version": "0.1.0",
+          "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+          "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+          "extractor_version": "0.1.279",
+          "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+        },
+        "identity": "d8d7bff7f52ba08c64582559efe26db450ebb4b9193f394776201393cd6c497f",
+        "schema": 9,
         "source": "10923d77ca24bb221ea7dda2854a16707b5c563bdc61fbda43b56ff621545b3d",
         "source_files": {
           "quad.rs": "4250e10acf22afd1237bb2e5ea4760534aa3879d0b77a4961cc9735848184c9c"
