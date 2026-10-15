@@ -7,7 +7,7 @@ use std::path::{Component, Path, PathBuf};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct CrateConfig {
+pub(crate) struct CrateConfig {
     pub name: String,
     pub edition: String,
     pub features: Vec<String>,

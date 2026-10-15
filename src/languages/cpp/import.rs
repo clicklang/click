@@ -53,6 +53,22 @@ impl PreparedCppImport {
         &self.inner.identity
     }
 
+    /// This import under the name a sidecar's `verifying` declaration gives
+    /// its logical source; a project unit names it by its path in the unit.
+    pub(crate) fn named(&self, logical_source: &str) -> Self {
+        if self.logical_source() == logical_source {
+            return self.clone();
+        }
+        Self {
+            inner: Arc::new(PreparedInner {
+                logical_source: logical_source.to_string(),
+                identity: self.inner.identity.clone(),
+                export: self.inner.export.clone(),
+                execution: Default::default(),
+            }),
+        }
+    }
+
     pub fn export(&self) -> &CppExport {
         &self.inner.export
     }
@@ -89,6 +105,10 @@ struct Config {
     artifact: String,
     #[serde(skip)]
     directory: PathBuf,
+    /// Every selected function: `function` for a per-sidecar config, or a
+    /// project unit source's `functions`.
+    #[serde(skip)]
+    functions: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -106,6 +126,12 @@ struct Lock {
     artifact_bytes: usize,
     profile: CppProfile,
     identity: String,
+    /// A project unit's roots at preparation, absolute: the unit root, then
+    /// the project root. Preprocessor inputs under them are rechecked
+    /// relative to the roots' current locations; inputs outside them are
+    /// pinned by their recorded digest.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    prepared_roots: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -132,28 +158,65 @@ fn refresh_import_inner(config_path: &Path) -> Result<(), String> {
         &config.working_directory,
         "C++ working directory",
     )?;
+    let outputs = [artifact_path(&config)?, lock_path(config_path)?];
+    let (lock, artifact) = export(
+        &config,
+        hex_digest(&config_bytes),
+        &ExportInputs {
+            config_path: Some(&absolute_path(config_path)?),
+            exporter: &exporter,
+            compilation_database: &compilation_database,
+            working_directory: &working_directory,
+            outputs: &outputs,
+        },
+    )?;
+    let mut lock_bytes =
+        serde_json::to_vec_pretty(&lock).map_err(|error| format!("encode C++ lock: {error}"))?;
+    lock_bytes.push(b'\n');
+    if lock_bytes.len() > MAX_CONFIG_BYTES {
+        return Err("C++ import lock exceeds its size limit".into());
+    }
+    write_file_atomically(&outputs[0], &artifact)?;
+    write_file_atomically(&outputs[1], &lock_bytes)
+}
+
+/// The resolved inputs and outputs of one export.
+struct ExportInputs<'a> {
+    config_path: Option<&'a Path>,
+    exporter: &'a Path,
+    compilation_database: &'a Path,
+    working_directory: &'a Path,
+    /// The artifact and lock outputs, which no input may be.
+    outputs: &'a [PathBuf; 2],
+}
+
+/// Runs the exporter twice on `config` and returns the lock and the
+/// artifact, without writing either.
+fn export(
+    config: &Config,
+    config_sha256: String,
+    inputs: &ExportInputs<'_>,
+) -> Result<(Lock, Vec<u8>), String> {
+    let ExportInputs {
+        exporter,
+        compilation_database,
+        working_directory,
+        ..
+    } = *inputs;
     if !working_directory.is_dir() {
         return Err(format!(
             "C++ working directory `{}` is not a directory",
             working_directory.display()
         ));
     }
-    let source = resolve_source(&config, &working_directory)?;
-    let logical_source = resolve_logical_source(&config, &working_directory)?;
-    let dependencies = resolve_dependencies(&config, &working_directory)?;
-    reject_output_collisions(
-        config_path,
-        &config,
-        &source,
-        &logical_source,
-        &exporter,
-        &compilation_database,
-        &dependencies,
-    )?;
+    let source = resolve_source(config, working_directory)?;
+    let logical_source = resolve_logical_source(config, working_directory)?;
+    let dependencies = resolve_dependencies(config, working_directory)?;
+    reject_output_collisions(inputs, &source, &logical_source, &dependencies)?;
 
-    let exporter_bytes = read_stable(&exporter, MAX_EXPORTER_BYTES, "C++ exporter")?;
+    let exporter_bytes = read_stable(exporter, MAX_EXPORTER_BYTES, "C++ exporter")?;
     let compilation_database_before = read_stable(
-        &compilation_database,
+        compilation_database,
         MAX_COMPILATION_DATABASE_BYTES,
         "C++ compilation database",
     )?;
@@ -161,14 +224,17 @@ fn refresh_import_inner(config_path: &Path) -> Result<(), String> {
     let logical_source_before =
         read_stable(&logical_source, MAX_SOURCE_BYTES, "C++ logical source")?;
     let dependency_bytes_before = read_dependencies(&dependencies)?;
-    validate_library_pins(&config, &dependency_bytes_before)?;
-    let arguments = vec![
+    validate_library_pins(config, &dependency_bytes_before)?;
+    let mut arguments = vec![
         "--logical-source".into(),
         config.logical_source.clone(),
         "--logical-source-path".into(),
         logical_source.to_string_lossy().into_owned(),
-        "--function".into(),
-        config.function.clone(),
+    ];
+    for function in &config.functions {
+        arguments.extend(["--function".into(), function.clone()]);
+    }
+    arguments.extend([
         "--source".into(),
         source.to_string_lossy().into_owned(),
         "--dependency-root".into(),
@@ -180,7 +246,7 @@ fn refresh_import_inner(config_path: &Path) -> Result<(), String> {
         "--library-assertions".into(),
         serde_json::to_string(&config.library_assertions)
             .map_err(|error| format!("encode C++ library contracts: {error}"))?,
-    ];
+    ]);
     let check_inputs = || -> Result<(), String> {
         if read_stable(&source, MAX_SOURCE_BYTES, "C++ source")? != source_before {
             return Err("C++ source changed during semantic export".into());
@@ -193,11 +259,11 @@ fn refresh_import_inner(config_path: &Path) -> Result<(), String> {
         if read_dependencies(&dependencies)? != dependency_bytes_before {
             return Err("C++ dependency changed during semantic export".into());
         }
-        if read_stable(&exporter, MAX_EXPORTER_BYTES, "C++ exporter")? != exporter_bytes {
+        if read_stable(exporter, MAX_EXPORTER_BYTES, "C++ exporter")? != exporter_bytes {
             return Err("C++ exporter changed during semantic export".into());
         }
         if read_stable(
-            &compilation_database,
+            compilation_database,
             MAX_COMPILATION_DATABASE_BYTES,
             "C++ compilation database",
         )? != compilation_database_before
@@ -207,19 +273,19 @@ fn refresh_import_inner(config_path: &Path) -> Result<(), String> {
         Ok(())
     };
     let artifact = run_cpp_exporter(
-        &exporter,
+        exporter,
         &arguments,
-        &working_directory,
+        working_directory,
         &config.logical_source,
     )?;
     check_inputs()?;
-    let export = decode_artifact(&artifact, &config, &dependencies)?;
+    let export = decode_artifact(&artifact, config, &dependencies)?;
     let preprocessor_files_before = read_preprocessor_files(&export.preprocessor_files)?;
-    validate_library_headers(&config, &dependencies, &preprocessor_files_before)?;
+    validate_library_headers(config, &dependencies, &preprocessor_files_before)?;
     let repeated = run_cpp_exporter(
-        &exporter,
+        exporter,
         &arguments,
-        &working_directory,
+        working_directory,
         &config.logical_source,
     )?;
     check_inputs()?;
@@ -230,7 +296,6 @@ fn refresh_import_inner(config_path: &Path) -> Result<(), String> {
     if preprocessor_files_before != preprocessor_files_after {
         return Err("C++ preprocessor input changed during semantic export".into());
     }
-    let config_sha256 = hex_digest(&config_bytes);
     let exporter_sha256 = hex_digest(&exporter_bytes);
     let compilation_database_sha256 = hex_digest(&compilation_database_before);
     let source_sha256 = hex_digest(&source_before);
@@ -264,16 +329,9 @@ fn refresh_import_inner(config_path: &Path) -> Result<(), String> {
         artifact_bytes: artifact.len(),
         profile: export.profile,
         identity,
+        prepared_roots: Vec::new(),
     };
-    let mut lock_bytes =
-        serde_json::to_vec_pretty(&lock).map_err(|error| format!("encode C++ lock: {error}"))?;
-    lock_bytes.push(b'\n');
-    if lock_bytes.len() > MAX_CONFIG_BYTES {
-        return Err("C++ import lock exceeds its size limit".into());
-    }
-
-    write_file_atomically(&artifact_path(&config)?, &artifact)?;
-    write_file_atomically(&lock_path(config_path)?, &lock_bytes)
+    Ok((lock, artifact))
 }
 
 fn run_cpp_exporter(
@@ -316,16 +374,9 @@ fn load_import_inner(config_path: &Path) -> Result<PreparedCppImport, String> {
     )?;
     let lock: Lock = serde_json::from_slice(&lock_bytes)
         .map_err(|error| format!("parse C++ import lock: {error}"))?;
-    if lock.schema != CONFIG_SCHEMA {
-        return Err(format!(
-            "unsupported C++ import lock schema {}; expected {CONFIG_SCHEMA}",
-            lock.schema
-        ));
-    }
     if lock.config_sha256 != hex_digest(&config_bytes) {
         return Err("C++ import lock does not match the import config; refresh it".into());
     }
-
     let compilation_database = resolve_input(
         &config.directory,
         &config.compilation_database,
@@ -339,26 +390,60 @@ fn load_import_inner(config_path: &Path) -> Result<PreparedCppImport, String> {
     if lock.compilation_database_sha256 != hex_digest(&compilation_database_bytes) {
         return Err("C++ compilation database differs from the import lock; refresh it".into());
     }
-
     let working_directory = resolve_input(
         &config.directory,
         &config.working_directory,
         "C++ working directory",
     )?;
-    let source = resolve_source(&config, &working_directory)?;
+    load_locked(
+        &config,
+        lock,
+        &working_directory,
+        &artifact_path(&config)?,
+        &[],
+    )
+}
+
+/// Checks a lock against `config`'s current inputs and loads its artifact.
+/// `current_roots` are the current locations of a project unit's
+/// `prepared_roots`; without them, every preprocessor input is re-read at its
+/// recorded path.
+fn load_locked(
+    config: &Config,
+    lock: Lock,
+    working_directory: &Path,
+    artifact_path: &Path,
+    current_roots: &[PathBuf],
+) -> Result<PreparedCppImport, String> {
+    if lock.schema != CONFIG_SCHEMA {
+        return Err(format!(
+            "unsupported C++ import lock schema {}; expected {CONFIG_SCHEMA}",
+            lock.schema
+        ));
+    }
+    if lock.prepared_roots.len() != current_roots.len() {
+        return Err("C++ import lock roots do not match its configuration".into());
+    }
+    let source = resolve_source(config, working_directory)?;
     let source_bytes = read_stable(&source, MAX_SOURCE_BYTES, "C++ source")?;
     if lock.source_sha256 != hex_digest(&source_bytes) {
-        return Err("C++ source differs from the import lock; refresh it".into());
+        return Err(format!(
+            "C++ source differs from the import lock: `{}`; refresh it",
+            source.display()
+        ));
     }
-    let logical_source = resolve_logical_source(&config, &working_directory)?;
+    let logical_source = resolve_logical_source(config, working_directory)?;
     let logical_source_bytes =
         read_stable(&logical_source, MAX_SOURCE_BYTES, "C++ logical source")?;
     if lock.logical_source_sha256 != hex_digest(&logical_source_bytes) {
-        return Err("C++ logical source differs from the import lock; refresh it".into());
+        return Err(format!(
+            "C++ logical source differs from the import lock: `{}`; refresh it",
+            logical_source.display()
+        ));
     }
-    let dependencies = resolve_dependencies(&config, &working_directory)?;
+    let dependencies = resolve_dependencies(config, working_directory)?;
     let dependency_bytes = read_dependencies(&dependencies)?;
-    validate_library_pins(&config, &dependency_bytes)?;
+    validate_library_pins(config, &dependency_bytes)?;
     let dependency_digests = dependency_bytes
         .into_iter()
         .map(|(path, bytes)| (path, hex_digest(&bytes)))
@@ -366,25 +451,36 @@ fn load_import_inner(config_path: &Path) -> Result<PreparedCppImport, String> {
     if lock.dependencies != dependency_digests {
         return Err("C++ dependency inventory differs from the import lock; refresh it".into());
     }
-    let artifact = read_stable(
-        &artifact_path(&config)?,
-        MAX_ARTIFACT_BYTES,
-        "C++ semantic artifact",
-    )?;
+    let artifact = read_stable(artifact_path, MAX_ARTIFACT_BYTES, "C++ semantic artifact")?;
     if lock.artifact_bytes != artifact.len() || lock.artifact_sha256 != hex_digest(&artifact) {
         return Err("C++ semantic artifact differs from the import lock; refresh it".into());
     }
-    let export = decode_artifact(&artifact, &config, &dependencies)?;
+    let export = decode_artifact(&artifact, config, &dependencies)?;
     if lock.profile != export.profile {
         return Err("C++ semantic artifact profile differs from the import lock".into());
     }
-    let preprocessor_files = read_preprocessor_files(&export.preprocessor_files)?;
-    validate_library_headers(&config, &dependencies, &preprocessor_files)?;
-    if lock.preprocessor_files != preprocessor_files {
-        return Err(
-            "C++ preprocessor input inventory differs from the import lock; refresh it".into(),
-        );
-    }
+    let preprocessor_files = if current_roots.is_empty() {
+        let files = read_preprocessor_files(&export.preprocessor_files)?;
+        if lock.preprocessor_files != files {
+            return Err(
+                "C++ preprocessor input inventory differs from the import lock; refresh it".into(),
+            );
+        }
+        files
+    } else {
+        let roots = lock
+            .prepared_roots
+            .iter()
+            .map(PathBuf::from)
+            .zip(current_roots.iter().cloned())
+            .collect::<Vec<_>>();
+        check_rooted_preprocessor_files(
+            &export.preprocessor_files,
+            &lock.preprocessor_files,
+            &roots,
+        )?
+    };
+    validate_library_headers(config, &dependencies, &preprocessor_files)?;
     let identity = semantic_identity(
         &lock.config_sha256,
         &lock.compilation_database_sha256,
@@ -402,12 +498,70 @@ fn load_import_inner(config_path: &Path) -> Result<PreparedCppImport, String> {
 
     Ok(PreparedCppImport {
         inner: Arc::new(PreparedInner {
-            logical_source: config.logical_source,
+            logical_source: config.logical_source.clone(),
             identity,
             export,
             execution: Default::default(),
         }),
     })
+}
+
+/// Checks a project unit's preprocessor inputs: each one under a prepared
+/// root is re-read at the root's current location and must match the lock;
+/// each one outside every root is pinned by its recorded digest. Returns the
+/// inventory with rooted paths at their current locations.
+fn check_rooted_preprocessor_files(
+    files: &[CppPreprocessorFile],
+    locked: &BTreeMap<String, LockedPreprocessorFile>,
+    roots: &[(PathBuf, PathBuf)],
+) -> Result<BTreeMap<String, LockedPreprocessorFile>, String> {
+    super::budget::limit("preprocessor files", files.len(), MAX_PREPROCESSOR_FILES)?;
+    if files.len() != locked.len() {
+        return Err(
+            "C++ preprocessor input inventory differs from the import lock; refresh it".into(),
+        );
+    }
+    let mut total_bytes = 0usize;
+    let mut current = BTreeMap::new();
+    for file in files {
+        let entry = locked
+            .get(&file.accessed_path)
+            .filter(|entry| entry.canonical_path == file.canonical_path)
+            .ok_or("C++ preprocessor input inventory differs from the import lock; refresh it")?;
+        let canonical = Path::new(&file.canonical_path);
+        let Some(path) = roots.iter().find_map(|(prepared, now)| {
+            canonical
+                .strip_prefix(prepared)
+                .ok()
+                .map(|relative| now.join(relative))
+        }) else {
+            current.insert(file.accessed_path.clone(), entry.clone());
+            continue;
+        };
+        let bytes = read_stable(&path, MAX_PREPROCESSOR_FILE_BYTES, "C++ preprocessor input")?;
+        total_bytes = total_bytes
+            .checked_add(bytes.len())
+            .ok_or("C++ artifact budget exhausted: preprocessor bytes (counter overflow)")?;
+        super::budget::limit(
+            "preprocessor bytes",
+            total_bytes,
+            MAX_PREPROCESSOR_TOTAL_BYTES,
+        )?;
+        if hex_digest(&bytes) != entry.sha256 {
+            return Err(format!(
+                "C++ input `{}` differs from its import lock; run `click import lock`",
+                path.display()
+            ));
+        }
+        current.insert(
+            file.accessed_path.clone(),
+            LockedPreprocessorFile {
+                canonical_path: path.to_string_lossy().into_owned(),
+                sha256: entry.sha256.clone(),
+            },
+        );
+    }
+    Ok(current)
 }
 
 fn decode_artifact(
@@ -420,7 +574,7 @@ fn decode_artifact(
         .map_err(|error| format!("parse C++ semantic artifact: {error}"))?;
     export.validate(
         &config.logical_source,
-        &config.function,
+        &config.functions,
         config.exceptions,
         config.exception_behavior,
         config.rtti,
@@ -442,7 +596,11 @@ fn decode_artifact(
         .iter()
         .map(|(header, path)| (header.as_str(), path.to_string_lossy()))
         .collect();
-    let mut pending = vec![export.function.body.as_slice()];
+    let mut pending = export
+        .functions
+        .iter()
+        .map(|function| function.body.as_slice())
+        .collect::<Vec<_>>();
     pending.extend(
         export
             .reachable_functions
@@ -571,7 +729,7 @@ fn validate_standard_byte_declarations(
     let sources = std::collections::BTreeSet::from_iter(
         std::iter::once(config.logical_source.clone()).chain(config.dependencies.iter().cloned()),
     );
-    for function in std::iter::once(&export.function).chain(&export.reachable_functions) {
+    for function in export.functions.iter().chain(&export.reachable_functions) {
         // An axiom has an interface and no source of its own: its types are
         // checked, and its synthetic spans name no file to check.
         if function.axiom.is_some() {
@@ -696,6 +854,7 @@ fn read_config(path: &Path) -> Result<(Config, Vec<u8>), String> {
         .parent()
         .ok_or("C++ import config has no parent directory")?
         .to_path_buf();
+    config.functions = vec![config.function.clone()];
     validate_config(&config)?;
     Ok((config, bytes))
 }
@@ -780,13 +939,21 @@ fn validate_config(config: &Config) -> Result<(), String> {
     ) {
         return Err("the first C++ import slice requires a `.cpp` or `.h` logical source".into());
     }
-    let mut components = config.function.rsplit("::");
-    let member = components.next().unwrap_or_default();
-    let valid_selector = (is_identifier(member)
-        || matches!(member, "operator+=" | "operator-=" | "operator[]"))
-        && components.all(is_identifier);
-    if !valid_selector {
-        return Err("C++ function selector requires a function name or Class::method (including operator+=, operator-= and operator[])".into());
+    if config.functions.is_empty() || config.functions.len() > 64 {
+        return Err("a C++ import selects 1 to 64 functions".into());
+    }
+    for (index, function) in config.functions.iter().enumerate() {
+        let mut components = function.rsplit("::");
+        let member = components.next().unwrap_or_default();
+        let valid_selector = (is_identifier(member)
+            || matches!(member, "operator+=" | "operator-=" | "operator[]"))
+            && components.all(is_identifier);
+        if !valid_selector {
+            return Err("C++ function selector requires a function name or Class::method (including operator+=, operator-= and operator[])".into());
+        }
+        if config.functions[..index].contains(function) {
+            return Err(format!("C++ function `{function}` is selected twice"));
+        }
     }
     if config.source == config.artifact || config.logical_source == config.artifact {
         return Err("C++ source and semantic artifact paths must differ".into());
@@ -963,26 +1130,21 @@ fn lock_path(config_path: &Path) -> Result<PathBuf, String> {
 }
 
 fn reject_output_collisions(
-    config_path: &Path,
-    config: &Config,
+    inputs: &ExportInputs<'_>,
     source: &Path,
     logical_source: &Path,
-    exporter: &Path,
-    compilation_database: &Path,
     dependencies: &[(String, PathBuf)],
 ) -> Result<(), String> {
-    let config_path = absolute_path(config_path)?;
-    let artifact = artifact_path(config)?;
-    let lock = lock_path(&config_path)?;
-    for (output_label, output) in [("artifact", &artifact), ("lock", &lock)] {
+    let [artifact, lock] = inputs.outputs;
+    for (output_label, output) in [("artifact", artifact), ("lock", lock)] {
         for (input_label, input) in [
-            ("config", config_path.as_path()),
-            ("source", source),
-            ("logical source", logical_source),
-            ("exporter", exporter),
-            ("compilation database", compilation_database),
+            ("config", inputs.config_path),
+            ("source", Some(source)),
+            ("logical source", Some(logical_source)),
+            ("exporter", Some(inputs.exporter)),
+            ("compilation database", Some(inputs.compilation_database)),
         ] {
-            if output == input {
+            if input == Some(output.as_path()) {
                 return Err(format!(
                     "C++ {output_label} output collides with the {input_label} input"
                 ));
@@ -1043,5 +1205,275 @@ fn bounded_error(error: String) -> String {
             "{}... [diagnostic truncated]",
             error.chars().take(MAX_CHARS).collect::<String>()
         )
+    }
+}
+
+/// A C++ unit of a Click project, as `click.project.json` describes it.
+#[derive(Clone, Debug)]
+pub(crate) struct UnitConfig {
+    pub unit_name: String,
+    /// The project root, absolute and canonical; artifact paths are
+    /// relative to it.
+    pub project_root: PathBuf,
+    /// The digest of the unit's description, which each source's lock
+    /// records.
+    pub unit_digest: String,
+    /// The unit's source root, absolute; the exporter's working directory.
+    pub root: PathBuf,
+    pub exceptions: bool,
+    pub rtti: bool,
+    /// Click's own description of the build: arguments every source is
+    /// compiled with, before its own.
+    pub args: Vec<String>,
+    pub lock_path: PathBuf,
+}
+
+/// One logical source of a C++ unit and the functions selected from it.
+#[derive(Clone, Debug)]
+pub(crate) struct UnitSource {
+    pub logical_source: String,
+    pub translation_unit: String,
+    pub functions: Vec<String>,
+    pub dependencies: Vec<String>,
+    pub library_assertions: Vec<CppLibraryAssertion>,
+    pub exception_behavior: CppExceptionBehavior,
+    pub args: Vec<String>,
+    /// The artifact's path relative to the project root.
+    pub artifact: String,
+}
+
+impl UnitConfig {
+    fn config(&self, source: &UnitSource) -> Result<Config, String> {
+        let config = Config {
+            schema: CONFIG_SCHEMA,
+            language: LANGUAGE.into(),
+            standard: STANDARD.into(),
+            target: TARGET.into(),
+            exceptions: self.exceptions,
+            exception_behavior: source.exception_behavior,
+            rtti: self.rtti,
+            // A unit names no exporter, database or working directory of its
+            // own: the export receives them directly.
+            exporter: "unit".into(),
+            compilation_database: "unit".into(),
+            working_directory: ".".into(),
+            source: source.translation_unit.clone(),
+            logical_source: source.logical_source.clone(),
+            dependencies: source.dependencies.clone(),
+            function: source.functions.first().cloned().unwrap_or_default(),
+            library_assertions: source.library_assertions.clone(),
+            artifact: source.artifact.clone(),
+            directory: self.project_root.clone(),
+            functions: source.functions.clone(),
+        };
+        validate_config(&config)?;
+        Ok(config)
+    }
+
+    fn working_directory(&self) -> Result<PathBuf, String> {
+        fs::canonicalize(&self.root).map_err(|error| {
+            format!(
+                "resolve the root `{}` of unit `{}`: {error}",
+                self.root.display(),
+                self.unit_name
+            )
+        })
+    }
+
+    /// The roots whose files are rechecked when loading: the unit root, then
+    /// the project root.
+    fn roots(&self) -> Result<Vec<PathBuf>, String> {
+        Ok(vec![self.working_directory()?, self.project_root.clone()])
+    }
+
+    /// The compilation database Click synthesizes for one source from the
+    /// unit's build description.
+    fn compilation_database(
+        &self,
+        source: &UnitSource,
+        working_directory: &Path,
+    ) -> Result<Vec<u8>, String> {
+        let mut arguments = vec![
+            "clang++".to_string(),
+            "-x".into(),
+            "c++".into(),
+            format!("-std={STANDARD}"),
+            format!("--target={TARGET}"),
+            if self.exceptions {
+                "-fexceptions"
+            } else {
+                "-fno-exceptions"
+            }
+            .into(),
+            if self.rtti { "-frtti" } else { "-fno-rtti" }.into(),
+        ];
+        arguments.extend(self.args.iter().chain(&source.args).cloned());
+        arguments.extend([
+            "-c".into(),
+            source.translation_unit.clone(),
+            "-o".into(),
+            format!("{}.o", source.translation_unit),
+        ]);
+        serde_json::to_vec_pretty(&serde_json::json!([{
+            "directory": working_directory,
+            "file": source.translation_unit,
+            "arguments": arguments,
+        }]))
+        .map_err(|error| format!("encode C++ compilation database: {error}"))
+    }
+}
+
+/// Exports every source of a project unit with the exporter at `exporter`:
+/// the unit's lock entry, keyed by logical source, and the artifacts to write.
+pub(crate) fn prepare_unit(
+    unit: &UnitConfig,
+    sources: &[UnitSource],
+    exporter: &Path,
+) -> Result<(serde_json::Value, Vec<(PathBuf, Vec<u8>)>), String> {
+    let exporter = fs::canonicalize(exporter)
+        .map_err(|error| format!("C++ exporter `{}`: {error}", exporter.display()))?;
+    let working_directory = unit.working_directory()?;
+    let roots = unit.roots()?;
+    let scratch = std::env::temp_dir().join(format!(
+        "click-cpp-unit-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    fs::create_dir_all(&scratch)
+        .map_err(|error| format!("create `{}`: {error}", scratch.display()))?;
+    let result = (|| {
+        let mut entries = serde_json::Map::new();
+        let mut artifacts = Vec::new();
+        for (index, source) in sources.iter().enumerate() {
+            let config = unit.config(source)?;
+            let database = scratch.join(format!("{index}/compile_commands.json"));
+            write_file_atomically(
+                &database,
+                &unit.compilation_database(source, &working_directory)?,
+            )?;
+            let outputs = [artifact_path(&config)?, unit.lock_path.clone()];
+            let (mut lock, artifact) = export(
+                &config,
+                unit.unit_digest.clone(),
+                &ExportInputs {
+                    config_path: None,
+                    exporter: &exporter,
+                    compilation_database: &database,
+                    working_directory: &working_directory,
+                    outputs: &outputs,
+                },
+            )
+            .map_err(bounded_error)?;
+            lock.prepared_roots = roots
+                .iter()
+                .map(|root| root.to_string_lossy().into_owned())
+                .collect();
+            entries.insert(
+                source.logical_source.clone(),
+                serde_json::to_value(&lock).map_err(|error| error.to_string())?,
+            );
+            artifacts.push((outputs[0].clone(), artifact));
+        }
+        Ok((serde_json::Value::Object(entries), artifacts))
+    })();
+    let _ = fs::remove_dir_all(&scratch);
+    result
+}
+
+/// Loads one logical source of a project unit from the unit's lock entry.
+pub(crate) fn load_unit(
+    unit: &UnitConfig,
+    source: &UnitSource,
+    lock: &serde_json::Value,
+) -> Result<PreparedCppImport, String> {
+    let config = unit.config(source)?;
+    let lock = lock
+        .get(&source.logical_source)
+        .ok_or_else(|| {
+            format!(
+                "the project lock for unit `{}` has no source `{}`; run `click import lock`",
+                unit.unit_name, source.logical_source
+            )
+        })
+        .and_then(|value| {
+            Lock::deserialize(value).map_err(|error| format!("parse C++ import lock: {error}"))
+        })?;
+    if lock.config_sha256 != unit.unit_digest {
+        return Err(format!(
+            "the project lock for unit `{}` does not match its description in `click.project.json`; run `click import lock` to prepare it again",
+            unit.unit_name
+        ));
+    }
+    load_locked(
+        &config,
+        lock,
+        &unit.working_directory()?,
+        &artifact_path(&config)?,
+        &unit.roots()?,
+    )
+    .map_err(bounded_error)
+}
+
+#[cfg(test)]
+mod unit_tests {
+    use super::*;
+
+    /// A unit's preprocessor inputs under a prepared root are rechecked at
+    /// the root's current location; inputs outside every root are pinned by
+    /// their recorded digest and never read.
+    #[test]
+    fn rooted_preprocessor_inputs_follow_their_root_and_outside_inputs_stay_pinned() {
+        let base = std::env::temp_dir().join(format!("click-cpp-rooted-{}", std::process::id()));
+        let now = base.join("now");
+        fs::create_dir_all(now.join("include")).unwrap();
+        fs::write(now.join("include/local.h"), "int local;\n").unwrap();
+        let prepared = PathBuf::from("/prepared/unit");
+        let file = |path: &str| CppPreprocessorFile {
+            accessed_path: path.into(),
+            canonical_path: path.into(),
+        };
+        let files = vec![
+            file("/prepared/unit/include/local.h"),
+            file("/usr/include/stdint.h"),
+        ];
+        let locked = BTreeMap::from([
+            (
+                "/prepared/unit/include/local.h".to_string(),
+                LockedPreprocessorFile {
+                    canonical_path: "/prepared/unit/include/local.h".into(),
+                    sha256: hex_digest(b"int local;\n"),
+                },
+            ),
+            (
+                "/usr/include/stdint.h".to_string(),
+                LockedPreprocessorFile {
+                    canonical_path: "/usr/include/stdint.h".into(),
+                    sha256: hex_digest(b"not read"),
+                },
+            ),
+        ]);
+        let roots = [(prepared, now.clone())];
+        let current = check_rooted_preprocessor_files(&files, &locked, &roots).unwrap();
+        assert_eq!(
+            current["/prepared/unit/include/local.h"].canonical_path,
+            now.join("include/local.h").to_string_lossy()
+        );
+        assert_eq!(
+            current["/usr/include/stdint.h"].canonical_path,
+            "/usr/include/stdint.h"
+        );
+
+        fs::write(now.join("include/local.h"), "int changed;\n").unwrap();
+        let error = check_rooted_preprocessor_files(&files, &locked, &roots).unwrap_err();
+        assert!(
+            error.contains("local.h") && error.contains("differs"),
+            "{error}"
+        );
+        let error = check_rooted_preprocessor_files(&files[..1], &locked, &roots).unwrap_err();
+        assert!(error.contains("inventory differs"), "{error}");
+        let _ = fs::remove_dir_all(&base);
     }
 }

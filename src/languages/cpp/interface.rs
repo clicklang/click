@@ -8,12 +8,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn prepare(
     import: &PreparedCppImport,
-    function: &CFunction,
+    selected: &[CFunction],
     reachable: &[CFunction],
     layouts: BTreeMap<String, syntax::C0StructLayout>,
     library_contracts: String,
 ) -> Result<PreparedExecution, String> {
-    let functions = prepare_functions(import, function, reachable, &layouts)?;
+    let functions = prepare_functions(import, selected, reachable, &layouts)?;
     Ok(PreparedExecution {
         functions,
         layouts,
@@ -158,14 +158,17 @@ pub(super) fn prepare_layouts(
 
 fn prepare_functions(
     import: &PreparedCppImport,
-    function: &CFunction,
+    selected: &[CFunction],
     reachable: &[CFunction],
     layouts: &BTreeMap<String, syntax::C0StructLayout>,
 ) -> Result<Vec<syntax::C0Function>, String> {
     let observers = super::schema::observer_callees(import);
-    std::iter::once(&import.export().function)
+    import
+        .export()
+        .functions
+        .iter()
         .chain(&import.export().reachable_functions)
-        .zip(std::iter::once(function).chain(reachable))
+        .zip(selected.iter().chain(reachable))
         .map(|(source, kernel)| {
             crate::instrumentation::record_deterministic_work(1);
             let mut locals = BTreeMap::new();

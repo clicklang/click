@@ -76,11 +76,19 @@ deterministic work at N = 8, 16 and 24 puts that growth in two places:
   facts in the equality and difference graphs
   (`register_expression_operands`, `TermClasses::root`,
   `retain_signed_int32_interval`, `DifferenceGraph::tighten`).
-- The rest is per-loop scans of the whole function's C source:
-  `statement_takes_address_of` and `loop_at_index`
-  (`src/kernel/termination.rs`), `expression_reads`
-  (`src/surface/lowering/source_layout.rs`), and
-  `collect_local_pointer_element_types`.
+- The rest was per-loop scans of the whole function's C source. These now
+  run once per function. The address-taken locals and the loop list are
+  computed once in the termination check
+  (`many_ranked_loops_in_one_function_cost_linear_termination_work`). The
+  loop step reuses the claim's source layout, which keeps the address-taken
+  locals and the local pointee types. The largest loop clause now charges
+  1,732, 2,262, 3,320 and 4,376 units at N = 4, 8, 16 and 24, about 132 per
+  earlier loop.
+
+What remains is the fact-context rebuild above. A loop step also still
+re-annotates the whole function with its bound clauses
+(`annotated_function_with_assumptions`, `to_kernel_function`). That work is
+charged nothing, so it does not show in the units but does show in time.
 
 The gate records the drift: `known_drift_sequential_loop_clauses` in
 `src/scaling_tests/surface/tests/step_shape_scaling_tests.rs` fails once the

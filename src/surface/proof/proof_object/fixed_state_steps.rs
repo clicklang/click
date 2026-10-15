@@ -399,8 +399,15 @@ impl<'a> Proof<'a> {
         let state = CState::new().with_memory(context.theorem_context.memory.clone());
         let recorded_snapshots = RecordedSnapshots::new();
         let mut integer_values = context.theorem_context.integer_values.clone();
-        for (name, value) in self.local_integer_values().iter() {
-            integer_values = integer_values.with_inserted(name.clone(), value.clone());
+        for name in application
+            .arguments
+            .iter()
+            .flat_map(contract_expression_referenced_names)
+            .collect::<BTreeSet<_>>()
+        {
+            if let Some(value) = self.local_integer_values().get(&name) {
+                integer_values = integer_values.with_inserted(name, value.clone());
+            }
         }
         let algebraic_values = application
             .arguments
@@ -1955,7 +1962,7 @@ impl<'a> Proof<'a> {
         ))
     }
 
-    fn capture_pure_algebraic_witness(
+    pub(super) fn capture_pure_algebraic_witness(
         &self,
         expression: &ContractExpression,
     ) -> Result<crate::kernel::AlgebraicTerm, ClickError> {
@@ -2275,8 +2282,17 @@ impl<'a> Proof<'a> {
             _ => Sort::CInt32,
         };
         let argument = self.capture_instantiate_argument(argument, &binder)?;
+        // Freeze the evaluated argument so `old`/`at` inside the quantified
+        // body cannot reinterpret a source memory expression at another point.
+        let surface_argument = ContractExpression::CFragment(CExpression::Value(
+            if binder == Sort::CMachineInteger(crate::kernel::MachineIntegerType::UInt64) {
+                CValue::UInt64(argument.clone())
+            } else {
+                CValue::Int32(argument.clone())
+            },
+        ));
 
-        self.state
+        let checked = self.state
             .apply_instantiate(lowered_quantified, argument, explicit_premises.as_deref())
             .map_err(|error| match error {
                 PropositionCloseError::NotProposition => {
@@ -2317,7 +2333,30 @@ impl<'a> Proof<'a> {
                     format_forall_int32_instantiation_error(message, ParameterBinding::default())
                 )),
                 _ => unreachable!("kernel returned an unrelated instantiate error"),
-            })
+            })?;
+        // Keep the kernel-checked conclusion's spelling in the same immutable
+        // proof scope. This index supplies no fact and is optional when the
+        // written shape cannot be recorded.
+        if (matches!(self.context.as_ref(), ProofContext::FixedState(_))
+            || self.focused_outcome_data().is_some())
+            && let ClickProposition::ForAll { name, body, .. } = &surface_quantified
+            && let [conclusion] = checked.state().checked_facts()
+            && let Ok(mut written) = substitute_click_proposition(
+                body,
+                &BTreeMap::from([(name.clone(), surface_argument)]),
+            )
+        {
+            while let ClickProposition::Implies(_, next) = written {
+                written = *next;
+            }
+            let mut locals = checked.state().locals().clone();
+            let mut spelled = locals.checked_lowerings.clone();
+            if spelled.record_lowering(&written, conclusion).is_ok() {
+                locals.checked_lowerings = spelled;
+                return Ok(checked.with_locals(locals));
+            }
+        }
+        Ok(checked)
     }
 
     pub(super) fn apply_rewrite(
@@ -2427,41 +2466,50 @@ impl<'a> Proof<'a> {
                 self.step_error(format!("could not unfold `rewrite` goal: {message}"))
             })?,
         );
-        let recorded = view
-            .surface_propositions
-            .available_kernel_matching(surface_equality, |kernel| {
+        let lookup = |map: &SurfacePropositionMap, surface: &ClickProposition| {
+            map.available_kernel_matching(surface, |kernel| {
                 self.facts().materialization_available(kernel)
             })
             .map(|kernel| Box::new(kernel.clone()))
             .or_else(|| {
-                let reverse = reverse_surface_equality(surface_equality)?;
-                let kernel = view
-                    .surface_propositions
-                    .available_kernel_matching(&reverse, |kernel| {
-                        self.facts().materialization_available(kernel)
-                    })?
-                    .clone();
-                reverse_kernel_equality(kernel).map(Box::new)
-            });
-        let equality = match recorded {
-            Some(equality) => equality,
-            None => Box::new(
-                lower_fixed_state_proposition_with_assumptions(
-                    &self.substitute_fixed_state_locals_in_proposition(surface_equality)?,
-                    self.facts().assumptions(),
-                    view.parameter_binding,
-                    view.fixed_state,
-                    view.spec_definitions,
-                )
-                .map_err(|message| {
-                    let source =
-                        crate::surface::printing::source_click_proposition(surface_equality);
-                    let source: String = source.chars().take(1024).collect();
-                    self.step_error(format!(
-                        "could not lower `rewrite` equality: {message}\n  equality: {source}"
-                    ))
-                })?,
-            ),
+                let reverse = reverse_surface_equality(surface)?;
+                let kernel = map.available_kernel_matching(&reverse, |kernel| {
+                    self.facts().materialization_available(kernel)
+                })?;
+                reverse_kernel_equality(kernel.clone()).map(Box::new)
+            })
+        };
+        // Authored spellings keep their existing precedence and remain the
+        // spelling used to present the rewritten goal. Normalize only the
+        // separate checked lookup key and the fresh-lowering fallback.
+        let equality = if let Some(recorded) = lookup(view.surface_propositions, surface_equality) {
+            recorded
+        } else {
+            let normalized = self.substitute_fixed_state_locals_in_proposition(surface_equality)?;
+            let recorded = (matches!(self.context.as_ref(), ProofContext::FixedState(_))
+                || self.focused_outcome_data().is_some())
+            .then(|| lookup(&self.state().locals().checked_lowerings, &normalized))
+            .flatten();
+            match recorded {
+                Some(equality) => equality,
+                None => Box::new(
+                    lower_fixed_state_proposition_with_assumptions(
+                        &normalized,
+                        self.facts().assumptions(),
+                        view.parameter_binding,
+                        view.fixed_state,
+                        view.spec_definitions,
+                    )
+                    .map_err(|message| {
+                        let source =
+                            crate::surface::printing::source_click_proposition(surface_equality);
+                        let source: String = source.chars().take(1024).collect();
+                        self.step_error(format!(
+                            "could not lower `rewrite` equality: {message}\n  equality: {source}"
+                        ))
+                    })?,
+                ),
+            }
         };
         let equality = Box::new(
             unfold_predicates_in_proposition(
@@ -3458,13 +3506,18 @@ impl<'a> Proof<'a> {
             ));
         }
         let complete = self.goal().is_some_and(|goal| facts.contains(goal));
-        Ok(self.checked_fact_transition(
-            self.state().locals().clone(),
-            facts,
-            complete,
-            added_facts,
-            checked_facts,
-        ))
+        let mut locals = self.state().locals().clone();
+        if matches!(self.context.as_ref(), ProofContext::FixedState(_))
+            || self.focused_outcome_data().is_some()
+        {
+            let mut spelled = locals.checked_lowerings.clone();
+            if spelled.record_lowering(&source, &checked_facts[0]).is_ok()
+                && spelled.record_lowering(&target, &checked_facts[1]).is_ok()
+            {
+                locals.checked_lowerings = spelled;
+            }
+        }
+        Ok(self.checked_fact_transition(locals, facts, complete, added_facts, checked_facts))
     }
 
     pub(super) fn apply_execution_transport_using(

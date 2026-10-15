@@ -117,7 +117,6 @@ theorem rb_erase_root_child_inorder(tree: RbTree) {
                         normalize();
                     }
                     rb_right(RbTree::Node(node, parent, color, left, right)) == RbTree::Empty => {
-                        have right == RbTree::Empty by auto;
                         rewrite(right == RbTree::Empty);
                         unfold(rb_left(RbTree::Node(node, parent, color, left, RbTree::Empty)));
                         unfold(rb_right(RbTree::Node(node, parent, color, left, RbTree::Empty)));

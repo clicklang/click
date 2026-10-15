@@ -574,11 +574,6 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                             rewrite(RbTree::Node(nid, 0, Color::Black, nleft, nright) == rb_recolor(RbTree::Node(nid, nparent, ncolor, nleft, nright), Color::Black));
                                             assumption();
                                         }
-                                        have rb_inorder(plug(Context::Top, RbTree::Node(nid, nparent, ncolor, nleft, nright))) == rb_inorder(plug(old(c.model), RbTree::Node(identity, node_parent, color, left_model, right_model))) by {
-                                            rewrite(Context::Top == c.model);
-                                            rewrite(RbTree::Node(nid, nparent, ncolor, nleft, nright) == t.model);
-                                            assumption();
-                                        }
                                         have rb_inorder(plug(Context::Top, rb_recolor(RbTree::Node(nid, nparent, ncolor, nleft, nright), Color::Black))) == rb_inorder(plug(Context::Top, RbTree::Node(nid, nparent, ncolor, nleft, nright))) by {
                                             apply(plug_recolor_inorder(Context::Top, RbTree::Node(nid, nparent, ncolor, nleft, nright), Color::Black));
                                             assumption();
@@ -1150,12 +1145,6 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             rewrite(gparent == cgp);
                                                                             assumption();
                                                                         }
-                                                                        have ctx_rb(Context::Left(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup), black_height(RbTree::Node(nid, nparent, ncolor, nleft, nright)), Color::Red) == 1 by {
-                                                                            rewrite(RbTree::Node(nid, nparent, ncolor, nleft, nright) == t.model);
-                                                                            rewrite(Context::Left(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup) == cup);
-                                                                            rewrite(cup == Context::Left(uid, ugp, ucolor, usib, uup));
-                                                                            assumption();
-                                                                        }
                                                                         apply(ctx_insert_case1_left_step(ugp, gparent, cid, unid, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib, unl, unr, uup)) using {
                                                                             almost_rb_insert(RbTree::Node(cid, gparent, Color::Red, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib)) == 1;
                                                                             ctx_rb(Context::Left(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup), black_height(RbTree::Node(nid, nparent, ncolor, nleft, nright)), Color::Red) == 1;
@@ -1687,12 +1676,6 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         have almost_rb_insert(RbTree::Node(cid, gparent, Color::Red, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib)) == 1 by {
                                                                             rewrite(RbTree::Node(nid, nparent, ncolor, nleft, nright) == t.model);
                                                                             rewrite(gparent == cgp);
-                                                                            assumption();
-                                                                        }
-                                                                        have ctx_rb(Context::Right(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup), black_height(RbTree::Node(nid, nparent, ncolor, nleft, nright)), Color::Red) == 1 by {
-                                                                            rewrite(RbTree::Node(nid, nparent, ncolor, nleft, nright) == t.model);
-                                                                            rewrite(Context::Right(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup) == cup);
-                                                                            rewrite(cup == Context::Right(uid, ugp, ucolor, usib, uup));
                                                                             assumption();
                                                                         }
                                                                         apply(ctx_insert_case1_right_step(ugp, gparent, cid, unid, unl, unr, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib, uup)) using {
@@ -2363,12 +2346,6 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             }
                                                                             assumption();
                                                                         }
-                                                                        have ctx_rb(Context::Left(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup), black_height(csib), Color::Red) == 1 by {
-                                                                            rewrite(black_height(csib) == black_height(t.model));
-                                                                            rewrite(Context::Left(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup) == cup);
-                                                                            rewrite(cup == Context::Left(uid, ugp, ucolor, usib, uup));
-                                                                            assumption();
-                                                                        }
                                                                         apply(ctx_insert_case1_left_step(ugp, gparent, cid, unid, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright), unl, unr, uup)) using {
                                                                             almost_rb_insert(RbTree::Node(cid, gparent, Color::Red, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright))) == 1;
                                                                             ctx_rb(Context::Left(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup), black_height(csib), Color::Red) == 1;
@@ -2842,12 +2819,6 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                                 is_rb(t.model) == 1;
                                                                                 ctx_rb(Context::Right(cid, cgp, Color::Red, csib, cup), black_height(t.model), Color::Black) == 1;
                                                                             }
-                                                                            assumption();
-                                                                        }
-                                                                        have ctx_rb(Context::Right(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup), black_height(csib), Color::Red) == 1 by {
-                                                                            rewrite(black_height(csib) == black_height(t.model));
-                                                                            rewrite(Context::Right(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup) == cup);
-                                                                            rewrite(cup == Context::Right(uid, ugp, ucolor, usib, uup));
                                                                             assumption();
                                                                         }
                                                                         apply(ctx_insert_case1_right_step(ugp, gparent, cid, unid, unl, unr, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright), uup)) using {

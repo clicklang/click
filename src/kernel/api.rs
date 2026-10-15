@@ -1101,13 +1101,19 @@ pub fn c_loop_invariant_obligations_at_back_edge(
 pub fn c_reject_address_escaped_loop_measures(
     function_name: &str,
     measures: &[CRankingComponent],
-    body: &CStatement,
+    addressed: &BTreeSet<String>,
 ) -> Result<(), String> {
     crate::kernel::termination::c_reject_address_escaped_loop_measures(
         function_name,
         measures,
-        body,
+        addressed,
     )
+}
+
+/// The locals whose address `body` takes anywhere: the one walk the
+/// address-escape checks read (see the termination module).
+pub fn c_address_taken_locals(body: &CStatement) -> BTreeSet<String> {
+    crate::kernel::termination::address_taken_locals(body)
 }
 
 /// The source form of one declared `decreases` component, for diagnostics.
@@ -7780,6 +7786,27 @@ pub fn c_function_contract_refinement_context(
         function,
         &mut ExecutionBudget::for_new_execution(),
     )
+}
+
+/// Whether `function`'s contract refines the named contract `contract_name`,
+/// by the judgment that forms `Contract(&function)` at a call: a trait
+/// method implementation is checked once against the trait's interface,
+/// which calls through the trait then assume. `function` must itself be
+/// verified against its contract; this compares the two contracts only.
+pub fn c_function_refines_named_contract(
+    environment: &CExecutionEnvironment,
+    contract_name: &str,
+    function: &CFunction,
+) -> Result<bool, String> {
+    let Some(contract) = environment.get_function_contract(contract_name) else {
+        return Ok(false);
+    };
+    super::functions::function_refines_named_contract(
+        contract,
+        function,
+        &mut ExecutionBudget::for_new_execution(),
+    )
+    .map_err(ExecutionLimit::describe)
 }
 
 /// The explicit refinement theorem a refused concrete formation needs.

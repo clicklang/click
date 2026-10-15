@@ -142,22 +142,30 @@ Proposed structure, to be confirmed while implementing:
 
 ## Further decisions
 
-The user accepted these on 2026-10-15; JSON was chosen explicitly and the
-rest are the recommended defaults.
+The user accepted these on 2026-10-15. JSON, the optimization policy and the
+C++ items were chosen explicitly; the rest are the recommended defaults.
 
 1. **Flag policy and optimized builds.** Today C accepts only preprocessor
    flags unless a named option profile admits more, while C++ accepts any
-   flag the command carries. Click does not check the assumptions an
-   optimizer makes (`restrict`, `nonnull`, strict aliasing, signed overflow,
-   null-check deletion). One policy covers C and C++. A build
-   description states the real build's flags, and each flag is classified as
-   one of:
-   - a preprocessor input,
-   - a checked semantic setting,
-   - an optimization accepted only with its safety counterparts, as the
-     kernel profile requires `-fno-strict-aliasing`, `-fno-strict-overflow`
-     and `-fno-delete-null-pointer-checks` with `-O2`,
-   - refused.
+   flag the command carries. Click does not check every assumption an
+   optimizer makes. One policy covers C and C++:
+   - **One optimization level per project.** The project file states it
+     exactly, and `-O2` is the default. Every unit is prepared for that
+     level, and a unit's own arguments may not name a different one. Long
+     term, a project may verify under several levels; the format leaves
+     room for that, but the first version supports one.
+   - **The optimized binary is covered by checking, not by safety flags.**
+     At `-O2` the compiler assumes the program never overflows signed
+     arithmetic, never dereferences null, never accesses an object through
+     an incompatible type, and keeps its `restrict` and `nonnull` promises.
+     Click already proves the first two. It must also check, or refuse,
+     type-punned accesses and the optimizer-promise attributes. Then a
+     verified claim holds for the `-O2` build without
+     `-fno-strict-aliasing`, `-fno-strict-overflow` or
+     `-fno-delete-null-pointer-checks`, and projects such as Bitcoin Core
+     keep their real flags.
+   - Every other flag in a build description is classified as a
+     preprocessor input, a checked semantic setting, or refused.
 2. **Existing compilation databases.** They are not an input. A project
    writes its build description once. For example, the Bitcoin fixture's
    CMake command line is translated into the description. A converter can be
@@ -168,6 +176,41 @@ rest are the recommended defaults.
 4. **Targets per unit.** One target per unit in the first version.
    The format must leave room for a unit verified under several targets.
 5. **File format.** JSON, extending `click.project.json`.
+6. **C++ functions.** The C++ exporter exports every function a unit source
+   lists into one artifact, so one sidecar can verify several functions of
+   the same file.
+7. **C++ header pinning.** As for C, headers under the project or a unit
+   root are rechecked by their path in that root; headers outside them
+   (system, sysroot, toolchain) are pinned by the digest the lock records
+   and are not re-read when loading, so C++ locks are portable.
+
+## Progress
+
+- **C units (first increment).** `click.project.json` is found as the nearest
+  ancestor of a sidecar and declares `"language": "c"` compiler-import units
+  with external roots, unit-wide and per-source arguments, and the
+  environment. A sidecar selects unit sources with ordinary relative
+  `verifying` paths. `click import lock` on a project writes
+  `click.project.lock.json` and `.click/<unit>/<source>.i`; external unit
+  roots are rechecked relative to the unit root, so a moved checkout still
+  loads and a changed input is refused. Per-sidecar configs still work and
+  are refused when a unit also lists the same sources.
+- **Rust units.** A `"language": "rust"` unit is one crate with a `crate`
+  description and its root in `sources`; its `roots` are the union of what the
+  project's sidecars verify (the adler2 `helpers` and `restoration` sidecars,
+  separately locked today, both verify against one extraction). Charon comes
+  from `CLICK_CHARON` at lock time only. Crate files are recorded per file so a
+  changed one is named.
+- **C++ units.** A `"language": "c++"` unit gives Clang arguments of its own,
+  written into a compilation database Click synthesizes, and each source
+  lists its `functions`. The exporter (artifact schema 60) exports every
+  listed function into one artifact, so one sidecar verifies several
+  functions of a file. Preprocessor inputs under the unit or project roots
+  are rechecked relative to them and outside inputs are pinned by digest, so
+  C++ unit locks load after the checkout moves.
+- **Remaining:** the module root still comes from imports rather than the
+  project file; the shared lock envelope; migrating existing configs; the
+  optimization level and flag policy.
 
 ## Intended regressions
 

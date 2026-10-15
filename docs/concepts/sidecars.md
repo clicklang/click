@@ -50,7 +50,10 @@ sidecars can name multiple C files when a proof depends on helper functions.
 A directory can set the C target and modeled runtime once for its sidecars in
 `click.project.json`, with optional `target` and `runtime` string fields. For
 example, `{"target":"x86_64-linux-userspace","runtime":"modeled-pthread"}`
-selects the conditional pthread model. Existing `target` and `runtime`
+selects the conditional pthread model. A sidecar in a subdirectory without
+its own file uses the nearest one above it. The file can also declare the
+project's compiler-import units ([Project units](../reference/cli/import.md#project-units)).
+Existing `target` and `runtime`
 directives in `.click` files remain valid when they agree with the project
 config. The selected profile is bound to proof artifacts and incremental
 sessions; configuration changes require a fresh verification.
@@ -116,7 +119,8 @@ stated in, `click::bytes` and `click::cstr`
 (`mdtests/a_string_function_call_brings_the_c_string_contracts.md`). Every
 other module—`click::bytes` and `click::cstr` without such a call,
 `click::machine_integer`, `click::integer` and `click::permutation`—must be
-imported before a file names one of its declarations
+imported before a file names one of its declarations by a bare name or a
+short path such as `cstr::readable`; a full `click::` path needs no import
 (`mdtests/string_predicates_need_an_import_without_a_string_function.md`).
 The C++ and Rust library contracts are generated for the calls a program
 makes, so they too arrive with the code.
@@ -129,9 +133,12 @@ import click::machine_integer;
 A proof that cites a theorem of a module the file does not import is refused
 before any proof runs, and the message names the import to add
 (`mdtests/a_cited_library_theorem_needs_its_module_import.md`).
-A predicate or function of an unimported module is not visible either, so a
-file may declare its own declaration with that name
-(`mdtests/an_unimported_library_name_is_free_for_a_user_definition.md`).
+A predicate, function, or resource of an unimported module is not visible
+either, so a file may declare its own declaration with that name
+(`mdtests/an_unimported_library_name_is_free_for_a_user_definition.md`,
+`mdtests/an_unimported_library_resource_name_is_free_for_a_user_definition.md`).
+A resource named in a contract without its module's import is refused with
+the import to add (`mdtests/a_library_resource_needs_its_module_import.md`).
 Built-in tactics such as `simp`, `arithmetic` and loop-invariant closing
 apply library theorems as part of their own reasoning, whatever the file
 imports. They name a library theorem by its qualified identity, such as
@@ -180,8 +187,8 @@ theorem append_nil_by_bare_names(xs: List<int32>) {
 ```
 
 Without a path or a selective import, a function, predicate or theorem of
-`click::nat`, `click::list` or `click::bytes` is not in scope by its bare
-name, even when the module is implicit
+`click::nat`, `click::list`, `click::bytes` or `click::cstr` is not in
+scope by its bare name, even when the module is implicit
 (`mdtests/a_bare_library_name_needs_a_path_or_selective_import.md`,
 `mdtests/a_bare_list_theorem_citation_needs_a_path_or_selective_import.md`).
 `import click::bytes;` puts the module in scope, so a sidecar writes
@@ -198,9 +205,11 @@ bring, is refused, as Rust refuses a clashing `use`
 Types and constructors such as `Nat`, `List` and `List::Cons` keep their
 bare names, as does the primitive conversion `to_nat`. When `click expand`
 writes out a theorem of these modules, it spells it by its bare name when a
-selective import brings it, and otherwise as `nat::name` or `list::name`.
-Other modules still carry name prefixes, such as `cstr_len`, and their bare
-names keep working until each is renamed; see
+selective import brings it, and otherwise as `module::name`, such as
+`list::append_cons`, adding the module's import when the file lacks it.
+The `permutation`, `machine_integer` and `integer` modules still carry
+bare names, such as `int32_positive_is_nonnegative`, and they keep working
+until each is renamed; see
 [`issues/standard-library.md`](https://github.com/clicklang/click/blob/master/issues/standard-library.md).
 
 ## Contracts are per function

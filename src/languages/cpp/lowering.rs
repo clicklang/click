@@ -38,7 +38,8 @@ use crate::kernel::{
 pub struct LoweredCppFunction {
     source: PreparedCppImport,
     names: ResolvedNames,
-    function: CFunction,
+    /// The selected functions, in selection order.
+    functions: Vec<CFunction>,
     reachable_functions: Vec<CFunction>,
     execution: std::sync::Arc<crate::languages::PreparedExecution>,
 }
@@ -64,12 +65,19 @@ impl LoweredCppFunction {
         &self.source
     }
 
+    /// The first selected function's artifact.
     pub fn source_function(&self) -> &CppFunction {
-        &self.source.export().function
+        &self.source.export().functions[0]
     }
 
+    /// The first selected function, lowered.
     pub fn kernel_function(&self) -> &CFunction {
-        &self.function
+        &self.functions[0]
+    }
+
+    /// Every selected function, lowered, in selection order.
+    pub fn kernel_functions(&self) -> &[CFunction] {
+        &self.functions
     }
 
     pub fn reachable_kernel_functions(&self) -> &[CFunction] {
@@ -81,7 +89,10 @@ impl LoweredCppFunction {
 /// contract-facing metadata.
 pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, String> {
     let names = ResolvedNames::new(
-        std::iter::once(&import.export().function)
+        import
+            .export()
+            .functions
+            .iter()
             .chain(&import.export().reachable_functions)
             .map(|function| (function.declaration_id.as_str(), function.name.as_str())),
     )?;
@@ -107,14 +118,12 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
         })
         .collect::<BTreeMap<_, _>>();
     let layouts = super::interface::prepare_layouts(import)?;
-    let function = lower_function(
-        import,
-        &import.export().function,
-        &names,
-        &records,
-        &constants,
-        &layouts,
-    )?;
+    let functions = import
+        .export()
+        .functions
+        .iter()
+        .map(|source| lower_function(import, source, &names, &records, &constants, &layouts))
+        .collect::<Result<Vec<_>, _>>()?;
     let reachable_functions = import
         .export()
         .reachable_functions
@@ -124,7 +133,7 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
     let library_contracts = super::standard_library::contracts(import.export(), &names)?;
     let execution = std::sync::Arc::new(super::interface::prepare(
         import,
-        &function,
+        &functions,
         &reachable_functions,
         layouts,
         library_contracts,
@@ -133,7 +142,7 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
         execution,
         names,
         source: import.clone(),
-        function,
+        functions,
         reachable_functions,
     })
 }

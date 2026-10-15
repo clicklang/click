@@ -29,6 +29,20 @@ releases, and resolve `latest`, from that GitHub repository instead of
 `clicklang/click`. Each part may contain ASCII letters, digits, `-`, `_`, and
 `.`; any other value fails.
 
+## Front-end variables
+
+### `CLICK_CHARON`
+
+`click import lock` reads `CLICK_CHARON=PATH` when it prepares a Rust unit of a
+project ([Project units](import.md#project-units)): the pinned `charon`
+executable, with `charon-driver` beside it. Verification never reads it.
+
+### `CLICK_CPP_EXPORTER`
+
+`click import lock` reads `CLICK_CPP_EXPORTER=PATH`, the pinned C++ exporter,
+when it prepares a C++ unit of a project. The test harnesses read it too.
+Verification never reads it.
+
 ## Diagnostic variables
 
 ### `CLICK_TIMINGS`

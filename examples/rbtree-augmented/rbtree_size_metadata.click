@@ -145,44 +145,9 @@ tactic rb_identity_at(p: struct rb_node*) {
 theorem sized_valid_parts(identity: struct rb_node*, parent: struct rb_node*, color: Color,
                           value: int32, left: SizedTree, right: SizedTree) {
     requires sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 1;
-    ensures to_integer(value) == 1 + to_integer(sized_value(left)) + to_integer(sized_value(right)) by {
-        if to_integer(value) == 1 + to_integer(sized_value(left)) + to_integer(sized_value(right)) {
-            assumption();
-        } else {
-            have sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 0 by {
-                unfold(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)));
-                normalize() using { not(to_integer(value) == 1 + to_integer(sized_value(left)) + to_integer(sized_value(right))); }
-            }
-            have not(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 1) by {
-                rewrite(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 0); normalize();
-            }
-            contradiction(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 1);
-        }
-    }
-    ensures sized_counts_valid(left) == 1 by {
-        if sized_counts_valid(left) == 1 { assumption(); } else {
-            have sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 0 by {
-                unfold(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)));
-                normalize() using { not(sized_counts_valid(left) == 1); }
-            }
-            have not(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 1) by {
-                rewrite(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 0); normalize();
-            }
-            contradiction(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 1);
-        }
-    }
-    ensures sized_counts_valid(right) == 1 by {
-        if sized_counts_valid(right) == 1 { assumption(); } else {
-            have sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 0 by {
-                unfold(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)));
-                normalize() using { not(sized_counts_valid(right) == 1); }
-            }
-            have not(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 1) by {
-                rewrite(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 0); normalize();
-            }
-            contradiction(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 1);
-        }
-    }
+    ensures to_integer(value) == 1 + to_integer(sized_value(left)) + to_integer(sized_value(right)) by auto;
+    ensures sized_counts_valid(left) == 1 by auto;
+    ensures sized_counts_valid(right) == 1 by auto;
 }
 
 tactic join_sized_tree(p: struct rb_node*) {
@@ -210,9 +175,6 @@ tactic join_sized_tree(p: struct rb_node*) {
                 rewrite(metadata.model == SizedTree::Node(identity, parent, color, value, left_model, right_model));
                 unfold(sized_shape(SizedTree::Node(identity, parent, color, value, left_model, right_model))); normalize();
             }
-            have sized_counts_valid(SizedTree::Node(identity, parent, color, value, left_model, right_model)) == 1 by {
-                rewrite(SizedTree::Node(identity, parent, color, value, left_model, right_model) == metadata.model); assumption();
-            }
             apply(sized_valid_parts(identity, parent, color, value, left_model, right_model));
             let { value_cell: cell, left: left_metadata, right: right_metadata } = unfold(metadata);
             let { left: left_structure, right: right_structure } = unfold(structure);
@@ -225,14 +187,6 @@ tactic join_sized_tree(p: struct rb_node*) {
             have rb_identity(sized_shape(right_model)) == p->rb_right by {
                 rewrite(sized_shape(right_model) == right_structure.model); assumption();
             }
-            have sized_identity(left_model) == p->rb_left by {
-                rewrite(sized_identity(left_model) == rb_identity(sized_shape(left_model))); assumption();
-            }
-            have sized_identity(right_model) == p->rb_right by {
-                rewrite(sized_identity(right_model) == rb_identity(sized_shape(right_model))); assumption();
-            }
-            have p->rb_left != p by assumption();
-            have p->rb_right != p by assumption();
             apply(sized_child_descent(identity, parent, color, value, left_model, right_model));
             have rb_subtree_size(sized_shape(left_metadata.model)) < rb_subtree_size(sized_shape(old(metadata.model))) by {
                 rewrite(left_metadata.model == left_model);

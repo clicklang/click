@@ -1088,20 +1088,28 @@ fn refined_lower_bound(condition: &CExpression, variable: &str, branch: bool, cu
 }
 
 /// Whether `expression` takes the address of the local `name`.
-fn expression_takes_address_of(expression: &CExpression, name: &str) -> bool {
+fn expression_address_taken_locals(expression: &CExpression, names: &mut BTreeSet<String>) {
     use CExpression::*;
-    let inner = |body: &CExpression| expression_takes_address_of(body, name);
+    let mut inner = |body: &CExpression| expression_address_taken_locals(body, names);
     match expression {
-        Value(_) | Variable(_) | FunctionAddress(_) => false,
+        Value(_) | Variable(_) | FunctionAddress(_) => {}
         Cast { expression, .. } => inner(expression),
         FloatNegate(expression) | FloatClassification { expression, .. } => inner(expression),
         Conditional {
             condition,
             then_branch,
             else_branch,
-        } => inner(condition) || inner(then_branch) || inner(else_branch),
+        } => {
+            inner(condition);
+            inner(then_branch);
+            inner(else_branch);
+        }
         AddressOf(body) | CheckedObjectAddress(body) => {
-            matches!(body.as_ref(), Variable(target) if target == name) || inner(body)
+            if let Variable(target) = body.as_ref() {
+                names.insert(target.clone());
+            } else {
+                inner(body);
+            }
         }
         PointerOffsetBytes { pointer, .. }
         | Subobject { pointer, .. }
@@ -1125,7 +1133,10 @@ fn expression_takes_address_of(expression: &CExpression, name: &str) -> bool {
         | BitwiseAnd(left, right)
         | BitwiseOr(left, right)
         | BitwiseXor(left, right)
-        | Index(left, right) => inner(left) || inner(right),
+        | Index(left, right) => {
+            inner(left);
+            inner(right);
+        }
     }
 }
 
@@ -1187,17 +1198,25 @@ fn collect_c_expression_variables(expression: &CExpression, names: &mut BTreeSet
     }
 }
 
-/// Whether any expression in `statement` takes the address of the local
-/// `name`. A local's cell can be written through a pointer only if its
-/// address was taken somewhere in the function, so this is the complete
-/// syntactic condition for "a store or a callee might change this local
-/// without assigning it by name".
-fn statement_takes_address_of(statement: &CStatement, name: &str) -> bool {
+/// The locals whose address some expression in `statement` takes. A local's
+/// cell can be written through a pointer only if its address was taken
+/// somewhere in the function, so this is the complete syntactic condition
+/// for "a store or a callee might change this local without assigning it by
+/// name". One walk of the function answers every local the checks below ask
+/// about.
+pub(super) fn address_taken_locals(statement: &CStatement) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    collect_address_taken_locals(statement, &mut names);
+    names
+}
+
+fn collect_address_taken_locals(statement: &CStatement, names: &mut BTreeSet<String>) {
     charge_termination_work(1);
-    let escapes = |expression: &CExpression| expression_takes_address_of(expression, name);
+    let mut escapes = |expression: &CExpression| expression_address_taken_locals(expression, names);
     match statement {
         CStatement::Skip
         | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -1205,8 +1224,8 @@ fn statement_takes_address_of(statement: &CStatement, name: &str) -> bool {
         | CStatement::Declare {
             initializer: None, ..
         }
-        | CStatement::DeclareAggregate { .. } => false,
-        CStatement::ForStep { step, .. } => statement_takes_address_of(step, name),
+        | CStatement::DeclareAggregate { .. } => {}
+        CStatement::ForStep { step, .. } => collect_address_taken_locals(step, names),
         CStatement::Declare {
             initializer: Some(expression),
             ..
@@ -1215,46 +1234,56 @@ fn statement_takes_address_of(statement: &CStatement, name: &str) -> bool {
         | CStatement::Return(expression)
         | CStatement::Throw(expression) => escapes(expression),
         CStatement::CallAssign { arguments, .. } | CStatement::Call { arguments, .. } => {
-            arguments.iter().any(escapes)
+            arguments.iter().for_each(escapes)
         }
         CStatement::HeapAllocate { bytes, .. } => escapes(bytes),
         CStatement::HeapFree { pointer } => escapes(pointer),
         CStatement::Assert { condition, .. } => escapes(condition),
         CStatement::Store { pointer, value } | CStatement::TypedStore { pointer, value, .. } => {
-            escapes(pointer) || escapes(value)
+            escapes(pointer);
+            escapes(value);
         }
         CStatement::CopyAggregate { target, source, .. }
         | CStatement::InitializeScalarArray { target, source, .. } => {
-            escapes(target) || escapes(source)
+            escapes(target);
+            escapes(source);
         }
         CStatement::Update {
             target, operand, ..
-        } => escapes(target) || escapes(operand),
+        } => {
+            escapes(target);
+            escapes(operand);
+        }
         CStatement::Seq(first, second) => {
-            statement_takes_address_of(first, name) || statement_takes_address_of(second, name)
+            collect_address_taken_locals(first, names);
+            collect_address_taken_locals(second, names);
         }
         CStatement::TryCatchInt32 {
             try_body, handler, ..
         } => {
-            statement_takes_address_of(try_body, name) || statement_takes_address_of(handler, name)
+            collect_address_taken_locals(try_body, names);
+            collect_address_taken_locals(handler, names);
         }
         CStatement::If {
             condition,
             then_branch,
             else_branch,
         } => {
-            escapes(condition)
-                || statement_takes_address_of(then_branch, name)
-                || statement_takes_address_of(else_branch, name)
+            escapes(condition);
+            collect_address_taken_locals(then_branch, names);
+            collect_address_taken_locals(else_branch, names);
         }
         CStatement::While {
             condition, body, ..
-        } => escapes(condition) || statement_takes_address_of(body, name),
+        } => {
+            escapes(condition);
+            collect_address_taken_locals(body, names);
+        }
         CStatement::Switch { expression, cases } => {
-            escapes(expression)
-                || cases
-                    .iter()
-                    .any(|case| statement_takes_address_of(&case.body, name))
+            escapes(expression);
+            for case in cases {
+                collect_address_taken_locals(&case.body, names);
+            }
         }
     }
 }
@@ -1265,9 +1294,9 @@ fn statement_takes_address_of(statement: &CStatement, name: &str) -> bool {
 fn reject_address_escaped_measure(
     function_name: &str,
     measure: &str,
-    body: &CStatement,
+    addressed: &BTreeSet<String>,
 ) -> Result<(), CTerminationError> {
-    if statement_takes_address_of(body, measure) {
+    if addressed.contains(measure) {
         return Err(error(format!(
             "termination measure `{measure}` in `{function_name}` has its address taken; a store \
              through that pointer could change the measure without a ranked update"
@@ -1283,10 +1312,10 @@ fn reject_address_escaped_measure(
 pub(super) fn c_reject_address_escaped_loop_measures(
     function_name: &str,
     measures: &[CRankingComponent],
-    body: &CStatement,
+    addressed: &BTreeSet<String>,
 ) -> Result<(), String> {
     for measure in measures {
-        reject_address_escaped_ranking_component(function_name, measure, body)
+        reject_address_escaped_ranking_component(function_name, measure, addressed)
             .map_err(|error| error.message)?;
     }
     Ok(())
@@ -1295,12 +1324,12 @@ pub(super) fn c_reject_address_escaped_loop_measures(
 fn reject_address_escaped_expression_measure(
     function_name: &str,
     measure: &CExpression,
-    body: &CStatement,
+    addressed: &BTreeSet<String>,
 ) -> Result<(), CTerminationError> {
     let mut variables = BTreeSet::new();
     collect_c_expression_variables(measure, &mut variables);
     for variable in variables {
-        reject_address_escaped_measure(function_name, &variable, body)?;
+        reject_address_escaped_measure(function_name, &variable, addressed)?;
     }
     Ok(())
 }
@@ -1342,11 +1371,11 @@ impl MeasureReads {
 fn reject_address_escaped_ranking_component(
     function_name: &str,
     component: &CRankingComponent,
-    body: &CStatement,
+    addressed: &BTreeSet<String>,
 ) -> Result<(), CTerminationError> {
     let (source, collected) = match component {
         CRankingComponent::CExpression(expression) => {
-            return reject_address_escaped_expression_measure(function_name, expression, body);
+            return reject_address_escaped_expression_measure(function_name, expression, addressed);
         }
         CRankingComponent::Pure { source, expression } => {
             let mut reads = MeasureReads::default();
@@ -1381,7 +1410,7 @@ fn reject_address_escaped_ranking_component(
         )));
     }
     for variable in reads.variables {
-        reject_address_escaped_measure(function_name, &variable, body)?;
+        reject_address_escaped_measure(function_name, &variable, addressed)?;
     }
     Ok(())
 }
@@ -1543,6 +1572,7 @@ fn statement_calls_visiting(
         CStatement::ForStep { step, .. } => statement_calls_visiting(step, calls, visit),
         CStatement::Skip
         | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -1605,6 +1635,7 @@ fn statement_declared_variables(statement: &CStatement, names: &mut BTreeSet<Str
         CStatement::ForStep { step, .. } => statement_declared_variables(step, names),
         CStatement::Skip
         | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -3150,43 +3181,52 @@ fn join_measure_components(components: impl Iterator<Item = String>) -> String {
     }
 }
 
-fn loop_at_index<'a>(
-    statement: &'a CStatement,
-    target: usize,
-    next_index: &mut usize,
-) -> Option<&'a CStatement> {
+/// The function's loops in the order `check_loops` numbers them: a loop
+/// before the loops in its body, then the rest in source order. One walk,
+/// so looking up every verified loop rule costs the function once.
+fn loops_in_order(statement: &CStatement) -> Vec<&CStatement> {
+    let mut loops = Vec::new();
+    collect_loops_in_order(statement, &mut loops);
+    loops
+}
+
+fn collect_loops_in_order<'a>(statement: &'a CStatement, loops: &mut Vec<&'a CStatement>) {
     charge_termination_work(1);
     match statement {
         CStatement::While { body, .. } => {
-            let index = *next_index;
-            *next_index += 1;
-            if index == target {
-                Some(statement)
-            } else {
-                loop_at_index(body, target, next_index)
-            }
+            loops.push(statement);
+            collect_loops_in_order(body, loops);
         }
-        CStatement::Seq(first, second) => loop_at_index(first, target, next_index)
-            .or_else(|| loop_at_index(second, target, next_index)),
+        CStatement::Seq(first, second) => {
+            collect_loops_in_order(first, loops);
+            collect_loops_in_order(second, loops);
+        }
         CStatement::If {
             then_branch,
             else_branch,
             ..
-        } => loop_at_index(then_branch, target, next_index)
-            .or_else(|| loop_at_index(else_branch, target, next_index)),
-        CStatement::Switch { cases, .. } => cases
-            .iter()
-            .find_map(|case| loop_at_index(&case.body, target, next_index)),
+        } => {
+            collect_loops_in_order(then_branch, loops);
+            collect_loops_in_order(else_branch, loops);
+        }
+        CStatement::Switch { cases, .. } => {
+            for case in cases {
+                collect_loops_in_order(&case.body, loops);
+            }
+        }
         CStatement::TryCatchInt32 {
             try_body, handler, ..
-        } => loop_at_index(try_body, target, next_index)
-            .or_else(|| loop_at_index(handler, target, next_index)),
-        CStatement::ForStep { step, .. } => loop_at_index(step, target, next_index),
+        } => {
+            collect_loops_in_order(try_body, loops);
+            collect_loops_in_order(handler, loops);
+        }
+        CStatement::ForStep { step, .. } => collect_loops_in_order(step, loops),
         // Spelled out, as in `check_loops`: the two walks number the same
         // loops only while they descend into the same statements, so a new
         // statement kind must be placed in both.
         CStatement::Skip
         | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -3205,7 +3245,7 @@ fn loop_at_index<'a>(
         | CStatement::TypedStore { .. }
         | CStatement::CopyAggregate { .. }
         | CStatement::InitializeScalarArray { .. }
-        | CStatement::Update { .. } => None,
+        | CStatement::Update { .. } => {}
     }
 }
 
@@ -3301,12 +3341,13 @@ fn verified_loop_ranking_measures(
 ) -> Result<(BTreeMap<usize, CLoopTerminationMeasure>, BTreeSet<usize>), CTerminationError> {
     let mut certified: BTreeMap<usize, CLoopTerminationMeasure> = BTreeMap::new();
     let mut unranked = BTreeSet::new();
+    let loops = loops_in_order(source_body);
+    let addressed = address_taken_locals(source_body);
     for rule in rules {
         let Some(index) = rule.loop_index else {
             continue;
         };
-        let mut next_index = 0;
-        let Some(source_loop) = loop_at_index(source_body, index, &mut next_index) else {
+        let Some(&source_loop) = loops.get(index) else {
             return Err(error(format!(
                 "verified loop rule for `{function_name}` refers to nonexistent loop {index}"
             )));
@@ -3327,7 +3368,7 @@ fn verified_loop_ranking_measures(
             )));
         };
         for component in ranking_measures {
-            reject_address_escaped_ranking_component(function_name, component, source_body)?;
+            reject_address_escaped_ranking_component(function_name, component, &addressed)?;
         }
         let measure = match structural_measure {
             Some(binder) => CLoopTerminationMeasure::Structural(binder.clone()),
@@ -3496,6 +3537,7 @@ fn collect_loops<'a>(statement: &'a CStatement, loops: &mut Vec<&'a CStatement>)
         CStatement::ForStep { step, .. } => collect_loops(step, loops),
         CStatement::Skip
         | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -3766,6 +3808,7 @@ fn check_loops(
         ),
         CStatement::Skip
         | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -3985,6 +4028,7 @@ fn statement_function_addresses(statement: &CStatement, taken: &mut BTreeSet<Str
     match statement {
         CStatement::Skip
         | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -4310,14 +4354,15 @@ fn check_expression_measure_recursion(
         &mut enclosing,
         &mut self_call_loops,
     );
+    let loops = loops_in_order(&function.source_body);
     for index in self_call_loops {
         charge_termination_work(1);
         // The rule is bound to this source loop the way
         // `verified_loop_ranking_measures` binds one: by index and executable
         // shape. Reading the shape here too keeps this check standing on its
-        // own rather than on that later pass's ordering. The source loop is
-        // looked up once per index, not once per rule.
-        let source_loop = loop_at_index(&function.source_body, index, &mut 0);
+        // own rather than on that later pass's ordering. The loops are
+        // listed once, so each index is a lookup.
+        let source_loop = loops.get(index).copied();
         let anchored = loop_rules.iter().any(|rule| {
             rule.loop_index == Some(index)
                 && rule
@@ -4371,6 +4416,7 @@ pub(super) fn statement_calls_function(statement: &CStatement, callee: &str) -> 
         CStatement::ForStep { step, .. } => statement_calls_function(step, callee),
         CStatement::Skip
         | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -4454,6 +4500,7 @@ fn self_call_loop_indices(
         // statements, so a new statement kind must be placed in all of them.
         CStatement::Skip
         | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -4861,6 +4908,9 @@ fn termination_rules_recording_function<'a>(
                 }
                 let mut parameter_indices = BTreeMap::new();
                 let mut structural_requirement = None;
+                // The function's address-taken locals, walked once for every
+                // measure checked below.
+                let addressed = std::cell::OnceCell::new();
                 if recursive_callees.is_empty() {
                     if recursive_measure.is_some() {
                         let mut refused = error(format!(
@@ -4963,7 +5013,7 @@ fn termination_rules_recording_function<'a>(
                         reject_address_escaped_expression_measure(
                             name,
                             measure,
-                            &function.source_body,
+                            addressed.get_or_init(|| address_taken_locals(&function.source_body)),
                         )?;
                     }
                 }
@@ -5056,7 +5106,11 @@ fn termination_rules_recording_function<'a>(
                     )?;
                 } else if let Some(index) = parameter_indices.get(name) {
                     let measure = &function.parameters()[*index].name;
-                    reject_address_escaped_measure(name, measure, &function.source_body)?;
+                    reject_address_escaped_measure(
+                        name,
+                        measure,
+                        addressed.get_or_init(|| address_taken_locals(&function.source_body)),
+                    )?;
                     recursion_paths(
                         &function.source_body,
                         measure,
@@ -5188,10 +5242,10 @@ mod address_escape_tests {
             value: variable("q"),
         };
         let body = CStatement::Seq(Arc::new(escape), Arc::new(store));
-        assert!(statement_takes_address_of(&body, "i"));
-        assert!(!statement_takes_address_of(&body, "q"));
-        assert!(reject_address_escaped_measure("spin", "i", &body).is_err());
-        assert!(reject_address_escaped_measure("spin", "q", &body).is_ok());
+        assert!(address_taken_locals(&body).contains("i"));
+        assert!(!address_taken_locals(&body).contains("q"));
+        assert!(reject_address_escaped_measure("spin", "i", &address_taken_locals(&body)).is_err());
+        assert!(reject_address_escaped_measure("spin", "q", &address_taken_locals(&body)).is_ok());
     }
 
     #[test]
@@ -5200,8 +5254,8 @@ mod address_escape_tests {
             function_name: "reset".to_string(),
             arguments: vec![address_of("n")],
         };
-        assert!(statement_takes_address_of(&call, "n"));
-        assert!(reject_address_escaped_measure("f", "n", &call).is_err());
+        assert!(address_taken_locals(&call).contains("n"));
+        assert!(reject_address_escaped_measure("f", "n", &address_taken_locals(&call)).is_err());
     }
 
     #[test]
@@ -5229,8 +5283,8 @@ mod address_escape_tests {
             natural_exit_target: None,
             body: Box::new(branch),
         };
-        assert!(statement_takes_address_of(&body, "n"));
-        assert!(!statement_takes_address_of(&body, "c"));
+        assert!(address_taken_locals(&body).contains("n"));
+        assert!(!address_taken_locals(&body).contains("c"));
     }
 }
 
@@ -6156,8 +6210,8 @@ mod local_descent_tests {
         assert!(check_loops(&body, &planned, &certified, "f", &mut 0, &mut Vec::new()).is_err());
     }
 
-    /// `loop_at_index` had no arm for a try/catch, so it neither found a loop
-    /// inside one nor counted past it, while `check_loops` numbers those
+    /// The loop lookup once had no arm for a try/catch, so it neither found a
+    /// loop inside one nor counted past it, while `check_loops` numbers those
     /// loops. An index then named different source loops in the two walks.
     #[test]
     fn loop_lookup_numbers_loops_inside_try_catch_as_the_check_does() {
@@ -6191,15 +6245,17 @@ mod local_descent_tests {
         .expect("an unranked body checks");
         assert_eq!(unranked, [0, 1, 2]);
 
+        let loops = loops_in_order(&body);
         for (index, condition) in [(0, 1), (1, 2), (2, 3)] {
-            let found = loop_at_index(&body, index, &mut 0)
+            let found = *loops
+                .get(index)
                 .unwrap_or_else(|| panic!("loop {index} exists"));
             assert!(
                 same_statement_shape(found, &spin(condition)),
                 "loop {index} must be the loop the check numbered {index}"
             );
         }
-        assert!(loop_at_index(&body, 3, &mut 0).is_none());
+        assert!(loops.get(3).is_none());
     }
 
     /// A rule whose body calls `callees`, calls through the local object

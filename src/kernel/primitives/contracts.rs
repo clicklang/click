@@ -3230,6 +3230,7 @@ fn statement_contains_internal_throw(statement: &CStatement) -> bool {
             .any(|case| statement_contains_internal_throw(&case.body)),
         CStatement::Skip
         | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue

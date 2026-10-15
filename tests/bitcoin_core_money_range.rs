@@ -45,6 +45,22 @@ fn check_upstream_cpp(
     check_upstream_cpp_rounding_phase(selected, name, source, logical_source, integer_header, None);
 }
 
+/// A sidecar fixture's leading `import` lines and its text after its
+/// `verifying` clause. A composed sidecar keeps one `verifying` clause, and
+/// every fixture's library imports go at its head, before that clause.
+fn fixture_imports_and_body(fixture: &str) -> (&str, &str) {
+    let clause = fixture.find("verifying \"").unwrap();
+    let imports = &fixture[..clause];
+    assert!(
+        imports
+            .lines()
+            .all(|line| line.is_empty() || line.starts_with("import click::")),
+        "a fixture's verifying clause follows only its library imports: {imports}"
+    );
+    let body = fixture[clause..].split_once(';').unwrap().1;
+    (imports.trim(), body)
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum RoundingPhase {
     Tools,
@@ -192,7 +208,7 @@ fn check_upstream_cpp_rounding_phase(
     if fee_rate_import {
         refreshed.expect("GetFee must import its unchanged converted-call graph");
         let import = load_import(&config_path).unwrap();
-        assert_eq!(import.export().function.name, "CFeeRate_GetFee");
+        assert_eq!(import.export().functions[0].name, "CFeeRate_GetFee");
         assert!(
             import
                 .export()
@@ -204,7 +220,7 @@ fn check_upstream_cpp_rounding_phase(
         let artifact: serde_json::Value =
             serde_json::from_slice(&fs::read(root.join(format!("{name}.click-cpp.json"))).unwrap())
                 .unwrap();
-        let initializer = &artifact["function"]["body"]
+        let initializer = &artifact["functions"][0]["body"]
             .as_array()
             .unwrap()
             .iter()
@@ -258,7 +274,8 @@ fn check_upstream_cpp_rounding_phase(
     }
     if selected == "FeeFrac::Div" && !bounded_div {
         use click::languages::cpp::{CppLibraryMetadata, CppLiteralMetadataBinding, CppStatement};
-        let CppStatement::LibraryAssert { metadata, .. } = &import.export().function.body[0] else {
+        let CppStatement::LibraryAssert { metadata, .. } = &import.export().functions[0].body[0]
+        else {
             panic!("retained upstream annotation")
         };
         assert!(matches!(metadata[0], CppLibraryMetadata::Consteval(_)));
@@ -965,7 +982,7 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
     }
     if selected == "FeeFrac::Mul" {
         assert!(import.export().records.is_empty());
-        assert_eq!(import.export().function.parameters.len(), 2);
+        assert_eq!(import.export().functions[0].parameters.len(), 2);
         for omitted in [
             "requires -9223372036854775808 <= to_integer(a);",
             "requires to_integer(a) <= 9223372036854775807;",
@@ -1159,7 +1176,7 @@ fn pinned_std_byte_values_verify_with_native_integer_contracts_offline() {
         is_fixed,
         span,
         ..
-    } = &import.export().function.return_type
+    } = &import.export().functions[0].return_type
     else {
         panic!("std::byte lost its nominal enum declaration");
     };
@@ -1856,12 +1873,12 @@ fn check_upstream_fee_evaluation_fast(mode: &str, expected: i64, phase: Rounding
     let contract = format!(
         "views this->fee; views this->size; requires this->fee == 7i64; requires this->size == 3; requires at_size == 2; ensures result == {expected}i64; ensures this->fee == old(this->fee); ensures this->size == old(this->size);"
     );
-    let div = include_str!("../integrations/bitcoin-core-money-range/FeeFracDivBounded.click")
-        .split_once(';')
-        .unwrap()
-        .1;
+    let (imports, div) = fixture_imports_and_body(include_str!(
+        "../integrations/bitcoin-core-money-range/FeeFracDivBounded.click"
+    ));
     let source = format!(
-        r#"{}
+        r#"{imports}
+{}
 {div}
 int64 FeeFrac::EvaluateFee<{instance}>(int32 at_size) const {{ {contract} }} by {{ execute(); simp(); }}
 int64 FeeFrac::EvaluateFee{mode}(int32 at_size) const {{ {contract} }} by {{ execute(); simp(); }}
@@ -1916,9 +1933,9 @@ fn check_upstream_result_fit_fast_fee_evaluation(mode: &str, phase: RoundingPhas
         ),
         _ => unreachable!(),
     };
-    let div = div.split_once(';').unwrap().1;
+    let (imports, div) = fixture_imports_and_body(div);
     let source = format!(
-        "{}\n{div}\n{caller}",
+        "{imports}\n{}\n{div}\n{caller}",
         include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click")
     );
     check_upstream_cpp_rounding_phase(
@@ -2004,10 +2021,9 @@ fn upstream_fast_result_fit_up_rejects_missing_bridges_and_forged_numerator() {
 }
 
 fn check_upstream_symbolic_fast_fee_evaluation(mode: &str, phase: RoundingPhase) {
-    let div = include_str!("../integrations/bitcoin-core-money-range/FeeFracDivBounded.click")
-        .split_once(';')
-        .unwrap()
-        .1;
+    let (imports, div) = fixture_imports_and_body(include_str!(
+        "../integrations/bitcoin-core-money-range/FeeFracDivBounded.click"
+    ));
     let caller = if mode == "Down" {
         include_str!("../integrations/bitcoin-core-money-range/FeeFracEvaluateFastDown.click.in")
     } else {
@@ -2015,7 +2031,7 @@ fn check_upstream_symbolic_fast_fee_evaluation(mode: &str, phase: RoundingPhase)
         include_str!("../integrations/bitcoin-core-money-range/FeeFracEvaluateFastUp.click.in")
     };
     let source = format!(
-        "{}\n{div}\n{caller}",
+        "{imports}\n{}\n{div}\n{caller}",
         include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click")
     );
     check_upstream_cpp_rounding_phase(
@@ -2155,18 +2171,15 @@ fn wide_fee_evaluation_source_with_profile(mode: &str, positive: bool, result_fi
             },
         );
     assert!(!fragment.contains('@'));
-    let div = if !result_fit {
+    let (imports, div) = fixture_imports_and_body(if !result_fit {
         include_str!("../integrations/bitcoin-core-money-range/FeeFracDivBounded.click")
     } else if down {
         include_str!("../integrations/bitcoin-core-money-range/FeeFracDivResultFitDown.click")
     } else {
         include_str!("../integrations/bitcoin-core-money-range/FeeFracDivResultFitUp.click")
-    }
-    .split_once(';')
-    .unwrap()
-    .1;
+    });
     format!(
-        "{}\n{div}\n{fragment}",
+        "{imports}\n{}\n{div}\n{fragment}",
         include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click")
     )
 }
@@ -2299,9 +2312,16 @@ fn unified_fee_evaluation_source_with_profile(mode: &str, result_fit: bool) -> S
         .split_once("\n}\nint64")
         .unwrap()
         .0;
+    assert!(
+        wide_body.contains("let { result: product } ="),
+        "{wide_body}"
+    );
     let negative = wide_body
         .replace("denominator", "negative_denominator")
-        .replace("let product =", "let negative_product =")
+        .replace(
+            "let { result: product } =",
+            "let { result: negative_product } =",
+        )
         .replace("to_integer(product)", "to_integer(negative_product)")
         .replace("FeeFrac_Div(product,", "FeeFrac_Div(negative_product,")
         .replace("rounded", "negative_rounded");
@@ -2672,10 +2692,10 @@ fn getfee_source() -> String {
             "verifying \"bitcoin-src/src/util/feefrac.h\";",
             "verifying \"bitcoin-src/src/policy/feerate.cpp\";",
         );
-    let empty = include_str!("../integrations/bitcoin-core-money-range/FeeFracIsEmpty.click")
-        .split_once(';')
-        .unwrap()
-        .1;
+    let (imports, empty) = fixture_imports_and_body(include_str!(
+        "../integrations/bitcoin-core-money-range/FeeFracIsEmpty.click"
+    ));
+    assert!(imports.is_empty());
     format!(
         "{helpers}\n{empty}\n{}",
         include_str!("../integrations/bitcoin-core-money-range/CFeeRateGetFee.click.in")
@@ -3769,7 +3789,7 @@ fn defaulted_span_arguments_import_as_compiler_constants() {
         "#include <span>\nstd::span<int> probe(std::span<int>& s) noexcept { return s.subspan(1); }\n",
         SPAN_DEPENDENCIES,
     );
-    let body = serde_json::to_value(&import.export().function.body).unwrap();
+    let body = serde_json::to_value(&import.export().functions[0].body).unwrap();
     let arguments = &body[0]["arguments"];
     assert_eq!(arguments[2]["value"]["kind"], "compiler_constant", "{body}");
     assert_eq!(
@@ -4248,7 +4268,7 @@ fn pinned_std_byte_reinterpreted_call_result_preserves_pointer_identity_offline(
     let lock: serde_json::Value = serde_json::from_slice(&fs::read(&lock_path).unwrap()).unwrap();
     for change in 0..4 {
         let mut forged = artifact.clone();
-        let conversion = &mut forged["function"]["body"][0]["conversions"][0];
+        let conversion = &mut forged["functions"][0]["body"][0]["conversions"][0];
         match change {
             0 => conversion["cast_kind"] = "no_op".into(),
             1 => conversion["explicit"] = false.into(),

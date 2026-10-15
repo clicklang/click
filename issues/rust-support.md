@@ -82,6 +82,23 @@ run nightly. Full smart audits of the original computation exceed the
 standard ten-minute bound and give no verdict; ordinary verification is the
 check that succeeds.
 
+## Front-end delivery progress
+
+The first installed frontend slice packages the pinned Charon, paired driver,
+rustc and runtime libraries for `x86_64-unknown-linux-gnu`. A release workflow
+builds the bundle and publishes its checksum; `click install VERSION --rust`
+checks and installs it beside that Click version. `click versions` lists the
+installed frontend. Rust project units resolve a development override followed
+by that installed bundle. Explicit manifest paths and runtime version checks
+remove rustup and the user's toolchain from installed extraction. A relocated
+installed-layout regression covers extraction, verification, repeated locks,
+version refusal and offline verification after removing the bundle.
+
+Other host bundles, release identity contributions to the shared project lock,
+removing historical trial names, and richer crate-closure diagnostics remain.
+The audit below records the original pipeline; legacy per-sidecar/source-build
+paths remain available during the project-config migration.
+
 ## Today's pipeline
 
 Audit of the current path, from a user's point of view:
@@ -267,12 +284,18 @@ needed to finish a claim already made:
     source length, aliases, nested depth and repeated shared diamonds.
     Structured acyclic branches now retain one exact live ledger through both
     arms and end at a common continuation. Arm accesses and conditions extend
-    the frontier; births and alias mutations stay on the shared path. Native
+    the frontier. Fully closed arm-local borrows/copies now use checked ledger
+    checkpoints: all new references end, original ownership returns, private
+    reference slots are cleared and the exact entry ledger is restored. Fresh
+    IDs are not rewound. Nested scopes preserve existing live references and
+    current writes; escaping or cross-arm references are refused. Source and
+    selected-delta scaling cover this path. Native
     conditional and nested-borrow helpers/callers cover expansion and negatives,
     while kernel tests exercise joins with live custody.
 
-  Wider source coverage remains open: branch-local births or alias mutation,
-  early returns, loops, aggregates, shared borrow graphs and call/havoc transport
+  Wider source coverage remains open: escaping/conditionally live arm references,
+  writes to outer reference bindings, early returns, loops, aggregates, shared
+  borrow graphs and call/havoc transport
   need checked protocols. Only the
   activated source subset executes local leases. A reproduced false acceptance
   here would be `unsound`, and so P1, under the [issue rules](README.md).

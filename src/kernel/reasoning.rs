@@ -10,6 +10,7 @@ pub(crate) use substitution::resolve_load_variables_from_registry;
 pub(crate) use substitution::resolve_minted_load_variables;
 #[cfg(test)]
 pub(in crate::kernel) use substitution::substitute_bitvector_variable_in_memory;
+pub(crate) use substitution::try_resolve_load_variables_from_registry;
 pub(in crate::kernel) mod memory_resolution;
 pub(in crate::kernel) mod store_gap;
 pub(in crate::kernel) mod variable_collection;

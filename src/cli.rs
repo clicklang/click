@@ -831,9 +831,11 @@ impl CInput {
 pub fn read_c_inputs(sidecar: &Path, click_source: &str) -> Result<CInput, String> {
     let directory = fs::canonicalize(containing_directory(sidecar))
         .map_err(|error| format!("failed to resolve sidecar directory: {error}"))?;
-    let target = match read_c_project_profile(&directory, &directory)?
-        .and_then(|profile| profile.target)
-    {
+    let profile = match read_c_project_profile(&directory, &directory)? {
+        Some(profile) => Some(profile),
+        None => ancestor_project_profile(&directory)?,
+    };
+    let target = match profile.and_then(|profile| profile.target) {
         Some(target) => target,
         None => crate::surface::selected_c_target(click_source).map_err(|error| error.report())?,
     };
@@ -860,8 +862,16 @@ fn read_c_inputs_for_target(
         .and_then(|name| name.to_str())
         .ok_or_else(|| format!("sidecar path `{}` has no valid filename", sidecar.display()))?;
     let config = sidecar.with_file_name(format!("{name}.import.json"));
+    let unit_selection = project_unit_selection(sidecar, click_source)?;
     match fs::symlink_metadata(&config) {
         Ok(_) => {
+            if let Some((project, _)) = &unit_selection {
+                return Err(format!(
+                    "`{}` and a unit of `{}` both prepare this sidecar's sources; keep one",
+                    config.display(),
+                    project.root().join(crate::project::FILE_NAME).display()
+                ));
+            }
             // Preserve the path spelling for the adapter's validation.
             // An existing but unreadable or dangling config cannot select
             // the legacy source-bundle route.
@@ -884,11 +894,51 @@ fn read_c_inputs_for_target(
             return Err(format!("failed to inspect `{}`: {error}", config.display()));
         }
     }
+    if let Some((project, requested)) = unit_selection {
+        return Ok(
+            match project
+                .prepared_sources(&requested)?
+                .expect("the project lists the selected sources")
+            {
+                crate::project::UnitSelection::C(imports) => CInput::Prepared(imports),
+                crate::project::UnitSelection::Program(program) => CInput::PreparedProgram(program),
+            },
+        );
+    }
     Ok(CInput::Bundle(read_verifying_sources_for_target(
         sidecar,
         click_source,
         target,
     )?))
+}
+
+/// The project whose units list a sidecar's `verifying` sources, found as the
+/// nearest `click.project.json` above it, with the sidecar's requested
+/// sources.
+#[allow(clippy::type_complexity)]
+fn project_unit_selection(
+    sidecar: &Path,
+    click_source: &str,
+) -> Result<Option<(crate::project::Project, Vec<(String, Option<PathBuf>)>)>, String> {
+    let directory = containing_directory(sidecar);
+    let Some(project) = crate::project::Project::find(directory)? else {
+        return Ok(None);
+    };
+    if !project.has_units() {
+        return Ok(None);
+    }
+    let requested = verifying_source_paths(click_source)
+        .map_err(|error| error.report())?
+        .into_iter()
+        .map(|name| {
+            let path = fs::canonicalize(directory.join(&name)).ok();
+            (name, path)
+        })
+        .collect::<Vec<_>>();
+    if !project.lists_any(&requested) {
+        return Ok(None);
+    }
+    Ok(Some((project, requested)))
 }
 
 #[derive(Deserialize)]
@@ -897,6 +947,9 @@ struct ProjectConfigJson {
     target: Option<String>,
     runtime: Option<String>,
     resource_semantics: Option<String>,
+    /// Units are read by [`crate::project::Project`].
+    #[allow(dead_code)]
+    units: Option<serde_json::Value>,
 }
 
 fn read_c_project_profile(
@@ -942,6 +995,18 @@ fn read_c_project_profile(
         ));
     }
     Ok(Some(CProjectProfile { target, runtime }))
+}
+
+/// The profile of the nearest `click.project.json` strictly above
+/// `directory`: a project file at a project's root applies to sidecars in its
+/// subdirectories.
+fn ancestor_project_profile(directory: &Path) -> Result<Option<CProjectProfile>, String> {
+    for candidate in directory.ancestors().skip(1) {
+        if fs::symlink_metadata(candidate.join(crate::project::FILE_NAME)).is_ok() {
+            return read_c_project_profile(candidate, candidate);
+        }
+    }
+    Ok(None)
 }
 
 /// The diagnostic for the retired migration setting, in a project config or
@@ -1054,7 +1119,7 @@ pub fn read_click_project_at_root(
             ));
         }
         (Some(profile), None) | (None, Some(profile)) => Some(profile),
-        (None, None) => None,
+        (None, None) => ancestor_project_profile(directory)?,
     };
     Ok(match profile {
         Some(profile) => project.with_c_profile(profile),
@@ -2312,6 +2377,32 @@ mod tests {
             );
         }
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn nearest_ancestor_project_file_supplies_the_profile() {
+        let root = std::env::temp_dir().join(format!(
+            "click-ancestor-profile-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        let nested = root.join("proofs/nested");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(
+            root.join("click.project.json"),
+            r#"{"target":"x86_64-linux-userspace","runtime":"modeled-pthread"}"#,
+        )
+        .unwrap();
+        let click = "verifying \"answer.c\";\nint32 answer() { ensures result == 1; } by { execute(); simp(); }\n";
+        let path = nested.join("answer.click");
+        fs::write(&path, click).unwrap();
+        let project = read_click_project(&path, click).unwrap();
+        let profile = project.c_profile().expect("the ancestor's profile");
+        assert_eq!(
+            profile.target,
+            Some(crate::languages::c::target::CTarget::X86_64LinuxUserspace)
+        );
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

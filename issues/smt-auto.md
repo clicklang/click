@@ -237,13 +237,22 @@ arm, which takes the restated fact exactly (7); by a later simple step that
 cites the fact, such as `rewrite` or `extract` (6); by an `apply` or `fold`
 requirement `auto` does not prove (3); or by a loop or induction closer (3).
 
-5. **Close an excluded `match` arm by `auto`.** An arm a `match` rules out
-   holds only `contradiction(P)` with `P` an exact fact, so the proof
-   restates `f(Node(...)) == 1` first. Let `auto` find the contradiction and
-   expansion print it.
-6. **A cheaper route to a restated fact.** Try a short rewrite chain before
-   the solver bridges, so the remaining `apply` premises can be deleted
-   without slowing their files.
+5. **Read a condition through a constructor equation.** Done. The 7
+   `contradiction`s the recheck counted were not excluded `match` arms: they
+   end hand proofs of `have parent == identity` from
+   `ctx_node_is(up.model, parent) == 1`, where the arm gives
+   `up.model == Context::Left(..)`. `auto` now restates such a fact over the
+   constructor by rewriting with the equation, and reads the condition out
+   of the restatement; it also reads a fact recorded at an earlier point
+   (`at(function.entry, ..)`) in its unanchored form. 20 such hand proofs in
+   the rbtree examples, 186 lines, are now `by auto;`.
+6. **A cheaper route to a restated fact.** Done. Before its solvers,
+   `auto` tries a goal that restates an available fact through one
+   connected equality: one `rewrite` and `assumption`, where the solvers
+   reached it through `Integer` bridges at many times the cost and in a
+   proof of a dozen lines. 229 more `have`s that restated an `apply` premise
+   are deleted, 621 lines, all 77 candidates in `rbtree_model.click`
+   among them, each file within 10% of its verification time.
 
 Each step is judged by deleting `have`s from the examples and checking that
 the proofs still verify.

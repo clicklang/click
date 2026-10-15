@@ -19,8 +19,9 @@ impl Parser {
         }
         self.expect_ident_spelling("fn")?;
         let path = self.expect_rust_path("function name")?;
+        self.rust_trait_type_parameters.clear();
         let callable_parameters = self.parse_rust_generic_parameters()?;
-        let name = if self.rust_impl_type.is_some() {
+        let name = if self.rust_impl_type.is_some() || self.rust_trait_interface.is_some() {
             // A method's own name; an item inside it, `compute::LIMIT`,
             // follows as the importer writes path segments.
             crate::languages::rust::names::method_path_name(
@@ -37,6 +38,32 @@ impl Parser {
         // A method is the function `Type_name`, and its receiver is the
         // first parameter, a pointer to the type named `self`.
         let name = match self.rust_impl_type.clone() {
+            // A crate trait's method takes a reference to a value of a type
+            // it does not know, so its contract reads nothing through it.
+            None if let Some(interface) = self.rust_trait_interface.clone() => {
+                let Some(mut receiver) = self.parse_rust_receiver("")? else {
+                    return Err(
+                        self.error("a trait method's interface takes `&self` or `&mut self`")
+                    );
+                };
+                if !receiver.struct_pointer {
+                    return Err(
+                        self.error("a trait method's interface takes `&self` or `&mut self`")
+                    );
+                }
+                receiver.struct_name = None;
+                receiver.struct_pointer = false;
+                parameters.push(
+                    self.parse_parameter_array_suffix("self".into(), receiver)?
+                        .parameter,
+                );
+                if self.peek() == Some(&Token::Comma) {
+                    self.position += 1;
+                }
+                let mut encoded = interface;
+                crate::languages::rust::names::push_path_segment(&mut encoded, &name);
+                encoded
+            }
             Some(impl_type) => {
                 if let Some(receiver) = self.parse_rust_receiver(&impl_type)? {
                     let parsed = self.parse_parameter_array_suffix("self".into(), receiver)?;
@@ -48,9 +75,12 @@ impl Parser {
                         self.position += 1;
                     }
                 }
-                match &self.rust_impl_method_suffix {
-                    Some(suffix) => format!("{impl_type}_{name}_{suffix}"),
-                    None => self.rust_inherent_method(&impl_type, &name)?,
+                match (&self.rust_impl_trait, &self.rust_impl_method_suffix) {
+                    (Some(trait_name), _) => crate::languages::rust::names::trait_method_name(
+                        &impl_type, trait_name, &name,
+                    ),
+                    (None, Some(suffix)) => format!("{impl_type}_{name}_{suffix}"),
+                    (None, None) => self.rust_inherent_method(&impl_type, &name)?,
                 }
             }
             None => name,
@@ -88,7 +118,8 @@ impl Parser {
                 continue;
             }
             let dyn_fn = self.peek() == Some(&Token::Amp)
-                && matches!(self.tokens.get(self.position + 1), Some(Token::Ident(word)) if word == "dyn");
+                && matches!(self.tokens.get(self.position + 1), Some(Token::Ident(word)) if word == "dyn")
+                && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(word)) if word == "Fn");
             // `f: F` of a `<F: Fn(i32) -> i32>` parameter.
             if let Some(word) = self.peek_ident()
                 && let Some((c_type, signature)) = callable_parameters.get(word).cloned()
@@ -203,8 +234,16 @@ impl Parser {
         let mut impl_path = self.expect_rust_path("type name")?;
         let suffix = self.parse_rust_trait_argument()?;
         let mut inherent = true;
+        // A crate trait is named by its path, as a crate type is; the
+        // standard library's traits by their own names.
+        let mut impl_trait = None;
         if self.peek_ident() == Some("for") {
             self.position += 1;
+            if suffix.is_none() && impl_path.len() > 1 {
+                impl_trait = Some(crate::languages::rust::names::path_name(
+                    &impl_path.iter().map(String::as_str).collect::<Vec<_>>(),
+                ));
+            }
             impl_path = self.expect_rust_path("type name")?;
             inherent = false;
         } else if suffix.is_some() {
@@ -238,6 +277,7 @@ impl Parser {
             }
         });
         let previous = self.rust_impl_type.replace(impl_type);
+        let previous_trait = std::mem::replace(&mut self.rust_impl_trait, impl_trait);
         let previous_suffix = std::mem::replace(&mut self.rust_impl_method_suffix, suffix);
         let previous_module = std::mem::replace(&mut self.rust_impl_module, impl_module);
         let mut result = Ok(());
@@ -246,8 +286,21 @@ impl Parser {
                 result = Err(self.error("an `impl` block holds `fn` contracts"));
                 break;
             }
+            // The method's own name, which names its interface in the trait.
+            let method = match self.tokens.get(self.position + 1) {
+                Some(Token::Ident(method)) => Some(method.clone()),
+                _ => None,
+            };
             match self.parse_function_block(false) {
-                Ok(block) => function_blocks.push(block),
+                Ok(block) => {
+                    if let (Some(trait_name), Some(method)) = (&self.rust_impl_trait, method) {
+                        let mut interface = trait_name.clone();
+                        crate::languages::rust::names::push_path_segment(&mut interface, &method);
+                        self.rust_trait_implementations
+                            .push((block.signature().name().to_string(), interface));
+                    }
+                    function_blocks.push(block)
+                }
                 Err(error) => {
                     result = Err(error);
                     break;
@@ -255,8 +308,66 @@ impl Parser {
             }
         }
         self.rust_impl_type = previous;
+        self.rust_impl_trait = previous_trait;
         self.rust_impl_method_suffix = previous_suffix;
         self.rust_impl_module = previous_module;
+        result?;
+        self.expect(Token::RBrace)?;
+        Ok(())
+    }
+
+    /// `trait traits::Shape { ... }`: each `fn` inside is the interface of
+    /// that method of the crate trait, an external declaration whose
+    /// contract every implementation must refine and a call through the
+    /// trait assumes. It takes no proof.
+    #[inline(never)]
+    pub(super) fn parse_rust_trait_block(
+        &mut self,
+        function_blocks: &mut Vec<FunctionBlock>,
+    ) -> Result<(), ClickError> {
+        self.expect_ident_spelling("trait")?;
+        let path = self.expect_rust_path("trait name")?;
+        if path.len() < 2 {
+            return Err(self.error(
+                "a crate trait is named by its path, as the crate writes it: `trait crate_name::Shape`",
+            ));
+        }
+        let interface = crate::languages::rust::names::path_name(
+            &path.iter().map(String::as_str).collect::<Vec<_>>(),
+        );
+        self.expect(Token::LBrace)?;
+        let previous = self.rust_trait_interface.replace(interface);
+        let mut result = Ok(());
+        while self.peek() != Some(&Token::RBrace) {
+            if self.peek_ident() != Some("fn") {
+                result = Err(self.error("a `trait` block holds `fn` interfaces"));
+                break;
+            }
+            match self.parse_function_block(true) {
+                // Nor does it hold any of the receiver's resources.
+                Ok(block)
+                    if block
+                        .requires()
+                        .iter()
+                        .any(|requirement| matches!(requirement, Requirement::Resource(_)))
+                        || block
+                            .ensures()
+                            .iter()
+                            .any(|clause| matches!(clause.ensure(), Ensure::Resource(_))) =>
+                {
+                    result = Err(self.error(
+                        "a trait method's interface holds no resources: it reads nothing through `self`, whose type it does not know",
+                    ));
+                    break;
+                }
+                Ok(block) => function_blocks.push(block),
+                Err(error) => {
+                    result = Err(error);
+                    break;
+                }
+            }
+        }
+        self.rust_trait_interface = previous;
         result?;
         self.expect(Token::RBrace)?;
         Ok(())
@@ -345,9 +456,25 @@ impl Parser {
             {
                 let name = word.to_string();
                 self.position += 2;
+                // `T: traits::Shape`: a crate trait, named by its path.
+                if self.peek_ident() != Some("Fn") && self.peek_next() == Some(&Token::ColonColon) {
+                    self.expect_rust_path("trait name")?;
+                    if callable.contains_key(&name) || !self.rust_trait_type_parameters.insert(name)
+                    {
+                        return Err(self.error("a type parameter is declared twice"));
+                    }
+                    if self.peek() == Some(&Token::Comma) {
+                        self.position += 1;
+                    }
+                    if self.peek() == Some(&Token::GreaterThan) {
+                        self.position += 1;
+                        return Ok(callable);
+                    }
+                    continue;
+                }
                 if self.peek_ident() != Some("Fn") {
                     return Err(self.error(
-                        "a `fn` signature's type parameter is supported only with an `Fn(...) -> ...` bound",
+                        "a `fn` signature's type parameter is supported only with an `Fn(...) -> ...` bound or a crate trait's, such as `<T: crate_name::Shape>`",
                     ));
                 }
                 self.position += 1;
@@ -521,6 +648,30 @@ impl Parser {
             return Err(self.error(
                 "a reference to a reference or to `()` in a `fn` signature is not supported; the Rust importer refuses it",
             ));
+        }
+        // `&dyn traits::Shape`, or `&T` for a crate trait's type parameter:
+        // a value of a type the function does not know, whose fields it
+        // cannot name.
+        let dyn_trait = self.peek_ident() == Some("dyn");
+        if dyn_trait {
+            self.position += 1;
+            self.expect_rust_path("trait name")?;
+        }
+        if dyn_trait
+            || matches!(self.peek_ident(), Some(name) if self.rust_trait_type_parameters.contains(name))
+                && !matches!(self.peek_next(), Some(Token::ColonColon))
+        {
+            if !dyn_trait {
+                self.position += 1;
+            }
+            return Ok(ParsedType {
+                c_type: C0Type::Int32Pointer,
+                struct_name: None,
+                struct_pointer: false,
+                constant: false,
+                pointee_constant: !mutable,
+                reference: false,
+            });
         }
         // `&[T; N]` is the pointer to the array's first element. The length
         // is the type's, so the contract writes it: `views words[0..N]`.

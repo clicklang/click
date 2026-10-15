@@ -29,6 +29,10 @@ const REWRITE_ATTEMPTS: usize = 256;
 /// closers miss: `simp` unfolds and computes what a rewrite exposes.
 const REWRITE_SIMP_CLOSURES: usize = 8;
 
+/// How many rewrites `auto` tries, each followed by `assumption`, before
+/// its solvers: a goal that restates a fact through one equation.
+const SINGLE_REWRITES: usize = 16;
+
 /// How many connected constructor equations `auto` pairs.
 const CONSTRUCTOR_EQUATIONS: usize = 16;
 
@@ -612,6 +616,9 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn try_auto_proof_closure(
         &self,
     ) -> Result<Option<Self>, ClickError> {
+        if let Some(closed) = self.try_single_rewrite_closure()? {
+            return Ok(Some(closed));
+        }
         if let Some(closed) = self.try_solver_closure()? {
             return Ok(Some(closed));
         }
@@ -633,16 +640,83 @@ impl<'a> Proof<'a> {
         if let Some(closed) = self.try_simp_closure()? {
             return Ok(Some(closed));
         }
+        // Before the rewrite search: it costs little when it does not apply.
+        if let Some(closed) = self.try_definition_condition_closure()? {
+            return Ok(Some(closed));
+        }
         if let Some(closed) = self.try_auto_equality_chain_closure()? {
             return Ok(Some(closed));
         }
         if let Some(closed) = self.try_constructor_join_closure()? {
             return Ok(Some(closed));
         }
-        if let Some(closed) = self.try_definition_condition_closure()? {
-            return Ok(Some(closed));
-        }
         self.try_wide_equality_solver_closure()
+    }
+
+    /// A goal that restates an available fact through one connected
+    /// equality, such as `f(Node(..)) == 1` beside `f(t) == 1` and
+    /// `t == Node(..)`: one `rewrite` and `assumption`. Tried before the
+    /// solvers, which would prove it too, at far greater cost and through a
+    /// much longer certificate. At most `SINGLE_REWRITES` rewrites.
+    pub(in crate::surface::proof) fn try_single_rewrite_closure(
+        &self,
+    ) -> Result<Option<Self>, ClickError> {
+        use crate::kernel::proof::equality_rewrite::{equality_rewrite_applies, reverse_equality};
+        let Some(goal) = self.goal() else {
+            return Ok(None);
+        };
+        let Some(equalities) =
+            crate::surface::planning::proposition_search::solver_connected_equalities(
+                self.facts().assumptions(),
+                goal,
+            )
+        else {
+            return Ok(None);
+        };
+        let mut attempts = 0;
+        for equality in &equalities {
+            let applies = |kernel: &Proposition| {
+                equality_rewrite_applies(goal, kernel)
+                    || reverse_equality(kernel)
+                        .is_some_and(|reverse| equality_rewrite_applies(goal, &reverse))
+            };
+            if !applies(equality) {
+                continue;
+            }
+            check_verification_deadline()?;
+            let Some((kernel, surface)) = self
+                .resolve_simp_premises(std::slice::from_ref(equality), &[])
+                .and_then(|mut spelled| spelled.pop())
+            else {
+                continue;
+            };
+            let mut forms = Vec::new();
+            if let Some(unanchored) = unanchored_equality(&surface)
+                && let Ok(lowered) =
+                    self.lower_surface_proposition(&unanchored, "`auto` rewrite equality")
+            {
+                forms.extend(oriented_forms(lowered, unanchored));
+            }
+            forms.extend(oriented_forms(kernel, surface));
+            for (kernel, surface) in forms {
+                if !equality_rewrite_applies(goal, &kernel) {
+                    continue;
+                }
+                if attempts == SINGLE_REWRITES {
+                    return Ok(None);
+                }
+                attempts += 1;
+                let Ok(rewritten) = self.apply_step(ProofStep::Rewrite(surface)) else {
+                    continue;
+                };
+                if let Ok(closed) = rewritten.apply_step(ProofStep::Assumption)
+                    && (closed.focused_discharged() || closed.is_complete())
+                {
+                    return Ok(Some(closed));
+                }
+            }
+        }
+        Ok(None)
     }
 
     /// Rewrite the goal by the equality facts connected to it until
@@ -839,30 +913,78 @@ impl<'a> Proof<'a> {
             ProofContext::FixedState(context) => context.spec_definitions.functions,
             ProofContext::Execution(context) => context.spec_definitions.functions,
         };
-        let mut tried = 0;
+        // Each fact as written, and the constructor each connected equation
+        // names a value as, with that equation oriented `C(...) == value`.
+        let mut spelled = Vec::new();
+        let mut constructors: Vec<(ContractExpression, ContractExpression, ClickProposition)> =
+            Vec::new();
         for equality in &equalities {
             check_verification_deadline()?;
-            let Some((_, fact)) = self
+            let Some((kernel, fact)) = self
                 .resolve_simp_premises(std::slice::from_ref(equality), &[])
                 .and_then(|mut spelled| spelled.pop())
             else {
                 continue;
             };
-            let ClickProposition::Comparison {
+            // A fact recorded at an earlier point is spelled there; its
+            // unanchored form names the same fact when it lowers to it here.
+            let fact = match unanchored_equality(&fact) {
+                Some(unanchored)
+                    if self
+                        .lower_surface_proposition(&unanchored, "`auto` definition fact")
+                        .is_ok_and(|lowered| lowered == kernel) =>
+                {
+                    unanchored
+                }
+                _ => fact,
+            };
+            if let ClickProposition::Comparison {
                 left,
                 operator: ComparisonOperator::Equal,
                 right,
             } = &fact
+            {
+                let built = |side: &ContractExpression| {
+                    matches!(side, ContractExpression::AlgebraicConstructor { .. })
+                };
+                if built(left) != built(right) && constructors.len() < CONSTRUCTOR_EQUATIONS {
+                    let (application, value) = if built(left) {
+                        (left, right)
+                    } else {
+                        (right, left)
+                    };
+                    constructors.push((
+                        value.clone(),
+                        application.clone(),
+                        ClickProposition::Comparison {
+                            left: application.clone(),
+                            operator: ComparisonOperator::Equal,
+                            right: value.clone(),
+                        },
+                    ));
+                }
+            }
+            spelled.push(fact);
+        }
+        let goal_text = crate::surface::printing::source_click_proposition(surface_goal);
+        let mut tried = 0;
+        for fact in &spelled {
+            check_verification_deadline()?;
+            let ClickProposition::Comparison {
+                left,
+                operator: ComparisonOperator::Equal,
+                right,
+            } = fact
             else {
                 continue;
             };
-            let (call, value, call_left) = match (left, right) {
+            let (call, value_side, call_left) = match (left, right) {
                 (ContractExpression::Call { .. }, value) => (left, value, true),
                 (value, ContractExpression::Call { .. }) => (right, value, false),
                 _ => continue,
             };
             let (ContractExpression::Call { name, arguments }, Some(value)) =
-                (call, integer_literal_value(value))
+                (call, integer_literal_value(value_side))
             else {
                 continue;
             };
@@ -878,70 +1000,148 @@ impl<'a> Proof<'a> {
                 break;
             }
             tried += 1;
-            let environment = definition
-                .parameters()
+            // The fact as written, and the fact with each argument a connected
+            // equation names as a constructor replaced by it, stated by
+            // rewriting it back: `match` arms over the argument are decided
+            // only in the second.
+            let mut readings = vec![(arguments.clone(), fact.clone(), None)];
+            let mut rewrites = Vec::new();
+            let restated = arguments
                 .iter()
-                .zip(arguments)
-                .map(|(parameter, argument)| (parameter.name().to_string(), argument.clone()))
-                .collect::<BTreeMap<_, _>>();
-            let mut leaves = 0;
-            let mut meets_goal = false;
-            let Some(plan) = self.definition_condition_plan(
-                definition.body(),
-                &environment,
-                goal,
-                value,
-                &mut leaves,
-                &mut meets_goal,
-            ) else {
-                continue;
-            };
-            if !meets_goal {
-                continue;
-            }
-            let (left, right) = if call_left {
-                (call.clone(), right.clone())
-            } else {
-                (left.clone(), call.clone())
-            };
-            let refutation = DefinitionRefutation {
-                application: ClickFunctionApplication {
+                .map(
+                    |argument| match constructors.iter().find(|(value, _, _)| value == argument) {
+                        Some((_, application, equation)) => {
+                            rewrites.push(ProofStep::Rewrite(equation.clone()));
+                            application.clone()
+                        }
+                        None => argument.clone(),
+                    },
+                )
+                .collect::<Vec<_>>();
+            if !rewrites.is_empty() {
+                let restated_call = ContractExpression::Call {
                     name: name.clone(),
-                    arguments: arguments.clone(),
-                },
-                differs: ClickProposition::Comparison {
-                    left,
-                    operator: ComparisonOperator::NotEqual,
-                    right,
-                },
-                fact: fact.clone(),
-                negated_goal: ClickProposition::Not(Box::new(surface_goal.clone())),
-            };
-            let Ok((split_proof, split, ids)) = self.split_focused_if(surface_goal.clone()) else {
-                return Ok(None);
-            };
-            let marker = split_proof.checkpoint();
-            let Some(then_done) = split_proof
-                .focus_branch(ids[0])
-                .and_then(|branch| branch.apply_step(ProofStep::Assumption))
-                .ok()
-                .filter(Proof::focused_discharged)
-            else {
-                return Ok(None);
-            };
-            let Ok(else_branch) = then_done.focus_branch(ids[1]) else {
-                return Ok(None);
-            };
-            let Some(else_done) = else_branch.refute_definition_ends(&plan, &refutation, &[])?
-            else {
-                continue;
-            };
-            if let Ok(closed) = else_done.join_focused_if(&marker, split, ids, surface_goal.clone())
-            {
-                return Ok(Some(closed));
+                    arguments: restated.clone(),
+                };
+                let restated_fact = ClickProposition::Comparison {
+                    left: if call_left {
+                        restated_call.clone()
+                    } else {
+                        left.clone()
+                    },
+                    operator: ComparisonOperator::Equal,
+                    right: if call_left {
+                        right.clone()
+                    } else {
+                        restated_call
+                    },
+                };
+                rewrites.push(ProofStep::Assumption);
+                readings.push((restated, restated_fact, Some(rewrites)));
+            }
+            for (arguments, fact, restatement) in readings {
+                // Plan first: it reads only the definition, so a fact whose
+                // definition never reaches the goal costs no checked step.
+                let environment = definition
+                    .parameters()
+                    .iter()
+                    .zip(&arguments)
+                    .map(|(parameter, argument)| (parameter.name().to_string(), argument.clone()))
+                    .collect::<BTreeMap<_, _>>();
+                let mut leaves = 0;
+                let mut meets_goal = false;
+                let Some(plan) = self.definition_condition_plan(
+                    definition.body(),
+                    &environment,
+                    &goal_text,
+                    value,
+                    &mut leaves,
+                    &mut meets_goal,
+                ) else {
+                    continue;
+                };
+                if !meets_goal {
+                    continue;
+                }
+                let base = match restatement {
+                    None => self.clone(),
+                    Some(steps) => match self.apply_step(have(fact.clone(), steps)) {
+                        Ok(base) => base,
+                        Err(_) => continue,
+                    },
+                };
+                if let Some(closed) = base.read_definition_condition(
+                    &plan,
+                    surface_goal,
+                    name,
+                    &arguments,
+                    fact,
+                    call_left,
+                )? {
+                    return Ok(Some(closed));
+                }
             }
         }
         Ok(None)
+    }
+
+    /// Closes the goal from one fact `f(arguments) == value` along `plan`,
+    /// as [`Self::try_definition_condition_closure`] describes.
+    fn read_definition_condition(
+        &self,
+        plan: &DefinitionPlan,
+        surface_goal: &ClickProposition,
+        name: &str,
+        arguments: &[ContractExpression],
+        fact: ClickProposition,
+        call_left: bool,
+    ) -> Result<Option<Self>, ClickError> {
+        let ClickProposition::Comparison { left, right, .. } = &fact else {
+            return Ok(None);
+        };
+        let call = if call_left { left } else { right };
+        let refutation = DefinitionRefutation {
+            application: ClickFunctionApplication {
+                name: name.to_string(),
+                arguments: arguments.to_vec(),
+            },
+            differs: ClickProposition::Comparison {
+                left: if call_left {
+                    call.clone()
+                } else {
+                    left.clone()
+                },
+                operator: ComparisonOperator::NotEqual,
+                right: if call_left {
+                    right.clone()
+                } else {
+                    call.clone()
+                },
+            },
+            fact: fact.clone(),
+            negated_goal: ClickProposition::Not(Box::new(surface_goal.clone())),
+        };
+        let Ok((split_proof, split, ids)) = self.split_focused_if(surface_goal.clone()) else {
+            return Ok(None);
+        };
+        let marker = split_proof.checkpoint();
+        let Some(then_done) = split_proof
+            .focus_branch(ids[0])
+            .and_then(|branch| branch.apply_step(ProofStep::Assumption))
+            .ok()
+            .filter(Proof::focused_discharged)
+        else {
+            return Ok(None);
+        };
+        let Ok(else_branch) = then_done.focus_branch(ids[1]) else {
+            return Ok(None);
+        };
+        let Some(else_done) = else_branch.refute_definition_ends(plan, &refutation, &[])? else {
+            return Ok(None);
+        };
+        Ok(else_done
+            .join_focused_if(&marker, split, ids, surface_goal.clone())
+            .ok())
     }
 
     /// The conditional tree of a definition body under `environment`, cut
@@ -953,7 +1153,7 @@ impl<'a> Proof<'a> {
         &self,
         body: &ContractExpression,
         environment: &BTreeMap<String, ContractExpression>,
-        goal: &Proposition,
+        goal: &str,
         value: i128,
         leaves: &mut usize,
         meets_goal: &mut bool,
@@ -965,10 +1165,9 @@ impl<'a> Proof<'a> {
                 else_branch,
             } => {
                 let condition = substitute_click_proposition(condition, environment).ok()?;
-                let lowered = self
-                    .lower_surface_proposition(&condition, "`auto` definition condition")
-                    .ok()?;
-                if &lowered == goal {
+                // Compared as written, so planning lowers nothing; the
+                // checked steps decide whether the condition is the goal.
+                if crate::surface::printing::source_click_proposition(&condition) == goal {
                     *meets_goal = true;
                     return self.definition_condition_plan(
                         else_branch,

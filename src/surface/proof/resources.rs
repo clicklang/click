@@ -2239,6 +2239,14 @@ fn project_held_resource_observable_facts(
     let Some(definition) = resource_environment.get(name) else {
         return Ok(state.memory().clone());
     };
+    // `amount of R(..)` holds `amount` instances of `R`'s body, so its body
+    // describes an instance only where `amount > 0` is known; with zero there
+    // is none, and its facts need not hold. `observe` makes the same check.
+    if let Some(quantity) = resource.owned_quantity_term()
+        && !owned_quantity_is_positive(quantity, available_pure_facts.assumptions())
+    {
+        return Ok(state.memory().clone());
+    }
     apply_composite_observation_law_with_facts(
         resource_environment,
         definition,
@@ -2253,6 +2261,23 @@ fn project_held_resource_observable_facts(
         None,
     )
     .map(|(memory, _, _)| memory)
+}
+
+/// Whether an owned resource's quantity is known to be positive: a constant
+/// read as a signed `int32`, as `fold` reads one, or one the kernel's
+/// condition decision settles.
+fn owned_quantity_is_positive(quantity: &Bitvector32Term, assumptions: &PureFactContext) -> bool {
+    quantity.as_const().is_some_and(|value| (value as i32) > 0)
+        || decided_without_search(
+            assumptions,
+            &Proposition::ConditionIs(
+                ConditionTerm::Bitvector32SignedGreaterThan(
+                    Box::new(quantity.clone()),
+                    Box::new(Bitvector32Term::Constant(0)),
+                ),
+                true,
+            ),
+        )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -5237,6 +5262,33 @@ fn materialize_composite_resource_cells_from_snapshot(
     }
     let element_width = contract_segment_element_width(parameters, segment);
     let segment_type = contract_segment_element_type(parameters, segment);
+    // A scalar field's ownership span can include alignment padding. Its retained
+    // declaration names only the actual scalar/array elements, not typed reads
+    // of every word in that wider span.
+    let (element_width, start, end) = if !segment_type.is_pointer()
+        && let Some(count) = crate::surface::lowering::declared_segment_observation_count(segment)
+    {
+        let width = segment_type.byte_width();
+        let Some(first_byte) = start.checked_mul(element_width) else {
+            return memory;
+        };
+        let Some(end_byte) = end.checked_mul(element_width) else {
+            return memory;
+        };
+        if !first_byte.is_multiple_of(width) {
+            return memory;
+        }
+        let first = first_byte / width;
+        let Some(last) = first.checked_add(count) else {
+            return memory;
+        };
+        if last.checked_mul(width).is_none_or(|bytes| bytes > end_byte) {
+            return memory;
+        }
+        (width, first, last)
+    } else {
+        (element_width, *start, *end)
+    };
     // The cells below as one run. Every element's value is its load in the
     // naming memory, typed as the element for a scalar and kept as the word
     // the load names for a pointer, so the run's element type is that word's
@@ -5254,15 +5306,15 @@ fn materialize_composite_resource_cells_from_snapshot(
             range.base().clone(),
             element_width,
             run_type,
-            *start,
-            *end,
+            start,
+            end,
             crate::kernel::intern_c_memory(naming_memory.clone()),
         ) {
             Ok(seeded) => return seeded,
             Err(unchanged) => memory = unchanged,
         }
     }
-    for index in *start..*end {
+    for index in start..end {
         let pointer = offset_pointer_by_elements(
             range.base().clone(),
             Bitvector32Term::Constant(index),
@@ -5943,6 +5995,111 @@ mod fold_quantity_activity_tests {
                 fold_resource_quantity_activity(&count, &assumptions),
                 expected
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod declared_scalar_field_observation_tests {
+    use super::*;
+
+    fn field(base: CExpression, element_type: CType) -> ContractSegment {
+        ContractSegment {
+            state: ContractSegmentState::Current,
+            base,
+            start: crate::kernel::c_int32_literal(0),
+            end: crate::kernel::c_int32_literal(0),
+            surface: ContractSegmentSurface::Field {
+                base: None,
+                name: "payload".into(),
+                element_width: Some(4),
+                element_type: Some(element_type),
+            },
+        }
+    }
+
+    #[test]
+    fn scalar_field_observations_do_not_initialize_owned_padding() {
+        let base = Pointer::symbolic(Variable(985_801));
+        for viewed in [false, true] {
+            let mut samples = Vec::new();
+            for padding in [0u32, 16, 64, 256] {
+                let segment = field(
+                    CExpression::Value(CValue::pointer(base.clone())),
+                    CType::Int32,
+                );
+                let range = CMemoryRange::new(base.clone(), 0.into(), (1 + padding).into());
+                let (clause, fact) = if viewed {
+                    (
+                        ResourceClause::ViewMemory(segment),
+                        CResourceFact::view_memory(range),
+                    )
+                } else {
+                    (
+                        ResourceClause::OwnMemory(segment),
+                        CResourceFact::own_memory(range),
+                    )
+                };
+                let memory = CMemory::new();
+                let (named, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    materialize_composite_resource_cells_from_snapshot(
+                        memory.clone(),
+                        &memory,
+                        &clause,
+                        &fact,
+                        &[],
+                    )
+                });
+                assert!(matches!(
+                    named.load(&base),
+                    CExpressionOutcome::Value(CValue::Int32(_))
+                ));
+                assert!(
+                    !matches!(
+                        named.load(&base.offset_by_bytes(4)),
+                        CExpressionOutcome::Value(_)
+                    ),
+                    "padding must not become an initialized scalar"
+                );
+                samples.push(work);
+            }
+            assert!(
+                samples.windows(2).all(|pair| pair[1] <= pair[0] + 8),
+                "{samples:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn declared_array_elements_exclude_trailing_padding() {
+        let base = Pointer::symbolic(Variable(985_802));
+        for count in [0, 16, 64, 256] {
+            let segment = field(
+                crate::kernel::c_typed_load(
+                    CExpression::Value(CValue::pointer(base.clone())),
+                    CType::Int32Array(count),
+                ),
+                CType::Int32,
+            );
+            let range = CMemoryRange::new(base.clone(), 0.into(), (count + 4).into());
+            let memory = CMemory::new();
+            let named = materialize_composite_resource_cells_from_snapshot(
+                memory.clone(),
+                &memory,
+                &ResourceClause::OwnMemory(segment),
+                &CResourceFact::own_memory(range),
+                &[],
+            );
+            if count > 0 {
+                assert!(matches!(
+                    named.load(&base.offset_by_bytes((count - 1) * 4)),
+                    CExpressionOutcome::Value(CValue::Int32(_))
+                ));
+            }
+            assert!(!matches!(
+                named.load(&base.offset_by_bytes(count * 4)),
+                CExpressionOutcome::Value(_)
+            ));
         }
     }
 }

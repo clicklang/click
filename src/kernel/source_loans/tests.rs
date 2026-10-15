@@ -50,6 +50,7 @@ fn export() -> r::RustExport {
             body: vec![],
             external: false,
             captures: 0,
+            implements: None,
             span: r::Span { line: 1, column: 1 },
             mir: Some(r::MirBody {
                 locals: vec![place("child", reference_type()), place("x", Type::I32)],
@@ -1000,4 +1001,290 @@ fn source_scalar_lease_birth_after_join_binds_actual_nonentry_source_point() {
             CExpressionOutcome::Value(int32(8))
         );
     }
+}
+
+fn arm_export(diamonds: usize) -> r::RustExport {
+    let mut source = branch_export(1, diamonds);
+    let mir = source.functions[0].mir.as_mut().unwrap();
+    mir.blocks[0].statements.clear();
+    for index in 0..diamonds {
+        for arm in 1..=2 {
+            let name = format!("arm_{index}_{arm}");
+            mir.locals.push(place(&name, reference_type()));
+            mir.blocks[index * 3 + arm].statements = vec![
+                assign(
+                    local(&name),
+                    E::Borrow {
+                        place: Box::new(deref("parent")),
+                        value_type: reference_type(),
+                    },
+                ),
+                assign(
+                    deref(&name),
+                    E::Integer {
+                        value: if arm == 1 { 7 } else { 9 },
+                    },
+                ),
+            ];
+        }
+    }
+    source
+}
+
+#[test]
+fn source_scalar_scope_closes_arm_borrows_and_clears_local_reference_slots() {
+    let (program, _scope) = alias_body(&arm_export(1));
+    let statements = leaves(&program);
+    let mut entered = initial().0.with_local("choose", bool_value(1));
+    let (yes, no) = statements
+        .iter()
+        .find_map(|statement| {
+            if let CStatement::If {
+                then_branch,
+                else_branch,
+                ..
+            } = statement
+            {
+                Some((then_branch.as_ref(), else_branch.as_ref()))
+            } else {
+                entered = normal(execute(&entered, statement));
+                None
+            }
+        })
+        .unwrap();
+    assert!(entered.has_local_reference_scope());
+    assert!(matches!(
+        execute(&entered, &c_return(c_void_value())),
+        CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+    ));
+    let left = normal(execute(&entered, yes));
+    let right = normal(execute(&entered, no));
+    assert_eq!(left.loan_ledger(), right.loan_ledger());
+    for state in [&left, &right] {
+        assert!(!state.has_local_reference_scope());
+        assert!(!state.has_local_scalar_references());
+        for name in ["arm_0_1", "arm_0_2"] {
+            assert!(state.locals().is_uninitialized_object(name));
+            assert_eq!(
+                read(state, c_variable(name)),
+                CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead)
+            );
+        }
+        assert!(state.loan_ledger().unwrap().invariant_holds());
+    }
+    for (state, expected) in [(&left, 7), (&right, 9)] {
+        assert_eq!(
+            read(state, c_load(c_variable("parent"))),
+            CExpressionOutcome::Value(int32(expected))
+        );
+    }
+    for flag in [0, 1] {
+        let CStatementOutcome::Return { state, .. } = execute(
+            &initial().0.with_local("choose", bool_value(flag)),
+            &program,
+        ) else {
+            panic!("arm return");
+        };
+        assert!(!state.has_local_reference_scope());
+        assert_eq!(
+            read(&state, c_load(c_variable("parent"))),
+            CExpressionOutcome::Value(int32(8))
+        );
+    }
+}
+
+#[test]
+fn source_scalar_scope_refuses_escaped_and_cross_arm_reference_definitions() {
+    for variation in 0..4 {
+        let mut source = arm_export(1);
+        let mir = source.functions[0].mir.as_mut().unwrap();
+        match variation {
+            0 => mir.blocks[3]
+                .statements
+                .insert(0, assign(local("x"), deref("arm_0_1"))),
+            1 => mir.blocks[2]
+                .statements
+                .push(assign(local("x"), deref("arm_0_1"))),
+            2 => mir.blocks[1]
+                .statements
+                .push(assign(local("parent"), local("arm_0_1"))),
+            _ => mir.blocks[3]
+                .statements
+                .insert(0, assign(local("child"), local("arm_0_1"))),
+        }
+        let (program, _scope) = alias_body(&source);
+        assert!(
+            !leaves(&program)
+                .iter()
+                .any(|statement| matches!(statement, CStatement::ScalarReferenceScope(_))),
+            "variation {variation}"
+        );
+        assert!(ends(&program).is_empty());
+    }
+}
+
+fn empty_scope_plan(block: usize) -> std::sync::Arc<ScalarReferenceScopePlan> {
+    ScalarReferenceScopePlan::new(
+        ScalarReferencePlanFamily::new("scope-tests", "scope"),
+        block,
+        block + 3,
+        vec![],
+    )
+}
+fn scope_initial() -> (CState, ResourceOccurrenceId) {
+    let (state, support) = initial();
+    let ledger = loans::LoanLedger::new();
+    let holder = ledger.fresh_participant().unwrap();
+    (
+        state
+            .with_loan_ledger(Some(ledger))
+            .with_loan_participant(Some(holder)),
+        support,
+    )
+}
+fn scope_parent(state: &CState) -> CPointerValue {
+    let CValue::Pointer(pointer) = state.locals().get("parent").unwrap() else {
+        panic!("parent");
+    };
+    pointer.clone()
+}
+#[test]
+fn source_scalar_scope_kernel_recovery_preserves_memory_support_and_freshness() {
+    let (base, support) = scope_initial();
+    let plan = empty_scope_plan(0);
+    let parent = scope_parent(&base);
+    let mut previous = None;
+    for value in [7, 9] {
+        let entered = normal(execute(&base, &plan.operation(false)));
+        let (active, child) = entered
+            .begin_local_scalar_reference(
+                &parent,
+                Some(support),
+                CType::Int32,
+                &PureFactContext::new(),
+            )
+            .unwrap();
+        if let Some(old) = previous {
+            assert_ne!(child.local_reference().unwrap().id(), old);
+        }
+        assert!(matches!(
+            execute(&active, &plan.operation(true)),
+            CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+        ));
+        let holder = active.loan_participant().unwrap();
+        assert!(
+            active
+                .loan_ledger()
+                .unwrap()
+                .close_local_reference_scope(holder, empty_scope_plan(10).key(), active.resources())
+                .is_err()
+        );
+        let foreign = active.loan_ledger().unwrap().fresh_participant().unwrap();
+        assert!(
+            active
+                .loan_ledger()
+                .unwrap()
+                .close_local_reference_scope(foreign, plan.key(), active.resources())
+                .is_err()
+        );
+        let fact = base
+            .resources()
+            .owned_fact_for_occurrence(support)
+            .unwrap()
+            .clone();
+        assert!(
+            active
+                .loan_ledger()
+                .unwrap()
+                .lend(holder, foreign, support, fact)
+                .is_err()
+        );
+        let written = normal(execute(
+            &active,
+            &c_store(
+                CExpression::Value(CValue::Pointer(child.clone())),
+                c_int32_literal(value),
+            ),
+        ));
+        let closed = written
+            .end_local_scalar_reference(&child, &PureFactContext::new())
+            .unwrap();
+        assert!(matches!(
+            execute(
+                &closed.clone().with_resource_context(ResourceContext::new()),
+                &plan.operation(true)
+            ),
+            CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+        ));
+        let recovered = normal(execute(&closed, &plan.operation(true)));
+        assert_eq!(recovered.loan_ledger(), base.loan_ledger());
+        assert!(
+            recovered
+                .resources()
+                .owned_fact_for_occurrence(support)
+                .is_some()
+        );
+        assert_eq!(
+            read(&recovered, c_load(c_variable("parent"))),
+            CExpressionOutcome::Value(int32(value))
+        );
+        assert!(matches!(
+            read(
+                &recovered,
+                c_load(CExpression::Value(CValue::Pointer(child.clone())))
+            ),
+            CExpressionOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+        ));
+        assert!(matches!(
+            execute(&recovered, &plan.operation(true)),
+            CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+        ));
+        previous = Some(child.local_reference().unwrap().id());
+    }
+}
+
+#[test]
+fn source_scalar_scope_nested_checkpoint_cannot_end_an_entry_reference() {
+    let (base, support) = scope_initial();
+    let parent = scope_parent(&base);
+    let (outer, child) = base
+        .begin_local_scalar_reference(
+            &parent,
+            Some(support),
+            CType::Int32,
+            &PureFactContext::new(),
+        )
+        .unwrap();
+    let plan = empty_scope_plan(0);
+    let entered = normal(execute(&outer, &plan.operation(false)));
+    assert!(
+        entered
+            .end_local_scalar_reference(&child, &PureFactContext::new())
+            .is_err()
+    );
+    let (active, grandchild) = entered
+        .begin_local_scalar_reference(&child, None, CType::Int32, &PureFactContext::new())
+        .unwrap();
+    let closed = active
+        .end_local_scalar_reference(&grandchild, &PureFactContext::new())
+        .unwrap();
+    let recovered = normal(execute(&closed, &plan.operation(true)));
+    assert_eq!(recovered.loan_ledger(), outer.loan_ledger());
+    assert!(recovered.has_local_scalar_references());
+    assert_eq!(
+        read(
+            &recovered,
+            c_load(CExpression::Value(CValue::Pointer(child.clone())))
+        ),
+        CExpressionOutcome::Value(int32(4))
+    );
+    let final_state = recovered
+        .end_local_scalar_reference(&child, &PureFactContext::new())
+        .unwrap();
+    assert!(
+        final_state
+            .resources()
+            .owned_fact_for_occurrence(support)
+            .is_some()
+    );
 }

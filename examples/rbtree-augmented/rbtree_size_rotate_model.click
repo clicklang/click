@@ -164,12 +164,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                     SizedTree::Empty => {
                                         unfold(right);
                                         unfold(sized_value(SizedTree::Empty));
-                                        have ((struct sized_node*)(void*)rb_old)->rb.rb_right == 0 by { assumption(); }
                                         let r = fold(optional_size(((struct sized_node*)(void*)rb_old)->rb.rb_right), { value: 0 });
-                                        have 0 <= l.value by { simp(); }
-                                        have 0 <= r.value by { simp(); }
-                                        have r.value <= 2147483646 by { simp(); }
-                                        have l.value <= 2147483646 - r.value by { simp(); }
                                         apply(size_sum_defined(l.value, r.value));
                                         apply(size_sum_as_integer(l.value, r.value));
                                         step(sized_rotate(rb_old, rb_new), { source: metadata, target: promoted_metadata, left: l, right: r });
@@ -266,17 +261,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         let { metadata: rm, left: rleft, right: rright } = unfold(right);
                                         unfold(rm);
                                         unfold(sized_value(SizedTree::Node(rid, rp, rc, rv, rl, rr)));
-                                        have sized_value(right_model) == rv by {
-                                            have right_model == SizedTree::Node(rid, rp, rc, rv, rl, rr) by { simp(); }
-                                            rewrite(right_model == SizedTree::Node(rid, rp, rc, rv, rl, rr));
-                                            unfold(sized_value(SizedTree::Node(rid, rp, rc, rv, rl, rr)));
-                                            normalize();
-                                        }
                                         let r = fold(optional_size(((struct sized_node*)(void*)rb_old)->rb.rb_right), { value: rv });
-                                        have 0 <= l.value by { simp(); }
-                                        have 0 <= r.value by { simp(); }
-                                        have r.value <= 2147483646 by { simp(); }
-                                        have l.value <= 2147483646 - r.value by { simp(); }
                                         apply(size_sum_defined(l.value, r.value));
                                         apply(size_sum_as_integer(l.value, r.value));
                                         child_size_separation((struct sized_node*)(void*)rb_old, ((struct sized_node*)(void*)rb_old)->rb.rb_right, { metadata: r });
@@ -397,11 +382,6 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             rewrite(sized_value(right_model) == r.value);
                                             normalize();
                                         }
-                                        have l.value <= 2147483646 - r.value by {
-                                            rewrite(l.value == sized_value(left_model));
-                                            rewrite(2147483646 - r.value == 2147483646 - sized_value(right_model));
-                                            assumption();
-                                        }
                                         apply(size_sum_defined(l.value, r.value));
                                         apply(size_sum_as_integer(l.value, r.value));
                                         child_size_separation((struct sized_node*)(void*)rb_old, ((struct sized_node*)(void*)rb_old)->rb.rb_left, { metadata: l });
@@ -501,10 +481,6 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             normalize();
                                         }
                                         let r = fold(optional_size(((struct sized_node*)(void*)rb_old)->rb.rb_right), { value: rv });
-                                        have 0 <= l.value by { simp(); }
-                                        have 0 <= r.value by { simp(); }
-                                        have r.value <= 2147483646 by { simp(); }
-                                        have l.value <= 2147483646 - r.value by { simp(); }
                                         apply(size_sum_defined(l.value, r.value));
                                         apply(size_sum_as_integer(l.value, r.value));
                                         child_size_separation((struct sized_node*)(void*)rb_old, ((struct sized_node*)(void*)rb_old)->rb.rb_left, { metadata: l });
@@ -758,12 +734,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                     SizedTree::Empty => {
                                         unfold(right);
                                         unfold(sized_value(SizedTree::Empty));
-                                        have ((struct sized_node*)(void*)rb_old)->rb.rb_right == 0 by { assumption(); }
                                         let r = fold(optional_size(((struct sized_node*)(void*)rb_old)->rb.rb_right), { value: 0 });
-                                        have 0 <= l.value by { simp(); }
-                                        have 0 <= r.value by { simp(); }
-                                        have r.value <= 2147483646 by { simp(); }
-                                        have l.value <= 2147483646 - r.value by { simp(); }
                                         apply(size_sum_defined(l.value, r.value));
                                         apply(size_sum_as_integer(l.value, r.value));
                                         step(sized_rotate(rb_old, rb_new), { source: metadata, target: promoted_metadata, left: l, right: r });
@@ -860,17 +831,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         let { metadata: rm, left: rleft, right: rright } = unfold(right);
                                         unfold(rm);
                                         unfold(sized_value(SizedTree::Node(rid, rp, rc, rv, rl, rr)));
-                                        have sized_value(right_model) == rv by {
-                                            have right_model == SizedTree::Node(rid, rp, rc, rv, rl, rr) by { simp(); }
-                                            rewrite(right_model == SizedTree::Node(rid, rp, rc, rv, rl, rr));
-                                            unfold(sized_value(SizedTree::Node(rid, rp, rc, rv, rl, rr)));
-                                            normalize();
-                                        }
                                         let r = fold(optional_size(((struct sized_node*)(void*)rb_old)->rb.rb_right), { value: rv });
-                                        have 0 <= l.value by { simp(); }
-                                        have 0 <= r.value by { simp(); }
-                                        have r.value <= 2147483646 by { simp(); }
-                                        have l.value <= 2147483646 - r.value by { simp(); }
                                         apply(size_sum_defined(l.value, r.value));
                                         apply(size_sum_as_integer(l.value, r.value));
                                         child_size_separation((struct sized_node*)(void*)rb_old, ((struct sized_node*)(void*)rb_old)->rb.rb_right, { metadata: r });
@@ -991,11 +952,6 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             rewrite(sized_value(right_model) == r.value);
                                             normalize();
                                         }
-                                        have l.value <= 2147483646 - r.value by {
-                                            rewrite(l.value == sized_value(left_model));
-                                            rewrite(2147483646 - r.value == 2147483646 - sized_value(right_model));
-                                            assumption();
-                                        }
                                         apply(size_sum_defined(l.value, r.value));
                                         apply(size_sum_as_integer(l.value, r.value));
                                         child_size_separation((struct sized_node*)(void*)rb_old, ((struct sized_node*)(void*)rb_old)->rb.rb_left, { metadata: l });
@@ -1095,10 +1051,6 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             normalize();
                                         }
                                         let r = fold(optional_size(((struct sized_node*)(void*)rb_old)->rb.rb_right), { value: rv });
-                                        have 0 <= l.value by { simp(); }
-                                        have 0 <= r.value by { simp(); }
-                                        have r.value <= 2147483646 by { simp(); }
-                                        have l.value <= 2147483646 - r.value by { simp(); }
                                         apply(size_sum_defined(l.value, r.value));
                                         apply(size_sum_as_integer(l.value, r.value));
                                         child_size_separation((struct sized_node*)(void*)rb_old, ((struct sized_node*)(void*)rb_old)->rb.rb_left, { metadata: l });

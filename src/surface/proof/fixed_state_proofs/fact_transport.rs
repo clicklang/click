@@ -15,29 +15,9 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
     state: &CState,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Vec<ClickProposition>, ClickError> {
-    let mut candidates = available
-        .iter()
-        .filter_map(|kernel| {
-            let surface = checked_surface_comparison_fact_in_state(
-                view,
-                kernel,
-                SurfaceFactMatch::AvailabilityEquivalent,
-                available,
-                parameter_binding,
-                state,
-                spec_definitions,
-            )
-            .ok();
-            surface.map(|surface| (kernel.clone(), surface))
-        })
-        .collect::<Vec<_>>();
     let mut selected = Vec::new();
     if exact_fact_is_available(source, available) {
-        let source_pair = (source.clone(), surface_source.clone());
-        if !candidates.contains(&source_pair) {
-            candidates.push(source_pair.clone());
-        }
-        selected.push(source_pair);
+        selected.push((source.clone(), surface_source.clone()));
     }
     let check_premises = |selected: &[(Proposition, ClickProposition)]| {
         let explicit = selected
@@ -124,6 +104,24 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
         )
     };
     if !checks(&selected) {
+        // The written source and checked frame may already suffice. Do not
+        // synthesize unrelated ambient facts before trying that proof.
+        let candidates = available
+            .iter()
+            .filter_map(|kernel| {
+                checked_surface_comparison_fact_in_state(
+                    view,
+                    kernel,
+                    SurfaceFactMatch::AvailabilityEquivalent,
+                    available,
+                    parameter_binding,
+                    state,
+                    spec_definitions,
+                )
+                .ok()
+                .map(|surface| (kernel.clone(), surface))
+            })
+            .collect::<Vec<_>>();
         let rank = |proposition: &Proposition| match proposition {
             Proposition::CResourceSeparate { .. }
             | Proposition::CMemoryLoadable { .. }
@@ -157,11 +155,14 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
                 .iter()
                 .filter(|fact| !candidates.iter().any(|(candidate, _)| candidate == *fact))
                 .count();
+            let _exact = render::TypedNotationScope::enter();
+            let mut labels = render::SnapshotLabels::with_state(parameter_binding, state);
+            let checked_source = render::render_proposition_labeled(source, &mut labels);
+            let checked_target = render::render_proposition_labeled(target, &mut labels);
             return Err(ClickError::new(format!(
-                "explicit surface premises do not view the certified fact transport\n  source: `{}`\n  target: `{}`\n  selected surface premises: {}\n  unsynthesizable ambient facts: {unavailable_count} (internal facts omitted)",
-                crate::surface::proof_diagnostics::render::render_proposition(source),
-                crate::surface::proof_diagnostics::render::render_proposition(target),
+                "explicit surface premises do not view the certified fact transport\n  checked source (holds): {checked_source}\n  checked target (wanted): {checked_target}\n  selected surface premises: {}\n  unsynthesizable ambient facts: {unavailable_count} (internal facts omitted){}",
                 complete.len(),
+                labels.trace_legend(),
             )));
         }
         for pair in remaining {
@@ -665,6 +666,8 @@ fn check_fixed_state_fact_transport_using_facts_inner(
                 tactic_index,
                 surface_source,
                 surface_target,
+                &source,
+                &target,
                 &transition_facts,
                 &mut labels,
             );
@@ -703,18 +706,20 @@ fn check_fixed_state_fact_transport_using_facts_inner(
     Ok(CheckedFixedStateFactTransport { source, target })
 }
 
-/// Show the written source and target once, then the bounded frontier facts
-/// that could relate them. Name stores, current locals, and recoverable source
-/// points; omit facts with no exact source spelling instead of dumping lowered
-/// loads and snapshot identities.
+/// Show the written and checked propositions with one shared snapshot legend.
+/// Include every frontier effect: a truncated list can hide the missing frame.
 fn describe_unreachable_fact_transport(
     claim_label: &str,
     tactic_index: usize,
     surface_source: &ClickProposition,
     surface_target: &ClickProposition,
+    source: &Proposition,
+    target: &Proposition,
     transition_facts: &(impl ExecutionFactSource + ?Sized),
     labels: &mut render::SnapshotLabels,
 ) -> String {
+    // Refusals must expose checked identities even outside --trace-proof.
+    let _exact = render::TypedNotationScope::enter();
     let mut rendered = format!(
         "`{claim_label}` tactic {tactic_index}: `transport using` found no frame evidence \
          carrying its source fact to the target's state\
@@ -723,7 +728,13 @@ fn describe_unreachable_fact_transport(
         crate::surface::printing::source_click_proposition(surface_source),
         crate::surface::printing::source_click_proposition(surface_target),
     );
+    let checked_source = render::render_proposition_labeled(source, labels);
+    let checked_target = render::render_proposition_labeled(target, labels);
+    rendered.push_str(&format!(
+        "\n  checked source (holds): {checked_source}\n  checked target (wanted): {checked_target}"
+    ));
     if transition_facts.is_empty() {
+        rendered.push_str(&labels.trace_legend());
         rendered.push_str(
             "\n  no effect fact at this frontier relates the two states, so the target must \
              follow from the source and the listed premises alone, and it does not: check that \
@@ -733,20 +744,18 @@ fn describe_unreachable_fact_transport(
         );
         return rendered;
     }
-    const LISTED: usize = 8;
     let total = transition_facts.len();
     rendered.push_str(&format!(
-        "\n  effect facts relating states at this frontier (showing {} of {total}):",
-        total.min(LISTED)
+        "\n  effect facts relating states at this frontier ({total}):"
     ));
-    for fact in transition_facts.fact_iter().take(LISTED) {
+    for fact in transition_facts.fact_iter() {
         rendered.push_str("\n    ");
         rendered.push_str(&render::render_proposition_labeled(
             fact.proposition(),
             labels,
         ));
         if let Proposition::CMemoryMutatesOnly { writes, .. } = fact.proposition() {
-            for (pointer, bytes) in writes.iter().take(LISTED) {
+            for (pointer, bytes) in writes.iter() {
                 if let Some((names, values)) = labels.naming_tables()
                     && let Some(cell) = crate::surface::diagnostics::diagnostic_source_cell(
                         pointer,
@@ -761,12 +770,9 @@ fn describe_unreachable_fact_transport(
         }
     }
 
-    if total > LISTED {
-        rendered.push_str("\n    … <additional effect facts omitted>");
-    }
     rendered.push_str(&labels.trace_legend().replace(
         "label definitions (recorded constructions, not additional facts):",
-        "effect-fact label definitions (local to the list above):",
+        "transport label definitions (shared by checked source, target, and effects):",
     ));
     rendered.push_str(
         "\n  none of them justifies the target: a store's effect summary carries a fact about a \

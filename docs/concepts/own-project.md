@@ -400,7 +400,7 @@ uint64 label_fit(uint64 length) {
 }
 
 uint64 label_measure(const char* src) {
-    requires cstr_readable(src);
+    requires click::cstr::readable(src);
     ensures result < 32;
 } by {
     execute();
@@ -439,7 +439,7 @@ click: preprocess label_copy.c: compiler exited with exit status: 1: In file inc
 ```
 
 The contracts are in the [standard library](../reference/library/index.md).
-`strlen` requires `cstr_readable(src)`: a readable, NUL-terminated string. The
+`strlen` requires `cstr::readable(src)`: a readable, NUL-terminated string. The
 caller must state that requirement. `external assumptions` lists every
 contract the result depends on but did not check: here, Click's `strlen`
 contract.
@@ -465,6 +465,9 @@ lists it among the external assumptions. See
 Try the remaining function, `label_copy`:
 
 ```click filename=label.click
+import click::integer;
+import click::machine_integer;
+
 verifying "label_fit.c";
 verifying "label_copy.c";
 
@@ -485,9 +488,7 @@ theorem label_source_prefix_viewable(bytes: uint8[], length: uint64, taken: uint
     ensures viewable(bytes[0u64..taken]) by {
         apply(uint64_less_than_to_integer(length, 18446744073709551615u64));
         apply(uint64_less_equal_to_integer(taken, length));
-        have to_integer(length) + 1 <= 18446744073709551615 by { auto; }
         apply(uint64_add_to_integer(length, 1u64));
-        have to_integer(taken) <= to_integer(length + 1u64) by { auto; }
         apply(uint64_to_integer_less_equal_implies_less_equal(taken, length + 1u64));
         apply(uint64_less_equal_transitive(taken, length + 1u64, 9223372036854775807u64));
         simp() using {
@@ -499,7 +500,7 @@ theorem label_source_prefix_viewable(bytes: uint8[], length: uint64, taken: uint
 }
 
 uint64 label_measure(const char* src) {
-    requires cstr_readable(src);
+    requires click::cstr::readable(src);
     ensures result < 32;
 } by {
     execute();
@@ -507,14 +508,14 @@ uint64 label_measure(const char* src) {
 }
 
 uint64 label_copy(char* dst, const char* src) {
-    requires cstr_readable(src);
+    requires click::cstr::readable(src);
     owns dst[0u64..32u64];
     requires separate(memory(dst[0u64..32u64]), memory(src[0u64..32u64]));
     ensures result < 32;
     ensures dst[result] == '\0';
 } by {
     step();
-    unfold(cstr_readable);
+    unfold(click::cstr::readable);
     have exists (len: uint64) {
         len < 18446744073709551615u64 and
         viewable(((uint8*)src)[0..len + 1u64]) and
@@ -553,8 +554,8 @@ uint64 label_copy(char* dst, const char* src) {
         extract(at(function.entry, ((uint8*)src)[len] == 0u8));
         simp();
     }
-    let length = step(strlen(src), {});
-    let taken = step(label_fit(length), {});
+    let { result: length } = step(strlen(src), {});
+    let { result: taken } = step(label_fit(length), {});
     have viewable(((uint8*)src)[0u64..length + 1u64]) by {
         transport(at(statement(2).entry, viewable(((uint8*)src)[0u64..length + 1u64])),
                   viewable(((uint8*)src)[0u64..length + 1u64])) using {
@@ -567,6 +568,9 @@ uint64 label_copy(char* dst, const char* src) {
 }
 ```
 
+The theorem cites `uint64` facts from the `click::integer` and
+`click::machine_integer` library modules, so the sidecar imports both; see
+[Click library imports](sidecars.md#click-library-imports).
 The copy needs a separate destination and source prefix, because `memcpy`
 requires its accessed ranges not to overlap. Its source may be `const`, as
 in the existing C. The destination's 32-byte ownership and `label_fit`'s bound

@@ -1292,6 +1292,77 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         ))
     }
 
+    /// Constructor exhaustion reduces a proposition to one universally
+    /// quantified implication per constructor. Payloads remain bound until
+    /// ordinary `intro` freshens them; no free case equation is admitted.
+    pub(crate) fn refine_proposition_algebraic_match(
+        &self,
+        value: &crate::kernel::AlgebraicTerm,
+        order: &[usize],
+    ) -> Result<Self, &'static str> {
+        let (goal, facts) = self
+            .focused_proposition()
+            .ok_or("match requires a proposition goal")?;
+        let equality = Proposition::Equal(
+            crate::kernel::Term::Algebraic(value.clone()),
+            crate::kernel::Term::Algebraic(value.clone()),
+        );
+        let reserved = crate::kernel::proposition_variables(goal.proposition())
+            .into_iter()
+            .chain(crate::kernel::proposition_variables(&equality))
+            .collect();
+        let first = facts
+            .fresh_universal_witness(&reserved)
+            .ok_or("match has exhausted fresh universal witness identities")?;
+        let mut variables = crate::kernel::KernelVariableGenerator::fresh_for(first.0, reserved);
+        let cases = crate::kernel::api::algebraic_constructor_case_equations(value, &mut || {
+            variables.next()
+        })
+        .ok_or("match requires a supported datatype with a nonempty constructor family")?;
+        if order.len() != cases.len()
+            || order
+                .iter()
+                .copied()
+                .collect::<std::collections::BTreeSet<_>>()
+                != (0..cases.len()).collect()
+        {
+            return Err("match must cover every constructor exactly once");
+        }
+        let obligations = order
+            .iter()
+            .map(|&index| {
+                let (case, binders) = &cases[index];
+                crate::instrumentation::record_deterministic_work(1 + binders.len());
+                binders.iter().rev().fold(
+                    Proposition::Implies(
+                        Box::new(case.clone()),
+                        Box::new(goal.proposition().clone()),
+                    ),
+                    |body, (var, sort)| Proposition::ForAll {
+                        var: *var,
+                        sort: sort.clone(),
+                        body: Box::new(body),
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        fn conjunction(items: &[Proposition]) -> Proposition {
+            if let [only] = items {
+                return only.clone();
+            }
+            let middle = items.len() / 2;
+            Proposition::And(
+                Box::new(conjunction(&items[..middle])),
+                Box::new(conjunction(&items[middle..])),
+            )
+        }
+        let mut refined =
+            super::PropositionObligation::new(conjunction(&obligations), goal.presentation.clone());
+        refined.outcome = goal.outcome.clone();
+        self.replace_focused_obligation(ProofObligation::Proposition(refined))
+            .map_err(|_| "match requires an open proposition goal")
+    }
+
     /// Open the exact conjuncts without introducing either as an assumption.
     pub(crate) fn split_proposition_both(
         &self,

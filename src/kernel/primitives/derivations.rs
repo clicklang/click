@@ -1174,7 +1174,9 @@ impl PureFactContext {
                 .bitvector64_equality_facts
                 .shares_root_with(&other.bitvector64_equality_facts)
             && self.prop_facts.ptr_eq(&other.prop_facts)
-            && std::sync::Arc::ptr_eq(&self.resource_compositions, &other.resource_compositions)
+            && self
+                .resource_compositions
+                .shares_root_with(&other.resource_compositions)
             && std::sync::Arc::ptr_eq(&self.memory_loadable_facts, &other.memory_loadable_facts)
             && std::sync::Arc::ptr_eq(
                 &self.memory_loadable_shape_facts,
@@ -1772,6 +1774,11 @@ fn c_statement_source_cost(statement: &CStatement) -> CSourceCost {
             cost.statement_steps = cost.statement_steps.saturating_add(1);
         }
         match statement {
+            CStatement::ScalarReferenceScope(scope) => {
+                cost.statement_steps = cost
+                    .statement_steps
+                    .saturating_add(scope.cleared_locals().len());
+            }
             CStatement::Skip
             | CStatement::EndScalarReference(_)
             | CStatement::EndAutomaticLifetimes { .. }

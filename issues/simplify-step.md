@@ -417,10 +417,13 @@ implicit `auto` disabled, 11 mdtests and 7 example sidecars fail: they are the
 claims whose bare simple tactics it proves. Expanding each failing claim with
 `click expand --claim` (repeated while another claim of the file still
 failed) gave files that all verify with the implicit `auto` disabled. This
-was one measurement on master after #1035; `click audit` checks a claim's
-expansion this way only when the claim also has a smart site, so a claim
-whose only automation is the implicit `auto` is not yet audited.
-`examples/rbtree-erase` was left out: it exhausts its loop budget on master.
+was one measurement on master after #1035; `examples/rbtree-erase` was left
+out, since it exhausts its loop budget on master. `click audit` now keeps it
+checked: a whole claim's expansion is cold-verified with the implicit `auto`
+off (that switch had been placed on the partial-selection path, where
+unselected automation still needs it), and a claim with no smart site that the
+implicit `auto` proves is found by verifying its source once and audited as a
+site of its own (`a_claim_proved_only_by_the_implicit_auto_is_audited`).
 
 ## Acceptance criteria
 

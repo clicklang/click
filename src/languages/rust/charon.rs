@@ -14,6 +14,7 @@ mod slice_into_iteration_tests;
 mod split_slices;
 #[cfg(test)]
 mod split_slices_tests;
+mod traits;
 
 use super::profile;
 use super::schema::{self as out, Expression as E, MirStatement as S, MirTerminator as T, Type};
@@ -39,70 +40,21 @@ struct TrialArtifact {
     data: charon_lib::export::CrateData,
 }
 
-pub(super) fn extract(executable: &Path, source: &Path, root: &Path) -> Result<Vec<u8>, String> {
-    extract_crate(executable, source, root, None, None)
-}
-
 pub(super) fn extract_crate(
-    executable: &Path,
+    runtime: &super::runtime::Runtime,
     source: &Path,
     root: &Path,
     crate_config: Option<&super::crate_inputs::CrateConfig>,
     sources: Option<&super::crate_inputs::SourceFiles>,
 ) -> Result<Vec<u8>, String> {
-    // The wrapper selects its compiled-in rustup toolchain. Keep only runtime
-    // selectors; no ambient rustc flags or Charon configuration can enter.
-    let environment: BTreeMap<_, _> = [
-        "PATH",
-        "HOME",
-        "RUSTUP_HOME",
-        "CARGO_HOME",
-        "RUST_MIN_STACK",
-    ]
-    .into_iter()
-    .filter_map(|key| {
-        std::env::var(key)
-            .ok()
-            .map(|value| (key.to_string(), value))
-    })
-    .collect();
+    let executable = &runtime.executable;
+    let environment = &runtime.environment;
     let limits = CompilerLimits {
         timeout: Duration::from_secs(30),
         max_stdout_bytes: 64 << 10,
         max_stderr_bytes: 64 << 10,
     };
-    let version = run_compiler(executable, &["version".into()], root, &environment, limits)?;
-    if String::from_utf8_lossy(&version.stdout).trim()
-        != format!(
-            "{} ({})",
-            profile::get().extractor_version,
-            profile::get().extractor_revision
-        )
-    {
-        return Err("Charon trial requires its pinned extractor revision".into());
-    }
-    let rustup = std::env::split_paths(environment.get("PATH").ok_or("Charon runtime needs PATH")?)
-        .map(|p| p.join("rustup"))
-        .find(|p| p.is_file())
-        .ok_or("Charon runtime needs rustup")?;
-    let compiler = run_compiler(
-        &rustup,
-        &[
-            "run".into(),
-            profile::get().toolchain.clone(),
-            "rustc".into(),
-            "-vV".into(),
-        ],
-        root,
-        &environment,
-        limits,
-    )?;
-    if !String::from_utf8_lossy(&compiler.stdout)
-        .lines()
-        .any(|line| line == format!("commit-hash: {}", profile::get().compiler_commit))
-    {
-        return Err("Charon trial requires its pinned compiler commit".into());
-    }
+    runtime.check(root, limits)?;
     let temp = tempfile::tempdir().map_err(|e| e.to_string())?;
     // Compile a private immutable snapshot, so even include_bytes! inputs cannot
     // change between dep-info, translation, and the final source recheck.
@@ -137,16 +89,13 @@ pub(super) fn extract_crate(
     if let Some(c) = crate_config {
         let dep = temp.path().join("inputs.d");
         let mut rustc_args = vec![
-            "run".into(),
-            profile::get().toolchain.clone(),
-            "rustc".into(),
             source.to_string_lossy().into_owned(),
             "--crate-type=lib".into(),
             format!("--crate-name={}", c.name),
             format!("--emit=dep-info={}", dep.display()),
         ];
         rustc_args.extend(flags.iter().cloned());
-        run_compiler(&rustup, &rustc_args, root, &environment, limits)?;
+        runtime.run_rustc(&rustc_args, root, limits)?;
         let observed =
             super::crate_inputs::dep_files(&std::fs::read(&dep).map_err(|e| e.to_string())?, root)?;
         let expected = c.files.iter().cloned().collect();
@@ -183,6 +132,9 @@ pub(super) fn extract_crate(
         }
     }
     args.extend(flags.iter().map(|flag| format!("--rustc-arg={flag}")));
+    if let Some(sysroot) = &runtime.sysroot {
+        args.push(format!("--rustc-arg=--sysroot={}", sysroot.display()));
+    }
     args.extend([
         "--".into(),
         source.to_string_lossy().into_owned(),
@@ -193,7 +145,7 @@ pub(super) fn extract_crate(
         "--crate-type".into(),
         "lib".into(),
     ]);
-    run_compiler(executable, &args, temp.path(), &environment, limits)?;
+    run_compiler(executable, &args, temp.path(), environment, limits)?;
     let metadata = std::fs::metadata(&artifact).map_err(|e| e.to_string())?;
     if !metadata.is_file() || metadata.len() > 4 << 20 {
         return Err("Charon trial artifact exceeds its file bound".into());
@@ -316,6 +268,7 @@ impl Adapter<'_> {
             mir: None,
             external: true,
             captures: 0,
+            implements: None,
             span: span(f.item_meta.span),
         })
     }
@@ -393,6 +346,9 @@ struct Adapter<'a> {
     /// The callable type of each type parameter of the function being
     /// adapted, `F: Fn(i32) -> i32`, by its index; `None` for one that is not.
     callable_parameters: std::cell::RefCell<Vec<Option<Type>>>,
+    /// The crate trait method implementations, by the interface function
+    /// each implements.
+    trait_impl_methods: BTreeMap<a::FunDeclId, String>,
 }
 impl Adapter<'_> {
     fn ty(&self, t: &a::Ty) -> Result<Type, String> {
@@ -433,11 +389,32 @@ impl Adapter<'_> {
                 .get(id.index())
                 .cloned()
                 .flatten()
-                .ok_or_else(|| unsupported("type parameter other than an Fn"))?,
+                .ok_or_else(|| unsupported("type parameter other than an Fn or a crate trait"))?,
+            // A reference to a type parameter bound by a crate trait is a
+            // reference to a value of unknown type.
+            a::TyKind::Ref(_, pointee, kind)
+                if matches!(pointee.kind(), a::TyKind::TypeVar(_))
+                    && self.ty(pointee)? == Type::TraitObject =>
+            {
+                Type::Reference {
+                    mutable: *kind == a::RefKind::Mut,
+                    pointee: Box::new(Type::TraitObject),
+                }
+            }
             a::TyKind::Ref(_, pointee, a::RefKind::Shared)
                 if matches!(pointee.kind(), a::TyKind::TypeVar(_)) =>
             {
                 self.ty(pointee)?
+            }
+            // So is a `&dyn Trait` of a crate trait.
+            a::TyKind::Ref(_, pointee, kind)
+                if matches!(pointee.kind(), a::TyKind::DynTrait(predicate)
+                    if self.dyn_interface_trait(predicate)?.is_some()) =>
+            {
+                Type::Reference {
+                    mutable: *kind == a::RefKind::Mut,
+                    pointee: Box::new(Type::TraitObject),
+                }
             }
             // A closure's state is the closure as a callable value.
             a::TyKind::Adt(r) if self.closure_state(r.id) => self.closure_state_type(r.id)?,
@@ -593,6 +570,20 @@ impl BodyAdapter<'_, '_> {
             && self.adapter.is_dyn_fn_call(pointer)
         {
             return Ok(None);
+        }
+        // Nor is a call through a crate trait.
+        if let u::TerminatorKind::Call { call, .. } = &t.kind {
+            match &call.func {
+                a::FnOperand::Regular(pointer)
+                    if self.adapter.interface_call(pointer)?.is_some() =>
+                {
+                    return Ok(None);
+                }
+                a::FnOperand::Dynamic(pointer) if self.adapter.vtable_call(pointer)?.is_some() => {
+                    return Ok(None);
+                }
+                _ => {}
+            }
         }
         if let Some(protocol::BorrowedProtocolCall::Next {
             source,
@@ -997,6 +988,36 @@ impl BodyAdapter<'_, '_> {
                     .map(|value| self.operand(value))
                     .collect::<Result<_, _>>()?,
             },
+            a::Rvalue::Ref { place, .. } if self.trait_object_reborrow(place)?.is_some() => {
+                self.trait_object_reborrow(place)?.expect("checked")
+            }
+            // A reference to a crate struct unsized to a `&dyn` crate trait
+            // is the same reference.
+            a::Rvalue::UnaryOp(
+                a::UnOp::Cast(a::CastKind::Unsize(source, _, a::UnsizingMetadata::VTable(..))),
+                op,
+            ) if matches!(self.adapter.ty(ty)?, Type::Reference { pointee, .. } if *pointee == Type::TraitObject) =>
+            {
+                let (
+                    Type::Reference { mutable, pointee },
+                    Type::Reference {
+                        mutable: unsized_mutable,
+                        ..
+                    },
+                ) = (self.adapter.ty(source)?, self.adapter.ty(ty)?)
+                else {
+                    return Err(unsupported("dyn unsize source"));
+                };
+                if !matches!(*pointee, Type::Record { .. })
+                    || mutable != unsized_mutable
+                    || self.adapter.ty(op.ty())? != self.adapter.ty(source)?
+                {
+                    return Err(unsupported(
+                        "dyn unsize of a value other than a crate struct reference",
+                    ));
+                }
+                self.operand(op)?
+            }
             a::Rvalue::Ref {
                 place,
                 kind,
@@ -1370,8 +1391,16 @@ impl BodyAdapter<'_, '_> {
                     a::FnOperand::Regular(ptr) if self.adapter.is_dyn_fn_call(ptr) => {
                         return self.dyn_fn_call(call, *target);
                     }
-                    a::FnOperand::Regular(ptr) => ptr,
+                    a::FnOperand::Regular(ptr) => {
+                        if let Some(interface) = self.adapter.interface_call(ptr)? {
+                            return self.interface_method_call(interface, call, *target);
+                        }
+                        ptr
+                    }
                     a::FnOperand::Dynamic(pointer) => {
+                        if let Some(interface) = self.adapter.vtable_call(pointer)? {
+                            return self.interface_method_call(interface, call, *target);
+                        }
                         return self.pointer_call(pointer, call, *target);
                     }
                 };
@@ -1402,6 +1431,8 @@ impl BodyAdapter<'_, '_> {
                     // types from its own bounds; a closure argument's type is
                     // compared with them.
                     let callee_inputs = self.adapter.callee_signature_types(callee)?;
+                    let callee_parameters =
+                        self.adapter.callable_type_parameters(&callee.generics)?;
                     if self.adapter.crate_mode
                         && (call.args.len() != callee_inputs.len()
                             || self.adapter.ty(&call.dest.ty)?
@@ -1411,18 +1442,35 @@ impl BodyAdapter<'_, '_> {
                     }
                     if self.adapter.crate_mode {
                         for (arg, ty) in call.args.iter().zip(&callee_inputs) {
-                            if self.adapter.ty(arg.ty())? != *ty {
+                            let argument = self.adapter.ty(arg.ty())?;
+                            // A reference to a crate struct is passed for a
+                            // reference to a crate trait's type parameter.
+                            let trait_object = matches!(
+                                (ty, &argument),
+                                (
+                                    Type::Reference { mutable, pointee },
+                                    Type::Reference { mutable: passed, pointee: value },
+                                ) if **pointee == Type::TraitObject
+                                    && mutable == passed
+                                    && matches!(**value, Type::Record { .. } | Type::TraitObject)
+                            );
+                            if argument != *ty && !trait_object {
                                 return Err(unsupported("source call operand type"));
                             }
                         }
                     }
                     if call.safety == a::CallSafety::Unsafe
                         || callee.signature.is_unsafe
-                        || !ptr.generics.types.iter().all(|ty| match ty.kind() {
-                            a::TyKind::Adt(r) => self.adapter.closure_state(r.id),
-                            a::TyKind::FnDef(_) => true,
-                            _ => false,
-                        })
+                        || ptr.generics.types.len() != callee_parameters.len()
+                        || !ptr.generics.types.iter().zip(&callee_parameters).all(
+                            |(ty, parameter)| match ty.kind() {
+                                a::TyKind::Adt(r) if self.adapter.closure_state(r.id) => true,
+                                a::TyKind::FnDef(_) => true,
+                                // A crate trait's type parameter is reached
+                                // only through the trait.
+                                _ => *parameter == Some(Type::TraitObject),
+                            },
+                        )
                     {
                         return Err(unsupported("unsafe or generic call"));
                     }
@@ -1600,6 +1648,7 @@ pub(super) fn decode_crate(
         closure_calls: BTreeMap::new(),
         closure_captures: BTreeMap::new(),
         callable_parameters: std::cell::RefCell::new(Vec::new()),
+        trait_impl_methods: BTreeMap::new(),
     };
     if crate_config.is_some() {
         adapter.record_closure_captures()?;
@@ -1612,6 +1661,11 @@ pub(super) fn decode_crate(
                 if !record.generics.types.is_empty() {
                     return Err(unsupported("generic closure"));
                 }
+                continue;
+            }
+            // A crate trait's vtable is not a record either: a call through
+            // it is a call of the trait's interface function.
+            if let a::TypeSource::VTable { .. } = &record.src {
                 continue;
             }
             if !record.generics.types.is_empty()
@@ -1648,6 +1702,19 @@ pub(super) fn decode_crate(
                 } else {
                     simple_name(&f.item_meta.name, &krate.crate_name)?
                 }
+            }
+            // A crate trait method's implementation, which a call through
+            // the trait reaches by the trait's interface function.
+            a::FunSource::TraitImpl {
+                trait_ref,
+                impl_ref,
+                item_id,
+                ..
+            } if adapter.interface_trait(trait_ref.id)? => {
+                let (name, interface) =
+                    adapter.trait_impl_method(f, impl_ref.id, trait_ref.id, *item_id)?;
+                adapter.trait_impl_methods.insert(id, interface);
+                name
             }
             a::FunSource::TraitImpl {
                 trait_ref,
@@ -2024,8 +2091,41 @@ pub(super) fn decode_crate(
             mir: Some(out::MirBody { locals, blocks }),
             external: false,
             captures: captures.as_ref().map_or(0, Vec::len),
+            implements: adapter.trait_impl_methods.get(id).cloned(),
             span: span(f.item_meta.span),
         });
+    }
+    // Each crate trait's methods are external functions, whose contracts are
+    // the interfaces. A call through the trait reaches whichever
+    // implementation the value has, so every one must be imported, to be
+    // checked against them.
+    for id in krate.trait_decls.iter_indexed().map(|(id, _)| id) {
+        if !adapter.interface_trait(id)? {
+            continue;
+        }
+        for function in adapter.interface_functions(id)? {
+            if used_names.contains(&function.name) {
+                return Err(unsupported("colliding proof function names"));
+            }
+            functions.push(function);
+        }
+    }
+    for imp in krate.trait_impls.iter() {
+        let id = imp.impl_trait.id;
+        if krate.trait_decls.get(id).is_none() || !adapter.interface_trait(id)? {
+            continue;
+        }
+        if imp.methods.iter().count() != krate.trait_decls[id].methods.iter().count()
+            || imp.methods.iter().any(|method| {
+                !adapter
+                    .trait_impl_methods
+                    .contains_key(&method.skip_binder.id)
+            })
+        {
+            return Err(unsupported(
+                "crate trait implementation method not imported",
+            ));
+        }
     }
     Ok(out::RustExport {
         schema: out::SCHEMA,

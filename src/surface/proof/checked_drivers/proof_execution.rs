@@ -966,7 +966,13 @@ fn advance_checked_linear_continuation<'a>(
         let next = if matches!(indexed.tactic, ProofTactic::CloseInvariants) {
             proof.apply_close_invariants_body(&[ProofTactic::Simp])?
         } else if let Some(step) = linear_execution_proof_step(&indexed.tactic) {
-            proof.apply_step_at(step, indexed.source_index)?
+            proof
+                .apply_step_at(step, indexed.source_index)
+                .inspect_err(|_| {
+                    if matches!(indexed.tactic, ProofTactic::TransportUsing { .. }) {
+                        proof.record_certification_failure_trace(proof.claim_label(), 0);
+                    }
+                })?
         } else if let ProofTactic::StepProved {
             step,
             proof: step_proof,
@@ -3110,7 +3116,13 @@ fn advance_focused_execution_arm<'a>(
         let next = if matches!(indexed.tactic, ProofTactic::CloseInvariants) {
             proof.apply_close_invariants_body(&[ProofTactic::Simp])?
         } else if let Some(step) = linear_execution_proof_step(&indexed.tactic) {
-            proof.apply_step_at(step, indexed.source_index)?
+            proof
+                .apply_step_at(step, indexed.source_index)
+                .inspect_err(|_| {
+                    if matches!(indexed.tactic, ProofTactic::TransportUsing { .. }) {
+                        proof.record_certification_failure_trace(proof.claim_label(), 0);
+                    }
+                })?
         } else if let ProofTactic::StepProved {
             step,
             proof: step_proof,
@@ -4595,7 +4607,11 @@ fn advance_linear_open_scope<'a>(
             continue;
         }
         if let Some(step) = linear_execution_proof_step(&indexed.tactic) {
-            scope = scope.apply_step(step)?;
+            scope = scope.apply_step(step).inspect_err(|_| {
+                if matches!(indexed.tactic, ProofTactic::TransportUsing { .. }) {
+                    scope.record_certification_failure_trace();
+                }
+            })?;
             continue;
         }
         if let ProofTactic::ApplyTheorem(application) = &indexed.tactic {

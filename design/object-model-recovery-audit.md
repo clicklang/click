@@ -992,3 +992,96 @@ All 47 heap controls pass (1.13s harness), including deterministic
 composite view at both free and reallocation. Formatting, mdBook, structural
 documentation lint and whitespace checks pass. Advisory Vale is unavailable;
 the full gate and nightly were not run locally.
+
+### Scalar field observations exclude alignment padding
+
+PR #1062 merged; final head `7acb5544a` is verified upstream. The next
+independent extraction addresses the source projector's scalar field names.
+A field's physical ownership span can include alignment padding before the
+next member. That span does not declare more scalar values. Name only the
+retained scalar or scalar-array element count, using its actual value width
+and checking that the complete observation fits inside the owned span.
+Ownership extents stay as declared.
+
+The recovery checkpoint `f53b66c39` also reconstructs the owned C input's
+parametric observations and attaches read cores to its exact owner. Its 98
+focused and 341 broader controls pass; the next modular application repair
+is separate from this source-only scalar extraction. The last normal archive
+audit remains 42/52, and no archive activation is claimed here.
+
+All 13 focused projection controls pass, including owned/viewed scalar padding
+and scalar-array counts at 0/16/64/256 sizes. All 52 normal example projects
+pass (328.71s harness, concurrent recovery compilation; not a performance
+comparison). Formatting, mdBook, structural documentation lint and whitespace
+checks pass. Advisory Vale is unavailable; the full gate and nightly were not
+run locally. The initial extraction referenced an archive-only type helper;
+this delivery uses master's existing array variants.
+
+The first CI run exposed a guarded recursive-view unfold regression. The
+rewrite compared read descriptions using actual supplier merging, which correctly
+refuses to merge separately bound loans. Description equivalence now checks
+coverage of the existing read cores without changing any supplier or loan binding.
+Owned resources and before/after loan consistency still require their existing
+checks. A real-loan regression covers contiguous coverage, gaps, excess extent,
+absence of ownership grants, unchanged bindings, and unrelated ranges at
+0/16/64/256 sizes. All 413 selected kernel controls and all 3,979 normal Markdown
+fixtures pass. Clippy with warnings denied also passes. These checks follow the
+earlier 52-example run; the full gate and nightly were not run locally.
+
+### Modular C prefix compatibility control
+
+PR #1063 merged; both pushed commits `d0900a8ba` and `fc69c7a10` are
+verified upstream. All 711 scaling tests also pass with the gate's 8 MiB Rust
+test stack setting; the initial run omitted that setting and overflowed a Rust
+importer test.
+
+The next small delivery retains the unchanged vector-push C body, storage
+resource and contract, with a caller that exports its prefix guarantee. The
+caller uses `simp` to bridge the callee's returned read observations; exact
+`assumption` alone is insufficient. Fresh verification, expansion, rewritten
+verification and retained rechecking pass on current upstream. The same control
+passes all four modes in recovery checkpoint `417678854`. This is a shared C
+compatibility baseline, not activation of the recovery model. The archive's
+grow-then-push proof and ten-failure audit remain open.
+
+### Retain checked spellings in nested proposition proofs
+
+PR #1070 merged; final head `2939473e5` is verified upstream. The next
+independent extraction retains the source-to-kernel spelling of checked
+`transport` and `instantiate` conclusions inside immutable fixed-state and
+return-outcome proposition scopes. These scopes lack the frontier/outcome
+carrier that already retained the spellings for outer proofs. A later rewrite
+can otherwise repeat the C expression's memory reasoning.
+
+A dedicated persistent proof-local cache carries normalized spellings, separate
+from authored forms used for certificate printing. Rewrites keep authored lookup
+precedence and presentation, substitute binders only for internal lookup, and
+still require an available checked fact. Instantiation freezes its evaluated argument so historical
+expressions cannot evaluate it at a different point. Unsupported spellings
+remain optional, and new goals still lower against their actual state. No
+resource, pointer-origin or object authority is introduced.
+
+Both new deterministic controls pass at 0/16/64/256 unrelated-fact sizes;
+retained lookup costs less than re-lowering. They reject a spelling without
+its fact, a missing instantiation guard, and reuse after rebinding a proof name.
+All 107 selected logical/expansion/index controls pass on current upstream.
+The initial normal Markdown audit passed all 3,990 fixture records before
+the CI correction below. The recovery return-frontier
+repair is checkpointed at `3712a8fb2`; the original vector remains incomplete,
+and the last archive audit remains 42/52.
+
+CI caught a printable-certificate regression in the original augmented-tree
+`compute_size_restores_subtree_size` proof. Normalized internal values had
+leaked into authored source selection and rewritten goal presentation. The
+lookup cache is now separate, and rewrites preserve their original written
+equality when presenting the successor. A third regression pins the authored
+proof-local name in that successor; the first two also pin that authored
+source-index storage is unchanged. All 46 normal fixed-state recovery controls
+pass with the gate stack setting (16 nightly tests skipped), and the exact
+upstream sidecar that failed CI now verifies unchanged. The initial broader
+recovery run omitted the gate stack setting and overflowed a deep case test;
+its gate-setting rerun passes. PR #1081 merged, and both pushed commits `346b87a69` and `76b262027`
+are verified upstream. After the correction, all 52 normal example projects,
+46 normal fixed-state controls, and library Clippy with warnings denied pass.
+The full Markdown corpus was not repeated after that correction. These are
+upstream checks; the recovery archive still has ten known example failures.

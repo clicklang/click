@@ -4,16 +4,34 @@ use super::super::borrow_frontiers::MirPoint;
 use super::super::borrow_frontiers::lease_forest::{CheckedForest, certify};
 use super::*;
 
+pub(super) struct Prepared {
+    forest: CheckedForest,
+    pub scopes: BTreeMap<usize, std::sync::Arc<ScalarReferenceScopePlan>>,
+}
 pub(super) fn prepare(
     function: &Function,
     identity: Option<&str>,
     joins: Option<&[usize]>,
-) -> Option<CheckedForest> {
-    certify(function, identity, joins?)
+) -> Option<Prepared> {
+    let forest = certify(function, identity, joins?)?;
+    let mut scopes = BTreeMap::new();
+    for (block, scope) in &forest.scopes {
+        let locals = scope
+            .locals
+            .iter()
+            .map(|(name, ty)| Some((name.clone(), scalar_type(ty).ok()?.to_kernel_type())))
+            .collect::<Option<Vec<_>>>()?;
+        scopes.insert(
+            *block,
+            ScalarReferenceScopePlan::new(scope.family.clone(), *block, scope.join, locals),
+        );
+    }
+    Some(Prepared { forest, scopes })
 }
 
-pub(super) fn endings(forest: &CheckedForest, point: MirPoint) -> CStatement {
-    forest
+pub(super) fn endings(prepared: &Prepared, point: MirPoint) -> CStatement {
+    prepared
+        .forest
         .endings
         .get(&point)
         .into_iter()
@@ -29,11 +47,11 @@ pub(super) fn endings(forest: &CheckedForest, point: MirPoint) -> CStatement {
 }
 
 pub(super) fn decorate(
-    forest: &CheckedForest,
+    prepared: &Prepared,
     point: MirPoint,
     statement: &mut CStatement,
 ) -> Result<(), String> {
-    if let Some(birth) = forest.births.get(&point) {
+    if let Some(birth) = prepared.forest.births.get(&point) {
         let mut count = 0;
         let mut pending = vec![&mut *statement];
         while let Some(selected) = pending.pop() {
@@ -80,7 +98,7 @@ pub(super) fn decorate(
     *statement = c_seq(
         original,
         endings(
-            forest,
+            prepared,
             MirPoint {
                 block: point.block,
                 statement: point.statement + 1,
@@ -161,6 +179,26 @@ mod tests {
                 ),
                 "nested_branch_update",
                 2,
+            ),
+            (
+                include_bytes!(
+                    "../../../../design/charon-trial/gate-fixtures/scalar-arm-scopes/borrow.ullbc"
+                ),
+                include_bytes!(
+                    "../../../../design/charon-trial/gate-fixtures/scalar-arm-scopes/borrow.rs"
+                ),
+                "scoped_update",
+                2,
+            ),
+            (
+                include_bytes!(
+                    "../../../../design/charon-trial/gate-fixtures/scalar-arm-scopes/borrow.ullbc"
+                ),
+                include_bytes!(
+                    "../../../../design/charon-trial/gate-fixtures/scalar-arm-scopes/borrow.rs"
+                ),
+                "nested_scopes",
+                4,
             ),
         ];
         for &(artifact, source, function, expected) in fixtures {

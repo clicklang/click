@@ -2,7 +2,7 @@
 
 A cast that leaves the pointer unchanged, to `const char *` or to
 `unsigned char *` from `uint8 *`, names the same storage, so the caller's
-`cstr_readable(bytes)` still discharges `strlen`'s precondition.
+`cstr::readable(bytes)` still discharges `strlen`'s precondition.
 
 ```c filename=strlen_casts.c
 uint64 through_const_char(uint8 bytes[]) {
@@ -22,7 +22,7 @@ uint64 through_unsigned_char(uint8 bytes[]) {
 verifying "strlen_casts.c";
 
 uint64 through_const_char(uint8 bytes[]) {
-    requires cstr_readable(bytes);
+    requires click::cstr::readable(bytes);
     ensures bytes[result] == '\0';
 } by {
     execute();
@@ -30,7 +30,7 @@ uint64 through_const_char(uint8 bytes[]) {
 }
 
 uint64 through_unsigned_char(uint8 bytes[]) {
-    requires cstr_readable(bytes);
+    requires click::cstr::readable(bytes);
     ensures bytes[result] == '\0';
 } by {
     execute();

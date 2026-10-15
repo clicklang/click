@@ -354,9 +354,6 @@ tactic certify_sized_context(child: struct rb_node*, root: struct rb_node*,
             }
             let checked = fold(sized_context_at(child, root, stop, previous), { model: SizedContext::Left(node, parent, color, value, sibling_model, up_model) }, { metadata: metadata, sibling: sibling, up: up });
             have checked.model == old(path.model) by { assumption(); }
-            have sized_context_valid(checked.model, to_integer(previous)) == 1 by {
-                rewrite(checked.model == SizedContext::Left(node, parent, color, value, sibling_model, up_model)); assumption();
-            }
         },
         SizedContext::Right(node, parent, color, value, sibling_model, up_model) => {
             let { metadata: metadata, sibling: sibling, up: up } = unfold(path);

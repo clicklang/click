@@ -61,6 +61,10 @@ impl LoanLedger {
 }
 
 impl CState {
+    pub(in crate::kernel) fn has_local_reference_scope(&self) -> bool {
+        self.loan_ledger()
+            .is_some_and(|ledger| ledger.storage.data.local_reference_scope.is_some())
+    }
     pub(in crate::kernel) fn has_local_scalar_references(&self) -> bool {
         self.loan_ledger()
             .is_some_and(|ledger| match self.loan_participant() {

@@ -50,10 +50,6 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                         rewrite(walk.model == SizedWalk::Active(previous, sub_model, path_model));
                         unfold(sized_walk_root(SizedWalk::Active(previous, sub_model, path_model))); normalize();
                     }
-                    have sized_walk_rank(walk.model) == sized_context_depth(sized_path_context(path_model)) + 1 by {
-                        rewrite(walk.model == SizedWalk::Active(previous, sub_model, path_model));
-                        unfold(sized_walk_rank(SizedWalk::Active(previous, sub_model, path_model))); normalize();
-                    }
                     apply(sized_context_depth_nonnegative(sized_path_context(path_model)));
                     apply(sized_plug_contains_focus(sized_path_context(path_model), sub_model));
                     have rb_subtree_size(sized_shape(sized_plug(sized_path_context(path_model), sub_model))) <= 2147483647 by {
@@ -70,16 +66,9 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                     step(); step(); step(); step(); step(); step();
                     let { result: child_node } = step();
                     mark before_recompute;
-                    have at(before_recompute, dirty.model) == sub_model by { assumption(); }
                     let { result: status, checked: repaired } = step(RecomputeTree, { tree: dirty });
                     apply(sized_parent_is_shape(sub_model, sized_context_parent(sized_path_context(path_model), stop)));
                     apply(sized_parent_is_shape(repaired.model, sized_context_parent(sized_path_context(path_model), stop)));
-                    have sized_parent_is(repaired.model, sized_context_parent(sized_path_context(path_model), stop)) == 1 by {
-                        rewrite(sized_parent_is(repaired.model, sized_context_parent(sized_path_context(path_model), stop)) == rb_parent_is(sized_shape(repaired.model), sized_context_parent(sized_path_context(path_model), stop)));
-                        rewrite(sized_shape(repaired.model) == sized_shape(sub_model));
-                        rewrite(rb_parent_is(sized_shape(sub_model), sized_context_parent(sized_path_context(path_model), stop)) == sized_parent_is(sub_model, sized_context_parent(sized_path_context(path_model), stop)));
-                        assumption();
-                    }
                     apply(sized_plug_same_shape(sized_path_context(path_model), sub_model, repaired.model));
                     if status != 0 {
                         have sized_value(repaired.model) == previous by {
@@ -101,15 +90,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                                 have sized_parent_is(SizedTree::Node(identity, parent, color, value, left_model, right_model), sized_context_parent(sized_path_context(path_model), stop)) == 1 by {
                                     rewrite(SizedTree::Node(identity, parent, color, value, left_model, right_model) == repaired.model); assumption();
                                 }
-                                have parent == sized_context_parent(sized_path_context(path_model), stop) by {
-                                    if parent == sized_context_parent(sized_path_context(path_model), stop) { assumption(); } else {
-                                        have sized_parent_is(SizedTree::Node(identity, parent, color, value, left_model, right_model), sized_context_parent(sized_path_context(path_model), stop)) != 1 by {
-                                            unfold(sized_parent_is(SizedTree::Node(identity, parent, color, value, left_model, right_model), sized_context_parent(sized_path_context(path_model), stop)));
-                                            normalize() using { not (parent == sized_context_parent(sized_path_context(path_model), stop)); }
-                                        }
-                                        contradiction(sized_parent_is(SizedTree::Node(identity, parent, color, value, left_model, right_model), sized_context_parent(sized_path_context(path_model), stop)) == 1);
-                                    }
-                                }
+                                have parent == sized_context_parent(sized_path_context(path_model), stop) by auto;
                                 let { metadata: metadata, left: left, right: right } = unfold(repaired);
                                 step(); step();
                                 have rb == parent by { normalize(); }

@@ -652,7 +652,7 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
             requires known_len < 18446744073709551615u64;
             requires defined(known_len + 1u64);
             requires viewable(haystack[0..known_len + 1u64]);
-            requires cstr_readable(haystack);
+            requires cstr::readable(haystack);
             views haystack[0..known_len + 1u64];
             ensures result < 18446744073709551615u64;
         } by {
@@ -11969,6 +11969,8 @@ fn outcome_predicate_unfold_provenance_survives_nested_have_expansion() {
         }
     "#;
     let click_source = r#"
+        import click::permutation;
+
         verifying "sort_three_cells.c";
 
         int32 sort_three_cells(int32 p[3]) {
@@ -17489,12 +17491,17 @@ fn a_written_loop_phase_expands_alone_by_label_and_by_line() {
     let function = "loop_entry_guard_before_written_implication";
     let label = format!("{function}.loop(0).preserve");
     let expanded = expand_c0_claim_source_by_label(&click, &sources, &label).unwrap();
+    // The written-out phase cites `click::machine_integer` theorems, so
+    // expansion adds that import ahead of the otherwise unchanged source.
+    let body = expanded
+        .strip_prefix("import click::machine_integer;\n")
+        .unwrap_or_else(|| panic!("expansion adds the cited import\n{expanded}"));
     let written = "preserve by simp;";
     let start = click.find(written).unwrap();
     let end = start + written.len();
-    assert!(expanded.starts_with(&click[..start]), "{expanded}");
-    assert!(expanded.ends_with(&click[end..]), "{expanded}");
-    let phase = &expanded[start..expanded.len() - (click.len() - end)];
+    assert!(body.starts_with(&click[..start]), "{expanded}");
+    assert!(body.ends_with(&click[end..]), "{expanded}");
+    let phase = &body[start..body.len() - (click.len() - end)];
     assert!(phase.starts_with("preserve by {"), "{phase}");
     assert!(!phase.contains("simp"), "{phase}");
     verify_c0_sources(&expanded, &sources).unwrap();
@@ -18273,4 +18280,40 @@ fn rejoined_model_match_in_open_expands_without_moving_the_continuation_inside()
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/surface/tests/expansion_tests.rs");
+}
+
+#[test]
+fn retained_project_recheck_ignores_shifted_import_positions_but_checks_paths() {
+    let source = r#"import "helper.click";
+theorem selected(x: int32) { ensures x == x by { normalize(); } }
+theorem untouched() { ensures 1 == 1 by { normalize(); } }
+"#;
+    let project = ClickProject::new(
+        "main.click",
+        [
+            ClickModuleSource::new("main.click", source, ["helper.click".to_owned()]),
+            ClickModuleSource::new("helper.click", "spec enum Helper { Empty }", []),
+        ],
+    );
+    let expanded = format!("import click::integer;\n{source}");
+    let position = expansion::position_at_offset(&expanded, expanded.find("ensures x").unwrap());
+    let (session, _) = C0VerificationSession::new_project(&project, &[]).unwrap();
+    session
+        .verify_at_project(&expanded, position.line, position.column)
+        .expect("an added library import only shifts the file import's source position");
+    let changed_contract = expanded.replace("ensures 1 == 1", "ensures 1 == 2");
+    assert!(
+        session
+            .verify_at_project(&changed_contract, position.line, position.column)
+            .unwrap_err()
+            .to_string()
+            .contains("outside the selected proof unit")
+    );
+    let changed_path = expanded.replace("helper.click", "other.click");
+    assert!(
+        session
+            .verify_at_project(&changed_path, position.line, position.column)
+            .is_err(),
+        "a changed import path must still be rejected"
+    );
 }

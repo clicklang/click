@@ -24,7 +24,7 @@ int32 compare_self(uint8 bytes[]) {
 verifying "strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.c";
 
 uint64 empty_length(uint8 text[]) {
-    requires cstr_readable(text);
+    requires click::cstr::readable(text);
     requires text[0] == '\0';
     ensures result == 0u64 by { execute(); simp(); }
 }

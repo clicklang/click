@@ -438,6 +438,7 @@ fn prove_claims_by_checked_tactics(
             assumptions: &assumptions_from_propositions(&pure_facts),
             checked_entry_state: None,
         }),
+        None,
     )?;
     let state = canonical_claim_caller_state(
         state,
@@ -1636,6 +1637,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     assumptions: &assumptions_from_propositions(entry_pure_facts.as_slice()),
                     checked_entry_state: proof_context.constants.function_entry_state.as_ref(),
                 }),
+                None,
             )
         })
         .transpose()?;
@@ -2745,7 +2747,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                             source: source.clone(),
                                             target: target.clone(),
                                             premises: premises.clone(),
-                                        })?
+                                        })
                                     } else {
                                         prepared.search_fixed_state_fact_transport(
                                             source,
@@ -2753,8 +2755,14 @@ pub(super) fn finish_ordered_proof<'a>(
                                             candidates
                                                 .clone()
                                                 .expect("smart transport gathered candidates"),
-                                        )?
-                                    };
+                                        )
+                                    }
+                                    .inspect_err(|_| {
+                                        prepared.record_certification_failure_trace(
+                                            &proof_label,
+                                            path_index,
+                                        );
+                                    })?;
                                     let checked_facts = transported.checked_facts().to_vec();
                                     let certificate = transported.certificate_since(&before)?;
                                     outcome_proof = Some(transported);

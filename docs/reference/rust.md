@@ -7,10 +7,12 @@ flow path into Click's shared execution, memory, and certificate rules.
 Verification uses the same sidecars, tactics, and bounded engine as C and C++.
 [Language coverage](coverage.md) compares the Rust subset with C and C++.
 
-Charon is the extraction backend; `scripts/build-charon.sh` builds the pinned
-version. Rust support is experimental: it needs a repository checkout and a
-separately built importer, and covers the subset listed in
-[Language coverage](coverage.md).
+Charon is the extraction backend. On `x86_64-unknown-linux-gnu`, releases provide
+an optional pinned frontend and compiler runtime through
+`click install VERSION --rust`. Rust support remains experimental and covers
+the subset listed in [Language coverage](coverage.md). Contributor builds use
+`scripts/build-charon.sh`; ordinary verification of committed locks needs
+neither Charon nor rustc.
 
 The working example is
 [`examples/basic-rust/borrow.rs`](https://github.com/clicklang/click/blob/master/examples/basic-rust/borrow.rs),
@@ -20,6 +22,36 @@ It covers a scalar branch, a mutable reference helper that writes through a
 local reborrow and then reuses its parent, and a caller proving a struct field's
 final value while preserving its other field. A shared field borrow remains
 stable while the disjoint field is mutated.
+
+## Installed Rust frontend
+
+`click install VERSION --rust` installs a bundle at
+`CLICK_HOME/versions/VERSION/frontends/rust` (with the usual default
+`CLICK_HOME`). The bundle's bounded `frontend.json` explicitly identifies
+Charon, its paired driver, rustc, and the sysroot. Extraction checks the running
+Click version, pinned Charon version/revision, compiler commit and host before
+compiling. The Charon wrapper's paired-driver layout is validated against the
+explicit driver entry. The bundle supplies its own target libraries and loader
+paths; installed extraction does not search for rustup or use ambient compiler
+flags. A missing or mismatched bundle gives an installation/version diagnostic.
+Only the Linux x86-64 GNU host is packaged initially.
+
+Rust project units use this frontend automatically. `CLICK_CHARON` is a
+contributor override: a bundle directory selects that bundle, while an
+executable selects the existing source-build path and its rustup-managed pinned
+toolchain. Legacy per-sidecar `exporter` paths remain supported; omitting that
+field selects the same override/installed resolution as project units. The
+shared project schema and lock format are described in
+[project configuration](../concepts/own-project.md). The existing lock identity
+formula remains unchanged.
+
+The release workflow builds Charon with `scripts/build-charon.sh --release`
+and assembles the bundle with `scripts/package-rust-frontend.py`, including its
+compiler libraries and license files. The installed-layout regression relocates
+that bundle and an installed Click, extracts and verifies the unchanged basic
+Rust example with crate-qualified sidecar names and the existing adler2
+saved-checksum proof, repeats locking byte-for-byte,
+checks mismatched identity refusal, then verifies after removing the frontend.
 
 ## Reproduce the example
 
@@ -47,7 +79,7 @@ selects a written tactic within that proof. Only the named proof is checked;
 other function contracts remain interfaces. Tracing validates the ordinary
 import lock and does not rerun the compiler.
 
-The import configuration selects one `.rs` file, the exporter executable,
+The legacy import configuration selects one `.rs` file, an optional development exporter,
 and an artifact output. Refresh runs the compiler with a bounded process and
 writes the artifact and input lock. Ordinary verification loads those files
 without executing the compiler. Source, configuration, artifact, or profile
@@ -70,7 +102,6 @@ explicit crate root and compiler configuration:
   "language": "rust",
   "target": "x86_64-unknown-linux-gnu",
   "source": "src/lib.rs",
-  "exporter": "../../../target/charon/debug/charon",
   "artifact": "crate.ullbc",
   "crate": {
     "name": "adler2",
@@ -337,7 +368,10 @@ An operator-trait method prints in Rust's qualified form: the method of
 `<adler2::algo::U32X4 as MulAssign<u32>>::mul_assign`, a reference or by-value
 argument reads `<T as AddAssign<&T>>::add_assign` or
 `<T as AddAssign<T>>::add_assign`, and `impl Default for adler2::Adler32` is
-`<adler2::Adler32 as Default>::default`. `--claim` and `--trace-proof` take
+`<adler2::Adler32 as Default>::default`. A crate trait is named by its path,
+and its method's implementation prints as
+`<trait_methods::Square as trait_methods::Shape>::area` ([trait method
+interfaces](#trait-method-interfaces)). `--claim` and `--trace-proof` take
 that form, the importer's name, or a `FILE:LINE` location in the sidecar
 ([claim labels](cli/expand.md#claim-labels)). The importer names an inherent method by the
 module its `impl` block is in, which Rust does not write: the method is
@@ -383,6 +417,10 @@ refused. Click's own words (`requires`, `ensures`, `owns`, `result`, the
 tactics) are the same in every language.
 
 ### Function pointers and named contracts
+
+A sidecar callable parameter must match the source signature. A mismatch
+reports both types in C spelling, such as `uint32 (*)(uint32)` against
+`int32 (*)(int32)`.
 
 A parameter of a safe Rust-ABI function-pointer type of scalar parameters and
 a scalar or unit result, `f: fn(i32) -> i32`, is a callback, as in C. A named
@@ -447,6 +485,52 @@ verified body covers every instantiation. A type parameter with any other
 bound, `impl FnMut` and `impl FnOnce`, generic function items, and
 non-scalar parameters or results are refused
 ([`design/charon-trial/impl-fn`](https://github.com/clicklang/click/blob/master/design/charon-trial/impl-fn/closure.click)).
+
+### Trait method interfaces
+
+A method of a crate trait, `pub trait Shape { fn area(&self, scale: i32) ->
+i32; }`, has an interface: the sidecar's `trait` block states it, with the
+trait named by its path and no proof, as an `extern fn` is declared,
+`trait trait_methods::Shape { fn area(&self, scale: i32) -> i32 { requires 0
+<= scale and scale <= 1000; ensures scale < result and result <= 3001; } }`.
+
+A call through a trait bound, `shape.area(scale)` for `shape: &T` and
+`T: Shape`, or through a `&dyn Shape`, is checked against the interface, as
+a call of an `extern fn` is: its caller establishes the `requires` and has
+only the `ensures`. The head writes a bound parameter as the source does,
+`fn trait_methods::total<T: trait_methods::Shape>(shape: &T, scale: i32)`
+or `shape: &dyn trait_methods::Shape`. A call on a known type,
+`square.area(scale)`, is a call of that type's implementation, under its
+own contract.
+
+Each implementation is written in an `impl` block naming the trait and the
+type by their paths, `impl trait_methods::Shape for trait_methods::Square
+{ fn area(&self, scale: i32) -> i32 { ... } by { ... } }`, and verified as
+any method is. It inherits the interface: the interface's `ensures` join its
+own, labeled `<trait_methods::Circle as
+trait_methods::Shape>::area.interface_ensures_0`, and its proof establishes
+them all; an implementation that writes no `requires` takes the
+interface's. It names its parameters as the interface does, so the
+inherited clauses read the same. It may accept more calls than the
+interface, a wider precondition, and its `requires` are checked to follow
+from the interface's by the check that forms a named contract at `&f`,
+which reads each clause exactly or decides a bare comparison: `requires 0
+<= scale; requires scale <= 2000;` follows from `requires 0 <= scale and
+scale <= 1000;`. An implementation whose `requires` do not follow is
+refused, naming both, as is one with no contract. Without a `trait` block,
+a call through the trait has no contract.
+
+The interface's receiver is a reference to a value of a type it does not
+know: the interface reads nothing through `self` and holds none of its
+resources, so an implementation whose contract needs the receiver's
+fields does not refine it. Every implementation a call can reach is in the
+import, since a generic call names its instance's implementation and a
+`dyn` coercion its vtable, and each one is checked. The importer refuses a
+crate trait with generics, associated items, supertraits, or default
+methods, a method that is generic or takes no `&self` or `&mut self`,
+non-scalar parameters or results, an implementation for anything but a
+crate struct, and a generic implementation
+([`design/charon-trial/trait-methods`](https://github.com/clicklang/click/blob/master/design/charon-trial/trait-methods/shapes.click)).
 
 ### `extern` block functions
 
@@ -882,17 +966,23 @@ source identities, duplicate endings and parent endings with live children are
 refused. Closing the outermost lease returns the original owned occurrence and
 preserves current memory. Expired aliases cannot use that returned owner.
 
-Across an `if`, both arms preserve the exact live loan ledger. Scalar reads,
-writes and calculations, including nested branches and condition reads, keep
-the borrow live through the common continuation. An arm's last use ends at the
-outermost enclosing continuation; a later use can extend that ending further.
-Nested borrows end innermost first. Births and reference copies or reassignment
-must occur on the shared path outside branch arms. Reusing a suspended parent
-in just one arm requires branch-specific recovery and remains outside this
-protocol.
+Across an `if`, scalar reads, writes and calculations can keep a borrow live
+through the common continuation. A use in a deeper arm extends that borrow to
+the corresponding common continuation; later uses can extend it further.
+Nested borrows end innermost first.
+
+Arm-local reborrows and reference copies are also supported when every such
+reference stays inside its defining arm. Each branch scope checkpoints the
+entry ledger, ends all references born there, verifies restoration of the exact
+original owned occurrences, and clears the private arm-local reference slots
+before restoring the exact entry ledger. Current writes are retained. Nested
+scopes may borrow an entry reference temporarily, preserving it at scope exit.
+The existing join still requires identical live loan state. Reference IDs are
+never reused, and old copies remain invalid after scope reconciliation.
 
 The source and sidecars require no additional lifetime annotations. Source
-observations remain read-only. Branch-local births or reference reassignment,
+observations remain read-only. Reference assignments to an existing outer
+binding, references escaping an arm, conditionally live borrow recovery,
 early returns, shared borrow graphs, aggregate or addressable reference
 transport, calls and loops still need source integration. Functions outside
 the activated subset retain their existing lowering and have no local lease

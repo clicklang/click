@@ -2338,44 +2338,40 @@ pub(in crate::kernel) fn owned_composition_store_separated_evidence(
         "general pointer distinctness",
         "composition-owned store separation",
         || {
-            assumptions.store_compositions().find_map(|resources| {
-                crate::instrumentation::record_deterministic_work(1);
-                let member = |pointer: &Pointer| {
-                    // A reconstructed resource may use a proof pointer for
-                    // the same object that C names through a parameter.
-                    // Probe only syntactic base prefixes and their exact
-                    // aliases; every hit still needs checked membership.
-                    let mut base = pointer.clone();
-                    loop {
-                        let found = std::iter::once(&base)
-                            .chain(assumptions.exact_pointer_aliases(&base))
-                            .find_map(|candidate| {
-                                resources.owned_memory_members_with_base(candidate).find(
-                                    |(_, range)| {
-                                        PointerInRangeEvidence::for_pointer(
-                                            pointer,
-                                            range,
-                                            assumptions,
-                                        )
-                                        .is_some()
-                                    },
-                                )
-                            });
-                        if found.is_some() {
-                            return found;
-                        }
-                        base.offset = match &base.offset {
-                            PointerOffsetTerm::Add(left, _) => (**left).clone(),
-                            PointerOffsetTerm::Constant(value) if *value != 0 => {
-                                PointerOffsetTerm::Constant(0)
-                            }
-                            _ => break,
-                        };
-                    }
-                    resources.owned_memory_member_containing_pointer(pointer)
+            let write_bases = store_member_probe_bases(write, assumptions);
+            let load_bases = store_member_probe_bases(pointer, assumptions);
+            let compositions: Box<dyn Iterator<Item = &ResourceContext>> =
+                match assumptions.store_owners() {
+                    Some(owners) => Box::new(owners.iter()),
+                    // Only a composition listed under a key of both objects'
+                    // members can hold the pair (`CompositionMemberIndex`).
+                    None => Box::new(
+                        assumptions
+                            .composition_members
+                            .listed_under(
+                                write_bases.iter().chain(&load_bases),
+                                [&write.block, &pointer.block],
+                            )
+                            .into_iter(),
+                    ),
                 };
-                let (write_entry, left) = member(write)?;
-                let (load_entry, right) = member(pointer)?;
+            compositions.into_iter().find_map(|resources| {
+                crate::instrumentation::record_deterministic_work(1);
+                let member = |pointer: &Pointer, bases: &[Pointer]| {
+                    bases
+                        .iter()
+                        .find_map(|candidate| {
+                            resources.owned_memory_members_with_base(candidate).find(
+                                |(_, range)| {
+                                    PointerInRangeEvidence::for_pointer(pointer, range, assumptions)
+                                        .is_some()
+                                },
+                            )
+                        })
+                        .or_else(|| resources.owned_memory_member_containing_pointer(pointer))
+                };
+                let (write_entry, left) = member(write, &write_bases)?;
+                let (load_entry, right) = member(pointer, &load_bases)?;
                 if write_entry == load_entry {
                     return None;
                 }
@@ -2404,6 +2400,25 @@ pub(in crate::kernel) fn owned_composition_store_separated_evidence(
             })
         },
     )
+}
+
+/// The bases a store-separation member lookup probes for `pointer`, in
+/// order: each syntactic base prefix followed by its exact aliases. A
+/// reconstructed resource may use a proof pointer for the same object that C
+/// names through a parameter; every hit still needs checked membership.
+fn store_member_probe_bases(pointer: &Pointer, assumptions: &PureFactContext) -> Vec<Pointer> {
+    let mut bases = Vec::new();
+    let mut base = pointer.clone();
+    loop {
+        bases.push(base.clone());
+        bases.extend(assumptions.exact_pointer_aliases(&base).cloned());
+        base.offset = match &base.offset {
+            PointerOffsetTerm::Add(left, _) => (**left).clone(),
+            PointerOffsetTerm::Constant(value) if *value != 0 => PointerOffsetTerm::Constant(0),
+            _ => break,
+        };
+    }
+    bases
 }
 
 pub(in crate::kernel) fn typed_ranges_disjoint_from_pointer_evidence(
@@ -6400,7 +6415,7 @@ mod borrow_partition_tests {
         assert!(!witness.checks(&step, read.base(), 4, &missing));
         // Retain the candidate index but withdraw its authority.
         let mut withdrawn = context.clone();
-        std::sync::Arc::make_mut(&mut withdrawn.resource_compositions).remove(&bound);
+        withdrawn.resource_compositions = withdrawn.resource_compositions.without_value(&bound);
         assert!(!witness.checks(&step, read.base(), 4, &withdrawn));
         assert!(
             typed_store_separated_ranges_evidence(write.base(), 4, read.base(), 4, &withdrawn)

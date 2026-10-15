@@ -127,33 +127,9 @@ theorem sized_context_early_stop(ctx: SizedContext, sub: SizedTree, previous: in
             },
             SizedContext::Left(node, parent, color, value, sibling, up) => {
                 unfold(sized_context_valid(SizedContext::Left(node, parent, color, value, sibling, up), to_integer(previous)));
-                have to_integer(value) == 1 + to_integer(previous) + to_integer(sized_value(sibling)) by {
-                    if to_integer(value) == 1 + to_integer(previous) + to_integer(sized_value(sibling)) { assumption(); } else {
-                        have sized_context_valid(SizedContext::Left(node, parent, color, value, sibling, up), to_integer(previous)) != 1 by {
-                            unfold(sized_context_valid(SizedContext::Left(node, parent, color, value, sibling, up), to_integer(previous)));
-                            normalize() using { not (to_integer(value) == 1 + to_integer(previous) + to_integer(sized_value(sibling))); }
-                        }
-                        contradiction(sized_context_valid(SizedContext::Left(node, parent, color, value, sibling, up), to_integer(previous)) == 1);
-                    }
-                }
-                have sized_counts_valid(sibling) == 1 by {
-                    if sized_counts_valid(sibling) == 1 { assumption(); } else {
-                        have sized_context_valid(SizedContext::Left(node, parent, color, value, sibling, up), to_integer(previous)) != 1 by {
-                            unfold(sized_context_valid(SizedContext::Left(node, parent, color, value, sibling, up), to_integer(previous)));
-                            normalize() using { to_integer(value) == 1 + to_integer(previous) + to_integer(sized_value(sibling)); not (sized_counts_valid(sibling) == 1); }
-                        }
-                        contradiction(sized_context_valid(SizedContext::Left(node, parent, color, value, sibling, up), to_integer(previous)) == 1);
-                    }
-                }
-                have sized_context_valid(up, to_integer(value)) == 1 by {
-                    if sized_context_valid(up, to_integer(value)) == 1 { assumption(); } else {
-                        have sized_context_valid(SizedContext::Left(node, parent, color, value, sibling, up), to_integer(previous)) != 1 by {
-                            unfold(sized_context_valid(SizedContext::Left(node, parent, color, value, sibling, up), to_integer(previous)));
-                            normalize() using { to_integer(value) == 1 + to_integer(previous) + to_integer(sized_value(sibling)); sized_counts_valid(sibling) == 1; not (sized_context_valid(up, to_integer(value)) == 1); }
-                        }
-                        contradiction(sized_context_valid(SizedContext::Left(node, parent, color, value, sibling, up), to_integer(previous)) == 1);
-                    }
-                }
+                have to_integer(value) == 1 + to_integer(previous) + to_integer(sized_value(sibling)) by auto;
+                have sized_counts_valid(sibling) == 1 by auto;
+                have sized_context_valid(up, to_integer(value)) == 1 by auto;
                 have sized_counts_valid(SizedTree::Node(node, parent, color, value, sub, sibling)) == 1 by {
                     unfold(sized_counts_valid(SizedTree::Node(node, parent, color, value, sub, sibling)));
                     rewrite(sized_value(sub) == previous);
@@ -168,33 +144,9 @@ theorem sized_context_early_stop(ctx: SizedContext, sub: SizedTree, previous: in
             },
             SizedContext::Right(node, parent, color, value, sibling, up) => {
                 unfold(sized_context_valid(SizedContext::Right(node, parent, color, value, sibling, up), to_integer(previous)));
-                have to_integer(value) == 1 + to_integer(sized_value(sibling)) + to_integer(previous) by {
-                    if to_integer(value) == 1 + to_integer(sized_value(sibling)) + to_integer(previous) { assumption(); } else {
-                        have sized_context_valid(SizedContext::Right(node, parent, color, value, sibling, up), to_integer(previous)) != 1 by {
-                            unfold(sized_context_valid(SizedContext::Right(node, parent, color, value, sibling, up), to_integer(previous)));
-                            normalize() using { not (to_integer(value) == 1 + to_integer(sized_value(sibling)) + to_integer(previous)); }
-                        }
-                        contradiction(sized_context_valid(SizedContext::Right(node, parent, color, value, sibling, up), to_integer(previous)) == 1);
-                    }
-                }
-                have sized_counts_valid(sibling) == 1 by {
-                    if sized_counts_valid(sibling) == 1 { assumption(); } else {
-                        have sized_context_valid(SizedContext::Right(node, parent, color, value, sibling, up), to_integer(previous)) != 1 by {
-                            unfold(sized_context_valid(SizedContext::Right(node, parent, color, value, sibling, up), to_integer(previous)));
-                            normalize() using { to_integer(value) == 1 + to_integer(sized_value(sibling)) + to_integer(previous); not (sized_counts_valid(sibling) == 1); }
-                        }
-                        contradiction(sized_context_valid(SizedContext::Right(node, parent, color, value, sibling, up), to_integer(previous)) == 1);
-                    }
-                }
-                have sized_context_valid(up, to_integer(value)) == 1 by {
-                    if sized_context_valid(up, to_integer(value)) == 1 { assumption(); } else {
-                        have sized_context_valid(SizedContext::Right(node, parent, color, value, sibling, up), to_integer(previous)) != 1 by {
-                            unfold(sized_context_valid(SizedContext::Right(node, parent, color, value, sibling, up), to_integer(previous)));
-                            normalize() using { to_integer(value) == 1 + to_integer(sized_value(sibling)) + to_integer(previous); sized_counts_valid(sibling) == 1; not (sized_context_valid(up, to_integer(value)) == 1); }
-                        }
-                        contradiction(sized_context_valid(SizedContext::Right(node, parent, color, value, sibling, up), to_integer(previous)) == 1);
-                    }
-                }
+                have to_integer(value) == 1 + to_integer(sized_value(sibling)) + to_integer(previous) by auto;
+                have sized_counts_valid(sibling) == 1 by auto;
+                have sized_context_valid(up, to_integer(value)) == 1 by auto;
                 have sized_counts_valid(SizedTree::Node(node, parent, color, value, sibling, sub)) == 1 by {
                     unfold(sized_counts_valid(SizedTree::Node(node, parent, color, value, sibling, sub)));
                     rewrite(sized_value(sub) == previous);
