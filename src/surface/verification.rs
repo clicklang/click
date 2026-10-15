@@ -2571,17 +2571,7 @@ fn verify_c0_sources_in_context(
                     .collect::<BTreeSet<_>>();
                 assumed_terminating.extend(closure_instance_names(&parsed_sources));
                 assumed_terminating.extend(object_coercion_names(&parsed_sources));
-                assumed_terminating.extend([
-                    "pthread_create".to_string(),
-                    "pthread_join".to_string(),
-                    "pthread_mutex_init".to_string(),
-                    "pthread_mutex_lock".to_string(),
-                    "pthread_mutex_unlock".to_string(),
-                    "pthread_mutex_destroy".to_string(),
-                    "atomic_init".to_string(),
-                    "atomic_store_explicit".to_string(),
-                    "atomic_load_explicit".to_string(),
-                ]);
+                assumed_terminating.extend(modeled_thread_runtime_names());
                 let preliminary = c_verified_function_termination_rules(
                     &partial_rules,
                     &termination_plans,
@@ -3525,17 +3515,7 @@ fn verify_c0_sources_in_context(
     if selected_thread_runtime
         == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread
     {
-        assumed_terminating.extend([
-            "pthread_create".to_string(),
-            "pthread_join".to_string(),
-            "pthread_mutex_init".to_string(),
-            "pthread_mutex_lock".to_string(),
-            "pthread_mutex_unlock".to_string(),
-            "pthread_mutex_destroy".to_string(),
-            "atomic_init".to_string(),
-            "atomic_store_explicit".to_string(),
-            "atomic_load_explicit".to_string(),
-        ]);
+        assumed_terminating.extend(modeled_thread_runtime_names());
     }
     // A selected function may recurse only through a function this run
     // assumes, so its declared measure ranks no edge here. That measure is
@@ -3919,15 +3899,8 @@ fn verification_required_functions_with_blocks(
             continue;
         }
         if runtime == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread
-            && (matches!(
-                name.as_str(),
-                "pthread_create"
-                    | "pthread_join"
-                    | "pthread_mutex_init"
-                    | "pthread_mutex_lock"
-                    | "pthread_mutex_unlock"
-                    | "pthread_mutex_destroy"
-            ) || crate::languages::c::thread_runtime::is_publication_operation(&name))
+            && (crate::languages::c::thread_runtime::is_modeled_pthread_function(&name)
+                || crate::languages::c::thread_runtime::is_publication_operation(&name))
         {
             continue;
         }
@@ -3938,10 +3911,7 @@ fn verification_required_functions_with_blocks(
             {
                 continue;
             }
-            if matches!(
-                name.as_str(),
-                "atomic_init" | "atomic_store_explicit" | "atomic_load_explicit"
-            ) {
+            if crate::languages::c::thread_runtime::is_publication_operation(&name) {
                 return Err(ClickError::new(format!(
                     "`{name}` is declared by Click's `<stdatomic.h>` projection, but only the modeled-pthread thread runtime models C11 atomic operations"
                 )));
@@ -4155,6 +4125,16 @@ fn c0_external_dependencies_parsed(
 
 fn is_c0_builtin_function(name: &str) -> bool {
     matches!(name, "malloc" | "calloc" | "realloc" | "free")
+}
+
+/// The functions the modeled-pthread runtime specifies instead of executing:
+/// assumed to terminate, since the trusted specification stands in for them.
+fn modeled_thread_runtime_names() -> impl Iterator<Item = String> {
+    use crate::languages::c::thread_runtime::{MODELED_PTHREAD_FUNCTIONS, PUBLICATION_OPERATIONS};
+    MODELED_PTHREAD_FUNCTIONS
+        .into_iter()
+        .chain(PUBLICATION_OPERATIONS)
+        .map(str::to_string)
 }
 
 fn modeled_pthread_create_workers(function: &syntax::C0Function) -> BTreeSet<String> {
