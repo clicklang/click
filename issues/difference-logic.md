@@ -248,13 +248,15 @@ Each step is its own pull request.
      8 of the 20 mdtests and 3 of the 5 examples. The rest are listed under
      *Left* above. The `step` refusals among them ("got 2 feasible condition
      paths") are expected under this phase, which keeps both branches.
-   - *The loop bug is not in these sites.* With every kernel-site general
-     decision dropped, `scripts/step-scaling-hunt.py loops` charges the same
-     4,598 / 15,260 / 59,046 / 132,782 units at N = 4 / 8 / 16 / 24. 93% of
-     that time is the smart `loop` clause's own search, which calls
-     `PureFactContext::decide` directly. Closing the bug means changing what
-     that search asks, or having it read the difference graph, in addition
-     to this phase.
+   - *The loop bug is in these sites.* An earlier measurement here
+     filtered the general decision's answers but still ran it, so it could
+     not see its cost. With the call itself skipped at the four sites,
+     `scripts/step-scaling-hunt.py loops` charges the largest loop clause
+     1,847 / 2,485 / 3,759 / 5,031 units at N = 4 / 8 / 16 / 24, against
+     4,596 / 15,258 / 59,044 / 132,780 with it. The quadratic part is the
+     general decision (`has_lower_bound_above` deciding each earlier loop's
+     dead copy of `i`). About 160 units per earlier loop remain, linear,
+     which the bug's acceptance (constant) still needs removed.
 
 ## Acceptance criteria
 
