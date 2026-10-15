@@ -465,6 +465,9 @@ lists it among the external assumptions. See
 Try the remaining function, `label_copy`:
 
 ```click filename=label.click
+import click::integer;
+import click::machine_integer;
+
 verifying "label_fit.c";
 verifying "label_copy.c";
 
@@ -485,9 +488,7 @@ theorem label_source_prefix_viewable(bytes: uint8[], length: uint64, taken: uint
     ensures viewable(bytes[0u64..taken]) by {
         apply(uint64_less_than_to_integer(length, 18446744073709551615u64));
         apply(uint64_less_equal_to_integer(taken, length));
-        have to_integer(length) + 1 <= 18446744073709551615 by { auto; }
         apply(uint64_add_to_integer(length, 1u64));
-        have to_integer(taken) <= to_integer(length + 1u64) by { auto; }
         apply(uint64_to_integer_less_equal_implies_less_equal(taken, length + 1u64));
         apply(uint64_less_equal_transitive(taken, length + 1u64, 9223372036854775807u64));
         simp() using {
@@ -553,8 +554,8 @@ uint64 label_copy(char* dst, const char* src) {
         extract(at(function.entry, ((uint8*)src)[len] == 0u8));
         simp();
     }
-    let length = step(strlen(src), {});
-    let taken = step(label_fit(length), {});
+    let { result: length } = step(strlen(src), {});
+    let { result: taken } = step(label_fit(length), {});
     have viewable(((uint8*)src)[0u64..length + 1u64]) by {
         transport(at(statement(2).entry, viewable(((uint8*)src)[0u64..length + 1u64])),
                   viewable(((uint8*)src)[0u64..length + 1u64])) using {
@@ -567,6 +568,9 @@ uint64 label_copy(char* dst, const char* src) {
 }
 ```
 
+The theorem cites `uint64` facts from the `click::integer` and
+`click::machine_integer` library modules, so the sidecar imports both; see
+[Click library imports](sidecars.md#click-library-imports).
 The copy needs a separate destination and source prefix, because `memcpy`
 requires its accessed ranges not to overlap. Its source may be `const`, as
 in the existing C. The destination's 32-byte ownership and `label_fit`'s bound

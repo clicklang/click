@@ -5456,6 +5456,8 @@ fn result_aware_fixed_state_apply_scales_with_unrelated_facts() {
 fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
     let click_file = crate::surface::parse(
         r#"
+            import click::machine_integer;
+
             int32 bounded(int32 upper) {
                 ensures result <= upper;
             } by {

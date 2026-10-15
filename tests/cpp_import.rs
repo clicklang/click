@@ -12800,7 +12800,8 @@ fn wide_narrowing_integer_ranges_reflect_into_native_correction_bounds() {
         let cert = cast_identity_certificate("to_integer(a)", "-100", "100");
         let helper = if name == "relay" { "ss64" } else { name };
         let mut proof = format!(
-            r#"verifying "narrow.cpp";
+            r#"import click::integer;
+verifying "narrow.cpp";
 {ty} {helper}(int128 a) {{
     requires -100 <= to_integer(a);
     requires to_integer(a) <= 100;
