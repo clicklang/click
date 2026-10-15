@@ -320,3 +320,117 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
         );
     }
 }
+
+fn pure_match_value(variants_count: usize) -> crate::kernel::AlgebraicTerm {
+    use crate::kernel::{
+        AlgebraicSchemas, AlgebraicTerm, AlgebraicTermNode, AlgebraicType, AlgebraicValueType,
+        AlgebraicVariantType, CType,
+    };
+    let key = AlgebraicValueType::Algebraic {
+        name: "PureMatchScaling".into(),
+        arguments: vec![],
+    };
+    let variants: Arc<[AlgebraicVariantType]> = (0..variants_count)
+        .map(|index| AlgebraicVariantType {
+            name: format!("Case{index}"),
+            fields: vec![AlgebraicValueType::C(CType::Int32)],
+        })
+        .collect::<Vec<_>>()
+        .into();
+    AlgebraicTerm {
+        algebraic_type: AlgebraicType {
+            rigid: false,
+            name: "PureMatchScaling".into(),
+            arguments: vec![],
+            variants: variants.clone(),
+            schemas: Arc::new(AlgebraicSchemas::new(std::collections::BTreeMap::from([(
+                key, variants,
+            )]))),
+        },
+        node: AlgebraicTermNode::Variable(Variable(2)),
+    }
+}
+
+#[test]
+fn pure_match_and_payload_freshening_ignore_unrelated_facts() {
+    type TestProof = ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()>;
+    let value = pure_match_value(1);
+    let mut costs = Vec::new();
+    for size in [16, 64, 256] {
+        let facts = ProofFacts::from_ordered(
+            &(0..size)
+                .map(|i| Proposition::Predicate {
+                    name: format!("unrelated_match_{i}"),
+                    arguments: vec![Term::Bitvector32(Bitvector32Term::Variable(Variable(i)))],
+                })
+                .collect::<Vec<_>>(),
+        );
+        let root: TestProof = ProofObject::root(
+            (),
+            ProofBranch::new(
+                ProofObligation::Proposition(PropositionObligation::new(
+                    Proposition::ConditionIs(
+                        crate::kernel::ConditionTerm::equal(
+                            Bitvector32Term::Variable(Variable(1)),
+                            Bitvector32Term::Variable(Variable(1)),
+                        ),
+                        true,
+                    ),
+                    (),
+                )),
+                ProofBranchState {
+                    facts,
+                    unfolded_predicates: PersistentOrderedSet::default(),
+                    execution: None,
+                },
+            ),
+        );
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                let refined = root
+                    .refine_proposition_algebraic_match(&value, &[0])
+                    .unwrap();
+                let field = refined.apply_intro(|_, _, _| ()).ok().unwrap();
+                let case = field.apply_intro(|_, _, _| ()).ok().unwrap();
+                assert_eq!(case.state.added_facts.len(), 1);
+                assert!(case.apply_normalize().is_ok());
+            })
+        });
+        costs.push((work, map_work));
+    }
+    for pair in costs.windows(2) {
+        assert!(pair[1].0 <= pair[0].0 * 2, "{costs:?}");
+        assert!(pair[1].1 <= pair[0].1 * 2, "{costs:?}");
+    }
+}
+
+#[test]
+fn pure_match_constructor_obligation_work_is_linear_in_the_family() {
+    type TestProof = ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()>;
+    let mut costs = Vec::new();
+    for size in [16, 64, 256] {
+        let value = pure_match_value(size);
+        let root: TestProof = ProofObject::root(
+            (),
+            ProofBranch::new(
+                ProofObligation::Proposition(PropositionObligation::new(
+                    Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(true), true),
+                    (),
+                )),
+                ProofBranchState {
+                    facts: ProofFacts::from_ordered(&[]),
+                    unfolded_predicates: PersistentOrderedSet::default(),
+                    execution: None,
+                },
+            ),
+        );
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            root.refine_proposition_algebraic_match(&value, &(0..size).collect::<Vec<_>>())
+                .unwrap()
+        });
+        costs.push(work);
+    }
+    for pair in costs.windows(2) {
+        assert!(pair[1] <= pair[0] * 5, "{costs:?}");
+    }
+}

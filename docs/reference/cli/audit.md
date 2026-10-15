@@ -28,19 +28,28 @@ nested bodies and checked proof arms. A smart container owns its body: its
 inner aliases count as one site. Audit and profile use the same source table
 as location-based expansion.
 
+A claim with no smart site can still rely on the implicit `auto`, which
+proves a bare simple tactic's open requirement, such as a `step()`'s
+precondition or a `fold`'s body fact. The inventory finds these claims by
+verifying each source once and lists each as one `implicit auto` site, so
+they are audited too. A source with no smart site that fails this verification
+fails the audit; one with smart sites is reported by its session.
+
 ## Checks
 
 A wholly selected claim is expanded once, with all its smart sites together.
 The rewritten claim must contain no smart tactics and pass retained and cold
-verification, including the performance comparison. A failed whole-claim
-expansion fails the audit.
+verification, including the performance comparison. Its cold verification runs
+with the implicit `auto` off, so an expanded claim is shown self-contained. A
+failed whole-claim expansion fails the audit.
 
 A cursor, site cap, or changed-source selection can select part of a claim.
 The selected sites are captured together in one verification and applied as
 one rewrite. The audit checks that each emitted region contains only simple
 tactics, then verifies the rewritten proof unit once in the retained session
 and once through ordinary cold targeted verification. It compares that cold
-work with the original claim. Unselected automation remains in the source.
+work with the original claim. Unselected automation remains in the source, and
+the implicit `auto` stays on for it.
 
 Every audit check counts deterministic work units, the units the tactic
 budgets are charged, so the same source reaches the same verdict on any

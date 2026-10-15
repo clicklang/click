@@ -1604,3 +1604,9 @@ The mirrored right-right root case and both wrappers also verify in
 writable callback. All 17 expansion sites in each single-rotation sidecar
 pass. Double rotations, color flips, arbitrary ancestor contexts and writable
 erase integration remain.
+
+`rbtree_size_model_unique.click` now proves that two recursively count-valid
+`SizedTree` values with equal erased shapes are equal, by induction on one
+model and exhaustive constructor matching on the other. This supplies the
+exact model transport needed between two writable rotation callbacks; it
+does not yet complete double-rotation insertion.
