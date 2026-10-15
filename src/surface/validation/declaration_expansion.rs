@@ -46,6 +46,9 @@ struct DeclaredResourceScope {
     character_parameters: std::cell::RefCell<BTreeSet<String>>,
     /// Fills in the type arguments of constructors that leave them out.
     constructors: ConstructorTypes,
+    /// These declarations impose no premises. Index once for the file; their
+    /// applications with value arguments need no premise search.
+    premise_free_theorems: BTreeSet<String>,
 }
 
 impl DeclaredResourceScope {
@@ -876,7 +879,18 @@ fn expand_declared_resource_clauses_with_rules(
             file.theorem_definitions(),
         )
     };
+    let premise_free_theorems = if family_rules {
+        file_library(&file)?.theorem_definitions()
+    } else {
+        &[]
+    }
+    .iter()
+    .chain(file.theorem_definitions())
+    .filter(|theorem| theorem.requires().is_empty())
+    .map(|theorem| theorem.name().to_string())
+    .collect();
     let resource_definitions = DeclaredResourceScope {
+        premise_free_theorems,
         family_rules,
         definitions: resource_definitions,
         children: Default::default(),
@@ -1816,6 +1830,24 @@ fn expand_declared_resource_tactic_with_plain_scripts(
     Ok(expanded.pop().expect("a plain script expansion has a root"))
 }
 
+/// A value argument introduces no argument-definedness search. Computed
+/// arguments still use the smart application even when the theorem itself
+/// declares no requirements (for example `to_integer(x + 1)`).
+fn theorem_argument_is_value(argument: &ContractExpression) -> bool {
+    match argument {
+        ContractExpression::IntegerLiteral(_)
+        | ContractExpression::Binding(_)
+        | ContractExpression::CBinding(_)
+        | ContractExpression::AlgebraicVariable { .. }
+        | ContractExpression::CFragment(CExpression::Value(_) | CExpression::Variable(_)) => true,
+        ContractExpression::AlgebraicConstructor { arguments, .. }
+        | ContractExpression::SequenceLiteral(arguments) => {
+            arguments.iter().all(theorem_argument_is_value)
+        }
+        _ => false,
+    }
+}
+
 #[inline(never)]
 fn expand_declared_resource_tactic_with_expressions(
     tactic: ProofTactic,
@@ -1833,7 +1865,18 @@ fn expand_declared_resource_tactic_with_expressions(
                 &application.name,
                 &mut application.arguments,
             );
-            Ok(ProofTactic::ApplyTheorem(application))
+            if resource_definitions
+                .premise_free_theorems
+                .contains(&application.name)
+                && application.arguments.iter().all(theorem_argument_is_value)
+            {
+                Ok(ProofTactic::ApplyTheoremUsing {
+                    application,
+                    premises: Vec::new(),
+                })
+            } else {
+                Ok(ProofTactic::ApplyTheorem(application))
+            }
         }
         ProofTactic::Witness(witness) => {
             Ok(ProofTactic::Witness(witness.try_map_values(|value| {

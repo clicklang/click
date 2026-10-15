@@ -521,6 +521,43 @@ fn expansion_spells_qualified_module_citations_by_their_in_scope_path() {
 }
 
 #[test]
+fn expansion_keeps_explicit_library_paths_and_unimported_predicates() {
+    let source = "theorem client() { ensures click::bytes::equal(p, 0, q, 0, 1) by simp; }";
+    assert_eq!(
+        library_citation_spelling(source, "have click::bytes::equal(p, 0, q, 0, 1);"),
+        "have click::bytes::equal(p, 0, q, 0, 1);"
+    );
+    assert_eq!(
+        library_citation_spelling(
+            "theorem client() {}",
+            "have click::bytes::equal(p, 0, q, 0, 1);"
+        ),
+        "have click::bytes::equal(p, 0, q, 0, 1);"
+    );
+    assert_eq!(
+        library_citation_spelling(
+            "/* import click::bytes; */ theorem client() {}",
+            "have click::bytes::equal(p, 0, q, 0, 1);"
+        ),
+        "have click::bytes::equal(p, 0, q, 0, 1);"
+    );
+    assert_eq!(
+        library_citation_spelling(
+            "import click::bytes;",
+            "have click::bytes::equal(p, 0, q, 0, 1);"
+        ),
+        "have bytes::equal(p, 0, q, 0, 1);"
+    );
+    assert_eq!(
+        library_citation_spelling(
+            "apply(click::list::append_left_identity(xs));",
+            "apply(click::list::append_left_identity(xs));"
+        ),
+        "apply(click::list::append_left_identity(xs));"
+    );
+}
+
+#[test]
 fn block_tactic_optional_semicolon_belongs_to_the_tactic() {
     let source = "by { step(); simp(); }";
     let tokens = scan_source_tokens(source).expect("source should tokenize");
@@ -3093,4 +3130,53 @@ theorem evaluation() executes FeeFrac_EvaluateFeeDown(const struct FeeFrac* this
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/surface/expansion/tests.rs");
+}
+
+#[test]
+fn premise_free_applications_are_simple_but_required_premises_stay_smart() {
+    let source = r#"
+        import click::integer;
+        theorem unconditional(x: int32) { ensures x == x by simp; }
+        theorem conditional(x: int32) { requires x == 0; ensures x == 0 by assumption(); }
+        theorem value_identity(z: Integer) { ensures z == z by simp; }
+        theorem computed(x: int64) {
+            requires defined(x + 1i64);
+            ensures to_integer(x + 1i64) == to_integer(x + 1i64) by {
+                apply(value_identity(to_integer(x + 1i64)));
+            }
+        }
+        theorem client(x: int32) {
+            requires x == 0;
+            ensures x == 0 by {
+                apply(unconditional(x));
+                apply(conditional(x));
+            }
+        }
+    "#;
+    let sites = c0_smart_tactic_source_sites(source, &[]).unwrap();
+    assert_eq!(
+        sites
+            .iter()
+            .filter(|site| site.claim_label == "client.ensures_0")
+            .map(|site| site.source_index)
+            .collect::<Vec<_>>(),
+        [1]
+    );
+    assert!(
+        sites
+            .iter()
+            .any(|site| site.claim_label == "computed.ensures_0")
+    );
+    verify_c0_sources(source, &[]).unwrap();
+    assert!(verify_c0_sources(&source.replace("requires defined(x + 1i64);", ""), &[]).is_err());
+    assert!(
+        verify_c0_sources(
+            &source.replace(
+                "requires x == 0;\n            ensures",
+                "requires x == 1;\n            ensures"
+            ),
+            &[]
+        )
+        .is_err()
+    );
 }

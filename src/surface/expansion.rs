@@ -2203,11 +2203,13 @@ fn splice_source(
 /// `replacement` with each library theorem a tactic cited by its qualified
 /// identity written as the file writes it. A module whose names need a path
 /// is cited by the bare name when the file imports it selectively, and
-/// otherwise by `m::name`. Any other library theorem is cited by its bare
-/// name, unless `source` declares a theorem of that name, which the bare name
-/// would mean instead.
+/// otherwise by `m::name` only when that module is in scope. Preserve full
+/// paths already written in the source: parsing them also records the module
+/// as an import, which a retained proof rewrite must not silently remove.
+/// Other library theorems may use their unshadowed bare names.
 fn library_citation_spelling(source: &str, replacement: &str) -> String {
     let mut spelled = String::with_capacity(replacement.len());
+    let mut module_visibility = BTreeMap::new();
     let mut rest = replacement;
     while let Some(start) = rest.find("click::") {
         let path_end = rest[start..]
@@ -2231,9 +2233,17 @@ fn library_citation_spelling(source: &str, replacement: &str) -> String {
         if let Some(short) = crate::surface::parser::qualified_module_spelling(path) {
             if selectively_imports(source, path) {
                 spelled.push_str(bare);
-            } else {
+            } else if !source.contains(path)
+                && *module_visibility
+                    .entry(path.rsplit_once("::").expect("qualified library path").0)
+                    .or_insert_with(|| library_module_in_scope(source, path))
+            {
                 spelled.push_str(&short);
+            } else {
+                spelled.push_str(path);
             }
+        } else if source.contains(path) {
+            spelled.push_str(path);
         } else if !shadowed && crate::surface::parser::library_theorem_identity(bare) == path {
             spelled.push_str(bare);
         } else {
@@ -2243,6 +2253,29 @@ fn library_citation_spelling(source: &str, replacement: &str) -> String {
     }
     spelled.push_str(rest);
     spelled
+}
+
+/// Whether an implicit or written import permits the short module spelling.
+/// A full path elsewhere in the file loads declarations but does not bring
+/// the module's short name into scope in the parser.
+fn library_module_in_scope(source: &str, path: &str) -> bool {
+    let Some((module, _)) = path.rsplit_once("::") else {
+        return false;
+    };
+    validation::implicit_library_modules()
+        .any(|identity| crate::surface::library_module_path(identity) == module)
+        || scan_source_tokens(source).is_ok_and(|tokens| {
+            tokens.split(|token| token.text == ";").any(|statement| {
+                if statement.first().is_none_or(|token| token.text != "import") {
+                    return false;
+                }
+                let imported = statement[1..]
+                    .iter()
+                    .map(|token| token.text.as_str())
+                    .collect::<String>();
+                imported == module || imported.starts_with(&format!("{module}::{{"))
+            })
+        })
 }
 
 /// Whether `source` brings the library declaration `path` into scope by its

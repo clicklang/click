@@ -452,6 +452,14 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             application,
             premises,
         } => {
+            if premises.is_empty() {
+                line(
+                    output,
+                    &prefix,
+                    &format!("apply({});", format_theorem_application(application)),
+                );
+                return;
+            }
             line(
                 output,
                 &prefix,
