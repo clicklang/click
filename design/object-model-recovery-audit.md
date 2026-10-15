@@ -587,7 +587,7 @@ cargo nextest run --test examples --no-fail-fast -E 'test(example_projects)'
 ```
 
 The fresh original segmented-buffer trace leads to the complete
-[modular buffer reduction](../bugs/modular-buffer-ranges-fail-to-rejoin.md).
+[modular buffer reduction](../mdtests/modular_buffer_ranges_rejoin_after_field_preserving_calls.md).
 All three reduced proofs pass on the upstream-based `73cff194e` verifier. The
 archive rejects the final fold: the held prefix and tail use descriptor pointer
 reads from different call snapshots. Field-preservation equalities are present;
@@ -633,9 +633,24 @@ continue reducing the remaining compatibility failures.
 ## Interior-write query follow-up
 
 PR #1011 merged the supplier-coordinate join repair; its pushed head
-`f2b2962a3` is verified in upstream history. Recovery checkpoint `c6d5c4200`
-then repairs a separate indexed lookup gap: scalar interior-write queries must
-ask for the checked endpoint of producer-registered pointer-read prefixes, as
+`f2b2962a3` is verified in upstream history.
+
+The modular-buffer range-join report is closed on current upstream. Its
+unchanged reduction is preserved in
+[`modular_buffer_ranges_rejoin_after_field_preserving_calls.md`](../mdtests/modular_buffer_ranges_rejoin_after_field_preserving_calls.md).
+`modular_buffer_ranges_rejoin_in_all_proof_modes` checks that reduction and
+both original segmented/split-buffer pipelines fresh, after expansion, through
+independent rewritten-source verification, and in retained sessions. All 61
+selected memory-equality-index tests pass, including the full-width adjacency
+refusal and framed-fragment rejection/scaling controls at 16/64/256/1024
+unrelated owners. The normal example stage passes all 50 selected projects;
+the three nightly rbtree projects and the C++ example are excluded (the pinned
+C++ exporter is unavailable in this environment). These are current-upstream
+results; archive activation and its remaining compatibility failures stay in
+this recovery audit.
+
+Recovery checkpoint `c6d5c4200` then repairs a separate indexed lookup gap:
+scalar interior-write queries must ask for the checked endpoint of producer-registered pointer-read prefixes, as
 footprint queries already do. It keeps the relation query-local and checks the
 live supplier's ownership and bounds. All 87 selected recovery kernel controls
 pass (6.75s harness), including the original manual-snapshot rejection and a
