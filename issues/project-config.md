@@ -140,15 +140,16 @@ Proposed structure, to be confirmed while implementing:
 - **Zero-config path stays:** a lone C sidecar with no root file keeps
   working in direct mode with the default target.
 
-## Open questions
+## Further decisions
 
-Each has a recommended default, used unless the user decides otherwise.
+The user accepted these on 2026-10-15; JSON was chosen explicitly and the
+rest are the recommended defaults.
 
 1. **Flag policy and optimized builds.** Today C accepts only preprocessor
    flags unless a named option profile admits more, while C++ accepts any
    flag the command carries. Click does not check the assumptions an
    optimizer makes (`restrict`, `nonnull`, strict aliasing, signed overflow,
-   null-check deletion). Default: one policy for C and C++. A build
+   null-check deletion). One policy covers C and C++. A build
    description states the real build's flags, and each flag is classified as
    one of:
    - a preprocessor input,
@@ -157,17 +158,16 @@ Each has a recommended default, used unless the user decides otherwise.
      kernel profile requires `-fno-strict-aliasing`, `-fno-strict-overflow`
      and `-fno-delete-null-pointer-checks` with `-O2`,
    - refused.
-2. **Existing compilation databases.** Default: not an input. A project
+2. **Existing compilation databases.** They are not an input. A project
    writes its build description once. For example, the Bitcoin fixture's
    CMake command line is translated into the description. A converter can be
    added later if needed.
-3. **Languages within a unit.** Default: one language per unit. Proofs may
+3. **Languages within a unit.** One language per unit. Proofs may
    share specifications across units. Calls across units, such as Rust calling
    C through FFI, are out of scope initially.
-4. **Targets per unit.** Default: one target per unit in the first version.
+4. **Targets per unit.** One target per unit in the first version.
    The format must leave room for a unit verified under several targets.
-5. **File format.** Default: JSON, extending `click.project.json`, since
-   there is no TOML parser in the build today.
+5. **File format.** JSON, extending `click.project.json`.
 
 ## Intended regressions
 

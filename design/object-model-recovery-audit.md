@@ -766,3 +766,56 @@ coverage prose, #1027's proof adaptations and recovery records. Recovery
 checkpoint `87ad14e1b` preserves the comparative failure evidence without keeping
 the unsuccessful archive proof edit. mdBook, docs lint and whitespace checks
 pass (Vale unavailable; advisory prose lint skipped).
+
+### Split-field terminator reduction
+
+PR #1028 merged; its final pushed commit `f669cb90f` is in upstream history.
+The recovery reduction now preserves the original separately owned descriptor
+fields. A whole-struct resource is a passing control but differs from that
+original boundary. Explicitly establishing the nonnegative append index lets
+the complete-width frame prove the unchanged pointer. Stored-value and zero
+terminator facts also check. This needs no new object rule or keyword.
+
+The next simple fold exhausts its unchanged 750,000-unit budget. The
+[fold defect](../bugs/split-descriptor-fold-exhausts-simple-budget.md) records a
+single-function reproduction, the incomplete diagnostic profile and acceptance
+criteria. Repeated offset/range reasoning dominates the failed fold; a specific
+performance repair has not yet been established. Failed proof edits and private
+probes are removed from production sources. Keep the original 41/52 archive
+audit and the separate vector allocation-fold failure open.
+
+Archive checkpoint `ee9b29f87` preserves the executable Markdown reproduction
+and updated reports. Its checked-in reproduction independently fails at the
+same simple fold with 750,001 units; the original example source is restored,
+and the CLI/library are rebuilt without probes. This is an unresolved defect
+checkpoint, not a claimed fix or a positive archive verification result.
+
+At upstream base `5fa772724`, a freshly rebuilt CLI/library verifies the focused
+split-field fixture in 2.91s. Fresh verification, expansion, rewritten checking
+and retained rechecking all pass. Wrong-value and wrong-terminator controls fail
+at final postconditions; a control without backing ownership is rejected while
+checking its resource's read authority. The filtered Markdown harness passes
+(2.77s); the fixture is classified nightly, and only this named fixture was run.
+No kernel rule or diagnostic presentation changes are included in this slice.
+
+### Bounded resource-query shortcuts
+
+A separate cleanup classifies literal resource quantities directly as signed
+int32 values, retaining the existing bounded decision route for symbolic
+quantities. A view-occurrence query returns immediately when the maintained
+ownership count establishes that every held fact is owned; mixed inputs skip
+owned candidates before aligning viewed requirements. These shortcuts neither
+publish pointer equalities nor grant authority.
+
+All 12 selected current-upstream quantity, view-dependency and fold-body controls
+pass (0.50s harness). The new deterministic controls cover 0, 16, 64 and 256
+unrelated facts/owners, signed count boundaries, symbolic counts, and view
+insertion/removal/forks. This is not the archive fold repair: the same fold
+still exhausts its budget. Private probes narrow that failure to lowering the
+`terminated_at` body fact, after the preceding exact bound checks succeed.
+PR #1038 merged, and its final pushed commit `e3175f36b` is verified upstream.
+
+The cleanup's rebuilt upstream CLI/library also pass the split-field fixture's
+fresh, expanded, rewritten and retained checks. Its filtered nightly-fixture
+harness passes (3.14s). Formatting, mdBook, docs lint and whitespace checks pass;
+Vale is unavailable, so advisory prose lint is skipped.

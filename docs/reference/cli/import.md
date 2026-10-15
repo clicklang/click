@@ -461,6 +461,18 @@ function that forwards a pointer requires the contract its callee requires.
 Reassigning a pointer, storing one in memory, and any other read of its value
 are refused (`tests/cpp_import.rs`, `*function_pointer*`).
 
+A lambda that captures nothing, passed for such a parameter,
+`apply([] (int y) noexcept { return y + y; }, x)`, is its call operator's
+address: the importer reads Clang's conversion of the closure to the pointer
+type as a `function_address` of the call operator, which it exports as a free
+function of the lambda's parameters. The sidecar names it by its enclosing
+function and its index among the lambdas written in that function's body, in
+source order: `int caller::(lambda#0)(int y) { ... } by { ... }`, the
+importer's `caller__lambda_0`. A lambda in a member function, a capturing or
+generic lambda, and a lambda used other than converted to a function pointer
+are refused (`mdtests/cpp_lambda_named_contract.md`,
+`tests/cpp_import.rs`, `cpp_lambdas_*`).
+
 A direct free-function return call accepts one nested call argument, including
 chains such as `return echo(echo(echo(value)));`. Other arguments must be stable
 scalars: literals, locked compiler/constexpr constants, by-value scalar parameters
