@@ -317,7 +317,7 @@ record may use its checked fields and ordinary methods. Because the artifact con
 direct-call closure and has no throwing operation, ordinary verification may
 check its normal behavior without inventing an exceptional proof outcome.
 An RTTI-enabled profile also permits those borrowed records; this does not add
-virtual dispatch, `typeid`, or `dynamic_cast` semantics.
+`typeid` or `dynamic_cast` semantics.
 
 The separate `"exception_behavior": "scalar_int32"` config requires
 `"exceptions": true`. Its locked artifact may contain a source `throw` of a
@@ -885,7 +885,7 @@ reachable unsupported bodies fail import.
 Direct `object.method(...)`, explicit `operator+=`/`operator-=`, and
 `object += other`/`object -= other` calls bind that receiver to the selected declaration identity. Call arguments
 must be direct supported references or the existing value arguments; pointer
-receivers, virtual dispatch, other overloaded operators, and call results
+receivers other than `this`, other overloaded operators, and call results
 outside the scalar-local initializer and direct scalar return-call slices remain unsupported.
 Same-width signed field `+=` and `-=` use checked loads, arithmetic, and
 stores. Compound updates with side effects or mixed-width conversions remain
@@ -1463,7 +1463,53 @@ recomputed artifacts reject wrong nominal targets even with equal layouts,
 reordered/incomplete paths, forged spans and mutable binding through const roots.
 Explicit casts, automatic derived objects and base constructor/destructor
 execution remain unsupported. Multiple or virtual bases, empty bases, own
-derived fields and tail-padding reuse remain outside this profile.
+derived fields and tail-padding reuse remain outside this profile; polymorphic
+classes have their own, below.
+
+A virtual method's contract is its interface. A call through it, on a
+reference or through `this`, is checked against the contract of the method
+the receiver's static type names, whichever override the dynamic type
+selects. A pure virtual method has no body; its contract is written `extern`,
+named as the importer names it. Each override inherits the interface of the
+method it overrides, as a Rust trait implementation does
+([Rust reference](../rust.md#trait-method-interfaces)): the interface's
+`ensures` join its own, labeled `Square_area.interface_ensures_0`, and its
+proof establishes them; an override that writes no `requires` takes the
+interface's, and written ones must follow from the interface's, each clause
+read exactly or decided as a bare comparison. It names its parameters as the
+interface does. An override whose `requires` do not follow, or that the
+sidecar does not state, is refused naming both methods:
+
+<!-- verified-example: mdtests/cpp_virtual_method_interface.md -->
+```click
+extern int Shape::area(int scale) const {
+    requires 0 <= scale and scale <= 1000;
+    ensures scale < result and result <= 2000;
+}
+int Square::area(int scale) const {
+    ensures result == scale + 1;
+} by { execute(); simp(); }
+```
+
+The interface reads nothing through `this` and holds none of its resources,
+so an override whose contract needs its fields does not refine it. A
+reachable virtual method brings every method of the translation unit that
+overrides it into the artifact, each checked, and refuses one outside the
+selected and dependency sources; a call through a virtual
+method reaches its overrides, so a call back through the interface from an
+override is refused as recursion. Overrides in other translation units are
+not seen, and are trusted to keep the interface, as any unverified code is.
+A qualified call, `shape.Shape::area(scale)`, does not dispatch, and is
+refused for a pure virtual method. A polymorphic class has at most one
+public, non-virtual, polymorphic base at offset zero, whose whole layout its
+own fields follow; its leading vtable pointer is named by no field and read
+by no contract. It has a trivial non-virtual destructor and is reached only
+by reference: constructing a polymorphic object, virtual destructors,
+covariant results and a pure virtual method with a definition remain
+unsupported
+(`mdtests/cpp_virtual_override_rejects_narrower_requires.md`,
+`mdtests/cpp_virtual_override_keeps_the_inherited_guarantee.md`,
+`tests/cpp_import.rs::virtual_dispatch_refuses_construction_recursion_and_other_class_shapes`).
 
 Discarded-result trivial copy assignment between live lvalues of the same
 nominal record lowers to shared C aggregate field copies. Clang must resolve a
@@ -1477,7 +1523,7 @@ the fields. User-defined assignment bodies and move assignment remain refused.
 
 Copy construction and moves, default or partial aggregate initialization, multiple
 non-destructible aggregate locals, broader nested lifetime combinations,
-virtual dispatch, general inheritance, bit-fields, nested record construction,
+general inheritance, bit-fields, nested record construction,
 and same-named record layouts remain explicit errors.
 Nested scalar locals, references to scalar locals, shadowing,
 broader address-taking, pointer locals, pointer arithmetic outside the supported

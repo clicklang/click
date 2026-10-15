@@ -125,6 +125,7 @@ mod tests {
         use super::super::schema::*;
         CppFunction {
             axiom: None,
+            virtual_method: None,
             declaration_id: "root".into(),
             name: "root".into(),
             function_kind: CppFunctionKind::Free,
