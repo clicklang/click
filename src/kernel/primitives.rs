@@ -1712,6 +1712,9 @@ pub struct CLValue {
     pub(super) pointee_volatile: bool,
     pub(super) constant: bool,
     pub(super) pointee_constant: bool,
+    /// The subobject extent of the pointer this memory lvalue was reached
+    /// through. The access is checked against it, and `&lvalue` keeps it.
+    pub(super) extent: Option<Arc<SubobjectExtent>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -1787,6 +1790,14 @@ pub enum CExpression {
     PointerOffsetBytes {
         pointer: Box<CExpression>,
         bytes: u32,
+    },
+    /// The pointer narrowed to the `width`-byte subobject that starts at its
+    /// address: a member access selects the member's own extent
+    /// (`design/pointer-subobject-extents.md`). It performs no load, grants
+    /// no access authority and does not move the address.
+    Subobject {
+        pointer: Box<CExpression>,
+        width: u32,
     },
     LessThan(Box<CExpression>, Box<CExpression>),
     LessEqual(Box<CExpression>, Box<CExpression>),
@@ -4709,6 +4720,10 @@ pub enum CUndefinedBehavior {
     /// not model object placement. A refusal names the comparison through
     /// `crate::kernel::locate_undefined_behavior`.
     OnePastEndComparison,
+    /// A read or write through a pointer outside the subobject it
+    /// designates (C11 6.5.6p8, C++ [expr.add]): `*(&pair.first + 1)` is
+    /// one past `first`, not `second`, though both name the same address.
+    SubobjectAccess,
 }
 
 impl CUndefinedBehavior {
@@ -4720,6 +4735,9 @@ impl CUndefinedBehavior {
                     .to_string()
             }
             Self::PointerArithmetic => "pointer arithmetic left the pointed-to object".to_string(),
+            Self::SubobjectAccess => {
+                "access outside the subobject the pointer designates".to_string()
+            }
             Self::DivisionByZero => "division by zero".to_string(),
             Self::InvalidShift => "invalid shift".to_string(),
             Self::InvalidMemory => "invalid memory access".to_string(),

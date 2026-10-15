@@ -467,7 +467,8 @@ pub(in crate::kernel) fn collect_c_expression_bitvector_variables(
         | CExpression::Load(body) => {
             collect_c_expression_bitvector_variables(body, variables);
         }
-        CExpression::PointerOffsetBytes { pointer, .. } => {
+        CExpression::PointerOffsetBytes { pointer, .. }
+        | CExpression::Subobject { pointer, .. } => {
             collect_c_expression_bitvector_variables(pointer, variables);
         }
         CExpression::TypedLoad { pointer, .. } => {
@@ -915,7 +916,8 @@ fn collect_c_expression_bound_identities(
             collect_c_expression_bound_identities(then_branch, variables, integer_seen);
             collect_c_expression_bound_identities(else_branch, variables, integer_seen);
         }
-        CExpression::PointerOffsetBytes { pointer, .. } => {
+        CExpression::PointerOffsetBytes { pointer, .. }
+        | CExpression::Subobject { pointer, .. } => {
             collect_c_expression_bound_identities(pointer, variables, integer_seen);
         }
         crate::kernel::binary_c_expression!(left, right) => {

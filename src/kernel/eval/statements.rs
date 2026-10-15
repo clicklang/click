@@ -590,6 +590,8 @@ fn write_c_lvalue_paths_without_local_reference(
         )]);
     };
 
+    let lvalue_extent = lvalue.extent.clone();
+    let lvalue_value_type = lvalue.value_type;
     match lvalue.storage {
         CLValueStorage::Local { name } => {
             if state
@@ -647,6 +649,20 @@ fn write_c_lvalue_paths_without_local_reference(
             )])
         }
         CLValueStorage::Memory { pointer } => {
+            if let Some(refusal) = subobject_access_refusal(
+                &pointer,
+                lvalue_extent.as_deref(),
+                lvalue_value_type.byte_width(),
+                &facts,
+                &obligations,
+                assumptions,
+            ) {
+                return Ok(vec![CStatementExecutionPath::new(
+                    CStatementOutcome::UndefinedBehavior(refusal),
+                    facts,
+                    obligations,
+                )]);
+            }
             let pointer = resolve_local_pointer_alias(state, &pointer, &effective_assumptions);
             if state.pending_thread_create.is_some() && !is_external_memory_pointer(&pointer) {
                 return Ok(vec![CStatementExecutionPath::new(

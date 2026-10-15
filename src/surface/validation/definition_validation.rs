@@ -816,7 +816,8 @@ pub(in crate::surface) fn c_expression_reads_no_memory(expression: &CExpression)
         | CExpression::Multiply(left, right) => {
             c_expression_reads_no_memory(left) && c_expression_reads_no_memory(right)
         }
-        CExpression::PointerOffsetBytes { pointer, .. } => c_expression_reads_no_memory(pointer),
+        CExpression::PointerOffsetBytes { pointer, .. }
+        | CExpression::Subobject { pointer, .. } => c_expression_reads_no_memory(pointer),
         CExpression::Cast { expression, .. } => c_expression_reads_no_memory(expression),
         // `&q[i]` is an address computed from `q` and `i`; nothing is loaded.
         CExpression::AddressOf(place) => match place.as_ref() {
@@ -2741,7 +2742,8 @@ fn collect_resource_fact_reads_from_c_expression(
             collect_resource_fact_reads_from_c_expression(else_branch, reads);
         }
         CExpression::AddressOf(_) | CExpression::CheckedObjectAddress(_) => {}
-        CExpression::PointerOffsetBytes { pointer, .. } => {
+        CExpression::PointerOffsetBytes { pointer, .. }
+        | CExpression::Subobject { pointer, .. } => {
             collect_resource_fact_reads_from_c_expression(pointer, reads);
         }
         CExpression::Load(pointer) => {

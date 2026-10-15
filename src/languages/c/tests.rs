@@ -5478,6 +5478,10 @@ fn c0_syntax_retains_struct_pointee_types_across_chained_fields() {
     else {
         panic!("the terminal scalar field should retain its resolved type")
     };
+    // `value` designates its own four bytes of the loaded `child` pointer.
+    let syntax::C0Expression::Subobject { pointer, width: 4 } = pointer.as_ref() else {
+        panic!("the terminal field should designate its member")
+    };
     assert!(matches!(
         pointer.as_ref(),
         syntax::C0Expression::Field {
@@ -6653,14 +6657,17 @@ fn c0_syntax_parses_chained_field_store_targets() {
             if matches!(
                 first.as_ref(),
                 syntax::C0Statement::Store {
-                    pointer: syntax::C0Expression::Field {
+                    pointer: syntax::C0Expression::Subobject { pointer, width: 4 },
+                    value_type: Some(syntax::C0Type::Int32),
+                    ..
+                } if matches!(
+                    pointer.as_ref(),
+                    syntax::C0Expression::Field {
                         field_type: syntax::C0Type::Int32Pointer,
                         field_struct_name: Some(name),
                         ..
-                    },
-                    value_type: Some(syntax::C0Type::Int32),
-                    ..
-                } if name == "leaf"
+                    } if name == "leaf"
+                )
             )
     ));
 }
@@ -9922,6 +9929,10 @@ fn c0_struct_field_lowering_uses_explicit_byte_offsets() {
     else {
         panic!("getter should return a field load")
     };
+    // The member pointer is narrowed to the member's own eight bytes.
+    let syntax::C0Expression::Subobject { pointer, width: 8 } = pointer.as_ref() else {
+        panic!("a member access should designate the member")
+    };
     assert!(matches!(
         pointer.as_ref(),
         syntax::C0Expression::PointerOffsetBytes { bytes: 8, .. }
@@ -9933,6 +9944,9 @@ fn c0_struct_field_lowering_uses_explicit_byte_offsets() {
     }) = function.body_kernel_statement()
     else {
         panic!("field load should retain its value type")
+    };
+    let crate::kernel::CExpression::Subobject { pointer, width: 8 } = pointer.as_ref() else {
+        panic!("a member access should designate the member")
     };
     assert!(matches!(
         pointer.as_ref(),
@@ -10120,6 +10134,12 @@ fn c0_struct_field_address_lowering_preserves_nested_byte_offset() {
         panic!("nested field address should target the scalar field")
     };
     assert_eq!(*field_type, syntax::C0Type::Int32);
+    // Each member selection designates that member: the leaf `value`, and
+    // within it the embedded `inner` it was reached through.
+    let syntax::C0Expression::Subobject { pointer, width } = pointer.as_ref() else {
+        panic!("the leaf member address should designate the leaf member")
+    };
+    assert_eq!(*width as usize, std::mem::size_of::<i32>());
     let syntax::C0Expression::PointerOffsetBytes {
         pointer: inner_pointer,
         bytes: inner_offset,
@@ -10128,6 +10148,14 @@ fn c0_struct_field_address_lowering_preserves_nested_byte_offset() {
         panic!("nested field address should include the inner field offset")
     };
     assert_eq!(*inner_offset, std::mem::offset_of!(HostInner, value) as u32);
+    let syntax::C0Expression::Subobject {
+        pointer: inner_pointer,
+        width: inner_width,
+    } = inner_pointer.as_ref()
+    else {
+        panic!("the inner member address should designate the inner member")
+    };
+    assert_eq!(*inner_width as usize, std::mem::size_of::<HostInner>());
     assert!(matches!(
         inner_pointer.as_ref(),
         syntax::C0Expression::PointerOffsetBytes { bytes, .. }
@@ -10147,6 +10175,9 @@ fn c0_struct_field_address_lowering_preserves_nested_byte_offset() {
     else {
         panic!("nested field address should preserve the leaf load type")
     };
+    let crate::kernel::CExpression::Subobject { pointer, .. } = pointer.as_ref() else {
+        panic!("the leaf member address should designate the leaf member")
+    };
     let crate::kernel::CExpression::PointerOffsetBytes {
         pointer: inner_pointer,
         bytes: inner_offset,
@@ -10155,6 +10186,13 @@ fn c0_struct_field_address_lowering_preserves_nested_byte_offset() {
         panic!("nested field address should include the inner field offset")
     };
     assert_eq!(*inner_offset, std::mem::offset_of!(HostInner, value) as u32);
+    let crate::kernel::CExpression::Subobject {
+        pointer: inner_pointer,
+        ..
+    } = inner_pointer.as_ref()
+    else {
+        panic!("the inner member address should designate the inner member")
+    };
     assert!(matches!(
         inner_pointer.as_ref(),
         crate::kernel::CExpression::PointerOffsetBytes { bytes, .. }

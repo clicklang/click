@@ -136,6 +136,8 @@ struct StaticAddress {
     pointer: crate::kernel::Pointer,
     c_type: C0Type,
     constant: bool,
+    /// The member subobject the address selects, if any.
+    extent: Option<crate::kernel::SubobjectExtent>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1701,6 +1703,7 @@ fn typed_store_at<'a>(
                 offset = offset.checked_add(*bytes)?;
                 pointer = inner;
             }
+            C0Expression::Subobject { pointer: inner, .. } => pointer = inner,
             // Only the element store `base + index` of a scalar array, whose
             // index scales by the stored element type.
             C0Expression::Add(inner, index) if matches!(inner.as_ref(), C0Expression::Variable(name) if name == base) =>
@@ -3090,6 +3093,13 @@ pub enum C0Expression {
         pointer: Box<C0Expression>,
         struct_name: String,
     },
+    /// A struct member's address narrowed to the member's `width` bytes
+    /// (`design/pointer-subobject-extents.md`); lowers to the kernel's
+    /// `CExpression::Subobject`.
+    Subobject {
+        pointer: Box<C0Expression>,
+        width: u32,
+    },
     Field {
         pointer: Box<C0Expression>,
         field_type: C0Type,
@@ -3564,6 +3574,7 @@ impl C0Function {
             .find(|global| global.name() == name || global.kernel_name() == name)
         {
             return Some(StaticAddress {
+                extent: None,
                 pointer: crate::kernel::CMemory::global_pointer(global.kernel_name()),
                 c_type: global.c_type(),
                 constant: global.is_constant(),
@@ -3576,6 +3587,7 @@ impl C0Function {
         {
             let c_type = global_array.complete_c_type()?;
             return Some(StaticAddress {
+                extent: None,
                 pointer: crate::kernel::CMemory::global_pointer(global_array.kernel_name()),
                 c_type,
                 constant: global_array.is_constant(),
@@ -3587,6 +3599,7 @@ impl C0Function {
             .find(|global| global.name() == name || global.kernel_name() == name)
         {
             return Some(StaticAddress {
+                extent: None,
                 pointer: crate::kernel::CMemory::global_pointer(global_aggregate.kernel_name()),
                 c_type: struct_value_type(global_aggregate.layout()),
                 constant: global_aggregate.is_constant(),
@@ -3599,6 +3612,7 @@ impl C0Function {
         {
             let c_type = global_aggregate_array.complete_c_type()?;
             return Some(StaticAddress {
+                extent: None,
                 pointer: crate::kernel::CMemory::global_pointer(
                     global_aggregate_array.kernel_name(),
                 ),
@@ -3612,6 +3626,7 @@ impl C0Function {
             .find(|static_local| static_local.name() == name || static_local.kernel_name() == name)
         {
             return Some(StaticAddress {
+                extent: None,
                 pointer: crate::kernel::CMemory::static_pointer(
                     &self.name,
                     static_local.kernel_name(),
@@ -3626,6 +3641,7 @@ impl C0Function {
             .find(|static_array| static_array.name() == name || static_array.kernel_name() == name)
         {
             return Some(StaticAddress {
+                extent: None,
                 pointer: crate::kernel::CMemory::static_pointer(
                     &self.name,
                     static_array.kernel_name(),
@@ -3638,6 +3654,7 @@ impl C0Function {
             static_aggregate.name() == name || static_aggregate.kernel_name() == name
         }) {
             return Some(StaticAddress {
+                extent: None,
                 pointer: crate::kernel::CMemory::static_pointer(
                     &self.name,
                     static_aggregate.kernel_name(),
@@ -3653,6 +3670,7 @@ impl C0Function {
                     || static_aggregate_array.kernel_name() == name
             })
             .map(|static_aggregate_array| StaticAddress {
+                extent: None,
                 pointer: crate::kernel::CMemory::static_pointer(
                     &self.name,
                     static_aggregate_array.kernel_name(),
@@ -3691,6 +3709,14 @@ impl C0Function {
             C0Expression::PointerOffsetBytes { pointer, bytes } => {
                 let mut address = self.static_address_expression(pointer)?;
                 address.pointer = address.pointer.offset_by_bytes(*bytes);
+                Some(address)
+            }
+            C0Expression::Subobject { pointer, width } => {
+                let mut address = self.static_address_expression(pointer)?;
+                address.extent = Some(crate::kernel::SubobjectExtent {
+                    start: address.pointer.clone(),
+                    width: u64::from(*width),
+                });
                 Some(address)
             }
             C0Expression::Add(pointer, offset) => {
@@ -3740,10 +3766,10 @@ impl C0Function {
         if address.c_type.pointer_type()? != declared_type {
             return None;
         }
-        Some(crate::kernel::CValue::typed_pointer_with_pointee_constant(
-            address.pointer,
-            declared_type.to_kernel_type(),
-            declared_pointee_constant,
+        Some(crate::kernel::CValue::Pointer(
+            crate::kernel::CPointerValue::new(address.pointer, declared_type.to_kernel_type())
+                .with_pointee_constant(declared_pointee_constant)
+                .with_extent(address.extent),
         ))
     }
 
@@ -5364,6 +5390,10 @@ impl C0Expression {
             Self::PointerOffsetBytes { pointer, bytes } => {
                 crate::kernel::c_pointer_offset_bytes(pointer.lower_expression(), *bytes)
             }
+            Self::Subobject { pointer, width } => crate::kernel::CExpression::Subobject {
+                pointer: Box::new(pointer.lower_expression()),
+                width: *width,
+            },
             Self::Int32Literal(value) => crate::kernel::c_int32_literal(*value),
             Self::UInt8Literal(value) => crate::kernel::c_uint8_literal(*value),
             Self::UInt32Literal(value) => crate::kernel::c_uint32_literal(*value),
@@ -6777,6 +6807,7 @@ fn evaluate_static_integer_expression(
         | C0Expression::FloatClassification { .. }
         | C0Expression::AddressOf(_)
         | C0Expression::PointerOffsetBytes { .. }
+        | C0Expression::Subobject { .. }
         | C0Expression::Float32Literal(_)
         | C0Expression::Float64Literal(_)
         | C0Expression::Load(_)
@@ -7041,6 +7072,22 @@ fn align_up(offset: u32, alignment: u32) -> Option<u32> {
     offset
         .checked_add(alignment - 1)
         .map(|value| value & !(alignment - 1))
+}
+
+/// The address of `field` within the struct at `base`. The member is its own
+/// subobject (`design/pointer-subobject-extents.md`): arithmetic from its
+/// address stays inside it, and an access through it may not reach a sibling
+/// at an adjacent address. A union member is not narrowed; union members
+/// overlap by design.
+fn member_pointer(base: C0Expression, field: &C0StructField) -> C0Expression {
+    let member = offset_field_pointer(base, field.offset_bytes);
+    if field.union_name.is_some() || field.byte_width == 0 {
+        return member;
+    }
+    C0Expression::Subobject {
+        pointer: Box::new(member),
+        width: field.byte_width,
+    }
 }
 
 fn offset_field_pointer(base: C0Expression, offset_bytes: u32) -> C0Expression {
@@ -7322,6 +7369,10 @@ fn contains_aggregate_value(expression: &C0Expression) -> bool {
         | C0Expression::FloatNegate(expression)
         | C0Expression::FloatClassification { expression, .. }
         | C0Expression::PointerOffsetBytes {
+            pointer: expression,
+            ..
+        }
+        | C0Expression::Subobject {
             pointer: expression,
             ..
         }
@@ -8562,6 +8613,7 @@ impl Parser {
             }
             C0Expression::AddressOf(target) => self.expression_is_constant_lvalue(target),
             C0Expression::PointerOffsetBytes { pointer, .. }
+            | C0Expression::Subobject { pointer, .. }
             | C0Expression::Subtract(pointer, _) => self.expression_pointee_is_constant(pointer),
             C0Expression::Add(left, right) => {
                 self.expression_pointee_is_constant(left)
@@ -8710,9 +8762,8 @@ impl Parser {
                 static_integer_value(index)?;
                 Some((base_type.pointee_type()?, constant))
             }
-            C0Expression::PointerOffsetBytes { pointer, .. } => {
-                self.static_address_expression(pointer)
-            }
+            C0Expression::PointerOffsetBytes { pointer, .. }
+            | C0Expression::Subobject { pointer, .. } => self.static_address_expression(pointer),
             C0Expression::Add(pointer, offset) => {
                 static_integer_value(offset)?;
                 self.static_address_expression(pointer)
@@ -12625,7 +12676,9 @@ impl Parser {
                 // Member lowering inserts byte offsets before the aggregate
                 // wrapper. These offsets preserve the declared member type.
                 let mut pointer = pointer.as_ref();
-                while let C0Expression::PointerOffsetBytes { pointer: base, .. } = pointer {
+                while let C0Expression::PointerOffsetBytes { pointer: base, .. }
+                | C0Expression::Subobject { pointer: base, .. } = pointer
+                {
                     pointer = base;
                 }
                 match pointer {
@@ -16770,6 +16823,7 @@ impl Parser {
             | C0Expression::FloatClassification { .. }
             | C0Expression::AddressOf(_)
             | C0Expression::PointerOffsetBytes { .. }
+            | C0Expression::Subobject { .. }
             | crate::languages::c::syntax::c0_comparison!(_, _)
             | C0Expression::Not(_)
             | C0Expression::And(_, _)
@@ -16831,6 +16885,10 @@ impl Parser {
             | C0Expression::FloatNegate(expression)
             | C0Expression::FloatClassification { expression, .. }
             | C0Expression::PointerOffsetBytes {
+                pointer: expression,
+                ..
+            }
+            | C0Expression::Subobject {
                 pointer: expression,
                 ..
             }
@@ -17112,6 +17170,10 @@ impl Parser {
                     pointer: expression,
                     ..
                 }
+                | C0Expression::Subobject {
+                    pointer: expression,
+                    ..
+                }
                 | C0Expression::Not(expression)
                 | C0Expression::BitwiseNot(expression)
                 | C0Expression::Load(expression) => expressions.push(expression),
@@ -17167,6 +17229,10 @@ impl Parser {
                 | C0Expression::FloatClassification { expression, .. }
                 | C0Expression::AddressOf(expression)
                 | C0Expression::PointerOffsetBytes {
+                    pointer: expression,
+                    ..
+                }
+                | C0Expression::Subobject {
                     pointer: expression,
                     ..
                 }
@@ -17286,6 +17352,10 @@ impl Parser {
             | C0Expression::FloatNegate(expression)
             | C0Expression::FloatClassification { expression, .. }
             | C0Expression::PointerOffsetBytes {
+                pointer: expression,
+                ..
+            }
+            | C0Expression::Subobject {
                 pointer: expression,
                 ..
             }
@@ -17930,6 +18000,10 @@ impl Parser {
             | C0Expression::PointerOffsetBytes {
                 pointer: expression,
                 ..
+            }
+            | C0Expression::Subobject {
+                pointer: expression,
+                ..
             } => self.reads_only_locals_other_than(expression, assigned),
             _ => false,
         }
@@ -18557,6 +18631,16 @@ impl Parser {
                     C0Expression::PointerOffsetBytes {
                         pointer: Box::new(pointer),
                         bytes,
+                    },
+                ))
+            }
+            C0Expression::Subobject { pointer, width } => {
+                let (prefix, pointer) = self.lower_expression_calls(*pointer)?;
+                Ok((
+                    prefix,
+                    C0Expression::Subobject {
+                        pointer: Box::new(pointer),
+                        width,
                     },
                 ))
             }
@@ -20421,6 +20505,7 @@ impl Parser {
             | C0Expression::FloatClassification { .. }
             | C0Expression::AddressOf(_)
             | C0Expression::PointerOffsetBytes { .. }
+            | C0Expression::Subobject { .. }
             | C0Expression::Int32Literal(_)
             | C0Expression::UInt8Literal(_)
             | C0Expression::UInt32Literal(_)
@@ -20755,9 +20840,8 @@ impl Parser {
             }
             C0Expression::CheckedArrayIndex { index, .. } => self.source_expression_type(index),
             C0Expression::AddressOf(value) => self.source_expression_type(value)?.pointer_type(),
-            C0Expression::PointerOffsetBytes { pointer, .. } => {
-                self.source_expression_type(pointer)
-            }
+            C0Expression::PointerOffsetBytes { pointer, .. }
+            | C0Expression::Subobject { pointer, .. } => self.source_expression_type(pointer),
             C0Expression::FloatNegate(value) => self.source_expression_type(value),
             C0Expression::FloatClassification { .. }
             | crate::languages::c::syntax::c0_comparison!(_, _)
@@ -21187,7 +21271,7 @@ impl Parser {
                 ));
             }
             return Ok((
-                offset_field_pointer(base.clone(), field.offset_bytes),
+                member_pointer(base.clone(), field),
                 field.c_type,
                 field.struct_name.clone(),
                 field.union_name.clone(),
@@ -21309,7 +21393,7 @@ impl Parser {
             ));
         }
         Ok((
-            offset_field_pointer(element_pointer, field.offset_bytes),
+            member_pointer(element_pointer, field),
             field.c_type,
             field.struct_name.clone(),
             field.union_name.clone(),
@@ -22739,6 +22823,10 @@ fn first_embedded_call_position(expression: &C0Expression) -> Option<SourcePosit
             pointer: expression,
             ..
         }
+        | C0Expression::Subobject {
+            pointer: expression,
+            ..
+        }
         | C0Expression::Not(expression)
         | C0Expression::BitwiseNot(expression)
         | C0Expression::Load(expression) => first_embedded_call_position(expression),
@@ -22789,7 +22877,8 @@ fn assignment_chain_targets(expression: &C0Expression) -> Option<Vec<String>> {
             expression: pointer,
             ..
         }
-        | C0Expression::PointerOffsetBytes { pointer, .. } => {
+        | C0Expression::PointerOffsetBytes { pointer, .. }
+        | C0Expression::Subobject { pointer, .. } => {
             return assignment_chain_targets(pointer);
         }
         _ => {}
@@ -22830,6 +22919,7 @@ fn first_assignment_position(expression: &C0Expression) -> Option<SourcePosition
         }
         | C0Expression::AddressOf(value)
         | C0Expression::PointerOffsetBytes { pointer: value, .. }
+        | C0Expression::Subobject { pointer: value, .. }
         | C0Expression::Not(value)
         | C0Expression::BitwiseNot(value)
         | C0Expression::Load(value)
@@ -22910,6 +23000,7 @@ fn expression_reads_runtime_value(expression: &C0Expression) -> bool {
             expression: value, ..
         }
         | C0Expression::PointerOffsetBytes { pointer: value, .. }
+        | C0Expression::Subobject { pointer: value, .. }
         | C0Expression::Not(value)
         | C0Expression::BitwiseNot(value)
         | C0Expression::CheckedArrayIndex { index: value, .. } => {

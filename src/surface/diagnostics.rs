@@ -276,17 +276,22 @@ impl Drop for ParameterPlaceScope {
 
 /// A pointer expression with the constant byte offsets added to it
 /// stripped: a field of a nested struct is one offset inside another.
+/// A member's subobject narrowing moves no address, so it is stripped too.
 fn strip_byte_offsets(mut pointer: &CExpression) -> Option<(&CExpression, u32)> {
     let mut offset_bytes = 0u32;
-    while let CExpression::PointerOffsetBytes {
-        pointer: base,
-        bytes,
-    } = pointer
-    {
-        offset_bytes = offset_bytes.checked_add(*bytes)?;
-        pointer = base;
+    loop {
+        match pointer {
+            CExpression::PointerOffsetBytes {
+                pointer: base,
+                bytes,
+            } => {
+                offset_bytes = offset_bytes.checked_add(*bytes)?;
+                pointer = base;
+            }
+            CExpression::Subobject { pointer: base, .. } => pointer = base,
+            _ => return Some((pointer, offset_bytes)),
+        }
     }
-    Some((pointer, offset_bytes))
 }
 
 /// The field a typed read at `offset_bytes` into a struct with `fields`
@@ -4904,6 +4909,7 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
         CExpression::PointerOffsetBytes { pointer, bytes } => {
             format!("byte_offset({}, {bytes})", describe_c_expression(pointer))
         }
+        CExpression::Subobject { pointer, .. } => describe_c_expression(pointer),
         CExpression::LessThan(left, right) => describe_binary_c_expression(left, "<", right),
         CExpression::LessEqual(left, right) => describe_binary_c_expression(left, "<=", right),
         CExpression::GreaterThan(left, right) => describe_binary_c_expression(left, ">", right),

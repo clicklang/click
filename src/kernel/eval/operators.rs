@@ -2310,6 +2310,20 @@ fn pointer_offset_by_elements_paths(
         }
     }
 
+    // A pointer into a subobject stays in it, one past its end included.
+    match subobject_formation_guards(&value, &result, &facts, &obligations, assumptions) {
+        Ok(subobject) => guards.extend(subobject),
+        Err(()) => {
+            owed.push(CExpressionPath {
+                outcome: CExpressionOutcome::UndefinedBehavior(
+                    CUndefinedBehavior::PointerArithmetic,
+                ),
+                facts,
+                obligations,
+            });
+            return owed;
+        }
+    }
     owed.extend(apply_pointer_formation_guards(
         value.with_address(result),
         guards,
@@ -2384,9 +2398,21 @@ pub(in crate::kernel) fn pointer_offset_by_bytes_paths(
         }];
     }
     let result = pointer.offset_by_bytes(bytes);
-    let Some(guards) = pointer_block_bounds(state, &result, 1) else {
+    let Some(mut guards) = pointer_block_bounds(state, &result, 1) else {
         return Vec::new();
     };
+    match subobject_formation_guards(&value, &result, &facts, &obligations, assumptions) {
+        Ok(subobject) => guards.extend(subobject),
+        Err(()) => {
+            return vec![CExpressionPath {
+                outcome: CExpressionOutcome::UndefinedBehavior(
+                    CUndefinedBehavior::PointerArithmetic,
+                ),
+                facts,
+                obligations,
+            }];
+        }
+    }
     apply_pointer_formation_guards(
         value.with_address(result),
         guards,
@@ -4846,6 +4872,139 @@ pub(in crate::kernel) fn pointer_equality_condition(
 
 pub(in crate::kernel) fn pointer_is_null_condition(pointer: Pointer) -> ConditionTerm {
     pointer_equality_condition(pointer, Pointer::null())
+}
+
+/// Whether the `bytes` bytes at `pointer` stay inside `extent`; zero bytes
+/// asks for a position, the one-past end included
+/// (`design/pointer-subobject-extents.md`). Each returned guard must hold.
+/// `None` when the address has no byte offset from the extent's start in
+/// the address's own spelling; [`subobject_extent_proven`] then decides it
+/// through the fact context.
+fn subobject_extent_guards(
+    pointer: &Pointer,
+    extent: &SubobjectExtent,
+    bytes: u32,
+) -> Option<Vec<PointerFormationGuard>> {
+    let offset = pointer_byte_offset_from_base(pointer, &extent.start)?;
+    let width = u32::try_from(extent.width).ok()?;
+    Some(vec![
+        PointerFormationGuard {
+            condition: ConditionTerm::signed_less_equal(
+                Bitvector32Term::Constant(0),
+                offset.clone(),
+            ),
+            value: true,
+        },
+        PointerFormationGuard {
+            condition: ConditionTerm::signed_less_equal(
+                Bitvector32Term::add(offset, Bitvector32Term::Constant(bytes)),
+                Bitvector32Term::Constant(width),
+            ),
+            value: true,
+        },
+    ])
+}
+
+/// Whether the facts prove the `bytes` bytes at `pointer` inside `extent`,
+/// resolving the address against the extent's start as a held range's
+/// base is resolved.
+fn subobject_extent_proven(
+    pointer: &Pointer,
+    extent: &SubobjectExtent,
+    bytes: u32,
+    facts: &ExecutionFacts,
+    obligations: &[ProofObligation],
+    assumptions: &PureFactContext,
+) -> bool {
+    if let Some(guards) = subobject_extent_guards(pointer, extent, bytes) {
+        return guards.iter().all(|guard| {
+            decide_with_facts(assumptions, facts, &guard.condition) == Some(guard.value)
+        });
+    }
+    let Ok(width) = u32::try_from(extent.width) else {
+        return false;
+    };
+    assumptions_with_path_context(assumptions, facts, obligations).pointer_access_in_range(
+        pointer,
+        bytes,
+        &extent.start,
+        &Bitvector32Term::Constant(0),
+        &Bitvector32Term::Constant(width),
+        1,
+    )
+}
+
+/// Refuses a read or write of `bytes` bytes at `pointer` outside the
+/// subobject extent of the pointer it was reached through.
+pub(in crate::kernel) fn subobject_access_refusal(
+    pointer: &Pointer,
+    extent: Option<&SubobjectExtent>,
+    bytes: u32,
+    facts: &ExecutionFacts,
+    obligations: &[ProofObligation],
+    assumptions: &PureFactContext,
+) -> Option<CUndefinedBehavior> {
+    let extent = extent?;
+    (!subobject_extent_proven(pointer, extent, bytes, facts, obligations, assumptions))
+        .then_some(CUndefinedBehavior::SubobjectAccess)
+}
+
+/// The formation guards a pointer arithmetic result owes to its operand's
+/// subobject extent. A result whose position cannot be related to the
+/// extent is refused outright.
+fn subobject_formation_guards(
+    value: &CPointerValue,
+    result: &Pointer,
+    facts: &ExecutionFacts,
+    obligations: &[ProofObligation],
+    assumptions: &PureFactContext,
+) -> Result<Vec<PointerFormationGuard>, ()> {
+    let Some(extent) = value.extent() else {
+        return Ok(Vec::new());
+    };
+    match subobject_extent_guards(result, extent, 0) {
+        Some(guards) => Ok(guards),
+        None if subobject_extent_proven(result, extent, 0, facts, obligations, assumptions) => {
+            Ok(Vec::new())
+        }
+        None => Err(()),
+    }
+}
+
+/// `CExpression::Subobject`: the pointer narrowed to the `width` bytes at
+/// its address. A pointer that already designates a subobject may select
+/// only a part of it.
+pub(in crate::kernel) fn subobject_paths(
+    pointer: CPointerValue,
+    width: u32,
+    facts: ExecutionFacts,
+    obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+) -> Vec<CExpressionPath> {
+    if let Some(refusal) = subobject_access_refusal(
+        pointer.pointer(),
+        pointer.extent(),
+        width,
+        &facts,
+        &obligations,
+        assumptions,
+    ) {
+        return vec![CExpressionPath {
+            outcome: CExpressionOutcome::UndefinedBehavior(refusal),
+            facts,
+            obligations,
+        }];
+    }
+    let start = pointer.pointer().clone();
+    let narrowed = pointer.with_extent(Some(SubobjectExtent {
+        start,
+        width: u64::from(width),
+    }));
+    vec![CExpressionPath {
+        outcome: CExpressionOutcome::Value(CValue::Pointer(narrowed)),
+        facts,
+        obligations,
+    }]
 }
 
 #[cfg(test)]

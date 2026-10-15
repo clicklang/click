@@ -3316,14 +3316,6 @@ impl CValue {
         Self::Pointer(CPointerValue::new(pointer, c_type))
     }
 
-    pub(crate) fn typed_pointer_with_pointee_volatile(
-        pointer: Pointer,
-        c_type: CType,
-        pointee_volatile: bool,
-    ) -> Self {
-        Self::Pointer(CPointerValue::new(pointer, c_type).with_pointee_volatile(pointee_volatile))
-    }
-
     pub(crate) fn typed_pointer_with_pointee_constant(
         pointer: Pointer,
         c_type: CType,
@@ -3416,6 +3408,7 @@ impl CLValue {
             pointee_volatile,
             constant: false,
             pointee_constant: false,
+            extent: None,
         }
     }
 
@@ -3441,6 +3434,7 @@ impl CLValue {
             pointee_volatile,
             constant: false,
             pointee_constant: false,
+            extent: None,
         }
     }
 
@@ -3460,6 +3454,16 @@ impl CLValue {
     pub(in crate::kernel) fn with_pointee_constant(mut self, pointee_constant: bool) -> Self {
         self.pointee_constant = pointee_constant;
         self
+    }
+
+    /// The lvalue reached through `pointer`, which keeps its extent.
+    pub(in crate::kernel) fn with_extent_of(mut self, pointer: &CPointerValue) -> Self {
+        self.extent = pointer.extent().cloned().map(std::sync::Arc::new);
+        self
+    }
+
+    pub(in crate::kernel) fn extent(&self) -> Option<&SubobjectExtent> {
+        self.extent.as_deref()
     }
 
     pub fn value_type(&self) -> CType {

@@ -3136,6 +3136,7 @@ pub(in crate::surface) fn c_unary_with_operand(
         | CExpression::CheckedObjectAddress(expression)
         | CExpression::Load(expression) => **expression = operand,
         CExpression::PointerOffsetBytes { pointer, .. }
+        | CExpression::Subobject { pointer, .. }
         | CExpression::TypedLoad { pointer, .. } => **pointer = operand,
         _ => unreachable!("CUnary stores a unary C operation"),
     }
@@ -3742,6 +3743,10 @@ pub(in crate::surface) fn substitute_c_fragment_in(
         CExpression::PointerOffsetBytes { pointer, bytes } => Ok(CExpression::PointerOffsetBytes {
             pointer: Box::new(substitute_c_fragment_in(pointer, substitutions)?),
             bytes: *bytes,
+        }),
+        CExpression::Subobject { pointer, width } => Ok(CExpression::Subobject {
+            pointer: Box::new(substitute_c_fragment_in(pointer, substitutions)?),
+            width: *width,
         }),
         CExpression::LessThan(left, right) => Ok(CExpression::LessThan(
             Box::new(substitute_c_fragment_in(left, substitutions)?),

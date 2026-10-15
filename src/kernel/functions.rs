@@ -13944,6 +13944,10 @@ fn c_expression_supports_stateful_memory_refinement(expression: &CExpression) ->
             pointer: expression,
             ..
         }
+        | CExpression::Subobject {
+            pointer: expression,
+            ..
+        }
         | CExpression::Not(expression)
         | CExpression::BitwiseNot(expression)
         | CExpression::Load(expression) => {
@@ -13975,6 +13979,10 @@ pub(super) fn c_expression_is_state_independent(expression: &CExpression) -> boo
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
         | CExpression::PointerOffsetBytes {
+            pointer: expression,
+            ..
+        }
+        | CExpression::Subobject {
             pointer: expression,
             ..
         }
@@ -14036,6 +14044,10 @@ fn c_expression_mentions_variable(expression: &CExpression, name: &str) -> bool 
             pointer: expression,
             ..
         }
+        | CExpression::Subobject {
+            pointer: expression,
+            ..
+        }
         | CExpression::Not(expression)
         | CExpression::Load(expression)
         | CExpression::TypedLoad {
@@ -14069,6 +14081,10 @@ fn c_expression_takes_address_of_variable(expression: &CExpression, name: &str) 
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
         | CExpression::PointerOffsetBytes {
+            pointer: expression,
+            ..
+        }
+        | CExpression::Subobject {
             pointer: expression,
             ..
         }
@@ -14122,6 +14138,9 @@ fn c_expression_parameter_offset(expression: &CExpression, parameter_name: &str)
         CExpression::Variable(variable) if variable == parameter_name => Some(0),
         CExpression::PointerOffsetBytes { pointer, bytes } => {
             c_expression_parameter_offset(pointer, parameter_name)?.checked_add(*bytes)
+        }
+        CExpression::Subobject { pointer, .. } => {
+            c_expression_parameter_offset(pointer, parameter_name)
         }
         CExpression::Cast { expression, .. } => {
             c_expression_parameter_offset(expression, parameter_name)
@@ -14201,6 +14220,10 @@ fn c_expression_uses_object_address(expression: &CExpression, name: &str) -> boo
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
         | CExpression::PointerOffsetBytes {
+            pointer: expression,
+            ..
+        }
+        | CExpression::Subobject {
             pointer: expression,
             ..
         }
@@ -16138,6 +16161,10 @@ fn collect_c_memory_read_expressions(statement: &CStatement, reads: &mut Vec<CEx
                 pointer: expression,
                 ..
             }
+            | CExpression::Subobject {
+                pointer: expression,
+                ..
+            }
             | CExpression::Not(expression)
             | CExpression::BitwiseNot(expression) => values(expression, reads),
             CExpression::Conditional {
@@ -16293,6 +16320,10 @@ fn c_expression_mentions_pointer_parameter(
         | CExpression::AddressOf(expression)
         | CExpression::CheckedObjectAddress(expression)
         | CExpression::PointerOffsetBytes {
+            pointer: expression,
+            ..
+        }
+        | CExpression::Subobject {
             pointer: expression,
             ..
         }
@@ -29070,6 +29101,7 @@ fn resolve_retained_aggregate_fields(
             CExpression::Variable(name) => {
                 Some((name, SpecExpression::CExpression(expression.clone())))
             }
+            CExpression::Subobject { pointer, .. } => projection(pointer),
             CExpression::PointerOffsetBytes { pointer, bytes } => {
                 let (name, pointer) = projection(pointer)?;
                 Some((
@@ -29144,7 +29176,8 @@ fn resolve_retained_aggregate_fields(
         | CExpression::BitwiseNot(inner)
         | CExpression::Load(inner)
         | CExpression::TypedLoad { pointer: inner, .. }
-        | CExpression::PointerOffsetBytes { pointer: inner, .. } => {
+        | CExpression::PointerOffsetBytes { pointer: inner, .. }
+        | CExpression::Subobject { pointer: inner, .. } => {
             resolve_retained_aggregate_fields(entry, state, inner, true, assumptions, budget)?
         }
         CExpression::Conditional {

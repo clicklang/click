@@ -35,6 +35,10 @@ pub(in crate::surface) fn c_expression_uses_variable(
         | CExpression::PointerOffsetBytes {
             pointer: expression,
             ..
+        }
+        | CExpression::Subobject {
+            pointer: expression,
+            ..
         } => c_expression_uses_variable(expression, variable),
         crate::kernel::binary_c_expression!(left, right) => {
             c_expression_uses_variable(left, variable)

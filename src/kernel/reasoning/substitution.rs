@@ -2407,6 +2407,7 @@ fn collect_c_expression_bound_variables(
         | CExpression::Load(body)
         | CExpression::BitwiseNot(body) => collect_c_expression_bound_variables(body, variables),
         CExpression::PointerOffsetBytes { pointer, .. }
+        | CExpression::Subobject { pointer, .. }
         | CExpression::TypedLoad { pointer, .. } => {
             collect_c_expression_bound_variables(pointer, variables)
         }
@@ -4187,6 +4188,12 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
             )),
             bytes: *bytes,
         },
+        CExpression::Subobject { pointer, width } => CExpression::Subobject {
+            pointer: Box::new(substitute_bitvector_variable_in_c_expression(
+                pointer, from, to,
+            )),
+            width: *width,
+        },
         CExpression::Not(body) => CExpression::Not(Box::new(
             substitute_bitvector_variable_in_c_expression(body, from, to),
         )),
@@ -5761,6 +5768,12 @@ fn substitute_pointer_variable_in_c_expression(
                 pointer, from, to,
             )),
             bytes: *bytes,
+        },
+        CExpression::Subobject { pointer, width } => CExpression::Subobject {
+            pointer: Box::new(substitute_pointer_variable_in_c_expression(
+                pointer, from, to,
+            )),
+            width: *width,
         },
         CExpression::Load(body) => CExpression::Load(Box::new(
             substitute_pointer_variable_in_c_expression(body, from, to),
