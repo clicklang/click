@@ -665,3 +665,23 @@ upstream-based `95fe8cbd1`. The active migration inventory control and the
 specifically selected source/obligation control pass; the other two ignored
 chunk tool controls were not run. The last complete archive audit remains
 **49/52** pending a rerun; arena and owned-vector are the other failures.
+
+
+The complete normal archive audit at `a9635866d` passes **50/52** in 121.71
+seconds: chunks-exact is restored, leaving arena and owned-vector. Concurrent
+compilation affected elapsed time. PR #1150 merged; its sole pushed commit
+`64f0f0d46` is verified as an upstream ancestor. No full green gate or native
+feature activation is claimed.
+
+Recovery commit `31c252a80` reconciles the already-landed held-owner address-class
+repair `a676ba284`. Its nine selected kernel controls and Markdown fixture pass,
+including scope, physical-width and four-size scaling controls. Neither remaining
+original example is restored by that repair. The reduced
+[descriptor-window failure](../bugs/archive-descriptor-window-fold-misses-owned-prefix.md)
+preserves direct descriptor-field access and the occupancy store; it passes the
+identified upstream baseline and fails the recovery archive at the window fold.
+The checked cell walk stops at loop havoc, and indexed reassembly misses the
+prefix despite the checked memory-resolution comparison accepting its base.
+Endpoint-chain and canonical-`take` experiments did not repair it and were
+reverted. Keep the remaining work focused on checked loop/frame evidence and
+selected resource suppliers, without reopening the accepted object-model design.
