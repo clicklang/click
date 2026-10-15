@@ -97,19 +97,36 @@ pub(super) fn activate(
     }) else {
         return Ok(());
     };
-    let Some(final_write) = all
-        .memory_accesses_at(MirPoint {
-            block: 0,
-            statement: last,
-        })
+    let accesses = all.memory_accesses_at(MirPoint {
+        block: 0,
+        statement: last,
+    });
+    let final_write = accesses
         .iter()
-        .find(|access| access.kind() == ScalarReferenceAccessKind::Write)
-    else {
-        return Ok(());
+        .find(|access| access.kind() == ScalarReferenceAccessKind::Write);
+    let read_ending = if final_write.is_none() {
+        let M::Assign {
+            target: E::Local { .. },
+            value: E::Deref {
+                reference,
+                value_type,
+            },
+        } = &statements[last]
+        else {
+            return Ok(());
+        };
+        let E::Local { name } = reference.as_ref() else {
+            return Ok(());
+        };
+        if value_type != pointee || accesses.len() != 1 || accesses[0].reference_local() != name {
+            return Ok(());
+        }
+        true
+    } else {
+        false
     };
-    // This name comes from the checked alias flow at the actual final store,
-    // not from a supplied alias list or the birth local's current value.
-    let ending_reference = final_write.reference_local();
+    // Select the actual checked alias at the last store or direct read.
+    let ending_reference = final_write.unwrap_or(&accesses[0]).reference_local();
     let end = MirPoint {
         block: 0,
         statement: last + 1,
@@ -165,10 +182,21 @@ pub(super) fn activate(
             && source.block == 0
             && source.statement == last
             && source.reference_local.as_ref() == ending_reference
-            && source.kind == ReferenceAccessKind::Write
+            && source.kind
+                == if read_ending {
+                    ReferenceAccessKind::Read
+                } else {
+                    ReferenceAccessKind::Write
+                }
+    };
+    let matches_read = |expression: &CExpression| {
+        matches!(expression,
+        CExpression::TypedLoad { source, .. } if source.as_ref()
+            .and_then(|source| source.reference_access.as_deref()).is_some_and(&matches_end))
     };
     let mut assignment = None;
     let mut ending = None;
+    let mut read = None;
     let mut pending = vec![&*body];
     while let Some(statement) = pending.pop() {
         crate::instrumentation::record_deterministic_work(1);
@@ -184,6 +212,18 @@ pub(super) fn activate(
                     return Err("ambiguous lowered scalar-reference birth".into());
                 }
             }
+            CStatement::Assign {
+                name, expression, ..
+            } if read_ending && matches_read(expression) => {
+                let previous = read.replace((
+                    name.clone(),
+                    expression.clone(),
+                    ending_reference.to_string(),
+                ));
+                if previous.is_some() {
+                    return Err("ambiguous lowered scalar-reference read ending".into());
+                }
+            }
             CStatement::TypedStore {
                 pointer,
                 value,
@@ -191,7 +231,7 @@ pub(super) fn activate(
                 volatile,
                 pointee_constant,
                 source,
-            } if source.as_ref().is_some_and(&matches_end) => {
+            } if !read_ending && source.as_ref().is_some_and(&matches_end) => {
                 let previous = ending.replace((
                     pointer.clone(),
                     value.clone(),
@@ -206,20 +246,35 @@ pub(super) fn activate(
             _ => {}
         }
     }
-    let plan = ScalarReferenceSourcePlan::new(
-        ScalarReferencePlanKey {
-            import_identity: identity.into(),
-            function: function.name.as_str().into(),
-            block: 0,
-            borrow,
-            end: end.statement,
-        },
-        parent.clone(),
-        child.clone(),
-        scalar_type(pointee)?.to_kernel_type(),
-        assignment.ok_or("checked scalar-reference birth missing from lowered source plan")?,
-        ending.ok_or("checked scalar-reference ending missing from lowered source plan")?,
-    );
+    let key = ScalarReferencePlanKey {
+        import_identity: identity.into(),
+        function: function.name.as_str().into(),
+        block: 0,
+        borrow,
+        end: end.statement,
+    };
+    let assignment =
+        assignment.ok_or("checked scalar-reference birth missing from lowered source plan")?;
+    let value_type = scalar_type(pointee)?.to_kernel_type();
+    let plan = if read_ending {
+        ScalarReferenceSourcePlan::new_read(
+            key,
+            parent.clone(),
+            child.clone(),
+            value_type,
+            assignment,
+            read.ok_or("checked scalar-reference read ending missing from lowered source plan")?,
+        )
+    } else {
+        ScalarReferenceSourcePlan::new(
+            key,
+            parent.clone(),
+            child.clone(),
+            value_type,
+            assignment,
+            ending.ok_or("checked scalar-reference ending missing from lowered source plan")?,
+        )
+    };
     let mut pending = vec![body];
     while let Some(statement) = pending.pop() {
         crate::instrumentation::record_deterministic_work(1);
@@ -231,7 +286,14 @@ pub(super) fn activate(
             CStatement::Assign { source, .. } if source.as_ref().is_some_and(&matches_birth) => {
                 *source = source.clone().with_lease_plan(plan.clone())
             }
-            CStatement::TypedStore { source, .. } if source.as_ref().is_some_and(&matches_end) => {
+            CStatement::Assign {
+                expression, source, ..
+            } if read_ending && matches_read(expression) => {
+                *source = source.clone().with_lease_read_end(plan.clone())
+            }
+            CStatement::TypedStore { source, .. }
+                if !read_ending && source.as_ref().is_some_and(&matches_end) =>
+            {
                 *source = source.clone().with_lease_plan(plan.clone())
             }
             _ => {}
@@ -345,5 +407,51 @@ mod tests {
             }
         }
         assert_eq!((births, endings), (1, 1));
+    }
+    #[test]
+    fn source_scalar_lease_activates_native_direct_read_ending() {
+        let export = super::super::super::charon::decode(
+            include_bytes!(
+                "../../../../design/charon-trial/gate-fixtures/scalar-read-end/borrow.ullbc"
+            ),
+            "borrow.rs",
+            include_bytes!(
+                "../../../../design/charon-trial/gate-fixtures/scalar-read-end/borrow.rs"
+            ),
+        )
+        .unwrap();
+        let (functions, _) = lower_with_identity(&export, Some("native-locked-source")).unwrap();
+        let helper = functions
+            .iter()
+            .find(|f| f.name() == "read_before_reuse")
+            .unwrap()
+            .to_kernel_function();
+        let mut births = 0;
+        let mut read_endings = 0;
+        let mut store_endings = 0;
+        let mut pending = vec![helper.body()];
+        while let Some(statement) = pending.pop() {
+            match statement {
+                CStatement::Seq(first, second) => {
+                    pending.push(first);
+                    pending.push(second);
+                }
+                CStatement::Assign {
+                    source, expression, ..
+                } if *source != CStatementAssignSource::default() => {
+                    if source.as_ref().is_some() {
+                        births += 1;
+                    } else {
+                        assert!(matches!(expression, CExpression::TypedLoad { .. }));
+                        read_endings += 1;
+                    }
+                }
+                CStatement::TypedStore { source, .. } => {
+                    store_endings += usize::from(*source != CStatementStoreSource::default())
+                }
+                _ => {}
+            }
+        }
+        assert_eq!((births, read_endings, store_endings), (1, 1, 0));
     }
 }

@@ -19,7 +19,7 @@ pub(crate) use source_loans::{ScalarReferencePlanKey, ScalarReferenceSourcePlan}
 /// artifacts.  This is deliberately separate from source and compiler
 /// identities: changing the authority interpretation must invalidate an old
 /// certificate even when its inputs are byte-identical.
-pub const RESOURCE_SEMANTICS_VERSION: u32 = 65;
+pub const RESOURCE_SEMANTICS_VERSION: u32 = 66;
 
 pub(crate) mod assumptions;
 mod difference_graph;

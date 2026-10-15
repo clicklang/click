@@ -21,7 +21,16 @@ pub(crate) struct ScalarReferenceSourcePlan {
     child: String,
     value_type: CType,
     assignment: CExpression,
-    store: (CExpression, CExpression, CType, bool, bool),
+    ending: ScalarReferenceEnding,
+}
+#[derive(Debug)]
+enum ScalarReferenceEnding {
+    Store((CExpression, CExpression, CType, bool, bool)),
+    Read {
+        name: String,
+        expression: CExpression,
+        reference: String,
+    },
 }
 impl ScalarReferenceSourcePlan {
     pub(crate) fn new(
@@ -38,7 +47,28 @@ impl ScalarReferenceSourcePlan {
             child,
             value_type,
             assignment,
-            store,
+            ending: ScalarReferenceEnding::Store(store),
+        })
+    }
+    pub(crate) fn new_read(
+        key: ScalarReferencePlanKey,
+        parent: String,
+        child: String,
+        value_type: CType,
+        assignment: CExpression,
+        read: (String, CExpression, String),
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            key,
+            parent,
+            child,
+            value_type,
+            assignment,
+            ending: ScalarReferenceEnding::Read {
+                name: read.0,
+                expression: read.1,
+                reference: read.2,
+            },
         })
     }
     pub(crate) fn key(&self) -> &ScalarReferencePlanKey {
@@ -55,13 +85,68 @@ impl ScalarReferenceSourcePlan {
         volatile: bool,
         constant: bool,
     ) -> bool {
-        (
-            &self.store.0,
-            &self.store.1,
-            self.store.2,
-            self.store.3,
-            self.store.4,
-        ) == (pointer, value, value_type, volatile, constant)
+        let ScalarReferenceEnding::Store(store) = &self.ending else {
+            return false;
+        };
+        (&store.0, &store.1, store.2, store.3, store.4)
+            == (pointer, value, value_type, volatile, constant)
+    }
+    pub(super) fn validates_read_assignment(&self, name: &str, expression: &CExpression) -> bool {
+        let ScalarReferenceEnding::Read {
+            name: expected,
+            expression: expected_expression,
+            reference,
+        } = &self.ending
+        else {
+            return false;
+        };
+        name == expected
+            && expression == expected_expression
+            && matches!(expression, CExpression::TypedLoad { pointer, value_type, volatile: false, pointee_constant: false, .. }
+                if *value_type == self.value_type && matches!(pointer.as_ref(), CExpression::Variable(local) if local == reference))
+    }
+    /// Only a successful direct read assignment may call this operation. The
+    /// selected reference must be a private local, so its value in `before` is
+    /// exactly the operand consumed by the ordinary checked load. No source
+    /// observation or earlier read fact supplies permission or ending evidence.
+    pub(super) fn end_read(
+        &self,
+        before: &CState,
+        after: &CState,
+        assumptions: &PureFactContext,
+    ) -> Result<CState, loans::LoanRefusal> {
+        let ScalarReferenceEnding::Read {
+            name,
+            expression,
+            reference,
+        } = &self.ending
+        else {
+            return Err(loans::LoanRefusal::InvalidEvidence);
+        };
+        if !self.validates_read_assignment(name, expression)
+            || before
+                .locals
+                .slot(reference)
+                .is_some_and(|slot| !block_is_never_address_taken_local(&slot.block))
+        {
+            return Err(loans::LoanRefusal::UnsupportedResource);
+        }
+        let Some(CValue::Pointer(pointer)) = before.locals.get(reference) else {
+            return Err(loans::LoanRefusal::InvalidEvidence);
+        };
+        let reference = pointer
+            .local_reference()
+            .ok_or(loans::LoanRefusal::MissingLoanBinding)?;
+        if pointer.c_type().pointee_type() != Some(self.value_type) {
+            return Err(loans::LoanRefusal::InvalidEvidence);
+        }
+        self.end(
+            after,
+            *reference,
+            pointer.pointer().clone(),
+            self.value_type,
+            assumptions,
+        )
     }
     pub(super) fn begin(
         &self,

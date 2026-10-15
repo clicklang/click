@@ -255,19 +255,20 @@ regression.
 
 Locked Rust lowering now activates this adapter for one direct mutable scalar
 reborrow from a reference parameter in a single MIR block ending at Return.
-The final child access must be a direct store. The active interval admits
+The final child access must be a direct store or a direct scalar read assigned
+to a local. The active interval admits
 scalar assignments and same-typed scalar reference copies or moves between
-private locals. The ending store may use a checked alias even after the original
+private locals. The ending operation may use a checked alias even after the original
 child local is replaced. Addressable reference storage, calls, aggregates and
 wider control flow still need source integration. The source frontier checker
 covers the complete selected function and rechecks the frontier immediately after the
-final store. Both the birth and ending must map uniquely to operations in the
+final operation. Both the birth and ending must map uniquely to operations in the
 same immutable lowered function body.
 
 These are semantic plans, separate from comparison-neutral observation labels.
 A plan binds the locked import, function, borrow/end points and exact lowered
-assignment/store operands. Plans participate in statement equality, hashing
-and ordering through a bounded source key; runtime operand validation examines
+assignment/store/read operands. Plans participate in statement equality, hashing
+and ordering through a bounded source key and assignment role; runtime operand validation examines
 only the selected operation. Moving a plan onto changed operands is refused.
 Copying an observation label cannot issue a birth or recover an owner.
 
@@ -281,8 +282,14 @@ expired, foreign-invocation or differently locked handles cannot recover.
 Copies retain the same live lease identity and all expire on recovery. The
 source frontier follows copies and replacement definitions, so a later alias
 use prevents an earlier ending even when the original child is no longer used.
-The ending consumes the actual alias lvalue's custody; a still-live original
-child cannot substitute for an untagged alias. No static-label history search
+A store ending consumes the actual alias lvalue's custody; a still-live original
+child cannot substitute for an untagged alias. A read ending binds the exact
+direct load from a private reference local, whose pre-assignment value is the
+operand evaluated by the normal load producer. Both that checked read and the
+scalar destination assignment must succeed before its live identity is consumed.
+No earlier read fact or source observation supplies ending authority, including
+on cache hits. Birth and read-ending roles compare distinctly, so transplanting
+a birth tag onto the read cannot perform recovery. No static-label history search
 or guessed dynamic invocation is used.
 
 Whole-byte footprints are checked independently of range spelling: four owned
@@ -293,8 +300,11 @@ ending; its helper/caller/nested proof, expansions and authority/value negatives
 continue to pass. Kernel execution tests cover original-occurrence recovery,
 parent denial, expired handles, wrong source plans and altered operations.
 A pinned native local-move fixture checks alias-based helper/caller verification,
-proof expansion/recheck and authority/value negatives. Preparation has
-deterministic 16/64/256/1024 selected-function and alias-chain scaling checks.
+proof expansion/recheck and authority/value negatives. A separate native direct-read
+fixture verifies the old value returned by a child read and subsequent parent
+mutation through helper/caller expansion and authority/value negatives. Preparation has
+deterministic 16/64/256/1024 selected-function, alias-chain and read-ending
+preparation scaling checks.
 
 The compiled Rust semantic profile versions this source coverage; the resource
 semantics version covers kernel lease execution. Current matching checked-in
@@ -304,7 +314,7 @@ hashes are unchanged.
 ## Remaining local-reference work
 
 Lease coverage must expand beyond this source subset: nested local source
-reborrows, read endings, multiple blocks and loops, shared aliases, aggregate
+reborrows, more general read expressions, multiple blocks and loops, shared aliases, aggregate
 fields, call transfer and memory havoc need their own checked
 source/runtime protocols. The read-only frontier and observation APIs cover
 more cases than source lease activation. Functions outside the activated subset
