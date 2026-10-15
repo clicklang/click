@@ -4057,6 +4057,38 @@ impl Parser {
         }
 
         loop {
+            // `const std::function<int(int)>& f` or `std::function<int(int)> f`:
+            // a callable value, as a function pointer is.
+            if let Some((c_type, function_pointer_signature)) =
+                self.parse_cpp_std_function_type()?
+            {
+                let name = self.expect_ident("parameter name")?;
+                parameters.push(FunctionParameter {
+                    click_type: ClickType::C(c_type),
+                    name,
+                    struct_name: None,
+                    function_pointer_signature: Some(function_pointer_signature),
+                    constant: false,
+                    pointee_constant: false,
+                    reference: false,
+                });
+                match self.peek() {
+                    Some(Token::Comma) => {
+                        self.position += 1;
+                        continue;
+                    }
+                    Some(Token::RParen) => {
+                        return Ok(ParsedParameters {
+                            parameters,
+                            struct_params,
+                            struct_array_params,
+                            reference_params,
+                            declared_loadable_bytes,
+                        });
+                    }
+                    _ => return Err(self.error("expected `,` or `)` after a parameter")),
+                }
+            }
             let parsed_type = self.parse_type()?;
             let parsed_parameter = if self.peek() == Some(&Token::LParen) {
                 let (name, c_type, function_pointer_signature) =
@@ -4473,6 +4505,37 @@ impl Parser {
         let (c_type, function_pointer_signature) =
             self.parse_function_pointer_signature_tail(return_type)?;
         Ok((name, c_type, function_pointer_signature))
+    }
+
+    /// A C++ `std::function<R(A...)>` parameter type, possibly `const` and
+    /// taken by reference: the callable type of its signature. `None`, with
+    /// nothing consumed, when the type is not one.
+    fn parse_cpp_std_function_type(
+        &mut self,
+    ) -> Result<Option<(C0Type, syntax::C0FunctionPointerSignature)>, ClickError> {
+        if !self.verifies_cpp() {
+            return Ok(None);
+        }
+        let start = self.position;
+        if self.peek_ident() == Some("const") {
+            self.position += 1;
+        }
+        if !(self.peek_ident() == Some("std")
+            && self.peek_next() == Some(&Token::ColonColon)
+            && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(word)) if word == "function")
+            && self.tokens.get(self.position + 3) == Some(&Token::LessThan))
+        {
+            self.position = start;
+            return Ok(None);
+        }
+        self.position += 4;
+        let return_type = self.parse_type()?;
+        let callable = self.parse_function_pointer_signature_tail(return_type)?;
+        self.expect(Token::GreaterThan)?;
+        if self.peek() == Some(&Token::Amp) {
+            self.position += 1;
+        }
+        Ok(Some(callable))
     }
 
     /// Parses the nameless C declarator used as a Click-native binder type:
