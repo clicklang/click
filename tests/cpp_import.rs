@@ -18383,3 +18383,64 @@ int total(const Shape& shape, int scale) {
         "{rendered}"
     );
 }
+
+// An override of a method of a class whose object carries state is stated on
+// its own class's memory, so its class defines that state; and a defining
+// class's method, stated on that class's memory, is not overridden.
+#[test]
+fn class_object_state_refuses_undefined_and_nested_overrides() {
+    let source = "struct Shape { virtual int area(int scale) const noexcept = 0; };
+struct Square : Shape {
+    int side;
+    int area(int scale) const noexcept override { return side + scale; }
+};
+struct Tile : Square {
+    int area(int scale) const noexcept override { return scale + side; }
+};
+int total(const Shape& shape, int scale) noexcept { return shape.area(scale); }
+";
+    let sidecar = r#"verifying "shapes.cpp";
+class Shape {
+    function size(this) -> int32;
+}
+extern int Shape::area(int scale) const {
+    requires 0 <= scale and scale <= 100;
+    requires 0 <= size(this) and size(this) <= 100;
+    ensures result == size(this) + scale;
+}
+class Square : Shape {
+    function size(this) -> int32 { this->side }
+}
+int Square::area(int scale) const {
+} by { execute(); simp(); }
+int Tile::area(int scale) const {
+} by { execute(); simp(); }
+int total(const Shape& shape, int scale) {
+    requires 0 <= scale and scale <= 100;
+    requires 0 <= size(shape) and size(shape) <= 100;
+    ensures result == size(shape) + scale;
+} by { execute(); simp(); }
+"#;
+    let project = Project::with_fixture("shapes.cpp", "total", source);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    for (from, to, expected) in [
+        (
+            "",
+            "",
+            "`Tile_area` overrides `Square_area`, which is stated on its class's memory",
+        ),
+        (
+            "class Square : Shape {\n    function size(this) -> int32 { this->side }\n}\n",
+            "",
+            "`Square_area` overrides `Shape_area`, whose class's object carries state",
+        ),
+    ] {
+        let sidecar = sidecar.replacen(from, to, 1);
+        let error = C0VerificationSession::new_program_prepared(&sidecar, &import)
+            .err()
+            .expect("the override must be refused");
+        let rendered = format!("{error:?}");
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}

@@ -1,3 +1,4 @@
+mod cpp_class_objects;
 mod cpp_model;
 mod cpp_syntax;
 mod library_paths;
@@ -696,6 +697,9 @@ struct Parser {
     /// The crate traits whose objects carry state, by importer name: the
     /// token rewrite already gave their implementations their interfaces.
     rust_object_traits: BTreeSet<String>,
+    /// The importer names of the methods of C++ classes whose objects carry
+    /// state: an override of one is stated on its own memory.
+    cpp_object_methods: cpp_class_objects::ObjectMethods,
     match_nesting: usize,
     proposition_nesting: usize,
     proof_nesting: usize,
@@ -1064,6 +1068,19 @@ impl Parser {
         parser.plain_char = layouts.plain_char;
         parser.int64_t_rank = layouts.int64_t_rank.unwrap_or(LongRank::Long);
         if layouts.language == Some(SourceLanguage::Cpp) {
+            // A sidecar verifying a C++ header is C++ by its import, which
+            // its `verifying` path does not say: its class object state is
+            // rewritten here.
+            if parser.language != SourceLanguage::Cpp {
+                let (tokens, positions, methods) = cpp_class_objects::rewrite_class_objects(
+                    std::mem::take(&mut parser.tokens),
+                    std::mem::take(&mut parser.positions),
+                )?;
+                parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
+                parser.tokens = tokens;
+                parser.positions = positions;
+                parser.cpp_object_methods = methods;
+            }
             parser.language = SourceLanguage::Cpp;
             parser.rust_trait_implementations = layouts.virtual_overrides;
         }
@@ -1112,9 +1129,20 @@ impl Parser {
         } else {
             (tokens, positions, BTreeSet::new())
         };
+        // So is a C++ sidecar's class object state.
+        let (tokens, positions, cpp_object_methods) = if language == SourceLanguage::Cpp {
+            cpp_class_objects::rewrite_class_objects(tokens, positions)?
+        } else {
+            (
+                tokens,
+                positions,
+                cpp_class_objects::ObjectMethods::default(),
+            )
+        };
         let matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
         Ok(Self {
             rust_object_traits,
+            cpp_object_methods,
             source_aliases: BTreeMap::new(),
             qualified_objects: None,
             pending_tactic_signature: false,
@@ -1410,6 +1438,29 @@ impl Parser {
         // contract a call through it assumes.
         let cpp = self.language == SourceLanguage::Cpp;
         for (implementation, interface) in std::mem::take(&mut self.rust_trait_implementations) {
+            // A defining class's method is stated on that class's memory, which
+            // an override's class lays out differently.
+            if cpp && self.cpp_object_methods.on_memory.contains(&interface) {
+                return Err(ClickError::new(format!(
+                    "`{implementation}` overrides `{interface}`, which is stated on its class's \
+                     memory by that class's definitions of its object's state; overriding it \
+                     remains unsupported"
+                ))
+                .at_declaration(&implementation));
+            }
+            // An override of a method of a class whose object carries state is
+            // stated on its own memory, by its class's definitions.
+            if cpp && self.cpp_object_methods.interfaces.contains(&interface) {
+                if !self.cpp_object_methods.on_memory.contains(&implementation) {
+                    return Err(ClickError::new(format!(
+                        "`{implementation}` overrides `{interface}`, whose class's object \
+                         carries state: its class defines that state on its own memory, \
+                         `class Derived : Base {{ function f(this) -> T {{ ... }} }}`"
+                    ))
+                    .at_declaration(&implementation));
+                }
+                continue;
+            }
             let Some(interface) = function_blocks
                 .iter()
                 .find(|block| (cpp || block.is_external()) && block.signature().name() == interface)

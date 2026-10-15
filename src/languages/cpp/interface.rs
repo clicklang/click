@@ -12,8 +12,36 @@ pub(super) fn prepare(
     reachable: &[CFunction],
     layouts: BTreeMap<String, syntax::C0StructLayout>,
     library_contracts: String,
+    object_coercions: &BTreeSet<(String, String)>,
 ) -> Result<PreparedExecution, String> {
-    let functions = prepare_functions(import, selected, reachable, &layouts)?;
+    let mut functions = prepare_functions(import, selected, reachable, &layouts)?;
+    // Where a reference to a derived class becomes a reference to its
+    // polymorphic base, the importer places a pack before the call and an
+    // unpack after it, each taking the derived class's address. Their
+    // contracts are the sidecar's; without one, each moves nothing.
+    for (derived, base) in object_coercions {
+        let layout = layouts
+            .get(derived)
+            .ok_or("C++ base conversion's derived class has no checked layout")?;
+        for name in [
+            crate::languages::cpp::names::object_pack_name(derived, base),
+            crate::languages::cpp::names::object_unpack_name(derived, base),
+        ] {
+            crate::instrumentation::record_deterministic_work(1);
+            let object = syntax::C0Parameter::new(
+                C0Type::Int32Pointer,
+                "object".to_string(),
+                Some(derived.clone()),
+            )
+            .with_pointee_struct_layout(derived.clone(), layout.clone())
+            .with_pointee_constant(true);
+            functions.push(syntax::C0Function::external(
+                C0Type::Void,
+                name,
+                vec![object],
+            ));
+        }
+    }
     Ok(PreparedExecution {
         functions,
         layouts,
