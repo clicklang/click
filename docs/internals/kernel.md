@@ -570,6 +570,13 @@ conditional, which no order fact is ever written about, gets the bounds its
 arms already state. The hull is a bound, not a case split: a claim that holds
 on one arm and fails on the other stays undecided.
 
+Scalar specification guards containing `and`, `or`, and `not` are encoded with
+existing 0/1 conditional terms, visiting each guard node once. The selected
+value's arms occur once around that guard, rather than being duplicated
+through the logical tree. Lowering remains context independent; explicit
+normalization uses the stated premises to select an arm. Unknown guards keep
+both possibilities (`mdtests/pure_conditional_compound_guards*.md`).
+
 ## C ABI and memory layout
 
 The C front end models one explicit ABI: LP64. In that ABI, `int8` has size and alignment 1, `int16` and
