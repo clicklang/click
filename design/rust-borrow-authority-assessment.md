@@ -256,9 +256,11 @@ regression.
 Locked Rust lowering now activates this adapter for one direct mutable scalar
 reborrow from a reference parameter in a single MIR block ending at Return.
 The final child access must be a direct store. The active interval admits
-scalar assignments; reference copies/storage, calls, aggregates and wider
-control flow still need source integration. The source frontier checker covers
-the complete selected function and rechecks the frontier immediately after the
+scalar assignments and same-typed scalar reference copies or moves between
+private locals. The ending store may use a checked alias even after the original
+child local is replaced. Addressable reference storage, calls, aggregates and
+wider control flow still need source integration. The source frontier checker
+covers the complete selected function and rechecks the frontier immediately after the
 final store. Both the birth and ending must map uniquely to operations in the
 same immutable lowered function body.
 
@@ -276,7 +278,12 @@ successful store's lvalue, checks its source key against the live ledger record,
 and returns the original owned occurrence without restoring old memory.
 Distinct executions at the same source point receive distinct identities;
 expired, foreign-invocation or differently locked handles cannot recover.
-No static-label history search or guessed dynamic invocation is used.
+Copies retain the same live lease identity and all expire on recovery. The
+source frontier follows copies and replacement definitions, so a later alias
+use prevents an earlier ending even when the original child is no longer used.
+The ending consumes the actual alias lvalue's custody; a still-live original
+child cannot substitute for an untagged alias. No static-label history search
+or guessed dynamic invocation is used.
 
 Whole-byte footprints are checked independently of range spelling: four owned
 bytes can back one i32, including a declared automatic scalar. Larger ranges,
@@ -285,17 +292,20 @@ The unchanged native `set_seven` witness now contains an actual lease birth and
 ending; its helper/caller/nested proof, expansions and authority/value negatives
 continue to pass. Kernel execution tests cover original-occurrence recovery,
 parent denial, expired handles, wrong source plans and altered operations.
-Preparation has a deterministic 16/64/256/1024 selected-function scaling check.
+A pinned native local-move fixture checks alias-based helper/caller verification,
+proof expansion/recheck and authority/value negatives. Preparation has
+deterministic 16/64/256/1024 selected-function and alias-chain scaling checks.
 
-The compiled Rust semantic profile and resource semantics version change with
-this activation. Current matching checked-in Rust locks are rebound to the new
-profile; their source, compiler and artifact hashes are unchanged.
+The compiled Rust semantic profile versions this source coverage; the resource
+semantics version covers kernel lease execution. Current matching checked-in
+Rust locks are rebound to the new profile; their source, compiler and artifact
+hashes are unchanged.
 
 ## Remaining local-reference work
 
-Lease coverage must expand beyond this first source subset: reference copies,
-nested local source reborrows, read endings, multiple blocks and loops, shared
-aliases, aggregate fields, call transfer and memory havoc need their own checked
+Lease coverage must expand beyond this source subset: nested local source
+reborrows, read endings, multiple blocks and loops, shared aliases, aggregate
+fields, call transfer and memory havoc need their own checked
 source/runtime protocols. The read-only frontier and observation APIs cover
 more cases than source lease activation. Functions outside the activated subset
 retain their existing lowering and do not acquire local lease coverage.
