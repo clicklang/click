@@ -1570,7 +1570,8 @@ pub(super) fn describe_runtime_error(
             message.push_str(&labels.trace_legend());
             message
         }
-        crate::kernel::CRuntimeError::FunctionContract(message) => {
+        crate::kernel::CRuntimeError::FunctionContract(message)
+        | crate::kernel::CRuntimeError::UnsuppliedResourceValue(message) => {
             format!(
                 "function contract could not be applied: {}",
                 name_string_literal_storage(message)

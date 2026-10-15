@@ -811,6 +811,7 @@ fn certified_transitions_from_execution(
                 Proposition::CStatementVerifies {
                     outcome: CStatementOutcome::RuntimeError(
                         crate::kernel::CRuntimeError::FunctionContract(_)
+                            | crate::kernel::CRuntimeError::UnsuppliedResourceValue(_)
                             | crate::kernel::CRuntimeError::PendingCallObligations(_)
                     ),
                     ..

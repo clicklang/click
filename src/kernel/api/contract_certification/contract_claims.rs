@@ -60,7 +60,10 @@ pub(crate) fn c_checked_function_proposition_with_reason(
         CFunctionOutcome::UndefinedBehavior(_) => {
             return Err("the checked path outcome is undefined behavior".to_string());
         }
-        CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message)) => {
+        CFunctionOutcome::RuntimeError(
+            CRuntimeError::FunctionContract(message)
+            | CRuntimeError::UnsuppliedResourceValue(message),
+        ) => {
             return Err(format!(
                 "the checked path outcome is a function-contract runtime error: {message}"
             ));

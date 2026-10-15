@@ -3957,20 +3957,19 @@ fn resource_clauses_with_no_evaluable_order_name_two_positions() {
         })
     };
     let evaluate = |clauses: &[CResourceSpec]| {
-        let CRuntimeError::FunctionContract(message) =
-            crate::kernel::functions::evaluate_function_resource_context(
-                &CState::new(),
-                clauses,
-                &[],
-                &PureFactContext::new(),
-                &mut ExecutionBudget::default(),
-            )
-            .expect("clause evaluation stays inside its budget")
-            .expect_err("no clause has read authority for its base")
-        else {
-            panic!("an unevaluable segment is a contract error");
-        };
-        message
+        let error = crate::kernel::functions::evaluate_function_resource_context(
+            &CState::new(),
+            clauses,
+            &[],
+            &PureFactContext::new(),
+            &mut ExecutionBudget::default(),
+        )
+        .expect("clause evaluation stays inside its budget")
+        .expect_err("no clause has read authority for its base");
+        error
+            .function_contract_message()
+            .expect("an unevaluable segment is a contract error")
+            .to_string()
     };
     assert_eq!(
         evaluate(&[unowned(100), unowned(101)]),
@@ -4212,23 +4211,22 @@ fn expanded_resource_clause_diagnostics_keep_source_positions() {
             guard: None,
         })
     };
-    let CRuntimeError::FunctionContract(message) =
-        crate::kernel::functions::evaluate_function_resource_context(
-            &CState::new(),
-            &[
-                unowned(100).with_clause_position(0, 2),
-                unowned(101).with_clause_position(0, 2),
-                unowned(102).with_clause_position(1, 2),
-            ],
-            &[],
-            &PureFactContext::new(),
-            &mut ExecutionBudget::default(),
-        )
-        .expect("clause evaluation stays inside its budget")
-        .expect_err("no clause has read authority for its base")
-    else {
-        panic!("an unevaluable segment is a contract error");
-    };
+    let error = crate::kernel::functions::evaluate_function_resource_context(
+        &CState::new(),
+        &[
+            unowned(100).with_clause_position(0, 2),
+            unowned(101).with_clause_position(0, 2),
+            unowned(102).with_clause_position(1, 2),
+        ],
+        &[],
+        &PureFactContext::new(),
+        &mut ExecutionBudget::default(),
+    )
+    .expect("clause evaluation stays inside its budget")
+    .expect_err("no clause has read authority for its base");
+    let message = error
+        .function_contract_message()
+        .expect("an unevaluable segment is a contract error");
     assert!(message.contains("resource clauses 1 and 2 cannot be evaluated in any order"));
 }
 

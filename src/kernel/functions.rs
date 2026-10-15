@@ -7977,7 +7977,10 @@ fn prepare_verified_function_call<'a>(
         &path_assumptions,
     ) {
         Ok(state) => state,
-        Err(CRuntimeError::FunctionContract(message)) => {
+        Err(
+            CRuntimeError::FunctionContract(message)
+            | CRuntimeError::UnsuppliedResourceValue(message),
+        ) => {
             return Ok(Err(resource_call_failure(&message)));
         }
         Err(error) => return Ok(Err(resource_call_failure(&format!("{error}")))),
@@ -10772,7 +10775,7 @@ fn project_explicit_memory_segments(
                 let range = canonical_memory_range(segment.into_range());
                 ranges.insert(range);
             }
-            Err(message) => return Ok(Err(message)),
+            Err(message) => return Ok(Err(message.into())),
         }
     }
     Ok(Ok((ranges.into_iter().collect(), evidence_facts.into())))
@@ -24485,7 +24488,7 @@ pub(super) fn loop_instance_guard(
     let pointer = match pointer {
         Ok(CValue::Pointer(pointer)) => pointer,
         Ok(_) => return Err("loop guard requires a mutex pointer".into()),
-        Err(message) => return Err(message),
+        Err(message) => return Err(message.into()),
     };
     Ok(Some((pointer.pointer().clone(), held.clone())))
 }
@@ -28843,6 +28846,9 @@ fn annotate_resource_clause_error(error: CRuntimeError, note: String) -> CRuntim
         CRuntimeError::FunctionContract(message) => {
             CRuntimeError::FunctionContract(format!("{message} ({note})"))
         }
+        CRuntimeError::UnsuppliedResourceValue(message) => {
+            CRuntimeError::UnsuppliedResourceValue(format!("{message} ({note})"))
+        }
         CRuntimeError::ContractResourceDiagnostic {
             reason,
             held,
@@ -28872,21 +28878,26 @@ fn resource_clause_runtime_error(
 /// a section that stalls on these as a pair; anything else is one clause's own
 /// problem.
 fn resource_clause_failure_awaits_supply(error: &CRuntimeError) -> bool {
-    if let CRuntimeError::ContractResourceDiagnostic { memory, .. } = error {
-        return memory.is_some();
+    match error {
+        CRuntimeError::ContractResourceDiagnostic { memory, .. } => memory.is_some(),
+        CRuntimeError::UnsuppliedResourceValue(_) => true,
+        _ => false,
     }
-    let CRuntimeError::FunctionContract(message) = error else {
-        return false;
-    };
-    // An endpoint the facts do not keep defined is the clause's own
-    // problem: no other clause's cells make `i + 1` stop overflowing.
-    if message.contains(crate::kernel::loops::UNRULED_OUT_UNDEFINED_BEHAVIOR) {
-        return false;
+}
+
+/// The refusal for a resource clause value that did not evaluate. Another
+/// clause may supply what it read, unless the expression may have undefined
+/// behavior the facts do not rule out: no other clause's cells make `i + 1`
+/// stop overflowing, so that needs a requirement.
+fn unevaluated_resource_value(
+    refusal: &super::loops::ValueRefusal,
+    message: String,
+) -> CRuntimeError {
+    if refusal.is_undefined_behavior() {
+        CRuntimeError::FunctionContract(message)
+    } else {
+        CRuntimeError::UnsuppliedResourceValue(message)
     }
-    message.starts_with("could not evaluate an owned memory resource segment")
-        || message.starts_with("could not evaluate a viewed memory resource segment")
-        || message.starts_with("could not evaluate `")
-        || message.starts_with("could not evaluate resource `")
 }
 
 fn resource_clause_cycle_runtime_error(
@@ -29557,14 +29568,17 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
             {
                 Ok(segment) => segment,
                 Err(reason) => {
-                    return Ok(Err(CRuntimeError::FunctionContract(format!(
-                        "could not evaluate {} memory resource segment: {reason}",
-                        if resource.is_view() {
-                            "a viewed"
-                        } else {
-                            "an owned"
-                        },
-                    ))));
+                    return Ok(Err(unevaluated_resource_value(
+                        &reason,
+                        format!(
+                            "could not evaluate {} memory resource segment: {reason}",
+                            if resource.is_view() {
+                                "a viewed"
+                            } else {
+                                "an owned"
+                            },
+                        ),
+                    )));
                 }
             };
             let range = EvaluatedMemorySegment {
@@ -29768,7 +29782,7 @@ fn evaluate_declared_quantity(
                     required,
                     memory: None,
                 },
-                _ => CRuntimeError::FunctionContract(message),
+                _ => CRuntimeError::FunctionContract(message.into()),
             }),
         },
     )
@@ -30174,14 +30188,18 @@ fn evaluate_function_declared_resource_spec(
                             CResourceAccessMode::Own => "owns",
                             CResourceAccessMode::View => "views",
                         };
-                        return Ok(Err(CRuntimeError::FunctionContract(format!(
-                            "could not evaluate `{spelling}` while checking `{action} {name}({})`: {error}",
-                            source_arguments.unwrap_or_default().join(", ")
-                        ))));
+                        return Ok(Err(unevaluated_resource_value(
+                            &error,
+                            format!(
+                                "could not evaluate `{spelling}` while checking `{action} {name}({})`: {error}",
+                                source_arguments.unwrap_or_default().join(", ")
+                            ),
+                        )));
                     }
-                    return Ok(Err(CRuntimeError::FunctionContract(format!(
-                        "could not evaluate resource `{name}` argument {index}: {error}"
-                    ))));
+                    return Ok(Err(unevaluated_resource_value(
+                        &error,
+                        format!("could not evaluate resource `{name}` argument {index}: {error}"),
+                    )));
                 }
             }
         };
