@@ -2997,7 +2997,7 @@ pub fn c_external_function_rule(function: CFunction) -> Option<CExternalFunction
             .contract_interface()
             .construction_parameter()
             .is_none()
-        && function.opaque_contract_supported()
+        && function.verified_direct_contract_supported()
         && !function.contract_claims().is_empty()
         && function_contract_claims_are_complete(&function))
     .then_some(CExternalFunctionRule {

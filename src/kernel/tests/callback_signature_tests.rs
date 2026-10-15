@@ -93,8 +93,11 @@ fn callback_signature_codes_cannot_overlap_adjacent_types() {
     );
 }
 
+/// Whether a function may throw is part of its contract, not of its pointer
+/// type: a C pointer type cannot say. Refinement reads it: a function that
+/// never throws implements a contract that may, and not the reverse.
 #[test]
-fn exceptional_outcome_is_part_of_callback_signature_identity() {
+fn exceptional_outcome_is_part_of_the_contract_not_the_pointer_type() {
     let ordinary = c_function(
         CType::Int32,
         "ordinary",
@@ -103,7 +106,7 @@ fn exceptional_outcome_is_part_of_callback_signature_identity() {
     );
     let exceptional = ordinary.clone().with_int32_exceptional_outcome();
 
-    assert_ne!(
+    assert_eq!(
         ordinary.function_pointer_type(),
         exceptional.function_pointer_type()
     );
@@ -116,5 +119,10 @@ fn exceptional_outcome_is_part_of_callback_signature_identity() {
         !ordinary
             .contract_interface()
             .has_compatible_signature_and_composite_vocabulary(exceptional.contract_interface())
+    );
+    assert!(
+        exceptional
+            .contract_interface()
+            .has_compatible_signature_and_composite_vocabulary(ordinary.contract_interface())
     );
 }

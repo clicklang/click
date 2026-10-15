@@ -129,9 +129,18 @@ Ordinary `ensures` is owed only by normal returns and may use `result`;
 payload name is available in the opposite family. Omitting `throws int32`
 declares a nonthrowing interface.
 
-Exceptional contracts are pure and direct: the exceptional family cannot
-carry resources or mutable effects, and named contracts, external contracts,
-callbacks, indirect calls, handlers, and unwinding do not support it. A separate, object-free C++ scalar-exception
+Exceptional contracts are pure: the exceptional family cannot carry
+resources or mutable effects. A named contract or an `extern` declaration
+may say `throws int32` too, and a call through a pointer under a throwing
+contract, or to a throwing `extern`, has both outcomes, as a direct call
+does. Whether a function may throw is part of its contract, not of its
+pointer type: a function that never throws meets a contract that may, a
+function that may throw meets only a contract that may, and its
+`exceptional ensures` must give the contract's
+(`mdtests/exceptional_named_contract.md`,
+`mdtests/exceptional_external_contract.md`). An explicit refinement theorem
+for a source that may throw is not supported yet, and nor are handlers and
+unwinding. A separate, object-free C++ scalar-exception
 import profile accepts typed `throw int32`, one typed `try`/`catch (int name)`
 with a fresh payload binding, and the narrow single-guard cleanup shape
 documented by the import reference. It still rejects nested handlers and other
