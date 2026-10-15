@@ -577,3 +577,13 @@ The separate archive trace defect is preserved in
 [the refcount trace reproduction](https://github.com/lacker/click/blob/db1cc4541/bugs/archive-refcount-failure-loses-proof-trace.md).
 Its original post-call pure comparison loses the checked trace prefix; investigate
 that recording defect before guessing at its missing count relation.
+
+The refcount trace defect also reproduces upstream with a minimal false
+`have x == 2 by auto` after a helper proved `x == 1`. The early source-have
+refusal dropped the checked proof's diagnostic provider. Attaching the same
+provider used by its other refusal paths preserves the existing message and
+restores the checked trace prefix; failed smart candidates add no facts.
+The new regression and all 73 active diagnostic controls pass (nine ignored).
+On the archive, the original refcount trace now records the post-retain read
+equal to `1 + amount`; its functional failure still needs diagnosis. Retain
+the 46/52 audit count.
