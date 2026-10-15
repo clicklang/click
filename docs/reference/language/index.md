@@ -3370,9 +3370,11 @@ Both require the corresponding read permission and initialized storage.
 `address(pointer)` is the `uint64` integer representation of an object pointer
 under the LP64 profile. It is the spec spelling of the C cast
 `(unsigned long) pointer` and denotes the same kernel term: the address keeps
-the exact source pointer, so `address(p) == address(q)` is decided exactly as
-`p == q`, `address(p) == 0` as `p == 0`, and a comparison with an integer that
-has no pointer origin stays undecided. Rewriting the pointer to null reduces
+the exact source pointer. `address(p) == address(q)` holds when `p == q`
+does, but not conversely: it is what a C comparison between pointers states,
+and it carries no permission from one pointer to the other.
+`address(p) == 0` is decided as `p == 0`, and a comparison with an integer
+that has no pointer origin stays undecided. Rewriting the pointer to null reduces
 its address to `uint64` zero, also inside arithmetic with symbolic operands.
 Contracts use it to describe words that hold a pointer in integer form,
 such as `ensures node->word == address(next)`

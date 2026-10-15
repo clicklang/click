@@ -135,12 +135,14 @@ the returned children on every path. Recursion therefore descends through a
 matched, modeled resource without losing or duplicating any subtree.
 
 The membership guarantee is where the model's identity payload earns its place.
-`heap_member` tests `node == target` against the payload, while the C tests the
-address `root == target`; `tree_at` states `fact p == identity`, and the proof
-turns that into `node == target` in the branch where the C test held with
+The C tests the address `root == target`, so `heap_member` tests
+`address(node) == address(target)` against the payload: equal addresses are
+all the C comparison establishes, and a pointer one past one node could share
+another node's address. `tree_at` states `fact p == identity`, and the proof
+turns the C test into the model's in the branch where it held with
 
 ```click
-have node == target by auto;
+have address(node) == address(target) by auto;
 ```
 
 `auto` rewrites `node` to `root` and closes on the branch condition.
@@ -262,11 +264,12 @@ cite.
   standard library's `list::append_associative`.
 - `heap_member` is the recursive `bool` membership test, searching the
   node, then the left subtree, then the right one, in the order the C search
-  uses. `heap_member_is_inorder_membership` proves
-  `heap_member(tree, target) == list::contains(heap_inorder(tree), target)` by
-  structural induction from `list::contains_append` and `list::contains_cons`, so
-  membership in the model is exactly membership in the sequence the rotations
-  preserve. The C search only learns that a recursive call returned nonzero;
+  uses. `heap_addresses` lists the node addresses in order, and
+  `heap_member_is_address_membership` proves
+  `heap_member(tree, target) == list::contains(heap_addresses(tree), address(target))`
+  by structural induction from `list::contains_append` and
+  `list::contains_cons`, so membership in the model is exactly membership of
+  the address in the in-order address sequence. The C search only learns that a recursive call returned nonzero;
   since a `bool` is exactly `false` or `true`, that `heap_member(l.model,
   target) != false` is already the `heap_member(left_model, target)` the
   model's left test needs, with no range lemma.
