@@ -1,11 +1,14 @@
-//! Closures that capture nothing, passed for a `fn` pointer. Charon writes
-//! `apply(|y| y + y, x)` as a closure state type with no fields, the closure's
-//! `Fn::call` method taking `&self` and its arguments as one tuple, and a
-//! generated `ClosureAsFn` function the pointer cast names. The importer
-//! keeps only the `call` body, named as rustc names the closure
+//! Closures and callable values. Charon writes `apply(|y| y + y, x)` as a
+//! closure state type whose fields are its captures, the closure's `Fn::call`
+//! method taking `&self` and its arguments as one tuple, and, for a `fn`
+//! pointer, a generated `ClosureAsFn` function the pointer cast names. The
+//! importer keeps only the `call` body, named as rustc names the closure
 //! (`caller::{closure#0}`) and rewritten as an ordinary function of the
-//! closure's parameters, and a cast of the generated function is the
-//! address of that function.
+//! closure's captures and parameters. A cast of the generated function is the
+//! address of that function; a state reference unsized to `&dyn Fn`, or a
+//! state passed by value for an `impl Fn` parameter, is the closure's
+//! creation from its captured values; and a call through `&dyn Fn` or an
+//! `Fn`-bound type parameter is a call through the callable value.
 use super::*;
 
 impl Adapter<'_> {
