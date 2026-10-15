@@ -3208,6 +3208,47 @@ fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_snapshots(
     assert!(!rendered.contains('…'), "{rendered}");
 }
 
+#[test]
+fn failed_final_assumption_preserves_its_checked_trace_context() {
+    let source = r#"verifying "f.c";
+        void f(int32 *cell, int32 value) {
+            owns cell[0..1];
+            ensures cell[0] == value;
+            ensures cell[0] == value + 1;
+        } by {
+            step(); step();
+            have cell[0] == value by { simp(); }
+            assumption();
+            assumption();
+            assumption();
+        }
+    "#;
+    with_proof_trace("f", || {
+        let error = verify_c0_sources(
+            source,
+            &[("f.c", "void f(int32 *cell, int32 value) { *cell = value; }")],
+        )
+        .expect_err("the false remaining claim must reject");
+        assert!(
+            error.message().contains("found no available fact"),
+            "{}",
+            error.message()
+        );
+        assert!(
+            error
+                .concise_report_parts()
+                .0
+                .contains("found no available fact")
+        );
+        let trace = error
+            .trace_context_report()
+            .expect("retain the failed focused goal's existing context");
+        assert!(trace.contains("steps through: *cell = value"), "{trace}");
+        assert!(trace.contains("have cell[0] == value"), "{trace}");
+        assert!(!trace.contains("adds: cell[0] == value + 1"), "{trace}");
+    });
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/surface/tests/diagnostic_tests.rs");

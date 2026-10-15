@@ -887,3 +887,21 @@ rbtree-augmented, refcount, ring-buffer, rust-byte-sum and rust-chunks-exact.
 This is not a green archive verdict. The expensive first returned-resource
 assumption has a separate preserved report at that checkpoint; the fold budget
 failure itself no longer reproduces on the final indexed-order archive variant.
+
+### Preserve the final-assumption trace context
+
+The ordered final-assumption driver discarded each failed focused proof error
+and constructed a fresh summary. Focusing also created a semantic root without
+linking its existing checked trace prefix. Retain one selected failed goal's
+diagnostic on the original summary and register the focused root under that
+prefix. This restores recorded execution and successful `have` steps through the
+existing renderer; it introduces no facts or output format.
+
+The regression rejects a deliberately false second postcondition after a checked
+store and true stored-value fact. It checks the original driver summary and the
+presence of those earlier operations, and refuses any trace fact asserting the
+false claim. All 135 selected current-upstream diagnostic and proof-trace controls pass
+(2.47s). A freshly rebuilt CLI rejects the false claim with the original summary
+and useful checked prefix. Formatting, mdBook, docs lint and whitespace checks
+pass; advisory Vale is unavailable. Archive checkpoint
+`e5305eeba` preserves the original false-claim and string-clear reproductions.
