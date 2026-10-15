@@ -350,6 +350,9 @@ struct Adapter<'a> {
     /// The crate trait method implementations, by the interface function
     /// each implements.
     trait_impl_methods: BTreeMap<a::FunDeclId, String>,
+    /// Each crate struct a call passes as a crate trait's object, with the
+    /// trait: the struct's pack and unpack functions are imported.
+    object_coercions: std::cell::RefCell<BTreeSet<(a::TypeDeclId, a::TraitDeclId)>>,
 }
 impl Adapter<'_> {
     fn ty(&self, t: &a::Ty) -> Result<Type, String> {
@@ -561,6 +564,12 @@ struct BodyAdapter<'a, 'b> {
     slice_pairs: BTreeMap<a::LocalId, [String; 2]>,
     iterator_refs: BTreeMap<a::LocalId, a::LocalId>,
     iterator_discriminants: BTreeMap<a::LocalId, a::LocalId>,
+    /// The locals a crate struct reference is unsized into a `&dyn` crate
+    /// trait for.
+    unsized_objects: BTreeMap<a::LocalId, (a::TypeDeclId, a::TraitDeclId)>,
+    /// The pack, unpack, and argument of each object the block's call makes
+    /// from a crate struct reference.
+    coercions: std::cell::RefCell<Vec<(String, String, E)>>,
 }
 impl BodyAdapter<'_, '_> {
     /// Named interpretations for compiler-resolved slice length and unsigned From.
@@ -1479,7 +1488,7 @@ impl BodyAdapter<'_, '_> {
                         return Err(unsupported("projected call destination"));
                     };
                     let mut owned_arguments = Vec::new();
-                    let arguments = call
+                    let arguments: Vec<E> = call
                         .args
                         .iter()
                         .enumerate()
@@ -1509,6 +1518,45 @@ impl BodyAdapter<'_, '_> {
                             }
                         })
                         .collect::<Result<_, String>>()?;
+                    // A crate struct reference passed as a crate trait's
+                    // object becomes the object for the call.
+                    for (index, operand) in call.args.iter().enumerate() {
+                        let generic = callee
+                            .signature
+                            .inputs
+                            .get(index)
+                            .and_then(|ty| self.adapter.object_parameter_trait(callee, ty))
+                            .and_then(|trait_id| match operand.ty().kind() {
+                                a::TyKind::Ref(_, pointee, _) => self
+                                    .adapter
+                                    .record_id(pointee)
+                                    .ok()
+                                    .map(|record| (record, trait_id)),
+                                _ => None,
+                            });
+                        let unsized_object = match operand {
+                            a::Operand::Move(place) | a::Operand::Copy(place) => match place.kind {
+                                a::PlaceKind::Local(local) => {
+                                    self.unsized_objects.get(&local).copied()
+                                }
+                                _ => None,
+                            },
+                            _ => None,
+                        };
+                        if let Some((record, trait_id)) = generic.or(unsized_object) {
+                            let (pack, unpack) =
+                                self.adapter.object_coercion_names(record, trait_id)?;
+                            self.adapter
+                                .object_coercions
+                                .borrow_mut()
+                                .insert((record, trait_id));
+                            self.coercions.borrow_mut().push((
+                                pack,
+                                unpack,
+                                arguments[index].clone(),
+                            ));
+                        }
+                    }
                     T::Call {
                         function: self
                             .adapter
@@ -1650,6 +1698,7 @@ pub(super) fn decode_crate(
         closure_captures: BTreeMap::new(),
         callable_parameters: std::cell::RefCell::new(Vec::new()),
         trait_impl_methods: BTreeMap::new(),
+        object_coercions: std::cell::RefCell::new(BTreeSet::new()),
     };
     if crate_config.is_some() {
         adapter.record_closure_captures()?;
@@ -2024,8 +2073,11 @@ pub(super) fn decode_crate(
             slice_pairs,
             iterator_refs,
             iterator_discriminants,
+            unsized_objects: traits::unsized_objects(&adapter, body),
+            coercions: std::cell::RefCell::new(Vec::new()),
         };
         let mut blocks = Vec::new();
+        let mut coercions = Vec::new();
         for block in &b.body.body {
             let mut statements: Vec<S> = block
                 .statements
@@ -2078,11 +2130,13 @@ pub(super) fn decode_crate(
                     block.terminator.span.data().beg.line
                 )
             })?;
+            coercions.push((blocks.len(), b.coercions.take()));
             blocks.push(out::MirBlock {
                 statements,
                 terminator,
             });
         }
+        traits::wrap_object_coercions(&mut blocks, coercions)?;
         protocol::split_next_branches(&mut blocks)?;
         functions.push(out::Function {
             name: name.clone(),
@@ -2110,6 +2164,9 @@ pub(super) fn decode_crate(
             }
             functions.push(function);
         }
+    }
+    for (record, trait_id) in adapter.object_coercions.borrow().iter() {
+        functions.extend(adapter.object_coercion_functions(*record, *trait_id)?);
     }
     for imp in krate.trait_impls.iter() {
         let id = imp.impl_trait.id;

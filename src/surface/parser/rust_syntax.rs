@@ -293,7 +293,9 @@ impl Parser {
             };
             match self.parse_function_block(false) {
                 Ok(block) => {
-                    if let (Some(trait_name), Some(method)) = (&self.rust_impl_trait, method) {
+                    if let (Some(trait_name), Some(method)) = (&self.rust_impl_trait, method)
+                        && !self.rust_object_traits.contains(trait_name)
+                    {
                         let mut interface = trait_name.clone();
                         crate::languages::rust::names::push_path_segment(&mut interface, &method);
                         self.rust_trait_implementations
@@ -314,6 +316,19 @@ impl Parser {
         result?;
         self.expect(Token::RBrace)?;
         Ok(())
+    }
+
+    /// Whether `clause` is the object a trait method's receiver holds, which
+    /// the token rewrite gives a trait whose object carries state.
+    fn is_object_handle(&self, clause: &ResourceClause) -> bool {
+        let Some(trait_name) = &self.rust_trait_interface else {
+            return false;
+        };
+        let ResourceClause::Named { resource, .. } = clause else {
+            return false;
+        };
+        matches!(resource.as_ref(), ResourceClause::Declared { name, .. }
+            if *name == rust_trait_objects::object_family(trait_name))
     }
 
     /// `trait traits::Shape { ... }`: each `fn` inside is the interface of
@@ -346,14 +361,13 @@ impl Parser {
             match self.parse_function_block(true) {
                 // Nor does it hold any of the receiver's resources.
                 Ok(block)
-                    if block
-                        .requires()
-                        .iter()
-                        .any(|requirement| matches!(requirement, Requirement::Resource(_)))
-                        || block
-                            .ensures()
-                            .iter()
-                            .any(|clause| matches!(clause.ensure(), Ensure::Resource(_))) =>
+                    if block.requires().iter().any(|requirement| {
+                        matches!(requirement, Requirement::Resource(clause)
+                            if !self.is_object_handle(clause))
+                    }) || block.ensures().iter().any(|clause| {
+                        matches!(clause.ensure(), Ensure::Resource(resource)
+                                if !self.is_object_handle(resource))
+                    }) =>
                 {
                     result = Err(self.error(
                         "a trait method's interface holds no resources: it reads nothing through `self`, whose type it does not know",

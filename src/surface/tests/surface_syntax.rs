@@ -5202,3 +5202,99 @@ fn a_rust_trait_implementation_inherits_its_interface() {
         error.message()
     );
 }
+
+/// A crate trait's `function`s are its object's fields: the object is a
+/// field-bearing abstract resource, a `&self` method's interface holds it and
+/// reads `size(self)` as its field, an implementation's method is stated on
+/// its own memory with the interface inherited there, and the struct's pack
+/// and unpack carry the definitions.
+#[test]
+fn a_rust_trait_function_is_its_object_field() {
+    let source = "verifying \"shapes.rs\"; \
+        trait shapes::Shape { function size(self) -> i32; \
+            fn area(&self, scale: i32) -> i32 { ensures result == size(self) + scale; } } \
+        impl shapes::Shape for shapes::Square { function size(self) -> i32 { self.side } \
+            fn area(&self, s: i32) -> i32 { } by { execute(); simp(); } }";
+    // The importer supplies `Square`'s layout, which `owns *self` reads.
+    let parse = |source: &str| {
+        parser::parse_with_layouts_and_aggregate_objects(
+            source,
+            parser::ProgramLayouts {
+                struct_layouts: [(
+                    "__rust_q_I6_shapes_I6_Square".to_string(),
+                    crate::languages::c::syntax::C0StructLayout::from_explicit_fields(
+                        vec![(
+                            "side".into(),
+                            crate::languages::c::syntax::C0Type::Int32,
+                            0,
+                            4,
+                        )],
+                        4,
+                        4,
+                    )
+                    .unwrap(),
+                )]
+                .into(),
+                ..Default::default()
+            },
+        )
+    };
+    let file = parse(source).expect("a trait with a function parses");
+    let display = |name: &str| crate::languages::rust::names::display_rust_names(name).into_owned();
+    let object = file
+        .resource_definitions()
+        .iter()
+        .find(|definition| display(definition.name()) == "shapes::Shape::object")
+        .expect("the trait's object is declared");
+    assert!(object.is_sealed());
+    assert_eq!(object.fields().len(), 1);
+    let names = file
+        .function_blocks()
+        .iter()
+        .map(|block| display(block.signature().name()))
+        .collect::<Vec<_>>();
+    for name in [
+        "shapes::Shape::area",
+        "<shapes::Square as shapes::Shape>::area",
+        "<shapes::Square as shapes::Shape>::__pack",
+        "<shapes::Square as shapes::Shape>::__unpack",
+    ] {
+        assert!(names.iter().any(|found| found == name), "{name}: {names:?}");
+    }
+    // The implementation renames `scale` and reads `size(self)` as
+    // `self.side`, with the interface's guarantee labeled as the interface's.
+    let area = file
+        .function_blocks()
+        .iter()
+        .find(|block| {
+            display(block.signature().name()) == "<shapes::Square as shapes::Shape>::area"
+        })
+        .unwrap();
+    assert!(
+        area.requires()
+            .iter()
+            .any(|requirement| matches!(requirement, Requirement::Resource(_)))
+    );
+    let labels = (0..area.ensures().len())
+        .map(|index| display(&area.ensure_claim_label(index)))
+        .collect::<Vec<_>>();
+    assert!(
+        labels
+            .iter()
+            .any(|label| label == "<shapes::Square as shapes::Shape>::area.interface_ensures_0"),
+        "{labels:?}"
+    );
+    let iface = parser::implementation_interface_contract(area.signature().name());
+    assert!(
+        file.contract_definitions()
+            .iter()
+            .any(|contract| contract.name() == iface)
+    );
+    let missing = source.replace("function size(self) -> i32 { self.side }", "");
+    let error = parse(&missing).expect_err("an implementation must define the function");
+    assert!(
+        error.message().contains("defines it for its type"),
+        "{}",
+        error.message()
+    );
+}

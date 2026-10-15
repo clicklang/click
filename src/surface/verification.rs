@@ -2570,6 +2570,7 @@ fn verify_c0_sources_in_context(
                     .filter(|name| !declared_diverging.contains(name))
                     .collect::<BTreeSet<_>>();
                 assumed_terminating.extend(closure_instance_names(&parsed_sources));
+                assumed_terminating.extend(object_coercion_names(&parsed_sources));
                 assumed_terminating.extend([
                     "pthread_create".to_string(),
                     "pthread_join".to_string(),
@@ -3520,6 +3521,7 @@ fn verify_c0_sources_in_context(
         .filter(|name| !declared_diverging.contains(name))
         .collect::<BTreeSet<_>>();
     assumed_terminating.extend(closure_instance_names(&parsed_sources));
+    assumed_terminating.extend(object_coercion_names(&parsed_sources));
     if selected_thread_runtime
         == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread
     {
@@ -5747,8 +5749,32 @@ pub(in crate::surface) fn build_function_environment(
             }
             None => function.to_kernel_function(),
         };
+        let unwritten_coercion = function_block.is_none()
+            && crate::languages::rust::names::is_object_coercion(function.name());
         if closure_captures > 0 {
             environment = with_closure_instance(environment, &function, closure_captures)?;
+        }
+        // A trait's object carries no state when the trait declares no
+        // functions: making one from a struct reference, or the reference
+        // back, moves nothing.
+        if unwritten_coercion {
+            let no_op = function.clone().with_contract(
+                vec![],
+                vec![],
+                vec![],
+                vec![CFunctionContractClaim::body_safety()],
+                true,
+            );
+            let rule = crate::kernel::c_external_function_rule(no_op.clone()).ok_or_else(|| {
+                ClickError::new(format!(
+                    "trait object coercion `{}` cannot be applied opaquely",
+                    function.name()
+                ))
+            })?;
+            environment = environment
+                .with_function(no_op)
+                .with_external_function_rule(rule);
+            continue;
         }
         environment = environment.with_function(function);
     }
@@ -5854,6 +5880,14 @@ fn check_trait_method_implementations(
         if environment.get_function_contract(interface).is_none() {
             continue;
         }
+        // A trait whose object carries state states each implementation's
+        // interface on that implementation's own memory.
+        let iface = crate::surface::parser::implementation_interface_contract(function.name());
+        let contract = if environment.get_function_contract(&iface).is_some() {
+            iface.as_str()
+        } else {
+            interface
+        };
         // An implementation without its own contract is never verified, so
         // no interface may stand for it.
         if !function_blocks
@@ -5870,7 +5904,7 @@ fn check_trait_method_implementations(
         let Some(implementation) = environment.get_function(function.name()) else {
             continue;
         };
-        if !crate::kernel::c_function_refines_named_contract(environment, interface, implementation)
+        if !crate::kernel::c_function_refines_named_contract(environment, contract, implementation)
             .map_err(ClickError::new)?
         {
             return Err(ClickError::new(format!(
@@ -5884,6 +5918,18 @@ fn check_trait_method_implementations(
         }
     }
     Ok(())
+}
+
+/// The functions that turn a crate struct reference into a crate trait's
+/// object and back. Each returns at once: it only moves resources.
+fn object_coercion_names(
+    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+) -> impl Iterator<Item = String> + '_ {
+    parsed_sources
+        .values()
+        .map(|(_, function)| function.name())
+        .filter(|name| crate::languages::rust::names::is_object_coercion(name))
+        .map(str::to_string)
 }
 
 /// The functions that make instances of the program's capturing closures.

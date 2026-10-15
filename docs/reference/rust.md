@@ -555,7 +555,7 @@ a call through the trait has no contract.
 
 The interface's receiver is a reference to a value of a type it does not
 know: the interface reads nothing through `self` and holds none of its
-resources, so an implementation whose contract needs the receiver's
+resources, except its trait's object state (below), so an implementation whose contract needs the receiver's
 fields does not refine it. Every implementation a call can reach is in the
 import, since a generic call names its instance's implementation and a
 `dyn` coercion its vtable, and each one is checked. The importer refuses a
@@ -564,6 +564,37 @@ methods, a method that is generic or takes no `&self` or `&mut self`,
 non-scalar parameters or results, an implementation for anything but a
 crate struct, and a generic implementation
 ([`design/charon-trial/trait-methods`](https://github.com/clicklang/click/blob/master/design/charon-trial/trait-methods/shapes.click)).
+
+### Trait object state
+
+A trait block may declare model functions of its object, `function
+size(self) -> i32;`, which are the object's state: the trait's object is a
+sealed abstract resource, `trait_objects::Shape::object`, with a field for
+each function. A `&self` method of the trait, a parameter `x: &T` with a
+`T: Trait` bound, and `x: &dyn Trait` each hold the object `x` refers to,
+with no clause written for it, and read its state as `size(x)`. A shared
+reference keeps it, so the caller still knows `size(x)` after the call, and
+an `ensures` reads it as it was at entry. No proof folds or unfolds the
+object: it has no body.
+
+Each `impl` of such a trait defines every function from its type's
+fields, `function size(self) -> i32 { self.side }`; an `impl` that omits
+one is refused. Its methods are stated on the struct's own memory, `owns
+*self` for `&self`, with `size(self)` read as the definition in its own
+clauses and in the interface's it inherits, and its proof is an ordinary
+method proof. Its refinement is checked against the interface read on that
+memory, an implementation's `contract fn` `..._iface`.
+
+Where a struct reference becomes the object, at a call that instantiates a
+bound type parameter with the struct or coerces it to `&dyn Trait`, the
+importer brackets the call with the struct's pack and unpack: pack
+consumes the struct's memory and produces its object, whose fields are the
+definitions read on it, and unpack returns the memory with the definitions
+equal to the fields. A caller passing `&Square { side: 3 }` therefore knows
+`size` is `3` and gets the interface's guarantee read with that value.
+`&mut self` receivers, generic traits, and default methods are not yet
+supported
+([`design/charon-trial/trait-objects`](https://github.com/clicklang/click/blob/master/design/charon-trial/trait-objects/shapes.click)).
 
 ### `extern` block functions
 

@@ -3935,6 +3935,8 @@ mod impl_fn;
 mod parameterized_contracts;
 #[path = "rust_import/trait_methods.rs"]
 mod trait_methods;
+#[path = "rust_import/trait_objects.rs"]
+mod trait_objects;
 
 #[path = "rust_import/loop_headers.rs"]
 mod loop_headers;
