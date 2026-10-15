@@ -74,9 +74,9 @@ original shape: a Rust slice cursor `cursor == base + (4 - k)` held as a
 loop invariant, with `k == 4` proved before a `have cursor == base` in the
 loop's `preserve` body. That `have` sits behind enough recorded snapshots
 (calls and `mark`s) that per-snapshot premise spelling is expensive.
-`bugs/loop-invariant-through-pointer-field-simp-exhausts-budget.md` is a
-separate budget failure in pointer-field loops. It predates `c0cf00874`,
-but a fix to premise surfacing may affect both.
+The separate pointer-field loop budget failures were repaired by explicitly
+instantiating their filled-prefix fact after the increment; that proof repair
+does not address this cursor equality search.
 
 ## Acceptance criteria
 

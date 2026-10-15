@@ -13,9 +13,11 @@ the store result. This explicit case split keeps the remaining smart closures
 small enough to verify and expand under their ordinary budgets.
 
 The loop counts toward `j->hi`, a viewed field the body never writes, so the
-measure reads it. The quantified invariant shares the closer's premise pool, so
-the two ranking members are named before the back edge in the shape the
-obligation is built in.
+measure reads it. The ranking members are named before the back edge in the
+shape the obligation is built in. After the increment, the proof explicitly converts
+`k < i` to `k <= at(statement(4).entry, i)` and instantiates the filled-prefix
+fact from that snapshot. The final closer can then use the stated invariant
+instead of rediscovering the quantified prefix extension through memory history.
 
 ```c filename=probe_contract.c
 struct job {
@@ -129,6 +131,21 @@ int32 probe_contract(struct job *j) {
                     at(statement(3).entry, i) < at(statement(3).entry, j->hi);
                     j->lo <= j->hi;
                 }
+            }
+            have forall (k: int32) { j->lo <= k and k < i implies j->p[k] == j->v } by {
+                intro();
+                intro();
+                have k <= at(statement(4).entry, i) by {
+                    arithmetic() using {
+                        k < i;
+                        i == at(statement(4).entry, i) + 1;
+                        at(statement(4).entry, i) < j->hi;
+                    }
+                }
+                instantiate(at(statement(4).entry, forall (k: int32) {
+                    j->lo <= k and k <= i implies j->p[k] == j->v
+                }), k) using { j->lo <= k; k <= at(statement(4).entry, i); }
+                assumption();
             }
             simp();
         }

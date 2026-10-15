@@ -198,7 +198,7 @@ quarantines, original programs or claims changed.
 
 ## Loop escape and retained-resource lookup recovery
 
-The [loop selector reduction](../bugs/loop-resource-selector-loses-descriptor-read-authority.md)
+The [loop selector reduction](https://github.com/lacker/click/blob/6b8c5a1bbf0ce3f79ffe9f5e2891ada0aa432b84/bugs/loop-resource-selector-loses-descriptor-read-authority.md)
 attributes the erroneous `MemberAddress` escape classification to archived
 commit `3e6d4cc0e7`. Preserved repair `6b8c5a1bb` keeps a pointer carrier stable
 when selecting its referent's member, while retaining genuine escaped-slot havoc.
@@ -1100,3 +1100,50 @@ are verified upstream. After the correction, all 52 normal example projects,
 46 normal fixed-state controls, and library Clippy with warnings denied pass.
 The full Markdown corpus was not repeated after that correction. These are
 upstream checks; the recovery archive still has ten known example failures.
+
+
+## Loop resource selector closure
+
+The selector report remained open after the complete reduced loop repair at
+`53da27b58` and the shared upstream extractions. Its original C and proof are
+retained in
+[`loop_resource_backing_range_fold_after_write.md`](../mdtests/loop_resource_backing_range_fold_after_write.md),
+with fresh, expanded, rewritten and retained checking covered by
+`descriptor_backing_range_loop_survives_all_proof_modes`. The introducing
+`MemberAddress` escape error belongs to archived `3e6d4cc0e7`; the carrier
+repair is preserved at `6b8c5a1bb`. Upstream does not contain that archived
+`MemberAddress` representation. No new object-model activation is needed to
+close this selector regression.
+
+The rejection controls preserve the authority boundary: selecting a backing
+resource without a descriptor view is refused, owning an uninitialized local
+descriptor does not initialize its pointer, and a loop that changes the pointer
+cannot retarget the entry backing owner. These are retained in
+[`loop_resource_selector_requires_descriptor_view.md`](../mdtests/loop_resource_selector_requires_descriptor_view.md),
+[`loop_resource_selector_rejects_uninitialized_field.md`](../mdtests/loop_resource_selector_rejects_uninitialized_field.md)
+and
+[`loop_resource_selector_rejects_overwritten_field.md`](../mdtests/loop_resource_selector_rejects_overwritten_field.md).
+
+Recovery checkpoint `7ccabaee9` rechecks the unchanged reduction in all four
+proof modes through the public verification, expansion and retained-session
+APIs. It passes all three new selector rejection controls, both selected
+loop-argument rejection controls, all seven loop-carrier controls, all three
+exit-local argument controls and all three selected actual-call/domain controls.
+The original arena C is unchanged. Its project gets past the selector and now
+stops at `arena_alloc.contract` tactic 239: `fold requires ownership of the complete instance body`. This later range
+refold is still recovery work; closing the selector report does not restore
+arena or change the last full example-audit count. No work or proof limit was
+raised.
+
+The broader archive
+`c_declared_member_domains_reject_scalar_sibling_traversal` control still fails
+by accepting `*(&pair->first + 1)`. This is the separately tracked
+[scalar-subobject defect](../bugs/pointer-arithmetic-crosses-scalar-subobject.md),
+not a passing domain check or a full green-gate verdict.
+
+On upstream-based `b1af9a1b2`, the three new rejection fixtures and four
+existing loop-exit resource argument fixtures pass. The original reduced loop
+passes `click audit --claim probe.contract` at all four smart sites, including
+cold and retained rewritten verification and the expansion fixed-point check.
+The original arena sidecar verifies all nine selected proofs. All 42
+documentation checks pass. The full and nightly gates were not repeated.

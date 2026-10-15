@@ -638,7 +638,8 @@ the same signed length limit and canonical seed range. The
 [correspondence demonstration](../checksum-correspondence.md) derives native
 result equality under matched entry bytes and state, and records the checked
 incremental and reset cases. Experimental Rust architecture work remains in
-the [rust-support roadmap](../../../issues/rust-support.md).
+the [production borrow assessment](../../rust-borrow-authority-assessment.md) and
+[retained post-launch context](../../rust-charon-assessment.md#existing-post-launch-context).
 
 Full original-computation smart audits exhaust the standard ten-minute run bound
 before completing a site, although ordinary verification succeeds. This is an

@@ -7737,6 +7737,7 @@ impl FunctionBlock {
     pub(in crate::surface) fn inherit_interface(
         &mut self,
         interface: &FunctionBlock,
+        source: &str,
     ) -> Result<(), String> {
         let names = |block: &FunctionBlock| {
             block
@@ -7748,7 +7749,7 @@ impl FunctionBlock {
         };
         if names(self) != names(interface) {
             return Err(format!(
-                "an implementation names its parameters as the trait's interface does, ({}), \
+                "an implementation names its parameters as {source} does, ({}), \
                  so the interface's clauses read the same in it",
                 names(interface).join(", ")
             ));

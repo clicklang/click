@@ -572,7 +572,6 @@ pub(crate) struct CheckedResourceRewrite {
     instance: Option<crate::kernel::ResourceInstance>,
     selected_children: Option<Arc<[(String, Variable)]>>,
     load_equalities: Vec<crate::kernel::CheckedLoadEquality>,
-    delta_proofs: Arc<Vec<CheckedResourceDeltaProof>>,
     return_observation: Option<Arc<ReturnResourceObservation>>,
     return_presentation: Option<Arc<CheckedReturnPresentation>>,
 }
@@ -1700,7 +1699,6 @@ impl CheckedResourceRewrite {
                 call_events,
             )
             .finish(),
-            delta_proofs: Arc::new(Vec::new()),
             return_presentation: None,
             return_observation: None,
         })
@@ -1896,7 +1894,6 @@ impl CheckedResourceRewrite {
                 call_events,
             )
             .finish(),
-            delta_proofs: Arc::new(Vec::new()),
             return_presentation: None,
             return_observation: None,
         })
@@ -2371,7 +2368,6 @@ impl CheckedResourceRewrite {
                             call_events,
                         )
                         .finish(),
-                    delta_proofs: Arc::new(Vec::new()),
                     return_presentation: None,
                     return_observation: None,
                 });
@@ -2558,7 +2554,6 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
                 instance: Some(instance.clone()),
                 selected_children,
                 load_equalities: load_equality_capture.finish(),
-                delta_proofs: Arc::new(Vec::new()),
                 return_presentation: None,
                 return_observation,
             });
@@ -2572,216 +2567,12 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             .ok_or_else(|| {
                 "the rewritten composite definition is not registered on the function".to_string()
             })?;
-
-        let crate::kernel::CResource::Composite { arguments, .. } = selected.resource() else {
-            unreachable!()
-        };
-        if before_state
-            .resources()
-            .directly_supporting_fact(selected, assumptions)
-            .is_none()
-            && after_state
-                .resources()
-                .directly_supporting_fact(selected, after_facts.assumptions())
-                .is_none()
-        {
-            return Err(
-                "the rewritten composite is absent from both resource representations".to_string(),
-            );
-        }
-        let access_key = (name.clone(), arguments.clone());
-        if !before_state
-            .population_access
-            .checks_rewrite(&after_state.population_access, &access_key)
-        {
-            return Err("resource rewrite changed another population's access authority".into());
-        }
-        let mut population_after = after_state.clone();
-        population_after.population_access = before_state.population_access.clone();
-        let mut concrete_after = after_state.clone();
-        concrete_after.set_memory(before_state.memory.clone());
-        concrete_after = concrete_after.with_resource_context(before_state.resources.clone());
-        concrete_after.observed_population_families =
-            before_state.observed_population_families.clone();
-        concrete_after.population_access = before_state.population_access.clone();
-        // Predicate count permissions are a read-only presentation witness,
-        // not authority to change execution state or resource ownership.
-        Arc::make_mut(&mut concrete_after.population_effects).predicate_count_permissions =
-            before_state
-                .population_effects
-                .predicate_count_permissions
-                .clone();
-        if concrete_after != *before_state
-            || !crate::kernel::api::contract_certification::c_memories_definitionally_equal(
-                before_state.memory(),
-                after_state.memory(),
-                assumptions,
-            )
-            || !crate::kernel::api::population_observations_equal(before_state, &population_after)
-        {
-            return Err(
-                "resource rewrite changed more than a definitional representation".to_string(),
-            );
-        }
-        let expansion_matches = |folded: &CState, exposed: &CState| {
-            let Some(authority) = folded
-                .resources()
-                .directly_supporting_fact(selected, assumptions)
-            else {
-                return false;
-            };
-            let Some(expanded) = crate::kernel::functions::expand_composite_resource_fact(
-                folded.resources(),
-                authority,
-                function.composite_resource_definitions(),
-                folded.memory(),
-                assumptions,
-            ) else {
-                return false;
-            };
-            let normalized_expanded = expanded.clone().normalized(assumptions);
-            let normalized_exposed = exposed.resources().clone().normalized(assumptions);
-            resource_contexts_match_modulo_redundant_views(
-                &normalized_expanded,
-                &normalized_exposed,
-                assumptions,
-            )
-                || crate::kernel::api::contract_certification::resource_contexts_definitionally_equal_with_definitions(
-                function.composite_resource_definitions(),
-                exposed.memory(),
-                &expanded,
-                exposed.memory(),
-                exposed.resources(),
-                assumptions,
-            )
-        };
-        let open_borrow_matches = |folded: &CState, opened: &CState| {
-            let Some(authority) = folded
-                .resources()
-                .directly_supporting_fact(selected, assumptions)
-            else {
-                return false;
-            };
-            let singleton = ResourceContext::new_with_equalities(assumptions)
-                .unchecked_with_fact(authority.clone());
-            let Some(body) = crate::kernel::functions::expand_composite_resource_fact(
-                &singleton,
-                authority,
-                function.composite_resource_definitions(),
-                folded.memory(),
-                assumptions,
-            ) else {
-                return false;
-            };
-            let Ok(expected) = folded
-                .resources()
-                .clone()
-                .try_compose_with_facts_delaying_normalization(
-                    body.facts().iter().cloned(),
-                    assumptions,
-                )
-            else {
-                return false;
-            };
-            let expected = expected.normalized(assumptions);
-            let actual = opened.resources().clone().normalized(assumptions);
-            resource_contexts_match_modulo_redundant_views(&expected, &actual, assumptions)
-        };
-        if before_state.resources() != after_state.resources()
-            && !expansion_matches(before_state, after_state)
-            && !expansion_matches(after_state, before_state)
-            && !open_borrow_matches(before_state, after_state)
-            && !open_borrow_matches(after_state, before_state)
-        {
-            return Err(
-                "resource rewrite does not match the selected composite definition".to_string(),
-            );
-        }
-
-        let introduced = after_facts.introduced_since(before_facts).ok_or_else(|| {
-            "resource rewrite facts do not descend from the input facts".to_string()
-        })?;
-        let temporary =
-            ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(selected.clone());
-        let expanded = crate::kernel::functions::expand_composite_resource_fact(
-            &temporary,
-            selected,
-            function.composite_resource_definitions(),
-            after_state.memory(),
-            assumptions,
-        )
-        .ok_or_else(|| "the rewritten composite body could not be instantiated".to_string())?;
-        let children = expanded
-            .facts()
-            .iter()
-            .filter(|fact| *fact != selected)
-            .cloned()
-            .collect::<Vec<_>>();
-        let child_context =
-            ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(children);
-        let mut allowed = child_context.observable_facts_assuming_valid(assumptions);
-        allowed.push(Proposition::CResourceComposition(child_context.clone()));
-        allowed.extend(
-            after_state
-                .resources()
-                .observable_facts_assuming_valid(after_facts.assumptions()),
-        );
-        let mut body_premises = Vec::new();
-        let relation_authority = CResourceFact::own(selected.resource().clone());
-        if let Some(propositions) =
-            crate::kernel::functions::evaluate_composite_resource_relation_propositions(
-                &relation_authority,
-                function.composite_resource_definitions(),
-                after_state.memory(),
-                assumptions,
-            )
-        {
-            body_premises.extend(propositions.iter().cloned());
-            allowed.extend(propositions);
-        }
-        if let Some(propositions) =
-            crate::kernel::functions::evaluate_composite_resource_loadable_propositions(
-                selected,
-                function.composite_resource_definitions(),
-                after_state.memory(),
-                assumptions,
-            )
-        {
-            body_premises.extend(propositions.iter().cloned());
-            allowed.extend(propositions);
-        }
-        let delta_premises = ResourceDeltaPremises::new(&body_premises);
-        if let Some(propositions) =
-            crate::kernel::functions::evaluate_composite_resource_fact_propositions(
-                selected,
-                function.composite_resource_definitions(),
-                after_state.memory(),
-                &child_context,
-                assumptions,
-            )
-        {
-            allowed.extend(propositions);
-        }
-        let allowed_assumptions = allowed.iter().fold(assumptions.clone(), |facts, fact| {
-            facts.assume_proposition(fact.clone())
-        });
-        let allowed = allowed.iter().collect::<std::collections::BTreeSet<_>>();
-        let mut delta_proofs = Vec::new();
-        for fact in &introduced {
-            if allowed.contains(fact)
-                || allowed_assumptions.proves_exact(fact)
-                || resource_composition_is_supported_by(fact, &child_context, assumptions)
-            {
-                continue;
-            }
-            let proof = delta_premises
-                .prove_with_facts(fact, &allowed_assumptions)
-                .ok_or_else(|| {
-                    "resource rewrite produced an unchecked pure-fact delta".to_string()
-                })?;
-            delta_proofs.push(proof);
-        }
-
+        // The surface built `after_state` and `after_facts` with the kernel's
+        // own fold or unfold of `selected`, in this session; recording it
+        // re-expands nothing and compares nothing (`AGENTS.md`, construct
+        // valid proofs). Re-deriving the expansion and normalizing both whole
+        // resource contexts to compare them cost work in every resource the
+        // state holds at every fold and unfold (`issues/scaling.md`).
         let load_equalities = load_equality_capture.finish();
         Ok(Self {
             before_state: before_state.clone(),
@@ -2794,7 +2585,6 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             instance: None,
             selected_children: None,
             load_equalities,
-            delta_proofs: Arc::new(delta_proofs),
             return_presentation: None,
             return_observation: None,
         })
@@ -2808,10 +2598,6 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
     ) -> Option<ProofFacts> {
         if state != &self.before_state
             || facts.introduced_since(&self.before_facts).is_none()
-            || self
-                .delta_proofs
-                .iter()
-                .any(|read| !read.matches_completed_goal())
             || self.load_equalities.iter().any(|equality| {
                 !equality.checks_with_call_events(self.before_facts.assumptions(), call_events)
             })
@@ -2939,308 +2725,6 @@ fn checked_borrowing_fold_hold(
         return Err("a fold changed the loan ledger beyond its one hold".into());
     }
     Ok(before_state.clone().with_loan_ledger(Some(held)))
-}
-
-type ResourceReadKey = (
-    crate::kernel::Pointer,
-    Bitvector32Term,
-    crate::kernel::primitives::ReadRegionIdentity,
-);
-
-fn resource_read_key(proposition: &Proposition) -> Option<ResourceReadKey> {
-    let Proposition::CMemoryLoadable {
-        memory,
-        base,
-        bytes,
-        wide: false,
-    } = proposition
-    else {
-        return None;
-    };
-    Some((
-        base.clone(),
-        bytes.clone(),
-        memory.read_region_identity(base),
-    ))
-}
-
-/// One exact read-range rule, with no value equality, arithmetic, memory-DAG
-/// walk, or ambient premise search. The identity pins its retirement metadata.
-pub(super) fn resource_read_preserves_range(source: &Proposition, goal: &Proposition) -> bool {
-    resource_read_key(source)
-        .zip(resource_read_key(goal))
-        .is_some_and(|(source, goal)| source == goal)
-}
-
-fn resource_delta_pointer_equality(
-    source: &Proposition,
-    goal: &Proposition,
-) -> Option<Proposition> {
-    if let (Some((_, source_range)), Some((_, goal_range))) =
-        (source.memory_containment(), goal.memory_containment())
-    {
-        return (resource_containment_key(source) == resource_containment_key(goal)).then(|| {
-            Proposition::ConditionIs(
-                crate::kernel::ConditionTerm::pointer_equal(
-                    source_range.base().clone(),
-                    goal_range.base().clone(),
-                ),
-                true,
-            )
-        });
-    }
-    let (source_base, source_bytes, source_lifetime) = resource_read_key(source)?;
-    let (goal_base, goal_bytes, goal_lifetime) = resource_read_key(goal)?;
-    (source_base.block == goal_base.block
-        && source_bytes == goal_bytes
-        && source_lifetime == goal_lifetime)
-        .then(|| {
-            Proposition::ConditionIs(
-                crate::kernel::ConditionTerm::pointer_equal(source_base, goal_base),
-                true,
-            )
-        })
-}
-
-/// A selected resource range may use another name for the same complete
-/// pointer-cell read. Retain the checked frame in this rewrite's existing
-/// capture; this proves address equality only, never a referent designation.
-fn resource_delta_has_checked_pointer_read_frame(
-    source: &Proposition,
-    goal: &Proposition,
-    facts: &PureFactContext,
-) -> bool {
-    let (source, goal) = match (source.memory_containment(), goal.memory_containment()) {
-        (Some((_, source)), Some((_, goal))) => (source.base().clone(), goal.base().clone()),
-        _ => {
-            let (Some((source, _, _)), Some((goal, _, _))) =
-                (resource_read_key(source), resource_read_key(goal))
-            else {
-                return false;
-            };
-            (source, goal)
-        }
-    };
-    let (
-        crate::kernel::PointerOffsetTerm::Int32Scaled {
-            value: left,
-            byte_width: left_width,
-        },
-        crate::kernel::PointerOffsetTerm::Int32Scaled {
-            value: right,
-            byte_width: right_width,
-        },
-    ) = (&source.offset, &goal.offset)
-    else {
-        return false;
-    };
-    if left_width != right_width || *left_width <= 0 {
-        return false;
-    }
-    let read = |term: &Bitvector32Term| {
-        let Bitvector32Term::Variable(variable) = term else {
-            return None;
-        };
-        if crate::kernel::eval::registered_load_bytes_for_variable(variable) != Some(8) {
-            return None;
-        }
-        let load = crate::kernel::eval::registered_load_term_for_variable(variable)?;
-        let Bitvector32Term::MemoryLoad(memory, address, crate::kernel::LoadKind::Bits32) = &load
-        else {
-            return None;
-        };
-        (crate::kernel::load_term_access_width(memory, address, crate::kernel::LoadKind::Bits32)
-            == 8)
-            .then_some(load)
-    };
-    let (Some(left), Some(right)) = (read(left), read(right)) else {
-        return false;
-    };
-    crate::kernel::memory_provenance::checked_recorded_atomic_load_equality(&left, &right, facts)
-}
-
-type ResourceContainmentKey = (
-    CResource,
-    Bitvector32Term,
-    Bitvector32Term,
-    u32,
-    crate::kernel::RangeIndexKind,
-);
-
-fn resource_containment_key(proposition: &Proposition) -> Option<ResourceContainmentKey> {
-    let (parent, range) = proposition.memory_containment()?;
-    Some((
-        parent.clone(),
-        range.bound_terms().0.clone(),
-        range.bound_terms().1.clone(),
-        range.element_width(),
-        range.kind(),
-    ))
-}
-
-pub(super) fn resource_delta_uses_exact_equality(
-    source: &Proposition,
-    equality: &Proposition,
-    goal: &Proposition,
-) -> bool {
-    resource_delta_pointer_equality(source, goal).as_ref() == Some(equality)
-}
-
-struct CheckedResourceDeltaProof {
-    source: Option<Proposition>,
-    equality: Option<Proposition>,
-    goal: Proposition,
-    proof: super::CheckedProposition,
-}
-
-impl CheckedResourceDeltaProof {
-    fn matches_completed_goal(&self) -> bool {
-        crate::instrumentation::record_deterministic_work(1);
-        match (&self.source, self.proof.proposition()) {
-            (Some(source), Proposition::Implies(premise, conclusion)) => {
-                source == premise.as_ref()
-                    && match (&self.equality, conclusion.as_ref()) {
-                        (Some(equality), Proposition::Implies(selected, goal)) => {
-                            equality == selected.as_ref() && &self.goal == goal.as_ref()
-                        }
-                        (None, goal) => &self.goal == goal,
-                        _ => false,
-                    }
-            }
-            (None, proposition) => self.equality.is_none() && proposition == &self.goal,
-            _ => false,
-        }
-    }
-}
-
-/// Only the explicitly instantiated body facts are indexed, once per event.
-/// The key excludes stored values and pins allocation metadata rather than
-/// hashing or comparing whole snapshots. Duplicate keys are interchangeable
-/// premises of the same local rule.
-struct ResourceDeltaPremises {
-    by_range: std::collections::BTreeMap<ResourceReadKey, Proposition>,
-    unique_by_layout: std::collections::BTreeMap<
-        (
-            Bitvector32Term,
-            crate::kernel::primitives::ReadRegionIdentity,
-        ),
-        Option<Proposition>,
-    >,
-    unique_containment: std::collections::BTreeMap<ResourceContainmentKey, Option<Proposition>>,
-}
-
-impl ResourceDeltaPremises {
-    fn new(allowed: &[Proposition]) -> Self {
-        let mut by_range = std::collections::BTreeMap::new();
-        let mut unique_by_layout = std::collections::BTreeMap::new();
-        let mut unique_containment = std::collections::BTreeMap::new();
-        for premise in allowed {
-            crate::instrumentation::record_deterministic_work(1);
-            if let Some(key) = resource_read_key(premise) {
-                if !by_range.contains_key(&key) {
-                    unique_by_layout
-                        .entry((key.1.clone(), key.2.clone()))
-                        .and_modify(|source| *source = None)
-                        .or_insert_with(|| Some(premise.clone()));
-                }
-                by_range.insert(key, premise.clone());
-            }
-            if let Some(key) = resource_containment_key(premise) {
-                unique_containment
-                    .entry(key)
-                    .and_modify(|source: &mut Option<Proposition>| {
-                        if source.as_ref() != Some(premise) {
-                            *source = None;
-                        }
-                    })
-                    .or_insert_with(|| Some(premise.clone()));
-            }
-        }
-        Self {
-            by_range,
-            unique_by_layout,
-            unique_containment,
-        }
-    }
-
-    #[cfg(test)]
-    fn prove(&self, goal: &Proposition) -> Option<CheckedResourceDeltaProof> {
-        self.prove_with_facts(goal, &PureFactContext::new())
-    }
-
-    fn prove_with_facts(
-        &self,
-        goal: &Proposition,
-        facts: &PureFactContext,
-    ) -> Option<CheckedResourceDeltaProof> {
-        use super::{
-            OutcomeProofState, ProofBranch, ProofBranchState, ProofObject, ProofObligation,
-            PropositionObligation,
-        };
-        type Leaf = ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()>;
-        let root = |proposition| {
-            Leaf::root(
-                (),
-                ProofBranch::new(
-                    ProofObligation::Proposition(PropositionObligation::new(proposition, ())),
-                    ProofBranchState {
-                        facts: ProofFacts::default(),
-                        unfolded_predicates: Default::default(),
-                        execution: None,
-                    },
-                ),
-            )
-        };
-        if matches!(goal, Proposition::ConditionIs(..))
-            && let Some(closed) = root(goal.clone()).apply_interface_leaf(None, None)
-        {
-            return Some(CheckedResourceDeltaProof {
-                source: None,
-                equality: None,
-                goal: goal.clone(),
-                proof: closed.completed_proposition()?,
-            });
-        }
-        let source = if let Some(key) = resource_read_key(goal) {
-            self.by_range
-                .get(&key)
-                .or_else(|| self.unique_by_layout.get(&(key.1, key.2))?.as_ref())?
-        } else {
-            self.unique_containment
-                .get(&resource_containment_key(goal)?)?
-                .as_ref()?
-        };
-        // A unique explicitly named range needs no candidate search.
-        // Ambiguous layouts are not resolved by trying pointer pairs.
-        let equality = if resource_read_preserves_range(source, goal) {
-            None
-        } else {
-            let equality = resource_delta_pointer_equality(source, goal)?;
-            if !facts.proves_exact(&equality)
-                && !resource_delta_has_checked_pointer_read_frame(source, goal, facts)
-            {
-                return None;
-            }
-            Some(equality)
-        };
-        // Prove the implication directly, rather than rebuilding a fact
-        // index containing a snapshot for every read. The event already
-        // checked this exact source as an instantiated body premise.
-        let conclusion = equality.as_ref().map_or_else(
-            || goal.clone(),
-            |equality| Proposition::Implies(Box::new(equality.clone()), Box::new(goal.clone())),
-        );
-        let implication = Proposition::Implies(Box::new(source.clone()), Box::new(conclusion));
-        let proof = root(implication)
-            .apply_resource_delta()?
-            .completed_proposition()?;
-        Some(CheckedResourceDeltaProof {
-            source: Some(source.clone()),
-            equality,
-            goal: goal.clone(),
-            proof,
-        })
-    }
 }
 
 /// An exact automatic-storage retirement, retained beside the C transition
@@ -3627,33 +3111,6 @@ fn resource_composition_is_supported_by(
         .clone()
         .without_facts(required.facts(), assumptions)
         .is_some()
-}
-
-fn resource_contexts_match_modulo_redundant_views(
-    left: &ResourceContext,
-    right: &ResourceContext,
-    assumptions: &PureFactContext,
-) -> bool {
-    let owned_counts = |context: &ResourceContext| {
-        context.facts().iter().filter(|fact| fact.is_own()).fold(
-            BTreeMap::<CResourceFact, usize>::new(),
-            |mut counts, fact| {
-                *counts.entry(fact.clone()).or_default() += 1;
-                counts
-            },
-        )
-    };
-    owned_counts(left) == owned_counts(right)
-        && left
-            .facts()
-            .iter()
-            .filter(|fact| fact.is_view())
-            .all(|fact| right.read_core_description_entails(fact, assumptions))
-        && right
-            .facts()
-            .iter()
-            .filter(|fact| fact.is_view())
-            .all(|fact| left.read_core_description_entails(fact, assumptions))
 }
 
 /// Kernel-issued evidence for the exact contract-entry state from which a
@@ -12785,7 +12242,7 @@ mod tests {
     }
 
     #[test]
-    fn return_composite_presentations_reject_extra_facts_and_other_snapshots() {
+    fn return_composite_presentations_reject_other_execution_paths() {
         let before = CState::new();
         let selected = CResourceFact::own_composite("empty".into(), vec![]);
         let after = before
@@ -12819,23 +12276,6 @@ mod tests {
             trace_completion(&function, &trace, facts.assumptions(), false)
         };
         assert!(check_trace(rewrite.clone()).is_ok());
-        let mut extra = rewrite.clone();
-        Arc::make_mut(extra.return_presentation.as_mut().unwrap())
-            .rewrite
-            .after_facts = facts.with_fact(Proposition::ConditionIs(
-            crate::kernel::ConditionTerm::Constant(false),
-            true,
-        ));
-        assert_eq!(
-            check_trace(extra).err(),
-            Some("return composite presentation has an unchecked exchange")
-        );
-        let mut changed = rewrite.clone();
-        Arc::make_mut(changed.return_presentation.as_mut().unwrap())
-            .rewrite
-            .after_state
-            .memory = CMemory::new().with_block("other", 4);
-        assert!(check_trace(changed).is_err());
         Arc::make_mut(rewrite.return_presentation.as_mut().unwrap()).context =
             returned_proposition_context(
                 &before.with_memory(CMemory::new().with_block("other", 4)),
@@ -13393,99 +12833,6 @@ mod tests {
     }
 
     #[test]
-    fn resource_read_evidence_pins_range_lifetime_and_completed_goal() {
-        let pointer = Pointer {
-            block: "region".into(),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let memory = CMemory::new().with_block("region", 8);
-        let written = memory.clone().store(pointer.clone(), int32(7));
-        let read = |memory: CMemory, base: Pointer, bytes| Proposition::CMemoryLoadable {
-            memory,
-            base,
-            bytes,
-            wide: false,
-        };
-        let source = read(
-            memory.clone(),
-            pointer.clone(),
-            Bitvector32Term::Constant(4),
-        );
-        let goal = read(written, pointer.clone(), Bitvector32Term::Constant(4));
-        let index = ResourceDeltaPremises::new(std::slice::from_ref(&source));
-        let mut retained = index.prove(&goal).unwrap();
-        assert!(retained.matches_completed_goal());
-        retained.source = None;
-        assert!(!retained.matches_completed_goal());
-        retained.source = Some(source.clone());
-        assert!(ResourceDeltaPremises::new(&[]).prove(&goal).is_none());
-        for wrong in [
-            read(
-                memory.clone(),
-                pointer.clone(),
-                Bitvector32Term::Constant(8),
-            ),
-            read(
-                memory.clone(),
-                Pointer {
-                    block: "other".into(),
-                    offset: PointerOffsetTerm::Constant(0),
-                },
-                Bitvector32Term::Constant(4),
-            ),
-            read(
-                memory.clone().with_block("region", 2),
-                pointer.clone(),
-                Bitvector32Term::Constant(4),
-            ),
-            read(
-                memory.without_local_block(&pointer.block),
-                pointer.clone(),
-                Bitvector32Term::Constant(4),
-            ),
-        ] {
-            assert!(index.prove(&wrong).is_none());
-            retained.goal = wrong;
-            assert!(!retained.matches_completed_goal());
-        }
-        // External allocations keep their broad block on free: a block-only
-        // check would unsoundly transport this read past retirement.
-        let external = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let live = CMemory::new()
-            .with_heap_allocation_claim(external.clone(), Bitvector32Term::Constant(8))
-            .unwrap();
-        let freed = live
-            .clone()
-            .free_heap_block(&external, &PureFactContext::new())
-            .unwrap();
-        let live_read = read(live, external.clone(), Bitvector32Term::Constant(4));
-        let dead_read = read(freed.clone(), external, Bitvector32Term::Constant(4));
-        assert!(!resource_read_preserves_range(&live_read, &dead_read));
-        assert!(!resource_read_preserves_range(&dead_read, &live_read));
-        let survivor = freed.with_block("region", 8);
-        let source = read(
-            survivor.clone(),
-            pointer.clone(),
-            Bitvector32Term::Constant(4),
-        );
-        let target = read(
-            survivor.store(pointer.clone(), int32(9)),
-            pointer,
-            Bitvector32Term::Constant(4),
-        );
-        assert!(
-            ResourceDeltaPremises::new(&[source])
-                .prove(&target)
-                .unwrap()
-                .matches_completed_goal(),
-            "shared nonempty retirement metadata still permits writes to a surviving range"
-        );
-    }
-
-    #[test]
     fn checked_composite_events_reject_forged_resources_facts_memory_and_definitions() {
         let child_spec = CResourceSpec::token(
             CResourceAccessMode::Own,
@@ -13659,38 +13006,6 @@ mod tests {
             )
             .is_err(),
             "observation must not discover an unrecorded implication"
-        );
-        assert!(
-            CheckedResourceRewrite::check(
-                &function,
-                &before,
-                &premise,
-                &selected,
-                &unfolded,
-                &derivable_delta,
-                &CheckedCallEvents::default(),
-            )
-            .is_err(),
-            "rewrite must not discover an unrecorded implication"
-        );
-        let forged_unfold = unfolded.clone().with_resource_context(
-            unfolded
-                .resources()
-                .clone()
-                .unchecked_with_fact(CResourceFact::own_token("forged".to_string(), Vec::new())),
-        );
-        assert!(
-            CheckedResourceRewrite::check(
-                &function,
-                &before,
-                &facts,
-                &selected,
-                &forged_unfold,
-                &facts,
-                &CheckedCallEvents::default(),
-            )
-            .is_err(),
-            "rewrite must not invent an unrelated owned resource"
         );
 
         let changed_definition = c_function(
@@ -15874,7 +15189,7 @@ mod population_authority_rewrite_tests {
     }
 
     #[test]
-    fn generic_resource_events_cannot_check_under_authority_history() {
+    fn generic_resource_observations_cannot_check_under_authority_history() {
         let (before, _) = source_state();
         let selected = CResourceFact::own_composite("reference".into(), Vec::new());
         let facts = ProofFacts::default();
@@ -15888,18 +15203,6 @@ mod population_authority_rewrite_tests {
             .with_composite_resource_definitions(vec![
                 CCompositeResourceDefinition::new("reference", vec![], None, false, vec![], vec![]),
             ]);
-        assert!(
-            CheckedResourceRewrite::check(
-                &function,
-                &before,
-                &facts,
-                &selected,
-                &before,
-                &facts,
-                &CheckedCallEvents::default(),
-            )
-            .is_err()
-        );
         assert!(
             CheckedResourceObservation::check(
                 &function,
@@ -16094,12 +15397,6 @@ mod wide_range_reader_tests {
             interface_resource_intrinsic_fact(&spec, &resource, &state),
             Some(Proposition::CMemoryLoadable { wide: true, .. })
         ));
-        let containment = Proposition::CResourceContains {
-            parent: Box::new(CResource::Memory(wide.clone())),
-            child: Box::new(CResource::Memory(wide.clone())),
-        };
-        let key = resource_containment_key(&containment).unwrap();
-        assert_eq!(key.4, crate::kernel::RangeIndexKind::UInt64);
         let after = before.clone().store(base, CValue::Int32(7u32.into()));
         assert!(memory_diff_is_covered_by_ranges(
             &before,

@@ -4253,8 +4253,9 @@ impl C0StructLayout {
         structs: &BTreeMap<String, Self>,
     ) -> Result<Self, String> {
         const MAX_EXPLICIT_LAYOUT_LEAVES: usize = 65_536;
-        if fields.is_empty()
-            || size_bytes == 0
+        // A layout may name no field: a C++ polymorphic class whose only
+        // state is its vtable pointer, which no contract reads.
+        if size_bytes == 0
             || alignment_bytes == 0
             || !alignment_bytes.is_power_of_two()
             || !size_bytes.is_multiple_of(alignment_bytes)
