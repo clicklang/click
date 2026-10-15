@@ -745,10 +745,11 @@ fn write_c_lvalue_paths_without_local_reference(
                 .unwrap_or(pointer);
 
             if is_external_memory_pointer(&pointer) && !has_external_write_resource {
-                let missing = CMemoryRange::new(
+                let missing = CMemoryRange::new_with_element_width(
                     pointer.clone(),
                     Bitvector32Term::Constant(0),
                     Bitvector32Term::Constant(1),
+                    value.byte_width(),
                 );
                 // A live mutex holds storage its initialization consumed;
                 // name it rather than the missing ownership.
