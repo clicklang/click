@@ -685,3 +685,18 @@ prefix despite the checked memory-resolution comparison accepting its base.
 Endpoint-chain and canonical-`take` experiments did not repair it and were
 reverted. Keep the remaining work focused on checked loop/frame evidence and
 selected resource suppliers, without reopening the accepted object-model design.
+
+
+Recovery checkpoint `df56e3e28` reconciles upstream PR #1155's checked structural
+branch-join effects and explicit vector preservation proof. The complete normal
+example audit now passes **51/52** in 116.53 seconds, with no new failure.
+Owned-vector is restored; arena alone fails at `arena_alloc.contract` tactic 239.
+This is a failed audit with one known failure, not a green-tree verdict.
+
+In the reduced arena proof, explicitly proving that the current data pointer
+equals its entry value gets past ownership reassembly. The fold then rejects
+the resource's separation fact; additionally proving the occupied pointer and
+capacity unchanged does not discharge that fact automatically. Preserve the
+distinction between selecting ownership and transferring separation premises
+when investigating the remaining failure. No new object-model design choice
+has been identified.

@@ -238,3 +238,10 @@ reverted. Explicit separation of the descriptor from both backing arrays also
 leaves the same window-fold failure. These observations narrow the next
 investigation to the loop-frame evidence and its use during indexed selection;
 they do not justify scanning unrelated holdings or introducing ambient aliases.
+
+An explicit `have arena->data == old(arena->data) by auto;` immediately before
+the reduced window fold checks and gets past ownership reassembly. The fold
+then refuses the resource body's separation fact. Explicit equalities for the
+occupied pointer and capacity also check but do not discharge that fact
+automatically. This is evidence for separating alias selection from resource
+premise transfer in the next diagnosis, rather than bypassing either check.
