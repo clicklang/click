@@ -102,3 +102,19 @@ fold failure is `owned-split-buffer`; a shared cause is not yet established.
 - Bound selected proof work beside unrelated resources at multiple sizes. Keep
   existing tactic budgets, claims and source programs unchanged.
 - Recheck the normal example stage and report any remaining failures separately.
+
+## Archive repair status
+
+Checkpoint `477784302` repairs this archive regression: candidate lookup already
+checks the framed pointer endpoint, but supplier normalization lost the
+query-local address coordinates. Restating only selected byte-footprint ranges
+in those checked coordinates restores the join without granting pointer origin.
+The unchanged reduction and both original buffer projects pass fresh, expanded,
+rewritten and retained checking. The focused kernel regression also checks
+withdrawn separation/ownership, partial pointer writes and unrelated-resource
+scaling. The normal example stage improves to 41/52, with no new failures.
+
+Keep this report until the repair is integrated into the recovery implementation;
+the passing checkpoint is preserved on the archive branch, not merged wholesale.
+See the [recovery audit](../design/object-model-recovery-audit.md#checked-coordinate-buffer-join-repair)
+for the validation and remaining failures.

@@ -595,3 +595,37 @@ the precise missing checked frame/transport step is not yet attributed. Keep
 native pointer-origin checking intact and diagnose that certificate path before
 extracting additional general range rules. The split-buffer failure still needs
 an independent reduction before claiming the same cause.
+
+## Checked-coordinate buffer join repair
+
+Archive checkpoint `477784302` restores both original buffer projects without
+changing their C or claims. The selected pointer read has a checked, full-width
+endpoint through the call frame. Candidate lookup uses that endpoint in a
+query-local address graph, but scratch normalization previously reinserted the
+original supplier ranges and lost their common coordinates. The repair restates
+only selected byte-footprint suppliers in the query's checked coordinates before
+joining them. It publishes no equality and changes no object designation,
+validity, pointer-origin rule, or loan/support exclusion.
+
+Validation on that implementation:
+
+- All 86 selected memory-index, pointer-designation, native-span, loop-carrier
+  and borrow-partition kernel controls pass (8.12s harness). The new regression
+  fails before the repair and passes afterward. It rejects withdrawn separation,
+  missing ownership and a partially overwritten pointer field; measured selected
+  work stays bounded beside 16, 64, 256 and 1024 unrelated owners.
+- The unchanged reduced bug and both original segmented/split-buffer pipelines
+  pass fresh verification, expansion, rewritten checking and retained rechecking.
+  The helper was explicitly relinked after `cargo build --lib`; an earlier helper
+  invocation had used a stale top-level library artifact and is not evidence of
+  a proof-mode disagreement.
+- The normal 52-project example stage completes in 130.78s: **41 pass, 11 fail**.
+  Segmented-buffer and split-buffer are restored; there are no new failures.
+  Remaining failures: arena, binary-tree, input-cursor, multifile-registry,
+  owned-string, owned-vector, rbtree-augmented, refcount, ring-buffer, rust-byte-sum
+  and rust-chunks-exact. The gate remains non-green; no full nightly run was made.
+
+This is a preserved archive repair, not activation of the archive. The next
+step is to assess whether this small supplier-coordinate repair has independent
+upstream value and can be extracted with its checked-frame prerequisites, then
+continue reducing the remaining compatibility failures.
