@@ -120,3 +120,17 @@ for the modules you touch, and run them all with
 `cargo nextest run --lib -E 'test(/scaling_tests/)'`.
 Follow the [verification efficiency contract](docs/internals/verification-efficiency.md)
 for complexity requirements and review criteria.
+
+## Construct valid proofs; never produce-then-check
+
+Efficiency takes priority over a small trusted base
+([trust](docs/concepts/trust.md)). A proof-object operation constructs its
+successor directly and is valid by construction. Do not have the kernel
+re-derive or re-validate what the same session just produced: no premise
+re-walks, state re-comparisons, recomputed identities, or checker passes over
+evidence a producer handed back. Do not cite trusted-base size, untrusted
+callers, or defense in depth as a reason to add one. If a caller could supply
+bad input, move that computation inside the operation instead of checking its
+output. Where existing code or docs follow produce-then-check, treat it as a
+defect to remove, not a pattern to extend. See
+[construction, not re-validation](docs/internals/verification-efficiency.md#construction-not-re-validation).

@@ -5172,11 +5172,22 @@ fn bounded_index_stores(stores: usize) -> (String, String) {
 /// cancellation. The walk now reads the edges filed under each node
 /// (`OrderWalkIndex`), so a store's refusal costs the same beside any number
 /// of other indices' bounds: 990, 2,162, 4,506, 9,194 and 18,570 units.
+///
+/// The difference graph pushes a bound along at most `EDGE_LIMIT` (32)
+/// edges. Past that many indices below `n`, `n` is marked truncated and each
+/// interval read pulls up to the limit of its neighbours, a fixed extra cost
+/// per store: the store rule charges 1,054, 2,230, 4,678 and 9,958 units at
+/// 4 to 32 stores, then 30,022, 65,926 and 137,734 at 64 to 256. Each side
+/// of the limit is checked for near-linear growth on its own, so the step
+/// between them is not read as growth.
 #[test]
-#[ignore = "nightly: 1.9s in the parallel gate"]
+#[ignore = "nightly: 13s"]
 fn stores_to_bounded_unordered_indices_are_near_linear() {
     const STORE_WORK: &str = "operation `verification statement: store`";
-    let samples = [4, 8, 16, 32, 64]
+    // Within the graph's edge limit, then past it.
+    const REGIMES: [&[usize]; 2] = [&[4, 8, 16, 32], &[64, 128, 256]];
+    let samples = REGIMES
+        .concat()
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = bounded_index_stores(size);
@@ -5205,22 +5216,24 @@ fn stores_to_bounded_unordered_indices_are_near_linear() {
     // the whole verification the same, which the old walk exceeded at every
     // size (3.4 to 3.9 per doubling).
     let within = |low: usize, high: usize| high.saturating_mul(4) <= low.saturating_mul(9);
-    assert!(
-        store_work
-            .windows(2)
-            .skip(1)
-            .all(|pair| within(pair[0], pair[1])),
-        "the store rule's work over bounded unordered indices is not near linear: {store_work:?}; named work: {}",
-        named_growth_diagnostic(&samples)
-    );
-    assert!(
-        samples
-            .windows(2)
-            .skip(1)
-            .all(|pair| within(pair[0].work, pair[1].work)),
-        "stores to bounded unordered indices are not near linear: {samples:?}; named work: {}",
-        named_growth_diagnostic(&samples)
-    );
+    // The smallest size is setup-dominated, so its doubling is not checked.
+    let (below, beyond) = (1..REGIMES[0].len(), REGIMES[0].len()..samples.len());
+    for range in [below, beyond] {
+        assert!(
+            store_work[range.clone()]
+                .windows(2)
+                .all(|pair| within(pair[0], pair[1])),
+            "the store rule's work over bounded unordered indices is not near linear: {store_work:?}; named work: {}",
+            named_growth_diagnostic(&samples)
+        );
+        assert!(
+            samples[range]
+                .windows(2)
+                .all(|pair| within(pair[0].work, pair[1].work)),
+            "stores to bounded unordered indices are not near linear: {samples:?}; named work: {}",
+            named_growth_diagnostic(&samples)
+        );
+    }
 }
 
 /// [`bounded_index_stores`] with `size_t` indices and length: each index is

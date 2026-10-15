@@ -96,14 +96,17 @@ instead of from what the step changed.
    `proof_evidence_unretained_premise` checks about one premise per path
    fact at every step, and a premise missing from the contexts builds a set
    of the whole retained history (a known uncharged build in
-   `docs/internals/verification-efficiency.md`). Each lookup compares memory
-   snapshots, and `CMemory`'s order walks the entries two snapshots share,
-   so a comparison is linear too. Callgrind on `heap_objects` at N = 64
-   attributes about a quarter of all instructions to each. Neither is
-   charged, so step work stays flat while step time grows: `make_box`
-   costs 1,586 units at every position but 12 to 45 ms. Planned: a theorem
-   that names its context instead of listing it, and memory snapshots held
-   interned and ordered by content hash.
+   `docs/internals/verification-efficiency.md`). Neither is charged, so
+   step work stays flat while step time grows. Each of those lookups also
+   compared memory snapshots and resource contexts by walking the entries
+   two snapshots of one path share; that part is fixed: `CMemory`,
+   `SharedCMemory` and `ResourceContext` order by a cached content hash
+   first and walk only on a tie
+   (`ordering_snapshots_of_one_path_does_not_walk_their_shared_entries`).
+   On `heap_objects` at N = 64 that took the run from 6.28 to 3.92 billion
+   instructions, and the mean step at N = 256 from 18.7 to 8.7 ms. Still
+   open: a theorem that names its context instead of listing it, so a
+   step's premise check costs its own facts.
 5. **Fixed: satisfying a composite checked every held one of its shape.**
    `ResourceContext::satisfies_fact` tried entailment against every held
    `boxed(..)` when the required pointer was spelled differently, so each

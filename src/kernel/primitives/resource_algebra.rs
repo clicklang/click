@@ -305,6 +305,14 @@ pub(super) fn remove_resource_index_entry<K: Ord + Clone>(
     }
 }
 
+/// One fact's share of `ResourceContextIndex::fact_hash`.
+fn resource_fact_content_hash(fact: &CResourceFact) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    fact.hash(&mut hasher);
+    hasher.finish()
+}
+
 impl ResourceContextIndex {
     /// Files or withdraws one identity as able to fail instance validity:
     /// held twice, or held once with other than one owned unit.
@@ -444,6 +452,9 @@ impl ResourceContextIndex {
                     insert_resource_index_entry(&result.iterated_by_block, second.clone(), entry);
             }
         }
+        result.fact_hash = result
+            .fact_hash
+            .wrapping_add(resource_fact_content_hash(fact));
         result.exact = insert_resource_index_entry(&result.exact, fact.clone(), entry);
         result.by_resource =
             insert_resource_index_entry(&result.by_resource, fact.resource().clone(), entry);
@@ -685,6 +696,9 @@ impl ResourceContextIndex {
                     remove_resource_index_entry(&result.iterated_by_block, second, entry);
             }
         }
+        result.fact_hash = result
+            .fact_hash
+            .wrapping_sub(resource_fact_content_hash(fact));
         result.exact = remove_resource_index_entry(&result.exact, fact, entry);
         result.by_resource =
             remove_resource_index_entry(&result.by_resource, fact.resource(), entry);
