@@ -221,14 +221,29 @@ The next steps, in order:
    `is_rb(left) == 1`, `black_height(left) == black_height(right)` and the
    other conditions on the way to `1`. The 36 hand-written proofs of that
    shape in the rbtree examples, about 470 lines, are now `by auto;`.
-   Measured on the 86 sampled `have`s that apply a function to a
-   constructor, none could be deleted before this, for three other
-   reasons: a fact about a resource's model is restated over the
-   constructor before `unfold` consumes the resource and a written `simp()`
-   then misses it (leaving the claim to `auto` instead finds it);
-   `contradiction(f(Node(...)) == 1)` in an excluded `match` arm needs the
-   restated fact exactly; and an `apply` or `fold` requirement is not
-   discharged by `auto`.
+4. **Discharge simple-tactic requirements.** Done: a bare `apply` proves a
+   premise that is not an available fact as a `have` by `auto`, and a bare
+   `fold` or `step` leaves an open requirement to the implicit `auto`
+   ([simplify-step.md](simplify-step.md)). 150 `have`s that restated an
+   `apply` premise were deleted. Another 51 in `rbtree_model.click` stay,
+   because `auto` reaches a restated fact through the solver's `Integer`
+   bridges rather than a rewrite, and deleting them made the file about 30%
+   slower.
+
+Rechecked on master after step 4: of the 86 sampled `have`s that apply a
+function to a constructor, 62 are gone and 5 more can be deleted. The other
+19 are needed by `contradiction(f(Node(...)) == 1)` in an excluded `match`
+arm, which takes the restated fact exactly (7); by a later simple step that
+cites the fact, such as `rewrite` or `extract` (6); by an `apply` or `fold`
+requirement `auto` does not prove (3); or by a loop or induction closer (3).
+
+5. **Close an excluded `match` arm by `auto`.** An arm a `match` rules out
+   holds only `contradiction(P)` with `P` an exact fact, so the proof
+   restates `f(Node(...)) == 1` first. Let `auto` find the contradiction and
+   expansion print it.
+6. **A cheaper route to a restated fact.** Try a short rewrite chain before
+   the solver bridges, so the remaining `apply` premises can be deleted
+   without slowing their files.
 
 Each step is judged by deleting `have`s from the examples and checking that
 the proofs still verify.
