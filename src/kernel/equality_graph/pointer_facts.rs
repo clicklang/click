@@ -150,25 +150,25 @@ impl EqualityGraph {
         &self,
         pointer: &Pointer,
     ) -> impl Iterator<Item = (String, crate::kernel::Proposition)> {
-        use crate::kernel::{Proposition, Term};
-        let mut contracts = Vec::new();
-        for (name, sources) in self
-            .pointer_fact_candidates(pointer, &terms::PointerFactKey::FunctionContracts)
+        self.pointer_fact_candidates(pointer, &terms::PointerFactKey::FunctionContracts)
             .iter()
-        {
-            crate::instrumentation::record_deterministic_work(1);
-            let mut seen = std::collections::BTreeSet::<Vec<Term>>::new();
-            for (_, source) in sources.iter() {
+            .map(|(group, sources)| {
                 crate::instrumentation::record_deterministic_work(1);
-                let proposition = source.proposition();
-                let Proposition::Predicate { arguments, .. } = proposition else {
-                    continue;
-                };
-                if seen.insert(arguments.iter().skip(2).cloned().collect()) {
-                    contracts.push((name.clone(), proposition.clone()));
-                }
-            }
-        }
-        contracts.into_iter()
+                let name = group
+                    .split_once(terms::CONTRACT_VALUES_SEPARATOR)
+                    .map_or(group.as_str(), |(name, _)| name);
+                (
+                    name.to_string(),
+                    sources
+                        .iter()
+                        .next()
+                        .expect("nonempty contract sources")
+                        .1
+                        .proposition()
+                        .clone(),
+                )
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 }
