@@ -858,6 +858,10 @@ pub struct ResourceDefinition {
     /// Declared `authorized resource`: the family takes part in population
     /// accounting, so `authority(...)` and `count(...)` may name it.
     authorized: bool,
+    /// An `abstract resource` that declares fields: its instances carry
+    /// fields, but it has no body, so no proof folds, unfolds, or observes
+    /// one. Only a trusted contract produces or consumes an instance.
+    sealed: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -7530,6 +7534,12 @@ impl ClickFunctionDefinition {
 }
 
 impl ResourceDefinition {
+    /// Whether this is a field-bearing `abstract resource`, which no proof
+    /// may fold, unfold, or observe.
+    pub fn is_sealed(&self) -> bool {
+        self.sealed
+    }
+
     pub fn fields(&self) -> &[ResourceFieldDefinition] {
         self.composite_body
             .as_ref()
