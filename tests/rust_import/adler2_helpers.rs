@@ -2871,6 +2871,33 @@ fn public_general_proof() -> String {
 #[test]
 #[ignore = "nightly: general public API composition with the full computation specification"]
 fn charon_adler2_general_public_checksum_matches_common_spec() {
+    let t = tempfile::tempdir().unwrap();
+    let demo = t.path().join("demo");
+    let output = std::process::Command::new("python3")
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/prepare-adler32-demo.py"))
+        .arg(&demo)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for (name, canonical) in [
+        ("public", public_general_proof()),
+        ("incremental", incremental_proof()),
+        ("resumed", resumed_proof()),
+    ] {
+        let generated =
+            fs::read_to_string(demo.join(format!("design/charon-trial/adler2/{name}-demo.click")))
+                .unwrap();
+        assert!(
+            generated
+                .split_whitespace()
+                .eq(canonical.split_whitespace()),
+            "{name}: installed demo must retain the canonical proof tokens"
+        );
+    }
     let p = adler2_helpers_project();
     let prepared = p.prepared().unwrap();
     let source = public_general_proof();

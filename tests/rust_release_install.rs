@@ -126,6 +126,19 @@ fn rust_release_archive_installs_and_verifies() {
             fs::read(trial.join(file)).unwrap()
         );
     }
+    // Prepare unchanged fragments on the build host, then move the entire demo.
+    // Verification below uses the relocated inputs, with an empty PATH and
+    // the installed frontend removed.
+    let staged_demo = t.path().join("staged-demo");
+    success(
+        Command::new("python3")
+            .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/prepare-adler32-demo.py"))
+            .arg(&staged_demo)
+            .output()
+            .unwrap(),
+    );
+    let demo = t.path().join("relocated-demo");
+    fs::rename(staged_demo, &demo).unwrap();
     fs::remove_dir_all(installed.join("frontends/rust")).unwrap();
     success(cli(
         &binary,
@@ -139,4 +152,31 @@ fn rust_release_archive_installs_and_verifies() {
         &adler,
         &["verify", "restoration.click"],
     ));
+    let trial = demo.join("design/charon-trial");
+    for sidecar in [
+        "zlib/canonical-demo.click",
+        "zlib/incremental-demo.click",
+        "zlib/reset-demo.click",
+        "adler2/public-demo.click",
+        "adler2/incremental-demo.click",
+        "adler2/resumed-demo.click",
+        "adler2/correspondence.click",
+    ] {
+        let proof = trial.join(sidecar);
+        let output = cli(
+            &binary,
+            &relocated,
+            &demo,
+            &["verify", proof.to_str().unwrap()],
+        );
+        assert!(
+            output.status.success(),
+            "{sidecar}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        eprintln!(
+            "{sidecar}: {}",
+            String::from_utf8_lossy(&output.stdout).trim()
+        );
+    }
 }
