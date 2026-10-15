@@ -438,7 +438,11 @@ those compatibility obligations before activation. See the
 The split-field string fold now passes at unchanged limits after the
 [preliminary byte-gap query repair](../design/object-model-recovery-audit.md#preliminary-byte-gap-query-repair).
 The focused archive proof passes fresh, expanded, rewritten and retained checks.
-Continue with clear's final zero-value claim and its missing failure trace before
-activation. Keep the original C and split-field resource; the vector allocation
-fold remains separate. The original 41/52 archive audit is not a new full-project
-result.
+The archive's clear proof now also passes, and the full original string project
+passes all four modes. The completed archive audit improves to 42/52; ten
+compatibility failures remain. Continue reducing the vector allocation fold
+across its modular push call, using the existing checked pointer-field effects
+before considering any new contract surface. The graph-lock follow-up passes
+all 5,415 current-upstream normal library tests and 168 C++ import/span tests.
+Keep the original C, split-field resources and contracts intact; the separate
+returned-resource performance report is not closed by the fold repair.

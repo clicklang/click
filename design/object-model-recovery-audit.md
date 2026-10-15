@@ -849,18 +849,12 @@ The initial exact-order variant's rebuilt probe-free archive CLI/library passes
 fresh verification, expansion, rewritten verification and retained rechecking.
 Archive checkpoint `be001cb2f` contains that initial repair; `3279dd7b0` preserves the separately checked push/pop proof
 adaptations and the missing final-assumption trace reproduction.
-All 189 selected current-upstream controls and 224 selected archive kernel
-controls pass the final indexed-order variant. Its final archive four-mode
-recheck remains pending, so the [fold defect](../bugs/split-descriptor-fold-exhausts-simple-budget.md)
-remains open until those acceptance checks complete. The final extraction's
-rebuilt upstream CLI/library passes the split-field fixture and full original
-owned-string project in fresh, expanded, rewritten and retained modes. All three
-wrong-value, wrong-terminator and missing-ownership controls still reject.
-Formatting, mdBook, docs lint and whitespace checks pass; the full gate and
-nightly suite are left to CI.
-The full archive string project gets past push; a focused pop adaptation also
-checks, but the full project still stops at clear's zero-value claim. No new
-52-project audit or bounded-model completion is claimed.
+The final indexed-order variant passes the split-field fixture and full original
+owned-string project in fresh, expanded, rewritten and retained modes on both
+the recovery archive and current-upstream extraction. Wrong stored-value and
+wrong-terminator claims reject, and missing backing ownership is refused. These
+checks close the fold-budget defect; its historical reproduction remains in
+archive history. The separate returned-resource performance report remains open.
 
 ### CI graph-lock boundary follow-up
 
@@ -874,7 +868,15 @@ The repair keeps term interning and affine decomposition structural. Scalar and
 offset query adapters perform selected normalization before locking; internal
 raw-read names retain their exact snapshot, kind and access width. A new
 multi-size raw-read registration regression complements the existing
-snapshot/support and complete-width controls. Final validation is in progress.
+snapshot/support and complete-width controls. The selected offset adapter
+preserves expression shape while normalizing scalar indices before locking.
+
+After integrating upstream `c819a273e`, all 5,415 normal library tests pass
+(115.1s; 572 skipped), as do all 168 selected C++ import/span integration tests
+(32.4s). All 534 selected archive graph, memory, designation, span, loop/loan and
+diagnostic controls pass. Freshly rebuilt libraries and CLIs pass the positive
+four-mode checks above; all three negative controls reject. Formatting, mdBook,
+docs lint and whitespace checks pass. The full gate and nightly remain CI work.
 
 The recovery archive's full original string project and focused original pop
 and clear reductions now pass all four proof modes. Checkpoint `5570f876c`
