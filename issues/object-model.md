@@ -28,6 +28,12 @@ against the revision they describe before being presented as upstream behavior.
 milestones; [the Rust reference](../docs/reference/rust.md) records the supported Rust subset;
 its [Linux frontend milestone](../design/rust-charon-assessment.md#completed-linux-frontend-delivery) is complete.
 
+Pointer-field compatibility recovery is complete in candidate `ebe4f69a1` on
+`codex/pointer-field-recovery`: the original vector and string projects verify
+all 13 and 15 proofs with unchanged C, contracts, resources and limits. See the
+[closure evidence](../design/object-model-recovery-audit.md#pointer-field-postcondition-closure).
+This does not activate the archived model or change the last full audit count.
+
 ## Recovery starting point
 
 The preserved implementation checkpoint is `b92deef95` on
@@ -418,7 +424,7 @@ keep the 41/52 audit count until a new complete example run establishes otherwis
 bindings, including retained-session checking, without publishing their value
 bridges to sibling contexts. The positive regression passes all four proof
 modes; 133 selected recovery controls pass. Continue with the
-[string/vector postcondition gap](../bugs/c-pointer-field-postconditions-lose-frame-evidence.md),
+[string/vector postcondition gap](https://github.com/clicklang/click/blob/439b841c4633c9282354e772ffdf95748fb5dc41/bugs/c-pointer-field-postconditions-lose-frame-evidence.md),
 keeping C and claims intact and distinguishing an explicit checked equality
 proof from `assumption`'s exact-fact lookup. The full example audit remains 41/52.
 

@@ -700,7 +700,7 @@ postcondition is rejected. Temporary instrumentation is removed.
 The execution-gap bug is replaced by
 [`pointer_field_reloaded_backing_writes.md`](../mdtests/pointer_field_reloaded_backing_writes.md).
 The original string/vector postconditions remain under the
-[separate report](../bugs/c-pointer-field-postconditions-lose-frame-evidence.md).
+[separate report](https://github.com/clicklang/click/blob/439b841c4633c9282354e772ffdf95748fb5dc41/bugs/c-pointer-field-postconditions-lose-frame-evidence.md).
 The last full recovery example count remains 41/52; no new full-stage or nightly
 verdict is claimed. PR #1016 merged and its pushed head `863de60ed` is verified
 in upstream history.
@@ -732,7 +732,7 @@ The focused checks use the original functions in their full sidecars. Reduced
 projects copy the same C, resource definitions, contracts and proofs for fresh,
 expanded, rewritten and retained checks without admitting the unrelated failing
 functions. This is partial recovery, not closure of the
-[string/vector report](../bugs/c-pointer-field-postconditions-lose-frame-evidence.md):
+[string/vector report](https://github.com/clicklang/click/blob/439b841c4633c9282354e772ffdf95748fb5dc41/bugs/c-pointer-field-postconditions-lose-frame-evidence.md):
 string push still rejects its terminator equality, while the vector project now
 reaches an allocation-resource fold in `allocated_vector_push`. The last full
 archive audit remains 41/52; no new full-stage verdict is claimed.
@@ -769,7 +769,7 @@ previous checkpoint are recovery-archive results, not current-upstream results.
 At archive `d6caff076`, the same explicit backing-pointer proof still fails
 after the zero store, with distinct projected pointer-read snapshots in the
 trace. The archive's later vector allocation fold also remains open. The
-[bug report](../bugs/c-pointer-field-postconditions-lose-frame-evidence.md) records
+[bug report](https://github.com/clicklang/click/blob/439b841c4633c9282354e772ffdf95748fb5dc41/bugs/c-pointer-field-postconditions-lose-frame-evidence.md) records
 that distinction. Its activation work and the last full archive count of 41/52
 remain unchanged. No new full example-stage or nightly verdict is claimed.
 
@@ -1147,3 +1147,48 @@ passes `click audit --claim probe.contract` at all four smart sites, including
 cold and retained rewritten verification and the expansion fixed-point check.
 The original arena sidecar verifies all nine selected proofs. All 42
 documentation checks pass. The full and nightly gates were not repeated.
+
+
+## Pointer-field postcondition closure
+
+Recovery candidate `ebe4f69a1`, based on `80d5584ac`, restores the complete
+original owned-vector project (13 proofs). The original owned-string project
+also passes all 15 proofs. C, contracts, resources and work budgets are unchanged.
+This supersedes the earlier partial postcondition and callee-prefix reports;
+it does not activate the archived object model or update the full example count.
+
+The remaining grow-then-push prefix proof used only grow's old-prefix equality
+and tried to frame it across push's writable buffer. Instead, instantiate
+push's exact guarantee at `statement(8).exit`, carry the post-call read to the
+current state and the earlier read to `statement(8).entry` separately, then
+rewrite the resulting element equalities. The complete repaired caller passes
+`click audit --claim allocated_vector_push.contract`: all six smart sites pass
+expansion, cold rewritten verification, retained checking and fixed-point checks.
+No pointer identity is inferred from numeric address equality.
+
+Full-project verification then exposed a structural branch-join regression in
+`vector_replace_if`. Its arms already retain checked statement-effect counts,
+including the modular call's complete-pointer refinement. Structural joins
+discarded their walked memory-step records and tried to reconstruct the chain
+from snapshots. Preserve the same records already used by interface joins.
+Exact arm-delta, source, continuation, state and effect-coverage requirements
+remain in place. The original getter, setter, conditional caller and contracts
+are preserved in
+[`c_pointer_field_preserving_calls_join_branches.md`](../mdtests/c_pointer_field_preserving_calls_join_branches.md).
+The recovery reduction verifies all three proofs.
+
+The recovered original string push/clear claims also pass all eight selected
+audit sites. The branch reduction passes its one smart-site audit. The permanent
+`owned_vector_grow_then_push_prefix_rechecks_in_all_proof_modes` regression reads
+the original vector project, expands the complete caller, checks it cold, and
+rechecks it in a retained session. Wrong setter results and missing backing
+authority are rejection controls. A separate four-size branch control varies
+unrelated caller requirements; the existing effect-delta, uncertified-effect
+and memory-coverage rejection controls remain active.
+
+On the upstream extraction, all 723 active scaling tests and the named
+64/128/256/512-requirement branch scaling control pass. All 14 selected checked
+execution controls pass, including wrong arm deltas, uncertified effects,
+insufficient memory coverage, forged resource events and invalid source tails.
+The original-vector four-mode regression and both branch rejection mutations
+pass. Slow new controls run by name here and remain in nightly for the gate.

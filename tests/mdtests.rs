@@ -87,6 +87,7 @@ const NIGHTLY: &[&str] = &[
     "c_named_function_contract_accepts_symbolic_mutable_subrange.md",          // 0.6s
     "c_named_function_contract_frames_guarded_composite.md",                   // 0.8s
     "c_named_function_contract_refinement_theorem.md",                         // 0.7s
+    "c_pointer_field_preserving_calls_join_branches.md",                       // 2.6s
     "c_switch.md",                                                             // 0.5s
     "call_frames_pointer_after_named_unfolds.md",                              // 1.0s
     "call_frees_owned_allocation_beside_borrowed_view.md",                     // 1.0s

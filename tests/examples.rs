@@ -2466,3 +2466,70 @@ fn expanded_library_names_resolve_and_audit() {
         );
     }
 }
+
+/// The grow call's old-prefix fact cannot be framed across push's writable
+/// buffer. Use push's exact call-exit guarantee and frame each side separately.
+#[test]
+#[ignore = "nightly: original grow-then-push proof across all proof modes"]
+fn owned_vector_grow_then_push_prefix_rechecks_in_all_proof_modes() {
+    limits::spawn(
+        "vector grow-then-push proof modes",
+        "click-vector-prefix-modes".into(),
+        || {
+            let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            let path = root.join("examples/owned-vector/vector.click");
+            let source = fs::read_to_string(&path).unwrap();
+            let c_sources = read_verifying_sources(&path, &source).unwrap();
+            let sources = source_refs(&c_sources);
+            verify_c0_sources(&source, &sources).unwrap();
+            let expanded = click::surface::expand_c0_claim_source(
+                &source,
+                &sources,
+                "allocated_vector_push",
+                click::surface::CProofClaim::Grouped,
+            )
+            .expect("the complete grow-then-push claim must expand");
+            let declaration = expanded.find("int32 allocated_vector_push(").unwrap();
+            let offset = declaration + expanded[declaration..].find("ensures").unwrap();
+            let line = expanded[..offset].bytes().filter(|b| *b == b'\n').count() + 1;
+            let column = expanded[..offset].rsplit('\n').next().unwrap().len() + 1;
+            verify_c0_sources_at(&expanded, &sources, line, column)
+                .expect("the expanded grow-then-push claim must check fresh");
+            let (session, _) =
+                click::surface::C0VerificationSession::new(&source, &sources).unwrap();
+            session
+                .verify_at(&expanded, line, column)
+                .expect("the expanded grow-then-push claim must check retained");
+        },
+    )
+    .unwrap();
+}
+
+/// The branch summary must retain the setter's result and actual write authority.
+#[test]
+#[ignore = "nightly: pointer-field call branch rejection controls"]
+fn pointer_field_call_branch_rejects_wrong_result_and_missing_backing_authority() {
+    limits::spawn(
+        "pointer-field branch rejection controls",
+        "click-pointer-field-branch-negative".into(),
+        || {
+            let path = Path::new("mdtests/c_pointer_field_preserving_calls_join_branches.md");
+            let fixture = click::cli::parse_mdtest(
+                path,
+                include_str!("../mdtests/c_pointer_field_preserving_calls_join_branches.md"),
+            )
+            .unwrap();
+            let source = fixture.click_source.unwrap();
+            let c_sources = fixture.c_sources;
+            let original_c = &c_sources[0].1;
+            let wrong = original_c.replace("data[index] = value;", "data[index] = 0;");
+            assert_ne!(wrong, *original_c);
+            assert!(verify_c0_sources(&source, &[("vector.c", wrong.as_str())]).is_err());
+            let ownership = "    owns owner->data[0..owner->cap];\n";
+            assert_eq!(source.matches(ownership).count(), 1);
+            let missing = source.replace(ownership, "");
+            assert!(verify_c0_sources(&missing, &source_refs(&c_sources)).is_err());
+        },
+    )
+    .unwrap();
+}
