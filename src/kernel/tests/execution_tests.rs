@@ -202,6 +202,7 @@ fn active_stable_loan_rejects_direct_local_assignment_and_alias_store() {
     let direct = execute_c_statement_paths(
         &state,
         &CStatement::Assign {
+            source: Default::default(),
             name: "x".to_string(),
             expression: c_int32_literal(1),
         },
@@ -343,6 +344,7 @@ fn volatile_parameter_accesses_emit_ordered_facts() {
         vec![c_parameter("value", CType::Int32).with_volatile(true)],
         CStatement::Seq(
             std::sync::Arc::new(CStatement::Assign {
+                source: Default::default(),
                 name: "value".to_string(),
                 expression: c_int32_literal(8),
             }),

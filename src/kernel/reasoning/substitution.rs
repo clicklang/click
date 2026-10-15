@@ -875,7 +875,12 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(statement: &CStatement, s:
             }
             statement
         }
-        CStatement::Assign { name, expression } => CStatement::Assign {
+        CStatement::Assign {
+            name,
+            expression,
+            source,
+        } => CStatement::Assign {
+            source: source.clone(),
             name: name.clone(),
             expression: s.c_expression(expression),
         },

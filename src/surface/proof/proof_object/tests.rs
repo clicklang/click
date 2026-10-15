@@ -14904,6 +14904,7 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
             CStatement::Assign {
                 name,
                 expression: CExpression::TypedLoad { value_type, .. },
+                ..
             } => Some((*value_type, name.as_str())),
             _ => None,
         }

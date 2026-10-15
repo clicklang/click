@@ -3918,12 +3918,14 @@ pub(super) fn describe_statement_head(statement: &CStatement) -> String {
         CStatement::ForStep { step, .. } => describe_statement_head(step),
         CStatement::Declare { name, .. } => format!("declare {name}"),
         CStatement::DeclareAggregate { name, .. } => format!("declare aggregate {name}"),
-        CStatement::Assign { name, expression }
-            if crate::surface::diagnostics::is_call_result_temporary(name) =>
-        {
+        CStatement::Assign {
+            name, expression, ..
+        } if crate::surface::diagnostics::is_call_result_temporary(name) => {
             describe_c_expression(expression)
         }
-        CStatement::Assign { name, expression } => {
+        CStatement::Assign {
+            name, expression, ..
+        } => {
             format!("{name} = {}", describe_c_expression(expression))
         }
         CStatement::CallAssign {

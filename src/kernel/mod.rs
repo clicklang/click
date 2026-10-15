@@ -7,9 +7,10 @@
 //!
 pub(crate) mod api;
 mod source_access;
-pub use source_access::CStatementStoreSource;
+pub use source_access::{CStatementAssignSource, CStatementStoreSource};
 pub(crate) use source_access::{
-    ExecutedReferenceAccess, ReferenceAccessKind, ReferenceAccessSourceId,
+    ExecutedReferenceAccess, ExecutedReferenceBoundary, ReferenceAccessKind,
+    ReferenceAccessSourceId, ReferenceBorrowSourceId,
 };
 
 /// Version of the resource and stable-view semantics used by proof

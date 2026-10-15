@@ -245,6 +245,11 @@ needed to finish a claim already made:
     parent suspension, nested dependencies and one-time child recovery, with
     exact owned-support checks and indexed scaling regressions. Rust execution
     does not yet issue or consume these local-reference transitions.
+  - completed scalar-reborrow assignment receipts and execution-bound endings
+    immediately after selected child stores. Bindings require both operations
+    on one path, check the source and actual pointer, and refuse ambiguous
+    repeated observations. These receipts do not yet carry local-loan leases
+    or authorize recovery.
 
   Those executed observations must still bind the local-reference lifecycle,
   live memory permission and the actual ending frontier/invocation. Recovery

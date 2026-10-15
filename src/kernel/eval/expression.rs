@@ -2381,8 +2381,8 @@ fn read_c_lvalue_paths_without_ranges(
                             // This is a consequence of completing the read,
                             // never a condition selecting an evaluation path.
                             fact.logical_read_equation = true;
-                            fact.reference_read =
-                                crate::kernel::source_access::ReferenceReadSource::new(
+                            fact.reference_observation =
+                                crate::kernel::source_access::ReferenceObservationSource::new(
                                     source.clone(),
                                     pointer.clone(),
                                     &state.memory,

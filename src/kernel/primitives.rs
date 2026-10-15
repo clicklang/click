@@ -2962,6 +2962,7 @@ pub enum CStatement {
     Assign {
         name: String,
         expression: CExpression,
+        source: super::source_access::CStatementAssignSource,
     },
     CallAssign {
         target: String,
@@ -10806,7 +10807,7 @@ pub struct ExecutionPureFact {
     /// state, since the producer's snapshot and pointer are the authority.
     pub(super) generated_load_binding: Option<Box<GeneratedLoadBinding>>,
     pub(super) generated_load_source_events: GeneratedLoadSourceEvents,
-    pub(super) reference_read: super::source_access::ReferenceReadSource,
+    pub(super) reference_observation: super::source_access::ReferenceObservationSource,
 }
 
 /// Source events are execution provenance, not part of the proposition's

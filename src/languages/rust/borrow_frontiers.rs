@@ -42,6 +42,34 @@ pub struct CheckedExecutedScalarReferenceAccess<'a, 'e> {
     event: crate::kernel::ExecutedReferenceAccess<'e>,
     execution: &'e crate::kernel::SymbolicCExecution,
 }
+
+/// A completed borrow assignment and its checked store ending on one selected
+/// execution path. This is execution provenance, not a loan-recovery right.
+#[derive(Debug)]
+pub struct CheckedExecutedScalarReferenceEnd<'a, 'e> {
+    certificate: &'a CheckedScalarReferenceEnd<'a>,
+    pointer: &'e crate::kernel::Pointer,
+    ending: crate::kernel::ExecutedReferenceAccess<'e>,
+    execution: &'e crate::kernel::SymbolicCExecution,
+    path_index: usize,
+}
+impl CheckedExecutedScalarReferenceEnd<'_, '_> {
+    pub fn source_certificate(&self) -> &CheckedScalarReferenceEnd<'_> {
+        self.certificate
+    }
+    pub fn pointer(&self) -> &crate::kernel::Pointer {
+        self.pointer
+    }
+    pub fn execution(&self) -> &crate::kernel::SymbolicCExecution {
+        self.execution
+    }
+    pub fn path_index(&self) -> usize {
+        self.path_index
+    }
+    pub fn ending_pointer(&self) -> &crate::kernel::Pointer {
+        self.ending.pointer()
+    }
+}
 impl CheckedExecutedScalarReferenceAccess<'_, '_> {
     pub fn source_access(&self) -> &CheckedScalarReferenceAccess<'_> {
         self.access
@@ -104,6 +132,100 @@ pub struct CheckedScalarReferenceEnd<'a> {
 }
 
 impl CheckedScalarReferenceEnd<'_> {
+    /// Bind an ending immediately after a completed selected store. Repeated
+    /// births/endings on one path are conservatively refused: combining
+    /// observations is not evidence of a particular dynamic invocation.
+    pub fn bind_executed_endings<'a, 'e>(
+        &'a self,
+        execution: &'e crate::kernel::SymbolicCExecution,
+    ) -> Vec<CheckedExecutedScalarReferenceEnd<'a, 'e>> {
+        use crate::kernel::ExecutedReferenceBoundary;
+        #[derive(Default)]
+        struct Candidate<'e> {
+            birth: Option<(&'e crate::kernel::Pointer, usize)>,
+            ending: Option<(crate::kernel::ExecutedReferenceAccess<'e>, usize)>,
+            births: usize,
+            endings: usize,
+        }
+        let S::Assign {
+            target: E::Local { name: child },
+            value: E::Borrow { place, .. },
+        } = &self.function.mir.as_ref().unwrap().blocks[self.borrow.block].statements
+            [self.borrow.statement]
+        else {
+            return Vec::new();
+        };
+        let E::Deref { reference, .. } = place.as_ref() else {
+            return Vec::new();
+        };
+        let E::Local { name: parent } = reference.as_ref() else {
+            return Vec::new();
+        };
+        let mut candidates = BTreeMap::<usize, Candidate<'e>>::new();
+        for (order, (path_index, event)) in execution.executed_reference_boundaries().enumerate() {
+            crate::instrumentation::record_deterministic_work(1);
+            match event {
+                ExecutedReferenceBoundary::Borrow { source, pointer }
+                    if source.import_identity.as_ref() == self.import_identity
+                        && source.function.as_ref() == self.function.name
+                        && source.block == self.borrow.block
+                        && source.statement == self.borrow.statement
+                        && source.parent.as_ref() == parent
+                        && source.child.as_ref() == child =>
+                {
+                    let candidate = candidates.entry(path_index).or_default();
+                    candidate.births += 1;
+                    candidate.birth = Some((pointer, order));
+                }
+                ExecutedReferenceBoundary::Store(event) => {
+                    let source = event.source();
+                    if source.import_identity.as_ref() != self.import_identity
+                        || source.function.as_ref() != self.function.name
+                        || source.block != self.end.block
+                        || source.statement.checked_add(1) != Some(self.end.statement)
+                    {
+                        continue;
+                    }
+                    let point = MirPoint {
+                        block: source.block,
+                        statement: source.statement,
+                    };
+                    let Some(index) = self.access_index.get(&(point, source.node)) else {
+                        continue;
+                    };
+                    let access = &self.accesses[&point][*index];
+                    if access.kind != ScalarReferenceAccessKind::Write
+                        || access.reference != source.reference_local.as_ref()
+                    {
+                        continue;
+                    }
+                    let candidate = candidates.entry(path_index).or_default();
+                    candidate.endings += 1;
+                    candidate.ending = Some((event, order));
+                }
+                _ => {}
+            }
+        }
+        candidates
+            .into_iter()
+            .filter_map(|(path_index, candidate)| {
+                if candidate.births != 1 || candidate.endings != 1 {
+                    return None;
+                }
+                let (pointer, birth_order) = candidate.birth?;
+                let (ending, end_order) = candidate.ending?;
+                (birth_order < end_order && pointer == ending.pointer()).then_some(
+                    CheckedExecutedScalarReferenceEnd {
+                        certificate: self,
+                        pointer,
+                        ending,
+                        execution,
+                        path_index,
+                    },
+                )
+            })
+            .collect()
+    }
     pub fn import_identity(&self) -> &str {
         self.import_identity
     }
@@ -1082,6 +1204,14 @@ mod tests {
         identity: &str,
         owned: bool,
     ) -> crate::kernel::SymbolicCExecution {
+        execute_export_repeated(export, identity, owned, false)
+    }
+    fn execute_export_repeated(
+        export: &super::super::schema::RustExport,
+        identity: &str,
+        owned: bool,
+        twice: bool,
+    ) -> crate::kernel::SymbolicCExecution {
         use crate::kernel::*;
         let (functions, _) =
             super::super::lowering::lower_with_identity(export, Some(identity)).unwrap();
@@ -1114,11 +1244,24 @@ mod tests {
         } else {
             state
         };
-        prove_symbolic_c_execution_paths(
-            state,
-            functions[0].to_kernel_function().body().clone(),
-            PureFactContext::new(),
-        )
+        let body = functions[0].to_kernel_function().body().clone();
+        fn fragment(body: &CStatement, remove_declarations: bool) -> CStatement {
+            match body {
+                CStatement::Seq(a, b) => c_seq(
+                    fragment(a, remove_declarations),
+                    fragment(b, remove_declarations),
+                ),
+                CStatement::Return(_) => c_skip(),
+                CStatement::Declare { .. } if remove_declarations => c_skip(),
+                other => other.clone(),
+            }
+        }
+        let body = if twice {
+            c_seq(fragment(&body, false), fragment(&body, true))
+        } else {
+            body
+        };
+        prove_symbolic_c_execution_paths(state, body, PureFactContext::new())
     }
 
     #[test]
@@ -1134,6 +1277,11 @@ mod tests {
         assert_eq!(execution.paths().len(), 1);
         let bindings = certificate.bind_executed_accesses(&execution);
         assert_eq!(bindings.len(), 2, "{execution:?}");
+        let endings = certificate.bind_executed_endings(&execution);
+        assert_eq!(endings.len(), 1, "{execution:?}");
+        assert_eq!(endings[0].pointer(), endings[0].ending_pointer());
+        assert!(std::ptr::eq(endings[0].execution(), &execution));
+        assert_eq!(endings[0].path_index(), 0);
         let mut kinds: Vec<_> = bindings
             .iter()
             .map(|binding| binding.source_access().kind())
@@ -1160,6 +1308,52 @@ mod tests {
         // Same source names and pointer do not bind a different locked import.
         let other = execute_export(&export, "other-lock", true);
         assert!(certificate.bind_executed_accesses(&other).is_empty());
+    }
+
+    #[test]
+    fn scalar_reference_executed_ending_refuses_repeated_births_on_one_path() {
+        let original = export(function());
+        let certificate =
+            certify_scalar_reference_end(&original.functions[0], "locked", point(0), point(2))
+                .unwrap();
+        let execution = execute_export_repeated(&original, "locked", true, true);
+        assert!(execution.limit().is_none());
+        assert!(certificate.bind_executed_endings(&execution).is_empty());
+    }
+
+    #[test]
+    fn scalar_reference_executed_ending_requires_birth_and_exact_frontier() {
+        let f = function();
+        let original = export(f.clone());
+        let certificate =
+            certify_scalar_reference_end(&original.functions[0], "locked", point(0), point(2))
+                .unwrap();
+        let mut missing = f.clone();
+        block_mut(&mut missing).statements[0] = assign(local("child"), local("parent"));
+        assert!(
+            certificate
+                .bind_executed_endings(&execute_export(&export(missing), "locked", true))
+                .is_empty()
+        );
+        assert!(
+            certificate
+                .bind_executed_endings(&execute_export(&original, "other-lock", true))
+                .is_empty()
+        );
+        assert!(
+            certificate
+                .bind_executed_endings(&execute_export(&original, "locked", false))
+                .is_empty()
+        );
+        let later = export(f);
+        let certificate =
+            certify_scalar_reference_end(&later.functions[0], "locked", point(0), point(3))
+                .unwrap();
+        assert!(
+            certificate
+                .bind_executed_endings(&execute_export(&later, "locked", true))
+                .is_empty()
+        );
     }
 
     #[test]

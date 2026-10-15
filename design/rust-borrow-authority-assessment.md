@@ -181,6 +181,34 @@ the dependency/root indexes. Deterministic measurements at 16, 64, 256 and 1024
 unrelated roots bound selected lifecycle operations by persistent indexed
 lookups; production transitions do not walk the ledger or resource context.
 
+## Executed scalar-reference boundaries
+
+Rust lowering now attaches private source provenance to the assignment for a
+direct mutable scalar reborrow. The ordinary assignment producer emits a
+private receipt only after successful assignment, checking the actual parent's
+pointer before the assignment against the child's pointer and pointer type
+afterward. Failed assignments and ordinary untagged pointer copies emit no
+borrow receipt. Source provenance stays outside statement/fact comparison;
+rewritten facts discard the receipt.
+
+`CheckedScalarReferenceEnd::bind_executed_endings` joins a completed borrow
+receipt with a checked child store immediately preceding the selected ending.
+It checks the locked import, function, exact MIR points, parent/child source
+bindings, indexed store operation and actual pointer. Both receipts must occur
+in order on the same execution path. Exactly one matching birth and ending
+must exist on that path; repeated observations are refused instead of being
+combined across possible dynamic invocations. Endings after other statement
+kinds currently have no execution binding. Neither source labels nor a store
+without the selected borrow receipt suffice.
+
+These receipts are execution evidence, not recovery rights. They do not yet
+carry a local-reference lease or establish a dynamic invocation identity, and
+ordinary memory producers still use their existing authority checks. Private
+provenance tags remain comparison-neutral; recovery must additionally establish
+the selected operation's membership in the locked source plan. Private
+receipt deltas retain each producer occurrence without scanning ambient facts;
+the existing 16/64/256/1024 regression now also checks borrow receipts.
+
 ## Remaining local-reference work
 
 A checked kernel lifecycle does not by itself enforce local references in
@@ -189,7 +217,8 @@ source execution, preserve reference identity through copies and accesses,
 validate the exact ending frontier and invocation, and connect checked
 borrow-end frontiers to kernel recovery. Runtime enforcement must also cover
 pointer casts, untagged aliases, call transfer and memory havoc. An access observation is not
-evidence that the ending frontier has executed. The ending certificate
+evidence that every supported ending frontier has executed. The new restricted
+boundary binding supplies a completed borrow/store pair, while the ending certificate
 alone is insufficient: recovery must also match the source identity, reference
 access, borrowed footprint and exact program frontier. Neither last-use guesses nor `StorageDead`
 alone may authorize early recovery, and a live pointer alias must not revive

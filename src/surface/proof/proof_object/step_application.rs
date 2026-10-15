@@ -3710,6 +3710,7 @@ fn trace_function_pointer_load(
                 value_type: CType::FunctionPointer(_),
                 ..
             },
+        ..
     } = statement.as_ref()
     else {
         return None;
