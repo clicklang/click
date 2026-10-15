@@ -172,45 +172,95 @@ clauses. The kernel checks it where a clause's base value becomes a range
 (`segment_extent_refusal`); fold lowering refuses constant ranges by name
 first. A pointer without an extent is unaffected.
 
-## Phase B: designation across address equality (modular defect)
+## Phase B: designation is part of the pointer value (modular defect)
 
-A callee sees opaque pointers. It must not dereference `q` on the strength of a
-C-level `q == p` with `p` the carrier of its authority. The address may be a
-one-past position that merely coincides with `p`. The fix is that authority
-reached *only* through address equality cannot justify an access.
+Approved 2026-10-15 in place of the earlier "two equalities" proposal.
 
-Proposal:
+### Principle
 
-- **Two equalities.**
-  - *Address equality* comes from C `==`, `address(p) == address(q)` and
-    numeric reasoning. It stays in today's equality graph for aliasing and
-    cell lookup.
-  - *Value equality* covers spec `q == p` on pointers (D2), arithmetic
-    derivation (`q = p + 1`) and copies. It is tracked as a separate
-    relation over pointer *values*.
-- **Access check.** Authority lookup is unchanged. When the authorizing range's
-  carrier is not the accessing pointer, the lookup must additionally connect the
-  accessing pointer to that carrier by value equality or affine derivation.
-  Address equality alone is not enough.
-- **Spec equality.** Spec `==` on pointer-typed values means value equality
-  (address and extent). At a call the caller must prove it.
-  - `requires h->value == p` with `h->value = &pair.first + 1` and
-    `p = &pair.second` fails at the caller: the extents differ.
-  - The archived negative regression
-    `c0_const_pointer_field_address_equality_does_not_authenticate_loaded_domain`
-    then becomes a positive callee proof with a rejected caller. That is the
-    right split: the callee's contract is honest, and the caller's argument
-    violates it.
-  - `address(p) == address(q)` remains available for address-only claims.
+A C pointer value is an address plus the object it designates. C `==` on
+pointers compares addresses only: `&pair.first + 1 == &pair.second` holds,
+and only the second may be read through.
 
-Phase B touches the equality graph and authority candidate selection
-(`memory_equality_index.rs` `read_access_entries` / `write_access_entries`). It
-is the expensive and risky part. The archive stalled on it ("Equality and
-substitution"). Phase B should get its own PR and corpus measurement after
-Phase A lands. Its expected breakage is proofs that read through one pointer
-using authority held by another, related only by a C comparison. Those proofs
-are unsound under C rules unless the pointer is otherwise known not to be
-one-past.
+- **Addresses stay where they are.** The kernel's `Pointer` (block and offset)
+  is the address. The equality graph keeps merging addresses with full
+  congruence, whatever the source of the equality, including C `==`. Cells,
+  aliasing, stored values, ordering, branch decisions and `return q == p` keep
+  working unchanged. No equality is hidden from any part of the system.
+- **Designation is a separate component of the value.** Read and write
+  permission depends on the designation as well as the address. An address
+  equality says nothing about designations, so it cannot carry permission from
+  one designation to another.
+
+### Why the address cannot carry it
+
+Measured on master `5fa772724`. Inside `if (q == p)`, Click respells the local
+`q` to `p`'s address. A permission check derived from the accessed address,
+even through `Pointer::object_identity()`, therefore sees only `p`, and the
+hole stays open. The designation must live on the value and survive
+respelling, as the Phase A extent does.
+
+### Representation
+
+- **Values.** `CPointerValue` carries a designation: a root token and the
+  Phase A extent.
+  - The token is the allocation or declared object for a pointer formed from
+    one.
+  - A parameter, a pointer loaded from memory, and a call result each get an
+    opaque token, minted once at the point the value enters.
+  - Respelling the address (`replace_pointer`) keeps the designation;
+    substitution maps it like the extent's start.
+- **Ranges.** A memory range named by a clause records the designation of the
+  pointer value that named it, at the point the clause becomes a range
+  (`evaluate_loop_effect_segment` and the fold lowering, as for extents).
+  Splitting and joining a range keep the designation.
+
+### Rule
+
+A read or write through a value is permitted by a held range only when
+both of these hold:
+- the range covers the address, as today;
+- the value's designation is the range's designation, or the two are related
+  by a designation equality.
+
+Designation equalities come only from value-level sources:
+- contract `==` on pointers (`requires`, `ensures`, invariants);
+- a pointer read back from memory and the value stored there;
+- resource argument binding at fold and unfold;
+- copies and pointer arithmetic, which keep the designation by construction.
+
+A missing source makes Click refuse a valid proof, the safe direction. The
+corpus measurement after each step finds those sources.
+
+### Contract `==`
+
+D2 applies. At a call the caller must establish a precondition `p == q`
+between pointers for their designations too. Member addresses written in
+contracts carry the member's extent, as program member addresses do. The
+callee adopts the designation a precondition equality states at entry. This
+closes the remaining entry case: a global initialized to `&g.first` that a
+callee steps past.
+
+### Steps
+
+1. Designation tokens on values and ranges, with no behavior change.
+2. Enforce the rule at reads and writes, with the contract, stored-value and
+   binding sources. Measure the corpus and add any missing source.
+3. Designation-aware contract `==` (D2) and contract member narrowing.
+
+The `docs/concepts/memory-model.md` sentence "two addresses are equal exactly
+when their pointers are equal" becomes: equal addresses name the same memory,
+not the same pointer value.
+
+### Measurement before step 1
+
+Hiding C pointer `==` from the verifier entirely broke 26 mdtests and two
+examples (`modeled-binary-tree`, `rbtree-augmented`). Every failure was about
+the comparison's value, and none was about permission. That cost does not
+apply to this design, because address knowledge is kept. The proofs at risk
+are those that read through one designation with another's permission,
+related only by an address fact. The measurement found none outside the
+reproductions.
 
 ## Decisions (approved as recommended)
 

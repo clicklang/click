@@ -1635,7 +1635,7 @@ impl PureFactContext {
         // the containment proof depends only on the range: prove each
         // distinct range once.
         let mut decided = BTreeMap::<&CMemoryRange, bool>::new();
-        for resources in self.resource_compositions.iter() {
+        for resources in self.store_compositions() {
             crate::instrumentation::record_deterministic_work(1);
             for base in &spellings {
                 for (entry, range) in resources.owned_memory_members_with_base(base) {
@@ -4765,7 +4765,7 @@ pub(in crate::kernel) fn owned_instances_naming_access_base<'a>(
 /// through every one of them. A range stated over a base spelled some other
 /// way is simply not found here; the caller then asks its full ladder, so a
 /// miss costs time and never a decision. Linear in the offset's size.
-fn additive_base_spellings(pointer: &Pointer) -> Vec<Pointer> {
+pub(in crate::kernel) fn additive_base_spellings(pointer: &Pointer) -> Vec<Pointer> {
     let mut spellings = vec![pointer.clone()];
     let mut offset = &pointer.offset;
     while let PointerOffsetTerm::Add(left, _) = offset {

@@ -1,7 +1,7 @@
 //! Private scalar-reference adapter for the ordinary memory producers.
 //!
 //! Source observations cannot construct these leases. Checked source plans
-//! issue births and bind endings to actual executed lvalue custody.
+//! issue births; explicit endings resolve the current invocation's live custody.
 
 use super::*;
 use crate::kernel::primitives::ReservedLocalScalarOwner;
@@ -119,12 +119,12 @@ impl CState {
     pub(in crate::kernel) fn begin_source_scalar_reference(
         &self,
         parent: &CPointerValue,
-        support: ResourceOccurrenceId,
+        support: Option<ResourceOccurrenceId>,
         value_type: CType,
         assumptions: &PureFactContext,
         key: crate::kernel::ScalarReferencePlanKey,
     ) -> Result<(Self, CPointerValue), LoanRefusal> {
-        self.begin_scalar_reference(parent, Some(support), value_type, assumptions, Some(key))
+        self.begin_scalar_reference(parent, support, value_type, assumptions, Some(key))
     }
     fn begin_scalar_reference(
         &self,
@@ -187,13 +187,13 @@ impl CState {
             let root = LocalReferenceBinding {
                 id: LocalReferenceId::fresh()?,
                 parent: None,
+                source_plan: None,
                 backing: Arc::new(LocalReferenceBacking {
                     holder,
                     support,
                     owned: owned.clone(),
                     value_type,
                     reservation: Some(Arc::new(reservation)),
-                    source_plan,
                 }),
             };
             let birth =
@@ -206,7 +206,12 @@ impl CState {
             .as_ref()
             .ok_or(LoanRefusal::MissingBacking)?
             .resources(assumptions);
-        let (binding, birth) = ledger.borrow_local_reference(&parent_binding, holder, &reserved)?;
+        let (binding, birth) = ledger.borrow_local_reference_with_source(
+            &parent_binding,
+            holder,
+            &reserved,
+            source_plan,
+        )?;
         let ledger = ledger.apply(&birth)?;
         let pointer = parent
             .clone()
@@ -226,10 +231,43 @@ impl CState {
     ) -> Result<(), LoanRefusal> {
         let ledger = self.loan_ledger().ok_or(LoanRefusal::MissingLoanBinding)?;
         let (binding, _, _) = ledger.local_scalar_reference(reference)?;
-        if binding.backing.source_plan.as_ref() != Some(key) {
+        if binding.source_plan.as_ref() != Some(key) {
             return Err(LoanRefusal::InvalidEvidence);
         }
         Ok(())
+    }
+
+    pub(in crate::kernel) fn end_source_scalar_reference(
+        &self,
+        key: &crate::kernel::ScalarReferencePlanKey,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, LoanRefusal> {
+        let holder = self.loan_participant().ok_or(LoanRefusal::WrongHolder)?;
+        let ledger = self.loan_ledger().ok_or(LoanRefusal::MissingLoanBinding)?;
+        let id = *ledger
+            .storage
+            .data
+            .source_local_references
+            .get(&(holder, key.clone()))
+            .ok_or(LoanRefusal::MissingLoanBinding)?;
+        let reference = LocalScalarReference(id);
+        let (binding, _, _) = ledger.local_scalar_reference(&reference)?;
+        self.validate_source_scalar_reference(&reference, key)?;
+        let range = binding
+            .backing
+            .owned
+            .memory_own_range()
+            .ok_or(LoanRefusal::MissingBacking)?;
+        let pointer = CPointerValue::new(
+            range.start_pointer(),
+            binding
+                .backing
+                .value_type
+                .pointer_to()
+                .ok_or(LoanRefusal::InvalidEvidence)?,
+        )
+        .with_local_reference(reference);
+        self.end_local_scalar_reference(&pointer, assumptions)
     }
 
     pub(in crate::kernel) fn end_local_scalar_reference(

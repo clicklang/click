@@ -1922,6 +1922,7 @@ impl CheckedResourceRewrite {
             after_facts,
             call_events,
             selected_children,
+            &[],
         )
         .map_err(|error| error.message)
     }
@@ -1936,6 +1937,7 @@ impl CheckedResourceRewrite {
         after_facts: &ProofFacts,
         call_events: &CheckedCallEvents,
         selected_children: Option<Arc<[(String, Variable)]>>,
+        loan_holds: &[crate::kernel::CheckedLoanTransition],
     ) -> Result<Self, ResourceRewriteCheckError> {
         Self::check_with_return_observation(
             function,
@@ -1947,6 +1949,7 @@ impl CheckedResourceRewrite {
             call_events,
             selected_children,
             None,
+            loan_holds,
         )
     }
 
@@ -1961,6 +1964,7 @@ impl CheckedResourceRewrite {
         call_events: &CheckedCallEvents,
         selected_children: Option<Arc<[(String, Variable)]>>,
         return_observation: Option<Arc<ReturnResourceObservation>>,
+        loan_holds: &[crate::kernel::CheckedLoanTransition],
     ) -> Result<Self, ResourceRewriteCheckError> {
         let mut rejected_fact = None;
         Self::check_with_children_recording(
@@ -1974,6 +1978,7 @@ impl CheckedResourceRewrite {
             selected_children,
             &mut rejected_fact,
             return_observation,
+            loan_holds,
         )
         .map_err(|message| ResourceRewriteCheckError {
             message,
@@ -1993,7 +1998,36 @@ impl CheckedResourceRewrite {
         selected_children: Option<Arc<[(String, Variable)]>>,
         rejected_fact: &mut Option<Arc<RejectedResourceRewriteFact>>,
         return_observation: Option<Arc<ReturnResourceObservation>>,
+        loan_holds: &[crate::kernel::CheckedLoanTransition],
     ) -> Result<Self, String> {
+        if !loan_holds.is_empty() {
+            // Check the hold on its own, then check the fold as a
+            // definitional rewrite from the input state with that one hold
+            // already placed. The event keeps the true input state.
+            let held_before = checked_borrowing_fold_hold(
+                function,
+                before_state,
+                before_facts,
+                selected,
+                after_state,
+                loan_holds,
+            )?;
+            let mut checked = Self::check_with_children_recording(
+                function,
+                &held_before,
+                before_facts,
+                selected,
+                after_state,
+                after_facts,
+                call_events,
+                selected_children,
+                rejected_fact,
+                return_observation,
+                &[],
+            )?;
+            checked.before_state = before_state.clone();
+            return Ok(checked);
+        }
         // A family that reaches no population keeps its ordinary definition
         // law; only population-reaching bodies take the checks below.
         let reaches_population = match selected.resource() {
@@ -2804,6 +2838,109 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
     }
 }
 
+/// The input state of a proof `fold` with its one loan hold placed.
+///
+/// A fold whose owned head packages a loan-backed view is a borrowing
+/// composite (escaping borrows in `docs/internals/stable-views.md`): the head
+/// carries body facts read through the loan, so the fold places a hold on the
+/// loan's scope and the head's binding names it. While the hold exists the
+/// scope cannot end, so the owner behind the loan cannot be recovered and
+/// written while the head still describes its memory. The hold grants nothing:
+/// it creates no loan, share or view, changes no memory and no resource, and
+/// only removes the scope's ability to end. A ledger with it permits a subset
+/// of what the input ledger permits.
+///
+/// Checked here, without trusting the proof driver's choice of loan:
+/// - `selected` is one owned composite folded by this step: no input
+///   occurrence supports it, and the successor holds an owned occurrence of
+///   it whose loan binding carries a hold;
+/// - that binding's loan is the dependency of a view the composite's body
+///   names in the input state, so the hold is on the loan the body reads
+///   through;
+/// - the one transition is exactly that hold, placed by this state's loan
+///   participant on that authority, applied to the exact input ledger, and
+///   its result is the successor's ledger.
+///
+/// The caller then checks the fold as a definitional rewrite from the
+/// returned state, so every other part of the state is compared as before.
+fn checked_borrowing_fold_hold(
+    function: &CFunction,
+    before_state: &CState,
+    before_facts: &ProofFacts,
+    selected: &CResourceFact,
+    after_state: &CState,
+    loan_holds: &[crate::kernel::CheckedLoanTransition],
+) -> Result<CState, String> {
+    let [hold] = loan_holds else {
+        return Err("a fold places at most one loan hold".into());
+    };
+    if !matches!(selected, CResourceFact::Own(CResource::Composite { .. }, _)) {
+        return Err("a loan hold requires the fold of one owned composite".into());
+    }
+    let assumptions = before_facts.assumptions();
+    if before_state
+        .resources()
+        .directly_supporting_fact(selected, assumptions)
+        .is_some()
+    {
+        return Err("a loan hold requires a fold of a composite the input does not hold".into());
+    }
+    if before_state.loan_participant() != after_state.loan_participant() {
+        return Err("a loan hold changed the loan participant".into());
+    }
+    let holder = before_state
+        .loan_participant()
+        .ok_or("a loan hold requires a loan participant")?;
+    let ledger = before_state
+        .loan_ledger()
+        .ok_or("a loan hold requires a loan ledger")?;
+    let binding = after_state
+        .resources()
+        .owned_occurrences_for_fact(selected)
+        .into_iter()
+        .filter_map(|occurrence| after_state.resources().loan_dependency(occurrence))
+        .find(|binding| binding.hold.is_some())
+        .ok_or("a loan hold is not carried by the folded composite")?;
+    let temporary =
+        ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(selected.clone());
+    let body = crate::kernel::functions::expand_composite_resource_fact(
+        &temporary,
+        selected,
+        function.composite_resource_definitions(),
+        before_state.memory(),
+        assumptions,
+    )
+    .ok_or("a loan hold's composite body could not be instantiated")?;
+    let same_authority = |dependency: &crate::kernel::LoanViewBinding| {
+        dependency.loan == binding.loan
+            && dependency.scope == binding.scope
+            && dependency.share == binding.share
+            && dependency.support == binding.support
+    };
+    let body_reads_through_loan = body
+        .facts()
+        .iter()
+        .filter(|child| *child != selected && child.is_view())
+        .any(|child| {
+            before_state
+                .resources()
+                .view_occurrences_for_fact(child, assumptions)
+                .into_iter()
+                .filter_map(|occurrence| before_state.resources().loan_dependency(occurrence))
+                .any(same_authority)
+        });
+    if !body_reads_through_loan {
+        return Err("a loan hold is not on a loan the folded body views".into());
+    }
+    let held = ledger
+        .apply_borrowing_fold_hold(hold, binding, holder)
+        .map_err(|refusal| format!("a fold's loan hold is not checked: {refusal:?}"))?;
+    if after_state.loan_ledger() != Some(&held) {
+        return Err("a fold changed the loan ledger beyond its one hold".into());
+    }
+    Ok(before_state.clone().with_loan_ledger(Some(held)))
+}
+
 type ResourceReadKey = (
     crate::kernel::Pointer,
     Bitvector32Term,
@@ -2863,6 +3000,63 @@ fn resource_delta_pointer_equality(
                 true,
             )
         })
+}
+
+/// A selected resource range may use another name for the same complete
+/// pointer-cell read. Retain the checked frame in this rewrite's existing
+/// capture; this proves address equality only, never a referent designation.
+fn resource_delta_has_checked_pointer_read_frame(
+    source: &Proposition,
+    goal: &Proposition,
+    facts: &PureFactContext,
+) -> bool {
+    let (source, goal) = match (source.memory_containment(), goal.memory_containment()) {
+        (Some((_, source)), Some((_, goal))) => (source.base().clone(), goal.base().clone()),
+        _ => {
+            let (Some((source, _, _)), Some((goal, _, _))) =
+                (resource_read_key(source), resource_read_key(goal))
+            else {
+                return false;
+            };
+            (source, goal)
+        }
+    };
+    let (
+        crate::kernel::PointerOffsetTerm::Int32Scaled {
+            value: left,
+            byte_width: left_width,
+        },
+        crate::kernel::PointerOffsetTerm::Int32Scaled {
+            value: right,
+            byte_width: right_width,
+        },
+    ) = (&source.offset, &goal.offset)
+    else {
+        return false;
+    };
+    if left_width != right_width || *left_width <= 0 {
+        return false;
+    }
+    let read = |term: &Bitvector32Term| {
+        let Bitvector32Term::Variable(variable) = term else {
+            return None;
+        };
+        if crate::kernel::eval::registered_load_bytes_for_variable(variable) != Some(8) {
+            return None;
+        }
+        let load = crate::kernel::eval::registered_load_term_for_variable(variable)?;
+        let Bitvector32Term::MemoryLoad(memory, address, crate::kernel::LoadKind::Bits32) = &load
+        else {
+            return None;
+        };
+        (crate::kernel::load_term_access_width(memory, address, crate::kernel::LoadKind::Bits32)
+            == 8)
+            .then_some(load)
+    };
+    let (Some(left), Some(right)) = (read(left), read(right)) else {
+        return false;
+    };
+    crate::kernel::memory_provenance::checked_recorded_atomic_load_equality(&left, &right, facts)
 }
 
 type ResourceContainmentKey = (
@@ -3022,7 +3216,9 @@ impl ResourceDeltaPremises {
             None
         } else {
             let equality = resource_delta_pointer_equality(source, goal)?;
-            if !facts.proves_exact(&equality) {
+            if !facts.proves_exact(&equality)
+                && !resource_delta_has_checked_pointer_read_frame(source, goal, facts)
+            {
                 return None;
             }
             Some(equality)
@@ -3452,12 +3648,12 @@ fn resource_contexts_match_modulo_redundant_views(
             .facts()
             .iter()
             .filter(|fact| fact.is_view())
-            .all(|fact| right.satisfies_fact(fact, assumptions))
+            .all(|fact| right.read_core_description_entails(fact, assumptions))
         && right
             .facts()
             .iter()
             .filter(|fact| fact.is_view())
-            .all(|fact| left.satisfies_fact(fact, assumptions))
+            .all(|fact| left.read_core_description_entails(fact, assumptions))
 }
 
 /// Kernel-issued evidence for the exact contract-entry state from which a
@@ -10432,6 +10628,33 @@ impl ExecutionProofCore {
         after_facts: &ProofFacts,
         selected_children: Option<Arc<[(String, Variable)]>>,
     ) -> Result<(), ResourceRewriteCheckError> {
+        self.record_resource_rewrite_with_loan_holds(
+            function,
+            arguments,
+            before_facts,
+            selected,
+            after_state,
+            after_facts,
+            selected_children,
+            &[],
+        )
+    }
+
+    /// A proof `fold` whose owned head packages a loan-backed view places one
+    /// hold on that loan's scope. The rewrite check applies that exact hold
+    /// transition to the input ledger rather than accepting any ledger change.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn record_resource_rewrite_with_loan_holds(
+        &mut self,
+        function: &CFunction,
+        arguments: &[CExpression],
+        before_facts: &ProofFacts,
+        selected: &CResourceFact,
+        after_state: &CState,
+        after_facts: &ProofFacts,
+        selected_children: Option<Arc<[(String, Variable)]>>,
+        loan_holds: &[crate::kernel::CheckedLoanTransition],
+    ) -> Result<(), ResourceRewriteCheckError> {
         if self.evidence_completed {
             return Err("a resource rewrite was recorded after the trace completed"
                 .to_string()
@@ -10446,6 +10669,7 @@ impl ExecutionProofCore {
             after_facts,
             &self.checked_call_events,
             selected_children,
+            loan_holds,
         )?;
         if self.frontier.is_at_function_entry() && !self.frontier.entry_member_prefix {
             rewrite.before_state =
@@ -10716,6 +10940,7 @@ impl ExecutionProofCore {
             &self.checked_call_events,
             selected_children,
             observation,
+            &[],
         )?;
         if self.frontier.execution().is_some() {
             rewrite.return_context = Some(self.return_context_for_path(path_index)?);
@@ -12163,7 +12388,8 @@ mod tests {
                 &after,
                 &supported,
                 &CheckedCallEvents::default(),
-                None
+                None,
+                &[]
             )
             .is_ok()
         );
@@ -12181,6 +12407,7 @@ mod tests {
             &unsupported,
             &CheckedCallEvents::default(),
             None,
+            &[],
         )
         .err()
         .expect("unsupported facts must still be rejected");
@@ -12752,6 +12979,7 @@ mod tests {
                 &CheckedCallEvents::default(),
                 None,
                 Some(observation),
+                &[],
             )
         };
         let checked = check(&facts, observation.clone()).unwrap();

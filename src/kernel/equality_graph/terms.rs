@@ -189,7 +189,15 @@ impl Application {
         match self {
             Self::Apply(left, right) => Self::Apply(classes.root(left), classes.root(right)),
             Self::Condition(kind, left, right) => {
-                Self::Condition(kind, classes.root(left), classes.root(right))
+                let (mut left, mut right) = (classes.root(left), classes.root(right));
+                if matches!(
+                    kind,
+                    congruence::ConditionKind::PointerEq | congruence::ConditionKind::OffsetEq
+                ) && left > right
+                {
+                    std::mem::swap(&mut left, &mut right);
+                }
+                Self::Condition(kind, left, right)
             }
             Self::UInt64Binary(op, left, right) => {
                 Self::UInt64Binary(op, classes.root(left), classes.root(right))
@@ -301,7 +309,7 @@ pub(super) struct TermClasses {
     // class. A narrow spelling must not discard the wide coordinate whose
     // bounds justify a borrow. Queries never enumerate class members.
     additive_addresses: PersistentMap<u64, (Option<Arc<Pointer>>, Option<Arc<Pointer>>)>,
-    // Same-block pointer comparisons enter as offset equalities. Their checked
+    // The offset views of same-block pointer equations. These checked
     // producer spellings carry no block identity and are applied only in the
     // query's own block.
     additive_offsets: PersistentMap<
@@ -506,7 +514,7 @@ impl TermClasses {
         term: &crate::kernel::Bitvector32Term,
         merged: &std::collections::HashSet<u64>,
     ) -> Int32AtomClass {
-        let term = crate::kernel::canonical_term(term);
+        let term = term.clone();
         match self
             .nodes
             .get(&Node::Int32(MachineAtom::int32(term.clone())))
@@ -1066,7 +1074,7 @@ impl TermClasses {
                             } else {
                                 crate::kernel::MachineIntegerType::Int64
                             },
-                            crate::kernel::canonical_term(value),
+                            value.as_ref().clone(),
                         ),
                         *byte_width,
                         *unsigned,
@@ -1229,8 +1237,10 @@ impl TermClasses {
     }
 
     fn intern_int32(&mut self, term: &crate::kernel::Bitvector32Term) -> u64 {
-        let term = crate::kernel::canonical_term(term);
-        self.intern_machine(&term, false)
+        // This interner runs under the graph mutex. Memory canonicalization
+        // can re-enter this graph through a cell-epoch walk; callers perform
+        // it before locking, while raw reads here retain their own snapshot.
+        self.intern_machine(term, false)
     }
 
     pub(super) fn int32_class(&mut self, term: &crate::kernel::Bitvector32Term) -> u64 {
@@ -1292,7 +1302,7 @@ impl TermClasses {
             if supported(term) {
                 return None;
             }
-            let term = crate::kernel::canonical_term(term);
+            let term = term.clone();
             (!supported(&term)).then(|| Node::Int32(MachineAtom::int32(term)))
         };
         let left_atom = opaque(left);

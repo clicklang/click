@@ -2310,47 +2310,47 @@ id = "library.type.Nat"
 path = "reference/library/index.md#nat"
 
 [[item]]
-id = "library.function.add"
+id = "library.function.nat::add"
 path = "reference/library/index.md#natadd"
 
 [[item]]
-id = "library.theorem.add_left_identity"
+id = "library.theorem.nat::add_left_identity"
 path = "reference/library/index.md#natadd_left_identity"
 
 [[item]]
-id = "library.theorem.add_succ_left"
+id = "library.theorem.nat::add_succ_left"
 path = "reference/library/index.md#natadd_succ_left"
 
 [[item]]
-id = "library.theorem.add_right_identity"
+id = "library.theorem.nat::add_right_identity"
 path = "reference/library/index.md#natadd_right_identity"
 
 [[item]]
-id = "library.theorem.add_succ_right"
+id = "library.theorem.nat::add_succ_right"
 path = "reference/library/index.md#natadd_succ_right"
 
 [[item]]
-id = "library.theorem.add_associative"
+id = "library.theorem.nat::add_associative"
 path = "reference/library/index.md#natadd_associative"
 
 [[item]]
-id = "library.theorem.add_commutative"
+id = "library.theorem.nat::add_commutative"
 path = "reference/library/index.md#natadd_commutative"
 
 [[item]]
-id = "library.function.length"
+id = "library.function.list::length"
 path = "reference/library/index.md#listlength"
 
 [[item]]
-id = "library.theorem.length_nil"
+id = "library.theorem.list::length_nil"
 path = "reference/library/index.md#listlength_nil"
 
 [[item]]
-id = "library.theorem.length_cons"
+id = "library.theorem.list::length_cons"
 path = "reference/library/index.md#listlength_cons"
 
 [[item]]
-id = "library.theorem.length_append"
+id = "library.theorem.list::length_append"
 path = "reference/library/index.md#listlength_append"
 
 [[item]]
@@ -2358,39 +2358,39 @@ id = "library.type.List"
 path = "reference/library/index.md#list"
 
 [[item]]
-id = "library.function.append"
+id = "library.function.list::append"
 path = "reference/library/index.md#listappend"
 
 [[item]]
-id = "library.function.contains"
+id = "library.function.list::contains"
 path = "reference/library/index.md#listcontains"
 
 [[item]]
-id = "library.theorem.append_left_identity"
+id = "library.theorem.list::append_left_identity"
 path = "reference/library/index.md#listappend_left_identity"
 
 [[item]]
-id = "library.theorem.append_right_identity"
+id = "library.theorem.list::append_right_identity"
 path = "reference/library/index.md#listappend_right_identity"
 
 [[item]]
-id = "library.theorem.append_cons"
+id = "library.theorem.list::append_cons"
 path = "reference/library/index.md#listappend_cons"
 
 [[item]]
-id = "library.theorem.append_associative"
+id = "library.theorem.list::append_associative"
 path = "reference/library/index.md#listappend_associative"
 
 [[item]]
-id = "library.theorem.contains_nil"
+id = "library.theorem.list::contains_nil"
 path = "reference/library/index.md#listcontains_nil"
 
 [[item]]
-id = "library.theorem.contains_cons"
+id = "library.theorem.list::contains_cons"
 path = "reference/library/index.md#listcontains_cons"
 
 [[item]]
-id = "library.theorem.contains_append"
+id = "library.theorem.list::contains_append"
 path = "reference/library/index.md#listcontains_append"
 
 [[item]]
@@ -2402,28 +2402,28 @@ id = "library.predicate.permutation"
 path = "reference/library/index.md#permutation"
 
 [[item]]
-id = "library.function.byte_count"
-path = "reference/library/index.md#byte_count"
+id = "library.function.bytes::count"
+path = "reference/library/index.md#bytescount"
 
 [[item]]
-id = "library.predicate.bytes_equal"
-path = "reference/library/index.md#bytes_equal"
+id = "library.predicate.bytes::equal"
+path = "reference/library/index.md#bytesequal"
 
 [[item]]
-id = "library.predicate.bytes_equal_range"
-path = "reference/library/index.md#bytes_equal_range"
+id = "library.predicate.bytes::equal_range"
+path = "reference/library/index.md#bytesequal_range"
 
 [[item]]
-id = "library.predicate.bytes_all_equal"
-path = "reference/library/index.md#bytes_all_equal"
+id = "library.predicate.bytes::all_equal"
+path = "reference/library/index.md#bytesall_equal"
 
 [[item]]
-id = "library.predicate.bytes_contains"
-path = "reference/library/index.md#bytes_contains"
+id = "library.predicate.bytes::contains"
+path = "reference/library/index.md#bytescontains"
 
 [[item]]
-id = "library.predicate.bytes_all_not_equal"
-path = "reference/library/index.md#bytes_all_not_equal"
+id = "library.predicate.bytes::all_not_equal"
+path = "reference/library/index.md#bytesall_not_equal"
 
 [[item]]
 id = "library.predicate.cstr_prefix"
@@ -3371,31 +3371,31 @@ id = "library.theorem.integer_to_uint64_round_trip"
 path = "reference/library/index.md#integer_to_uint64_round_trip"
 
 [[item]]
-id = "library.theorem.to_integer_zero"
+id = "library.theorem.nat::to_integer_zero"
 path = "reference/library/index.md#natto_integer_zero"
 
 [[item]]
-id = "library.theorem.to_integer_succ"
+id = "library.theorem.nat::to_integer_succ"
 path = "reference/library/index.md#natto_integer_succ"
 
 [[item]]
-id = "library.theorem.to_integer_nonnegative"
+id = "library.theorem.nat::to_integer_nonnegative"
 path = "reference/library/index.md#natto_integer_nonnegative"
 
 [[item]]
-id = "library.theorem.to_nat_to_integer"
+id = "library.theorem.nat::to_nat_to_integer"
 path = "reference/library/index.md#natto_nat_to_integer"
 
 [[item]]
-id = "library.theorem.to_integer_to_nat"
+id = "library.theorem.nat::to_integer_to_nat"
 path = "reference/library/index.md#natto_integer_to_nat"
 
 [[item]]
-id = "library.theorem.to_nat_zero"
+id = "library.theorem.nat::to_nat_zero"
 path = "reference/library/index.md#natto_nat_zero"
 
 [[item]]
-id = "library.theorem.to_integer_add"
+id = "library.theorem.nat::to_integer_add"
 path = "reference/library/index.md#natto_integer_add"
 
 [[item]]

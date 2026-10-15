@@ -237,7 +237,7 @@ impl AffineOffset {
                         result.add_atom(
                             OffsetAtom::Int32(MachineAtom::new(
                                 crate::kernel::MachineIntegerType::Int32,
-                                crate::kernel::canonical_term(value),
+                                value.as_ref().clone(),
                             )),
                             width,
                         )?;
@@ -265,7 +265,7 @@ impl AffineOffset {
                                     } else {
                                         crate::kernel::MachineIntegerType::Int64
                                     },
-                                    crate::kernel::canonical_term(value),
+                                    value.as_ref().clone(),
                                 ),
                                 unsigned: *unsigned,
                             },
@@ -1290,6 +1290,11 @@ impl EqualityGraph {
         if left == right {
             return true;
         }
+        // As for scalar equality, normalize selected load observations
+        // before locking. The term interner itself never walks history.
+        let left = left.map_scaled_values(crate::kernel::canonical_term);
+        let right = right.map_scaled_values(crate::kernel::canonical_term);
+        let (left, right) = (&left, &right);
         // Offset addition is exact byte arithmetic. Its affine form catches
         // reordering and regrouping without a premise or term-class merge.
         if let (Some(left), Some(right)) = (AffineOffset::of(left), AffineOffset::of(right))

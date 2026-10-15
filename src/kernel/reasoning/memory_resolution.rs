@@ -837,10 +837,9 @@ fn never_address_taken_local_versus_pointer_value(
 /// and never a `!=`. Two pointers such a fact relates are one address, so a
 /// pointer proven distinct from one is proven distinct from the other; that is
 /// substitution of equals, not a new separation claim.
-/// `ConditionTerm::pointer_equal` folds an equality between two offsets of one
-/// block to a `PointerOffsetEqual`, which is not a `PointerEqual` at all, so an
-/// entry can only ever exchange two spellings of *one* address and never shifts
-/// an offset. The resolved spelling must itself be non-symbolic, so the hop
+/// The comparison retains both complete addresses, including their offsets,
+/// so an entry exchanges two spellings of *one* address without extending
+/// the premise to other offsets. The resolved spelling must itself be non-symbolic, so the hop
 /// always moves towards a block the structural rule can decide, and the answer
 /// is `false` whenever no such equality is stated.
 ///
@@ -4140,8 +4139,13 @@ fn one_element_gap_separates_bytes(
     // Only a known direction can separate them now. Ask for it in the order
     // that puts the narrower requirement first.
     let strictly_below = |low: &Bitvector32Term, high: &Bitvector32Term| {
-        assumptions.decide(&ConditionTerm::signed_less_than(low.clone(), high.clone()))
-            == Some(true)
+        let condition = ConditionTerm::signed_less_than(low.clone(), high.clone());
+        // This preliminary byte-gap check runs inside memory-history walks.
+        // General arithmetic reasoning may resolve these same load atoms and
+        // recursively start another history walk. Use recorded order evidence;
+        // unknown geometry is left to the complete range-separation checks.
+        assumptions.exact_condition_value(&condition) == Some(true)
+            || assumptions.proves_recorded_signed_order(low, high, true)
     };
     let lower_access_bytes = if strictly_below(&left_index, &right_index) {
         left_bytes

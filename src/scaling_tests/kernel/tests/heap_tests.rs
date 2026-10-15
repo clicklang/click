@@ -200,3 +200,108 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn free_allocation_discovery_ignores_unrelated_resource_tokens() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let base = Pointer::symbolic(Variable(948_000));
+    let mut samples = Vec::new();
+    for count in [0, 16, 64, 256] {
+        let mut resources = ResourceContext::new()
+            .unchecked_with_fact(CResourceFact::own_allocation(base.clone(), 16))
+            .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                base.clone(),
+                0.into(),
+                4.into(),
+            )));
+        for index in 0..count {
+            resources = resources.unchecked_with_fact(CResourceFact::own_allocation(
+                Pointer {
+                    block: PointerBlock::Heap(948_100 + index),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                16,
+            ));
+        }
+        let state = CState::new()
+            .with_resource_context(resources)
+            .with_local("p", CValue::pointer(base.clone()));
+        let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+            execute_c_statement_paths(
+                &state,
+                &c_heap_free(c_variable("p")),
+                &PureFactContext::new(),
+                CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+                &mut ExecutionBudget::default(),
+            )
+            .expect("selected declared allocation should free")
+        });
+        let [
+            CStatementExecutionPath {
+                outcome: CStatementOutcome::Normal(after),
+                ..
+            },
+        ] = paths.as_slice()
+        else {
+            panic!("expected one successful free: {paths:?}");
+        };
+        assert!(
+            after
+                .memory()
+                .is_deallocated_heap_address(&base, &PureFactContext::new())
+        );
+        assert_eq!(after.resources().facts().len(), count as usize);
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= pair[0] + 32),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn realloc_reference_check_ignores_unrelated_resource_tokens() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let mut samples = Vec::new();
+    for count in [0, 16, 64, 256] {
+        let state = successful_heap_allocation_state();
+        let mut resources = state.resources().clone();
+        for index in 0..count {
+            resources = resources.unchecked_with_fact(CResourceFact::own_allocation(
+                Pointer {
+                    block: PointerBlock::Heap(949_100 + index),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                16,
+            ));
+        }
+        let state = state
+            .with_resource_context(resources)
+            .with_local("q", CValue::pointer(Pointer::null()));
+        let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+            execute_c_statement_paths(
+                &state,
+                &c_call_assign("q", "realloc", vec![c_variable("p"), c_int32_literal(8)]),
+                &PureFactContext::new(),
+                CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+                &mut ExecutionBudget::default(),
+            )
+            .expect("reallocation should produce a pending result")
+        });
+        assert!(
+            matches!(
+                paths.as_slice(),
+                [CStatementExecutionPath {
+                    outcome: CStatementOutcome::Normal(_),
+                    ..
+                }]
+            ),
+            "{paths:?}"
+        );
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= pair[0] + 32),
+        "{samples:?}"
+    );
+}

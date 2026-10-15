@@ -399,8 +399,15 @@ impl<'a> Proof<'a> {
         let state = CState::new().with_memory(context.theorem_context.memory.clone());
         let recorded_snapshots = RecordedSnapshots::new();
         let mut integer_values = context.theorem_context.integer_values.clone();
-        for (name, value) in self.local_integer_values().iter() {
-            integer_values = integer_values.with_inserted(name.clone(), value.clone());
+        for name in application
+            .arguments
+            .iter()
+            .flat_map(contract_expression_referenced_names)
+            .collect::<BTreeSet<_>>()
+        {
+            if let Some(value) = self.local_integer_values().get(&name) {
+                integer_values = integer_values.with_inserted(name, value.clone());
+            }
         }
         let algebraic_values = application
             .arguments
@@ -1955,7 +1962,7 @@ impl<'a> Proof<'a> {
         ))
     }
 
-    fn capture_pure_algebraic_witness(
+    pub(super) fn capture_pure_algebraic_witness(
         &self,
         expression: &ContractExpression,
     ) -> Result<crate::kernel::AlgebraicTerm, ClickError> {
@@ -3474,6 +3481,14 @@ impl<'a> Proof<'a> {
         premises: &[ClickProposition],
         context: &ExecutionProofContext<'a>,
     ) -> Result<CheckedFocusedTransition, ClickError> {
+        // Resolve only the named operands, as other proposition operations
+        // do. Model-match pointers are proof bindings, not C local names.
+        let source = self.substitute_fixed_state_locals_in_proposition(source)?;
+        let target = self.substitute_fixed_state_locals_in_proposition(target)?;
+        let premises = premises
+            .iter()
+            .map(|premise| self.substitute_fixed_state_locals_in_proposition(premise))
+            .collect::<Result<Vec<_>, _>>()?;
         // A nested proposition proof stated at this frontier may transport
         // facts as well; the successor below preserves the goal's kind.
         let mut execution = self
@@ -3491,9 +3506,9 @@ impl<'a> Proof<'a> {
             .old_reference_state(&execution.core.frontier, &execution.core.state)
             .clone();
         let checked = check_fixed_state_fact_transport_using_facts(
-            source,
-            target,
-            premises,
+            &source,
+            &target,
+            &premises,
             context.claim_label,
             context.tactic_index,
             self.facts(),
@@ -3511,11 +3526,11 @@ impl<'a> Proof<'a> {
         execution
             .presentation
             .surface_propositions
-            .record_lowering(source, &checked.source)?;
+            .record_lowering(&source, &checked.source)?;
         execution
             .presentation
             .surface_propositions
-            .record_lowering(target, &checked.target)?;
+            .record_lowering(&target, &checked.target)?;
         let mut facts = self.facts().clone();
         let added_facts = if facts.contains(&checked.target) {
             Vec::new()

@@ -5281,7 +5281,7 @@ struct CFunctionContractApplication<'a> {
 /// mapping and the alignment test are exact. A cell the copy would split, a
 /// symbolic range, or a misaligned destination is left alone: the destination
 /// keeps its post-havoc state, so the transfer can only add observations the
-/// copy's `bytes_equal` guarantee already justified. An untyped source has no
+/// copy's `click::bytes::equal` guarantee already justified. An untyped source has no
 /// cells, so a raw byte copy still establishes nothing typed.
 pub(in crate::kernel) fn transfer_representation_copy_cells(
     entry_memory: &CMemory,
@@ -5840,7 +5840,7 @@ fn execute_verified_function_applications_with_suspension(
         };
         // A recognized byte-copy declaration transfers initialized typed
         // cells across the copy. It runs after the external contract's havoc,
-        // so the copies' `bytes_equal` guarantee is what makes the transferred
+        // so the copies' `click::bytes::equal` guarantee is what makes the transferred
         // values the checked ones, and it is the only thing that turns the
         // destination's freshly owned bytes into typed observations.
         let memory = if let Some(effect) = application.representation_copy {
@@ -10815,7 +10815,10 @@ pub(super) fn assumed_mutex_input_reservations(
 /// a matched body whose arm is not decided, a recursive or witness-bearing
 /// body -- contributes nothing, so the rule never keeps a cell on the
 /// strength of a body it could not read. The opening is paid once per call,
-/// one unit per visited residual instance or composite and its body.
+/// one unit per visited residual instance or composite and its body, except
+/// for a family whose bodies are argument-direct: its composites are not
+/// visited, and the kept memory answers for them per queried address
+/// (`CallKeptRanges::range_holding`).
 /// Counted membership never owns its population-wide body independently:
 /// another transferred member may authorize the callee to change that body.
 pub(super) fn call_kept_ownership(
@@ -10826,32 +10829,50 @@ pub(super) fn call_kept_ownership(
 ) -> CallKeptOwnership {
     let mut ranges = Vec::new();
     let mut premises = Vec::new();
-    for fact in residual.owned_instances_and_composites() {
-        match fact.resource() {
-            CResource::Instance(_) => {
-                if let Some((body_ranges, body_premises)) =
-                    unmatched_instance_body_ownership(fact, definitions, state, assumptions)
-                        .or_else(|| {
-                            matched_instance_body_ownership(fact, definitions, state, assumptions)
-                        })
-                {
-                    ranges.extend(body_ranges);
-                    premises.extend(body_premises);
-                }
+    for fact in residual.owned_instances() {
+        if let Some((body_ranges, body_premises)) =
+            unmatched_instance_body_ownership(fact, definitions, state, assumptions)
+                .or_else(|| matched_instance_body_ownership(fact, definitions, state, assumptions))
+        {
+            ranges.extend(body_ranges);
+            premises.extend(body_premises);
+        }
+    }
+    // A family whose bodies are argument-direct owns the same ranges
+    // wherever its facts are held, so the kept set answers for those
+    // composites per queried address and they are not opened here
+    // (`CallKeptRanges::range_holding`). Every other family opens each of
+    // its held composites at this state.
+    let definition = |name: &str| {
+        definitions
+            .binary_search_by(|definition| definition.name().cmp(name))
+            .ok()
+            .map(|index| &definitions[index])
+    };
+    let mut direct = Vec::new();
+    for (name, facts) in residual.owned_composite_families() {
+        if let Some(found) = definition(name)
+            && found.has_argument_direct_body()
+        {
+            if direct
+                .last()
+                .is_none_or(|last: &CCompositeResourceDefinition| last.name() != name)
+            {
+                direct.push(found.clone());
             }
-            CResource::Composite { .. } => {
-                let Some(expanded) = expand_composites_for_frame(
-                    &ResourceContext::new_with_equalities(assumptions)
-                        .unchecked_with_fact(fact.clone()),
-                    definitions,
-                    state.memory(),
-                    assumptions,
-                ) else {
-                    continue;
-                };
-                ranges.extend(owned_memory_ranges_of(&expanded));
-            }
-            _ => {}
+            continue;
+        }
+        for fact in facts {
+            let Some(expanded) = expand_composites_for_frame(
+                &ResourceContext::new_with_equalities(assumptions)
+                    .unchecked_with_fact(fact.clone()),
+                definitions,
+                state.memory(),
+                assumptions,
+            ) else {
+                continue;
+            };
+            ranges.extend(owned_memory_ranges_of(&expanded));
         }
     }
     CallKeptOwnership::new(
@@ -10860,9 +10881,30 @@ pub(super) fn call_kept_ownership(
             ResourceContext::new_with_equalities(assumptions)
                 .unchecked_with_facts(ranges.into_iter().map(CResourceFact::own_memory)),
             premises,
+            (!direct.is_empty()).then(|| std::sync::Arc::new(direct)),
         ),
         assumptions,
     )
+}
+
+/// The owned memory ranges of one held composite whose definition has an
+/// argument-direct body, opened one layer as a call's kept memory opens a
+/// composite. The body reads neither memory nor facts
+/// (`CCompositeResourceDefinition::has_argument_direct_body`), so the ranges
+/// are a function of the fact and are opened against empty ones.
+pub(in crate::kernel) fn argument_direct_composite_ranges(
+    fact: &CResourceFact,
+    definitions: &[CCompositeResourceDefinition],
+) -> Vec<CMemoryRange> {
+    let assumptions = PureFactContext::new();
+    expand_composites_for_frame(
+        &ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(fact.clone()),
+        definitions,
+        &CMemory::new(),
+        &assumptions,
+    )
+    .map(|expanded| owned_memory_ranges_of(&expanded))
+    .unwrap_or_default()
 }
 
 /// Expose ordinary bodies with their existing access, leaving counted heads opaque,
@@ -10942,6 +10984,65 @@ fn expand_composites_for_frame(
 mod counted_membership_framing_tests {
     use super::*;
     use crate::kernel::*;
+
+    fn boxed_definition() -> CCompositeResourceDefinition {
+        CCompositeResourceDefinition::new(
+            "boxed",
+            vec![c_parameter("p", CType::Int32Pointer)],
+            None,
+            false,
+            vec![CResourceSpec::owned_memory(CMemorySegment::new(
+                c_variable("p"),
+                c_int32_literal(0),
+                c_int32_literal(1),
+            ))],
+            vec![],
+        )
+    }
+
+    /// A held composite whose body is argument-direct is kept by a call
+    /// without being opened: the recorded kept memory answers for its cell,
+    /// the checker's exact-range test finds the range it answered with, and
+    /// memory no held resource names is not kept.
+    #[test]
+    fn a_call_keeps_an_argument_direct_composites_memory_without_opening_it() {
+        let _session = VerificationSession::enter();
+        let boxed = boxed_definition();
+        assert!(boxed.has_argument_direct_body());
+        let object = |index: u64| Pointer::symbolic(Variable(781_000 + index));
+        let residual = ResourceContext::new().unchecked_with_fact(CResourceFact::own_composite(
+            "boxed".into(),
+            vec![CValue::pointer(object(1))],
+        ));
+        let memory = CMemory::new().store(object(1), int32(5));
+        let assumptions = PureFactContext::new();
+        let state = CState::new()
+            .with_memory(memory.clone())
+            .with_resource_context(residual.clone());
+        let kept = call_kept_ownership(&residual, &[boxed], &state, &assumptions);
+        assert!(
+            kept.opened_resources_for_test().is_empty(),
+            "an argument-direct composite is not opened at the call"
+        );
+        let written = CMemoryRange::new(
+            object(2),
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(1),
+        );
+        let after =
+            memory.with_call_memory_havoc(Variable(781_100), &[written], &assumptions, Some(&kept));
+        let recorded = CallKeptRanges::recorded_on(&after).expect("kept memory is recorded");
+        let range = recorded
+            .range_holding(&assumptions, None, &object(1), 4)
+            .expect("the composite's cell is kept by the caller");
+        assert!(recorded.contains_range(&range));
+        assert!(!recorded.holds_access(&object(3), 4, &assumptions));
+        assert_eq!(
+            recorded.diagnostic_ranges().facts().len(),
+            1,
+            "diagnostics still list the composite's range"
+        );
+    }
 
     #[test]
     fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
@@ -14314,6 +14415,7 @@ fn statement_writes_aggregate_parameter(
             }
         }
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -16089,6 +16191,7 @@ fn collect_c_memory_read_expressions(statement: &CStatement, reads: &mut Vec<CEx
 
     match statement {
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -22259,9 +22362,8 @@ fn pointer_spelling_rank(pointer: &Pointer) -> (bool, &Pointer) {
 /// Soundness rests on the equality being exact and on it being a genuine
 /// cross-block one. `exact_pointer_aliases` reads the index of assumed
 /// `PointerEqual` facts: never a derived, heuristic, or disjunctive
-/// conclusion, and never a `!=`. An equality between two offsets of one block
-/// is not a `PointerEqual` at all -- `ConditionTerm::pointer_equal` folds it
-/// to a `PointerOffsetEqual` -- so an entry can only ever exchange two
+/// conclusion, and never a `!=`. Same-block entries are explicitly excluded
+/// by `arm_pointer_program_spelling`; an entry can only exchange two
 /// spellings of one address, at the offset the fact states and no other. Which
 /// equal spelling is chosen changes nothing logically, since they are all the
 /// same address; `pointer_spelling_rank` fixes it so that the choice is
@@ -22321,6 +22423,7 @@ pub(in crate::kernel) fn arm_pointer_program_spelling(
     crate::instrumentation::record_deterministic_work(1);
     assumptions
         .exact_pointer_aliases(pointer)
+        .filter(|alias| alias.block != pointer.block)
         .filter(|alias| pointer_spelling_rank(alias) < pointer_spelling_rank(pointer))
         .min_by_key(|alias| pointer_spelling_rank(alias))
         .cloned()

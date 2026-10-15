@@ -1091,6 +1091,17 @@ fn changed_outside_proof_unit(
     target: &VerificationTarget,
 ) -> bool {
     let mut rewritten = proof_unit_erased_click_file(rewritten, target);
+    // Import locations are diagnostic metadata. Expansion may prepend a
+    // library import, moving an unchanged file import to another line.
+    // Preserve the ordered paths as part of the semantic boundary.
+    if baseline
+        .imports
+        .iter()
+        .map(|import| &import.path)
+        .eq(rewritten.imports.iter().map(|import| &import.path))
+    {
+        rewritten.imports = baseline.imports.clone();
+    }
     if baseline
         .library_imports
         .iter()

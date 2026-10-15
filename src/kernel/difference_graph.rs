@@ -200,8 +200,8 @@ impl DifferenceGraph {
         }
         if let Some((operation, domain, a, b, commutative)) = overflow_parts(condition) {
             if !value {
-                let a = self.affine(domain, a);
-                let b = self.affine(domain, b);
+                let a = self.modular_affine(domain, a);
+                let b = self.modular_affine(domain, b);
                 charge();
                 self.no_overflow =
                     self.no_overflow
@@ -661,6 +661,38 @@ impl DifferenceGraph {
         (Some(self.node(domain, term)), 0)
     }
 
+    /// `term`'s bitvector value as a node plus a constant modulo the
+    /// domain's width: `1 + l` and `1 + v` share a key when `l` and `v`
+    /// share a node, whether or not the sum wraps. Only the absence of
+    /// overflow is keyed this way, which depends on the operands' bitvector
+    /// values alone.
+    fn modular_affine(&mut self, domain: Domain, term: &Bitvector32Term) -> Affine {
+        match modular_parts(domain, term) {
+            Some((base, k)) => {
+                let (node, offset) = self.modular_affine(domain, base);
+                (node, wrap(domain, offset + k))
+            }
+            None => {
+                let (node, offset) = self.affine(domain, term);
+                (node, wrap(domain, offset))
+            }
+        }
+    }
+
+    /// `modular_affine` without adding to the graph.
+    fn modular_resolve(&self, domain: Domain, term: &Bitvector32Term) -> Option<Affine> {
+        match modular_parts(domain, term) {
+            Some((base, k)) => {
+                let (node, offset) = self.modular_resolve(domain, base)?;
+                Some((node, wrap(domain, offset + k)))
+            }
+            None => {
+                let (node, offset) = self.resolve(domain, term)?;
+                Some((node, wrap(domain, offset)))
+            }
+        }
+    }
+
     /// `term` as known nodes and constants, without adding to the graph.
     /// A term not in the graph resolves through a link its base's interval
     /// already justifies; otherwise `None`.
@@ -773,7 +805,10 @@ impl DifferenceGraph {
             _ => None,
         };
         if let Some((operation, domain, a, b, commutative)) = overflow_parts(condition)
-            && let (Some(a), Some(b)) = (self.resolve(domain, a), self.resolve(domain, b))
+            && let (Some(a), Some(b)) = (
+                self.modular_resolve(domain, a),
+                self.modular_resolve(domain, b),
+            )
             && self
                 .no_overflow
                 .contains(&overflow_key(operation, a, b, commutative))
@@ -869,6 +904,13 @@ impl DifferenceGraph {
         {
             return Some(true);
         }
+        // An unsigned remainder is at most its dividend.
+        if let (Domain::UInt64, Bitvector32Term::UInt64Remainder(a, _)) = (domain, lower)
+            && a.as_ref() == upper
+            && !strict
+        {
+            return Some(true);
+        }
         // lower < upper (or <=) holds when lower - upper <= -strict, and
         // fails when upper - lower <= -(not strict).
         let (holds, fails) = match (self.resolve(domain, lower), self.resolve(domain, upper)) {
@@ -906,11 +948,30 @@ impl DifferenceGraph {
             .resolve(domain, term)
             .map_or_else(|| domain.range(), |affine| self.affine_interval(affine));
         let (low, high) = self.structural_interval(domain, term);
-        (node_low.max(low), node_high.min(high))
+        // A 64-bit word read as signed and as unsigned is one value modulo
+        // 2^64, so the other reading's node bounds this one.
+        let (other_low, other_high) = match domain {
+            Domain::Int64 => Some(Domain::UInt64),
+            Domain::UInt64 => Some(Domain::Int64),
+            Domain::Int32 => None,
+        }
+        .and_then(|other| self.resolve(other, term))
+        .map_or_else(
+            || domain.range(),
+            |affine| {
+                let (low, high) = self.affine_interval(affine);
+                wrap_interval(domain, low, high)
+            },
+        );
+        (
+            node_low.max(low).max(other_low),
+            node_high.min(high).min(other_high),
+        )
     }
 
     /// `term_interval` from `term`'s operands alone.
     fn structural_interval(&self, domain: Domain, term: &Bitvector32Term) -> (i128, i128) {
+        use crate::kernel::MachineIntegerType as M;
         use Bitvector32Term as T;
         if matches!(term, T::Variable(_) | T::Constant(_)) {
             // No operands to read: nothing to charge.
@@ -924,6 +985,24 @@ impl DifferenceGraph {
                 let (a_low, a_high) = self.term_interval(domain, a);
                 let (b_low, b_high) = self.term_interval(domain, b);
                 (a_low + b_low, a_high + b_high)
+            }
+            // `x - x % k` rounds an unsigned `x` down to a multiple of `k`.
+            (Domain::UInt64, T::UInt64Subtract(a, b)) if matches!(b.as_ref(), T::UInt64Remainder(x, _) if x == a) =>
+            {
+                let T::UInt64Remainder(_, k) = b.as_ref() else {
+                    unreachable!("matched above")
+                };
+                let (a_low, a_high) = self.term_interval(domain, a);
+                let (k_low, k_high) = self.term_interval(domain, k);
+                if k_low < 1 {
+                    // `x % 0` is undefined; nothing is known.
+                    return domain.range();
+                }
+                if k_low == k_high {
+                    (a_low / k_low * k_low, a_high / k_low * k_low)
+                } else {
+                    ((a_low - (k_high - 1)).max(0), a_high)
+                }
             }
             (Domain::Int32, T::Subtract(a, b))
             | (Domain::Int64, T::Int64Subtract(a, b))
@@ -941,17 +1020,18 @@ impl DifferenceGraph {
                 let high = products.iter().max().copied().unwrap_or(i128::MAX);
                 (low, high)
             }
-            // C's truncating remainder by a constant other than 0 and -1:
+            // C's truncating remainder by a divisor that cannot be zero:
             // its sign is the dividend's, and its magnitude is below the
             // divisor's and at most the dividend's.
-            (Domain::Int32, T::Remainder(a, b))
-                if constant(domain, b).is_some_and(|k| k != 0 && k != -1) =>
-            {
-                let k = constant(domain, b).expect("checked above");
+            (Domain::Int32, T::Remainder(a, b)) | (Domain::Int64, T::Int64Remainder(a, b)) => {
                 let (a_low, a_high) = self.term_interval(domain, a);
-                let bound = k.abs() - 1;
-                if a_low == a_high {
-                    (a_low % k, a_low % k)
+                let (b_low, b_high) = self.term_interval(domain, b);
+                if b_low <= 0 && b_high >= 0 {
+                    return domain.range();
+                }
+                let bound = b_low.abs().max(b_high.abs()) - 1;
+                if a_low == a_high && b_low == b_high {
+                    (a_low % b_low, a_low % b_low)
                 } else if a_low >= 0 {
                     (0, a_high.min(bound))
                 } else if a_high <= 0 {
@@ -960,6 +1040,94 @@ impl DifferenceGraph {
                     (-bound, bound)
                 }
             }
+            // C's truncating quotient by a divisor of one sign: monotone in
+            // each operand, so the corners bound it. A quotient that leaves
+            // the domain (`MIN / -1`) is caught below.
+            (Domain::Int32, T::Divide(a, b)) | (Domain::Int64, T::Int64Divide(a, b)) => {
+                let (a_low, a_high) = self.term_interval(domain, a);
+                let (b_low, b_high) = self.term_interval(domain, b);
+                if b_low <= 0 && b_high >= 0 {
+                    return domain.range();
+                }
+                let quotients = [
+                    a_low / b_low,
+                    a_low / b_high,
+                    a_high / b_low,
+                    a_high / b_high,
+                ];
+                (
+                    quotients.iter().min().copied().unwrap_or(i128::MIN),
+                    quotients.iter().max().copied().unwrap_or(i128::MAX),
+                )
+            }
+            (Domain::UInt64, T::UInt64Remainder(a, b)) => {
+                let (a_low, a_high) = self.term_interval(domain, a);
+                let (b_low, b_high) = self.term_interval(domain, b);
+                if b_low < 1 {
+                    return domain.range();
+                }
+                if a_low == a_high && b_low == b_high {
+                    (a_low % b_low, a_low % b_low)
+                } else {
+                    (0, a_high.min(b_high - 1))
+                }
+            }
+            // A 32-bit unsigned quotient or remainder, read as the signed
+            // value the domain holds: computed on the operands' unsigned
+            // readings, for a divisor that cannot be zero.
+            (Domain::Int32, T::UnsignedDivide(a, b) | T::UnsignedRemainder(a, b)) => {
+                let unsigned = |term| {
+                    let (low, high) = self.term_interval(domain, term);
+                    wrap_range((0, (1 << 32) - 1), low, high)
+                };
+                let ((a_low, a_high), (b_low, b_high)) = (unsigned(a), unsigned(b));
+                if b_low < 1 {
+                    return domain.range();
+                }
+                let (low, high) = if matches!(term, T::UnsignedDivide(..)) {
+                    (a_low / b_high, a_high / b_low)
+                } else if a_low == a_high && b_low == b_high {
+                    (a_low % b_low, a_low % b_low)
+                } else {
+                    (0, a_high.min(b_high - 1))
+                };
+                wrap_interval(domain, low, high)
+            }
+            // Unsigned narrowing keeps the operand modulo 2^32.
+            (Domain::Int32, T::UInt32From64(inner)) => {
+                let (low, high) = self.term_interval(word_domain(inner), inner);
+                wrap_interval(Domain::Int32, low, high)
+            }
+            // `x ^ MIN` moves a value of known sign by the modulus's half.
+            (Domain::Int32, T::BitwiseXor(..)) | (Domain::Int64, T::Int64BitwiseXor(..))
+                if sign_flip_base(domain, term).is_some() =>
+            {
+                let base = sign_flip_base(domain, term).expect("checked above");
+                let (low, high) = self.term_interval(domain, base);
+                if low >= 0 || high < 0 {
+                    let (a, b) = (flip_sign(domain, low), flip_sign(domain, high));
+                    (a.min(b), a.max(b))
+                } else {
+                    return domain.range();
+                }
+            }
+            // A conditional value is its decided branch's, or either's.
+            (
+                _,
+                T::If {
+                    condition,
+                    then_term,
+                    else_term,
+                },
+            ) => match self.decide(condition) {
+                Some(true) => self.term_interval(domain, then_term),
+                Some(false) => self.term_interval(domain, else_term),
+                None => {
+                    let (then_low, then_high) = self.term_interval(domain, then_term);
+                    let (else_low, else_high) = self.term_interval(domain, else_term);
+                    (then_low.min(else_low), then_high.max(else_high))
+                }
+            },
             (Domain::Int64, T::Int64From32(inner)) => self.term_interval(Domain::Int32, inner),
             // Unsigned division by a divisor known to be positive.
             (Domain::UInt64, T::UInt64Divide(a, b)) => {
@@ -969,6 +1137,46 @@ impl DifferenceGraph {
                     return domain.range();
                 }
                 (a_low / b_high, a_high / b_low)
+            }
+            // A constant mask: at most the mask and the masked value, and
+            // exact for an exactly known value.
+            (Domain::UInt64, T::UInt64BitwiseAnd(a, b))
+                if constant(domain, a)
+                    .or_else(|| constant(domain, b))
+                    .is_some() =>
+            {
+                let (mask, value) = match constant(domain, b) {
+                    Some(mask) => (mask, a),
+                    None => (constant(domain, a).expect("checked above"), b),
+                };
+                let (low, high) = self.term_interval(domain, value);
+                if low == high {
+                    (low & mask, low & mask)
+                } else {
+                    (0, high.min(mask))
+                }
+            }
+            // A conversion between the 64-bit types keeps its operand
+            // modulo 2^64.
+            (
+                Domain::Int64 | Domain::UInt64,
+                T::MachineIntegerCast {
+                    value,
+                    source: source @ (M::Int64 | M::UInt64),
+                    destination: M::Int64 | M::UInt64,
+                },
+            ) => {
+                let source = if *source == M::Int64 {
+                    Domain::Int64
+                } else {
+                    Domain::UInt64
+                };
+                let (low, high) = self.term_interval(source, value);
+                wrap_interval(domain, low, high)
+            }
+            (Domain::UInt64, T::UInt64FromInt64(value)) => {
+                let (low, high) = self.term_interval(Domain::Int64, value);
+                wrap_interval(domain, low, high)
             }
             // Zero extension: a non-negative `int32` keeps its value, a
             // negative one gains 2^32, and an operand of unknown sign lands
@@ -1002,6 +1210,9 @@ impl DifferenceGraph {
         a: &Bitvector32Term,
         b: &Bitvector32Term,
     ) -> (i128, i128) {
+        if a == b {
+            return (0, 0);
+        }
         let (a_low, a_high) = self.term_interval(domain, a);
         let (b_low, b_high) = self.term_interval(domain, b);
         let mut high = a_high - b_low;
@@ -1257,6 +1468,44 @@ fn sign_flip_base(domain: Domain, term: &Bitvector32Term) -> Option<&Bitvector32
     }
 }
 
+/// The interval `[low, high]` of mathematical values taken modulo `domain`'s
+/// width: shifted by the multiple of the modulus that lands its low end in
+/// `domain`, or all of `domain` when it then does not fit.
+fn wrap_interval(domain: Domain, low: i128, high: i128) -> (i128, i128) {
+    wrap_range(domain.range(), low, high)
+}
+
+/// `wrap_interval` into the range `[min, max]`.
+fn wrap_range((min, max): (i128, i128), low: i128, high: i128) -> (i128, i128) {
+    let modulus = max - min + 1;
+    let shift = (low - min).div_euclid(modulus) * modulus;
+    let (low, high) = (low - shift, high - shift);
+    if high <= max { (low, high) } else { (min, max) }
+}
+
+/// The domain a 64-bit operand's value is read in: unsigned for an unsigned
+/// operation or constant, signed otherwise. Both readings bound each other
+/// (`term_interval`), so either is sound.
+fn word_domain(term: &Bitvector32Term) -> Domain {
+    use Bitvector32Term as T;
+    match term {
+        T::UInt64Constant(_)
+        | T::UInt64Add(..)
+        | T::UInt64Subtract(..)
+        | T::UInt64Multiply(..)
+        | T::UInt64Divide(..)
+        | T::UInt64Remainder(..)
+        | T::UInt64BitwiseAnd(..)
+        | T::UInt64BitwiseOr(..)
+        | T::UInt64BitwiseXor(..)
+        | T::UInt64BitwiseNot(..)
+        | T::UInt64From32(..)
+        | T::UInt64FromInt32(..)
+        | T::UInt64FromInt64(..) => Domain::UInt64,
+        _ => Domain::Int64,
+    }
+}
+
 /// `value ^ MIN` in a signed `domain`.
 fn flip_sign(domain: Domain, value: i128) -> i128 {
     let min = domain.range().0;
@@ -1288,6 +1537,18 @@ fn offset_equality(condition: &ConditionTerm) -> Option<ConditionTerm> {
     let ConditionTerm::PointerOffsetEqual(a, b) = condition else {
         return None;
     };
+    // Field offsets from equal bases (`p->size`, `q->size`) are equal
+    // exactly when the bases are.
+    use crate::kernel::PointerOffsetTerm as O;
+    if let (O::Add(a_base, a_field), O::Add(b_base, b_field)) = (a.as_ref(), b.as_ref())
+        && let (O::Constant(a_field), O::Constant(b_field)) = (a_field.as_ref(), b_field.as_ref())
+        && a_field == b_field
+    {
+        return offset_equality(&ConditionTerm::PointerOffsetEqual(
+            a_base.clone(),
+            b_base.clone(),
+        ));
+    }
     let (a, b) = match (scaled_offset(a)?, scaled_offset(b)?) {
         (ScaledOffset::Scaled(a, wa), ScaledOffset::Scaled(b, wb)) if wa == wb => {
             (a.clone(), b.clone())
@@ -1662,6 +1923,35 @@ impl PointerClasses {
         }
         None
     }
+}
+
+/// A sum or difference with a constant, as its other operand and the
+/// constant added.
+fn modular_parts(domain: Domain, term: &Bitvector32Term) -> Option<(&Bitvector32Term, i128)> {
+    use Bitvector32Term as T;
+    match (domain, term) {
+        (Domain::Int32, T::Add(a, b))
+        | (Domain::Int64, T::Int64Add(a, b))
+        | (Domain::UInt64, T::UInt64Add(a, b)) => {
+            match (constant(domain, a), constant(domain, b)) {
+                (_, Some(k)) => Some((a.as_ref(), k)),
+                (Some(k), _) => Some((b.as_ref(), k)),
+                _ => None,
+            }
+        }
+        (Domain::Int32, T::Subtract(a, b))
+        | (Domain::Int64, T::Int64Subtract(a, b))
+        | (Domain::UInt64, T::UInt64Subtract(a, b)) => {
+            constant(domain, b).map(|k| (a.as_ref(), -k))
+        }
+        _ => None,
+    }
+}
+
+/// `value` reduced modulo `domain`'s width, into `[0, 2^width)`.
+fn wrap(domain: Domain, value: i128) -> i128 {
+    let (min, max) = domain.range();
+    value.rem_euclid(max - min + 1)
 }
 
 /// `term`'s value in `domain` when it is a constant there.

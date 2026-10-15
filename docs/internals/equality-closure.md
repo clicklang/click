@@ -16,6 +16,27 @@ has its own remaining frontier; completing it is not an additional equality
 migration requirement. Wider theories in this note remain reference material,
 not new P1 acceptance criteria.
 
+## Pointer comparison evidence
+
+Symbolic pointer equality and disequality retain both complete addresses,
+including a syntactically common block and symbolic reflexive comparisons.
+Constant comparisons still fold. Keeping symbolic comparisons preserves the
+fact lookup used by explicit `assumption()` after resolving a stored pointer;
+reflexivity remains available to normalization and equality closure.
+When registering a same-block comparison, the graph identifies its condition
+node with the comparison of the two offsets. This is a definitional view of
+one predicate, not an additional premise. Later pointer aliases can therefore
+reuse the original address comparison without reconstructing a cancelled
+base from an arbitrary class representative.
+
+The bridge registers only the selected addresses and offsets. It neither
+enumerates pointer aliases nor derives equal blocks from equal offsets.
+Truth remains scoped to its admitted premise; withdrawing either that premise
+or the required pointer alias removes the conclusion. The
+`pointer_comparison_preserves_base_evidence_through_aliases_and_scopes` and
+`pointer_comparison_evidence_work_ignores_unrelated_facts` regressions cover
+registration order, early queries, premise withdrawal, and ambient scaling.
+
 ## Typed algebraic model values
 
 Checked equalities of algebraic model values enter the same persistent term
@@ -195,6 +216,17 @@ applications and offset terms register on demand during insertion and queries.
 equalities, addition congruence, and registered same-snapshot int32 load congruence. The uint64 interface above extends the same closure to wide reads and selected
 wide expressions. Further sorts and consumers remain separate work. `pointer_is_classed` and `pointer_spellings` are explicitly
 pointer-specific compatibility helpers for legacy consumers.
+
+Term interning and affine decomposition run under the graph mutex and do not
+canonicalize memory or traverse its history. Public scalar and offset equality
+queries normalize their selected scalar indices before locking while preserving
+the offset expression's addition nodes. A raw scalar read can
+receive an exact-snapshot observation name with its recorded kind and access
+width; that internal definition introduces no path proposition or read authority.
+A different snapshot still needs the existing checked normalization or frame
+bridge. `raw_read_address_registration_does_not_walk_memory_history` measures
+selected registration beside 0, 16, 64 and 256 unrelated classes. The existing
+snapshot/support regression separately checks raw/named equality and withdrawal.
 
 Kernel consumers use `PureFactContext::pointers_known_equal(left, right)`
 for equality already established by this trusted graph. It neither searches

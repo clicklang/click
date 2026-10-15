@@ -996,6 +996,7 @@ pub(crate) struct CellStore {
     /// function of the two maps above.
     logical: OnceLock<SnapshotMap<Pointer, CValue>>,
     ordered_index: std::sync::Mutex<Option<OrderedIndexCache>>,
+    pointer_reachable_index: std::sync::Mutex<Option<PointerReachableIndex>>,
     parameter_partition_index: std::sync::Mutex<Option<ParameterPartitionIndex>>,
 }
 
@@ -1010,6 +1011,19 @@ struct ParameterPartitionIndex {
     known: SnapshotMap<(Pointer, Pointer), ()>,
     unknown: SnapshotMap<Pointer, ()>,
     bases: SnapshotMap<Pointer, Pointer>,
+}
+
+/// The concrete cells a pointer value can reach: every cell outside the
+/// slot of a local whose address is never taken
+/// ([`super::block_is_never_address_taken_local`]). Kept beside the store and
+/// caught up by diffing the concrete map it was taken from, so a store only
+/// pays for the cells changed since; a change to the addressability registry
+/// rebuilds it.
+#[derive(Clone)]
+struct PointerReachableIndex {
+    cells: SnapshotMap<Pointer, CValue>,
+    generation: u64,
+    keys: SnapshotMap<Pointer, ()>,
 }
 
 #[derive(Clone)]
@@ -1033,6 +1047,9 @@ impl Clone for CellStore {
             run_cells: self.run_cells,
             logical: self.logical.clone(),
             ordered_index: std::sync::Mutex::new(self.ordered_index.lock().unwrap().clone()),
+            pointer_reachable_index: std::sync::Mutex::new(
+                self.pointer_reachable_index.lock().unwrap().clone(),
+            ),
             parameter_partition_index: std::sync::Mutex::new(
                 self.parameter_partition_index.lock().unwrap().clone(),
             ),
@@ -1369,6 +1386,53 @@ impl CellStore {
     /// The ordinary candidate cells, omitting only array cells which the
     /// recorded strict path places a full scalar width away from this store.
     /// The derivative cache follows persistent-map deltas between stores.
+    /// The concrete cells a pointer value can reach, in key order: every cell
+    /// except those in the slot of a local whose address is never taken,
+    /// which no pointer value designates. Costs the cells changed since this
+    /// store's lineage last asked, plus the cells returned.
+    pub(in crate::kernel) fn pointer_reachable_cells(&self) -> Vec<Pointer> {
+        let generation = super::memory_state::never_address_taken_generation();
+        let mut guard = self.pointer_reachable_index.lock().unwrap();
+        let mut index = guard
+            .take()
+            .filter(|index| index.generation == generation)
+            .unwrap_or_else(|| PointerReachableIndex {
+                cells: SnapshotMap::new(),
+                generation,
+                keys: SnapshotMap::new(),
+            });
+        let changes = index
+            .cells
+            .diff(&self.concrete)
+            .filter_map(|change| match change {
+                super::persistent_map::SnapshotMapChange::Added(key) => Some((key.clone(), true)),
+                super::persistent_map::SnapshotMapChange::Removed(key) => {
+                    Some((key.clone(), false))
+                }
+                super::persistent_map::SnapshotMapChange::Changed(_) => None,
+            })
+            .collect::<Vec<_>>();
+        for (key, added) in changes {
+            if super::block_is_never_address_taken_local(&key.block) {
+                continue;
+            }
+            if added {
+                index.keys.insert(key, ());
+            } else {
+                index.keys.remove(&key);
+            }
+        }
+        index.cells = self.concrete.clone();
+        let cells = index
+            .keys
+            .keys()
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+            .cloned()
+            .collect();
+        *guard = Some(index);
+        cells
+    }
+
     pub(in crate::kernel) fn ordered_store_candidates(
         &self,
         pointer: &Pointer,

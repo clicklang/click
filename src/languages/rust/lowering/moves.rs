@@ -210,6 +210,11 @@ pub(super) fn lower(
         return Err("MIR body has no entry block".into());
     }
     let flow = flow::Flow::analyze(f, mir)?;
+    let leases = super::scalar_leases::prepare(
+        f,
+        cx.import_identity.as_deref(),
+        flow.loops.is_empty().then_some(flow.joins.as_slice()),
+    );
     let mut nodes = vec![None; mir.blocks.len()];
     let check = |local: &str, record: &str| -> Result<&str, String> {
         if records.get(local).copied() != Some(record) {
@@ -395,7 +400,7 @@ pub(super) fn lower(
             } else {
                 BTreeMap::new()
             };
-            let statement = match s {
+            let mut statement = match s {
                 S::SliceSplit {
                     slice,
                     midpoint,
@@ -734,9 +739,28 @@ pub(super) fn lower(
                 S::Initialize { fields, .. } => fields.iter().collect(),
                 _ => Vec::new(),
             };
+            if let Some(forest) = &leases {
+                super::scalar_leases::decorate(
+                    forest,
+                    super::super::borrow_frontiers::MirPoint {
+                        block,
+                        statement: statement_index,
+                    },
+                    &mut statement,
+                )?;
+            }
             statements = c_seq(statements, c_seq(accesses(&inputs, &live), statement));
         }
-        nodes[block] = Some(c_seq(statements, terminal));
+        let prefix = leases.as_ref().map_or_else(c_skip, |forest| {
+            super::scalar_leases::endings(
+                forest,
+                super::super::borrow_frontiers::MirPoint {
+                    block,
+                    statement: 0,
+                },
+            )
+        });
+        nodes[block] = Some(c_seq(prefix, c_seq(statements, terminal)));
     }
     let mut emitted = vec![false; mir.blocks.len()];
     let structured = region(cx, mir, &nodes, &flow, &mut emitted, 0, mir.blocks.len())?;

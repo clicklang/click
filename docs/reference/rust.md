@@ -910,27 +910,38 @@ same modeled pointer: writes through the child are observed through its parent.
 The compiler establishes when parent reuse is legal; the kernel establishes
 that each modeled access is justified by the supplied resources.
 
-For one direct mutable scalar reborrow from a reference parameter in a single
-MIR block ending at return, locked lowering also issues checked local leases.
-The final child access must be a direct store or a direct scalar read assigned
-to a local. Between birth and ending, scalar assignments and same-typed scalar
-reference copies into private locals
-are supported. A local copy or move carries the same lease identity; the final
-store or read may use any alias followed by the checked source flow. Replacing the
-original child local does not end the lease held by another alias. The kernel
-withholds the selected whole scalar owner while the child is active, checks
-child accesses against its fresh identity,
-and recovers the original owner exactly once after the checked final operation.
-For read endings, the reference operand must be a private local and the exact
-direct load and scalar assignment must both succeed. Cached reads still pass
-the ordinary permission checks; source observations cannot grant recovery.
-Child writes remain current; expired child copies cannot use the returned
-owner, and recovery expires every copy of that identity. This applies to `i32`,
-`u8`, `u16` and `u32` with an exact direct owned footprint. Nested local
-reborrows, more general read expressions, calls within the active interval and wider control flow
-retain their existing lowering and have no local lease coverage yet. Reference
-transport through addressable slots or aggregates remains excluded while a
-lease is active. Source observation labels grant no authority.
+For supported scalar functions, locked lowering issues checked local lease
+births and explicit borrow-end operations. Straight-line code and structured
+acyclic branches with a shared continuation are supported.
+The supported pointees are `i32`, `u8`, `u16` and `u32`, with exact direct owned
+footprints. Local copies or moves retain the same lease identity; a reborrow
+creates a child that suspends its parent. Reads and writes use the ordinary
+memory producers and their authority checks.
+
+Ending frontiers follow scalar reads, writes, calculations and reference copies.
+An indexed source pass propagates descendant uses to parents and emits nested
+endings innermost first, including when several borrows end at one statement.
+The kernel resolves each ending through its current invocation's live handle;
+recovery does not depend on which alias name survives. Missing births, foreign
+source identities, duplicate endings and parent endings with live children are
+refused. Closing the outermost lease returns the original owned occurrence and
+preserves current memory. Expired aliases cannot use that returned owner.
+
+Across an `if`, both arms preserve the exact live loan ledger. Scalar reads,
+writes and calculations, including nested branches and condition reads, keep
+the borrow live through the common continuation. An arm's last use ends at the
+outermost enclosing continuation; a later use can extend that ending further.
+Nested borrows end innermost first. Births and reference copies or reassignment
+must occur on the shared path outside branch arms. Reusing a suspended parent
+in just one arm requires branch-specific recovery and remains outside this
+protocol.
+
+The source and sidecars require no additional lifetime annotations. Source
+observations remain read-only. Branch-local births or reference reassignment,
+early returns, shared borrow graphs, aggregate or addressable reference
+transport, calls and loops still need source integration. Functions outside
+the activated subset retain their existing lowering and have no local lease
+coverage.
 
 The trusted boundary includes the pinned compiler, exporter, semantic artifact,
 and its translator. The lock detects stale or changed inputs; it is not an

@@ -67,10 +67,15 @@ Successful progress is concise by default: one row per claim. `--verbose`
 includes the phase costs for each claim batch.
 
 A claim whose sites are all selected is expanded once, with every site
-together, since expanding one site runs its whole claim. Failure of that whole-claim
+together, since expanding one site runs its whole claim, and its rewrite is
+cold-verified with the implicit `auto` off. Failure of that whole-claim
 expansion fails the audit. A partial selection is captured together in one verification as well;
 its fixed-point check covers only the emitted regions, leaving unselected
 smart tactics unchanged.
+
+A claim with no smart site whose bare simple tactics the implicit `auto`
+proves is one site of its own, found by verifying its source once during the
+inventory, and is audited as a whole claim.
 
 The audit's own checks count deterministic work units, the ones the tactic
 budgets are charged, so machine load cannot change them; wall-clock time is
@@ -654,7 +659,7 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
     let sources = without_excluded(audit_targets(&arguments.path)?, &arguments.exclude)?;
     println!("INVENTORY");
     let inventory_limit = arguments.limits.session.within(deadline)?;
-    let (sites, _) = run_phase("smart-site inventory", inventory_limit, || {
+    let (mut sites, _) = run_phase("smart-site inventory", inventory_limit, || {
         for path in &sources {
             let source = load_audit_source(path)?;
             let runtime = match &source.project {
@@ -678,6 +683,39 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
         sites.len()
     );
     let claims = resolve_audit_claims(&sources, &arguments.claims)?;
+    // A claim the implicit `auto` proves without a smart site is found by
+    // verifying its source; a run naming claims by location reads only theirs.
+    let discovery_sources = if !claims.is_empty() && claims.iter().all(|claim| claim.path.is_some())
+    {
+        claims
+            .iter()
+            .filter_map(|claim| claim.path.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>()
+    } else {
+        sources.clone()
+    };
+    let (implicit_sites, discovery_failures) = implicit_auto_sites(
+        &discovery_sources,
+        &sites,
+        arguments.limits.session.within(deadline)?,
+    )?;
+    for failure in &discovery_failures {
+        println!("  implicit-auto discovery FAILED: {failure}");
+    }
+    println!(
+        "  {} claims proved by the implicit `auto` with no smart site",
+        implicit_sites.len()
+    );
+    sites.extend(implicit_sites);
+    sites.sort_by(|left, right| {
+        (&left.click_path, left.position.line, left.position.column).cmp(&(
+            &right.click_path,
+            right.position.line,
+            right.position.column,
+        ))
+    });
     let claim_sites = select_claim_sites(&sites, &claims)?;
     if !arguments.claims.is_empty() {
         println!(
@@ -734,7 +772,7 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
     }
     let mut audited_sites = 0;
     let mut site_failures = 0;
-    let mut session_failures = 0;
+    let mut session_failures = discovery_failures.len();
     let mut attempted_sites = 0;
     let mut worker: Option<(PathBuf, AuditSessionWorker)> = None;
     let mut cursor = 0;
@@ -1286,6 +1324,97 @@ fn inventory_sites(sources: &[PathBuf]) -> Result<Vec<AuditSite>, String> {
     Ok(sites.into_values().collect())
 }
 
+/// One site per claim whose bare simple tactics the implicit `auto` proves
+/// and which holds no smart site: its whole expansion must verify without
+/// the implicit `auto` (`issues/simplify-step.md`), so the audit expands it
+/// as it does a claim of smart sites. Finding them verifies each source once;
+/// a source with no smart site that does not verify is returned as a failure.
+fn implicit_auto_sites(
+    sources: &[PathBuf],
+    smart: &[AuditSite],
+    limit: PhaseLimit,
+) -> Result<(Vec<AuditSite>, Vec<String>), String> {
+    let smart_claims = smart
+        .iter()
+        .map(|site| (site.click_path.clone(), site.claim.clone()))
+        .collect::<BTreeSet<_>>();
+    let mut sites = Vec::new();
+    let mut failures = Vec::new();
+    for source_path in sources {
+        let canonical_path = fs::canonicalize(source_path)
+            .map_err(|error| format!("failed to resolve `{}`: {error}", source_path.display()))?;
+        if looks_like_mdtest(&canonical_path) {
+            let markdown = fs::read_to_string(&canonical_path).map_err(|error| {
+                format!("failed to read `{}`: {error}", canonical_path.display())
+            })?;
+            let mdtest = cli::parse_mdtest(&canonical_path, &markdown)?;
+            if matches!(mdtest.expectation, Some(MdTestExpectation::FailContains(_))) {
+                continue;
+            }
+        }
+        let source = load_audit_source(&canonical_path)?;
+        // The kernel's tables are thread-local, as in a session.
+        let discovered = thread::scope(|scope| {
+            thread::Builder::new()
+                .name("click-audit-implicit-auto".to_string())
+                .stack_size(SESSION_THREAD_STACK_BYTES)
+                .spawn_scoped(scope, || {
+                    run_phase("implicit-auto discovery", limit, || {
+                        let (verified, events) =
+                            click::instrumentation::collect(|| start_session(&source));
+                        verified?;
+                        Ok(events
+                            .into_iter()
+                            .filter_map(|event| match event {
+                                click::instrumentation::VerificationEvent::TacticStarted(
+                                    tactic,
+                                ) if tactic.tactic_name
+                                    == click::instrumentation::IMPLICIT_AUTO_TACTIC =>
+                                {
+                                    Some(tactic.claim)
+                                }
+                                _ => None,
+                            })
+                            .collect::<BTreeSet<_>>())
+                    })
+                })
+                .map_err(|error| format!("failed to start implicit-auto discovery: {error}"))?
+                .join()
+                .map_err(|_| "implicit-auto discovery thread panicked".to_string())?
+        });
+        let claims = match discovered {
+            Ok((claims, _)) => claims,
+            // A source with smart sites is verified again by its session,
+            // which reports the failure; for one without, this is the check.
+            Err(message) => {
+                if !smart_claims.iter().any(|(path, _)| path == &canonical_path) {
+                    failures.push(format!("{}: {message}", canonical_path.display()));
+                }
+                continue;
+            }
+        };
+        for claim in claims {
+            if smart_claims.contains(&(canonical_path.clone(), claim.clone())) {
+                continue;
+            }
+            let click_position =
+                claim_source_position_for_source(&source, &source.click_source, &claim)?;
+            sites.push(AuditSite {
+                click_path: canonical_path.clone(),
+                position: SourcePosition {
+                    line: click_position.line + source.line_offset,
+                    column: click_position.column,
+                    origin: None,
+                },
+                click_position,
+                claim,
+                tactic_name: click::instrumentation::IMPLICIT_AUTO_TACTIC.to_string(),
+            });
+        }
+    }
+    Ok((sites, failures))
+}
+
 /// One `--claim`: a label, or the claim covering a source location, which
 /// also names the one file it is in.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1790,13 +1919,18 @@ fn audit_claim_rewrite(
             .name("click-audit-cold-rewritten".to_string())
             .stack_size(SESSION_THREAD_STACK_BYTES)
             .spawn_scoped(scope, || {
-                cold_verify(
-                    &expanded,
-                    &cold_source,
-                    &site.claim,
-                    cold_limit,
-                    "expanded proof-unit verification",
-                )
+                // The whole claim's expansion has nothing smart left: checked
+                // with the implicit `auto` off, it is shown self-contained
+                // (`issues/simplify-step.md`).
+                click::surface::without_implicit_auto(|| {
+                    cold_verify(
+                        &expanded,
+                        &cold_source,
+                        &site.claim,
+                        cold_limit,
+                        "expanded proof-unit verification",
+                    )
+                })
             })
             .map_err(|error| format!("failed to start cold verification: {error}"))?;
         let original_cost = cold_verify(
@@ -1912,17 +2046,14 @@ fn audit_selected_claim_rewrite(
         limits.verification.within(deadline)?,
         "original proof-unit verification",
     )?;
-    // The whole claim's expansion has nothing smart left: checked with the
-    // implicit `auto` off, it is shown self-contained (`issues/simplify-step.md`).
-    let expanded_cost = click::surface::without_implicit_auto(|| {
-        cold_verify(
-            &expanded,
-            source,
-            &first.claim,
-            limits.verification.within(deadline)?,
-            "expanded proof-unit verification",
-        )
-    })?;
+    // Unselected automation keeps running, the implicit `auto` included.
+    let expanded_cost = cold_verify(
+        &expanded,
+        source,
+        &first.claim,
+        limits.verification.within(deadline)?,
+        "expanded proof-unit verification",
+    )?;
     if let Some(regression) =
         performance_regression(original_cost, expanded_cost, limits.performance_slack)
     {

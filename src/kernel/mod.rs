@@ -13,13 +13,16 @@ pub(crate) use source_access::{
     ExecutedReferenceAccess, ExecutedReferenceBoundary, ReferenceAccessKind,
     ReferenceAccessSourceId, ReferenceBorrowSourceId,
 };
-pub(crate) use source_loans::{ScalarReferencePlanKey, ScalarReferenceSourcePlan};
+pub use source_loans::CScalarReferenceEnd;
+pub(crate) use source_loans::{
+    ScalarReferencePlanFamily, ScalarReferencePlanKey, ScalarReferenceSourcePlan,
+};
 
 /// Version of the resource and stable-view semantics used by proof
 /// artifacts.  This is deliberately separate from source and compiler
 /// identities: changing the authority interpretation must invalidate an old
 /// certificate even when its inputs are byte-identical.
-pub const RESOURCE_SEMANTICS_VERSION: u32 = 66;
+pub const RESOURCE_SEMANTICS_VERSION: u32 = 68;
 
 pub(crate) mod assumptions;
 mod difference_graph;
@@ -61,8 +64,8 @@ pub(crate) use loans::LoanLedger;
 pub(crate) use loans::LoanRefusal;
 pub(crate) use loans::owned_reservation_miss_for;
 pub(crate) use loans::{
-    CheckedLoanCallEvidenceSequence, LoanViewBinding, concat_checked_loan_evidence,
-    empty_checked_loan_evidence_sequence,
+    CheckedLoanCallEvidenceSequence, CheckedLoanTransition, LoanViewBinding,
+    concat_checked_loan_evidence, empty_checked_loan_evidence_sequence,
 };
 pub use loans::{
     LoanOriginKind, LoanOverlapStatus, LoanRefusalCategory, LoanRefusalDiagnostic,

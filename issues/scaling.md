@@ -57,34 +57,36 @@ largest step of 69,033.
 Each is the same pattern: a step recomputes something from the whole state
 instead of from what the step changed.
 
-1. **A store through an unresolved pointer visits every cached cell.**
-   `CMemory::without_possible_aliasing_cells` takes
-   `AliasCandidates::of_block` of the written block, and a `Symbolic` block
-   (a pointer an extern returned) admits every block. Each candidate is then
-   asked the ownership question and the distinctness ladder. In
-   `heap_objects` the candidates are mostly the earlier locals' own stack
-   slots: 2,080 checks at N = 64, which is 64·65/2. Locals whose address is
-   never taken are already proven distinct from every pointer value
-   (`never_address_taken_local_versus_pointer_value`), but the store still
-   visits them. A store should frame out everything outside its footprint
-   without asking each cell.
+1. **Fixed: a store through an unresolved pointer visited every cached
+   cell**, including the slot of every earlier local, which no pointer value
+   can reach. The cell store now keeps the pointer-reachable cell keys
+   (`CellStore::pointer_reachable_cells`), caught up by diffing, and a store
+   through a `Symbolic` pointer visits only those. `heap_objects` stores now
+   cost 135 units at every position at N = 64.
 2. **Composition evidence is a list that only grows.** Every step states
    about four snapshots of the whole resource context as
-   `Proposition::CResourceComposition` facts, and separation queries scan the
-   whole set (`PureFactContext::owned_store_footprint`,
-   `owned_composition_store_separated_evidence`, and about twenty other
-   `resource_compositions.iter()` sites). Indexing the set by block does not
-   help on its own: each step rebuilds its assumptions in a fresh context
-   and re-admits the snapshots with no lineage to diff against, so an index
-   pays the whole frame either at admission or at every query (tried on
-   branch `claude/blissful-cori-zfd8s9`, commit `3513b5d2`).
-3. **A call rebuilds what the caller keeps.** `call_kept_ownership` expands
-   every kept composite at every call (`expand_composites_for_frame`) to
-   list the memory the caller keeps, and `CallKeptRanges::with_residual`
-   merges every opened range into the edge's identity. At N = 64 this is
-   nearly all of `drop_box`'s growth; the rest of the call path is flat.
-   The havoc should be defined by the callee's footprint, with "kept" meaning
-   everything else, recorded as the residual and answered per address.
+   `Proposition::CResourceComposition` facts. Stores no longer read them:
+   the write path states the writer's current composition as the store owner
+   (`PureFactContext::with_store_owner`), and `owned_store_footprint` and
+   `owned_composition_store_separated_evidence` read it alone. That removed
+   25 of the 29 units per earlier object a `heap_objects` store cost (cause 1
+   was the rest), and no
+   mdtest, example or unit test depended on the older compositions. About
+   twenty other `resource_compositions.iter()` sites, in load resolution and
+   condition reasoning, still scan the whole set. Indexing the set does not
+   help on its own: each step rebuilds its assumptions in a fresh context and
+   re-admits the snapshots with no lineage to diff against (tried on branch
+   `claude/blissful-cori-zfd8s9`, commit `3513b5d2`).
+3. **A call rebuilds what the caller keeps.** `call_kept_ownership` expanded
+   every kept composite at every call to list the memory the caller keeps.
+   Fixed for composites whose definition is argument-direct, such as
+   `boxed`: the call opens none of them, and the recorded kept memory opens
+   only the composites a question's address can name
+   (`CallKeptRanges::range_holding`). `heap_objects` now costs 1,401 units per
+   `drop_box` at every position at N = 64, and the whole proof 204,585 units
+   (was 695,291). Still per call: residual instances and composites whose
+   bodies read memory, a condition or a witness are opened at every call, so
+   a function holding many of those still pays for each.
 
 Related scaling bugs stay in `bugs/` until fixed:
 [sequential-loop-clause-grows-with-earlier-loops.md](../bugs/sequential-loop-clause-grows-with-earlier-loops.md).
@@ -101,15 +103,17 @@ End-to-end, `src/scaling_tests/surface/tests/step_shape_scaling_tests.rs`
 runs the `scripts/step-scaling-hunt.py` shapes in the gate: a step repeated at
 several positions must not drift with the statements before it, and a call
 must not grow with unrelated facts, aliases or owned objects.
-`known_drift_heap_object_stores_and_releases` records the `heap_objects` drift
-of causes 1 to 3 and fails when it stops, so the fix updates this issue.
+`heap_object_stores_and_releases_cost_the_same_at_every_position` holds
+`heap_objects` flat; `known_drift_sequential_loop_clauses` records the loop
+bug's drift and fails when it stops.
 
 ## Acceptance
 
-- Each known cause above is fixed in its representation, with a
-  deterministic regression at four or more sizes.
-- `known_drift_heap_object_stores_and_releases` becomes an ordinary
-  no-drift test, and `step-scaling-hunt.py heap_objects` shows every simple
-  step's work constant in N, up to logarithmic factors; ownership is still
-  checked at every store and release.
+- Each remaining cause above is fixed in its representation, with a
+  deterministic regression at four or more sizes: the composition scans
+  outside stores (cause 2), and calls beside held instances or composites
+  whose bodies read memory, a condition or a witness (cause 3).
+- `step-scaling-hunt.py` shows every simple step of every shape constant in
+  N, up to logarithmic factors and work proportional to the step's own
+  effect (as the final `return` ending N locals in `heap_objects` is).
 - No budget or threshold is raised to get there.

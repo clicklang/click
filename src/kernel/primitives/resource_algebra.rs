@@ -356,8 +356,22 @@ impl ResourceContextIndex {
         }
         if fact.is_own() {
             result.owned_count += 1;
-            if matches!(fact.resource(), CResource::Composite { .. }) {
+            if let CResource::Composite { arguments, .. } = fact.resource() {
                 result.owned_composite_count += 1;
+                let count = result.owned_composite_facts.get(fact).copied().unwrap_or(0);
+                result.owned_composite_facts.insert(fact.clone(), count + 1);
+                for pointer in algebraic_pointer_arguments(arguments) {
+                    result.owned_composites_by_pointer_argument = insert_resource_index_entry(
+                        &result.owned_composites_by_pointer_argument,
+                        pointer.clone(),
+                        entry,
+                    );
+                    result.owned_composites_by_argument_block = insert_resource_index_entry(
+                        &result.owned_composites_by_argument_block,
+                        pointer.block.clone(),
+                        entry,
+                    );
+                }
             }
         }
         if let CResource::MutexGuard(identity) = fact.resource() {
@@ -569,8 +583,30 @@ impl ResourceContextIndex {
         }
         if fact.is_own() {
             result.owned_count -= 1;
-            if matches!(fact.resource(), CResource::Composite { .. }) {
+            if let CResource::Composite { arguments, .. } = fact.resource() {
                 result.owned_composite_count -= 1;
+                let count = result
+                    .owned_composite_facts
+                    .get(fact)
+                    .copied()
+                    .expect("owned composite count exists");
+                if count == 1 {
+                    result.owned_composite_facts.remove(fact);
+                } else {
+                    result.owned_composite_facts.insert(fact.clone(), count - 1);
+                }
+                for pointer in algebraic_pointer_arguments(arguments) {
+                    result.owned_composites_by_pointer_argument = remove_resource_index_entry(
+                        &result.owned_composites_by_pointer_argument,
+                        pointer,
+                        entry,
+                    );
+                    result.owned_composites_by_argument_block = remove_resource_index_entry(
+                        &result.owned_composites_by_argument_block,
+                        &pointer.block,
+                        entry,
+                    );
+                }
             }
         }
         if let CResource::MutexGuard(identity) = fact.resource() {
@@ -2467,6 +2503,94 @@ impl ResourceContext {
             })
     }
 
+    /// The owned folded composites with a C pointer argument equal to `base`,
+    /// read from the argument index: one unit to position and one per
+    /// composite returned.
+    pub(in crate::kernel) fn owned_composites_with_pointer_argument<'a>(
+        &'a self,
+        base: &Pointer,
+    ) -> impl Iterator<Item = &'a CResourceFact> + 'a {
+        crate::instrumentation::record_deterministic_work(1);
+        self.storage
+            .index
+            .owned_composites_by_pointer_argument
+            .get(base)
+            .into_iter()
+            .flat_map(ResourceEntryIds::iter)
+            .map(|entry| {
+                crate::instrumentation::record_deterministic_work(1);
+                self.fact(*entry)
+            })
+    }
+
+    /// The owned folded composites with a C pointer argument in `block`.
+    pub(in crate::kernel) fn owned_composites_with_argument_block<'a>(
+        &'a self,
+        block: &PointerBlock,
+    ) -> impl Iterator<Item = &'a CResourceFact> + 'a {
+        crate::instrumentation::record_deterministic_work(1);
+        self.storage
+            .index
+            .owned_composites_by_argument_block
+            .get(block)
+            .into_iter()
+            .flat_map(ResourceEntryIds::iter)
+            .map(|entry| {
+                crate::instrumentation::record_deterministic_work(1);
+                self.fact(*entry)
+            })
+    }
+
+    /// The owned folded composites with their multiplicity, as one
+    /// content-hashed persistent map.
+    pub(in crate::kernel) fn owned_composite_facts(&self) -> &SnapshotMap<CResourceFact, usize> {
+        &self.storage.index.owned_composite_facts
+    }
+
+    /// The owned folded composites, grouped by family name, from the shape
+    /// index: a caller that answers a whole family at once never visits its
+    /// facts.
+    pub(in crate::kernel) fn owned_composite_families<'a>(
+        &'a self,
+    ) -> impl Iterator<Item = (&'a str, impl Iterator<Item = &'a CResourceFact> + 'a)> + 'a {
+        self.storage
+            .index
+            .exact_shapes
+            .iter()
+            .skip_while(|((family, _, _), _)| *family < ResourceFamily::Composite)
+            .take_while(|((family, _, _), _)| *family == ResourceFamily::Composite)
+            .map(move |((_, name, _), entries)| {
+                crate::instrumentation::record_deterministic_work(1);
+                (
+                    name.as_str(),
+                    entries
+                        .iter()
+                        .map(move |entry| {
+                            crate::instrumentation::record_deterministic_work(1);
+                            self.fact(*entry)
+                        })
+                        .filter(|fact| fact.is_own()),
+                )
+            })
+    }
+
+    /// The owned field-bearing instances of this context, from the instance
+    /// index. Charges one work unit per visited fact.
+    pub(in crate::kernel) fn owned_instances<'a>(
+        &'a self,
+    ) -> impl Iterator<Item = &'a CResourceFact> + 'a {
+        self.storage
+            .index
+            .instances
+            .iter()
+            .flat_map(|(_, entries)| entries.iter())
+            .map(|entry| {
+                crate::instrumentation::record_deterministic_work(1);
+                self.fact(*entry)
+            })
+            .filter(|fact| fact.is_own())
+    }
+
     /// Whether this context holds any owned instance with a C pointer
     /// argument: the constant-time gate before any cell asks the index.
     pub(in crate::kernel) fn has_owned_instances_with_pointer_arguments(&self) -> bool {
@@ -2475,36 +2599,6 @@ impl ResourceContext {
             .index
             .owned_instances_by_pointer_argument
             .is_empty()
-    }
-
-    /// The owned field-bearing instances and folded composites of this
-    /// context, drawn from the instance and shape indexes rather than a scan
-    /// of every fact: flat memory, tokens, iterated facts and views are never
-    /// visited. Charges one work unit per visited fact.
-    pub(in crate::kernel) fn owned_instances_and_composites<'a>(
-        &'a self,
-    ) -> impl Iterator<Item = &'a CResourceFact> + 'a {
-        let composites = self
-            .storage
-            .index
-            .exact_shapes
-            .iter()
-            .skip_while(|((family, _, _), _)| *family < ResourceFamily::Composite)
-            .take_while(|((family, _, _), _)| *family == ResourceFamily::Composite)
-            .flat_map(|(_, entries)| entries.iter());
-        let instances = self
-            .storage
-            .index
-            .instances
-            .iter()
-            .flat_map(|(_, entries)| entries.iter());
-        composites
-            .chain(instances)
-            .map(|entry| {
-                crate::instrumentation::record_deterministic_work(1);
-                self.fact(*entry)
-            })
-            .filter(|fact| fact.is_own())
     }
 
     /// The facts `CResourceFact::may_refer_to_memory_block` selects for
@@ -5395,6 +5489,37 @@ impl ResourceContext {
         }
     }
 
+    /// Description comparison for a checked resource rewrite, not call/lend
+    /// authority. Existing read cores may jointly cover a view even when their
+    /// separate support/loan bindings forbid merging actual supplier entries.
+    /// Only a boolean escapes; no binding is dropped from the real context.
+    pub(in crate::kernel) fn read_core_description_entails(
+        &self,
+        fact: &CResourceFact,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        if self.satisfies_fact(fact, assumptions) {
+            return true;
+        }
+        let Some(range) = fact.memory_view_range() else {
+            return false;
+        };
+        let candidates = self.memory_fact_candidates(range, false, assumptions);
+        let mut cores = Self::new_with_equalities(assumptions);
+        for entry in candidates.entries.iter() {
+            let supplier = candidates
+                .supplier_at_base(entry, range.base())
+                .unwrap_or_else(|| self.fact(entry).clone());
+            if let Some(core) = supplier.core_with_assumptions(assumptions) {
+                cores.insert_fact(core);
+            }
+        }
+        cores
+            .normalized_with_byte_endpoints(assumptions, true)
+            .directly_supporting_fact(fact, assumptions)
+            .is_some()
+    }
+
     pub fn satisfies_fact(&self, fact: &CResourceFact, assumptions: &PureFactContext) -> bool {
         if !fact.has_valid_exclusive_access() {
             return false;
@@ -6203,38 +6328,13 @@ impl ResourceContext {
             for entry in entries {
                 self.remove_entry_only(entry);
             }
-            self.storage = std::sync::Arc::new(ResourceContextStorage {
-                facts: self.storage.facts.clone(),
-                next_entry_id: self.storage.next_entry_id,
-                occurrence_by_entry: self.storage.occurrence_by_entry.clone(),
-                entry_by_occurrence: self.storage.entry_by_occurrence.clone(),
-                index: self.storage.index.clone(),
-                supported_by: self.storage.supported_by.clone(),
-                support_occurrence_by_projection: self
-                    .storage
-                    .support_occurrence_by_projection
-                    .clone(),
-                projections_by_support: self.storage.projections_by_support.clone(),
-                projections_by_support_occurrence: self
-                    .storage
-                    .projections_by_support_occurrence
-                    .clone(),
-                support_metadata_by_projection: self.storage.support_metadata_by_projection.clone(),
-                projections_by_memory_block: self.storage.projections_by_memory_block.clone(),
-                projections_by_memory_interval: self.storage.projections_by_memory_interval.clone(),
-                projections_by_memory_interval_subtree: self
-                    .storage
-                    .projections_by_memory_interval_subtree
-                    .clone(),
-                unknown_memory_support: self.storage.unknown_memory_support.clone(),
-                symbolic_memory_support: self.storage.symbolic_memory_support.clone(),
-                expansions_by_support_occurrence: PersistentMap::default(),
-                expansions_by_support_entry: PersistentMap::default(),
-                origin: self.storage.origin.clone(),
-                history: self.storage.history.clone(),
-                observable_projection_source: None,
-                materialized: std::sync::OnceLock::new(),
-            });
+            // Each removal above advanced the observable projection; clearing
+            // the expansion caches advances it too, so a normalization that
+            // restores the same supported pairs below keeps the warm view
+            // instead of leaving every later observation to recompute it.
+            let previous = self.storage.clone();
+            self.clear_cached_support_expansions();
+            self.advance_observable_expansions_cleared(&previous);
             return self
                 .normalized_with_byte_endpoints(assumptions, byte_endpoints)
                 .restore_supported_projection_pairs(supported)
@@ -6398,6 +6498,41 @@ impl ResourceContext {
                 (*support_occurrence, expansion.as_ref().clone())
             })
             .collect()
+    }
+
+    /// Replace the storage root with one holding no cached support
+    /// expansions, leaving every fact, entry, occurrence and support index in
+    /// place. The caller advances the observable projection.
+    fn clear_cached_support_expansions(&mut self) {
+        self.storage = std::sync::Arc::new(ResourceContextStorage {
+            facts: self.storage.facts.clone(),
+            next_entry_id: self.storage.next_entry_id,
+            occurrence_by_entry: self.storage.occurrence_by_entry.clone(),
+            entry_by_occurrence: self.storage.entry_by_occurrence.clone(),
+            index: self.storage.index.clone(),
+            supported_by: self.storage.supported_by.clone(),
+            support_occurrence_by_projection: self.storage.support_occurrence_by_projection.clone(),
+            projections_by_support: self.storage.projections_by_support.clone(),
+            projections_by_support_occurrence: self
+                .storage
+                .projections_by_support_occurrence
+                .clone(),
+            support_metadata_by_projection: self.storage.support_metadata_by_projection.clone(),
+            projections_by_memory_block: self.storage.projections_by_memory_block.clone(),
+            projections_by_memory_interval: self.storage.projections_by_memory_interval.clone(),
+            projections_by_memory_interval_subtree: self
+                .storage
+                .projections_by_memory_interval_subtree
+                .clone(),
+            unknown_memory_support: self.storage.unknown_memory_support.clone(),
+            symbolic_memory_support: self.storage.symbolic_memory_support.clone(),
+            expansions_by_support_occurrence: PersistentMap::default(),
+            expansions_by_support_entry: PersistentMap::default(),
+            origin: self.storage.origin.clone(),
+            history: self.storage.history.clone(),
+            observable_projection_source: None,
+            materialized: std::sync::OnceLock::new(),
+        });
     }
 
     fn restore_cached_support_expansions(
@@ -6823,13 +6958,15 @@ impl ResourceNormalizationIndex {
 
 /// The C pointer arguments of an instance, as its index keys them.
 fn instance_pointer_arguments(instance: &ResourceInstance) -> impl Iterator<Item = &Pointer> {
-    instance
-        .arguments
-        .iter()
-        .filter_map(|argument| match argument {
-            AlgebraicValue::C(CValue::Pointer(pointer)) => Some(pointer.pointer()),
-            _ => None,
-        })
+    algebraic_pointer_arguments(&instance.arguments)
+}
+
+/// The C pointer arguments among `arguments`, in order.
+fn algebraic_pointer_arguments(arguments: &[AlgebraicValue]) -> impl Iterator<Item = &Pointer> {
+    arguments.iter().filter_map(|argument| match argument {
+        AlgebraicValue::C(CValue::Pointer(pointer)) => Some(pointer.pointer()),
+        _ => None,
+    })
 }
 
 /// The block of a token or composite's first argument when that argument is
@@ -10545,5 +10682,86 @@ fn absent_view_queries_ignore_owned_frames_and_track_view_lifecycle() {
             work, 0,
             "removing the last view restores empty lookup: size={size}"
         );
+    }
+}
+
+#[cfg(test)]
+mod read_core_description_tests {
+    use super::*;
+    use crate::kernel::loans::{LoanLedger, LoanViewBinding};
+
+    #[test]
+    fn bound_read_descriptions_compose_without_merging_loan_authority() {
+        let base = Pointer::symbolic(Variable(956_001));
+        let range = |start, end| CMemoryRange::new(base.clone(), start, end);
+        let whole = CResourceFact::own_memory(range(0.into(), 4.into()));
+        let backing = ResourceContext::new().unchecked_with_fact(whole.clone());
+        let support = backing.owned_occurrences_for_fact(&whole)[0];
+        let ledger = LoanLedger::new();
+        let owner = ledger.fresh_participant().unwrap();
+        let reader = ledger.fresh_participant().unwrap();
+        let opening = ledger.lend(owner, reader, support, whole).unwrap();
+        let ledger = ledger.apply(&opening.transition).unwrap();
+        let facts = PureFactContext::new();
+        let required = CResourceFact::view_memory(range(0.into(), 4.into()));
+        for gap in [false, true] {
+            let mut samples = Vec::new();
+            for count in [0, 16, 64, 256] {
+                let mut context = ResourceContext::new();
+                for piece in [
+                    CResourceFact::view_memory(range(0.into(), (if gap { 1 } else { 2 }).into())),
+                    CResourceFact::view_memory(range(2.into(), 4.into())),
+                ] {
+                    context = context.unchecked_with_fact(piece.clone());
+                    let occurrence = context.view_occurrences_for_fact(&piece, &facts)[0];
+                    let binding = LoanViewBinding {
+                        loan: opening.loan,
+                        scope: opening.scope,
+                        share: opening.root_share,
+                        support,
+                        viewed: piece,
+                        hold: None,
+                    };
+                    ledger
+                        .validate_view_binding(binding.clone(), reader)
+                        .unwrap();
+                    context = context.with_loan_dependency(occurrence, binding);
+                }
+                for index in 0..count {
+                    context =
+                        context.unchecked_with_fact(CResourceFact::view_memory(CMemoryRange::new(
+                            Pointer {
+                                block: PointerBlock::Heap(956_100 + index),
+                                offset: PointerOffsetTerm::Constant(0),
+                            },
+                            0.into(),
+                            4.into(),
+                        )));
+                }
+                let bindings = context.loan_dependency_state();
+                assert!(
+                    !context.satisfies_fact(&required, &facts),
+                    "actual suppliers retain their separate loan bindings"
+                );
+                let (covered, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    context.read_core_description_entails(&required, &facts)
+                });
+                assert_eq!(covered, !gap);
+                assert_eq!(context.loan_dependency_state().identity, bindings.identity);
+                assert!(!context.read_core_description_entails(
+                    &CResourceFact::own_memory(range(0.into(), 4.into())),
+                    &facts
+                ));
+                assert!(!context.read_core_description_entails(
+                    &CResourceFact::view_memory(range(0.into(), 5.into())),
+                    &facts
+                ));
+                samples.push(work);
+            }
+            assert!(
+                samples.windows(2).all(|pair| pair[1] <= pair[0] + 64),
+                "{samples:?}"
+            );
+        }
     }
 }

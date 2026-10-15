@@ -136,10 +136,15 @@ observable root. Queries use maintained ownership counts rather than enumerate
 retained owners. The cache checks both the source storage identity and the
 addressability registry revision; a classification change or a whole-input
 rewrite rebuilds the projection. Returned compositions use current loan
-bindings, and cached storage never supplies a proof decision. Four-size
-regressions cover unchanged queries, private insertion/removal sequences,
-addressable deltas, and retained owners, with compatibility checks for supports,
-expansions, loans, forks, and registry changes.
+bindings, and cached storage never supplies a proof decision. Normalization
+drops and restores supported views and cached expansions; clearing the
+expansions is a producer too, so the view after a lending call's recovery
+stays warm. Four-size regressions cover unchanged queries, private
+insertion/removal sequences, addressable deltas, and retained owners, with
+compatibility checks for supports, expansions, loans, forks, and registry
+changes. `a_view_lending_call_and_its_observation_ignore_unrelated_allocations`
+measures a call that `views` a heap range, then its caller's observation, at
+479 units beside 2, 4, 8 and 16 unrelated live allocations.
 
 Fixed-state propositions select their referenced local bindings before
 elaboration. Recorded snapshots look up those names individually instead of
@@ -818,6 +823,35 @@ while growing unrelated context: exact contradiction, consistent order
 contexts, theory-capable order endpoints, fixed overflow decisions, quantified
 fact queries, long order paths, fixed viewability queries, and condition
 derivations.
+
+## Condition decisions in simple checking
+
+The kernel's own condition evaluation (`decide_with_facts`, the path-fact
+consistency check, a merged branch's path facts, a loop condition) does not
+search the path. It reads exact facts, the condition's own form, and the
+context's `DifferenceGraph` (`src/kernel/difference_graph.rs`) with its keyed
+rules (`PureFactContext::difference_decision`). The general decision
+`PureFactContext::decide` stays with smart tactics. A condition the fast path
+leaves open keeps both branches, and a requirement it leaves open needs a
+proof step that states it.
+
+The graph's nodes are `int32`, `int64` and `uint64` values keyed by term, and
+its edges are constraints `x - y <= c`; a constant bound is an edge to a zero
+node, so facts about unrelated values never meet at a shared constant.
+Insertion propagates bounds, follows waiting links, and checks for cycles
+along at most `EDGE_LIMIT` edges, and a read pulls one hop from a node whose
+push was cut short. A value many others are bounded by, such as an array
+length, then costs the same however many there are. Past the limit the graph
+answers less, never something false. Queries read stored bounds or a bounded
+path between the two values. Pointer classes and disequalities, known low
+bits, and no-overflow facts are keyed by their own values (an overflow fact
+by its operands' nodes and offsets modulo the word size, so `(1 + a) + b`
+finds `defined(1 + a + b)`).
+
+`work_is_independent_of_unrelated_bounded_values` pins insertion and query
+work beside 16 to 1,024 unrelated values, and
+`decisions_hold_in_every_model_and_are_complete` checks each answer against
+every model of generated fact sets. See `issues/difference-logic.md`.
 
 ## Termination heights and local descent
 

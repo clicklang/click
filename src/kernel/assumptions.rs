@@ -33,6 +33,7 @@ mod constant_classes;
 use super::equality_graph::EqualityGraph;
 pub(in crate::kernel) use constant_classes::ConstantClasses;
 mod memory_reasoning;
+pub(in crate::kernel) use memory_reasoning::additive_base_spellings;
 pub(crate) use memory_reasoning::arm_frame_composite_definitions;
 pub(crate) use memory_reasoning::clear_frame_expansion_memo;
 pub(in crate::kernel) use memory_reasoning::parameter_partition_root;
@@ -2549,6 +2550,9 @@ impl PureFactContext {
         for resources in self.resource_compositions.iter() {
             fingerprint ^= Self::fingerprint(3, resources);
         }
+        if let Some(owners) = &self.store_owners {
+            fingerprint ^= Self::fingerprint(5, owners);
+        }
         fingerprint ^= self.reasoning_policy.fingerprint();
         self.content_fingerprint = fingerprint;
     }
@@ -3012,7 +3016,8 @@ impl PureFactContext {
         let derived;
         let (left, right) = match condition {
             ConditionTerm::Bitvector32Equal(left, right) => (left.as_ref(), right.as_ref()),
-            ConditionTerm::PointerOffsetEqual(left, right) => {
+            condition if condition.pointer_offset_sides().is_some() => {
+                let (left, right) = condition.pointer_offset_sides().expect("offset view");
                 let Some(pair) = int32_element_index_from_offset(left)
                     .zip(int32_element_index_from_offset(right))
                 else {
@@ -4062,7 +4067,8 @@ impl PureFactContext {
                     ConditionTerm::Bitvector32Equal(left, right) => {
                         Some((left.as_ref().clone(), right.as_ref().clone()))
                     }
-                    ConditionTerm::PointerOffsetEqual(left, right) => {
+                    condition if condition.pointer_offset_sides().is_some() => {
+                        let (left, right) = condition.pointer_offset_sides().expect("offset view");
                         int32_element_index_from_offset(left)
                             .zip(int32_element_index_from_offset(right))
                     }
@@ -4242,6 +4248,7 @@ impl PureFactContext {
         self.algebraic_variable_constructors = crate::persistent::PersistentMap::default();
         self.algebraic_variable_variant_evidence = crate::persistent::PersistentMap::default();
         self.resource_compositions = std::sync::Arc::new(BTreeSet::new());
+        self.store_owners = None;
         self.composition_object_resources = Default::default();
         self.memory_read_defined_facts = crate::persistent::PersistentMap::default();
         self.memory_loadable_facts = std::sync::Arc::new(BTreeMap::new());
@@ -5103,6 +5110,54 @@ impl PureFactContext {
         self.content_fingerprint
     }
 
+    /// This context with `owner`, the writer's current observable
+    /// composition or `None` when it has none to state, as the ownership its
+    /// stores are separated by. A store writes only memory its writer owns
+    /// now, so a cached cell in a different member of that ownership keeps
+    /// its value; compositions stated earlier on the path are not consulted,
+    /// which keeps a store's work independent of the path's length.
+    pub(in crate::kernel) fn with_store_owner(self, owner: Option<ResourceContext>) -> Self {
+        self.with_store_owners(owner.into_iter().collect())
+    }
+
+    /// This context with `opened`, a composition the store opened from what
+    /// its writer holds now, stated and added to the store's owners. Without
+    /// owners (a context no writer stated them in) it is only stated.
+    pub(in crate::kernel) fn with_additional_store_owner(self, opened: ResourceContext) -> Self {
+        match &self.store_owners {
+            Some(owners) => {
+                let mut owners = owners.as_ref().clone();
+                owners.push(opened);
+                self.with_store_owners(owners)
+            }
+            None => self.assume_proposition(Proposition::CResourceComposition(opened)),
+        }
+    }
+
+    fn with_store_owners(mut self, owners: Vec<ResourceContext>) -> Self {
+        for owner in &owners {
+            self = self.assume_proposition(Proposition::CResourceComposition(owner.clone()));
+        }
+        if let Some(previous) = &self.store_owners {
+            self.content_fingerprint ^= Self::fingerprint(5, previous);
+        }
+        let owners = std::sync::Arc::new(owners);
+        self.content_fingerprint ^= Self::fingerprint(5, &owners);
+        self.store_owners = Some(owners);
+        self
+    }
+
+    /// The compositions store separation reads: the store owners alone when
+    /// the writer stated them, every stated composition otherwise.
+    pub(in crate::kernel) fn store_compositions(
+        &self,
+    ) -> Box<dyn Iterator<Item = &ResourceContext> + '_> {
+        match &self.store_owners {
+            Some(owners) => Box::new(owners.iter()),
+            None => Box::new(self.resource_compositions.iter()),
+        }
+    }
+
     /// A context holding only this context's resource compositions: what
     /// ownership alone proves, independent of any condition or other fact.
     pub(crate) fn compositions_only(&self) -> Self {
@@ -5271,7 +5326,8 @@ impl PureFactContext {
             return graph
                 .decide(condition)
                 .or_else(|| canonical().and_then(|canonical| graph.decide(&canonical)))
-                .or_else(pointer_disequality);
+                .or_else(pointer_disequality)
+                .or_else(|| aliased_operands(graph, condition));
         }
         let mut graph = graph.clone();
         for (fact, value) in extra {
@@ -5281,6 +5337,7 @@ impl PureFactContext {
             .decide(condition)
             .or_else(|| canonical().and_then(|canonical| graph.decide(&canonical)))
             .or_else(pointer_disequality)
+            .or_else(|| aliased_operands(&graph, condition))
     }
 
     pub(crate) fn proves_exact(&self, proposition: &Proposition) -> bool {
@@ -5398,14 +5455,9 @@ impl PureFactContext {
                 }
             }
         }
-        if let ConditionTerm::PointerEqual(left, right) = &condition
-            && left.block == right.block
-        {
-            self = self.assume_condition_uncharged(
-                ConditionTerm::pointer_offset_equal(left.offset.clone(), right.offset.clone()),
-                value,
-            );
-        }
+        // The graph derives a same-block comparison's offset view. Do not
+        // publish it as an independent premise: it must disappear when the
+        // original pointer comparison is withdrawn.
         // An unsigned upper bound below the sign bit, `x <u c` with
         // `c <= 2^31`, is spelled as the biased signed order
         // `(x ^ 2^31) < (c ^ 2^31)`. It holds exactly when the signed pair
@@ -8378,4 +8430,90 @@ mod dynamic_current_load_tests {
         });
         assert!(current_memory_loads_in_term(&term, &memory).is_err());
     }
+}
+
+/// An arithmetic overflow question whose two operands are load variables
+/// reading one cell, as `a -= a` reads `this->size` and `other.size` when
+/// `other` is `*this`: the operands are one value, so the question is asked
+/// of that value with itself. Two registry lookups, one pointer decision in
+/// the graph, and exact cell lookups; nothing is searched.
+fn aliased_operands(
+    graph: &super::difference_graph::DifferenceGraph,
+    condition: &ConditionTerm,
+) -> Option<bool> {
+    use ConditionTerm as C;
+    let (a, b) = match condition {
+        C::Bitvector32SignedAddOverflows(a, b)
+        | C::Bitvector32SignedSubtractOverflows(a, b)
+        | C::Bitvector32SignedMultiplyOverflows(a, b)
+        | C::Bitvector64SignedAddOverflows(a, b)
+        | C::Bitvector64SignedSubtractOverflows(a, b)
+        | C::Bitvector64SignedMultiplyOverflows(a, b) => (a, b),
+        _ => return None,
+    };
+    let (Bitvector32Term::Variable(left), Bitvector32Term::Variable(right)) =
+        (a.as_ref(), b.as_ref())
+    else {
+        return None;
+    };
+    if left == right
+        || !crate::kernel::eval::is_load_variable(left)
+        || !crate::kernel::eval::is_load_variable(right)
+        || crate::kernel::registered_load_kind_for_variable(left)?
+            != crate::kernel::registered_load_kind_for_variable(right)?
+    {
+        return None;
+    }
+    let (left_memory, left_pointer) = crate::kernel::registered_load_for_variable(left)?;
+    let (right_memory, right_pointer) = crate::kernel::registered_load_for_variable(right)?;
+    let same_cell = graph.decide(&C::PointerEqual(
+        Box::new(left_pointer.clone()),
+        Box::new(right_pointer.clone()),
+    )) == Some(true)
+        || (left_pointer.block == right_pointer.block
+            && graph.decide(&C::PointerOffsetEqual(
+                Box::new(left_pointer.offset.clone()),
+                Box::new(right_pointer.offset.clone()),
+            )) == Some(true));
+    // The two snapshots agree at the cell when they are one snapshot, or
+    // when one materialized the other's read there (`this->size` read
+    // first, then `other.size` from a snapshot that records it): an exact
+    // cell lookup each way.
+    let holds = |memory: &SharedCMemory, pointer: &Pointer, variable: &Variable| {
+        matches!(
+            memory.known_value(pointer),
+            Some(CValue::Int32(Bitvector32Term::Variable(held))
+                | CValue::Int64(Bitvector32Term::Variable(held))
+                | CValue::UInt64(Bitvector32Term::Variable(held))) if held == *variable
+        )
+    };
+    if !same_cell
+        || !(left_memory == right_memory
+            || holds(&right_memory, &left_pointer, left)
+            || holds(&left_memory, &right_pointer, right))
+    {
+        return None;
+    }
+    let itself = match condition {
+        C::Bitvector32SignedAddOverflows(..) => {
+            C::Bitvector32SignedAddOverflows(a.clone(), a.clone())
+        }
+        C::Bitvector32SignedSubtractOverflows(..) => {
+            C::Bitvector32SignedSubtractOverflows(a.clone(), a.clone())
+        }
+        C::Bitvector32SignedMultiplyOverflows(..) => {
+            C::Bitvector32SignedMultiplyOverflows(a.clone(), a.clone())
+        }
+        C::Bitvector64SignedAddOverflows(..) => {
+            C::Bitvector64SignedAddOverflows(a.clone(), a.clone())
+        }
+        C::Bitvector64SignedSubtractOverflows(..) => {
+            C::Bitvector64SignedSubtractOverflows(a.clone(), a.clone())
+        }
+        C::Bitvector64SignedMultiplyOverflows(..) => {
+            C::Bitvector64SignedMultiplyOverflows(a.clone(), a.clone())
+        }
+        _ => unreachable!("matched above"),
+    };
+    graph.decide(&itself)
 }

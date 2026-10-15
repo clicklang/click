@@ -249,6 +249,10 @@ impl DynamicViewDependencyIndex {
     }
 }
 
+/// The innermost guarded universal binder around a body-fact read: its
+/// variable and the guard its body's implication assumes.
+type QuantifiedBinder<'a> = Option<(Variable, &'a Proposition)>;
+
 /// Find the live stable-view authority needed by the current memory loads in
 /// one lowered body fact.  Loads from an older memory snapshot are historical
 /// scalar facts and deliberately do not participate in this check.  The
@@ -266,14 +270,31 @@ fn dynamic_body_fact_dependency(
         state: &CState,
         assumptions: &PureFactContext,
         temporary_views: &DynamicViewDependencyIndex,
+        binder: QuantifiedBinder<'_>,
         selected: &mut Option<crate::kernel::LoanViewBinding>,
     ) -> Result<(), String> {
-        let required_view = CResourceFact::view_memory(CMemoryRange::new_with_element_width(
-            pointer,
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
-            width,
-        ));
+        // A read under a guarded universal, `forall v { lo <= v < hi implies
+        // ... p[v] ... }`, reads only cells of `p[lo..hi]`. Require a live
+        // view of that whole range instead of one of the symbolic cell
+        // `p[v]`, which no view contains since `v` alone is unconstrained.
+        // Every cell the guard admits lies in the range
+        // (`CMemoryRange::guarded_quantified_cells`), so a view covering the
+        // range covers every cell the fact reads, and its loan is the fact's
+        // dependency. A read the range does not describe keeps the one-cell
+        // requirement.
+        let range = binder
+            .and_then(|(variable, guard)| {
+                CMemoryRange::guarded_quantified_cells(&pointer, variable, guard, width)
+            })
+            .unwrap_or_else(|| {
+                CMemoryRange::new_with_element_width(
+                    pointer,
+                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::Constant(1),
+                    width,
+                )
+            });
+        let required_view = CResourceFact::view_memory(range);
         if !temporary_views
             .unbound
             .view_occurrences_for_fact(&required_view, assumptions)
@@ -346,6 +367,7 @@ fn dynamic_body_fact_dependency(
         state: &CState,
         assumptions: &PureFactContext,
         temporary_views: &DynamicViewDependencyIndex,
+        binder: QuantifiedBinder<'_>,
         selected: &mut Option<crate::kernel::LoanViewBinding>,
     ) -> Result<(), String> {
         for (pointer, width) in crate::kernel::current_memory_loads_in_term(term, state.memory())? {
@@ -355,6 +377,7 @@ fn dynamic_body_fact_dependency(
                 state,
                 assumptions,
                 temporary_views,
+                binder,
                 selected,
             )?;
         }
@@ -365,6 +388,7 @@ fn dynamic_body_fact_dependency(
         state: &CState,
         assumptions: &PureFactContext,
         temporary_views: &DynamicViewDependencyIndex,
+        binder: QuantifiedBinder<'_>,
         selected: &mut Option<crate::kernel::LoanViewBinding>,
     ) -> Result<(), String> {
         match proposition {
@@ -373,26 +397,48 @@ fn dynamic_body_fact_dependency(
                 state,
                 assumptions,
                 temporary_views,
+                binder,
                 selected,
             ),
             Proposition::Equal(left, right) => {
-                walk_term(left, state, assumptions, temporary_views, selected)?;
-                walk_term(right, state, assumptions, temporary_views, selected)
+                walk_term(left, state, assumptions, temporary_views, binder, selected)?;
+                walk_term(right, state, assumptions, temporary_views, binder, selected)
             }
             Proposition::And(left, right)
             | Proposition::Or(left, right)
             | Proposition::Implies(left, right) => {
-                walk_proposition(left, state, assumptions, temporary_views, selected)?;
-                walk_proposition(right, state, assumptions, temporary_views, selected)
+                walk_proposition(left, state, assumptions, temporary_views, binder, selected)?;
+                walk_proposition(right, state, assumptions, temporary_views, binder, selected)
             }
-            Proposition::Not(body)
-            | Proposition::ForAll { body, .. }
-            | Proposition::Exists { body, .. } => {
-                walk_proposition(body, state, assumptions, temporary_views, selected)
+            Proposition::ForAll { var, body, .. } => match body.as_ref() {
+                Proposition::Implies(guard, consequent) => {
+                    walk_proposition(guard, state, assumptions, temporary_views, binder, selected)?;
+                    walk_proposition(
+                        consequent,
+                        state,
+                        assumptions,
+                        temporary_views,
+                        Some((*var, guard)),
+                        selected,
+                    )
+                }
+                body => {
+                    walk_proposition(body, state, assumptions, temporary_views, binder, selected)
+                }
+            },
+            Proposition::Not(body) | Proposition::Exists { body, .. } => {
+                walk_proposition(body, state, assumptions, temporary_views, binder, selected)
             }
             Proposition::Predicate { arguments, .. } => {
                 for argument in arguments {
-                    walk_term(argument, state, assumptions, temporary_views, selected)?;
+                    walk_term(
+                        argument,
+                        state,
+                        assumptions,
+                        temporary_views,
+                        binder,
+                        selected,
+                    )?;
                 }
                 Ok(())
             }
@@ -405,6 +451,7 @@ fn dynamic_body_fact_dependency(
                     state,
                     assumptions,
                     temporary_views,
+                    binder,
                     selected,
                 ),
                 CExpressionOutcome::UndefinedBehavior(_) | CExpressionOutcome::RuntimeError(_) => {
@@ -423,6 +470,7 @@ fn dynamic_body_fact_dependency(
                     state,
                     assumptions,
                     temporary_views,
+                    binder,
                     selected,
                 )?;
                 if memory == state.memory() {
@@ -432,6 +480,7 @@ fn dynamic_body_fact_dependency(
                         state,
                         assumptions,
                         temporary_views,
+                        binder,
                         selected,
                     )?;
                 }
@@ -443,6 +492,7 @@ fn dynamic_body_fact_dependency(
                 state,
                 assumptions,
                 temporary_views,
+                binder,
                 selected,
             ),
             Proposition::CMemoryCanStore { .. }
@@ -454,7 +504,14 @@ fn dynamic_body_fact_dependency(
         }
     }
     let mut selected = None;
-    walk_proposition(required, state, assumptions, temporary_views, &mut selected)?;
+    walk_proposition(
+        required,
+        state,
+        assumptions,
+        temporary_views,
+        None,
+        &mut selected,
+    )?;
     Ok(selected)
 }
 
@@ -3678,8 +3735,9 @@ fn fold_composite_resources_on_outcome_with_facts(
     unfolded_predicates: &[String],
     closure: ResourceBodyClosure,
     family_reaches_population: bool,
-) -> Result<(CFunctionOutcome, Vec<CResourceFact>), ClickError> {
+) -> Result<FoldedOutcome, ClickError> {
     let mut selections = Vec::with_capacity(resource_folds.len());
+    let mut loan_holds = Vec::new();
     for resource in resource_folds {
         let definition = composite_resource_law_definition(
             resource_environment,
@@ -4356,13 +4414,18 @@ fn fold_composite_resources_on_outcome_with_facts(
                         describe_resource_clause(resource)
                     )));
                 };
-                let (ledger, hold) = ledger.hold(binding, holder).map_err(|refusal| {
-                    ClickError::new(format!(
-                        "`{claim_label}` path {path_index}: `fold({})` cannot hold the loan behind its viewed body: {refusal}",
-                        describe_resource_clause(resource)
-                    ))
-                })?;
+                let (ledger, hold, transition) = ledger
+                    .hold_with_transition(binding, holder)
+                    .map_err(|refusal| {
+                        ClickError::new(format!(
+                            "`{claim_label}` path {path_index}: `fold({})` cannot hold the loan behind its viewed body: {refusal}",
+                            describe_resource_clause(resource)
+                        ))
+                    })?;
                 binding.hold = Some(hold);
+                // The kernel checks the fold's ledger change against this
+                // exact transition.
+                loan_holds.push(transition);
                 post_state = Box::new(post_state.with_loan_ledger(Some(ledger)));
             }
             // Authority rewrites authenticate the selected exchange only;
@@ -4517,14 +4580,25 @@ fn fold_composite_resources_on_outcome_with_facts(
         };
     }
 
-    Ok((outcome, selections))
+    Ok((outcome, selections, loan_holds))
 }
 
 pub(super) struct CheckedResourceFold {
     pub(super) selected: CResourceFact,
     pub(super) state: CState,
     pub(super) facts: ProofFacts,
+    /// The hold a borrowing fold placed on the loan behind its viewed body,
+    /// which the kernel checks as the fold's only ledger change.
+    pub(super) loan_holds: Vec<crate::kernel::CheckedLoanTransition>,
 }
+
+/// A folded outcome, the resources it selected, and the loan holds its
+/// borrowing folds placed.
+type FoldedOutcome = (
+    CFunctionOutcome,
+    Vec<CResourceFact>,
+    Vec<crate::kernel::CheckedLoanTransition>,
+);
 
 pub(super) struct CheckedOutcomeResourceFold {
     pub(super) selected: CResourceFact,
@@ -4588,7 +4662,9 @@ pub(super) fn fold_composite_resource_on_outcome_for_proof(
     family_reaches_population: bool,
 ) -> Result<CheckedOutcomeResourceFold, ClickError> {
     let mut facts = ProofResourcePureFacts::new(facts);
-    let (outcome, mut selections) = fold_composite_resources_on_outcome_with_facts(
+    // A return fold's ledger change, if any, is not presented to the kernel
+    // as a hold: the return rewrite check keeps refusing it.
+    let (outcome, mut selections, _) = fold_composite_resources_on_outcome_with_facts(
         resource_environment,
         std::slice::from_ref(resource),
         None,
@@ -4703,7 +4779,7 @@ fn fold_composite_resource_for_proof_with_closure(
         value: CValue::Int32(Bitvector32Term::Constant(0)),
         state: Box::new(state),
     };
-    let (outcome, mut selections) = fold_composite_resources_on_outcome_with_facts(
+    let (outcome, mut selections, loan_holds) = fold_composite_resources_on_outcome_with_facts(
         resource_environment,
         std::slice::from_ref(resource),
         Some(source_resource),
@@ -4728,6 +4804,7 @@ fn fold_composite_resource_for_proof_with_closure(
             .expect("one fold has one selected resource"),
         state: *state,
         facts: facts.facts,
+        loan_holds,
     })
 }
 
@@ -5160,6 +5237,33 @@ fn materialize_composite_resource_cells_from_snapshot(
     }
     let element_width = contract_segment_element_width(parameters, segment);
     let segment_type = contract_segment_element_type(parameters, segment);
+    // A scalar field's ownership span can include alignment padding. Its retained
+    // declaration names only the actual scalar/array elements, not typed reads
+    // of every word in that wider span.
+    let (element_width, start, end) = if !segment_type.is_pointer()
+        && let Some(count) = crate::surface::lowering::declared_segment_observation_count(segment)
+    {
+        let width = segment_type.byte_width();
+        let Some(first_byte) = start.checked_mul(element_width) else {
+            return memory;
+        };
+        let Some(end_byte) = end.checked_mul(element_width) else {
+            return memory;
+        };
+        if !first_byte.is_multiple_of(width) {
+            return memory;
+        }
+        let first = first_byte / width;
+        let Some(last) = first.checked_add(count) else {
+            return memory;
+        };
+        if last.checked_mul(width).is_none_or(|bytes| bytes > end_byte) {
+            return memory;
+        }
+        (width, first, last)
+    } else {
+        (element_width, *start, *end)
+    };
     // The cells below as one run. Every element's value is its load in the
     // naming memory, typed as the element for a scalar and kept as the word
     // the load names for a pointer, so the run's element type is that word's
@@ -5177,15 +5281,15 @@ fn materialize_composite_resource_cells_from_snapshot(
             range.base().clone(),
             element_width,
             run_type,
-            *start,
-            *end,
+            start,
+            end,
             crate::kernel::intern_c_memory(naming_memory.clone()),
         ) {
             Ok(seeded) => return seeded,
             Err(unchanged) => memory = unchanged,
         }
     }
-    for index in *start..*end {
+    for index in start..end {
         let pointer = offset_pointer_by_elements(
             range.base().clone(),
             Bitvector32Term::Constant(index),
@@ -5408,6 +5512,108 @@ void child_release(struct child* obj) {
     #[test]
     fn dynamic_definedness_requires_live_view_binding_and_keeps_owner_scalar_distinct() {
         check_dynamic_current_fact_dependencies(true);
+    }
+
+    /// A guarded universal read depends on a view of every cell its guard
+    /// admits, not on the one symbolic cell `p[k]`, which no view contains.
+    #[test]
+    fn dynamic_quantified_definedness_depends_on_the_guarded_range() {
+        let base = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let memory = CMemory::new();
+        let index = Variable(2_000_000);
+        let index_term = || Box::new(Bitvector32Term::Variable(index));
+        let below = |end: u32| {
+            Proposition::ConditionIs(
+                ConditionTerm::Bitvector32SignedLessThan(
+                    index_term(),
+                    Box::new(Bitvector32Term::Constant(end)),
+                ),
+                true,
+            )
+        };
+        let at_least_zero = Proposition::ConditionIs(
+            ConditionTerm::Bitvector32SignedLessEqual(
+                Box::new(Bitvector32Term::Constant(0)),
+                index_term(),
+            ),
+            true,
+        );
+        let quantified = |guard: Proposition| Proposition::ForAll {
+            var: index,
+            sort: crate::kernel::Sort::CInt32,
+            body: Box::new(Proposition::Implies(
+                Box::new(guard),
+                Box::new(Proposition::CMemoryReadDefined {
+                    memory: memory.clone(),
+                    pointer: Pointer {
+                        block: PointerBlock::ExternalArgument,
+                        offset: PointerOffsetTerm::Int32Scaled {
+                            value: index_term(),
+                            byte_width: 4,
+                        },
+                    },
+                    value_type: crate::kernel::CType::Int32,
+                }),
+            )),
+        };
+        let range = CMemoryRange::new(
+            base,
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(4),
+        );
+        let own = CResourceFact::own_memory(range.clone());
+        let view = CResourceFact::view_memory(range);
+        let support_resources = ResourceContext::new().unchecked_with_fact(own.clone());
+        let support = support_resources.owned_occurrences_for_fact(&own)[0];
+        let ledger = crate::kernel::LoanLedger::new();
+        let lender = ledger.fresh_participant().unwrap();
+        let opening = ledger.lend(lender, lender, support, own).unwrap();
+        let ledger = ledger.apply(&opening.transition).unwrap();
+        let binding = crate::kernel::LoanViewBinding {
+            loan: opening.loan,
+            scope: opening.scope,
+            share: opening.root_share,
+            support,
+            viewed: view.clone(),
+            hold: None,
+        };
+        let bound_resources = ResourceContext::new().unchecked_with_fact(view.clone());
+        let view_occurrence = bound_resources.occurrences_for_fact(&view)[0];
+        let state = CState::new()
+            .with_memory(memory.clone())
+            .with_resource_context_and_loan_dependencies(
+                bound_resources,
+                [(view_occurrence, binding)],
+            )
+            .with_loan_ledger(Some(ledger))
+            .with_loan_participant(Some(lender));
+        let no_temporary_views = DynamicViewDependencyIndex::new(&[], &[], &PureFactContext::new());
+        let dependency = |fact: &Proposition| {
+            dynamic_body_fact_dependency(fact, &state, &PureFactContext::new(), &no_temporary_views)
+        };
+        let within = quantified(Proposition::And(
+            Box::new(at_least_zero.clone()),
+            Box::new(below(4)),
+        ));
+        assert!(
+            dependency(&within).unwrap().is_some(),
+            "a guard inside the view keeps the view's loan"
+        );
+        let beyond = quantified(Proposition::And(
+            Box::new(at_least_zero),
+            Box::new(below(5)),
+        ));
+        assert!(
+            dependency(&beyond).is_err(),
+            "a guard admitting a cell past the view is refused"
+        );
+        assert!(
+            dependency(&quantified(below(4))).is_err(),
+            "a signed index with no lower bound admits negative cells"
+        );
     }
 
     fn check_dynamic_current_fact_dependencies(definedness: bool) {
@@ -5764,6 +5970,111 @@ mod fold_quantity_activity_tests {
                 fold_resource_quantity_activity(&count, &assumptions),
                 expected
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod declared_scalar_field_observation_tests {
+    use super::*;
+
+    fn field(base: CExpression, element_type: CType) -> ContractSegment {
+        ContractSegment {
+            state: ContractSegmentState::Current,
+            base,
+            start: crate::kernel::c_int32_literal(0),
+            end: crate::kernel::c_int32_literal(0),
+            surface: ContractSegmentSurface::Field {
+                base: None,
+                name: "payload".into(),
+                element_width: Some(4),
+                element_type: Some(element_type),
+            },
+        }
+    }
+
+    #[test]
+    fn scalar_field_observations_do_not_initialize_owned_padding() {
+        let base = Pointer::symbolic(Variable(985_801));
+        for viewed in [false, true] {
+            let mut samples = Vec::new();
+            for padding in [0u32, 16, 64, 256] {
+                let segment = field(
+                    CExpression::Value(CValue::pointer(base.clone())),
+                    CType::Int32,
+                );
+                let range = CMemoryRange::new(base.clone(), 0.into(), (1 + padding).into());
+                let (clause, fact) = if viewed {
+                    (
+                        ResourceClause::ViewMemory(segment),
+                        CResourceFact::view_memory(range),
+                    )
+                } else {
+                    (
+                        ResourceClause::OwnMemory(segment),
+                        CResourceFact::own_memory(range),
+                    )
+                };
+                let memory = CMemory::new();
+                let (named, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    materialize_composite_resource_cells_from_snapshot(
+                        memory.clone(),
+                        &memory,
+                        &clause,
+                        &fact,
+                        &[],
+                    )
+                });
+                assert!(matches!(
+                    named.load(&base),
+                    CExpressionOutcome::Value(CValue::Int32(_))
+                ));
+                assert!(
+                    !matches!(
+                        named.load(&base.offset_by_bytes(4)),
+                        CExpressionOutcome::Value(_)
+                    ),
+                    "padding must not become an initialized scalar"
+                );
+                samples.push(work);
+            }
+            assert!(
+                samples.windows(2).all(|pair| pair[1] <= pair[0] + 8),
+                "{samples:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn declared_array_elements_exclude_trailing_padding() {
+        let base = Pointer::symbolic(Variable(985_802));
+        for count in [0, 16, 64, 256] {
+            let segment = field(
+                crate::kernel::c_typed_load(
+                    CExpression::Value(CValue::pointer(base.clone())),
+                    CType::Int32Array(count),
+                ),
+                CType::Int32,
+            );
+            let range = CMemoryRange::new(base.clone(), 0.into(), (count + 4).into());
+            let memory = CMemory::new();
+            let named = materialize_composite_resource_cells_from_snapshot(
+                memory.clone(),
+                &memory,
+                &ResourceClause::OwnMemory(segment),
+                &CResourceFact::own_memory(range),
+                &[],
+            );
+            if count > 0 {
+                assert!(matches!(
+                    named.load(&base.offset_by_bytes((count - 1) * 4)),
+                    CExpressionOutcome::Value(CValue::Int32(_))
+                ));
+            }
+            assert!(!matches!(
+                named.load(&base.offset_by_bytes(count * 4)),
+                CExpressionOutcome::Value(_)
+            ));
         }
     }
 }

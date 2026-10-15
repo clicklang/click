@@ -776,10 +776,11 @@ original boundary. Explicitly establishing the nonnegative append index lets
 the complete-width frame prove the unchanged pointer. Stored-value and zero
 terminator facts also check. This needs no new object rule or keyword.
 
-The next simple fold exhausts its unchanged 750,000-unit budget. The
-[fold defect](../bugs/split-descriptor-fold-exhausts-simple-budget.md) records a
-single-function reproduction, the incomplete diagnostic profile and acceptance
-criteria. Repeated offset/range reasoning dominates the failed fold; a specific
+At checkpoint `ee9b29f87`, the next simple fold exhausts its unchanged
+750,000-unit budget. The archived
+[fold defect](https://github.com/lacker/click/blob/ee9b29f87822302f753f53eeb1c505bcc06f21ea/bugs/split-descriptor-fold-exhausts-simple-budget.md)
+records its reproduction and incomplete diagnostic profile. The
+[repair below](#preliminary-byte-gap-query-repair) supersedes this blocker. Repeated offset/range reasoning dominates the failed fold; a specific
 performance repair has not yet been established. Failed proof edits and private
 probes are removed from production sources. Keep the original 41/52 archive
 audit and the separate vector allocation-fold failure open.
@@ -819,3 +820,210 @@ The cleanup's rebuilt upstream CLI/library also pass the split-field fixture's
 fresh, expanded, rewritten and retained checks. Its filtered nightly-fixture
 harness passes (3.14s). Formatting, mdBook, docs lint and whitespace checks pass;
 Vale is unavailable, so advisory prose lint is skipped.
+
+### Preliminary byte-gap query repair
+
+PR #1042 merged; its final pushed commit `f3f71a8d7` is verified in upstream
+history. The next archive repair targets the split-field fold itself. A private
+stack sample identifies general signed-order reasoning inside the preliminary
+byte-gap check: resolving its load operands reenters the same memory histories.
+Use exact recorded order and indexed traversal of written order edges for that
+directional check. The traversal retains only its successful path's exact
+premises, handles order withdrawal, and performs no memory equality queries.
+Unknown geometry falls through to complete range-separation evidence; constant-gap
+and direction-free stride checks retain their behavior. The experiment moving
+frame discovery out of read registration is excluded from this repair.
+
+The archive's focused original-source proof now verifies at unchanged limits;
+a completed profile measures its fold at 0.40s. Other expensive simple steps
+remain and this is not a whole-proof performance claim. All 227 selected archive
+memory-history, pointer-frame, designation, span, loop, loan and resource-query
+controls pass. The new query regression checks 0, 16, 64 and 256 unrelated facts,
+order withdrawal, absent/reversed order and overlapping access widths. The final
+extraction also checks a two-edge order chain over memory-load atoms, preserving
+the existing derived-order store-hop control. Wrong
+stored-value and wrong-terminator claims reject, and missing backing ownership
+is refused while checking the resource's read authority.
+
+The initial exact-order variant's rebuilt probe-free archive CLI/library passes
+fresh verification, expansion, rewritten verification and retained rechecking.
+Archive checkpoint `be001cb2f` contains that initial repair; `3279dd7b0` preserves the separately checked push/pop proof
+adaptations and the missing final-assumption trace reproduction.
+The final indexed-order variant passes the split-field fixture and full original
+owned-string project in fresh, expanded, rewritten and retained modes on both
+the recovery archive and current-upstream extraction. Wrong stored-value and
+wrong-terminator claims reject, and missing backing ownership is refused. These
+checks close the fold-budget defect; its historical reproduction remains in
+archive history. The separate returned-resource performance report remains open.
+
+### CI graph-lock boundary follow-up
+
+PR #1051's bounded order checks expose an existing graph reentry path in
+`equivalent_field_derived_bases_frame_symbolic_index_store`. The failed library
+partition reproduces locally: 944 of 945 tests pass and that case times out.
+A debugger shows the graph mutex held by address registration while term
+canonicalization starts a cell-epoch walk that queries the same mutex.
+
+The repair keeps term interning and affine decomposition structural. Scalar and
+offset query adapters perform selected normalization before locking; internal
+raw-read names retain their exact snapshot, kind and access width. A new
+multi-size raw-read registration regression complements the existing
+snapshot/support and complete-width controls. The selected offset adapter
+preserves expression shape while normalizing scalar indices before locking.
+
+After integrating upstream `c819a273e`, all 5,415 normal library tests pass
+(115.1s; 572 skipped), as do all 168 selected C++ import/span integration tests
+(32.4s). All 534 selected archive graph, memory, designation, span, loop/loan and
+diagnostic controls pass. Freshly rebuilt libraries and CLIs pass the positive
+four-mode checks above; all three negative controls reject. Formatting, mdBook,
+docs lint and whitespace checks pass. The full gate and nightly remain CI work.
+
+The recovery archive's full original string project and focused original pop
+and clear reductions now pass all four proof modes. Checkpoint `5570f876c`
+preserves the one-line clear predicate elimination and the completed normal
+example audit: **42/52 pass**, 10 fail, exit 100, 176.3s harness. Remaining projects
+are arena, binary-tree, input-cursor, multifile-registry, owned-vector,
+rbtree-augmented, refcount, ring-buffer, rust-byte-sum and rust-chunks-exact.
+This is not a green archive verdict. The expensive first returned-resource
+assumption has a separate preserved report at that checkpoint; the fold budget
+failure itself no longer reproduces on the final indexed-order archive variant.
+
+### Preserve the final-assumption trace context
+
+The ordered final-assumption driver discarded each failed focused proof error
+and constructed a fresh summary. Focusing also created a semantic root without
+linking its existing checked trace prefix. Retain one selected failed goal's
+diagnostic on the original summary and register the focused root under that
+prefix. This restores recorded execution and successful `have` steps through the
+existing renderer; it introduces no facts or output format.
+
+The regression rejects a deliberately false second postcondition after a checked
+store and true stored-value fact. It checks the original driver summary and the
+presence of those earlier operations, and refuses any trace fact asserting the
+false claim. All 135 selected current-upstream diagnostic and proof-trace controls pass
+(2.47s). A freshly rebuilt CLI rejects the false claim with the original summary
+and useful checked prefix. Formatting, mdBook, docs lint and whitespace checks
+pass; advisory Vale is unavailable. Archive checkpoint
+`e5305eeba` preserves the original false-claim and string-clear reproductions.
+
+### Selected complete-read bridge for resource deltas
+
+Recovery checkpoint `c72759eb7` closes a producer/checker mismatch when unfolding
+a returned resource. The kernel's instantiated loadability premise and the
+surface-produced fact name the same backing address through different registered
+pointer reads. The existing delta index already selects a unique body premise;
+only its exact named address-equality bridge was missing.
+
+For that selected pair, admit only complete eight-byte registered reads at the
+same positive pointee scale and check their recorded memory evidence. Retain the
+evidence in the existing rewrite capture for rechecking. Upstream's legacy
+`Bits32` pointer encoding additionally checks the raw term's eight-byte access
+width before using the recorded-only equality constructor. This is numeric
+loadability transport; it supplies no object designation or allocation token.
+Ambiguous premise selection, changed lifetime metadata, overwritten cells,
+partial writes (including the upper half), and narrow-only reads remain refused.
+
+All 337 selected archive execution, memory, pointer-effect and native-record
+controls pass. The focused unfold-and-free reduction verifies its three proofs
+and passes fresh, expanded, rewritten and retained checks with a rebuilt library.
+The latest normal archive audit remains **42/52**, with the same ten failures
+(136.3s harness, exit 100). The original vector allocation fold still rejects its
+full pointer-value comparison. This is not archive activation. Upstream
+extraction passes all four targeted controls and all 707 scaling tests with two
+workers (59.3s). The initial scaling run timed out one endpoint test while a
+compiler ran concurrently; that case passes alone in 6.8s, and the complete
+rerun passes without changing limits. Formatting, mdBook, docs lint and whitespace
+checks pass; advisory Vale is unavailable. The full gate and nightly remain CI
+work.
+
+### Contained-range counterpart of the read-frame bridge
+
+PR #1055 merged; both pushed commits `825879a46` and `61c6ae286` are verified
+upstream. The same selected complete-read bridge also applies to a
+`CResourceContains` body fact whose child range has another recorded pointer
+name. Keep the exact parent, bounds, width and unique-source checks; only the
+selected bases use the existing eight-byte frame certificate.
+
+All four targeted controls and all 708 scaling tests pass (two workers, 52.8s
+scaling harness). The containment case uses a separate pointer cell, so an
+earlier loadability proof cannot warm the equality being tested. Changed
+parents/bounds, ambiguous sources and an upper-half overwrite reject. Formatting,
+mdBook, docs lint and whitespace checks pass; the full gate and nightly remain
+CI work. No native input promise or allocation-token equivalence is broadened.
+
+### Indexed allocation discovery before retirement
+
+The recovery refold-and-free reduction exposed allocation discovery in `free`
+materializing and scanning the whole resource context. Independently of the
+archive's native pointer model, upstream can select allocation-token candidates
+through the existing token-shape and pointer-root index. The final exact raw-base
+check remains unchanged; this delivery does not admit new pointer aliases,
+allocation identities or authority. Token consumption, full backing ownership,
+live-loan checks and lifetime retirement continue through their existing checks.
+
+The recovery native-input repair is separately preserved at `576012956`: a
+uniquely indexed live witness retains its original coordinates through checked
+complete-read frames. Its refold-and-return reduction verifies three proofs and
+passes fresh, expanded, rewritten and retained checking; all 220 related controls
+pass. The refold-and-free reduction still rejects, and the original vector and
+ten-failure archive audit remain open. This delivery is a selected lookup repair,
+not activation of that archive model. PR #1058's final head `19b3739ea` is verified
+in upstream history.
+
+All 46 selected heap tests pass, including the 0/16/64/256 unrelated-allocation
+regression (1.74s harness). Existing double/interior-free, missing-authority,
+view, loan and external-allocation controls remain green. Formatting, included
+scaling-file formatting, mdBook and whitespace checks pass; advisory Vale is
+unavailable. The full gate and nightly remain CI work.
+
+### Selected stale-reference checks before reallocation
+
+PR #1059 merged, and final pushed head `3d55c023b` is verified upstream.
+The adjacent reallocation path still projected all held resource observations
+and scanned all facts after consuming the old allocation and backing range.
+It now uses the same conservative block-reference candidate index as free,
+with the existing separation check and error for a retained dependent resource.
+Resource observations are projected only when a candidate remains. This avoids
+visiting unrelated allocation tokens; it does not change pointer equality,
+authority, loan checks, or the semantics of reallocation's pending result.
+
+All 47 heap controls pass (1.13s harness), including deterministic
+0/16/64/256 unrelated-token scaling and rejection of the same persistent
+composite view at both free and reallocation. Formatting, mdBook, structural
+documentation lint and whitespace checks pass. Advisory Vale is unavailable;
+the full gate and nightly were not run locally.
+
+### Scalar field observations exclude alignment padding
+
+PR #1062 merged; final head `7acb5544a` is verified upstream. The next
+independent extraction addresses the source projector's scalar field names.
+A field's physical ownership span can include alignment padding before the
+next member. That span does not declare more scalar values. Name only the
+retained scalar or scalar-array element count, using its actual value width
+and checking that the complete observation fits inside the owned span.
+Ownership extents stay as declared.
+
+The recovery checkpoint `f53b66c39` also reconstructs the owned C input's
+parametric observations and attaches read cores to its exact owner. Its 98
+focused and 341 broader controls pass; the next modular application repair
+is separate from this source-only scalar extraction. The last normal archive
+audit remains 42/52, and no archive activation is claimed here.
+
+All 13 focused projection controls pass, including owned/viewed scalar padding
+and scalar-array counts at 0/16/64/256 sizes. All 52 normal example projects
+pass (328.71s harness, concurrent recovery compilation; not a performance
+comparison). Formatting, mdBook, structural documentation lint and whitespace
+checks pass. Advisory Vale is unavailable; the full gate and nightly were not
+run locally. The initial extraction referenced an archive-only type helper;
+this delivery uses master's existing array variants.
+
+The first CI run exposed a guarded recursive-view unfold regression. The
+rewrite compared read descriptions using actual supplier merging, which correctly
+refuses to merge separately bound loans. Description equivalence now checks
+coverage of the existing read cores without changing any supplier or loan binding.
+Owned resources and before/after loan consistency still require their existing
+checks. A real-loan regression covers contiguous coverage, gaps, excess extent,
+absence of ownership grants, unchanged bindings, and unrelated ranges at
+0/16/64/256 sizes. All 413 selected kernel controls and all 3,979 normal Markdown
+fixtures pass. Clippy with warnings denied also passes. These checks follow the
+earlier 52-example run; the full gate and nightly were not run locally.

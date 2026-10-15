@@ -882,6 +882,8 @@ struct LoanLedgerData {
     local_references: PersistentMap<LocalReferenceId, LocalReferenceRecord>,
     local_reference_roots: PersistentMap<ResourceOccurrenceId, LocalReferenceId>,
     local_reference_holders: PersistentMap<LoanParticipantId, u64>,
+    source_local_references:
+        PersistentMap<(LoanParticipantId, crate::kernel::ScalarReferencePlanKey), LocalReferenceId>,
     next_scope: u64,
     next_loan: u64,
     next_share: u64,
@@ -4302,6 +4304,7 @@ impl LoanLedger {
                     local_references: PersistentMap::default(),
                     local_reference_roots: PersistentMap::default(),
                     local_reference_holders: PersistentMap::default(),
+                    source_local_references: PersistentMap::default(),
                     next_scope: 0,
                     next_loan: 0,
                     next_share: 0,
@@ -4337,6 +4340,7 @@ impl LoanLedger {
             || !data.local_references.is_empty()
             || !data.local_reference_roots.is_empty()
             || !data.local_reference_holders.is_empty()
+            || !data.source_local_references.is_empty()
         {
             return false;
         }
@@ -5094,6 +5098,7 @@ impl LoanLedger {
     /// that transition so later checks use the same endpoint.
     /// The composite occurrence carries the hold binding, which is released
     /// when that occurrence is consumed by a call that does not return it.
+    #[cfg(test)]
     pub(crate) fn hold(
         &self,
         binding: &LoanViewBinding,
@@ -5103,13 +5108,41 @@ impl LoanLedger {
         Ok((ledger, hold))
     }
 
-    fn hold_with_transition(
+    pub(crate) fn hold_with_transition(
         &self,
         binding: &LoanViewBinding,
         holder: LoanParticipantId,
     ) -> Result<(Self, LoanHoldId, CheckedLoanTransition), LoanRefusal> {
         self.validate_view_binding(binding.clone(), holder)?;
         self.hold_authority_with_transition(binding.authority(), holder)
+    }
+
+    /// The successor of a proof `fold` that packages a loan-backed view into
+    /// an owned borrowing composite: `transition` must be exactly the hold
+    /// `holder` placed on the loan `binding` names, and `binding.hold` must
+    /// name that hold, so the folded head carries the hold that keeps its
+    /// loan's scope from ending. Applying it rechecks the exact predecessor
+    /// and that `holder` still holds the live authority. Anything else, a
+    /// different transition or a hold the head does not carry, is refused.
+    pub(crate) fn apply_borrowing_fold_hold(
+        &self,
+        transition: &CheckedLoanTransition,
+        binding: &LoanViewBinding,
+        holder: LoanParticipantId,
+    ) -> Result<Self, LoanRefusal> {
+        match &transition.evidence {
+            LoanTransitionEvidence::Hold {
+                binding: held,
+                holder: placed_by,
+                hold,
+            } if *held == binding.authority()
+                && *placed_by == holder
+                && binding.hold == Some(*hold) =>
+            {
+                self.apply(transition)
+            }
+            _ => Err(LoanRefusal::InvalidEvidence),
+        }
     }
 
     /// Lifetime holds need possession, not a stable-read description. The
@@ -6842,7 +6875,7 @@ impl LoanLedger {
     }
 
     #[cfg(test)]
-    fn invariant_holds(&self) -> bool {
+    pub(in crate::kernel) fn invariant_holds(&self) -> bool {
         if !self.exclusive_calls_invariant() || !self.local_references_invariant() {
             return false;
         }
@@ -8921,6 +8954,63 @@ mod tests {
         let released = released.apply(&recover).unwrap();
         assert_eq!(recovered_escrow, escrow);
         assert!(released.invariant_holds());
+    }
+
+    /// A borrowing fold's ledger change is accepted only as the exact hold
+    /// its folded head names: the placer, the authority and the hold
+    /// identity must all agree, and the transition must start at the exact
+    /// input ledger.
+    #[test]
+    fn a_borrowing_fold_hold_is_exactly_the_hold_its_head_carries() {
+        let (ledger, holder, other) = participants();
+        let viewed = CResourceFact::view_memory(parameter_range(32, 0, 1, 4));
+        let resources = ResourceContext::new().unchecked_with_fact(viewed.clone());
+        let support = resources.occurrences_for_fact(&viewed)[0];
+        let opening = ledger
+            .borrowed_contract_input(holder, support, viewed.clone(), None)
+            .unwrap();
+        let ledger = ledger.apply(&opening.transition).unwrap();
+        let binding = LoanViewBinding {
+            loan: opening.loan,
+            scope: opening.scope,
+            share: opening.root_share,
+            support,
+            viewed,
+            hold: None,
+        };
+        let (held, hold, transition) = ledger.hold_with_transition(&binding, holder).unwrap();
+        let carried = LoanViewBinding {
+            hold: Some(hold),
+            ..binding.clone()
+        };
+        assert_eq!(
+            ledger.apply_borrowing_fold_hold(&transition, &carried, holder),
+            Ok(held.clone())
+        );
+        assert_eq!(
+            ledger.apply_borrowing_fold_hold(&transition, &binding, holder),
+            Err(LoanRefusal::InvalidEvidence),
+            "the head must carry the hold"
+        );
+        assert_eq!(
+            ledger.apply_borrowing_fold_hold(&transition, &carried, other),
+            Err(LoanRefusal::InvalidEvidence),
+            "the hold must be the folding participant's"
+        );
+        let elsewhere = LoanViewBinding {
+            support: ResourceOccurrenceId::default(),
+            ..carried.clone()
+        };
+        assert_eq!(
+            ledger.apply_borrowing_fold_hold(&transition, &elsewhere, holder),
+            Err(LoanRefusal::InvalidEvidence),
+            "the hold must be on the head's loan authority"
+        );
+        assert_eq!(
+            held.apply_borrowing_fold_hold(&transition, &carried, holder),
+            Err(LoanRefusal::StalePredecessor),
+            "the hold applies only to its exact input ledger"
+        );
     }
 
     /// A hold requires a live binding of its placer: a stale or foreign

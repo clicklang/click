@@ -255,29 +255,25 @@ needed to finish a claim already made:
     Calls, reference storage, aggregates and loop summarization remain refused
     while a lease is active.
 
-  - source-bound birth/end execution for one same-block scalar reborrow from a
-    reference parameter, ending after its final child store or direct scalar
-    read assignment. Semantic plans
-    bind exact lowered operands and locked source points; recovery consumes the
-    actual store's live lease identity and restores the original owned support.
-    The unchanged native reborrow witness verifies with real lease operations,
-    including proof expansion/recheck and authority/value negatives. New source
-    tests reject missing births, stale/foreign handles and transplanted plans.
-    Same-typed scalar reference copies/moves between private locals now retain
-    that identity; the final store can use a checked alias, including after
-    replacement of the original child local. Recovery expires all copies.
-    Source tests cover delayed alias uses and missing actual alias custody;
-    a native local-move fixture verifies the helper and caller with checked
-    expansion, and alias-chain preparation has deterministic scaling coverage.
-    Direct read endings bind an exact load from a private reference local and
-    recover only after the checked load and destination assignment succeed.
-    Birth/end roles compare distinctly; cache hits and observation-only labels
-    cannot supply recovery. A native read helper/caller fixture checks returned
-    values, parent reuse and expansion; read preparation has scaling coverage.
+  - source-bound births and explicit borrow-end operations for straight-line
+    scalar borrow forests. An indexed alias/tree pass computes frontiers once;
+    nested endings at one frontier run innermost first. Endings resolve live
+    invocation handles, reject live children and consume each handle once,
+    preserving the original owned support and current memory. Copies and moves
+    retain the same identity, even after replacement of the original variable.
+    Read/store observations remain read-only. Native store, alias, read-ending
+    and nested-frontier fixtures cover helper/caller verification, expansion,
+    parent reuse and authority/value negatives. Preparation scaling includes
+    source length, aliases, nested depth and repeated shared diamonds.
+    Structured acyclic branches now retain one exact live ledger through both
+    arms and end at a common continuation. Arm accesses and conditions extend
+    the frontier; births and alias mutations stay on the shared path. Native
+    conditional and nested-borrow helpers/callers cover expansion and negatives,
+    while kernel tests exercise joins with live custody.
 
-  Wider source coverage remains open: nested local references, more general read
-  expressions, multiple blocks/loops, aggregates, shared aliases and call/havoc
-  transport need checked protocols. Observations remain read-only; only the
+  Wider source coverage remains open: branch-local births or alias mutation,
+  early returns, loops, aggregates, shared borrow graphs and call/havoc transport
+  need checked protocols. Only the
   activated source subset executes local leases. A reproduced false acceptance
   here would be `unsound`, and so P1, under the [issue rules](README.md).
 - **Stable proof observations.** Provide source-facing slice, array and

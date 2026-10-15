@@ -973,14 +973,9 @@ fn add_condition_path_fact_with_visibility(
     if let Some(known) = PureFactContext::decide_intrinsically(&condition) {
         return (known == value).then_some(());
     }
-    let known = assumptions
-        .difference_decision(&condition, &[])
-        .or_else(|| {
-            (!assumptions.should_defer_non_exact_condition_reasoning())
-                .then(|| assumptions.decide(&condition))
-                .flatten()
-                .inspect(|_| record_general_condition_decision("path fact"))
-        });
+    // Only the fast decisions settle a path fact; one they leave open is
+    // added (`issues/difference-logic.md`).
+    let known = assumptions.difference_decision(&condition, &[]);
     if let Some(known) = known {
         if known == value && !certified_after_effect {
             return Some(());
@@ -1806,12 +1801,6 @@ pub(in crate::kernel) fn decide_with_facts(
             assumptions.difference_decision(condition, &extra)
         })
         .or_else(|| {
-            (!assumptions.should_defer_non_exact_condition_reasoning())
-                .then(|| assumptions.decide(condition))
-                .flatten()
-                .inspect(|_| record_general_condition_decision("decide_with_facts"))
-        })
-        .or_else(|| {
             facts.fact_iter().find_map(|fact| match fact.proposition() {
                 Proposition::ConditionIs(existing_condition, value)
                     if existing_condition == condition =>
@@ -1830,23 +1819,10 @@ pub(in crate::kernel) fn decide_with_facts(
                 },
                 |assumptions, fact| assumptions.assume_proposition(fact.proposition().clone()),
             );
-            // The path facts' own fast answers first: a composition a
-            // comparison assumed is read by the keyed pointer rules.
-            merged.difference_decision(condition, &[]).or_else(|| {
-                merged
-                    .decide(condition)
-                    .inspect(|_| record_general_condition_decision("path facts"))
-            })
+            // A composition a comparison assumed as a path fact is read by
+            // the keyed pointer rules there.
+            merged.difference_decision(condition, &[])
         })
-}
-
-/// Counts a condition the general decision settled after the difference
-/// graph left it open (`HiddenPrerequisiteRoute::KernelCondition`).
-pub(in crate::kernel) fn record_general_condition_decision(site: &'static str) {
-    crate::instrumentation::record_hidden_prerequisite(
-        crate::instrumentation::HiddenPrerequisiteRoute::KernelCondition,
-        site,
-    );
 }
 
 #[cfg(test)]

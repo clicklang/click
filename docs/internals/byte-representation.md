@@ -27,7 +27,7 @@ extern uint8* memcpy(uint8 destination[], const uint8 source[], uint64 bytes) {
     owns destination[0..bytes];
     requires separate(memory(destination[0..bytes]), memory(source[0..bytes]));
     ensures result == destination;
-    ensures bytes_equal(destination, 0u64, old(source), 0u64, bytes);
+    ensures click::bytes::equal(destination, 0u64, old(source), 0u64, bytes);
 }
 ```
 
@@ -82,7 +82,7 @@ exactly those cells. A load of any other type at a planted cell meets a cell
 of another kind and is refused (see
 [Reinterpretation stays refused](#reinterpretation-stays-refused)).
 
-The transfer only adds observations the `bytes_equal` guarantee already
+The transfer only adds observations the `bytes::equal` guarantee already
 justifies, and it refuses to plant a cell in four cases. The destination then
 keeps its post-havoc state, which has no cell there:
 

@@ -1589,3 +1589,24 @@ The complementary black-parent exit and both wrappers now verify in
 `rbtree_size_insert_black_parent.click`. They preserve the focused sized model
 and the full ancestor tag, with no callback premise. This proves both immediate
 insertion exits; continuing ancestor/color-flip and rotation paths remain.
+
+
+`rbtree_size_insert_rotation.click` now checks a left-left three-node rotation
+at the root and both augmented insertion wrappers. It calls the indirect
+writable callback through the proved `RotateTreeRight` contract and returns the
+expected black-root/two-red-leaf shape with recursively valid cached sizes.
+The original insertion C is unchanged. Other rotation shapes, color flips,
+arbitrary ancestor contexts and writable erase integration remain.
+
+
+The mirrored right-right root case and both wrappers also verify in
+`rbtree_size_insert_mirrored_rotation.click`, using `RotateTreeLeft` for the
+writable callback. All 17 expansion sites in each single-rotation sidecar
+pass. Double rotations, color flips, arbitrary ancestor contexts and writable
+erase integration remain.
+
+`rbtree_size_model_unique.click` now proves that two recursively count-valid
+`SizedTree` values with equal erased shapes are equal, by induction on one
+model and exhaustive constructor matching on the other. This supplies the
+exact model transport needed between two writable rotation callbacks; it
+does not yet complete double-rotation insertion.

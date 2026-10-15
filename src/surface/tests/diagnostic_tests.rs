@@ -47,6 +47,55 @@ fn implicit_loop_closure_is_smart_while_written_closure_is_simple() {
     }
 }
 
+/// The implicit `auto` proving a bare `fold`'s open body fact is its own
+/// smart tactic at the fold's site, so its search is charged to a smart
+/// budget and profiled apart from the fold's simple certificate check.
+#[test]
+fn implicit_auto_is_a_smart_tactic_at_the_simple_tactic_site() {
+    use crate::instrumentation::{IMPLICIT_AUTO_TACTIC, VerificationEvent, collect};
+    let source = r#"
+        verifying "make.c";
+        resource either(n: int32, m: int32) { fact n > 0 or m > 0; }
+        void make(int32 x, int32 y) {
+            requires x > 0;
+            produces either(x, y);
+        } by {
+            fold(either(x, y));
+            execute();
+            simp();
+        }
+    "#;
+    let (result, events) =
+        collect(|| verify_c0_sources(source, &[("make.c", "void make(int32 x, int32 y) { }\n")]));
+    result.expect("the implicit `auto` proves the fold's open body fact");
+    let started = |name: &str| {
+        events
+            .iter()
+            .filter_map(|event| match event {
+                VerificationEvent::TacticStarted(tactic) if tactic.tactic_name == name => {
+                    Some(tactic.clone())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let folds = started("fold");
+    let autos = started(IMPLICIT_AUTO_TACTIC);
+    let [fold] = folds.as_slice() else {
+        panic!("one `fold` tactic: {events:?}");
+    };
+    assert_eq!(fold.class, "simple", "{events:?}");
+    assert!(!autos.is_empty(), "missing the implicit `auto`: {events:?}");
+    for auto in &autos {
+        assert_eq!(auto.class, "smart", "{events:?}");
+        assert_eq!(
+            (auto.claim.as_str(), auto.source_index),
+            (fold.claim.as_str(), fold.source_index),
+            "the implicit `auto` is profiled at the fold's site: {events:?}"
+        );
+    }
+}
+
 #[test]
 fn auto_have_budget_failure_keeps_the_exhaustion_reason() {
     let source = r#"
@@ -3157,6 +3206,47 @@ fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_snapshots(
     assert!(rendered.contains("read<Bits32>"), "{rendered}");
     assert!(rendered.contains("store"), "{rendered}");
     assert!(!rendered.contains('…'), "{rendered}");
+}
+
+#[test]
+fn failed_final_assumption_preserves_its_checked_trace_context() {
+    let source = r#"verifying "f.c";
+        void f(int32 *cell, int32 value) {
+            owns cell[0..1];
+            ensures cell[0] == value;
+            ensures cell[0] == value + 1;
+        } by {
+            step(); step();
+            have cell[0] == value by { simp(); }
+            assumption();
+            assumption();
+            assumption();
+        }
+    "#;
+    with_proof_trace("f", || {
+        let error = verify_c0_sources(
+            source,
+            &[("f.c", "void f(int32 *cell, int32 value) { *cell = value; }")],
+        )
+        .expect_err("the false remaining claim must reject");
+        assert!(
+            error.message().contains("found no available fact"),
+            "{}",
+            error.message()
+        );
+        assert!(
+            error
+                .concise_report_parts()
+                .0
+                .contains("found no available fact")
+        );
+        let trace = error
+            .trace_context_report()
+            .expect("retain the failed focused goal's existing context");
+        assert!(trace.contains("steps through: *cell = value"), "{trace}");
+        assert!(trace.contains("have cell[0] == value"), "{trace}");
+        assert!(!trace.contains("adds: cell[0] == value + 1"), "{trace}");
+    });
 }
 
 #[cfg(test)]

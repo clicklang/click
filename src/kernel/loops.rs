@@ -2392,6 +2392,7 @@ pub(super) fn execute_c_statement_verification_paths(
             // identity stream: `variables` allocates from `budget`, so nothing
             // has to be synchronized across this boundary.
             let operation = match statement {
+                CStatement::EndScalarReference(_) => "verification statement: borrow end",
                 CStatement::Skip => "verification statement: skip",
                 CStatement::Break => "verification statement: break",
                 CStatement::Continue => "verification statement: continue",
@@ -2652,16 +2653,6 @@ pub(super) fn condition_is_decided(
         .exact_condition_value(condition)
         .or_else(|| PureFactContext::decide_intrinsically(condition))
         .or_else(|| assumptions.difference_decision(condition, &[]))
-        .or_else(|| {
-            (!assumptions.should_defer_non_exact_condition_reasoning())
-                .then(|| assumptions.decide(condition))
-                .flatten()
-                .inspect(|_| {
-                    crate::kernel::reasoning::path_facts::record_general_condition_decision(
-                        "loop condition",
-                    )
-                })
-        })
 }
 
 fn condition_is_decided_true(assumptions: &PureFactContext, condition: &ConditionTerm) -> bool {
@@ -9725,6 +9716,7 @@ fn validate_loop_havoc_stable_loans(
 pub(super) fn statement_may_write_memory(state: &CState, statement: &CStatement) -> bool {
     match statement {
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
@@ -9862,6 +9854,7 @@ pub(super) fn collect_loop_modified_locals(statement: &CStatement, names: &mut B
             names.extend(retired.iter().cloned())
         }
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
@@ -10034,6 +10027,7 @@ pub(crate) fn collect_address_taken_locals(statement: &CStatement, names: &mut B
     match statement {
         CStatement::EndAutomaticLifetimes { .. } => {}
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }

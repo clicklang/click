@@ -1,21 +1,8 @@
-# Pointer non-self facts are lost through a resource alias
+# Non-self links survive a resource address alias
 
-Soundness: incomplete. Unfolding a resource establishes that its child link
-is different from its address. After the resource's modeled identity names
-that same address, ordinary fact lookup cannot recover the non-self fact
-through the identity alias. No false acceptance is known.
-
-Reproduce with the embedded fixture below: `click verify --trace-proof keep
-bugs/pointer-nonself-fact-through-resource-alias.md`. The inner unfold records
-an offset disequality and its address identity equality. The requested
-`parent->child != parent` instead lowers to a pointer disequality. The graph
-has an existing pointer-to-offset truth bridge, but not the converse lookup.
-The same gap blocks folding the parent in the sized insertion rotation proof.
-
-Acceptance: the fixture passes using `assumption`; missing non-self evidence
-and aliases withdrawn or unavailable in another branch remain conservative.
-Queries must use only the selected addresses and indexed truth, not scan the
-ambient context or enumerate all pointer aliases.
+The inner resource contributes both its address identity and its non-self
+link fact. Looking up the same fact through that identity uses the shared
+pointer/offset comparison bridge.
 
 ```c filename=pointer_nonself.c
 struct item { uint64 word; struct item* child; };

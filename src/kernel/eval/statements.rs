@@ -449,20 +449,7 @@ fn write_c_lvalue_paths_for_initialization(
             obligations,
         )]);
     }
-    let ending = store_source.lease_plan().cloned();
-    if ending.is_some() && lvalue.local_reference.is_none() {
-        return Ok(vec![CStatementExecutionPath::new(
-            CStatementOutcome::RuntimeError(crate::kernel::source_loans::source_loan_error(
-                crate::kernel::loans::LoanRefusal::MissingLoanBinding,
-            )),
-            facts,
-            obligations,
-        )]);
-    }
     if let Some(reference) = &lvalue.local_reference {
-        let executed_reference = *reference;
-        let executed_pointer = lvalue.pointer(state).expect("memory reference lvalue");
-        let executed_type = lvalue.value_type;
         let effective_assumptions =
             assumptions_with_path_context(assumptions, &facts, &obligations);
         let result = lvalue
@@ -509,22 +496,6 @@ fn write_c_lvalue_paths_for_initialization(
                     .without_exact_representation_for_occurrence(occurrence)
                     .expect("scalar store retains its temporary owner");
                 **state = (**state).clone().with_resource_context(resources);
-                if let Some(plan) = &ending {
-                    match plan.end(
-                        state,
-                        executed_reference,
-                        executed_pointer.clone(),
-                        executed_type,
-                        &effective_assumptions,
-                    ) {
-                        Ok(next) => **state = next,
-                        Err(error) => {
-                            path.outcome = CStatementOutcome::RuntimeError(
-                                crate::kernel::source_loans::source_loan_error(error),
-                            )
-                        }
-                    }
-                }
             }
         }
         return Ok(paths);
@@ -577,13 +548,17 @@ fn write_c_lvalue_paths_without_local_reference(
     let effective_assumptions = if direct_local_copy {
         effective_assumptions
     } else {
-        state
+        // The store is separated by what the writer owns now, not by every
+        // composition stated earlier on the path.
+        let owner = state
             .resources()
             .observable_facts_assuming_valid(&effective_assumptions)
             .into_iter()
-            .fold(effective_assumptions, |assumptions, fact| {
-                assumptions.assume_proposition(fact)
-            })
+            .find_map(|fact| match fact {
+                Proposition::CResourceComposition(owner) => Some(owner),
+                _ => None,
+            });
+        effective_assumptions.with_store_owner(owner)
     };
     let mut facts = facts;
     let constant = lvalue.is_constant();
@@ -892,9 +867,10 @@ fn write_c_lvalue_paths_without_local_reference(
                     &effective_assumptions,
                 ) {
                     Some(opened) => {
-                        let fact = Proposition::CResourceComposition(opened);
-                        facts.push(ExecutionPureFact::new(fact.clone()));
-                        effective_assumptions.assume_proposition(fact)
+                        facts.push(ExecutionPureFact::new(Proposition::CResourceComposition(
+                            opened.clone(),
+                        )));
+                        effective_assumptions.with_additional_store_owner(opened)
                     }
                     None => effective_assumptions,
                 };
@@ -1841,30 +1817,40 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 ));
                 continue;
             }
-            let resource_assumptions = state
-                .resources()
-                .observable_facts_assuming_valid(&effective_assumptions)
-                .into_iter()
-                .fold(effective_assumptions.clone(), |assumptions, fact| {
-                    assumptions.assume_proposition(fact)
-                });
-            if let Some(stale) = resources.facts().iter().find(|resource| {
-                resource.may_refer_to_memory_block(&old_pointer.block)
-                    && !resource.is_proven_separate_from_allocation_with_element_width(
-                        &old_pointer,
-                        &old_bytes,
-                        old_range_width,
-                        &resource_assumptions,
-                    )
-            }) {
-                paths.push(CStatementExecutionPath::new(
-                    CStatementOutcome::RuntimeError(CRuntimeError::StaleResourceAfterFree {
-                        resource: Box::new(stale.clone()),
-                    }),
-                    all_facts,
-                    all_obligations,
-                ));
-                continue;
+            // Reallocation retires the old block under the same conservative
+            // reference check as free. Select that block's dependents before
+            // projecting resource facts; unrelated holdings cannot become stale.
+            {
+                let mut candidates =
+                    resources.facts_that_may_refer_to_memory_block(&old_pointer.block);
+                if let Some(first) = candidates.next() {
+                    let resource_assumptions = state
+                        .resources()
+                        .observable_facts_assuming_valid(&effective_assumptions)
+                        .into_iter()
+                        .fold(effective_assumptions.clone(), |assumptions, fact| {
+                            assumptions.assume_proposition(fact)
+                        });
+                    if let Some(stale) = std::iter::once(first).chain(candidates).find(|resource| {
+                        !resource.is_proven_separate_from_allocation_with_element_width(
+                            &old_pointer,
+                            &old_bytes,
+                            old_range_width,
+                            &resource_assumptions,
+                        )
+                    }) {
+                        paths.push(CStatementExecutionPath::new(
+                            CStatementOutcome::RuntimeError(
+                                CRuntimeError::StaleResourceAfterFree {
+                                    resource: Box::new(stale.clone()),
+                                },
+                            ),
+                            all_facts,
+                            all_obligations,
+                        ));
+                        continue;
+                    }
+                }
             }
 
             let old_cells = state
@@ -2089,11 +2075,14 @@ fn execute_c_heap_free_paths(
             continue;
         }
 
+        // Discovery uses the token shape and pointer-root index. The exact
+        // allocation-base check below remains the authority boundary.
+        let allocation_query = CResourceFact::own_allocation(pointer.pointer().clone(), 0);
         let declared_allocation = state
             .resources
-            .facts()
-            .iter()
-            .filter_map(|fact| fact.allocation())
+            .direct_match_candidates_for(&allocation_query, &effective_assumptions)
+            .into_iter()
+            .filter_map(CResourceFact::allocation)
             .find(|(base, _)| **base == *pointer.pointer())
             .map(|(_, bytes)| bytes.clone());
         let element_width = pointer
@@ -2631,6 +2620,7 @@ fn collect_scope_declared_names(statement: &CStatement, names: &mut Vec<String>)
         | CStatement::TryCatchInt32 { .. }
         // Everything else declares nothing.
         | CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
@@ -2991,23 +2981,9 @@ fn execute_c_statement_leaf_paths(
             name,
             expression,
             source,
-        } => source.lease_plan().is_none_or(|plan| {
-            if source.is_lease_read_end() {
-                plan.validates_read_assignment(name, expression)
-            } else {
-                plan.validates_assignment(name, expression)
-            }
-        }),
-        CStatement::TypedStore {
-            pointer,
-            value,
-            value_type,
-            volatile,
-            pointee_constant,
-            source,
-        } => source.lease_plan().is_none_or(|plan| {
-            plan.validates_store(pointer, value, *value_type, *volatile, *pointee_constant)
-        }),
+        } => source
+            .lease_plan()
+            .is_none_or(|plan| plan.validates_assignment(name, expression)),
         _ => true,
     };
     if !valid_source_operation {
@@ -3020,6 +2996,16 @@ fn execute_c_statement_leaf_paths(
         )]);
     }
     let paths = match statement {
+        CStatement::EndScalarReference(source) => vec![CStatementExecutionPath::new(
+            match source.execute(state, assumptions) {
+                Ok(next) => CStatementOutcome::Normal(Box::new(next)),
+                Err(error) => CStatementOutcome::RuntimeError(
+                    crate::kernel::source_loans::source_loan_error(error),
+                ),
+            },
+            Vec::new().into(),
+            Vec::new(),
+        )],
         CStatement::Skip => vec![CStatementExecutionPath::new(
             CStatementOutcome::Normal(Box::new(state.clone())),
             Vec::new().into(),
@@ -3288,11 +3274,7 @@ fn execute_c_statement_leaf_paths(
                             &path.facts,
                             &path.obligations,
                         );
-                        let transition = if source.is_lease_read_end() {
-                            plan.end_read(state, after, &effective_assumptions)
-                        } else {
-                            plan.begin(state, after, &effective_assumptions)
-                        };
+                        let transition = plan.begin(state, after, &effective_assumptions);
                         match transition {
                             Ok(next) => **after = next,
                             Err(error) => {

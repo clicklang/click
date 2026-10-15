@@ -15,17 +15,12 @@ pub(crate) struct ReferenceBorrowSourceId {
 }
 
 /// Source observations compare neutrally. A checked lease plan participates in
-/// statement identity and executes an actual checked birth or read ending.
+/// statement identity and executes an actual checked birth.
 #[derive(Clone, Debug, Default)]
 pub struct CStatementAssignSource(
     Option<Arc<ReferenceBorrowSourceId>>,
-    Option<Arc<ScalarReferenceAssignmentLease>>,
+    Option<Arc<ScalarReferenceSourcePlan>>,
 );
-#[derive(Debug)]
-struct ScalarReferenceAssignmentLease {
-    plan: Arc<ScalarReferenceSourcePlan>,
-    read_ending: bool,
-}
 impl CStatementAssignSource {
     pub(crate) fn new(source: ReferenceBorrowSourceId) -> Self {
         Self(Some(Arc::new(source)), None)
@@ -34,31 +29,14 @@ impl CStatementAssignSource {
         self.0.as_deref()
     }
     pub(crate) fn with_lease_plan(mut self, plan: Arc<ScalarReferenceSourcePlan>) -> Self {
-        self.1 = Some(Arc::new(ScalarReferenceAssignmentLease {
-            plan,
-            read_ending: false,
-        }));
-        self
-    }
-    pub(crate) fn with_lease_read_end(mut self, plan: Arc<ScalarReferenceSourcePlan>) -> Self {
-        self.1 = Some(Arc::new(ScalarReferenceAssignmentLease {
-            plan,
-            read_ending: true,
-        }));
+        self.1 = Some(plan);
         self
     }
     pub(super) fn lease_plan(&self) -> Option<&Arc<ScalarReferenceSourcePlan>> {
-        self.1.as_ref().map(|operation| &operation.plan)
+        self.1.as_ref()
     }
-    pub(super) fn is_lease_read_end(&self) -> bool {
-        self.1
-            .as_ref()
-            .is_some_and(|operation| operation.read_ending)
-    }
-    fn semantic_key(&self) -> Option<(bool, &ScalarReferencePlanKey)> {
-        self.1
-            .as_ref()
-            .map(|operation| (operation.read_ending, operation.plan.key()))
+    fn semantic_key(&self) -> Option<&ScalarReferencePlanKey> {
+        self.1.as_ref().map(|plan| plan.key())
     }
     pub(super) fn completed(
         &self,
@@ -141,45 +119,30 @@ pub(crate) struct ReferenceAccessSourceId {
     pub(crate) kind: ReferenceAccessKind,
 }
 
-/// Observations compare neutrally and never authorize a store. A checked
-/// ending plan participates in statement identity and consumes actual custody.
+/// Store observations compare neutrally and never authorize a store or end.
+/// Checked borrow endings are explicit statements with semantic identity.
 #[derive(Clone, Debug, Default)]
-pub struct CStatementStoreSource(
-    Option<Arc<ReferenceAccessSourceId>>,
-    Option<Arc<ScalarReferenceSourcePlan>>,
-);
+pub struct CStatementStoreSource(Option<Arc<ReferenceAccessSourceId>>);
 impl CStatementStoreSource {
     pub(crate) fn new(source: ReferenceAccessSourceId) -> Self {
-        Self(Some(Arc::new(source)), None)
-    }
-    pub(crate) fn with_lease_plan(mut self, plan: Arc<ScalarReferenceSourcePlan>) -> Self {
-        self.1 = Some(plan);
-        self
-    }
-    pub(super) fn lease_plan(&self) -> Option<&Arc<ScalarReferenceSourcePlan>> {
-        self.1.as_ref()
+        Self(Some(Arc::new(source)))
     }
     pub(crate) fn as_ref(&self) -> Option<&ReferenceAccessSourceId> {
         self.0.as_deref()
     }
 }
 impl PartialEq for CStatementStoreSource {
-    fn eq(&self, other: &Self) -> bool {
-        self.1.as_ref().map(|plan| plan.key()) == other.1.as_ref().map(|plan| plan.key())
+    fn eq(&self, _: &Self) -> bool {
+        true
     }
 }
 impl Eq for CStatementStoreSource {}
 impl std::hash::Hash for CStatementStoreSource {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        std::hash::Hash::hash(&self.1.as_ref().map(|plan| plan.key()), state);
-    }
+    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
 }
 impl Ord for CStatementStoreSource {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.1
-            .as_ref()
-            .map(|plan| plan.key())
-            .cmp(&other.1.as_ref().map(|plan| plan.key()))
+    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
     }
 }
 impl PartialOrd for CStatementStoreSource {

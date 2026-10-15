@@ -1103,7 +1103,7 @@ fn kept_call_havoc_work(residual: ResourceContext) -> (usize, usize) {
     let assumptions = PureFactContext::new();
     let kept = CallKeptOwnership::new(
         residual,
-        CallKeptRanges::new(ResourceContext::new(), Vec::new()),
+        CallKeptRanges::new(ResourceContext::new(), Vec::new(), None),
         &assumptions,
     );
     let memory = CMemory::new().store(
@@ -1251,7 +1251,7 @@ fn a_call_rechecks_cached_members_after_ownership_withdrawal_or_width_change() {
     {
         let kept = CallKeptOwnership::new(
             residual,
-            CallKeptRanges::new(ResourceContext::new(), vec![]),
+            CallKeptRanges::new(ResourceContext::new(), vec![], None),
             &assumptions,
         );
         let after = before.clone().with_call_memory_havoc(
@@ -1320,6 +1320,7 @@ fn a_call_kept_instance_range_is_placed_in_work_linear_in_its_body() {
         let kept = CallKeptRanges::new(
             ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(range)),
             premises,
+            None,
         );
         let assumptions = PureFactContext::new();
         let cell = data(Bitvector32Term::Variable(Variable(START_LOAD)));
@@ -1488,6 +1489,7 @@ fn a_kept_range_base_equality_is_proved_once_per_fact_set() {
             ResourceContext::new()
                 .unchecked_with_facts([CResourceFact::own_memory(external_range(KEPT, 0, 4))]),
             Vec::new(),
+            None,
         );
         let access = external_field(ACCESS, 8);
         assert!(
@@ -2036,5 +2038,44 @@ fn sequential_owned_parameter_stores_ignore_earlier_cached_fields() {
     assert!(
         samples.iter().all(|(_, _, work)| *work <= 100),
         "a field store visited unrelated cached objects: {samples:?}"
+    );
+}
+
+/// A store through a pointer value never visits the slot of a local whose
+/// address is never taken: no pointer value designates one
+/// (`never_address_taken_local_versus_pointer_value`). Each slot keeps its
+/// value, and the store's work is the same beside 16, 64 or 256 of them.
+#[test]
+fn a_symbolic_store_skips_locals_whose_address_is_never_taken() {
+    let mut samples = Vec::new();
+    for size in [16usize, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        crate::kernel::set_never_address_taken_locals(
+            (0..size).map(|index| format!("hidden{index}")).collect(),
+        );
+        let slot = |index: usize| scaling_cell(&format!("local:hidden{index}"), 0);
+        let mut memory = CMemory::new();
+        for index in 0..size {
+            memory = memory
+                .with_block(slot(index).block.clone(), 4)
+                .store(slot(index), scaling_value(index));
+        }
+        let written = Pointer::symbolic(Variable(98_500));
+        // The first store catches the reachable-cell index up to this
+        // memory; the measured one pays only the change since.
+        let memory = memory.without_possible_aliasing_cells(&written, 4, &PureFactContext::new());
+        let (after, work) = crate::instrumentation::measure_deterministic_work(|| {
+            memory.without_possible_aliasing_cells(&written, 4, &PureFactContext::new())
+        });
+        assert!(
+            (0..size).all(|index| after.has_known_cell_at(&slot(index))),
+            "size {size}: a store through a pointer value dropped a local's slot"
+        );
+        crate::kernel::clear_never_address_taken_locals();
+        samples.push((size, work));
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[1].1 <= pair[0].1 + 4),
+        "a store through a pointer value visits locals no pointer reaches: {samples:?}"
     );
 }

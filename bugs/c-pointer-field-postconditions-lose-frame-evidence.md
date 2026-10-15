@@ -83,9 +83,14 @@ success with closure of those two archive failures.
 
 Explicitly proving `0 <= old(owner->len) + 1` lets the archive check the final
 backing-pointer equality across the terminator store. The resource keeps its
-original separate descriptor fields. Explicit stored-value and unfolded
-terminator facts then check, but the subsequent simple resource fold exhausts
-its deterministic work budget. The
-[reduced fold defect](split-descriptor-fold-exhausts-simple-budget.md) preserves
-this next blocker and the profile. No claim that the full archive project
-passes, and no new full-audit count, follows from this reduction.
+original separate descriptor fields. Stored-value and unfolded terminator facts
+also check. At checkpoint `be001cb2f`, restricting preliminary byte-gap order
+queries fixes the subsequent fold at unchanged budgets; that exact-order
+variant passes fresh, expanded, rewritten and retained checks. The final
+indexed-order variant is still being rechecked on the archive. See the
+[checked repair](../design/object-model-recovery-audit.md#preliminary-byte-gap-query-repair).
+
+The complete archive string project now gets past push and the checked pop
+adaptation, but still stops at clear's zero-value claim. The separate vector
+allocation-resource fold remains unresolved. No new full-audit count follows
+from this reduction; keep this broader report open.

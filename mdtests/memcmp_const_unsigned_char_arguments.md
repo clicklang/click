@@ -12,7 +12,7 @@ verifying "memcmp_const_unsigned_char_arguments.c";
 int32 compare4(const uint8* a, const uint8* b) {
     requires viewable(a[0..4]);
     requires viewable(b[0..4]);
-    ensures result == 0 implies bytes_equal(a, 0u64, b, 0u64, 4u64);
+    ensures result == 0 implies click::bytes::equal(a, 0u64, b, 0u64, 4u64);
 } by {
     have forall (k: uint64) {
         k < 4u64 implies defined(a[k]) and defined(b[k])

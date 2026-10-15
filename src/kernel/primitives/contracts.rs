@@ -1715,6 +1715,66 @@ impl CCompositeResourceDefinition {
             })
     }
 
+    /// Whether the memory this body owns is a function of the composite's
+    /// arguments alone: no condition, matched arm, witness, recursion,
+    /// population authority or instance schema, and every clause an
+    /// unguarded owned memory segment spelled from parameters and constants
+    /// by casts, arithmetic and byte offsets, never by a load, with its base
+    /// rooted at a pointer parameter. Opening such a body reads neither memory
+    /// nor facts, so its ranges are the same wherever its fact is held, and a
+    /// question about one address needs only the composites whose arguments
+    /// spell its base (`memory_state::CallKeptRanges::range_holding`).
+    pub(in crate::kernel) fn has_argument_direct_body(&self) -> bool {
+        let parameter = |name: &str| self.parameters.iter().any(|p| p.name() == name);
+        fn direct(expression: &CExpression, parameter: &dyn Fn(&str) -> bool) -> bool {
+            match expression {
+                CExpression::Variable(name) => parameter(name),
+                CExpression::Value(value) => !matches!(value, CValue::Pointer(_)),
+                CExpression::Cast { expression, .. } => direct(expression, parameter),
+                CExpression::PointerOffsetBytes { pointer, .. } => direct(pointer, parameter),
+                CExpression::Add(left, right)
+                | CExpression::Subtract(left, right)
+                | CExpression::Multiply(left, right) => {
+                    direct(left, parameter) && direct(right, parameter)
+                }
+                _ => false,
+            }
+        }
+        fn rooted(expression: &CExpression, parameter: &dyn Fn(&str) -> bool) -> bool {
+            match expression {
+                CExpression::Variable(name) => parameter(name),
+                CExpression::Cast { expression, .. } => rooted(expression, parameter),
+                CExpression::PointerOffsetBytes { pointer, .. } => rooted(pointer, parameter),
+                CExpression::Add(left, _) | CExpression::Subtract(left, _) => {
+                    rooted(left, parameter)
+                }
+                _ => false,
+            }
+        }
+        self.witnesses.is_empty()
+            && self.condition.is_none()
+            && self.matched.is_none()
+            && self.instance_schema.is_none()
+            && !self.recursive
+            && !self.matched_recursive
+            && !self.owns_population_authority()
+            && !self.contains.is_empty()
+            && self.contains.iter().all(|child| {
+                let CResourceTerm::Memory(segment) = child.term() else {
+                    return false;
+                };
+                child.access() == CResourceAccessMode::Own
+                    && child.quantity() == &CResourceQuantity::One
+                    && child.guard().is_none()
+                    && child.resource_arguments().is_empty()
+                    && segment.guard.is_none()
+                    && rooted(&segment.base, &parameter)
+                    && direct(&segment.base, &parameter)
+                    && direct(&segment.start, &parameter)
+                    && direct(&segment.end, &parameter)
+            })
+    }
+
     pub fn witnesses(&self) -> &[CParameter] {
         &self.witnesses
     }
@@ -2208,6 +2268,105 @@ impl CMemoryRange {
             kind: self.kind,
             ..Self::new_with_element_width(base, start, end, self.element_width)
         }
+    }
+
+    /// The range of cells a guarded universal read can reach.
+    ///
+    /// `pointer` is a cell read inside `forall v { guard implies ... }`. When
+    /// `pointer` is exactly element `v` of some `base`, in the addressing a
+    /// range's own [`Self::start_pointer`] uses, and `guard` has conjuncts
+    /// bounding `v` to `lo <= v < hi` in the comparison of that addressing's
+    /// index kind, the answer is `base[lo..hi]` of that kind. Every value of
+    /// `v` the guard admits is then an index of this range, so a view that
+    /// covers the range covers every cell the read names. Other conjuncts
+    /// only shrink the admitted set. An unsigned 64-bit index needs no lower
+    /// conjunct, since `0` bounds it already; a signed one does.
+    ///
+    /// `base`, `lo` and `hi` must not mention `v`: the range is then one
+    /// fixed set, rather than a description that varies with the binder.
+    /// Any other shape answers nothing, and the caller keeps its per-cell
+    /// check. The work is proportional to the guard and the pointer.
+    pub(crate) fn guarded_quantified_cells(
+        pointer: &Pointer,
+        variable: Variable,
+        guard: &Proposition,
+        element_width: u32,
+    ) -> Option<Self> {
+        let is_variable = |term: &Bitvector32Term| matches!(term, Bitvector32Term::Variable(found) if *found == variable);
+        let (base_offset, scaled) = match &pointer.offset {
+            PointerOffsetTerm::Add(base, scaled) => (base.as_ref().clone(), scaled.as_ref()),
+            scaled => (PointerOffsetTerm::Constant(0), scaled),
+        };
+        let kind = match scaled {
+            PointerOffsetTerm::Int32Scaled { value, .. } if is_variable(value) => {
+                RangeIndexKind::Int32
+            }
+            PointerOffsetTerm::Int64Scaled {
+                value,
+                unsigned: true,
+                ..
+            } if is_variable(value) => RangeIndexKind::UInt64,
+            _ => return None,
+        };
+        let base = Pointer {
+            block: pointer.block.clone(),
+            offset: base_offset,
+        };
+        let index = Bitvector32Term::Variable(variable);
+        let reconstructed = match kind {
+            RangeIndexKind::Int32 => base.offset_by_elements(index, element_width),
+            RangeIndexKind::UInt64 => {
+                base.offset_by_typed_elements(index, element_width, true, true)
+            }
+        };
+        if &reconstructed != pointer {
+            return None;
+        }
+        let mut lower =
+            (kind == RangeIndexKind::UInt64).then_some(Bitvector32Term::UInt64Constant(0));
+        let mut upper = None;
+        let mut pending = vec![guard];
+        while let Some(conjunct) = pending.pop() {
+            match conjunct {
+                Proposition::And(left, right) => {
+                    pending.push(left);
+                    pending.push(right);
+                }
+                Proposition::ConditionIs(condition, true) => match (kind, condition) {
+                    (RangeIndexKind::Int32, ConditionTerm::Bitvector32SignedLessEqual(lo, v))
+                    | (
+                        RangeIndexKind::UInt64,
+                        ConditionTerm::Bitvector64UnsignedLessEqual(lo, v),
+                    ) if is_variable(v) => lower = Some(lo.as_ref().clone()),
+                    (RangeIndexKind::Int32, ConditionTerm::Bitvector32SignedLessThan(v, hi))
+                    | (RangeIndexKind::UInt64, ConditionTerm::Bitvector64UnsignedLessThan(v, hi))
+                        if is_variable(v) =>
+                    {
+                        upper = Some(hi.as_ref().clone())
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+        let (lower, upper) = (lower?, upper?);
+        let mut mentioned = BTreeSet::new();
+        for term in [
+            Term::PointerOffset(base.offset.clone()),
+            Term::Bitvector32(lower.clone()),
+            Term::Bitvector32(upper.clone()),
+        ] {
+            crate::kernel::reasoning::collect_term_bitvector_variables(&term, &mut mentioned);
+        }
+        if mentioned.contains(&variable) {
+            return None;
+        }
+        Some(match kind {
+            RangeIndexKind::Int32 => {
+                Self::new_with_element_width(base, lower, upper, element_width)
+            }
+            RangeIndexKind::UInt64 => Self::new_wide(base, lower, upper, element_width),
+        })
     }
 
     /// A range whose bounds are unsigned 64-bit element indices.
@@ -3070,6 +3229,7 @@ fn statement_contains_internal_throw(statement: &CStatement) -> bool {
             .iter()
             .any(|case| statement_contains_internal_throw(&case.body)),
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -3511,3 +3671,97 @@ impl std::fmt::Display for CTerminationError {
 }
 
 impl std::error::Error for CTerminationError {}
+
+#[cfg(test)]
+mod guarded_quantified_cell_tests {
+    use super::*;
+
+    fn index() -> Variable {
+        Variable(2_000_000)
+    }
+
+    fn holds(condition: ConditionTerm) -> Proposition {
+        Proposition::ConditionIs(condition, true)
+    }
+
+    fn variable(variable: Variable) -> Box<Bitvector32Term> {
+        Box::new(Bitvector32Term::Variable(variable))
+    }
+
+    /// `p + v` for a byte array `p`, indexed by an unsigned 64-bit `v`.
+    fn wide_cell(base: &Pointer) -> Pointer {
+        base.offset_by_typed_elements(Bitvector32Term::Variable(index()), 1, true, true)
+    }
+
+    fn parameter() -> Pointer {
+        Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(7)), 1),
+        }
+    }
+
+    #[test]
+    fn an_unsigned_guard_names_the_range_from_zero() {
+        let base = parameter();
+        let length = Bitvector32Term::Variable(Variable(8));
+        let guard = holds(ConditionTerm::Bitvector64UnsignedLessThan(
+            variable(index()),
+            Box::new(length.clone()),
+        ));
+        assert_eq!(
+            CMemoryRange::guarded_quantified_cells(&wide_cell(&base), index(), &guard, 1),
+            Some(CMemoryRange::new_wide(
+                base,
+                Bitvector32Term::UInt64Constant(0),
+                length,
+                1
+            ))
+        );
+    }
+
+    #[test]
+    fn a_guard_in_another_comparison_or_on_the_binder_names_nothing() {
+        let base = parameter();
+        let cell = wide_cell(&base);
+        let length = Box::new(Bitvector32Term::Variable(Variable(8)));
+        // A signed comparison does not bound an unsigned 64-bit index.
+        let signed = holds(ConditionTerm::Bitvector32SignedLessThan(
+            variable(index()),
+            length.clone(),
+        ));
+        assert_eq!(
+            CMemoryRange::guarded_quantified_cells(&cell, index(), &signed, 1),
+            None
+        );
+        // An upper bound that mentions the binder is not one fixed range.
+        let circular = holds(ConditionTerm::Bitvector64UnsignedLessThan(
+            variable(index()),
+            Box::new(Bitvector32Term::UInt64Add(
+                variable(index()),
+                length.clone(),
+            )),
+        ));
+        assert_eq!(
+            CMemoryRange::guarded_quantified_cells(&cell, index(), &circular, 1),
+            None
+        );
+        // A stride other than the read's width is not that range's element.
+        let bound = holds(ConditionTerm::Bitvector64UnsignedLessThan(
+            variable(index()),
+            length,
+        ));
+        assert_eq!(
+            CMemoryRange::guarded_quantified_cells(&cell, index(), &bound, 4),
+            None
+        );
+        // A base that moves with the binder is not one fixed range.
+        let moving = wide_cell(&Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(index()), 1),
+        });
+        assert_eq!(
+            CMemoryRange::guarded_quantified_cells(&moving, index(), &bound, 1),
+            None
+        );
+    }
+}

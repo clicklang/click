@@ -2704,57 +2704,11 @@ impl<'a> Proof<'a> {
                 ) {
                     return Ok(proposition);
                 }
-                // Mixed atoms need the ordinary checked specification lowerer.
-                // Select only bindings referenced by this explicit certificate
-                // node, so unrelated theorem parameters are never copied.
-                let values = names
-                    .iter()
-                    .filter_map(|name| {
-                        if integer_values.get(name).is_some() {
-                            return None;
-                        }
-                        context
-                            .theorem_context
-                            .values
-                            .get(name)
-                            .map(|value| (name.clone(), value.clone()))
-                    })
-                    .collect();
-                let arrays = names
-                    .iter()
-                    .filter_map(|name| {
-                        context
-                            .theorem_context
-                            .array_refs
-                            .get(name)
-                            .map(|value| (name.clone(), value.clone()))
-                    })
-                    .collect();
-                let algebraic = names
-                    .iter()
-                    .filter_map(|name| {
-                        context
-                            .structural_induction_setup
-                            .as_ref()?
-                            .algebraic_values
-                            .get(name)
-                            .map(|value| (name.clone(), value.clone()))
-                    })
-                    .collect();
-                super::super::pure_theorems::lower_pure_theorem_proposition_recording_introductions(
-                    context.claim_label,
-                    &promoted,
-                    self.facts().assumptions(),
-                    ContractEnvironment::new(&values, &arrays),
-                    &algebraic,
-                    &integer_values,
-                    &context.theorem_context.memory,
-                    context.spec_definitions,
-                )
-                .map(|(proposition, _)| proposition)
-                .map_err(|message| {
-                    self.step_error(format!("could not lower {description}: {message}"))
-                })
+                // Mixed atoms use the same checked lowerer as their written
+                // premises, including selected proof-local model bindings and
+                // native substitutions. The Integer-only path above remains
+                // independent of unrelated theorem state.
+                self.lower_surface_proposition(&promoted, description)
             }
             _ => self.lower_surface_proposition_direct(surface, description),
         }

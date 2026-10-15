@@ -435,10 +435,21 @@ allocation-fold failures are specific to the recovery archive; continue reducing
 those compatibility obligations before activation. See the
 [upstream/archive distinction](../design/object-model-recovery-audit.md#string-push-proof-and-full-upstream-project-checks).
 
-The split-field string reduction now identifies a narrower next blocker:
-explicit append-index bounds and stored-value proofs check, but the subsequent
-simple fold exhausts its work budget. Reduce and fix the
-[fold performance defect](../bugs/split-descriptor-fold-exhausts-simple-budget.md)
-before continuing the archive's string proof or activation. Keep the original
-C, split-field resource and existing budgets; the vector allocation fold remains
-separate.
+The split-field string fold now passes at unchanged limits after the
+[preliminary byte-gap query repair](../design/object-model-recovery-audit.md#preliminary-byte-gap-query-repair).
+The focused archive proof passes fresh, expanded, rewritten and retained checks.
+The archive's clear proof now also passes, and the full original string project
+passes all four modes. The completed archive audit improves to 42/52; ten
+compatibility failures remain. Continue reducing the vector allocation fold
+across its modular push call, using the existing checked pointer-field effects
+before considering any new contract surface. The graph-lock follow-up passes
+all 5,415 current-upstream normal library tests and 168 C++ import/span tests.
+Keep the original C, split-field resources and contracts intact; the separate
+returned-resource performance report is not closed by the fold repair.
+
+
+PR #1054 has merged; both pushed trace-fix commits `7350af8a0` and `09c1cf285`
+are verified upstream. The latest archive audit after the selected read-frame
+repair remains 42/52 with no new failures. Continue the
+[selected resource-delta extraction](../design/object-model-recovery-audit.md#selected-complete-read-bridge-for-resource-deltas)
+and the separate full-pointer evidence gap at the vector allocation fold.
