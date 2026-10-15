@@ -41,14 +41,14 @@ pub fn entry_with(command: &str, arguments: Vec<String>) -> Result<(), String> {
 
 fn usage() -> &'static str {
     "version-manager commands:
-  click install <VERSION|latest>
+  click install <VERSION|latest> [--rust]
   click use [VERSION|--unset]
   click default [VERSION]
   click versions"
 }
 
 fn install_command(arguments: &[String]) -> Result<(), String> {
-    if arguments.len() != 1 {
+    if !matches!(arguments, [_] | [_, _]) || (arguments.len() == 2 && arguments[1] != "--rust") {
         return Err(usage().to_string());
     }
     let requested = arguments[0].as_str();
@@ -58,7 +58,86 @@ fn install_command(arguments: &[String]) -> Result<(), String> {
         normalize_version(requested)?
     };
     install_version(&version)?;
+    if arguments.len() == 2 {
+        install_rust_frontend(&version)?;
+    }
     Ok(())
+}
+
+fn install_rust_frontend(version: &str) -> Result<(), String> {
+    let target = host_target()?;
+    if target != "x86_64-unknown-linux-gnu" {
+        return Err(format!(
+            "a pinned Rust frontend bundle is not yet available for {target}; Click itself remains installed"
+        ));
+    }
+    let home = click_home()?;
+    let destination = home.join("versions").join(version).join("frontends/rust");
+    if destination.exists() {
+        check_rust_bundle(&destination, version)?;
+        println!("Rust frontend for Click {version} is already installed.");
+        return Ok(());
+    }
+    let temporary = temporary_directory(&home)?;
+    let name = format!("click-rust-frontend-{target}.tar.gz");
+    let base = format!(
+        "https://github.com/{}/releases/download/v{version}",
+        release_repository()?
+    );
+    let archive = temporary.0.join(&name);
+    let checksum = temporary.0.join(format!("{name}.sha256"));
+    download(&format!("{base}/{name}"), &archive)?;
+    download(&format!("{base}/{name}.sha256"), &checksum)?;
+    verify_sha256(&archive, &checksum)?;
+    Archive::new(GzDecoder::new(
+        File::open(&archive).map_err(|e| e.to_string())?,
+    ))
+    .unpack(&temporary.0)
+    .map_err(|e| format!("could not unpack Rust frontend: {e}"))?;
+    let bundle = temporary.0.join("rust");
+    check_rust_bundle(&bundle, version)?;
+    fs::create_dir_all(destination.parent().unwrap()).map_err(|e| e.to_string())?;
+    fs::rename(bundle, &destination)
+        .map_err(|e| format!("could not install Rust frontend: {e}"))?;
+    println!("Installed Rust frontend for Click {version} ({target}).");
+    Ok(())
+}
+
+fn check_rust_bundle(bundle: &Path, version: &str) -> Result<String, String> {
+    let path = bundle.join("frontend.json");
+    if fs::metadata(&path)
+        .map_err(|e| format!("Rust frontend manifest: {e}"))?
+        .len()
+        > 64 << 10
+    {
+        return Err("Rust frontend manifest exceeds its byte bound".into());
+    }
+    let manifest: serde_json::Value = serde_json::from_reader(
+        File::open(path).map_err(|e| format!("Rust frontend manifest: {e}"))?,
+    )
+    .map_err(|e| format!("Rust frontend manifest: {e}"))?;
+    if manifest["schema"] != 1
+        || manifest["click_version"] != version
+        || manifest["host"] != "x86_64-unknown-linux-gnu"
+        || manifest["charon"] != "bin/charon"
+        || manifest["driver"] != "bin/charon-driver"
+        || manifest["rustc"] != "runtime/bin/rustc"
+        || manifest["sysroot"] != "runtime"
+        || ["extractor_version", "extractor_revision", "compiler_commit"]
+            .iter()
+            .any(|key| manifest[key].as_str().is_none_or(str::is_empty))
+        || !bundle.join("bin/charon").is_file()
+        || !bundle.join("bin/charon-driver").is_file()
+        || !bundle.join("runtime/bin/rustc").is_file()
+        || !bundle
+            .join("runtime/lib/rustlib/x86_64-unknown-linux-gnu/lib")
+            .is_dir()
+    {
+        return Err(format!(
+            "Rust frontend bundle is incomplete or does not match Click {version}"
+        ));
+    }
+    Ok(manifest["extractor_version"].as_str().unwrap().to_string())
 }
 
 fn install_version(version: &str) -> Result<(), String> {
@@ -510,7 +589,12 @@ fn versions_command(arguments: &[String]) -> Result<(), String> {
         } else {
             ""
         };
-        println!("{version}{global_marker}{project_marker}");
+        let bundle = versions.join(&version).join("frontends/rust");
+        let rust = check_rust_bundle(&bundle, &version).map_or_else(
+            |_| String::new(),
+            |charon| format!(" (Rust frontend: Charon {charon})"),
+        );
+        println!("{version}{global_marker}{project_marker}{rust}");
     }
     Ok(())
 }

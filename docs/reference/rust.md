@@ -7,10 +7,12 @@ flow path into Click's shared execution, memory, and certificate rules.
 Verification uses the same sidecars, tactics, and bounded engine as C and C++.
 [Language coverage](coverage.md) compares the Rust subset with C and C++.
 
-Charon is the extraction backend; `scripts/build-charon.sh` builds the pinned
-version. Rust support is experimental: it needs a repository checkout and a
-separately built importer, and covers the subset listed in
-[Language coverage](coverage.md).
+Charon is the extraction backend. On `x86_64-unknown-linux-gnu`, releases provide
+an optional pinned frontend and compiler runtime through
+`click install VERSION --rust`. Rust support remains experimental and covers
+the subset listed in [Language coverage](coverage.md). Contributor builds use
+`scripts/build-charon.sh`; ordinary verification of committed locks needs
+neither Charon nor rustc.
 
 The working example is
 [`examples/basic-rust/borrow.rs`](https://github.com/clicklang/click/blob/master/examples/basic-rust/borrow.rs),
@@ -20,6 +22,36 @@ It covers a scalar branch, a mutable reference helper that writes through a
 local reborrow and then reuses its parent, and a caller proving a struct field's
 final value while preserving its other field. A shared field borrow remains
 stable while the disjoint field is mutated.
+
+## Installed Rust frontend
+
+`click install VERSION --rust` installs a bundle at
+`CLICK_HOME/versions/VERSION/frontends/rust` (with the usual default
+`CLICK_HOME`). The bundle's bounded `frontend.json` explicitly identifies
+Charon, its paired driver, rustc, and the sysroot. Extraction checks the running
+Click version, pinned Charon version/revision, compiler commit and host before
+compiling. The Charon wrapper's paired-driver layout is validated against the
+explicit driver entry. The bundle supplies its own target libraries and loader
+paths; installed extraction does not search for rustup or use ambient compiler
+flags. A missing or mismatched bundle gives an installation/version diagnostic.
+Only the Linux x86-64 GNU host is packaged initially.
+
+Rust project units use this frontend automatically. `CLICK_CHARON` is a
+contributor override: a bundle directory selects that bundle, while an
+executable selects the existing source-build path and its rustup-managed pinned
+toolchain. Legacy per-sidecar `exporter` paths remain supported; omitting that
+field selects the same override/installed resolution as project units. The
+shared project schema and lock format are described in
+[project configuration](../concepts/own-project.md). The existing lock identity
+formula remains unchanged.
+
+The release workflow builds Charon with `scripts/build-charon.sh --release`
+and assembles the bundle with `scripts/package-rust-frontend.py`, including its
+compiler libraries and license files. The installed-layout regression relocates
+that bundle and an installed Click, extracts and verifies the unchanged basic
+Rust example with crate-qualified sidecar names and the existing adler2
+saved-checksum proof, repeats locking byte-for-byte,
+checks mismatched identity refusal, then verifies after removing the frontend.
 
 ## Reproduce the example
 
@@ -47,7 +79,7 @@ selects a written tactic within that proof. Only the named proof is checked;
 other function contracts remain interfaces. Tracing validates the ordinary
 import lock and does not rerun the compiler.
 
-The import configuration selects one `.rs` file, the exporter executable,
+The legacy import configuration selects one `.rs` file, an optional development exporter,
 and an artifact output. Refresh runs the compiler with a bounded process and
 writes the artifact and input lock. Ordinary verification loads those files
 without executing the compiler. Source, configuration, artifact, or profile
@@ -70,7 +102,6 @@ explicit crate root and compiler configuration:
   "language": "rust",
   "target": "x86_64-unknown-linux-gnu",
   "source": "src/lib.rs",
-  "exporter": "../../../target/charon/debug/charon",
   "artifact": "crate.ullbc",
   "crate": {
     "name": "adler2",

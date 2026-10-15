@@ -40,70 +40,21 @@ struct TrialArtifact {
     data: charon_lib::export::CrateData,
 }
 
-pub(super) fn extract(executable: &Path, source: &Path, root: &Path) -> Result<Vec<u8>, String> {
-    extract_crate(executable, source, root, None, None)
-}
-
 pub(super) fn extract_crate(
-    executable: &Path,
+    runtime: &super::runtime::Runtime,
     source: &Path,
     root: &Path,
     crate_config: Option<&super::crate_inputs::CrateConfig>,
     sources: Option<&super::crate_inputs::SourceFiles>,
 ) -> Result<Vec<u8>, String> {
-    // The wrapper selects its compiled-in rustup toolchain. Keep only runtime
-    // selectors; no ambient rustc flags or Charon configuration can enter.
-    let environment: BTreeMap<_, _> = [
-        "PATH",
-        "HOME",
-        "RUSTUP_HOME",
-        "CARGO_HOME",
-        "RUST_MIN_STACK",
-    ]
-    .into_iter()
-    .filter_map(|key| {
-        std::env::var(key)
-            .ok()
-            .map(|value| (key.to_string(), value))
-    })
-    .collect();
+    let executable = &runtime.executable;
+    let environment = &runtime.environment;
     let limits = CompilerLimits {
         timeout: Duration::from_secs(30),
         max_stdout_bytes: 64 << 10,
         max_stderr_bytes: 64 << 10,
     };
-    let version = run_compiler(executable, &["version".into()], root, &environment, limits)?;
-    if String::from_utf8_lossy(&version.stdout).trim()
-        != format!(
-            "{} ({})",
-            profile::get().extractor_version,
-            profile::get().extractor_revision
-        )
-    {
-        return Err("Charon trial requires its pinned extractor revision".into());
-    }
-    let rustup = std::env::split_paths(environment.get("PATH").ok_or("Charon runtime needs PATH")?)
-        .map(|p| p.join("rustup"))
-        .find(|p| p.is_file())
-        .ok_or("Charon runtime needs rustup")?;
-    let compiler = run_compiler(
-        &rustup,
-        &[
-            "run".into(),
-            profile::get().toolchain.clone(),
-            "rustc".into(),
-            "-vV".into(),
-        ],
-        root,
-        &environment,
-        limits,
-    )?;
-    if !String::from_utf8_lossy(&compiler.stdout)
-        .lines()
-        .any(|line| line == format!("commit-hash: {}", profile::get().compiler_commit))
-    {
-        return Err("Charon trial requires its pinned compiler commit".into());
-    }
+    runtime.check(root, limits)?;
     let temp = tempfile::tempdir().map_err(|e| e.to_string())?;
     // Compile a private immutable snapshot, so even include_bytes! inputs cannot
     // change between dep-info, translation, and the final source recheck.
@@ -138,16 +89,13 @@ pub(super) fn extract_crate(
     if let Some(c) = crate_config {
         let dep = temp.path().join("inputs.d");
         let mut rustc_args = vec![
-            "run".into(),
-            profile::get().toolchain.clone(),
-            "rustc".into(),
             source.to_string_lossy().into_owned(),
             "--crate-type=lib".into(),
             format!("--crate-name={}", c.name),
             format!("--emit=dep-info={}", dep.display()),
         ];
         rustc_args.extend(flags.iter().cloned());
-        run_compiler(&rustup, &rustc_args, root, &environment, limits)?;
+        runtime.run_rustc(&rustc_args, root, limits)?;
         let observed =
             super::crate_inputs::dep_files(&std::fs::read(&dep).map_err(|e| e.to_string())?, root)?;
         let expected = c.files.iter().cloned().collect();
@@ -184,6 +132,9 @@ pub(super) fn extract_crate(
         }
     }
     args.extend(flags.iter().map(|flag| format!("--rustc-arg={flag}")));
+    if let Some(sysroot) = &runtime.sysroot {
+        args.push(format!("--rustc-arg=--sysroot={}", sysroot.display()));
+    }
     args.extend([
         "--".into(),
         source.to_string_lossy().into_owned(),
@@ -194,7 +145,7 @@ pub(super) fn extract_crate(
         "--crate-type".into(),
         "lib".into(),
     ]);
-    run_compiler(executable, &args, temp.path(), &environment, limits)?;
+    run_compiler(executable, &args, temp.path(), environment, limits)?;
     let metadata = std::fs::metadata(&artifact).map_err(|e| e.to_string())?;
     if !metadata.is_file() || metadata.len() > 4 << 20 {
         return Err("Charon trial artifact exceeds its file bound".into());

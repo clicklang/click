@@ -6,6 +6,7 @@ mod import;
 pub(crate) mod lowering;
 pub mod names;
 mod profile;
+mod runtime;
 pub mod schema;
 pub(crate) use crate_inputs::CrateConfig;
 pub use import::{PreparedRustImport, load_import, refresh_import};

@@ -16,7 +16,7 @@
 //!
 //! A C unit lists translation units that its compiler preprocesses. A Rust
 //! unit is one crate and lists its root; the pinned Charon named by
-//! `CLICK_CHARON` extracts it at lock time, and the crate's `roots` are the
+//! The pinned Rust frontend extracts it at lock time, and the crate's `roots` are the
 //! entry points every sidecar verifying it sees.
 
 use std::collections::BTreeMap;
@@ -284,13 +284,7 @@ impl Project {
             let (language, lock, unit_artifacts) = match unit.spec.language.as_str() {
                 "rust" => {
                     let unit = self.rust_unit(name)?;
-                    let exporter = std::env::var_os("CLICK_CHARON").ok_or_else(|| {
-                        format!(
-                            "set CLICK_CHARON to the pinned Charon executable to prepare Rust unit `{name}`"
-                        )
-                    })?;
-                    create_parent(&unit.artifact)?;
-                    let (lock, artifacts) = rust_import::prepare_unit(&unit, Path::new(&exporter))
+                    let (lock, artifacts) = rust_import::prepare_unit(&unit)
                         .map_err(|error| format!("unit `{name}`: {error}"))?;
                     ("rust", lock, artifacts)
                 }

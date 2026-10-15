@@ -1,0 +1,71 @@
+name: Rust frontend release
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing Click release tag to build the Rust frontend for
+        required: true
+        type: string
+
+concurrency:
+  group: rust-frontend-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  linux-gnu:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check release version
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, tomllib
+          version = tomllib.loads(pathlib.Path('Cargo.toml').read_text())['package']['version']
+          assert os.environ['RELEASE_TAG'] == 'v' + version, 'release tag must match Click version'
+          PY
+      - name: Build pinned release frontend
+        run: scripts/build-charon.sh --install-toolchain --release
+      - name: Assemble frontend and compiler runtime
+        run: |
+          source scripts/charon-toolchain.sh
+          python3 scripts/package-rust-frontend.py target/rust-release/rust \
+            --charon-bin target/charon/release --sysroot "$CHARON_SYSROOT" \
+            --charon-license target/charon-source/LICENSE.md
+          cd target/rust-release
+          archive=click-rust-frontend-x86_64-unknown-linux-gnu.tar.gz
+          tar -czf "$archive" rust
+          sha256sum "$archive" > "$archive.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rust-frontend-x86_64-unknown-linux-gnu
+          path: target/rust-release/*.tar.gz*
+      - name: Attach to the Click release
+        run: |
+          # The main release workflow creates the release independently. Keep
+          # the assets if it fails, so this job can be rerun after it is fixed.
+          for attempt in {1..40}; do
+            if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+                target/rust-release/*.tar.gz*
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "Click release $RELEASE_TAG is not available; frontend assets remain in the workflow artifact" >&2
+          exit 1
