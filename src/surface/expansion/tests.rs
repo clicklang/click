@@ -1974,6 +1974,18 @@ fn int64_arithmetic_expands_to_its_integer_bridge_steps() {
     );
 }
 
+/// A Rust head's generic parameters come between its name and its
+/// parameters, and a callable bound has its own parentheses and `->`.
+#[test]
+fn a_generic_rust_head_is_located_by_its_path() {
+    let source = "verifying \"lib.rs\";\nfn lib::apply<F: Fn(i32) -> i32>(f: F, x: i32) -> i32 {\n    ensures 0 == 0;\n} by { execute(); simp(); }\nfn lib::keep<'a>(x: &'a i32) -> i32 {\n    ensures 1 == 1;\n} by { execute(); simp(); }\n";
+    let tokens = scan_source_tokens(source).unwrap();
+    let apply = find_function(&tokens, "__rust_q_I3_lib_I5_apply").expect("the generic head");
+    let keep = find_function(&tokens, "__rust_q_I3_lib_I4_keep").expect("the lifetime head");
+    assert!(apply.body_open < apply.body_close && apply.body_close < keep.body_open);
+    assert!(find_function(&tokens, "Fn").is_err());
+}
+
 /// A sidecar writes an inherent method without the module its `impl` block
 /// is in, and the proof tools are asked for it by the importer's name,
 /// which has that module. The method is found by the spelling the source

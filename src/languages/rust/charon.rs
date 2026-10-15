@@ -390,6 +390,9 @@ struct Adapter<'a> {
     closure_calls: BTreeMap<a::FunDeclId, a::TypeDeclId>,
     /// The variables each closure captures, by its state type.
     closure_captures: BTreeMap<a::TypeDeclId, Vec<closures::Capture>>,
+    /// The callable type of each type parameter of the function being
+    /// adapted, `F: Fn(i32) -> i32`, by its index; `None` for one that is not.
+    callable_parameters: std::cell::RefCell<Vec<Option<Type>>>,
 }
 impl Adapter<'_> {
     fn ty(&self, t: &a::Ty) -> Result<Type, String> {
@@ -422,6 +425,24 @@ impl Adapter<'_> {
                     element: Box::new(element),
                 }
             }
+            // An `F: Fn(A) -> R` parameter is a callable value, and so is a
+            // shared reference to one, which a call through it borrows.
+            a::TyKind::TypeVar(a::DeBruijnVar::Bound(depth, id)) if depth.index == 0 => self
+                .callable_parameters
+                .borrow()
+                .get(id.index())
+                .cloned()
+                .flatten()
+                .ok_or_else(|| unsupported("type parameter other than an Fn"))?,
+            a::TyKind::Ref(_, pointee, a::RefKind::Shared)
+                if matches!(pointee.kind(), a::TyKind::TypeVar(_)) =>
+            {
+                self.ty(pointee)?
+            }
+            // A closure's state is the closure as a callable value.
+            a::TyKind::Adt(r) if self.closure_state(r.id) => self.closure_state_type(r.id)?,
+            // So is a function item's type, which an `impl Fn` argument has.
+            a::TyKind::FnDef(binder) => self.function_item_type(&binder.skip_binder)?,
             // A `&dyn Fn(A) -> R` is a callable value, as a `fn` pointer is.
             a::TyKind::Ref(_, pointee, a::RefKind::Shared)
                 if matches!(pointee.kind(), a::TyKind::DynTrait(_)) =>
@@ -923,8 +944,34 @@ impl BodyAdapter<'_, '_> {
                 }
                 self.place(p)
             }
+            // A function item passed for an `impl Fn` parameter is its
+            // address, as a closure that captures nothing is.
+            a::Operand::Const(c) if matches!(c.kind(), a::ConstantExprKind::FnDef(_)) => {
+                let a::ConstantExprKind::FnDef(pointer) = c.kind() else {
+                    unreachable!()
+                };
+                self.function_item_address(pointer, c.ty())
+            }
             a::Operand::Const(c) => self.constant(c),
         }
+    }
+    /// The address of the crate function item `pointer` names, as a value of
+    /// type `ty`.
+    fn function_item_address(&self, pointer: &a::FnPtr, ty: &a::Ty) -> Result<E, String> {
+        if !pointer.generics.types.is_empty() {
+            return Err(unsupported("function pointer to a generic function"));
+        }
+        let id = self.adapter.resolve(pointer)?;
+        Ok(E::FunctionAddress {
+            function: self
+                .adapter
+                .functions
+                .get(&id)
+                .or_else(|| self.adapter.closure_shims.get(&id))
+                .ok_or_else(|| unsupported("function pointer to an unmodeled function"))?
+                .clone(),
+            value_type: self.adapter.ty(ty)?,
+        })
     }
     fn rvalue(&self, v: &a::Rvalue, ty: &a::Ty) -> Result<E, String> {
         Ok(match v {
@@ -1075,20 +1122,7 @@ impl BodyAdapter<'_, '_> {
                 let a::ConstantExprKind::FnDef(pointer) = c.kind() else {
                     return Err(unsupported("function pointer from a non-item"));
                 };
-                if !pointer.generics.types.is_empty() {
-                    return Err(unsupported("function pointer to a generic function"));
-                }
-                let id = self.adapter.resolve(pointer)?;
-                E::FunctionAddress {
-                    function: self
-                        .adapter
-                        .functions
-                        .get(&id)
-                        .or_else(|| self.adapter.closure_shims.get(&id))
-                        .ok_or_else(|| unsupported("function pointer to an unmodeled function"))?
-                        .clone(),
-                    value_type: self.adapter.ty(ty)?,
-                }
+                self.function_item_address(pointer, ty)?
             }
             a::Rvalue::UnaryOp(a::UnOp::Cast(a::CastKind::Scalar(..)), op) => E::Cast {
                 value: Box::new(self.operand(op)?),
@@ -1264,6 +1298,16 @@ impl BodyAdapter<'_, '_> {
                     else_target: branches[no].index(),
                 }
             }
+            // A callable value owns no resource: an `impl Fn` argument is a
+            // closure whose captures are scalars.
+            u::TerminatorKind::Drop {
+                kind: a::DropKind::Precise,
+                place,
+                target,
+                ..
+            } if matches!(self.adapter.ty(&place.ty), Ok(Type::FnPointer { .. })) => T::Goto {
+                target: target.index(),
+            },
             u::TerminatorKind::Drop {
                 kind: a::DropKind::Precise,
                 place,
@@ -1354,23 +1398,31 @@ impl BodyAdapter<'_, '_> {
                         target: target.index(),
                     }
                 } else {
+                    // The callee's `impl Fn` parameters take their callable
+                    // types from its own bounds; a closure argument's type is
+                    // compared with them.
+                    let callee_inputs = self.adapter.callee_signature_types(callee)?;
                     if self.adapter.crate_mode
-                        && (call.args.len() != callee.signature.inputs.len()
+                        && (call.args.len() != callee_inputs.len()
                             || self.adapter.ty(&call.dest.ty)?
                                 != self.adapter.ty(&callee.signature.output)?)
                     {
                         return Err(unsupported("source call signature/destination type"));
                     }
                     if self.adapter.crate_mode {
-                        for (arg, ty) in call.args.iter().zip(&callee.signature.inputs) {
-                            if self.adapter.ty(arg.ty())? != self.adapter.ty(ty)? {
+                        for (arg, ty) in call.args.iter().zip(&callee_inputs) {
+                            if self.adapter.ty(arg.ty())? != *ty {
                                 return Err(unsupported("source call operand type"));
                             }
                         }
                     }
                     if call.safety == a::CallSafety::Unsafe
                         || callee.signature.is_unsafe
-                        || !ptr.generics.types.is_empty()
+                        || !ptr.generics.types.iter().all(|ty| match ty.kind() {
+                            a::TyKind::Adt(r) => self.adapter.closure_state(r.id),
+                            a::TyKind::FnDef(_) => true,
+                            _ => false,
+                        })
                     {
                         return Err(unsupported("unsafe or generic call"));
                     }
@@ -1547,6 +1599,7 @@ pub(super) fn decode_crate(
         closure_shims: BTreeMap::new(),
         closure_calls: BTreeMap::new(),
         closure_captures: BTreeMap::new(),
+        callable_parameters: std::cell::RefCell::new(Vec::new()),
     };
     if crate_config.is_some() {
         adapter.record_closure_captures()?;
@@ -1618,6 +1671,14 @@ pub(super) fn decode_crate(
                         .trait_impls
                         .get(impl_ref.id)
                         .ok_or_else(|| unsupported("missing Fn impl"))?;
+                    // A function item's `Fn` methods forward to the item,
+                    // which an `impl Fn` argument names directly.
+                    if matches!(
+                        imp.impl_trait.generics.types.first().map(|ty| ty.kind()),
+                        Some(a::TyKind::FnDef(_))
+                    ) {
+                        continue;
+                    }
                     let (closure, state) = adapter
                         .closure_impl_path(imp)
                         .ok_or_else(|| unsupported("Fn trait implementation outside a closure"))?;
@@ -1686,7 +1747,12 @@ pub(super) fn decode_crate(
         if f.signature.is_unsafe
             || f.signature.abi != abi
             || f.signature.is_variadic
-            || !f.generics.types.is_empty()
+            || (!f.generics.types.is_empty()
+                && (crate_config.is_none()
+                    || adapter
+                        .callable_type_parameters(&f.generics)?
+                        .iter()
+                        .any(Option::is_none)))
             || !f.generics.const_generics.is_empty()
         {
             return Err(unsupported("unsafe, foreign, or generic function"));
@@ -1738,6 +1804,9 @@ pub(super) fn decode_crate(
             return Err(unsupported("colliding proof function names"));
         }
         let f = &krate.fun_decls[*id];
+        // An `impl Fn` parameter's type is the callable its bound names.
+        *adapter.callable_parameters.borrow_mut() =
+            adapter.callable_type_parameters(&f.generics)?;
         if let a::Body::Extern(_) = &f.body {
             functions.push(adapter.external_function(name, f)?);
             continue;
