@@ -482,3 +482,22 @@ address-equality rejection, and modular record-pointer identity return on the
 activation checklist. The existing scalar-subobject bug records the archive's
 still-accepted pointer-field countermodel. No complete cursor proof or new full
 archive audit is claimed.
+
+
+Recovery checkpoint `2dc992cfe` closes the cursor initializer's modular
+returned-view gap. It preserves opaque copy operands as values without native
+input promises, reproduces declared read-only input projections independently,
+and restores certified input-field copies before returned-view matching. The
+original initializer C, resource and contract are retained in
+`mdtests/c_pointer_field_copy_preserves_borrowed_view_across_call.md`; its caller
+passes fresh, expanded, rewritten and retained checks on both recovery and
+current upstream. This fixture is an independent compatibility control, not
+activation of the recovery object model.
+
+The archive's original shared pipeline passes both initializer calls and now
+fails at `input_cursor_take`, whose returned borrowing composite still observes
+a fresh pointer. Continue its field-preservation summary separately. Six entry
+and seven field controls pass; the broader pointer selection has 477 passes,
+two known failures and 17 ignored controls. Those failures remain the loaded
+field/address-equality rejection and modular declared-record identity return.
+The last full archive example audit is still 42/52.

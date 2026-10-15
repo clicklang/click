@@ -1,20 +1,16 @@
 {
-  "schema": 1,
   "target": "x86_64-linux-kernel",
-  "compiler": "/usr/bin/x86_64-linux-gnu-gcc-13",
-  "working_directory": "inputs",
-  "environment": {
-    "allow": {
-      "PATH": "/usr/bin:/bin",
-      "LC_ALL": "C",
-      "LANG": "C"
-    }
-  },
-  "option_profile": "linux-6.8-x86_64-kbuild",
-  "sources": [
-    {
-      "logical_source": "lib/rbtree.c",
-      "path": "lib/rbtree.c",
+  "units": {
+    "linux": {
+      "language": "c",
+      "root": "inputs",
+      "compiler": "/usr/bin/x86_64-linux-gnu-gcc-13",
+      "environment": {
+        "PATH": "/usr/bin:/bin",
+        "LC_ALL": "C",
+        "LANG": "C"
+      },
+      "option_profile": "linux-6.8-x86_64-kbuild",
       "args": [
         "-nostdinc",
         "-I./arch/x86/include",
@@ -122,8 +118,11 @@
         "-DKBUILD_MODNAME=\"rbtree\"",
         "-D__KBUILD_MODNAME=kmod_rbtree"
       ],
-      "artifact": "rbtree.i",
-      "projection": "dependency-closure"
+      "sources": {
+        "lib/rbtree.c": {
+          "projection": "dependency-closure"
+        }
+      }
     }
-  ]
+  }
 }

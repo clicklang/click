@@ -187,8 +187,8 @@ theorem append_nil_by_bare_names(xs: List<int32>) {
 ```
 
 Without a path or a selective import, a function, predicate or theorem of
-`click::nat`, `click::list`, `click::bytes` or `click::cstr` is not in
-scope by its bare name, even when the module is implicit
+`click::nat`, `click::list`, `click::bytes`, `click::cstr` or
+`click::permutation` is not in scope by its bare name, even when the module is implicit
 (`mdtests/a_bare_library_name_needs_a_path_or_selective_import.md`,
 `mdtests/a_bare_list_theorem_citation_needs_a_path_or_selective_import.md`).
 `import click::bytes;` puts the module in scope, so a sidecar writes
@@ -207,9 +207,9 @@ bare names, as does the primitive conversion `to_nat`. When `click expand`
 writes out a theorem of these modules, it spells it by its bare name when a
 selective import brings it, and otherwise as `module::name`, such as
 `list::append_cons`, adding the module's import when the file lacks it.
-The `permutation`, `machine_integer` and `integer` modules still carry
-bare names, such as `int32_positive_is_nonnegative`, and they keep working
-until each is renamed; see
+The `machine_integer` and `integer` modules still carry bare names, such
+as `int32_positive_is_nonnegative`, and they keep working until each is
+renamed; see
 [`issues/standard-library.md`](https://github.com/clicklang/click/blob/master/issues/standard-library.md).
 
 ## Contracts are per function

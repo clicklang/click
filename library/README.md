@@ -10,7 +10,7 @@ imports with `import click::...;`, and the modules those import:
 | `nat.click` | implicit | `Nat`, `to_nat`, `nat::add` and their laws |
 | `list.click` | implicit | `List<T>`, `list::append`, `list::contains`, `list::length` and their laws |
 | `machine_integer.click` | `import click::machine_integer;` | Order, increment and definedness lemmas over native integer widths |
-| `permutation.click` | `import click::permutation;` | `count` and `permutation` over `int32[]` |
+| `permutation.click` | `import click::permutation;` | `permutation::count` and `permutation::permutation` over `int32[]` |
 | `bytes.click` | `import click::bytes;`, or with `c/string` | `bytes::count`, `bytes::equal` and the other byte-range predicates over `uint8[]` |
 | `cstr.click` | `import click::cstr;`, or with `c/string` | C-string predicates and theorems, and the borrowed-string resource `cstr_at` |
 | `c/builtins.click` | implicit | `__click_constant_p_unknown`, the value of `__builtin_constant_p` |

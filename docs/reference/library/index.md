@@ -2497,7 +2497,7 @@ theorem int32_greater_equal_and_not_greater_than_implies_equal(left: int32, righ
 
 ## Array specifications
 
-### `count`
+### `permutation::count`
 
 ```click
 function count(p: int32[], lo: int32, hi: int32, x: int32) -> int32 {
@@ -2513,12 +2513,12 @@ function count(p: int32[], lo: int32, hi: int32, x: int32) -> int32 {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `permutation`
+### `permutation::permutation`
 
 ```click
 predicate permutation(a: int32[], b: int32[], lo: int32, hi: int32) {
     forall (x: int32) {
-        count(a, lo, hi, x) == count(b, lo, hi, x)
+        permutation::count(a, lo, hi, x) == permutation::count(b, lo, hi, x)
     }
 }
 ```
@@ -2527,7 +2527,7 @@ predicate permutation(a: int32[], b: int32[], lo: int32, hi: int32) {
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(permutation)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(permutation::permutation)` when a proof needs the predicate body.
 
 ## Byte-range specifications
 

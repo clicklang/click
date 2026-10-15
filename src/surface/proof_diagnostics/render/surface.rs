@@ -666,6 +666,7 @@ impl Printer<'_> {
                 if !self.source_mode() {
                     return None;
                 }
+                let single = matches!(condition, ConditionTerm::Float32(_));
                 return match float {
                     crate::kernel::CFloatCondition::Comparison {
                         operator,
@@ -681,8 +682,8 @@ impl Printer<'_> {
                             C::GreaterThan => ">",
                             C::GreaterEqual => ">=",
                         };
-                        let left = self.bitvector(left, None, depth)?;
-                        let right = self.bitvector(right, None, depth)?;
+                        let left = self.float_operand(left, single, depth)?;
+                        let right = self.float_operand(right, single, depth)?;
                         // A float comparison with a NaN operand is false
                         // either way, so its negation keeps the `not`.
                         Some(negate(
@@ -698,7 +699,7 @@ impl Printer<'_> {
                         classification,
                         value,
                     } => {
-                        let value = self.bitvector(value, None, depth)?;
+                        let value = self.float_operand(value, single, depth)?;
                         Some(negate(
                             format!(
                                 "is{}({})",
@@ -1096,6 +1097,44 @@ impl Printer<'_> {
         }
     }
 
+    /// Comparisons supply the floating type, so an integral bound can use
+    /// an existing integer literal and C's numeric conversion. This keeps
+    /// cast prerequisites copyable even without decimal float tokens.
+    fn float_operand(
+        &mut self,
+        value: &Bitvector32Term,
+        single: bool,
+        depth: usize,
+    ) -> Option<Spelled> {
+        let number = match (single, value) {
+            (true, Bitvector32Term::Constant(bits)) => f64::from(f32::from_bits(*bits)),
+            (false, Bitvector32Term::UInt64Constant(bits)) => f64::from_bits(*bits),
+            _ => return self.bitvector(value, None, depth),
+        };
+        if let Err(elided) = self.enter(depth) {
+            return elided;
+        }
+        // Do not erase negative zero, or round a value at the signed upper
+        // endpoint through a saturating float-to-integer conversion.
+        if number.is_finite()
+            && number.fract() == 0.0
+            && (number != 0.0 || !number.is_sign_negative())
+            && ((i64::MIN as f64)..-(i64::MIN as f64)).contains(&number)
+        {
+            let integer = number as i64;
+            return Some(atom(if i32::try_from(integer).is_ok() {
+                integer.to_string()
+            } else {
+                format!("{integer}i64")
+            }));
+        }
+        Some(atom(if single {
+            format!("{:?}f32", number as f32)
+        } else {
+            format!("{number:?}")
+        }))
+    }
+
     fn bitvector(
         &mut self,
         value: &Bitvector32Term,
@@ -1178,8 +1217,20 @@ impl Printer<'_> {
             } else {
                 operand_hint
             };
-            let left = self.bitvector(left, operand_hint, depth)?;
-            let right = self.bitvector(right, right_hint, depth)?;
+            let (left, right) = match operator {
+                crate::kernel::BitvectorBinaryOp::Float32(_) => (
+                    self.float_operand(left, true, depth)?,
+                    self.float_operand(right, true, depth)?,
+                ),
+                crate::kernel::BitvectorBinaryOp::Float64(_) => (
+                    self.float_operand(left, false, depth)?,
+                    self.float_operand(right, false, depth)?,
+                ),
+                _ => (
+                    self.bitvector(left, operand_hint, depth)?,
+                    self.bitvector(right, right_hint, depth)?,
+                ),
+            };
             return Some(spelled(
                 format!(
                     "{} {symbol} {}",
@@ -1212,7 +1263,11 @@ impl Printer<'_> {
                 U::MachineIntegerCast { source, .. } => Hint::of_machine(source),
                 _ => None,
             };
-            let inner = self.bitvector(inner, inner_hint, depth)?;
+            let inner = match operator {
+                U::Float32Negate => self.float_operand(inner, true, depth)?,
+                U::Float64Negate => self.float_operand(inner, false, depth)?,
+                _ => self.bitvector(inner, inner_hint, depth)?,
+            };
             return Some(match (prefix, type_name) {
                 (Some(prefix), _) => spelled(format!("{prefix}{}", operand(inner, UNARY)), UNARY),
                 (None, Some(name)) => cast(name, inner),
@@ -2211,6 +2266,69 @@ mod tests {
             ),
             true,
         )
+    }
+
+    #[test]
+    fn float_diagnostics_keep_names_widths_and_decimal_literals() {
+        let parameters = [
+            crate::languages::c::syntax::C0Parameter::new(
+                crate::languages::c::syntax::C0Type::Float64,
+                "d".into(),
+                None,
+            ),
+            crate::languages::c::syntax::C0Parameter::new(
+                crate::languages::c::syntax::C0Type::Float32,
+                "f".into(),
+                None,
+            ),
+        ];
+        let arguments = [
+            crate::kernel::CExpression::Value(CValue::Float64(Bitvector32Term::Variable(
+                Variable(7),
+            ))),
+            crate::kernel::CExpression::Value(CValue::Float32(Bitvector32Term::Variable(
+                Variable(8),
+            ))),
+        ];
+        let mut labels = SnapshotLabels::naming(ParameterBinding::new(&parameters, &arguments));
+        for (value, expected) in [
+            (-2147483648.0_f64, "d >= -2147483648"),
+            (2147483648.0, "d >= 2147483648i64"),
+            (-0.0, "d >= -0.0"),
+            (0.0, "d >= 0"),
+            (1.5, "d >= 1.5"),
+        ] {
+            let fact = Proposition::ConditionIs(
+                ConditionTerm::Float64(crate::kernel::CFloatCondition::Comparison {
+                    operator: crate::kernel::CComparisonOperator::GreaterEqual,
+                    left: Box::new(Bitvector32Term::Variable(Variable(7))),
+                    right: Box::new(Bitvector32Term::UInt64Constant(value.to_bits())),
+                }),
+                true,
+            );
+            assert_eq!(source(&fact, &mut labels), expected);
+        }
+        let fact = Proposition::ConditionIs(
+            ConditionTerm::Float32(crate::kernel::CFloatCondition::Comparison {
+                operator: crate::kernel::CComparisonOperator::LessThan,
+                left: Box::new(Bitvector32Term::Float32Binary {
+                    operator: crate::kernel::CFloatBinaryOperator::Add,
+                    left: Box::new(Bitvector32Term::Variable(Variable(8))),
+                    right: Box::new(Bitvector32Term::Constant(1.5_f32.to_bits())),
+                }),
+                right: Box::new(Bitvector32Term::Constant(2.0_f32.to_bits())),
+            }),
+            true,
+        );
+        assert_eq!(source(&fact, &mut labels), "f + 1.5f32 < 2");
+        let integer = Proposition::ConditionIs(
+            ConditionTerm::Bitvector64Equal(
+                Box::new(Bitvector32Term::UInt64Constant(1.5_f64.to_bits())),
+                Box::new(Bitvector32Term::Variable(Variable(9))),
+            ),
+            true,
+        );
+        assert!(source(&integer, &mut labels).contains("4609434218613702656u64"));
     }
 
     #[test]

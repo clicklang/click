@@ -2683,14 +2683,19 @@ mod tests {
             "bits.h",
             "local.h",
             "main.click",
-            "main.click.import.json",
-            "main.click.import.lock.json",
-            "main.i",
+            crate::project::FILE_NAME,
+            crate::project::LOCK_NAME,
+            ".click/main/main.c.i",
         ] {
-            fs::copy(original.join(name), fixture.0.join(name)).unwrap();
+            let destination = fixture.0.join(name);
+            fs::create_dir_all(destination.parent().unwrap()).unwrap();
+            fs::copy(original.join(name), destination).unwrap();
         }
-        let config = fixture.0.join("main.click.import.json");
-        let lock: Lock = serde_json::from_slice(&fs::read(lock_path(&config)).unwrap()).unwrap();
+        let project_lock: serde_json::Value =
+            serde_json::from_slice(&fs::read(fixture.0.join(crate::project::LOCK_NAME)).unwrap())
+                .unwrap();
+        let lock: Lock =
+            serde_json::from_value(project_lock["units"]["main"]["lock"].clone()).unwrap();
         assert_ne!(lock.config_directory, fixture.0.to_string_lossy());
         // The program's own headers are its only dependencies: a standard
         // interface such as `<limits.h>` comes from Click, not the platform.
@@ -2719,7 +2724,12 @@ mod tests {
         else {
             panic!("ordinary loading must select the locked GCC artifact");
         };
-        let original_imports = load_imports(&original.join("main.click.import.json")).unwrap();
+        let original_sidecar = original.join("main.click");
+        let crate::cli::CInput::Prepared(original_imports) =
+            crate::cli::read_c_inputs(&original_sidecar, &proof).unwrap()
+        else {
+            panic!("the committed fixture must select its locked GCC artifact");
+        };
         assert_eq!(imports[0].identity(), original_imports[0].identity());
         assert!(imports[0].source().contains("return 8"));
         assert!(imports[0].source().contains("+ 34;"));
@@ -2743,11 +2753,11 @@ mod tests {
 
         let header = fixture.0.join("local.h");
         fs::write(&header, "#define LOCAL_OFFSET 35\n").unwrap();
-        assert!(load_imports(&config).is_err());
+        assert!(crate::cli::read_c_inputs(&sidecar, &proof).is_err());
         fs::copy(original.join("local.h"), &header).unwrap();
-        let artifact = fixture.0.join("main.i");
+        let artifact = fixture.0.join(".click/main/main.c.i");
         fs::write(&artifact, "int answer(void) { return 43; }\n").unwrap();
-        assert!(load_imports(&config).is_err());
+        assert!(crate::cli::read_c_inputs(&sidecar, &proof).is_err());
     }
 
     #[test]
@@ -2967,16 +2977,17 @@ mod tests {
     /// profile.
     #[test]
     fn linux_rbtree_vector_is_classified_by_the_kbuild_profile() {
-        let config: serde_json::Value = serde_json::from_slice(
+        let project: serde_json::Value = serde_json::from_slice(
             &fs::read(
                 Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("integrations/linux-rbtree/rbtree.click.import.json"),
+                    .join("integrations/linux-rbtree/click.project.json"),
             )
             .unwrap(),
         )
         .unwrap();
+        let config = &project["units"]["linux"];
         assert_eq!(config["option_profile"], "linux-6.8-x86_64-kbuild");
-        let vector = config["sources"][0]["args"]
+        let vector = config["args"]
             .as_array()
             .unwrap()
             .iter()

@@ -271,11 +271,11 @@ range facts may still need more explicit proof support.
 
 `old(...)` is surface syntax for elaborating an expression in the function-entry
 context. As an array argument to a pure Click function or predicate, `old(p)`
-becomes an entry-state array ref, so `permutation(p, old(p), lo, hi)` has the
+becomes an entry-state array ref, so `permutation::permutation(p, old(p), lo, hi)` has the
 expected old-vs-current meaning.
 
 Loop-invariant lowering now applies that same model to old-state pure
-functions, so `old(count(p, lo, hi, x))` can elaborate through stdlib `count`
+functions, so `old(permutation::count(p, lo, hi, x))` can elaborate through stdlib `permutation::count`
 and preserve its `.fold` in Kernel Click. The elaborator still rejects attempts
 to capture non-fixed local spec bindings inside `old(...)`.
 
@@ -306,7 +306,7 @@ general induction engine for arbitrary folds.
 Loop invariants now elaborate through spec lowering, so unfolded pure Click
 functions can contain `if`, `let`, and `.fold` values over explicit current and
 entry memory snapshots. This supports direct invariants such as
-`permutation(p, old(p), lo, hi)` when the proof unfolds the relevant predicate.
+`permutation::permutation(p, old(p), lo, hi)` when the proof unfolds the relevant predicate.
 
 ## Loop invariants need explicit facts
 

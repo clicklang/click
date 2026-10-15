@@ -163,9 +163,7 @@ if [[ "${1:-}" == "--audit" ]]; then
     export CLICK_CPP_EXPORTER
     CLICK_CPP_EXPORTER="$(scripts/build-cpp-exporter.sh)"
     cargo build --release --bin click
-    # Unlike the examples gate, this job starts with no generated native C
-    # lock or preprocessed sources. Rust examples use checked-in offline locks.
-    target/release/click import lock examples/label-build-flags/label.click
+    # C and Rust examples use checked-in offline locks.
     exec target/release/click audit --keep-going --time-limit 180m \
         --exclude examples/basic-cpp \
         .

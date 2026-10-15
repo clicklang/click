@@ -1,0 +1,14 @@
+{
+  "units": {
+    "label": {
+      "language": "c",
+      "compiler": "/usr/bin/gcc",
+      "environment": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+      "args": ["-Iinclude", "-DLABEL_CAPACITY=32"],
+      "sources": {
+        "label_fit.c": {},
+        "label_copy.c": {}
+      }
+    }
+  }
+}

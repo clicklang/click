@@ -109,6 +109,7 @@ const QUALIFIED_MODULES: &[&str] = &[
     "library/list.click",
     "library/bytes.click",
     "library/cstr.click",
+    "library/permutation.click",
 ];
 
 /// The qualified identity a bare theorem citation names: a library theorem

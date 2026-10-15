@@ -43,6 +43,11 @@ A value is printed in its own type: `-56` for an `int32`, `4294967240u32` for a
 `(int32)(uint32)size`, and an overflow condition reads as `defined(a + b)` or
 its negation.
 
+Float prerequisites retain source names and print numeric bounds rather than
+IEEE bit patterns. Integral bounds use integer literals whose numeric conversion
+preserves the float value, such as `d >= -2147483648` and
+`d < 2147483648i64`. These cast bounds can be reused as contract prerequisites.
+
 A read names the memory it reads. A read of the state being reported is the
 bare place (`a[m]`), a read of the function's entry memory is `old(a[m])`, and
 a read at a recorded mark or program point is `at(point, a[m])`. A read of any

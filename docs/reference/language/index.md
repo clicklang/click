@@ -2907,7 +2907,7 @@ around the complete cast or field expression to select a snapshot.
 
 When `old(p)` is passed as an array argument to a pure Click function or
 predicate, it becomes an entry-state Click array ref. For example,
-`permutation(p, old(p), 0, 2)` compares post-state `p` to entry-state `p`.
+`permutation::permutation(p, old(p), 0, 2)` compares post-state `p` to entry-state `p`.
 See [Surface Click and Kernel Click](../../concepts/surface-and-kernel.md).
 
 ## `c(...)`

@@ -222,9 +222,11 @@ Each step is a separate PR that leaves every example verifying:
      `cstr_readable` is `cstr::readable`, and so on. The predicate that
      was `cstr` keeps its name as `cstr::cstr`, beside `cstr::len` and
      `cstr::readable`.
-   - Next: the `permutation` rename, joining `QUALIFIED_MODULES` in
-     `src/surface/parser/library_paths.rs`; `machine_integer` and
-     `integer` wait on the Integer-default arithmetic decision.
+   - Done: the `permutation` rename: `count` and `permutation` are
+     `permutation::count` and `permutation::permutation`, so a file may
+     declare its own `count` or `permutation` beside a module import.
+   - Next: `machine_integer` and `integer`, which wait on the
+     Integer-default arithmetic decision.
 6. Document the primitives in the language reference, and describe the
    library per module in the reference.
 7. Apply the consistency rules below: generic `count` and `permutation`,

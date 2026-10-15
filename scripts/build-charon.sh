@@ -32,7 +32,7 @@ if [[ -n "$install_toolchain" ]]; then
         --target x86_64-unknown-linux-gnu
 fi
 if [[ "$(rustc +"$toolchain" -vV 2>/dev/null | sed -n 's/^commit-hash: //p')" != "$compiler" ]]; then
-    echo "error: install $toolchain with rustc-dev and rust-src for the Charon trial" >&2
+    echo "error: the Rust frontend requires $toolchain ($compiler) with rustc-dev and rust-src; run scripts/build-charon.sh --install-toolchain" >&2
     exit 1
 fi
 source_dir="$PWD/target/charon-source"

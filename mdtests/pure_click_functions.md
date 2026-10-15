@@ -111,7 +111,7 @@ int32 branch_indicator(int32 x, int32 y) {
 int32 count_three_matches(int32 p[3], int32 x) {
     views p[0..3];
     ensures result_value: result == count3(p, x) by auto;
-    ensures stdlib_count_value: result == count(p, 0, 3, x) by auto;
+    ensures stdlib_count_value: result == permutation::count(p, 0, 3, x) by auto;
 }
 
 int32 range_helpers() {
@@ -128,9 +128,9 @@ int32 range_helpers() {
 
 int32 identity_permutation(int32 p[3]) {
     requires viewable(p[0..3]);
-    ensures same_multiset: permutation(p, p, 0, 3) by {
+    ensures same_multiset: permutation::permutation(p, p, 0, 3) by {
         execute();
-        unfold(permutation);
+        unfold(permutation::permutation);
         simp();
     }
 }

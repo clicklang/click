@@ -71,7 +71,7 @@ fn charon_slice_into_iter_preserves_actual_typed_state_and_checked_reads() {
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn charon_slice_into_iter_rejects_forged_identity_mutability_and_instantiation() {
     for mutation in 0..12 {
-        let mut artifact: TrialArtifact = serde_json::from_slice(ARTIFACT).unwrap();
+        let mut artifact: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
         let different_element = artifact
             .data
             .translated
@@ -202,7 +202,7 @@ fn charon_slice_into_iter_rejects_forged_identity_mutability_and_instantiation()
 
 #[test]
 fn charon_slice_into_iter_reborrow_requires_matching_pointer_and_metadata() {
-    let mut artifact: TrialArtifact = serde_json::from_slice(ARTIFACT).unwrap();
+    let mut artifact: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
     let function = artifact.data.translated.fun_decls.iter_mut()
         .find(|f| f.item_meta.is_local && matches!(f.item_meta.name.name.last(), Some(a::PathElem::Ident(name, _)) if name == "forward_signed"))
         .unwrap();

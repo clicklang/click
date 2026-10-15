@@ -390,7 +390,7 @@ charged to visible semantic output rather than hidden ambient state:
   `prepared_path_extensions_with_new_facts_and_obligations_build_only_the_delta`
   checks a new fact and obligation at every step against a fresh context.
 
-  Three builds remain charged nothing (`assume_proposition_uncharged`,
+  Two builds remain charged nothing (`assume_proposition_uncharged`,
   counted by `count_uncharged_context_entries`), each a known violation. A
   step's direct-transport context covers its statement-local facts, and a
   simple step's statement-local facts hold every observable resource fact
@@ -401,11 +401,12 @@ charged to visible semantic output rather than hidden ambient state:
   path's memory-effect facts and every available fact afresh, so each transport is
   linear in the path: charging it pushes
   `expanded_roundtrip_work_per_source_byte_is_logarithmic` past its bound.
-  The set of a path's retained facts that evidence checking reads once per
-  checked step (`proof_evidence_unretained_premise`) is not a context, but
-  it is the same kind of rebuild: charging it grows the expanded extra copy
-  a unit per unrelated allocation. Removing them needs the resource facts'
-  and the path's memory-effect facts' contexts carried with the proof state.
+  Removing them needs the resource facts' and the path's memory-effect
+  facts' contexts carried with the proof state. A third, the set of a
+  path's retained facts that evidence checking built to look up a
+  statement theorem's premises, is gone with that lookup: a statement
+  theorem lists only its own path facts and obligations, and recording it
+  does not walk them (construction, not re-validation, above).
 
   Completed early-return paths retain shared fact prefixes and immutable
   candidate records. Terminal joins concatenate persistent candidate,

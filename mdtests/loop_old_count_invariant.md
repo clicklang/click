@@ -1,7 +1,7 @@
 # loop invariant lowers old-state stdlib count
 
 This checks that `old(...)` in a loop invariant re-elaborates its body in the
-entry-state spec context. In particular, `old(count(...))` reaches the stdlib
+entry-state spec context. In particular, `old(permutation::count(...))` reaches the stdlib
 `count` function and keeps its `.fold` as pure spec/core over entry memory.
 
 ```c filename=loop_old_count_invariant.c
@@ -30,7 +30,7 @@ int32 loop_old_count_invariant(int32 p[3]) {
     loop {
         decreases (3 - i);
         invariant i >= 0 and i <= 3;
-        invariant old(count(p, 0, 3, p[0])) == old(count(p, 0, 3, p[0]));
+        invariant old(permutation::count(p, 0, 3, p[0])) == old(permutation::count(p, 0, 3, p[0]));
         initialize by {
             have i >= 0 and i <= 3 by {
                 both {
@@ -39,7 +39,7 @@ int32 loop_old_count_invariant(int32 p[3]) {
                     normalize();
                 }
             }
-            have old(count(p, 0, 3, p[0])) == old(count(p, 0, 3, p[0])) by {
+            have old(permutation::count(p, 0, 3, p[0])) == old(permutation::count(p, 0, 3, p[0])) by {
                 normalize();
             }
         }

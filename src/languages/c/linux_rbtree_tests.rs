@@ -15,8 +15,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use sha2::{Digest, Sha256};
 
-use super::compiler_import::{create_lock, load_imports};
+use super::compiler_import::PreparedCImport;
 use super::{provenance::CSourceMap, syntax};
+use crate::project::{self, Project};
 use crate::source::SourcePosition;
 
 /// The first rejection of the complete pinned translation unit: the
@@ -67,8 +68,34 @@ const REQUIRE_TOOLCHAIN: &str = "CLICK_LINUX_RBTREE_REQUIRE_TOOLCHAIN";
 /// Set to an output path to write the per-declaration rejection inventory.
 const INVENTORY: &str = "CLICK_LINUX_RBTREE_INVENTORY";
 
+/// The unit's prepared artifact and the sidecar, relative to the project.
+const ARTIFACT: &str = ".click/linux/lib/rbtree.c.i";
+const SIDECAR: &str = "rbtree.click";
+
 fn fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("integrations/linux-rbtree")
+}
+
+/// The committed project file's `linux` unit.
+fn unit(root: &Path) -> serde_json::Value {
+    let project: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join(project::FILE_NAME)).unwrap()).unwrap();
+    project["units"]["linux"].clone()
+}
+
+/// The `linux` unit's entry in a project lock.
+fn unit_lock(root: &Path) -> serde_json::Value {
+    read_lock(&root.join(project::LOCK_NAME))["units"]["linux"]["lock"].clone()
+}
+
+/// The prepared `lib/rbtree.c` the sidecar selects from the project's lock.
+fn load(root: &Path) -> Result<Vec<PreparedCImport>, String> {
+    let sidecar = root.join(SIDECAR);
+    let source = fs::read_to_string(&sidecar).unwrap();
+    match crate::cli::read_c_inputs(&sidecar, &source)? {
+        crate::cli::CInput::Prepared(imports) => Ok(imports),
+        _ => Err("expected the project's prepared C unit".into()),
+    }
 }
 
 fn sha256(bytes: &[u8]) -> String {
@@ -202,7 +229,9 @@ fn import_layout(provenance: &serde_json::Value, files: &[&str]) -> Closure {
     let layout = Closure(root);
     fs::rename(&extracted.0, layout.0.join("inputs")).expect("move the closure into inputs/");
     for name in files {
-        fs::copy(fixture().join(name), layout.0.join(name)).unwrap();
+        let destination = layout.0.join(name);
+        fs::create_dir_all(destination.parent().unwrap()).unwrap();
+        fs::copy(fixture().join(name), destination).unwrap();
     }
     layout
 }
@@ -371,12 +400,15 @@ fn linux_rbtree_closure_matches_its_provenance() {
     );
     assert!(closure.0.join("lib/rbtree.c").is_file());
 
-    // The import configuration names the recorded invocation: every recorded
+    // The project's unit names the recorded invocation: every recorded
     // argument, in order, except `-E` and the source operand, which the
     // importer supplies itself.
-    let config: serde_json::Value =
-        serde_json::from_slice(&fs::read(fixture().join("rbtree.click.import.json")).unwrap())
-            .unwrap();
+    let config = unit(&fixture());
+    assert_eq!(config["root"], "inputs");
+    assert_eq!(
+        config["sources"]["lib/rbtree.c"],
+        serde_json::json!({"projection": "dependency-closure"})
+    );
     let mut recorded = provenance["preprocess"]["argv"]
         .as_array()
         .unwrap()
@@ -385,7 +417,7 @@ fn linux_rbtree_closure_matches_its_provenance() {
         .filter(|argument| *argument != "-E")
         .collect::<Vec<_>>();
     assert_eq!(recorded.pop(), Some("lib/rbtree.c"));
-    let configured = config["sources"][0]["args"]
+    let configured = config["args"]
         .as_array()
         .unwrap()
         .iter()
@@ -402,7 +434,7 @@ fn linux_rbtree_closure_matches_its_provenance() {
 #[ignore = "nightly: 4s in the parallel gate"]
 fn linux_rbtree_pinned_translation_unit_locks_and_reproduces_its_frontier() {
     let provenance = provenance();
-    let closure = import_layout(&provenance, &["rbtree.click", "rbtree.click.import.json"]);
+    let closure = import_layout(&provenance, &[SIDECAR, project::FILE_NAME]);
     let required = std::env::var_os(REQUIRE_TOOLCHAIN).is_some_and(|value| !value.is_empty());
     if let Some(notice) =
         toolchain_gate(&provenance, required).unwrap_or_else(|error| panic!("{error}"))
@@ -411,18 +443,19 @@ fn linux_rbtree_pinned_translation_unit_locks_and_reproduces_its_frontier() {
         return;
     }
 
-    // The import route: `click import lock` runs the configured vector
-    // under the option profile and reproduces the committed lock.
-    let config_path = closure.0.join("rbtree.click.import.json");
-    create_lock(&config_path).expect("lock the recorded configuration");
-    let artifact = fs::read(closure.0.join("rbtree.i")).unwrap();
+    // The import route: `click import lock` runs the unit's vector under
+    // the option profile and reproduces the committed lock.
+    Project::load(&closure.0.join(project::FILE_NAME))
+        .and_then(|project| project.lock())
+        .expect("lock the recorded unit");
+    let artifact = fs::read(closure.0.join(ARTIFACT)).unwrap();
     assert_eq!(
         sha256(&artifact),
         text(&provenance, &["preprocess", "output", "sha256"]),
         "the importer's artifact differs from the recorded preprocessed output"
     );
-    let produced = read_lock(&closure.0.join("rbtree.click.import.lock.json"));
-    let committed = read_lock(&fixture().join("rbtree.click.import.lock.json"));
+    let produced = unit_lock(&closure.0);
+    let committed = unit_lock(&fixture());
     for field in [
         "schema",
         "config_sha256",
@@ -448,7 +481,7 @@ fn linux_rbtree_pinned_translation_unit_locks_and_reproduces_its_frontier() {
             "locked source field `{field}` differs"
         );
     }
-    let imports = load_imports(&config_path).expect("load the fresh lock");
+    let imports = load(&closure.0).expect("load the fresh lock");
     assert_eq!(
         imports[0].promise_attributes(),
         syntax::PromiseAttributes::Refuse
@@ -494,18 +527,12 @@ fn linux_rbtree_locked_import_loads_offline() {
     let provenance = provenance();
     let layout = import_layout(
         &provenance,
-        &[
-            "rbtree.click",
-            "rbtree.click.import.json",
-            "rbtree.click.import.lock.json",
-            "rbtree.i",
-        ],
+        &[SIDECAR, project::FILE_NAME, project::LOCK_NAME, ARTIFACT],
     );
-    let config_path = layout.0.join("rbtree.click.import.json");
-    let imports = load_imports(&config_path).expect("load the committed lock offline");
+    let imports = load(&layout.0).expect("load the committed lock offline");
     assert_eq!(imports.len(), 1);
     let import = imports[0].clone();
-    assert_eq!(import.logical_source(), "lib/rbtree.c");
+    assert_eq!(import.logical_source(), "inputs/lib/rbtree.c");
     assert_eq!(
         import.promise_attributes(),
         syntax::PromiseAttributes::Refuse
@@ -531,11 +558,13 @@ fn linux_rbtree_locked_import_loads_offline() {
         .join()
         .expect("the locked parse finishes")
         .unwrap_or_else(|error| panic!("the locked projected unit no longer parses: {error}"));
+    // A static inline's identity names its translation unit as the sidecar
+    // spells it.
     assert_eq!(
         functions,
         PROJECTED_FUNCTIONS
             .iter()
-            .map(|name| name.to_string())
+            .map(|name| name.replace("#inline:lib/", "#inline:inputs/lib/"))
             .collect::<BTreeSet<_>>()
     );
 
@@ -545,10 +574,10 @@ fn linux_rbtree_locked_import_loads_offline() {
     let mut changed = original.clone();
     changed[0] ^= 1;
     fs::write(&header, changed).unwrap();
-    let error = load_imports(&config_path).expect_err("a changed header must be refused");
+    let error = load(&layout.0).expect_err("a changed header must be refused");
     assert!(error.contains("differs from its import lock"), "{error}");
     fs::write(&header, original).unwrap();
-    load_imports(&config_path).unwrap();
+    load(&layout.0).unwrap();
 }
 
 /// The locked artifact's frontier: the whole unit stops at its first
@@ -557,11 +586,11 @@ fn linux_rbtree_locked_import_loads_offline() {
 #[test]
 fn linux_rbtree_locked_artifact_frontier() {
     assert_eq!(
-        sha256(&fs::read(fixture().join("rbtree.i")).unwrap()),
+        sha256(&fs::read(fixture().join(ARTIFACT)).unwrap()),
         text(&provenance(), &["preprocess", "output", "sha256"]),
         "the committed artifact is the recorded preprocessed output"
     );
-    let artifact = fs::read_to_string(fixture().join("rbtree.i")).expect("the locked artifact");
+    let artifact = fs::read_to_string(fixture().join(ARTIFACT)).expect("the locked artifact");
     let (source, map) = CSourceMap::decode(&artifact).expect("decode line markers");
     let error = match syntax::parse_translation_unit_for_import(
         &source,
