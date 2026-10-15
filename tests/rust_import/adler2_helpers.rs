@@ -1374,6 +1374,18 @@ fn charon_adler2_four_byte_compute_proves_original_body_and_rejects_false_output
 }
 
 #[test]
+#[ignore = "nightly: wrong modulus and false remainder in the original four-byte computation"]
+fn charon_adler2_four_byte_compute_rejects_false_remainder_normalization() {
+    let goal = "have b_vec.0[0] == at(reduction_b, b_vec.0[0]) % 65521u32 by";
+    for false_goal in [
+        "have b_vec.0[0] == at(reduction_b, b_vec.0[0]) % 251u32 by",
+        "have b_vec.0[0] == at(reduction_b, b_vec.0[0]) % 65521u32 + 1u32 by",
+    ] {
+        reject_compute(FOUR_BYTE_COMPUTE, goal, false_goal);
+    }
+}
+
+#[test]
 #[ignore = "nightly: checks the original Adler cursor have and its deterministic work"]
 fn charon_adler2_four_byte_cursor_have_keeps_its_pre_regression_work_bound() {
     let p = compute_project(FOUR_BYTE_COMPUTE);
