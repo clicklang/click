@@ -2567,6 +2567,8 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
 
     fn condition_contains(condition: &ConditionTerm, variable: Variable) -> bool {
         match condition {
+            ConditionTerm::PointerValueEqual(left, right) => left.pointers().chain(right.pointers()).any(|p| integer_carrier_in_pointer(p, variable)),
+
             crate::kernel::integer_comparison_condition!(left, right) => {
                 integer_carrier_in_integer(left.as_ref(), variable)
                     || integer_carrier_in_integer(right.as_ref(), variable)
@@ -6247,6 +6249,9 @@ fn aggregate_projection_pointer(
         SpecExpression::CExpression(CExpression::Variable(name)) if name == parameter => {
             Some(SpecExpression::Value(CValue::pointer(slot.clone())))
         }
+        SpecExpression::Subobject { pointer, width } => Some(SpecExpression::Subobject {
+            pointer: Box::new(aggregate_projection_pointer(pointer, parameter, slot)?), width: *width,
+        }),
         SpecExpression::PointerOffset {
             pointer,
             elements,
@@ -7267,6 +7272,17 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 Vec::new()
             }
         }
+        SpecExpression::Subobject { pointer, width } => {
+            evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                SpecScope::new(state, loop_entry_state, algebraic_bindings), pointer, assumptions, budget,
+            )?.into_iter().filter_map(|mut path| {
+                let CValue::Pointer(value) = path.value else { return None; };
+                path.value = CValue::Pointer(value.clone().with_extent(Some(SubobjectExtent {
+                    start: value.pointer().clone(), width: u64::from(*width),
+                })));
+                Some(path)
+            }).collect()
+        }
         SpecExpression::PointerOffset {
             pointer,
             elements,
@@ -7625,8 +7641,6 @@ fn evaluate_spec_pointer_offset_paths_in(
         let CValue::Pointer(pointer) = pointer_path.value else {
             continue;
         };
-        let pointer_type = pointer.c_type();
-        let pointer = pointer.into_pointer();
         let element_assumptions = assumptions_with_path_context(
             assumptions,
             &pointer_path.facts,
@@ -7660,10 +7674,9 @@ fn evaluate_spec_pointer_offset_paths_in(
                 canonicalized_offset_index_term(elements, &mut facts)
             };
             paths.push(SpecExpressionPath {
-                value: CValue::typed_pointer(
-                    pointer.offset_by_typed_elements(elements, byte_width, unsigned, wide),
-                    pointer_type,
-                ),
+                value: CValue::Pointer(pointer.clone().with_address(
+                    pointer.pointer().offset_by_typed_elements(elements, byte_width, unsigned, wide),
+                )),
                 facts,
                 obligations,
             });
@@ -8413,6 +8426,13 @@ pub(super) fn c_value_comparison_proposition(
     operator: CComparisonOperator,
     right: &CValue,
 ) -> Option<Proposition> {
+    if let (CValue::Pointer(a), CValue::Pointer(b)) = (left, right)
+        && !a.is_null() && !b.is_null()
+        && a.c_type().pointer_types_compatible(b.c_type())
+        && matches!(operator, CComparisonOperator::Equal | CComparisonOperator::NotEqual)
+    {
+        return Some(Proposition::ConditionIs(ConditionTerm::pointer_value_equal(a.clone(), b.clone()), operator == CComparisonOperator::Equal));
+    }
     if matches!(left, CValue::Int128(_) | CValue::UInt128(_))
         || matches!(right, CValue::Int128(_) | CValue::UInt128(_))
     {

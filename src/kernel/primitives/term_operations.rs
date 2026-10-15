@@ -2021,6 +2021,8 @@ impl ConditionTerm {
     /// be a malformed application the kernel deliberately leaves undecided.
     pub(crate) fn reflexive_value(&self) -> Option<bool> {
         match self {
+            Self::PointerValueEqual(left, right) => (left == right).then_some(true),
+
             Self::Bitvector32SignedLessEqual(left, right)
             | Self::Bitvector32SignedGreaterEqual(left, right)
             | Self::Bitvector32Equal(left, right)
@@ -2435,6 +2437,7 @@ impl ConditionTerm {
                 Self::Bitvector64Equal(right.clone(), left.clone())
             }
             Self::PointerEqual(left, right) => Self::PointerEqual(right.clone(), left.clone()),
+            Self::PointerValueEqual(left, right) => Self::PointerValueEqual(right.clone(), left.clone()),
             Self::PointerOffsetEqual(left, right) => {
                 Self::PointerOffsetEqual(right.clone(), left.clone())
             }
@@ -2751,7 +2754,18 @@ impl ConditionTerm {
         match self {
             Self::PointerOffsetEqual(a, b) => Some((a, b)),
             Self::PointerEqual(a, b) if a.block == b.block => Some((&a.offset, &b.offset)),
+            Self::PointerValueEqual(a,b) if a.block == b.block && a.designation() == b.designation() && a.extent() == b.extent() => Some((&a.offset, &b.offset)),
             _ => None,
+        }
+    }
+
+    pub(crate) fn pointer_value_equal(left: CPointerValue, right: CPointerValue) -> Self {
+        if (left.designation() == right.designation() && left.extent() == right.extent() && left.extent_is_known() == right.extent_is_known())
+            || (matches!(left.c_type(), CType::FunctionPointer(_)) && matches!(right.c_type(), CType::FunctionPointer(_)))
+        {
+            Self::pointer_equal(left.pointer().clone(), right.pointer().clone())
+        } else {
+            Self::PointerValueEqual(Box::new(left), Box::new(right))
         }
     }
 
@@ -3422,6 +3436,8 @@ impl CLValue {
             constant: false,
             pointee_constant: false,
             extent: None,
+            designation: None,
+            extent_known: false,
         }
     }
 
@@ -3448,6 +3464,8 @@ impl CLValue {
             constant: false,
             pointee_constant: false,
             extent: None,
+            designation: None,
+            extent_known: false,
         }
     }
 
@@ -3472,6 +3490,8 @@ impl CLValue {
     /// The lvalue reached through `pointer`, which keeps its extent.
     pub(in crate::kernel) fn with_extent_of(mut self, pointer: &CPointerValue) -> Self {
         self.extent = pointer.extent().cloned().map(std::sync::Arc::new);
+        self.designation = Some(std::sync::Arc::new(pointer.designation().clone()));
+        self.extent_known = pointer.extent_is_known();
         self
     }
 
@@ -4415,6 +4435,9 @@ pub(crate) fn mirrored_equality(proposition: &Proposition) -> Option<Proposition
         }
         ConditionTerm::PointerEqual(left, right) => {
             ConditionTerm::PointerEqual(right.clone(), left.clone())
+        }
+        ConditionTerm::PointerValueEqual(left, right) => {
+            ConditionTerm::PointerValueEqual(right.clone(), left.clone())
         }
         _ => return None,
     };

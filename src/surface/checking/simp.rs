@@ -441,6 +441,8 @@ pub(in crate::surface) fn simp_condition_without_assumptions(
     condition: &ConditionTerm,
 ) -> Option<bool> {
     match condition {
+        ConditionTerm::PointerValueEqual(_, _) => PureFactContext::new().decide_condition_for_simp(condition),
+
         ConditionTerm::AlgebraicEqual(_, _) => {
             PureFactContext::new().decide_condition_for_simp(condition)
         }

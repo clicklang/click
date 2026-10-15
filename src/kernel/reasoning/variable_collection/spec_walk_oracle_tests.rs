@@ -90,7 +90,7 @@ fn old_collect_spec_expression_bitvector_variables(
             old_collect_spec_expression_bitvector_variables(pointer, variables);
             old_collect_spec_expression_bitvector_variables(elements, variables);
         }
-        SpecExpression::AggregateFieldValue { pointer, .. } => {
+        SpecExpression::Subobject { pointer, .. } | SpecExpression::AggregateFieldValue { pointer, .. } => {
             old_collect_spec_expression_bitvector_variables(pointer, variables);
         }
         SpecExpression::MemoryLoad {
@@ -426,7 +426,7 @@ fn old_collect_spec_integer_bound_expression(
             old_collect_spec_integer_bound_expression(pointer, variables, integer_seen);
             old_collect_spec_integer_bound_expression(elements, variables, integer_seen);
         }
-        SpecExpression::AggregateFieldValue { pointer, .. } => {
+        SpecExpression::Subobject { pointer, .. } | SpecExpression::AggregateFieldValue { pointer, .. } => {
             old_collect_spec_integer_bound_expression(pointer, variables, integer_seen);
         }
         SpecExpression::MemoryLoad {

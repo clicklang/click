@@ -52,7 +52,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
         let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
             pointer_value_at_stopping_store(&cell, &address, LoadKind::Bits32, 8, &context)
         });
-        assert_eq!(value, Some(stored.clone()));
+        assert_eq!(value, Some(CPointerValue::new(stored.clone(), CType::Int32Pointer)));
         samples.push(work);
         for (kind, bytes) in [
             (LoadKind::Bits32, 4),
@@ -100,11 +100,11 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
         ));
         assert_eq!(
             pointer_value_at_stopping_store(&overwritten, &address, LoadKind::Bits32, 8, &context),
-            Some(Pointer::null())
+            Some(CPointerValue::new(Pointer::null(), CType::Int32Pointer))
         );
         assert_ne!(
             pointer_value_at_stopping_store(&overwritten, &address, LoadKind::Bits32, 8, &context),
-            Some(stored)
+            Some(CPointerValue::new(stored, CType::Int32Pointer))
         );
         for offset in [0, 4, 32] {
             let changed = endpoint(memory.clone().store(

@@ -12,6 +12,8 @@ pub(super) enum ArgumentTag {
     Value(CType),
     Array((u32, u32), CType),
     Algebraic,
+    DesignationRead((u32, u32)),
+    PointerValueRead((u32, u32)),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -32,6 +34,7 @@ pub(in crate::kernel::equality_graph) enum ConditionKind {
     UInt64Gt,
     UInt64Ge,
     PointerEq,
+    PointerValueEq,
     OffsetEq,
     AlgebraicEq,
 }
@@ -40,17 +43,18 @@ impl TermClasses {
     /// Walk mixed-width machine applications once. In particular, a nested
     /// pure call does not recursively canonicalize every enclosing subtree.
     pub(super) fn intern_machine(&mut self, term: &T, wide: bool) -> u64 {
-        self.intern_expression(Some((term, wide)), None)
+        self.intern_expression(Some((term, wide)), None, None)
     }
 
     pub(super) fn intern_algebraic(&mut self, term: &crate::kernel::AlgebraicTerm) -> u64 {
-        self.intern_expression(None, Some(term))
+        self.intern_expression(None, Some(term), None)
     }
 
     fn intern_expression(
         &mut self,
         machine: Option<(&T, bool)>,
         algebraic: Option<&crate::kernel::AlgebraicTerm>,
+        value: Option<&CValue>,
     ) -> u64 {
         enum Binary {
             Int32Add,
@@ -67,7 +71,9 @@ impl TermClasses {
             Call(u64, usize),
             Binary(Binary),
         }
-        let mut pending = if let Some((term, wide)) = machine {
+        let mut pending = if let Some(value) = value {
+            vec![Work::Value(value)]
+        } else if let Some((term, wide)) = machine {
             vec![Work::Machine(term, wide)]
         } else {
             vec![Work::Algebraic(algebraic.expect("expression"))]
@@ -248,9 +254,27 @@ impl TermClasses {
                                 pointer.pointer().offset.clone(),
                             )
                             .0;
-                        let tag = self
-                            .intern_node(Node::ArgumentTag(ArgumentTag::Value(pointer.c_type())));
-                        Node::Apply(tag, address)
+                        // A complete unmodified read carries its whole value,
+                        // including an opaque extent, through cell congruence.
+                        // Its pointee address is never a value-identity key.
+                        let read = (!pointer.extent_is_known())
+                            .then(|| pointer.designation().as_loaded_value()).flatten()
+                            .filter(|_| crate::kernel::eval::typed_pointer_read_variable(pointer.pointer()).is_some_and(|v| crate::kernel::is_load_variable(&v)));
+                        let node = if let Some(read) = read {
+                            let cell = self.address(read.defining_address.block, read.defining_address.offset).0;
+                            let head = self.intern_node(Node::ArgumentTag(ArgumentTag::PointerValueRead(read.defining_memory.read_identity())));
+                            let read = self.intern_node(Node::Apply(head, cell));
+                            let ty = self.intern_node(Node::ArgumentTag(ArgumentTag::Value(pointer.c_type())));
+                            self.intern_node(Node::Apply(ty, read))
+                        } else {
+                            let mut designation = pointer.clone();
+                            designation.replace_pointer(crate::kernel::Pointer::null());
+                            let tag = self.opaque_argument(&A::Value(CValue::Pointer(designation)));
+                            self.intern_node(Node::Apply(tag, address))
+                        };
+                        self.retain_pointer_value(node, pointer.clone());
+                        values.push(node);
+                        continue;
                     } else {
                         values.push(self.opaque_argument(&A::Value(value.clone())));
                         continue;
@@ -374,6 +398,62 @@ impl TermClasses {
             .is_some_and(|(a, b)| self.close(vec![(a, b)]))
     }
 
+    pub(in crate::kernel::equality_graph) fn add_pointer_value_equality(
+        &mut self, a: &crate::kernel::CPointerValue, b: &crate::kernel::CPointerValue,
+    ) -> bool {
+        let a = self.intern_expression(None, None, Some(&CValue::Pointer(a.clone())));
+        let b = self.intern_expression(None, None, Some(&CValue::Pointer(b.clone())));
+        self.register_pending_loads();
+        self.close(vec![(a,b)])
+    }
+
+    pub(in crate::kernel::equality_graph) fn merge_designations(&mut self, a: &crate::kernel::Pointer, b: &crate::kernel::Pointer) -> bool {
+        let a = self.designation_node(a);
+        let b = self.designation_node(b);
+        self.close(vec![(a,b)])
+    }
+
+    pub(in crate::kernel::equality_graph) fn designations_equal(&mut self, a: &crate::kernel::Pointer, b: &crate::kernel::Pointer) -> bool {
+        let a = self.designation_node(a);
+        let b = self.designation_node(b);
+        self.register_pending_loads();
+        self.root(a) == self.root(b)
+    }
+
+    pub(in crate::kernel::equality_graph) fn pointer_values_equal(&mut self, a: &crate::kernel::CPointerValue, b: &crate::kernel::CPointerValue) -> bool {
+        let a = self.intern_expression(None, None, Some(&CValue::Pointer(a.clone())));
+        let b = self.intern_expression(None, None, Some(&CValue::Pointer(b.clone())));
+        self.register_pending_loads();
+        self.root(a) == self.root(b)
+    }
+
+    pub(super) fn retain_pointer_value(&mut self, node: u64, value: crate::kernel::CPointerValue) {
+        let root = self.root(node);
+        let value = self.pointer_values.get(&root).map_or(value.clone(), |previous| crate::kernel::pointer_designations::prefer_pointer(previous, &value));
+        self.pointer_values.insert(root, value);
+    }
+
+    pub(in crate::kernel::equality_graph) fn pointer_value_representative(&mut self, value: &crate::kernel::CPointerValue) -> crate::kernel::CPointerValue {
+        let node = self.intern_expression(None, None, Some(&CValue::Pointer(value.clone())));
+        self.register_pending_loads();
+        self.pointer_values.get(&self.root(node)).unwrap_or(value).clone()
+    }
+
+    fn designation_node(&mut self, origin: &crate::kernel::Pointer) -> u64 {
+        // Congruence here uses the cell a complete pointer was read from.
+        // Equality of the loaded pointer's numeric address never merges this
+        // node with a different value origin.
+        if let crate::kernel::PointerBlock::LoadedPointer(identity) = &origin.block
+            && let Some((memory, cell)) = crate::kernel::eval::registered_pointer_load(*identity)
+        {
+            let source = crate::kernel::prelude::canonical_load_projection_source(&memory, &cell).unwrap_or(memory);
+            let cell = self.address(cell.block, cell.offset).0;
+            let head = self.intern_node(Node::ArgumentTag(ArgumentTag::DesignationRead(source.read_identity())));
+            return self.intern_node(Node::Apply(head, cell));
+        }
+        self.opaque_argument(&A::Value(CValue::Pointer(crate::kernel::CPointerValue::new(origin.clone(), CType::VoidPointer))))
+    }
+
     fn opaque_argument(&mut self, argument: &A) -> u64 {
         // Map comparisons use stable IDs, not full algebraic values/snapshots.
         self.intern_node(Node::OpaqueArgument(SharedPureApplication::intern(
@@ -433,6 +513,11 @@ impl TermClasses {
             C::Bitvector64UnsignedGreaterEqual(a, b) => {
                 (UInt64Ge, self.intern_uint64(a), self.intern_uint64(b))
             }
+            C::PointerValueEqual(a, b) => (
+                PointerValueEq,
+                self.intern_expression(None, None, Some(&CValue::Pointer((**a).clone()))),
+                self.intern_expression(None, None, Some(&CValue::Pointer((**b).clone()))),
+            ),
             C::PointerEqual(a, b) => (
                 PointerEq,
                 self.address(a.block.clone(), a.offset.clone()).0,
@@ -463,6 +548,7 @@ impl TermClasses {
             C::Bitvector32SignedAddOverflows(..) => ConditionKind::Int32AddOverflow,
             C::Bitvector64Equal(..) => ConditionKind::UInt64Eq,
             C::PointerEqual(..) => ConditionKind::PointerEq,
+            C::PointerValueEqual(..) => ConditionKind::PointerValueEq,
             C::PointerOffsetEqual(..) => ConditionKind::OffsetEq,
             C::Bitvector32SignedLessThan(..) => ConditionKind::Int32Lt,
             C::Bitvector32SignedLessEqual(..) => ConditionKind::Int32Le,

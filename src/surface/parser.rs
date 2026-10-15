@@ -10970,6 +10970,12 @@ impl Parser {
         Ok(())
     }
 
+    fn member_field_pointer(&self, base: CExpression, field: &ResolvedField) -> CExpression {
+        let pointer = self.offset_field_pointer(base, field.offset_bytes);
+        if field.byte_width == 0 { return pointer; }
+        CExpression::Subobject { pointer: Box::new(pointer), width: field.byte_width }
+    }
+
     fn offset_field_pointer(&self, base: CExpression, offset_bytes: u32) -> CExpression {
         crate::kernel::c_pointer_offset_bytes(base, offset_bytes)
     }
@@ -11713,7 +11719,7 @@ impl Parser {
                     {
                         let field =
                             self.resolve_struct_field_metadata(base_struct_name, &field_name)?;
-                        let pointer = self.offset_field_pointer(base, field.offset_bytes);
+                        let pointer = self.member_field_pointer(base, &field);
                         struct_name = field.struct_name.clone();
                         union_name = field.union_name.clone();
                         struct_array_element_width = field.array_element_width;

@@ -310,9 +310,9 @@ pub(crate) fn normalize_using_conditions(
             return Ok(());
         }
     }
-    let reduced = super::term_rewrite::TermRewrite::for_conditions_with_graph(
+    let reduced = super::term_rewrite::TermRewrite::for_conditions_with_context(
         &conditions,
-        &facts.assumptions().equality_graph,
+        facts.assumptions(),
     )
     .proposition(goal);
     // Check constant uint64 upper bounds from the cited order edges only.

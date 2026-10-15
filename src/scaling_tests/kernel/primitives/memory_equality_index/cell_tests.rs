@@ -1653,3 +1653,27 @@ fn framed_pointer_read_selects_interior_writes_under_live_authority() {
         "unrelated owners changed selected interior-write work: {work_samples:?}"
     );
 }
+
+#[test]
+fn cold_read_queries_ignore_unrelated_classes_and_resource_ranges() {
+    let pointer = |id| Pointer::symbolic(Variable(id));
+    let mut samples = Vec::new();
+    for size in [16u64, 64, 256, 1024] {
+        let mut context = PureFactContext::new();
+        let mut resources = ResourceContext::new();
+        for index in 0..size {
+            let a = pointer(990_000 + index * 2);
+            let b = pointer(990_001 + index * 2);
+            context = context.assume_condition(ConditionTerm::pointer_equal(a, b.clone()), true);
+            resources = resources.unchecked_with_fact(CResourceFact::view_memory(CMemoryRange::new(b, 0u32.into(), 1u32.into())));
+        }
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert!(resources.permits_memory_read(&pointer(990_000), 4, &context));
+            // The first query's disposable class view cannot hide another
+            // class's alias when the next query shares its graph input key.
+            assert!(resources.permits_memory_read(&pointer(990_002), 4, &context));
+        });
+        samples.push(work);
+    }
+    assert!(samples.iter().max().unwrap() - samples.iter().min().unwrap() < 64, "{samples:?}");
+}

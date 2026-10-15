@@ -6,7 +6,7 @@
 
 use crate::kernel::LoadKind;
 use crate::kernel::{
-    AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, CType, CValue, IntegerComparisonOperator,
+    AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, CPointerValue, CType, CValue, IntegerComparisonOperator,
     IntegerTerm, MachineIntegerType, PureFunctionArgument, SharedCMemory, SharedIntegerTerm, Sort,
     Term,
 };
@@ -65,6 +65,7 @@ pub(crate) struct SnapshotBlindMemoryRangeKey {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) enum SnapshotBlindConditionKey {
+    PointerValueEqual(Box<CPointerValue>, Box<CPointerValue>),
     AlgebraicEqual(Box<AlgebraicTerm>, Box<AlgebraicTerm>),
     Constant(bool),
     Variable(Variable),
@@ -152,7 +153,7 @@ impl SnapshotBlindPropositionKey {
 impl SnapshotBlindConditionKey {
     fn forgets_a_snapshot(&self) -> bool {
         match self {
-            Self::AlgebraicEqual(_, _) => false,
+            Self::AlgebraicEqual(_, _) | Self::PointerValueEqual(_, _) => false,
             Self::Comparison(_, left, right) => {
                 left.forgets_a_snapshot() || right.forgets_a_snapshot()
             }
@@ -351,6 +352,8 @@ fn snapshot_blind_condition_key(condition: &ConditionTerm) -> SnapshotBlindCondi
         );
     }
     match condition {
+        ConditionTerm::PointerValueEqual(left, right) => SnapshotBlindConditionKey::PointerValueEqual(left.clone(), right.clone()),
+
         ConditionTerm::Constant(value) => SnapshotBlindConditionKey::Constant(*value),
         ConditionTerm::AlgebraicEqual(left, right) => {
             SnapshotBlindConditionKey::AlgebraicEqual(left.clone(), right.clone())
@@ -785,6 +788,8 @@ enum AlphaCValueKey {
         pointee_volatile: bool,
         pointee_constant: bool,
         pointer: AlphaPointerKey,
+        designation: AlphaPointerKey,
+        extent_known: bool,
         /// The subobject extent's start key and byte width.
         extent: Option<(AlphaPointerKey, u64)>,
     },
@@ -1075,6 +1080,7 @@ fn intern_alpha_registered_load(
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaConditionKey {
+    PointerValueEqual(Box<AlphaCValueKey>, Box<AlphaCValueKey>),
     Constant(bool),
     Variable(AlphaVariableKey),
     Binary(BitvectorComparisonOp, AlphaBitvectorKey, AlphaBitvectorKey),
@@ -1760,6 +1766,8 @@ fn alpha_c_value_key_with_bindings<const ALLOW_LOADS: bool>(
                 bindings,
                 next_binder,
             )?,
+            designation: alpha_pointer_key_with_bindings::<ALLOW_LOADS>(pointer.designation(), bindings, next_binder)?,
+            extent_known: pointer.extent_is_known(),
             extent: match pointer.extent() {
                 Some(extent) => Some((
                     alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
@@ -2234,6 +2242,10 @@ fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
         ConditionTerm::PointerOffsetEqual(left, right) => AlphaConditionKey::PointerOffsetEqual(
             alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(left, bindings, next_binder)?,
             alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(right, bindings, next_binder)?,
+        ),
+        ConditionTerm::PointerValueEqual(left, right) => AlphaConditionKey::PointerValueEqual(
+            Box::new(alpha_c_value_key_with_bindings::<ALLOW_LOADS>(&CValue::Pointer((**left).clone()), bindings, next_binder)?),
+            Box::new(alpha_c_value_key_with_bindings::<ALLOW_LOADS>(&CValue::Pointer((**right).clone()), bindings, next_binder)?),
         ),
         ConditionTerm::PointerEqual(left, right) => AlphaConditionKey::PointerEqual(
             alpha_pointer_key_with_bindings::<ALLOW_LOADS>(left, bindings, next_binder)?,

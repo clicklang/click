@@ -27,6 +27,7 @@ pub const RESOURCE_SEMANTICS_VERSION: u32 = 69;
 
 pub(crate) mod assumptions;
 mod difference_graph;
+mod pointer_designations;
 mod equality_graph;
 mod eval;
 mod fold_read_summary;
@@ -204,7 +205,7 @@ pub(crate) use reasoning::memory_resolution::{
 pub(crate) use reasoning::resolve_load_variables_from_registry;
 pub(crate) use reasoning::resolve_minted_load_variables;
 pub(crate) use reasoning::substitute_integer_variable_in_pure_proposition;
-pub(crate) use reasoning::substitute_pointer_variable_in_proposition;
+pub(crate) use reasoning::{substitute_pointer_variable_in_proposition, substitute_pointer_value_in_proposition};
 pub(crate) use reasoning::try_resolve_load_variables_from_registry;
 pub use reasoning::{LoweringIntroduction, LoweringIntroductions};
 pub(crate) use reasoning::{

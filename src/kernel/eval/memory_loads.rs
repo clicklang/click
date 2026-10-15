@@ -96,6 +96,13 @@ pub(in crate::kernel) fn evaluate_c_memory_load_paths(
         source,
         byte_order,
     );
+    if !volatile {
+        for path in &mut paths {
+            if let CExpressionOutcome::Value(CValue::Pointer(value)) = &mut path.outcome {
+                *value = assumptions.pointer_value_at_entry(value);
+            }
+        }
+    }
     if let Some(observed) = observed {
         for path in &mut paths {
             let CExpressionOutcome::Value(CValue::Pointer(value)) = &path.outcome else {
@@ -250,15 +257,13 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
                             &crate::kernel::intern_c_memory_ref(memory),
                             &pointer,
                         );
-                        if complete_pointer
-                            && !assumptions.pointers_known_equal(value.pointer(), &current)
-                        {
+                        if complete_pointer {
                             // The cached value was selected under this path's
                             // premises. Carry its current-cell equation with
                             // the result, rather than treating a global read
                             // observation as evidence in another context.
                             facts.push(ExecutionPureFact::logical_read_equation(
-                                value.pointer().clone(),
+                                value.clone(),
                                 current,
                             ));
                         }
@@ -1421,6 +1426,10 @@ fn canonicalized_pointer_value_from_int_cell(
             i64::from(pointee_byte_width),
         )
     };
+    let result = match &defining_load {
+        Some(Bitvector32Term::MemoryLoad(snapshot, cell, _)) => CPointerValue::from_read(loaded.clone(), value_type, snapshot, cell),
+        _ => CPointerValue::new(loaded.clone(), value_type),
+    };
     if let Some(load) = defining_load {
         if matches!(purpose, LoadPurpose::Logical | LoadPurpose::Validity)
             && let Bitvector32Term::MemoryLoad(memory, address, _) = &load
@@ -1438,7 +1447,7 @@ fn canonicalized_pointer_value_from_int_cell(
             (purpose == LoadPurpose::Program).then_some(&loaded),
         );
     }
-    Some(CValue::typed_pointer(loaded, value_type))
+    Some(CValue::Pointer(result))
 }
 
 fn should_use_symbolic_pointer_identity(
@@ -1592,6 +1601,17 @@ fn canonicalized_symbolic_load_value_with_identity(
     // opaque address alias. Only the symbolic value's coordinates change:
     // C access validity still checks the original pointer and its provenance.
     let address = logical_memory_load_address(memory, pointer.clone(), value_type, assumptions);
+    // Canonical address selection can expose a materialized pointer cell that
+    // the original spelling did not name. Reuse its complete stored value;
+    // manufacturing another read here would discard the selected designation.
+    if let Some(value @ CValue::Pointer(_)) = memory.known_value(&address)
+        && value_type.accepts(&value)
+    {
+        let CValue::Pointer(stored) = &value else { unreachable!() };
+        facts.push(ExecutionPureFact::logical_read_equation(stored.clone(),
+            Pointer::loaded_value(&crate::kernel::intern_c_memory_ref(memory), &address)));
+        return Some(value);
+    }
     let value = symbolic_load_value(memory, &address, value_type)?;
     // Terms are canonical at creation: an int or byte load evaluates to its
     // load variable, with the defining fact beside it, so every fact,
@@ -1687,7 +1707,7 @@ fn canonicalized_symbolic_load_value_with_identity(
         source,
         (purpose == LoadPurpose::Program).then_some(&pointer),
     );
-    Some(CValue::typed_pointer(pointer, pointer_value.c_type()))
+    Some(CValue::Pointer(pointer_value.clone().with_address(pointer)))
 }
 
 const LOAD_VARIABLE_BASE: u64 = 1 << 40;
@@ -2756,7 +2776,7 @@ fn is_store_fact(condition: &ConditionTerm, value: bool) -> bool {
 pub(crate) fn canonical_condition(condition: &ConditionTerm) -> ConditionTerm {
     match condition {
         ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => condition.clone(),
-        ConditionTerm::AlgebraicEqual(_, _) => condition.clone(),
+        ConditionTerm::AlgebraicEqual(_, _) | ConditionTerm::PointerValueEqual(..) => condition.clone(),
         ConditionTerm::Float32(float_condition) => {
             ConditionTerm::Float32(float_condition.map_bitvector_terms(canonical_term))
         }
@@ -2902,7 +2922,7 @@ fn substitute_load_variables(
                 }
             }
             Task::VisitCondition(condition) => match condition {
-                ConditionTerm::AlgebraicEqual(_, _) => condition_results.push(condition.clone()),
+                ConditionTerm::AlgebraicEqual(_, _) | ConditionTerm::PointerValueEqual(..) => condition_results.push(condition.clone()),
                 crate::kernel::integer_comparison_condition!(_, _) => {
                     condition_results.push(condition.clone())
                 }
@@ -3192,6 +3212,8 @@ fn term_mentions_a_memory_load(term: &Bitvector32Term) -> bool {
 
 fn condition_mentions_a_memory_load(condition: &ConditionTerm) -> bool {
     match condition {
+        ConditionTerm::PointerValueEqual(left, right) => left.pointers().chain(right.pointers()).any(|p| p.offset.any_scaled_value(term_mentions_a_memory_load)),
+
         // Until memory canonicalization traverses ADTs, conservatively disable
         // the memory-free fast path for this logical condition.
         ConditionTerm::AlgebraicEqual(_, _) => true,
@@ -3846,7 +3868,7 @@ pub(in crate::kernel) fn cached_symbolic_storage_cell_value(
             );
             return LOAD_VARIABLE_CACHE.with(|cache| {
                 let variable = cache.borrow().get(&load)?.0;
-                Some(CValue::typed_pointer(Pointer::symbolic(variable), c_type))
+                Some(CValue::Pointer(CPointerValue::from_read(Pointer::symbolic(variable), c_type, &crate::kernel::intern_c_memory(memory.clone()), pointer)))
             });
         }
         _ => return None,
@@ -3892,7 +3914,7 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
             crate::kernel::equality_graph::EqualityGraph::default()
                 .register_pointer_read_definition(&value, &snapshot, &address);
         }
-        return Some(CValue::typed_pointer(value, c_type));
+        return Some(CValue::Pointer(CPointerValue::from_read(value, c_type, &crate::kernel::intern_c_memory(memory.clone()), pointer)));
     }
     // The cell holds the load of this storage at its symbolic base, and a
     // term is canonical at creation: name the load as its load variable,
@@ -4017,7 +4039,7 @@ mod tests {
     fn logical_read_equations_are_not_conditions_or_quantifier_guards() {
         let value = Pointer::symbolic(Variable(959_001));
         let read = Pointer::loaded_value(&intern_c_memory(CMemory::new()), &value);
-        let fact = ExecutionPureFact::logical_read_equation(value, read);
+        let fact = ExecutionPureFact::logical_read_equation(CPointerValue::new(value, CType::Int32Pointer), read);
         let facts: ExecutionFacts = vec![fact.clone()].into();
         assert!(!facts.has_path_conditions());
         let goal = Proposition::ConditionIs(ConditionTerm::Constant(true), true);

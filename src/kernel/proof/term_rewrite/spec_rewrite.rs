@@ -375,7 +375,8 @@ fn collect_spec_expression_carriers(
             }
             collect_spec_expression_carriers(elements, variables, integer_seen);
         }
-        SpecExpression::AggregateFieldValue { pointer, .. }
+        SpecExpression::Subobject { pointer, .. }
+        | SpecExpression::AggregateFieldValue { pointer, .. }
         | SpecExpression::MemoryLoad { pointer, .. } => {
             collect_spec_expression_carriers(pointer, variables, integer_seen)
         }
@@ -1157,6 +1158,9 @@ impl<'a> TermRewrite<'a> {
             SpecExpression::LoopEntrySnapshot(value) => {
                 SpecExpression::LoopEntrySnapshot(Box::new(self.rewrite_spec_expression(value)?))
             }
+            SpecExpression::Subobject { pointer, width } => SpecExpression::Subobject {
+                pointer: Box::new(self.rewrite_spec_expression(pointer)?), width: *width,
+            },
             SpecExpression::PointerOffset {
                 pointer,
                 elements,

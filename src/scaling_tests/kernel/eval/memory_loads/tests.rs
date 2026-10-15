@@ -27,7 +27,7 @@ fn logical_cached_pointer_read_carries_its_current_cell_equation() {
                 true,
             )
             .assume_condition(
-                ConditionTerm::pointer_equal(cached.clone(), model.clone()),
+                ConditionTerm::pointer_value_equal(CPointerValue::new(cached.clone(), CType::Int64Pointer), CPointerValue::new(model.clone(), CType::Int64Pointer)),
                 true,
             );
         for i in 0..size {
@@ -81,7 +81,7 @@ fn logical_cached_pointer_read_carries_its_current_cell_equation() {
         assert!(!equal(&retained.restricted_to_facts(&[], &[])));
         assert!(!ResourceContext::new().permits_memory_read(&alias, 8, &retained));
         let missing_alias = empty.clone().assume_condition(
-            ConditionTerm::pointer_equal(cached.clone(), model.clone()),
+            ConditionTerm::pointer_value_equal(CPointerValue::new(cached.clone(), CType::Int64Pointer), CPointerValue::new(model.clone(), CType::Int64Pointer)),
             true,
         );
         assert!(!equal(&assumptions_with_path_context(

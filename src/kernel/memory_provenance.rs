@@ -131,7 +131,8 @@ pub(crate) fn c_resources_directly_match(
                 "kernel",
                 "resource context equality",
                 "resource direct match: pointer value",
-                || pointers_match_for_resource_check(left, right, assumptions),
+                || assumptions.pointer_designations_match(left, right)
+                    && pointers_match_for_resource_check(left, right, assumptions),
             )
         }
         _ => false,
@@ -139,7 +140,8 @@ pub(crate) fn c_resources_directly_match(
     match (left, right) {
         (CResource::Memory(left), CResource::Memory(right)) => {
             left == right
-                || (left.int32_bounds().is_some()
+                || (assumptions.designations_equal(&left.designation, &right.designation)
+                    && left.int32_bounds().is_some()
                     && right.int32_bounds().is_some()
                     && crate::instrumentation::measure_operation(
                         "kernel",
@@ -398,7 +400,7 @@ fn canonical_c_memory_deep_uncached(memory: &CMemory) -> CMemory {
                 CValue::Float64(term) => CValue::Float64(canonicalize_atomic_loads(term)),
                 CValue::Pointer(pointer) => CValue::Pointer(
                     pointer
-                        .map_pointers(canonicalize_pointer_loads)
+                        .map_addresses(canonicalize_pointer_loads)
                         .with_pointee_volatile(false)
                         .with_pointee_constant(false),
                 ),
@@ -456,7 +458,7 @@ fn canonical_c_memory_deep_uncached(memory: &CMemory) -> CMemory {
             CValue::Float64(term) => CValue::Float64(canonicalize_atomic_loads(term)),
             CValue::Pointer(pointer) => CValue::Pointer(
                 pointer
-                    .map_pointers(canonicalize_pointer_loads)
+                    .map_addresses(canonicalize_pointer_loads)
                     .with_pointee_volatile(false)
                     .with_pointee_constant(false),
             ),
@@ -2476,7 +2478,34 @@ pub(crate) fn pointer_read_has_stored_value(
     assumptions: &PureFactContext,
 ) -> bool {
     pointer_read_stored_value(left, assumptions, None)
-        .is_some_and(|stored| stored == *right || assumptions.pointers_known_equal(&stored, right))
+        .is_some_and(|stored| stored.pointer() == right || assumptions.pointers_known_equal(stored.pointer(), right))
+}
+
+/// Complete pointer reads preserve their designation across frames that
+/// leave all eight representation bytes unchanged. This compares source
+/// cells and recorded memory edges, never the loaded numeric addresses.
+pub(in crate::kernel) fn pointer_read_designations_equal(
+    left: &Pointer, right: &Pointer, assumptions: &PureFactContext,
+) -> bool {
+    let left_origin = left;
+    let right_origin = right;
+    let (Some(left), Some(right)) = (left.as_loaded_value(), right.as_loaded_value()) else { return false; };
+    if !crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(&left.defining_address, &right.defining_address, assumptions) {
+        return false;
+    }
+    if left.defining_memory == right.defining_memory { return true; }
+    let Some((a, _)) = memory_dag_cell_source_with_stop(&left.defining_memory, &left.defining_address,
+        crate::kernel::C_POINTER_BYTE_WIDTH, assumptions, true) else { return false; };
+    let Some((b, _)) = memory_dag_cell_source_with_stop(&right.defining_memory, &left.defining_address,
+        crate::kernel::C_POINTER_BYTE_WIDTH, assumptions, true) else { return false; };
+    if a.node() == b.node() { return true; }
+    let a_value = a.resolved_value(&left.defining_address, LoadKind::Bits32);
+    let b_value = b.resolved_value(&left.defining_address, LoadKind::Bits32);
+    if matches!(&a_value, Some(CValue::Pointer(stored)) if stored.designation() == right_origin)
+        || matches!(&b_value, Some(CValue::Pointer(stored)) if stored.designation() == left_origin)
+    { return true; }
+    matches!((a_value, b_value),
+        (Some(CValue::Pointer(a)), Some(CValue::Pointer(b))) if a == b)
 }
 
 /// Explicit pointer read-value normalization follows at most 64 recorded
@@ -2494,7 +2523,7 @@ pub(crate) fn pointer_read_has_recorded_value(
         .into_iter()
         .any(|(read, value)| {
             pointer_read_stored_value(read, assumptions, Some(64)).is_some_and(|stored| {
-                stored == *value || assumptions.pointers_known_equal(&stored, value)
+                stored.pointer() == value || assumptions.pointers_known_equal(stored.pointer(), value)
             })
         })
 }
@@ -2653,11 +2682,11 @@ fn bounded_recorded_cell_resolution(
     (source, result)
 }
 
-fn pointer_read_stored_value(
+pub(in crate::kernel) fn pointer_read_stored_value(
     read: &Pointer,
     assumptions: &PureFactContext,
     max_hops: Option<usize>,
-) -> Option<Pointer> {
+) -> Option<CPointerValue> {
     let Bitvector32Term::MemoryLoad(memory, address, kind) =
         crate::kernel::equality_graph::logical_pointer_read_term(read)?
     else {
@@ -2673,7 +2702,7 @@ fn pointer_read_stored_value(
     }?;
     if let Some(value) = cell.resolved_value(&address, kind) {
         return match value {
-            CValue::Pointer(stored) => Some(stored.pointer().clone()),
+            CValue::Pointer(stored) => Some(stored),
             _ => None,
         };
     }
@@ -2693,7 +2722,7 @@ fn pointer_value_at_stopping_store(
     kind: LoadKind,
     bytes: u32,
     assumptions: &PureFactContext,
-) -> Option<Pointer> {
+) -> Option<CPointerValue> {
     let step = cell.node().derivation()?;
     let CMemoryDerivation::Store {
         pointer: write,
@@ -2714,7 +2743,7 @@ fn pointer_value_at_stopping_store(
             address,
             assumptions,
         ))
-    .then(|| stored.pointer().clone())
+    .then(|| stored.clone())
 }
 
 /// Whether a pointer-valued load resolves through the recorded memory DAG to
@@ -4135,6 +4164,8 @@ pub(crate) fn term_is_shallow_structural_cache_key(term: &Bitvector32Term) -> bo
                 | Bitvector32Term::IntegerToMachine { .. } => {}
             },
             Node::Condition(condition, depth) => match condition {
+                ConditionTerm::PointerValueEqual(_, _) => return false,
+
                 ConditionTerm::AlgebraicEqual(_, _) => return false,
                 ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {}
                 crate::kernel::integer_comparison_condition!(_, _) => return false,
@@ -4593,7 +4624,7 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &Bitvector32Term) -> Bitvecto
                 }
             }
             AtomicCanonicalizationTask::VisitCondition(condition) => match condition {
-                ConditionTerm::AlgebraicEqual(_, _) => condition_results.push(condition.clone()),
+                ConditionTerm::AlgebraicEqual(_, _) | ConditionTerm::PointerValueEqual(..) => condition_results.push(condition.clone()),
                 crate::kernel::integer_comparison_condition!(_, _) => {
                     condition_results.push(condition.clone())
                 }
@@ -5151,6 +5182,8 @@ pub(crate) fn c_condition_fact_has_memory(fact: &Proposition) -> bool {
         return false;
     };
     match condition {
+        ConditionTerm::PointerValueEqual(_, _) => true,
+
         crate::kernel::binary_bitvector_condition!(left, right) => {
             bitvector_has_memory(left) || bitvector_has_memory(right)
         }
@@ -5183,6 +5216,12 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
         collect_bitvector_memories(right, memories);
     };
     match condition {
+        ConditionTerm::PointerValueEqual(left, right) => {
+            for pointer in left.pointers().chain(right.pointers()) {
+                collect_pointer_offset_memories(&pointer.offset, memories);
+            }
+        }
+
         ConditionTerm::AlgebraicEqual(left, right) => {
             left.for_each_bitvector_term(|term| collect_bitvector_memories(term, memories));
             right.for_each_bitvector_term(|term| collect_bitvector_memories(term, memories));
@@ -5288,6 +5327,10 @@ fn transport_framed_atomic_condition(
     }
     Some(match condition {
         // Do not claim a snapshot bridge through an opaque algebraic value.
+        ConditionTerm::PointerValueEqual(left, right) => ConditionTerm::PointerValueEqual(
+            Box::new(left.try_map_pointers(|p| transport_framed_atomic_pointer(p, after, assumptions))?),
+            Box::new(right.try_map_pointers(|p| transport_framed_atomic_pointer(p, after, assumptions))?),
+        ),
         ConditionTerm::AlgebraicEqual(_, _) => return None,
         ConditionTerm::Float32(float_condition) => {
             ConditionTerm::Float32(float_condition.try_map_bitvector_terms(|term| {

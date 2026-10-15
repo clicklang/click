@@ -1534,6 +1534,9 @@ impl Renderer<'_> {
                 self.push(" = ");
                 self.offset(b, 0);
             }
+            ConditionTerm::PointerValueEqual(a,b) => {
+                self.pointer(a.pointer()); self.push(" == "); self.pointer(b.pointer());
+            }
             ConditionTerm::PointerEqual(a, b) => {
                 self.pointer(a);
                 self.push(" = ");

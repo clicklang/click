@@ -275,6 +275,24 @@ pub(crate) fn substitute_pointer_variable_in_proposition(
     walk_proposition(proposition, &PointerSubstitution { from, to })
 }
 
+/// Bind a pointer witness without discarding its subobject designation.
+pub(crate) fn substitute_pointer_value_in_proposition(
+    proposition: &Proposition,
+    from: Variable,
+    to: &CPointerValue,
+) -> Result<Proposition, String> {
+    let c = std::collections::BTreeMap::from([(from,
+        crate::kernel::proof::term_rewrite::TypedCReplacement::Pointer(to.clone()))]);
+    let integers = Default::default();
+    let algebraic = Default::default();
+    let mut rewrite = crate::kernel::proof::term_rewrite::TermRewrite::for_typed_variables(&c, &integers, &algebraic);
+    let result = rewrite.proposition(proposition);
+    match rewrite.refusal() {
+        None => Ok(result),
+        Some(reason) => Err(format!("pointer witness substitution refused: {reason:?}")),
+    }
+}
+
 fn substitute_pointer_variable_in_algebraic_value(
     value: &AlgebraicValue,
     from: Variable,
@@ -1570,7 +1588,7 @@ fn walk_c_memory_range<S: VariableSubstitution + ?Sized>(
         s.pointer(&range.base),
         s.bitvector(range.bound_terms().0),
         s.bitvector(range.bound_terms().1),
-    )
+    ).with_designation(std::sync::Arc::new(s.pointer(&range.designation)))
 }
 
 #[cfg(test)]
@@ -3105,6 +3123,12 @@ fn collect_condition_bound_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match condition {
+        ConditionTerm::PointerValueEqual(left, right) => {
+            for pointer in left.pointers().chain(right.pointers()) {
+                collect_pointer_offset_bound_variables(&pointer.offset, variables);
+            }
+        }
+
         ConditionTerm::AlgebraicEqual(left, right) => {
             left.for_each_bitvector_term(|term| collect_bitvector_bound_variables(term, variables));
             right
@@ -4787,6 +4811,10 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
             substitute_bitvector_variable_in_pointer_offset(left, from, to),
             substitute_bitvector_variable_in_pointer_offset(right, from, to),
         ),
+        ConditionTerm::PointerValueEqual(left, right) => ConditionTerm::PointerValueEqual(
+            Box::new(left.map_pointers(|p| substitute_bitvector_variable_in_pointer(p, from, to))),
+            Box::new(right.map_pointers(|p| substitute_bitvector_variable_in_pointer(p, from, to))),
+        ),
         ConditionTerm::PointerEqual(left, right) => ConditionTerm::pointer_equal(
             substitute_bitvector_variable_in_pointer(left, from, to),
             substitute_bitvector_variable_in_pointer(right, from, to),
@@ -5683,6 +5711,7 @@ fn substitute_pointer_variable_in_condition(
                 right, from, to,
             )),
         ),
+        ConditionTerm::PointerValueEqual(..) => crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to).condition(condition),
         ConditionTerm::PointerEqual(left, right) => ConditionTerm::pointer_equal(
             substitute_pointer_variable_in_pointer(left, from, to),
             substitute_pointer_variable_in_pointer(right, from, to),
@@ -6317,6 +6346,9 @@ fn substitute_pointer_variable_in_spec_expression(
                 substitute_pointer_variable_in_spec_expression(expression, from, to),
             ))
         }
+        SpecExpression::Subobject { pointer, width } => SpecExpression::Subobject {
+            pointer: Box::new(substitute_pointer_variable_in_spec_expression(pointer, from, to)), width: *width,
+        },
         SpecExpression::PointerOffset {
             pointer,
             elements,

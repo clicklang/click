@@ -611,6 +611,14 @@ fn write_c_lvalue_paths_without_local_reference(
                     obligations,
                 )]);
             }
+            if let Some(pointer) = state.locals.slot(&name)
+                && lvalue.designation.as_deref().is_some_and(|origin| !effective_assumptions.designations_equal(origin, &pointer.object_identity()))
+                && state.resources().designated_memory_write_range(pointer, lvalue.designation.as_deref(), value.byte_width(), &effective_assumptions).is_none()
+            {
+                return Ok(vec![CStatementExecutionPath::new(CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
+                    resource: Box::new(CResourceFact::own_memory(CMemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), 1u32.into(), value.byte_width()))),
+                }), facts, obligations)]);
+            }
             if let Some(pointer) = state.locals.slot(&name).cloned()
                 && let Some(outcome) = memory_write_permission_outcome_for_local(
                     state,
@@ -714,11 +722,14 @@ fn write_c_lvalue_paths_without_local_reference(
                     obligations,
                 )]);
             }
-            let is_external = is_external_memory_pointer(&pointer);
+            let is_external = is_external_memory_pointer(&pointer)
+                || lvalue.designation.as_deref().is_some_and(|origin|
+                    !effective_assumptions.designations_equal(origin, &pointer.object_identity()));
             let authorized_range = is_external
                 .then(|| {
-                    state.resources().memory_write_range(
+                    state.resources().designated_memory_write_range(
                         &pointer,
+                        lvalue.designation.as_deref(),
                         value.byte_width(),
                         &effective_assumptions,
                     )
@@ -743,7 +754,7 @@ fn write_c_lvalue_paths_without_local_reference(
                 })
                 .unwrap_or(pointer);
 
-            if is_external_memory_pointer(&pointer) && !has_external_write_resource {
+            if is_external && !has_external_write_resource {
                 let missing = CMemoryRange::new(
                     pointer.clone(),
                     Bitvector32Term::Constant(0),
@@ -930,7 +941,7 @@ fn write_c_lvalue_paths_without_local_reference(
             // re-running store resolution at the subsequent read.
             if let CValue::Pointer(stored) = &written_value {
                 facts.push(ExecutionPureFact::logical_read_equation(
-                    stored.pointer().clone(),
+                    stored.clone(),
                     Pointer::loaded_value(
                         &crate::kernel::intern_c_memory_ref(state.memory()),
                         &written_pointer,
@@ -1001,9 +1012,15 @@ fn execute_c_aggregate_copy_paths(
             if source_pointer.is_null() {
                 continue;
             }
+            if let Some(refusal) = subobject_access_refusal(source_pointer.pointer(), source_pointer.extent(), layout.size_bytes(), &facts, &obligations, assumptions)
+                .or_else(|| subobject_access_refusal(target_pointer.pointer(), target_pointer.extent(), layout.size_bytes(), &facts, &obligations, assumptions))
+            {
+                paths.push(CStatementExecutionPath::new(CStatementOutcome::UndefinedBehavior(refusal), facts, obligations));
+                continue;
+            }
             if let Some(resource) = missing_aggregate_copy_read_resource(
                 state,
-                source_pointer.pointer(),
+                &source_pointer,
                 layout,
                 &assumptions_with_path_context(assumptions, &facts, &obligations),
             ) {
@@ -1027,7 +1044,7 @@ fn execute_c_aggregate_copy_paths(
             }
             if let Some(resource) = missing_aggregate_copy_write_resource(
                 state,
-                target_pointer.pointer(),
+                &target_pointer,
                 layout,
                 &assumptions_with_path_context(assumptions, &facts, &obligations),
             ) {
@@ -1071,11 +1088,11 @@ fn execute_c_aggregate_copy_paths(
 
 fn missing_aggregate_copy_write_resource(
     state: &CState,
-    target: &Pointer,
+    target: &CPointerValue,
     layout: &CAggregateLayout,
     assumptions: &PureFactContext,
 ) -> Option<CResourceFact> {
-    if !is_external_memory_pointer(target) {
+    if !is_external_memory_pointer(target) && assumptions.designations_equal(target.designation(), &target.pointer().object_identity()) {
         return None;
     }
     let ranges = layout
@@ -1092,7 +1109,7 @@ fn missing_aggregate_copy_write_resource(
         let pointer = target.offset_by_bytes(offset);
         if state
             .resources()
-            .memory_write_range(&pointer, bytes, assumptions)
+            .designated_memory_write_range(&pointer, Some(target.designation()), bytes, assumptions)
             .is_none()
         {
             return Some(CResourceFact::own_memory(
@@ -1110,11 +1127,12 @@ fn missing_aggregate_copy_write_resource(
 
 pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
     state: &CState,
-    source: &Pointer,
+    source: &CPointerValue,
     layout: &CAggregateLayout,
     assumptions: &PureFactContext,
 ) -> Option<CResourceFact> {
     if (!crate::kernel::eval::is_external_memory_pointer(source)
+        && assumptions.designations_equal(source.designation(), &source.pointer().object_identity())
         && !state.memory.requires_explicit_scalar_ownership(source)
         && !assumptions.should_require_owned_expression_loads())
         || (assumptions.should_allow_symbolic_contract_loads()
@@ -1124,9 +1142,9 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
     }
     for field in layout.fields() {
         crate::instrumentation::record_deterministic_work(1);
-        if !crate::kernel::reasoning::resource_context_has_read(
-            state.resources(),
+        if !state.resources().permits_designated_memory_read(
             &source.offset_by_bytes(field.offset_bytes()),
+            Some(source.designation()),
             field.c_type().byte_width(),
             assumptions,
         ) {
@@ -1145,9 +1163,9 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
     for union in layout.unions() {
         crate::instrumentation::record_deterministic_work(1);
         let pointer = source.offset_by_bytes(union.offset_bytes());
-        if !crate::kernel::reasoning::resource_context_has_read(
-            state.resources(),
+        if !state.resources().permits_designated_memory_read(
             &pointer,
+            Some(source.designation()),
             union.size_bytes(),
             assumptions,
         ) {

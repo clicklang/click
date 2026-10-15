@@ -1170,6 +1170,7 @@ pub(in crate::surface::proof) fn reverse_kernel_equality(
         Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(left, right), true) => Some(
             Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(right, left), true),
         ),
+        Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) => Some(Proposition::ConditionIs(ConditionTerm::PointerValueEqual(right.clone(), left.clone()), true)),
         Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => Some(
             Proposition::ConditionIs(ConditionTerm::PointerEqual(right, left), true),
         ),

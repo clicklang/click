@@ -13777,6 +13777,7 @@ fn state_independent_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecExpression::If { .. }
             | SpecExpression::Let { .. }
             | SpecExpression::PureFunctionApplication { .. }
+            | SpecExpression::Subobject { .. }
             | SpecExpression::PointerOffset { .. } => Visit::Descend,
             _ => Visit::Stop(()),
         },
@@ -13882,6 +13883,7 @@ fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecExpression::If { .. }
             | SpecExpression::Let { .. }
             | SpecExpression::PureFunctionApplication { .. }
+            | SpecExpression::Subobject { .. }
             | SpecExpression::PointerOffset { .. }
             | SpecExpression::MemoryLoad {
                 memory: SpecMemory::Current | SpecMemory::FunctionEntry,
@@ -14263,7 +14265,8 @@ fn spec_expression_parameter_offset(
         SpecExpression::CExpression(expression) => {
             c_expression_parameter_offset(expression, parameter_name)
         }
-        SpecExpression::Cast(expression, _) | SpecExpression::LoopEntrySnapshot(expression) => {
+        SpecExpression::Cast(expression, _) | SpecExpression::LoopEntrySnapshot(expression)
+        | SpecExpression::Subobject { pointer: expression, .. } => {
             spec_expression_parameter_offset(expression, parameter_name)
         }
         SpecExpression::PointerOffset {
@@ -18131,11 +18134,16 @@ fn aggregate_argument_read_refusal(
         let CValue::Pointer(source) = value else {
             continue;
         };
+        if let Some(refusal) = crate::kernel::eval::subobject_access_refusal(
+            source.pointer(), source.extent(), layout.size_bytes(), &ExecutionFacts::new(), &[], assumptions,
+        ) {
+            return Some(CFunctionOutcome::UndefinedBehavior(refusal));
+        }
         // Actual calls use the same read boundary as ordinary aggregate
         // assignment. Entry images are evaluated values, not caller reads.
         if let Some(resource) = crate::kernel::eval::missing_aggregate_copy_read_resource(
             state,
-            source.pointer(),
+            source,
             layout,
             assumptions,
         ) {

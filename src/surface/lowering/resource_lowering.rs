@@ -2676,7 +2676,6 @@ fn lower_resource_segment_with_values(
         )));
     };
     let base_value = base;
-    let base = base_value.pointer().clone();
     // A clause through a member pointer may not claim past the member
     // (`design/pointer-subobject-extents.md`, D1). Constant bounds are
     // refused here by name; the kernel decides the rest when it checks
@@ -2724,7 +2723,7 @@ fn lower_resource_segment_with_values(
     };
     // The same rule as the kernel's resource and proposition lowering.
     if let Some((start, end)) = crate::kernel::wide_range_bounds(&start_value, &end_value) {
-        return refuse_past_extent(CMemoryRange::new_wide(base, start, end, element_width));
+        return refuse_past_extent(CMemoryRange::from_pointer_value_wide(&base_value, start, end, element_width));
     }
     let start = bound(start_value, "start")?;
     let end = bound(end_value, "end")?;
@@ -2735,11 +2734,8 @@ fn lower_resource_segment_with_values(
             "`{resource_name}` segment has an end before its start: {start}..{end}"
         )));
     }
-    refuse_past_extent(CMemoryRange::new_with_element_width(
-        base,
-        start,
-        end,
-        element_width,
+    refuse_past_extent(CMemoryRange::from_pointer_value(
+        &base_value, start, end, element_width,
     ))
 }
 

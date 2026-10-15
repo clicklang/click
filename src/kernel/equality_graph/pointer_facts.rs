@@ -134,7 +134,7 @@ impl EqualityGraph {
                             ) => {
                                 left.c_type() == right.c_type()
                                     && left.pointee_volatile() == right.pointee_volatile()
-                                    && self.are_equal(left.pointer(), right.pointer())
+                                    && self.knows_condition(&crate::kernel::ConditionTerm::PointerValueEqual(Box::new(left.clone()), Box::new(right.clone())), true)
                             }
                             _ => left == right,
                         }

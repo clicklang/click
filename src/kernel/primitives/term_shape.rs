@@ -494,6 +494,8 @@ impl ConditionTerm {
         &self,
     ) -> Option<(BitvectorComparisonOp, &Bitvector32Term, &Bitvector32Term)> {
         match self {
+            Self::PointerValueEqual(_, _) => None,
+
             Self::Bitvector32SignedLessThan(left, right) => Some((
                 BitvectorComparisonOp::Bitvector32SignedLessThan,
                 left,

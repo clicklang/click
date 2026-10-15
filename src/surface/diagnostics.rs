@@ -689,6 +689,8 @@ pub(in crate::surface) fn value_naming_tables(
 /// diagnostic that has no source spelling of its operands.
 pub(super) fn condition_kind(condition: &ConditionTerm) -> &'static str {
     match condition {
+        ConditionTerm::PointerValueEqual(_, _) => "pointer value equality",
+
         ConditionTerm::AlgebraicEqual(_, _) => "algebraic equality",
         ConditionTerm::IntegerLessThan(_, _) => "Integer less-than",
         ConditionTerm::IntegerLessEqual(_, _) => "Integer less-or-equal",
@@ -6625,6 +6627,8 @@ pub(super) fn describe_condition(condition: &ConditionTerm) -> String {
         };
     }
     match condition {
+        ConditionTerm::PointerValueEqual(left, right) => format!("{} == {}", describe_pointer(left.pointer(), ParameterBinding::default()), describe_pointer(right.pointer(), ParameterBinding::default())),
+
         ConditionTerm::AlgebraicEqual(_, _) => "algebraic equality".to_string(),
         ConditionTerm::IntegerLessThan(left, right) => {
             describe_integer_comparison(left, "<", right)

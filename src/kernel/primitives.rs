@@ -656,6 +656,8 @@ pub enum ConditionTerm {
     Float64(CFloatCondition),
     PointerOffsetEqual(Box<PointerOffsetTerm>, Box<PointerOffsetTerm>),
     PointerEqual(Box<Pointer>, Box<Pointer>),
+    /// Specification pointer equality includes the designated object and extent.
+    PointerValueEqual(Box<CPointerValue>, Box<CPointerValue>),
     IntegerLessThan(SharedIntegerTerm, SharedIntegerTerm),
     IntegerLessEqual(SharedIntegerTerm, SharedIntegerTerm),
     IntegerGreaterThan(SharedIntegerTerm, SharedIntegerTerm),
@@ -1023,6 +1025,9 @@ pub(crate) struct LoadedPointerView {
 #[derive(Clone, Debug)]
 pub struct CPointerValue {
     pointer: Pointer,
+    /// The object designated when this value entered. Address aliases never
+    /// replace this component; only value transport or substitution maps it.
+    designation: Arc<Pointer>,
     c_type: CType,
     qualifiers: Option<Arc<CPointerQualifiers>>,
 }
@@ -1032,6 +1037,7 @@ struct CPointerQualifiers {
     volatile: bool,
     constant: bool,
     extent: Option<SubobjectExtent>,
+    extent_known: bool,
     local_reference: Option<super::loans::LocalScalarReference>,
 }
 
@@ -1058,11 +1064,32 @@ impl CPointerValue {
             c_type.is_pointer(),
             "C pointer values require a pointer type"
         );
+        let is_function = matches!(c_type, CType::FunctionPointer(_)) || pointer.block.is_function();
+        let known_root = is_function || matches!(pointer.block, PointerBlock::Concrete(_) | PointerBlock::Heap(_) | PointerBlock::Temporary(_));
         Self {
+            designation: Arc::new(if is_function { Pointer::null() } else { pointer.object_identity() }),
             pointer,
             c_type,
-            qualifiers: None,
+            qualifiers: known_root.then(|| Arc::new(CPointerQualifiers { extent_known: true, ..Default::default() })),
         }
+    }
+
+    /// An opaque complete pointer read has its own value origin. Its numeric
+    /// address may retain the legacy load spelling without determining that
+    /// origin from the storage allocation or the loaded bits.
+    pub(in crate::kernel) fn from_read(pointer: Pointer, c_type: CType, memory: &SharedCMemory, cell: &Pointer) -> Self {
+        let value = Self::new(pointer, c_type);
+        if matches!(c_type, CType::FunctionPointer(_)) || value.pointer.block.is_function() { return value; }
+        value.with_designation(Arc::new(Pointer::loaded_value(memory, cell)))
+    }
+
+    pub(crate) fn designation(&self) -> &Pointer {
+        &self.designation
+    }
+
+    pub(in crate::kernel) fn with_designation(mut self, designation: Arc<Pointer>) -> Self {
+        self.designation = designation;
+        self
     }
 
     pub(crate) fn pointer(&self) -> &Pointer {
@@ -1088,6 +1115,7 @@ impl CPointerValue {
     pub(crate) fn with_type(self, c_type: CType) -> Self {
         Self {
             pointer: self.pointer,
+            designation: self.designation,
             c_type,
             qualifiers: self.qualifiers,
         }
@@ -1140,7 +1168,19 @@ impl CPointerValue {
         self.qualifiers.as_ref()?.extent.as_ref()
     }
 
+    pub(crate) fn extent_is_known(&self) -> bool {
+        self.qualifiers.as_ref().is_some_and(|q| q.extent_known)
+    }
+
+    pub(in crate::kernel) fn with_root_extent(mut self) -> Self {
+        let qualifiers = Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default));
+        qualifiers.extent = None;
+        qualifiers.extent_known = true;
+        self
+    }
+
     pub(crate) fn with_extent(mut self, extent: Option<SubobjectExtent>) -> Self {
+        if extent.is_some() { Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).extent_known = true; }
         if extent.is_some() || self.extent().is_some() {
             Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).extent = extent;
         }
@@ -1153,6 +1193,10 @@ impl CPointerValue {
     pub(crate) fn map_pointers(&self, mut map: impl FnMut(&Pointer) -> Pointer) -> Self {
         let mut result = self.clone();
         result.pointer = map(&self.pointer);
+        let designation = map(&self.designation);
+        if designation != *self.designation {
+            result.designation = Arc::new(designation);
+        }
         if let Some(extent) = self.extent() {
             result = result.with_extent(Some(SubobjectExtent {
                 start: map(&extent.start),
@@ -1162,9 +1206,26 @@ impl CPointerValue {
         result
     }
 
+    pub(in crate::kernel) fn try_map_pointers(&self, mut map: impl FnMut(&Pointer) -> Option<Pointer>) -> Option<Self> {
+        let pointer = map(&self.pointer)?;
+        let designation = map(&self.designation)?;
+        let extent = match self.extent() {
+            Some(extent) => Some(SubobjectExtent { start: map(&extent.start)?, width: extent.width }),
+            None => None,
+        };
+        Some(self.clone().with_address(pointer).with_designation(Arc::new(designation)).with_extent(extent))
+    }
+
+    /// Re-spell physical addresses without changing the value's origin.
+    pub(in crate::kernel) fn map_addresses(&self, map: impl FnMut(&Pointer) -> Pointer) -> Self {
+        self.map_pointers(map).with_designation(self.designation.clone())
+    }
+
     /// Every address the value mentions, for variable collection.
     pub(crate) fn pointers(&self) -> impl Iterator<Item = &Pointer> {
-        std::iter::once(&self.pointer).chain(self.extent().map(|extent| &extent.start))
+        std::iter::once(&self.pointer)
+            .chain(std::iter::once(self.designation.as_ref()))
+            .chain(self.extent().map(|extent| &extent.start))
     }
 
     pub(crate) fn is_null(&self) -> bool {
@@ -1185,15 +1246,19 @@ impl CPointerValue {
         &self,
     ) -> (
         &Pointer,
+        &Pointer,
         &CType,
+        bool,
         bool,
         Option<&SubobjectExtent>,
         Option<super::loans::LocalReferenceId>,
     ) {
         (
             &self.pointer,
+            &self.designation,
             &self.c_type,
             self.pointee_volatile(),
+            self.extent_is_known(),
             self.extent(),
             self.local_reference().map(|reference| reference.id()),
         )
@@ -1762,7 +1827,9 @@ pub struct CLValue {
     pub(super) pointee_constant: bool,
     /// The subobject extent of the pointer this memory lvalue was reached
     /// through. The access is checked against it, and `&lvalue` keeps it.
+    pub(super) extent_known: bool,
     pub(super) extent: Option<Arc<SubobjectExtent>>,
+    pub(super) designation: Option<Arc<Pointer>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -2114,6 +2181,10 @@ pub enum SpecExpression {
         result_type: CType,
     },
     LoopEntrySnapshot(Box<SpecExpression>),
+    Subobject {
+        pointer: Box<SpecExpression>,
+        width: u32,
+    },
     PointerOffset {
         pointer: Box<SpecExpression>,
         elements: Box<SpecExpression>,
@@ -3234,6 +3305,8 @@ pub struct CMemorySegment {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CMemoryRange {
     pub(super) base: Pointer,
+    /// Origin of the value naming the range, independent of address aliases.
+    pub(super) designation: Arc<Pointer>,
     /// The bounds, in elements. Read them through [`CMemoryRange::start`]
     /// and [`CMemoryRange::end`], which hold only for an `Int32` range, or
     /// through [`CMemoryRange::wide_bounds`]: a term carries no width, so a
@@ -10780,6 +10853,13 @@ pub struct PureFactContext {
     /// terms. Appended on insertion; withdrawal rebuilds from exact equality
     /// indexes, preserving the remaining support in every fragment.
     pub(super) equality_graph: super::equality_graph::EqualityGraph,
+    /// Value-level pointer origins. C address comparisons never enter this graph.
+    pub(super) pointer_address_sources: crate::persistent::PersistentMap<ConditionTerm, crate::persistent::PersistentSet<ConditionTerm>>,
+    pub(super) designation_graph: super::pointer_designations::ValueClasses<Pointer>,
+    pub(super) extent_graph: super::pointer_designations::ValueClasses<Pointer>,
+    pub(super) pointer_value_classes: super::pointer_designations::ValueClasses<CPointerValue>,
+    pub(super) pointer_value_equalities:
+        crate::persistent::PersistentSet<(CPointerValue, CPointerValue)>,
     pub(super) algebraic_graph_equalities:
         crate::persistent::PersistentMap<(SharedPureApplication, SharedPureApplication), usize>,
     pub(super) congruence_conditions: crate::persistent::PersistentMap<ConditionTerm, bool>,

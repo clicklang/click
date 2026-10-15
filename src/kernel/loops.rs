@@ -6790,6 +6790,7 @@ pub(super) fn collect_loop_preservation_summary(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct EvaluatedMemorySegment {
     pub(super) base: Pointer,
+    pub(super) designation: std::sync::Arc<Pointer>,
     pub(super) start: Bitvector32Term,
     pub(super) end: Bitvector32Term,
     pub(super) element_width: u32,
@@ -6799,7 +6800,8 @@ pub(super) struct EvaluatedMemorySegment {
 impl EvaluatedMemorySegment {
     /// The range this segment denotes, in its own index kind.
     pub(super) fn into_range(self) -> CMemoryRange {
-        match self.kind {
+        let designation = self.designation;
+        let range = match self.kind {
             RangeIndexKind::Int32 => CMemoryRange::new_with_element_width(
                 self.base,
                 self.start,
@@ -6809,7 +6811,8 @@ impl EvaluatedMemorySegment {
             RangeIndexKind::UInt64 => {
                 CMemoryRange::new_wide(self.base, self.start, self.end, self.element_width)
             }
-        }
+        };
+        range.with_designation(designation)
     }
 }
 
@@ -8642,6 +8645,7 @@ pub(super) fn collect_loop_effect_check_obligations(
                     validated
                         .iter()
                         .map(|range| EvaluatedMemorySegment {
+                            designation: range.designation.clone(),
                             base: range.base.clone(),
                             start: range.bound_terms().0.clone(),
                             end: range.bound_terms().1.clone(),
@@ -8788,6 +8792,7 @@ pub(super) fn evaluate_loop_effect_segment(
         && let Some((start, end)) = crate::kernel::wide_range_bounds(start, end)
     {
         let evaluated = EvaluatedMemorySegment {
+            designation: std::sync::Arc::new(base_value.designation().clone()),
             base,
             start,
             end,
@@ -8828,6 +8833,7 @@ pub(super) fn evaluate_loop_effect_segment(
     let element_width = segment.element_width;
 
     let evaluated = EvaluatedMemorySegment {
+        designation: std::sync::Arc::new(base_value.designation().clone()),
         base,
         start,
         end,
@@ -8887,6 +8893,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         && let Some((start, end)) = crate::kernel::wide_range_bounds(start, end)
     {
         let evaluated = EvaluatedMemorySegment {
+            designation: std::sync::Arc::new(base_value.designation().clone()),
             base,
             start,
             end,
@@ -8927,6 +8934,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     };
     let element_width = segment.element_width;
     let evaluated = EvaluatedMemorySegment {
+        designation: std::sync::Arc::new(base_value.designation().clone()),
         base,
         start,
         end,
@@ -10223,6 +10231,7 @@ mod wide_range_reader_tests {
             4,
         );
         let segment = EvaluatedMemorySegment {
+            designation: wide.designation.clone(),
             base: base.clone(),
             start: wide.bound_terms().0.clone(),
             end: wide.bound_terms().1.clone(),
@@ -10334,9 +10343,10 @@ fn c_value_subobject_extent(value: &CValue) -> Option<&SubobjectExtent> {
 
 /// `fresh` with the subobject extent of the pointer value it abstracts.
 fn with_retained_extent(fresh: CValue, previous: Option<&CValue>) -> CValue {
-    match (fresh, previous.and_then(c_value_subobject_extent)) {
-        (CValue::Pointer(pointer), Some(extent)) => {
-            CValue::Pointer(pointer.with_extent(Some(extent.clone())))
+    match (fresh, previous) {
+        (CValue::Pointer(pointer), Some(CValue::Pointer(previous))) if previous.extent().is_some() => {
+            CValue::Pointer(pointer.with_extent(previous.extent().cloned())
+                .with_designation(std::sync::Arc::new(previous.designation().clone())))
         }
         (fresh, _) => fresh,
     }

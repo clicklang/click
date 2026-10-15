@@ -3396,6 +3396,19 @@ impl PureFactContext {
             {
                 return true;
             }
+            // Full pointer equality entails address equality, while its
+            // negation makes no claim about addresses.
+            if let ConditionTerm::PointerValueEqual(left, right) = condition && *value {
+                let address = ConditionTerm::pointer_equal(left.pointer().clone(), right.pointer().clone());
+                if condition_polarities.insert(canonical_contradiction_condition(&address), true) == Some(false) {
+                    return true;
+                }
+            }
+            if !*value && match condition {
+                ConditionTerm::PointerEqual(left, right) => self.equality_graph.are_equal(left, right),
+                ConditionTerm::PointerOffsetEqual(left, right) => self.equality_graph.are_offsets_equal(left, right),
+                _ => false,
+            } { return true; }
             match (condition, value) {
                 (ConditionTerm::Constant(actual), expected) if actual != expected => return true,
                 (ConditionTerm::Bitvector32Equal(left, right), true) => {

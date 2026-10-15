@@ -60,9 +60,11 @@ pub(in crate::surface) fn comparison_proposition(
                 ));
             }
         };
+        if !left.is_null() && !right.is_null() {
+            return Ok(Proposition::ConditionIs(ConditionTerm::pointer_value_equal(left.clone(), right.clone()), value));
+        }
         return Ok(Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(left.pointer().clone(), right.pointer().clone()),
-            value,
+            ConditionTerm::pointer_equal(left.pointer().clone(), right.pointer().clone()), value,
         ));
     }
     if matches!(left, CValue::UInt64(_)) || matches!(right, CValue::UInt64(_)) {

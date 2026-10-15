@@ -1053,7 +1053,8 @@ pub(in crate::kernel) fn cast_c_value_to_type(
     if target_type.is_pointer() {
         match value {
             CValue::Pointer(pointer) => {
-                return Ok(CValue::Pointer(pointer.with_type(target_type)));
+                let pointer = pointer.with_type(target_type);
+                return Ok(CValue::Pointer(if matches!(target_type, CType::VoidPointer | CType::UInt8Pointer | CType::Int8Pointer) { pointer.with_root_extent() } else { pointer }));
             }
             // Integer-to-pointer conversion is accepted only for a 64-bit
             // value that is exactly the recorded address of an object
@@ -1238,7 +1239,10 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
             let mut facts = ExecutionFacts::new();
             add_narrow_integer_range_execution_pure_facts(&mut facts, assumptions, value);
             vec![CExpressionPath {
-                outcome: CExpressionOutcome::Value(value.clone()),
+                outcome: CExpressionOutcome::Value(match value {
+                    CValue::Pointer(pointer) => CValue::Pointer(assumptions.pointer_value_at_entry(pointer)),
+                    _ => value.clone(),
+                }),
                 facts,
                 obligations: Vec::new(),
             }]
@@ -2313,6 +2317,15 @@ fn read_c_lvalue_paths_without_ranges(
     Ok(match outcome {
         CLValueOutcome::LValue(lvalue) => match &lvalue.storage {
             CLValueStorage::Local { name } => {
+                let local_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
+                if let Some(pointer) = state.locals.slot(name)
+                    && lvalue.designation.as_deref().is_some_and(|origin| !local_assumptions.designations_equal(origin, &pointer.object_identity()))
+                    && !state.resources().permits_designated_memory_read(pointer, lvalue.designation.as_deref(), lvalue.value_type.byte_width(), &local_assumptions)
+                {
+                    return Ok(vec![CExpressionPath { outcome: CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource {
+                        resource: Box::new(CResourceFact::view_memory(CMemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), 1u32.into(), lvalue.value_type.byte_width()))),
+                    }), facts, obligations }]);
+                }
                 if matches!(
                     state.locals.binding(name),
                     Some(
@@ -2348,8 +2361,7 @@ fn read_c_lvalue_paths_without_ranges(
                 }
                 let outcome = match state.locals.get(name) {
                     Some(value) if lvalue.value_type.accepts(value) => CExpressionOutcome::Value(
-                        value
-                            .clone()
+                        match value { CValue::Pointer(pointer) => CValue::Pointer(local_assumptions.pointer_value_at_entry(pointer)), _ => value.clone() }
                             .with_pointer_pointee_volatile(lvalue.pointee_is_volatile())
                             .with_pointer_pointee_constant(lvalue.pointee_is_constant()),
                     ),
@@ -2438,16 +2450,16 @@ fn read_c_lvalue_paths_without_ranges(
                 let effective_assumptions =
                     assumptions_with_path_context(assumptions, &facts, &obligations);
                 let is_external = is_external_memory_pointer(pointer)
-                    || state.memory.requires_explicit_scalar_ownership(pointer);
+                    || state.memory.requires_explicit_scalar_ownership(pointer)
+                    || lvalue.designation.as_deref().is_some_and(|origin|
+                        !effective_assumptions.designations_equal(origin, &pointer.object_identity()));
                 let require_owned = assumptions.should_require_owned_expression_loads();
                 let has_read_resource = (is_external || require_owned)
                     && ((!require_owned && assumptions.should_allow_symbolic_contract_loads())
-                        || resource_context_has_read(
-                            state.resources(),
-                            pointer,
-                            lvalue.value_type.byte_width(),
-                            &effective_assumptions,
-                        ));
+                        || crate::kernel::api::with_extended_dag_bridging(|| state.resources().permits_designated_memory_read(
+                            pointer, lvalue.designation.as_deref(),
+                            lvalue.value_type.byte_width(), &effective_assumptions,
+                        )));
                 if (is_external || require_owned) && !has_read_resource {
                     return Ok(vec![CExpressionPath {
                         outcome: CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource {
@@ -2573,6 +2585,10 @@ pub(in crate::kernel) fn address_of_lvalue_paths(
                                 .with_pointee_volatile(lvalue.is_volatile())
                                 .with_pointee_constant(lvalue.is_constant())
                                 .with_extent(lvalue.extent().cloned());
+                            if lvalue.extent_known && lvalue.extent().is_none() { address = address.with_root_extent(); }
+                            if let Some(designation) = &lvalue.designation {
+                                address = address.with_designation(designation.clone());
+                            }
                             if let Some(reference) = &lvalue.local_reference {
                                 address = address.with_local_reference(*reference);
                             }

@@ -1352,6 +1352,34 @@ impl EqualityGraph {
         equal
     }
 
+    pub(in crate::kernel) fn designations_equal(&self, left: &Pointer, right: &Pointer) -> bool {
+        if left == right { return true; }
+        let mut state = self.state.lock().expect("equality graph");
+        state.register_blocks([left.block.clone(), right.block.clone()]);
+        let equal = state.terms.designations_equal(left, right);
+        state.close(Vec::new());
+        equal
+    }
+
+    pub(in crate::kernel) fn pointer_value_representative(&self, value: &CPointerValue) -> CPointerValue {
+        let mut state = self.state.lock().expect("equality graph");
+        state.register_blocks(value.pointers().map(|p| p.block.clone()));
+        state.close(Vec::new());
+        state.terms.pointer_value_representative(value)
+    }
+
+    pub(in crate::kernel) fn add_pointer_value_equality(&mut self, left: &CPointerValue, right: &CPointerValue) {
+        self.add_equality(left.pointer(), right.pointer());
+        if left.pointer().block == right.pointer().block {
+            self.add_offset_equality(&left.pointer().offset, &right.pointer().offset);
+        }
+        let mut state = self.state.lock().expect("equality graph");
+        let origins_changed = state.terms.merge_designations(left.designation(), right.designation());
+        let changed = state.terms.add_pointer_value_equality(left, right) || origins_changed;
+        state.close(Vec::new());
+        if changed { state.remember_input(inputs::Input::PointerValue(left.clone(), right.clone())); }
+    }
+
     pub(in crate::kernel) fn add_algebraic_equality(
         &mut self,
         left: &AlgebraicTerm,
@@ -1610,6 +1638,11 @@ impl EqualityGraph {
             ConditionTerm::AlgebraicEqual(a, b) => {
                 self.register_expression_operands(state, [], [a.as_ref(), b.as_ref()]);
             }
+            ConditionTerm::PointerValueEqual(a, b) => {
+                self.register_logical_read_values(state, a.pointers().chain(b.pointers()));
+                state.register_blocks(a.pointers().chain(b.pointers()).map(|p| p.block.clone()));
+                state.close(Vec::new());
+            }
             ConditionTerm::PointerEqual(a, b) => {
                 self.register_logical_read_values(state, [a.as_ref(), b.as_ref()]);
                 state.register_blocks([a.block.clone(), b.block.clone()]);
@@ -1638,6 +1671,7 @@ impl EqualityGraph {
                 ConditionTerm::Bitvector32Equal(..)
                     | ConditionTerm::Bitvector64Equal(..)
                     | ConditionTerm::PointerEqual(..)
+                    | ConditionTerm::PointerValueEqual(..)
                     | ConditionTerm::PointerOffsetEqual(..)
                     | ConditionTerm::AlgebraicEqual(..)
             )
@@ -1663,6 +1697,11 @@ impl EqualityGraph {
         // nodes. A miss must not register an unrelated condition application.
         if value {
             match condition {
+                ConditionTerm::PointerValueEqual(a, b) => {
+                    let mut state = self.state.lock().expect("equality graph");
+                    self.prepare_condition(&mut state, condition);
+                    return state.terms.pointer_values_equal(a, b);
+                }
                 ConditionTerm::AlgebraicEqual(a, b) => return self.are_algebraic_equal(a, b),
                 ConditionTerm::Bitvector32Equal(a, b) => return self.are_int32_equal(a, b),
                 ConditionTerm::Bitvector64Equal(a, b) => return self.are_uint64_equal(a, b),
@@ -1769,6 +1808,20 @@ impl EqualityGraph {
         let mut state = self.state.lock().expect("equality graph");
         state.register_blocks([block.clone()]);
         state.parent.contains_key(block) || state.members.contains_key(block)
+    }
+
+    /// The affine class containing one selected base, without replaying
+    /// unrelated admitted merges. Used only for a disposable cold resource
+    /// view; published indexes retain their incremental merge protocol.
+    pub(in crate::kernel) fn pointer_merges_for_block(&self, block: &PointerBlock) -> Vec<PointerClassMerge> {
+        let mut state = self.state.lock().expect("equality graph");
+        state.register_blocks([block.clone()]);
+        let (kept, _) = state.find(block);
+        state.members.get(&kept).into_iter().flat_map(|members| members.iter())
+            .map(|(moved, delta)| {
+                crate::instrumentation::record_deterministic_work(1);
+                PointerClassMerge { moved: moved.clone(), kept: kept.clone(), moved_from_kept: delta.clone() }
+            }).collect()
     }
 
     /// Transitional resource consumers still enumerate spellings. This is

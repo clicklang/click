@@ -432,7 +432,8 @@ pub(super) fn apply_witness_tactic(
         (Sort::CPointer(expected), CValue::Pointer(pointer))
             if expected.accepts(&CValue::Pointer(pointer.clone())) =>
         {
-            crate::kernel::substitute_pointer_variable_in_proposition(&body, var, pointer.pointer())
+            crate::kernel::substitute_pointer_value_in_proposition(&body, var, &pointer)
+                .map_err(ClickError::new)?
         }
         _ => {
             return Err(ClickError::new(format!(

@@ -747,6 +747,18 @@ pub(in crate::surface) fn with_proof_local_value_names<R>(
 /// A source expression for a semantic C value, such as a resource witness
 /// inferred from memory: the proof local that names it, else a pointer or an
 /// `int32` as the proof would write it at `state`.
+fn synthesize_surface_pointer_address(
+    pointer: &Pointer, parameter_binding: ParameterBinding<'_>, state: &CState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<ContractExpression> {
+    let operand = synthesize_surface_pointer_expression(pointer, parameter_binding, state, bound_variables)?;
+    Some(crate::surface::lowering::contract_c_unary(operand, CExpression::Cast {
+        expression: Box::new(CExpression::Value(CValue::typed_pointer(pointer.clone(), CType::VoidPointer))),
+        target_type: CType::UInt64, integer_mode: crate::kernel::CIntegerCastMode::Standard,
+        pointee_struct: None, pointee_volatile: false, pointee_constant: false, explicit_qualification: false,
+    }))
+}
+
 pub(in crate::surface) fn synthesize_surface_value(
     value: &CValue,
     parameter_binding: ParameterBinding<'_>,
@@ -1956,9 +1968,19 @@ fn synthesize_surface_atomic_proposition(
             )?,
         });
     }
-    if let ConditionTerm::PointerEqual(left, right) = condition {
+    if let ConditionTerm::PointerValueEqual(left, right) = condition {
         return Some(ClickProposition::Comparison {
-            left: synthesize_surface_pointer_expression(
+            left: synthesize_surface_pointer_expression(left.pointer(), parameter_binding, state, bound_variables)?,
+            operator: if *value { ComparisonOperator::Equal } else { ComparisonOperator::NotEqual },
+            right: synthesize_surface_pointer_expression(right.pointer(), parameter_binding, state, bound_variables)?,
+        });
+    }
+    if let ConditionTerm::PointerEqual(left, right) = condition {
+        let pointer = if **left == Pointer::null() || **right == Pointer::null() {
+            synthesize_surface_pointer_expression
+        } else { synthesize_surface_pointer_address };
+        return Some(ClickProposition::Comparison {
+            left: pointer(
                 left,
                 parameter_binding,
                 state,
@@ -1969,7 +1991,7 @@ fn synthesize_surface_atomic_proposition(
             } else {
                 ComparisonOperator::NotEqual
             },
-            right: synthesize_surface_pointer_expression(
+            right: pointer(
                 right,
                 parameter_binding,
                 state,
@@ -2218,9 +2240,13 @@ pub(in crate::surface) fn synthesize_surface_equality_across_points(
                 synthesize_surface_pointer_offset(right, parameter_binding, state, &bound_variables)
             })?,
         ),
+        ConditionTerm::PointerValueEqual(left, right) => (
+            anchored(&|state| synthesize_surface_pointer_expression(left.pointer(), parameter_binding, state, &bound_variables))?,
+            anchored(&|state| synthesize_surface_pointer_expression(right.pointer(), parameter_binding, state, &bound_variables))?,
+        ),
         ConditionTerm::PointerEqual(left, right) => (
             anchored(&|state| {
-                synthesize_surface_pointer_expression(
+                synthesize_surface_pointer_address(
                     left,
                     parameter_binding,
                     state,
@@ -2228,7 +2254,7 @@ pub(in crate::surface) fn synthesize_surface_equality_across_points(
                 )
             })?,
             anchored(&|state| {
-                synthesize_surface_pointer_expression(
+                synthesize_surface_pointer_address(
                     right,
                     parameter_binding,
                     state,

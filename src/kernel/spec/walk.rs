@@ -154,7 +154,8 @@ impl<'a> SpecNode<'a> {
                     visit(N::Expression(pointer));
                     visit(N::Expression(elements));
                 }
-                SpecExpression::MemoryLoad { pointer, .. }
+                SpecExpression::Subobject { pointer, .. }
+                | SpecExpression::MemoryLoad { pointer, .. }
                 | SpecExpression::AggregateFieldValue { pointer, .. } => {
                     visit(N::Expression(pointer))
                 }

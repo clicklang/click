@@ -2461,7 +2461,8 @@ impl<'a> Proof<'a> {
                             premise,
                             Proposition::ConditionIs(
                                 ConditionTerm::Bitvector64Equal(..)
-                                    | ConditionTerm::PointerEqual(..)
+                                    | ConditionTerm::PointerValueEqual(..)
+                    | ConditionTerm::PointerEqual(..)
                                     | ConditionTerm::PointerOffsetEqual(..)
                                     | ConditionTerm::Float32(
                                         CFloatCondition::Classification { .. }
@@ -2673,7 +2674,7 @@ impl<'a> Proof<'a> {
         if matches!(
             self.goal(),
             Some(Proposition::ConditionIs(
-                ConditionTerm::PointerEqual(..),
+                ConditionTerm::PointerEqual(..) | ConditionTerm::PointerValueEqual(..),
                 true
             ))
         ) && let Ok(proof) = self.apply_step(ProofStep::NormalizeUsing(Vec::new()))

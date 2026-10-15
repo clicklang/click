@@ -17,6 +17,7 @@ impl PureFactContext {
             return Some(value);
         }
 
+        if matches!(condition, ConditionTerm::PointerValueEqual(..)) { return self.decide(condition); }
         match condition {
             ConditionTerm::AlgebraicEqual(left, right) => {
                 self.decide_algebraic_equality(left, right)

@@ -585,6 +585,11 @@ impl Printer<'_> {
                 };
                 return Some(negate(name, polarity));
             }
+            ConditionTerm::PointerValueEqual(left, right) => {
+                let left = self.cvalue(&crate::kernel::CValue::Pointer((**left).clone()), depth)?;
+                let right = self.cvalue(&crate::kernel::CValue::Pointer((**right).clone()), depth)?;
+                return Some(atom(format!("{} {} {}", operand(left, SHIFT), if polarity { "==" } else { "!=" }, operand(right, SHIFT))));
+            }
             ConditionTerm::PointerEqual(left, right) => {
                 if !self.source_mode() {
                     if self.mode == Mode::ExactIdentity
@@ -614,13 +619,14 @@ impl Printer<'_> {
                         pointer(right, self.labels)?
                     )));
                 }
+                let address_only = **left != Pointer::null() && **right != Pointer::null();
                 let left = self.pointer(left, depth)?;
                 let right = self.pointer(right, depth)?;
                 return Some(atom(format!(
                     "{} {} {}",
-                    operand(left, SHIFT),
+                    if address_only { format!("address({})", left.text) } else { operand(left, SHIFT) },
                     if polarity { "==" } else { "!=" },
-                    operand(right, SHIFT)
+                    if address_only { format!("address({})", right.text) } else { operand(right, SHIFT) }
                 )));
             }
             ConditionTerm::PointerOffsetEqual(left, right) => {

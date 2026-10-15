@@ -471,7 +471,9 @@ fn collect_c_value_carriers(value: &CValue, variables: &mut CarrierVariables) {
         | CValue::UInt128(term)
         | CValue::Float32(term)
         | CValue::Float64(term) => collect_bitvector_carriers(term, variables),
-        CValue::Pointer(pointer) => collect_pointer_carriers(pointer, variables),
+        CValue::Pointer(pointer) => {
+            for component in pointer.pointers() { collect_pointer_carriers(component, variables); }
+        },
     }
 }
 
@@ -562,6 +564,11 @@ fn collect_condition_carriers(condition: &ConditionTerm, variables: &mut Carrier
         return;
     }
     match condition {
+        ConditionTerm::PointerValueEqual(left, right) => {
+            collect_c_value_carriers(&CValue::Pointer((**left).clone()), variables);
+            collect_c_value_carriers(&CValue::Pointer((**right).clone()), variables);
+        }
+
         ConditionTerm::AlgebraicEqual(left, right) => {
             let mut seen = BTreeSet::new();
             collect_algebraic_carriers_seen(left, variables, &mut seen);
@@ -1219,10 +1226,12 @@ pub(crate) struct TermRewrite<'a> {
     integer_exact: Option<(&'a SharedIntegerTerm, &'a SharedIntegerTerm)>,
     pointer_variable: Option<(Variable, &'a Pointer)>,
     pointer_exact: Option<(&'a Pointer, &'a Pointer)>,
+    pointer_value_exact: Option<(&'a CPointerValue, &'a CPointerValue)>,
     pointer_offset_exact: Option<(&'a PointerOffsetTerm, &'a PointerOffsetTerm)>,
     conditions: Option<&'a HashMap<ConditionTerm, bool>>,
     bounded_uint64_indices: Option<std::collections::HashSet<Bitvector32Term>>,
     equality_graph: Option<&'a crate::kernel::equality_graph::EqualityGraph>,
+    pointer_context: Option<&'a PureFactContext>,
     collected_conditions: Option<Vec<ConditionTerm>>,
     integer_cache: HashMap<(u64, u64, bool), IntegerTerm>,
     pointer_application_cache: HashMap<(u64, u64, bool), PointerBlock>,
@@ -1351,6 +1360,7 @@ impl<'a> TermRewrite<'a> {
             conditions: None,
             bounded_uint64_indices: None,
             equality_graph: None,
+            pointer_context: None,
             collected_conditions: None,
             algebraic: None,
             bitvector: None,
@@ -1385,6 +1395,7 @@ impl<'a> TermRewrite<'a> {
             integer_work_exhausted: false,
             pointer_variable: None,
             pointer_exact: None,
+            pointer_value_exact: None,
             pointer_offset_exact: None,
             #[cfg(test)]
             visits: 0,
@@ -1422,6 +1433,7 @@ impl<'a> TermRewrite<'a> {
             conditions: None,
             bounded_uint64_indices: None,
             equality_graph: None,
+            pointer_context: None,
             collected_conditions: None,
             algebraic: None,
             bitvector: Some((from, to)),
@@ -1456,6 +1468,7 @@ impl<'a> TermRewrite<'a> {
             integer_work_exhausted: replacement_work_exhausted,
             pointer_variable: None,
             pointer_exact: None,
+            pointer_value_exact: None,
             pointer_offset_exact: None,
             #[cfg(test)]
             visits: 0,
@@ -1554,6 +1567,7 @@ impl<'a> TermRewrite<'a> {
             conditions: Some(conditions),
             bounded_uint64_indices: None,
             equality_graph: None,
+            pointer_context: None,
             collected_conditions: None,
             changed: false,
             integer_cache: HashMap::new(),
@@ -1585,6 +1599,7 @@ impl<'a> TermRewrite<'a> {
             integer_work_exhausted: false,
             pointer_variable: None,
             pointer_exact: None,
+            pointer_value_exact: None,
             pointer_offset_exact: None,
             #[cfg(test)]
             visits: 0,
@@ -1595,6 +1610,14 @@ impl<'a> TermRewrite<'a> {
     /// Conditional reduction in the checked proof context. The graph can
     /// establish positive equality only; an unsuccessful query stays unknown.
     /// Like cited conditions, this context never enters binder bodies.
+    pub(in crate::kernel) fn for_conditions_with_context(
+        conditions: &'a HashMap<ConditionTerm, bool>, context: &'a PureFactContext,
+    ) -> Self {
+        let mut rewrite = Self::for_conditions_with_graph(conditions, &context.equality_graph);
+        rewrite.pointer_context = Some(context);
+        rewrite
+    }
+
     pub(in crate::kernel) fn for_conditions_with_graph(
         conditions: &'a HashMap<ConditionTerm, bool>,
         graph: &'a crate::kernel::equality_graph::EqualityGraph,
@@ -1621,6 +1644,13 @@ impl<'a> TermRewrite<'a> {
         rewrite
     }
 
+    pub(crate) fn for_pointer_value_exact(from: &'a CPointerValue, to: &'a CPointerValue) -> Self {
+        let mut rewrite = Self::empty();
+        rewrite.pointer_value_exact = Some((from, to));
+        rewrite.enforce_integer_work_limit = true;
+        rewrite
+    }
+
     pub(crate) fn for_pointer_variable(from: Variable, to: &'a Pointer) -> Self {
         Self {
             algebraic: None,
@@ -1628,10 +1658,12 @@ impl<'a> TermRewrite<'a> {
             integer_exact: None,
             pointer_variable: Some((from, to)),
             pointer_exact: None,
+            pointer_value_exact: None,
             pointer_offset_exact: None,
             conditions: None,
             bounded_uint64_indices: None,
             equality_graph: None,
+            pointer_context: None,
             collected_conditions: None,
             integer_cache: HashMap::new(),
             pointer_application_cache: HashMap::new(),
@@ -1712,10 +1744,12 @@ impl<'a> TermRewrite<'a> {
             integer_exact: None,
             pointer_variable: None,
             pointer_exact: None,
+            pointer_value_exact: None,
             pointer_offset_exact: None,
             conditions: None,
             bounded_uint64_indices: None,
             equality_graph: None,
+            pointer_context: None,
             collected_conditions: None,
             integer_cache: HashMap::new(),
             pointer_application_cache: HashMap::new(),
@@ -1890,10 +1924,12 @@ impl<'a> TermRewrite<'a> {
             integer_exact: None,
             pointer_variable: None,
             pointer_exact: None,
+            pointer_value_exact: None,
             pointer_offset_exact: None,
             conditions: None,
             bounded_uint64_indices: None,
             equality_graph: None,
+            pointer_context: None,
             collected_conditions: None,
             integer_cache: HashMap::new(),
             pointer_application_cache: HashMap::new(),
@@ -2512,13 +2548,38 @@ impl<'a> TermRewrite<'a> {
             CValue::Float32(v) => CValue::Float32(self.bits(v)),
             CValue::Float64(v) => CValue::Float64(self.bits(v)),
             CValue::Pointer(v) => {
-                let adopted = match v.extent() {
-                    None => self.replaced_pointer_extent(v.pointer()),
-                    Some(_) => None,
+                if let Some((from, to)) = self.pointer_value_exact && v == from && !self.source_disabled {
+                    self.changed = true;
+                    return CValue::Pointer(to.clone());
+                }
+                let replacement = match &v.pointer().block {
+                    PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) =>
+                        self.typed_variables.as_ref().and_then(|values| values.c.get(variable)).and_then(|value| match value {
+                            TypedCReplacement::Pointer(pointer) => Some(pointer.clone()),
+                            _ => None,
+                        }),
+                    _ => None,
                 };
-                let mapped = v.map_pointers(|address| self.pointer(address));
+                let adopted = if !v.extent_is_known() { replacement.as_ref().and_then(|p| p.extent().cloned()) } else { None };
+                let designation = if let Some(TypedCReplacement::Pointer(replacement)) = match &v.pointer().block {
+                    PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) => self.typed_variables.as_ref().and_then(|values| values.c.get(variable)),
+                    _ => None,
+                } {
+                    replacement.designation().clone()
+                } else if let Some((from, to)) = self.pointer_variable
+                    && matches!(v.designation().block, PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) if variable == from)
+                {
+                    to.object_identity()
+                } else if self.pointer_exact.is_some() {
+                    v.designation().clone()
+                } else {
+                    self.pointer(v.designation())
+                };
+                let mapped = v.map_pointers(|address| self.pointer(address))
+                    .with_designation(std::sync::Arc::new(designation));
                 CValue::Pointer(match adopted {
                     Some(extent) => mapped.with_extent(Some(extent)),
+                    None if !v.extent_is_known() && replacement.as_ref().is_some_and(|p| p.extent_is_known()) => mapped.with_root_extent(),
                     None => mapped,
                 })
             }
@@ -3611,22 +3672,6 @@ impl<'a> TermRewrite<'a> {
         }
     }
 
-    /// The extent a value at `p` adopts when `p`'s block is a typed
-    /// variable replaced by a pointer value with an extent.
-    fn replaced_pointer_extent(&self, p: &Pointer) -> Option<crate::kernel::SubobjectExtent> {
-        let (PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable)) =
-            &p.block
-        else {
-            return None;
-        };
-        let Some(TypedCReplacement::Pointer(replacement)) =
-            self.typed_variables.as_ref()?.c.get(variable)
-        else {
-            return None;
-        };
-        replacement.extent().cloned()
-    }
-
     fn pointer(&mut self, p: &Pointer) -> Pointer {
         if self.checked_work_exhausted() {
             return exhausted_pointer();
@@ -3818,7 +3863,7 @@ impl<'a> TermRewrite<'a> {
             return ConditionTerm::Constant(false);
         }
         if let Some(conditions) = self.conditions
-            && let Some(value) = conditions.get(v)
+            && let Some(value) = conditions.get(v).or_else(|| conditions.get(&v.flipped()))
         {
             return ConditionTerm::Constant(*value);
         }
@@ -3833,6 +3878,12 @@ impl<'a> TermRewrite<'a> {
             }
             ConditionTerm::Float64(c) => {
                 ConditionTerm::Float64(c.map_bitvector_terms(|b| self.bits(b)))
+            }
+            ConditionTerm::PointerValueEqual(a, b) => {
+                let CValue::Pointer(a) = self.value(&CValue::Pointer((**a).clone())) else { unreachable!() };
+                let CValue::Pointer(b) = self.value(&CValue::Pointer((**b).clone())) else { unreachable!() };
+                let canonical = |value: CPointerValue| value.map_addresses(|p| Pointer { block: p.block.clone(), offset: crate::kernel::eval::canonical_offset_term(&p.offset) });
+                ConditionTerm::pointer_value_equal(canonical(a), canonical(b))
             }
             ConditionTerm::PointerEqual(a, b) => {
                 ConditionTerm::PointerEqual(Box::new(self.pointer(a)), Box::new(self.pointer(b)))
@@ -3962,6 +4013,12 @@ impl<'a> TermRewrite<'a> {
         if self.checked_work_exhausted() {
             ConditionTerm::Constant(false)
         } else if self.equality_graph.is_some_and(|graph| match &result {
+            ConditionTerm::PointerValueEqual(left, right) => {
+                let matches = self.pointer_context.map_or_else(
+                    || left.designation() == right.designation() && left.extent() == right.extent() && left.extent_is_known() == right.extent_is_known(),
+                    |context| context.pointer_designations_match(left, right));
+                matches && graph.are_equal(left.pointer(), right.pointer())
+            }
             ConditionTerm::PointerEqual(left, right) => graph.are_equal(left, right),
             ConditionTerm::PointerOffsetEqual(left, right) => graph.are_offsets_equal(left, right),
             ConditionTerm::Bitvector32Equal(left, right) => graph.are_int32_equal(left, right),

@@ -361,7 +361,7 @@ impl Names {
                 self.expression(a);
                 self.expression(b);
             }
-            BitwiseNot(e) | Cast(e, _) | LoopEntrySnapshot(e) | MemoryLoad { pointer: e, .. } => {
+            Subobject { pointer: e, .. } | BitwiseNot(e) | Cast(e, _) | LoopEntrySnapshot(e) | MemoryLoad { pointer: e, .. } => {
                 self.expression(e)
             }
             PointerOffset {

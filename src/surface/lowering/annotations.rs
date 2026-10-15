@@ -6652,10 +6652,10 @@ impl AnnotationLowerer<'_> {
                 },
                 environment,
             ),
-            // A specification observes addresses; it does not designate.
-            CExpression::Subobject { pointer, .. } => {
-                self.lower_c_fragment_to_spec(pointer, environment)
-            }
+            CExpression::Subobject { pointer, width } => Ok(SpecExpression::Subobject {
+                pointer: Box::new(self.lower_c_fragment_to_spec(pointer, environment)?),
+                width: *width,
+            }),
             CExpression::PointerOffsetBytes { pointer, bytes } => {
                 Ok(SpecExpression::PointerOffset {
                     pointer: Box::new(self.lower_c_fragment_to_spec(pointer, environment)?),

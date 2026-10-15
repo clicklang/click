@@ -537,6 +537,10 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
             HavocIdentityTask::Condition(condition) => {
                 crate::instrumentation::record_deterministic_work(1);
                 match condition {
+                    ConditionTerm::PointerValueEqual(left, right) => {
+                        let _ = write!(identity, "pveq({left:?},{right:?});");
+                    }
+
                     ConditionTerm::AlgebraicEqual(left, right) => {
                         let _ = write!(identity, "aeq({left:?},{right:?});");
                     }
@@ -6460,7 +6464,7 @@ impl CMemory {
         // resource argument evaluator does not retain a C load's fact stream.
         crate::kernel::equality_graph::EqualityGraph::default()
             .register_pointer_read_definition(&value, &snapshot, pointer);
-        CValue::typed_pointer(value, value_type)
+        CValue::Pointer(CPointerValue::from_read(value, value_type, &snapshot, pointer))
     }
 }
 

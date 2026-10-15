@@ -2120,12 +2120,37 @@ impl CMemoryRange {
     ) -> Self {
         assert!(element_width > 0, "memory element width must be positive");
         Self {
+            designation: std::sync::Arc::new(base.object_identity()),
             base,
             start_bound: start,
             end_bound: end,
             element_width,
             kind: RangeIndexKind::Int32,
         }
+    }
+
+    /// A typed clause carries the complete pointer's origin, independently of
+    /// whichever address spelling the resource algebra subsequently selects.
+    pub(crate) fn from_pointer_value(
+        value: &CPointerValue,
+        start: Bitvector32Term,
+        end: Bitvector32Term,
+        element_width: u32,
+    ) -> Self {
+        Self::new_with_element_width(value.pointer().clone(), start, end, element_width)
+            .with_designation(value.designation.clone())
+    }
+
+    pub(crate) fn from_pointer_value_wide(
+        value: &CPointerValue, start: Bitvector32Term, end: Bitvector32Term, element_width: u32,
+    ) -> Self {
+        Self::new_wide(value.pointer().clone(), start, end, element_width)
+            .with_designation(value.designation.clone())
+    }
+
+    pub(in crate::kernel) fn with_designation(mut self, designation: std::sync::Arc<Pointer>) -> Self {
+        self.designation = designation;
+        self
     }
 
     pub fn kind(&self) -> RangeIndexKind {
@@ -2288,6 +2313,7 @@ impl CMemoryRange {
     ) -> Self {
         Self {
             kind: self.kind,
+            designation: self.designation.clone(),
             ..Self::new_with_element_width(base, start, end, self.element_width)
         }
     }

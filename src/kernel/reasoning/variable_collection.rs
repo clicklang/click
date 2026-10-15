@@ -1498,6 +1498,10 @@ pub(crate) fn collect_condition_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match condition {
+        ConditionTerm::PointerValueEqual(left, right) => {
+            for pointer in left.pointers().chain(right.pointers()) { collect_pointer_bitvector_variables(pointer, variables); }
+        }
+
         ConditionTerm::AlgebraicEqual(left, right) => {
             collect_algebraic_term_bitvector_variables(left, variables);
             collect_algebraic_term_bitvector_variables(right, variables);
@@ -2576,6 +2580,10 @@ fn collect_condition_capture_variables(
         return;
     }
     match condition {
+        ConditionTerm::PointerValueEqual(left, right) => {
+            for pointer in left.pointers().chain(right.pointers()) { collect_pointer_capture_variables(pointer, variables, integer_seen); }
+        }
+
         ConditionTerm::Constant(_) => {}
         ConditionTerm::Variable(variable) => {
             variables.insert(*variable);
@@ -3288,6 +3296,12 @@ fn collect_condition_scope_summary(
         return IntegerScopeSummary::default();
     }
     match condition {
+        ConditionTerm::PointerValueEqual(left, right) => {
+            let mut summary = IntegerScopeSummary::default();
+            for pointer in left.pointers().chain(right.pointers()) { summary.merge(collect_pointer_scope_summary(pointer, summaries)); }
+            summary
+        }
+
         ConditionTerm::Constant(_) => IntegerScopeSummary::default(),
         ConditionTerm::Variable(variable) => IntegerScopeSummary::bitvector_variable(*variable),
         ConditionTerm::AlgebraicEqual(left, right) => {
@@ -3857,6 +3871,10 @@ fn collect_condition_binder_variables(
         return;
     }
     match condition {
+        ConditionTerm::PointerValueEqual(left, right) => {
+            for pointer in left.pointers().chain(right.pointers()) { collect_pointer_binder_variables(pointer, integer_variables, bitvector_variables, integer_seen); }
+        }
+
         ConditionTerm::AlgebraicEqual(left, right) => {
             collect_binder_variables_in_algebraic_term(
                 left,

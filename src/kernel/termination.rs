@@ -1448,7 +1448,8 @@ fn collect_spec_c_variables(
                     SpecExpression::Value(_)
                     | SpecExpression::ResourceField { .. }
                     | crate::kernel::binary_spec_expression!(_, _)
-                    | SpecExpression::PointerOffset { .. }
+                    | SpecExpression::Subobject { .. }
+            | SpecExpression::PointerOffset { .. }
                     | SpecExpression::BitwiseNot(_)
                     | SpecExpression::Cast(_, _)
                     | SpecExpression::PureFunctionApplication { .. }

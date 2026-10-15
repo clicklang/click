@@ -1303,6 +1303,10 @@ fn push_read(reads: &mut Vec<ResourceRead>, resource: OwnedResource, point: Prog
 
 fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRead>) {
     match condition {
+        ConditionTerm::PointerValueEqual(left, right) => {
+            for pointer in left.pointers().chain(right.pointers()) { collect_offset_reads(&pointer.offset, reads); }
+        }
+
         ConditionTerm::AlgebraicEqual(left, right) => {
             left.for_each_bitvector_term(|term| collect_bitvector_reads(term, reads));
             right.for_each_bitvector_term(|term| collect_bitvector_reads(term, reads));

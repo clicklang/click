@@ -1477,6 +1477,7 @@ impl ResourceContext {
         if let Some(query) = query {
             query.register(&graph);
         }
+        let mut complete_addresses = true;
         let addresses = if self.storage.facts.len() < graph.pointer_merge_count() {
             // A small, cold contract beside a large caller equality history:
             // index its actual occurrences in the already closed namespace.
@@ -1491,9 +1492,12 @@ impl ResourceContext {
             addresses
         } else {
             let mut addresses = self.storage.index.memory_addresses.clone();
-            for merge in graph.pointer_merges() {
-                addresses.merge(merge);
-            }
+            let merges = match query {
+                Some(MemoryQuery::Address(pointer)) => { complete_addresses = false; graph.pointer_merges_for_block(&pointer.block) },
+                Some(MemoryQuery::Footprint(range)) => { complete_addresses = false; graph.pointer_merges_for_block(&range.base().block) },
+                None => graph.pointer_merges(),
+            };
+            for merge in merges { addresses.merge(merge); }
             addresses
         };
         let paired = std::sync::Arc::new(PairedMemoryIndex {
@@ -1504,7 +1508,9 @@ impl ResourceContext {
             symbolic: symbolic::RangeSupports::default(),
             points_initialized: false,
         });
-        cache.by_inputs = cache.by_inputs.with_inserted(key, paired.clone());
+        // A selected-class view is valid for this query only. Caching it by
+        // the whole graph key would make a later unrelated query miss aliases.
+        if complete_addresses { cache.by_inputs = cache.by_inputs.with_inserted(key, paired.clone()); }
         paired
     }
 

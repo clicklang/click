@@ -2322,6 +2322,10 @@ fn collect_condition_bitvector_atoms(
     atoms: &mut BTreeSet<BitvectorEqualityAtomKey>,
 ) {
     match condition {
+        ConditionTerm::PointerValueEqual(left, right) => {
+            for pointer in left.pointers().chain(right.pointers()) { collect_pointer_bitvector_atoms(pointer, atoms); }
+        }
+
         ConditionTerm::AlgebraicEqual(left, right) => {
             left.for_each_bitvector_term(|term| collect_bitvector_atoms(term, atoms));
             right.for_each_bitvector_term(|term| collect_bitvector_atoms(term, atoms));
