@@ -427,3 +427,10 @@ verify. Continue with string push's terminator comparison and the later vector
 allocation fold. This does not close either complete project or change the
 41/52 archive audit. See the
 [focused evidence](../design/object-model-recovery-audit.md#explicit-stored-value-proofs-in-the-original-examples).
+
+
+Upstream now verifies both full string/vector projects after the focused
+string-push proof adjustment. The remaining string pointer-frame and vector
+allocation-fold failures are specific to the recovery archive; continue reducing
+those compatibility obligations before activation. See the
+[upstream/archive distinction](../design/object-model-recovery-audit.md#string-push-proof-and-full-upstream-project-checks).
