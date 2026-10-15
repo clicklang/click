@@ -79,8 +79,10 @@ fn modeled_tree_rotate_left_checks_model_and_ownership() {
             "model: HeapTree::Node(node, value, left_model, middle_model)",
             "model: HeapTree::Node(node, pivot_value, left_model, middle_model)",
         ),
-        source.replace("{ left: l, right: m }", "{ left: l, right: z }"),
-        source.replace("{ left: l, right: m }", "{ left: l, right: l }"),
+        // Fold the lower node with a wrong right child: the pivot's right
+        // child, or the root's own left child.
+        source.replace("}, { right: m });", "}, { right: right });"),
+        source.replace("}, { right: m });", "}, { right: left });"),
         source.replace(
             "let rotated = fold(tree_at(result)",
             "let rotated = fold(tree_at(root)",

@@ -2311,9 +2311,16 @@ fn unified_fee_evaluation_source_with_profile(mode: &str, result_fit: bool) -> S
         .split_once("\n}\nint64")
         .unwrap()
         .0;
+    assert!(
+        wide_body.contains("let { result: product } ="),
+        "{wide_body}"
+    );
     let negative = wide_body
         .replace("denominator", "negative_denominator")
-        .replace("let product =", "let negative_product =")
+        .replace(
+            "let { result: product } =",
+            "let { result: negative_product } =",
+        )
         .replace("to_integer(product)", "to_integer(negative_product)")
         .replace("FeeFrac_Div(product,", "FeeFrac_Div(negative_product,")
         .replace("rounded", "negative_rounded");
