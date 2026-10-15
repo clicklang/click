@@ -215,4 +215,17 @@ exit and both wrappers: a red focus beneath a nonnull black parent. Its
 the exact subtree model and full ancestor tag are preserved. It needs neither
 root-field ownership nor a callback contract because this path reads neither
 the root field nor calls the callback. The ancestor can be at any depth, but
-this case stops immediately; color flips and rotations are still pending.
+this case stops immediately; color flips and general rotations remain pending.
+
+
+`rbtree_size_insert_rotation.click` checks the unchanged `__rb_insert` body and
+both augmented wrappers for a left-left three-node rotation at the root. The
+input owns the black grandparent, red parent and red focus with valid cached
+sizes 3, 2 and 1. After the structural rotation, the indirect callback is
+checked against `RotateTreeRight`; it may write the promoted and demoted size
+cells and returns a recursively valid `sized_at` tree. The result has a black
+root and two red leaf children, with the exact expected structural model.
+The wrappers accept the checked writable callback directly or through the
+borrowed table field. This is the first insertion path that invokes a writable
+metadata callback. Other rotation shapes, color flips, arbitrary ancestor
+contexts and writable erase integration remain unfinished.
