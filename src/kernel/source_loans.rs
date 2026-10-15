@@ -1,6 +1,9 @@
 //! Semantic birth/end operations issued from checked locked-source lowering.
 //! Observation labels remain inert; these plans bind the actual IR operands.
+mod scopes;
 use super::*;
+pub use scopes::CScalarReferenceScope;
+pub(crate) use scopes::{ScalarReferenceScopeKey, ScalarReferenceScopePlan};
 use std::sync::Arc;
 
 /// Full labels are retained once for diagnostics and source membership. Hot

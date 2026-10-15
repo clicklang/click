@@ -101,6 +101,7 @@ fn statement_expressions<'a>(
         CStatement::Seq(first, _) => statement_expressions(first, expressions),
         CStatement::Skip
         | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }

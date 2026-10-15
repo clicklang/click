@@ -56,6 +56,7 @@ pub(super) fn summarize(function: &CFunction, summary: &mut AddressTakenSummary)
             }
             CStatement::Skip
             | CStatement::EndScalarReference(_)
+            | CStatement::ScalarReferenceScope(_)
             | CStatement::Break
             | CStatement::Continue
             | CStatement::Goto { .. }

@@ -4559,7 +4559,7 @@ pub(super) fn execute_c_function_call_paths(
     execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CFunctionPath>> {
-    if caller_state.has_local_scalar_references() {
+    if caller_state.has_local_scalar_references() || caller_state.has_local_reference_scope() {
         return Ok(vec![CFunctionPath::new(
             CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(Box::new(
                 crate::kernel::loans::LoanRefusal::UnsupportedResource
@@ -14416,6 +14416,7 @@ fn statement_writes_aggregate_parameter(
         }
         CStatement::Skip
         | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -16192,6 +16193,7 @@ fn collect_c_memory_read_expressions(statement: &CStatement, reads: &mut Vec<CEx
     match statement {
         CStatement::Skip
         | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue

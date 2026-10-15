@@ -2393,6 +2393,7 @@ pub(super) fn execute_c_statement_verification_paths(
             // has to be synchronized across this boundary.
             let operation = match statement {
                 CStatement::EndScalarReference(_) => "verification statement: borrow end",
+                CStatement::ScalarReferenceScope(_) => "verification statement: borrow scope",
                 CStatement::Skip => "verification statement: skip",
                 CStatement::Break => "verification statement: break",
                 CStatement::Continue => "verification statement: continue",
@@ -9715,6 +9716,7 @@ fn validate_loop_havoc_stable_loans(
 
 pub(super) fn statement_may_write_memory(state: &CState, statement: &CStatement) -> bool {
     match statement {
+        CStatement::ScalarReferenceScope(scope) => !scope.cleared_locals().is_empty(),
         CStatement::Skip
         | CStatement::EndScalarReference(_)
         | CStatement::Break
@@ -9850,6 +9852,9 @@ mod v10_tests {
 
 pub(super) fn collect_loop_modified_locals(statement: &CStatement, names: &mut BTreeSet<String>) {
     match statement {
+        CStatement::ScalarReferenceScope(scope) => {
+            names.extend(scope.cleared_locals().iter().map(|(name, _)| name.clone()))
+        }
         CStatement::EndAutomaticLifetimes { names: retired } => {
             names.extend(retired.iter().cloned())
         }
@@ -10028,6 +10033,7 @@ pub(crate) fn collect_address_taken_locals(statement: &CStatement, names: &mut B
         CStatement::EndAutomaticLifetimes { .. } => {}
         CStatement::Skip
         | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }

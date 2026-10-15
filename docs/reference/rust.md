@@ -882,17 +882,23 @@ source identities, duplicate endings and parent endings with live children are
 refused. Closing the outermost lease returns the original owned occurrence and
 preserves current memory. Expired aliases cannot use that returned owner.
 
-Across an `if`, both arms preserve the exact live loan ledger. Scalar reads,
-writes and calculations, including nested branches and condition reads, keep
-the borrow live through the common continuation. An arm's last use ends at the
-outermost enclosing continuation; a later use can extend that ending further.
-Nested borrows end innermost first. Births and reference copies or reassignment
-must occur on the shared path outside branch arms. Reusing a suspended parent
-in just one arm requires branch-specific recovery and remains outside this
-protocol.
+Across an `if`, scalar reads, writes and calculations can keep a borrow live
+through the common continuation. A use in a deeper arm extends that borrow to
+the corresponding common continuation; later uses can extend it further.
+Nested borrows end innermost first.
+
+Arm-local reborrows and reference copies are also supported when every such
+reference stays inside its defining arm. Each branch scope checkpoints the
+entry ledger, ends all references born there, verifies restoration of the exact
+original owned occurrences, and clears the private arm-local reference slots
+before restoring the exact entry ledger. Current writes are retained. Nested
+scopes may borrow an entry reference temporarily, preserving it at scope exit.
+The existing join still requires identical live loan state. Reference IDs are
+never reused, and old copies remain invalid after scope reconciliation.
 
 The source and sidecars require no additional lifetime annotations. Source
-observations remain read-only. Branch-local births or reference reassignment,
+observations remain read-only. Reference assignments to an existing outer
+binding, references escaping an arm, conditionally live borrow recovery,
 early returns, shared borrow graphs, aggregate or addressable reference
 transport, calls and loops still need source integration. Functions outside
 the activated subset retain their existing lowering and have no local lease

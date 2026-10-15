@@ -267,12 +267,18 @@ needed to finish a claim already made:
     source length, aliases, nested depth and repeated shared diamonds.
     Structured acyclic branches now retain one exact live ledger through both
     arms and end at a common continuation. Arm accesses and conditions extend
-    the frontier; births and alias mutations stay on the shared path. Native
+    the frontier. Fully closed arm-local borrows/copies now use checked ledger
+    checkpoints: all new references end, original ownership returns, private
+    reference slots are cleared and the exact entry ledger is restored. Fresh
+    IDs are not rewound. Nested scopes preserve existing live references and
+    current writes; escaping or cross-arm references are refused. Source and
+    selected-delta scaling cover this path. Native
     conditional and nested-borrow helpers/callers cover expansion and negatives,
     while kernel tests exercise joins with live custody.
 
-  Wider source coverage remains open: branch-local births or alias mutation,
-  early returns, loops, aggregates, shared borrow graphs and call/havoc transport
+  Wider source coverage remains open: escaping/conditionally live arm references,
+  writes to outer reference bindings, early returns, loops, aggregates, shared
+  borrow graphs and call/havoc transport
   need checked protocols. Only the
   activated source subset executes local leases. A reproduced false acceptance
   here would be `unsound`, and so P1, under the [issue rules](README.md).

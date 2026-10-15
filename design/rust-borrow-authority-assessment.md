@@ -10,7 +10,7 @@ an architecture requirement, with the following production boundary.
 | Required case | Current evidence | What remains |
 | --- | --- | --- |
 | Updated child contents return to the parent | Native Rust reborrow, field-guard cleanup and modular owned calls verify through the production engine. | Synchronous borrowed-memory calls now carry an explicit child receipt; local reference lifetimes remain separate. |
-| Parent reuse after the child's last use | `rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop` checks the unchanged `set_seven` witness body, then a real caller. Both contracts expand and reverify. | Extend retirement to branch-local births/alias changes and early exits. |
+| Parent reuse after the child's last use | `rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop` checks the unchanged `set_seven` witness body, then a real caller. Both contracts expand and reverify. | Extend retirement to escaping/conditionally live references and early exits. |
 | Disjoint fields remain usable | `rust_owned_disjoint_mutable_fields_verify` checks actual simultaneous field references and updated values; the production call planner partitions exclusive requirements. | Production call receipts now combine nested dependencies with the existing footprint partition; local borrow dependencies remain open. |
 | Stale child access and duplicate recovery fail | Production exclusive-call tests reject stale receipts, duplicate returns and missing discharge; native sidecar negatives reject absent write authority. | The first scalar source subset now rejects expired local handles; wider source coverage remains open. |
 | Wrong child identity or holder cannot recover | Production exclusive-call receipt tests reject wrong holders, other call identities, altered supports and a fabricated terminal rollback. | Source endings check live invocation handles and child dependencies; wider source coverage remains open. |
@@ -266,12 +266,31 @@ keep the same node, and replacement definitions change only the assigned alias.
 The checker records direct uses while traversing the selected function once.
 A reverse birth-order pass propagates each subtree's last use to its ancestors.
 A single region projection follows the existing checked CFG postdominator
-structure. Scalar accesses in both arms, including nested branches and
-conditions, are projected to the outermost common continuation. Reference
-births and alias changes are accepted only on the shared path. Branches
-therefore preserve the exact live loan ledger; the existing kernel join
-checks that identity without a new loan-state merge. No paths are enumerated
-and alias maps are not cloned per branch.
+structure. Lexical arm paths and ancestor jumps locate each use's continuation
+relative to its borrow definition. Definitions in one arm cannot be used in a
+sibling or its enclosing continuation, and an arm cannot overwrite an existing
+outer reference binding. Scalar writes, condition reads and local copies are
+followed without enumerating paths or cloning alias maps per branch.
+
+For arm-local definitions, lowering emits a sealed scope checkpoint before the
+conditional and a checked close on each arm. Nested conditionals use nested
+checkpoints. The kernel permits only local-reference registration, borrowing,
+recovery and retirement while a checkpoint is open. It records only newly
+issued IDs and their checked active count; an entry reference cannot be ended.
+At close, every new reference must be inactive and every newly borrowed root's
+original owned occurrence must be present. The current holder and exact sealed
+scope identity must match. Nonlocal ledger transitions, transport and return
+with an open scope are refused.
+
+The scope then marks its statically certified, private arm-local reference slots
+uninitialized, including their memory footprints, and restores the exact entry
+ledger. This prevents a later abstraction from turning a dead reference into
+a fresh ordinary pointer. Local reference IDs use a global fresh counter,
+which reconciliation never rewinds; captured stale values still fail lookup.
+Memory is not rolled back. Existing live entry references and unrelated loan
+state survive exactly. The ordinary join retains its exact-ledger check.
+No ambient ledger history is scanned: validation follows the scope's selected
+transition delta, new roots and cleanup slots.
 
 Every computed ending follows all uses of the node and its descendants, including
 copies and scalar expressions. Frontier identity includes both the block and
@@ -304,8 +323,10 @@ Source labels are shared in one immutable family; its precomputed fixed-width
 identity and frontier positions form the hot semantic key. Preparation and
 execution inspect selected statements and indexed state deltas. Deterministic
 16/64/256/1024 regressions cover ordinary source length, alias chains, read
-endings, nested depth and repeated shared diamonds. A selected-end regression also bounds execution work
-across growing live-handle indexes. No per-borrow whole-function scan is used.
+endings, nested depth and repeated shared diamonds, including arm-local scopes. A selected-end regression also bounds execution work
+across growing live-handle indexes. Selected scope work is also bounded at
+16/64/256/1024 ambient-history sizes (954/1044/1134/1224 map-work units).
+No per-borrow whole-function scan is used.
 
 The unchanged native `set_seven`, alias-move and read-ending witnesses activate
 explicit end operations. A new native fixture covers shared and separate
@@ -319,6 +340,13 @@ an actual join with live custody and refusal of premature parent access,
 expired aliases and duplicate ends. Condition reads, later join reads and nested
 regions pin common frontier placement.
 
+A pinned arm-scope fixture verifies independent and nested arm-local reborrows,
+a local alias and a modular caller, including expansion and value/authority
+negatives. Kernel tests check live-close refusal, wrong holders/source scope,
+entry-reference preservation, original support, missing ownership, duplicate
+close, stale IDs after reconciliation, cleared slots and escaped/cross-arm
+reference refusal.
+
 The Rust semantic profile versions this source coverage and the resource
 semantics version covers the new kernel operation. Matching existing locks are
 rebound without changing source, compiler or artifact hashes.
@@ -326,8 +354,9 @@ rebound without changing source, compiler or artifact hashes.
 ## Remaining local-reference work
 
 Shared borrow graphs, aggregate fields and reference storage, call transfer,
-memory havoc, branch-local births, alias changes or recovery, early returns
-and loops still need checked source/runtime protocols. Functions outside the activated subset retain their existing
+memory havoc, escaping or conditionally live arm references, writes to outer
+reference bindings, early returns and loops still need checked source/runtime
+protocols. Functions outside the activated subset retain their existing
 lowering. Pinned rustc establishes source borrow legality and does not replace
 submitted-sidecar authority checks. Neither observations nor a submitted alias
 list grants a recovery right.
@@ -342,7 +371,8 @@ cargo test --lib correspondence_calls_production_
 cargo test --lib exclusive_call_
 cargo test --lib local_reference_
 cargo test --lib scalar_reference_
-cargo test --lib source_scalar_lease
+cargo test --lib source_scalar_
+cargo test --test rust_import rust_arm_local_borrows_close_without_escaping_before_the_join -- --ignored
 cargo test --test rust_import rust_scalar_borrow_stays_live_through_both_branch_arms_and_ends_at_join -- --ignored
 cargo test --test rust_import rust_nested_scalar_borrows_end_explicitly_at_shared_and_separate_frontiers -- --ignored
 cargo test --test rust_import rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop -- --ignored

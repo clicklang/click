@@ -1772,6 +1772,11 @@ fn c_statement_source_cost(statement: &CStatement) -> CSourceCost {
             cost.statement_steps = cost.statement_steps.saturating_add(1);
         }
         match statement {
+            CStatement::ScalarReferenceScope(scope) => {
+                cost.statement_steps = cost
+                    .statement_steps
+                    .saturating_add(scope.cleared_locals().len());
+            }
             CStatement::Skip
             | CStatement::EndScalarReference(_)
             | CStatement::EndAutomaticLifetimes { .. }
