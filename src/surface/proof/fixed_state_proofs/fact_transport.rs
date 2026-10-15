@@ -15,29 +15,9 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
     state: &CState,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Vec<ClickProposition>, ClickError> {
-    let mut candidates = available
-        .iter()
-        .filter_map(|kernel| {
-            let surface = checked_surface_comparison_fact_in_state(
-                view,
-                kernel,
-                SurfaceFactMatch::AvailabilityEquivalent,
-                available,
-                parameter_binding,
-                state,
-                spec_definitions,
-            )
-            .ok();
-            surface.map(|surface| (kernel.clone(), surface))
-        })
-        .collect::<Vec<_>>();
     let mut selected = Vec::new();
     if exact_fact_is_available(source, available) {
-        let source_pair = (source.clone(), surface_source.clone());
-        if !candidates.contains(&source_pair) {
-            candidates.push(source_pair.clone());
-        }
-        selected.push(source_pair);
+        selected.push((source.clone(), surface_source.clone()));
     }
     let check_premises = |selected: &[(Proposition, ClickProposition)]| {
         let explicit = selected
@@ -124,6 +104,24 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
         )
     };
     if !checks(&selected) {
+        // The written source and checked frame may already suffice. Do not
+        // synthesize unrelated ambient facts before trying that proof.
+        let candidates = available
+            .iter()
+            .filter_map(|kernel| {
+                checked_surface_comparison_fact_in_state(
+                    view,
+                    kernel,
+                    SurfaceFactMatch::AvailabilityEquivalent,
+                    available,
+                    parameter_binding,
+                    state,
+                    spec_definitions,
+                )
+                .ok()
+                .map(|surface| (kernel.clone(), surface))
+            })
+            .collect::<Vec<_>>();
         let rank = |proposition: &Proposition| match proposition {
             Proposition::CResourceSeparate { .. }
             | Proposition::CMemoryLoadable { .. }

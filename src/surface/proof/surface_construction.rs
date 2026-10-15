@@ -102,14 +102,21 @@ fn checked_surface_fact_in_state_with_assumptions(
             "kernel fact belongs to a different recorded memory snapshot: {kernel:?}"
         )));
     }
-    let resolved_kernel = crate::kernel::resolve_minted_load_variables(kernel, view.effect_facts);
+    let resolved_kernel = crate::kernel::resolve_minted_load_variables(kernel, view.effect_facts)
+        .map_err(|error| {
+        ClickError::new(format!("could not resolve checked surface loads: {error}"))
+    })?;
     // Representative selection can derive facts through load variables
     // whose defining facts are not in this view's effect stream; the
     // registry is the kernel's own record of what each one stands for, and
     // resolving through it is the sanctioned display direction.
     let resolved_kernel =
         if crate::kernel::proposition_mentions_registered_load_variable(&resolved_kernel) {
-            crate::kernel::resolve_load_variables_from_registry(&resolved_kernel)
+            crate::kernel::try_resolve_load_variables_from_registry(&resolved_kernel).map_err(
+                |error| {
+                    ClickError::new(format!("could not resolve checked surface loads: {error}"))
+                },
+            )?
         } else {
             resolved_kernel
         };
@@ -525,12 +532,17 @@ fn checked_surface_comparison_fact_in_state_with_availability(
             bases.push(surface.clone());
         }
     }
-    let resolved_kernel = crate::kernel::resolve_minted_load_variables(kernel, view.effect_facts);
+    let resolved_kernel = crate::kernel::resolve_minted_load_variables(kernel, view.effect_facts)
+        .map_err(|error| {
+        ClickError::new(format!("could not resolve checked surface loads: {error}"))
+    })?;
     // Load variables represent loads whose snapshots the snapshot index needs;
     // resolve through the registry when no defining fact is in scope, and
     // index points from the load term rather than the kernel variable.
     let resolved_kernel = if &resolved_kernel == kernel {
-        crate::kernel::resolve_load_variables_from_registry(kernel)
+        crate::kernel::try_resolve_load_variables_from_registry(kernel).map_err(|error| {
+            ClickError::new(format!("could not resolve checked surface loads: {error}"))
+        })?
     } else {
         resolved_kernel
     };
