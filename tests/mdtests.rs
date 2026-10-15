@@ -167,6 +167,7 @@ const NIGHTLY: &[&str] = &[
     "normalize_using_rejects_changed_pointer_value.md",                        // 0.6s
     "opaque_call_scoped_composite_reallocation.md",                            // 1.9s
     "opaque_reallocating_call_does_not_carry_an_unstated_value.md",            // 0.8s
+    "pointer_field_frame_after_descriptor_and_backing_writes.md",              // 2.9s
     "pointer_field_reloaded_backing_writes.md",                                // 0.8s
     "pointer_read_alias_after_loop_helper.md",                                 // 1.0s
     "pointer_read_alias_rejects_changed_field.md",                             // 0.6s
