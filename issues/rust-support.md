@@ -106,8 +106,11 @@ spelling remain checked compatibility aliases without artifact rewrites.
 Frontend failures distinguish absent, incomplete and mismatched installations
 from development overrides, and name the corresponding recovery action.
 
-Other host bundles and release identity contributions to the shared project
-lock remain.
+Rust lock schema 9 now contributes the pinned release/compiler and complete
+profile identity instead of machine-specific Charon executable hashes.
+Single-file metadata paths are portable, and release installation checks compare
+refreshed basic/adler2 locks with committed locks. Schema-8 locks remain readable;
+refresh is explicit. Other host bundles remain.
 The audit below records the original pipeline; legacy per-sidecar/source-build
 paths remain available during the project-config migration.
 

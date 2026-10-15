@@ -84,7 +84,7 @@ fn rust_release_archive_installs_and_verifies() {
     ));
 
     let basic = t.path().join("basic");
-    examples::project(&basic);
+    examples::committed_project(&basic, "examples/basic-rust");
     success(cli(&binary, &relocated, &basic, &["import", "lock"]));
     success(cli(
         &binary,
@@ -93,13 +93,17 @@ fn rust_release_archive_installs_and_verifies() {
         &["verify", "borrow.click"],
     ));
     let lock = fs::read(basic.join("click.project.lock.json")).unwrap();
+    assert_eq!(
+        lock,
+        include_bytes!("../examples/basic-rust/click.project.lock.json")
+    );
     success(cli(&binary, &relocated, &basic, &["import", "lock"]));
     assert_eq!(
         fs::read(basic.join("click.project.lock.json")).unwrap(),
         lock
     );
     let adler = t.path().join("adler-proof");
-    examples::adler_project(&adler);
+    examples::committed_project(&adler, "design/charon-trial/adler2");
     success(cli(&binary, &relocated, &adler, &["import", "lock"]));
     success(cli(
         &binary,
@@ -108,13 +112,17 @@ fn rust_release_archive_installs_and_verifies() {
         &["verify", "restoration.click"],
     ));
     assert_eq!(
+        fs::read(adler.join("click.project.lock.json")).unwrap(),
+        include_bytes!("../design/charon-trial/adler2/click.project.lock.json")
+    );
+    assert_eq!(
         fs::read(basic.join("borrow.rs")).unwrap(),
         include_bytes!("../examples/basic-rust/borrow.rs")
     );
     let trial = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/adler2");
     for file in ["src/lib.rs", "src/algo.rs"] {
         assert_eq!(
-            fs::read(t.path().join("vendor/adler2").join(file)).unwrap(),
+            fs::read(adler.join(file)).unwrap(),
             fs::read(trial.join(file)).unwrap()
         );
     }

@@ -4,12 +4,17 @@
     "owned": {
       "language": "rust",
       "lock": {
-        "artifact": "c4d5c1d23b38b590922919ddafbbebfb9e88b353a9f0ba0acc0507bdd8e7af98",
-        "charon_driver": "645ab4b0456083642cafa05da8b1d58aca0c6d3349c2b7921b0820cbb465fb72",
+        "artifact": "7eb1dc8100ddcdf9ed452a57949ba8aeba006b91ab3cb239cffc555fd2b61b03",
         "config": "6ea346097db8f44bf8e34d58433fa64fdf625d26f2bc0f533ed1b30e06957a61",
-        "exporter": "c6cc5acf5bb7e4d4bb6bef5265639d1b05b0138e3072767825cc2aa62a5040e4",
-        "identity": "d8952ba1f5ea3be8fbf8c1a481c6c930c764bc4f18222fda4ec941ed3636b864",
-        "schema": 8,
+        "frontend": {
+          "click_version": "0.1.0",
+          "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+          "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+          "extractor_version": "0.1.279",
+          "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+        },
+        "identity": "b011c853f8b48a82b1c92e7adf89e8403ac6967197af26c46fb4e9fb2d1d0c3d",
+        "schema": 9,
         "source": "06e9d211e1e0b095872a1c55450d7d12ecc656e45d82dee070951fb56a336bdd",
         "source_files": {
           "owned.rs": "06e9d211e1e0b095872a1c55450d7d12ecc656e45d82dee070951fb56a336bdd"

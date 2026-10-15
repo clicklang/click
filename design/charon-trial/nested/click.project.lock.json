@@ -4,12 +4,17 @@
     "nested": {
       "language": "rust",
       "lock": {
-        "artifact": "e2ffd9c2ef31849778922f1991ac02f91644501bc9bc2f728bf53492f351bfcb",
-        "charon_driver": "645ab4b0456083642cafa05da8b1d58aca0c6d3349c2b7921b0820cbb465fb72",
+        "artifact": "8d2ac82f482eef199c76a59efd96e16cf448024aff9aafb3692839fbb170590d",
         "config": "cb59054ea791087b5d4cd4e6e07fb8ea5b739fbb6f7c1d14fb29e0991e7a2195",
-        "exporter": "c6cc5acf5bb7e4d4bb6bef5265639d1b05b0138e3072767825cc2aa62a5040e4",
-        "identity": "9869182957085aec34158337ae60a9e1f7a999f3db960ae67985e93acd79b28a",
-        "schema": 8,
+        "frontend": {
+          "click_version": "0.1.0",
+          "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+          "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+          "extractor_version": "0.1.279",
+          "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+        },
+        "identity": "87ea46b19ffe900231be9498e58527133bf97ba1c0cabd3ead8840b3dd2f98d1",
+        "schema": 9,
         "source": "a758bdee7c60de9602a67e25f8dfec3308620d409f0c4a39b4adedd59fc87af7",
         "source_files": {
           "nested.rs": "a758bdee7c60de9602a67e25f8dfec3308620d409f0c4a39b4adedd59fc87af7"

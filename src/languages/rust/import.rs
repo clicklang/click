@@ -1,5 +1,5 @@
 //! Refresh runs the pinned exporter; ordinary loading only checks locked inputs.
-use super::schema::{RustExport, SCHEMA, TARGET};
+use super::schema::{RustExport, TARGET};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -124,9 +124,12 @@ struct Lock {
     schema: u32,
     config: String,
     source: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     exporter: String,
     artifact: String,
     identity: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    frontend: Option<super::profile::FrontendIdentity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     charon_driver: Option<String>,
     /// A project unit's crate files with their digests, so a changed file
@@ -137,6 +140,7 @@ struct Lock {
 fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
+#[cfg(test)]
 fn import_identity(
     config: &str,
     source: &str,
@@ -171,6 +175,57 @@ fn import_identity_for(
         )
         .as_bytes(),
     )
+}
+
+// The artifact schema is independent of the Rust lock's identity format.
+const LEGACY_LOCK_SCHEMA: u32 = 8;
+const RELEASE_LOCK_SCHEMA: u32 = 9;
+fn release_identity(
+    config: &str,
+    source: &str,
+    artifact: &str,
+    frontend: &super::profile::FrontendIdentity,
+) -> String {
+    digest(
+        format!(
+            "click-rust-lock-v9\n{config}\n{source}\n{artifact}\n{}",
+            serde_json::to_string(frontend).unwrap()
+        )
+        .as_bytes(),
+    )
+}
+
+impl Lock {
+    fn identity_matches(&self) -> bool {
+        match (self.schema, &self.frontend) {
+            (RELEASE_LOCK_SCHEMA, Some(frontend)) => {
+                self.exporter.is_empty()
+                    && self.charon_driver.is_none()
+                    && frontend == &super::profile::FrontendIdentity::current()
+                    && self.identity
+                        == release_identity(&self.config, &self.source, &self.artifact, frontend)
+            }
+            (LEGACY_LOCK_SCHEMA, None) => self.charon_driver.as_deref().is_some_and(|driver| {
+                [
+                    super::profile::get().identity.as_str(),
+                    super::profile::LEGACY_IDENTITY,
+                ]
+                .iter()
+                .any(|prefix| {
+                    self.identity
+                        == import_identity_for(
+                            prefix,
+                            &self.config,
+                            &self.source,
+                            &self.exporter,
+                            &self.artifact,
+                            driver,
+                        )
+                })
+            }),
+            _ => false,
+        }
+    }
 }
 
 fn read(path: &Path, limit: usize) -> Result<Vec<u8>, String> {
@@ -398,7 +453,6 @@ fn extract(
         return Err("Charon driver must differ from artifact/lock outputs".into());
     }
     let driver_bytes = read(driver, 128 << 20)?;
-    let driver_hash = digest(&driver_bytes);
     let output_bytes = super::charon::extract_crate(
         runtime,
         inputs.source,
@@ -418,21 +472,16 @@ fn extract(
     }
     let config_hash = inputs.config_digest.clone();
     let source_hash = source_digest(c, &source_files);
-    let exporter_hash = digest(&exporter_bytes);
     let artifact_hash = digest(&output_bytes);
+    let frontend = super::profile::FrontendIdentity::current();
     let lock = Lock {
-        schema: SCHEMA,
-        identity: import_identity(
-            &config_hash,
-            &source_hash,
-            &exporter_hash,
-            &artifact_hash,
-            &driver_hash,
-        ),
-        charon_driver: Some(driver_hash),
+        schema: RELEASE_LOCK_SCHEMA,
+        identity: release_identity(&config_hash, &source_hash, &artifact_hash, &frontend),
+        frontend: Some(frontend),
+        charon_driver: None,
         config: config_hash,
         source: source_hash,
-        exporter: exporter_hash,
+        exporter: String::new(),
         artifact: artifact_hash,
         source_files: Default::default(),
     };
@@ -472,27 +521,10 @@ fn load_locked(
             root.join(name).display()
         ));
     }
-    if lock.schema != SCHEMA
+    if !lock.identity_matches()
         || lock.config != config_digest
         || lock.source != source_digest(c, &source_files)
         || lock.artifact != digest(&artifact)
-        || lock.charon_driver.is_none()
-        || ![
-            super::profile::get().identity.as_str(),
-            super::profile::LEGACY_IDENTITY,
-        ]
-        .iter()
-        .any(|prefix| {
-            lock.identity
-                == import_identity_for(
-                    prefix,
-                    &lock.config,
-                    &lock.source,
-                    &lock.exporter,
-                    &lock.artifact,
-                    lock.charon_driver.as_deref().unwrap_or_default(),
-                )
-        })
     {
         return Err("Rust import lock differs from its inputs; refresh it".into());
     }
@@ -634,7 +666,8 @@ mod unit_tests {
     fn rust_profile_product_name_preserves_legacy_locks_without_weakening_identity() {
         assert_eq!(super::super::profile::get().identity, "click-rust-v1");
         let root = tempfile::tempdir().unwrap();
-        let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/basic-rust");
+        let example =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/gate-fixtures/basic");
         for name in ["borrow.rs", "click.project.json"] {
             fs::copy(example.join(name), root.path().join(name)).unwrap();
         }
@@ -678,6 +711,44 @@ mod unit_tests {
                 .unwrap_err()
                 .contains("lock differs")
         );
+        // Explicitly refreshing a legacy lock switches only its identity format.
+        lock.exporter.clear();
+        lock.charon_driver = None;
+        lock.schema = RELEASE_LOCK_SCHEMA;
+        let frontend = super::super::profile::FrontendIdentity::current();
+        lock.identity = release_identity(&lock.config, &lock.source, &lock.artifact, &frontend);
+        lock.frontend = Some(frontend.clone());
+        assert!(load_unit(&unit, &serde_json::to_value(&lock).unwrap()).is_ok());
+        let saved = serde_json::to_value(&lock).unwrap();
+        assert!(saved.get("exporter").is_none() && saved.get("charon_driver").is_none());
+        // Even a self-consistent digest cannot select different release pins.
+        for field in [
+            "click_version",
+            "extractor_revision",
+            "extractor_version",
+            "compiler_commit",
+            "profile",
+        ] {
+            let mut changed = serde_json::to_value(&frontend).unwrap();
+            changed[field] = "different".into();
+            let changed = serde_json::from_value(changed).unwrap();
+            lock.identity = release_identity(&lock.config, &lock.source, &lock.artifact, &changed);
+            lock.frontend = Some(changed);
+            assert!(
+                load_unit(&unit, &serde_json::to_value(&lock).unwrap()).is_err(),
+                "{field}"
+            );
+        }
+        for (field, value) in [
+            ("frontend", serde_json::Value::Null),
+            ("exporter", "binary hash".into()),
+            ("charon_driver", "binary hash".into()),
+            ("schema", 8.into()),
+        ] {
+            let mut mixed = saved.clone();
+            mixed[field] = value;
+            assert!(load_unit(&unit, &mixed).is_err(), "{field}");
+        }
     }
 
     /// A project unit for an external crate, locked by hand from the
@@ -733,7 +804,8 @@ mod unit_tests {
         let (exporter, driver, artifact_hash) =
             (digest(b"charon"), digest(b"driver"), digest(&artifact));
         let lock = Lock {
-            schema: SCHEMA,
+            schema: LEGACY_LOCK_SCHEMA,
+            frontend: None,
             identity: import_identity(
                 &unit.unit_digest,
                 &source,
