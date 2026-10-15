@@ -4093,18 +4093,102 @@ impl ResourceContext {
     /// `N` owned ranges of one block): two owned ranges of a block that
     /// [`Self::separates_owned_members_in_block`] admits, not already
     /// structurally separate, and accepted by `admit`. Instead of visiting
-    /// the pairs, each owned member is asked once whether `left` accepts it
-    /// and, only when some member did, once whether `right` does, so a
-    /// query costs work linear in the block's owned members.
+    /// the pairs, each owned member is asked at most once whether `left`
+    /// accepts it and whether `right` does.
+    ///
+    /// `left_at` and `right_at` are addresses the two sides are spelled at.
+    /// The members filed under their roots (`memory_base_root`), and under
+    /// the roots of their same-block exact aliases, are asked first: a
+    /// member that holds a side is almost always one of them, and then the
+    /// query costs those members, not every owned member of the block
+    /// (every object a pointer parameter reaches shares one block, so a
+    /// call naming two of them used to ask all the others). Only when that
+    /// nominated selection holds no admitted pair is every member asked, as
+    /// before, reusing the answers already given.
+    ///
+    /// The answer is the one the full scan gives. A pair the nominated
+    /// selection finds is a pair of the full scan's candidate set meeting
+    /// all of its conditions (two distinct owned members of `block`, `left`
+    /// accepting one and `right` the other, not structurally separate,
+    /// admitted), so the full scan answers `Some` as well; the witness may
+    /// differ, and every caller either reads only that one exists or
+    /// rechecks the witness it returns (`AccessInRangeEvidence`). When the
+    /// selection finds none, the full scan runs and decides. The member
+    /// predicates do not depend on the order in which members are asked, so
+    /// reusing an answer changes nothing. The nomination itself grants
+    /// nothing: it chooses which members are asked first.
     pub(in crate::kernel) fn separated_owned_members_in_block(
         &self,
         block: &PointerBlock,
+        left_at: &Pointer,
+        right_at: &Pointer,
+        assumptions: &crate::kernel::PureFactContext,
         mut left: impl FnMut(&CMemoryRange) -> bool,
         mut right: impl FnMut(&CMemoryRange) -> bool,
         mut admit: impl FnMut(&CMemoryRange, &CMemoryRange) -> bool,
     ) -> Option<(&CMemoryRange, &CMemoryRange)> {
         if !self.separates_owned_members_in_block(block) {
             return None;
+        }
+        let mut left_answers = BTreeMap::<ResourceEntryId, bool>::new();
+        let mut right_answers = BTreeMap::<ResourceEntryId, bool>::new();
+        let ask = |answers: &mut BTreeMap<ResourceEntryId, bool>,
+                   accepts: &mut dyn FnMut(&CMemoryRange) -> bool,
+                   entry: ResourceEntryId,
+                   range: &CMemoryRange| {
+            *answers.entry(entry).or_insert_with(|| accepts(range))
+        };
+        let pair =
+            |lefts: &[(ResourceEntryId, &'_ CMemoryRange)],
+             rights: &[(ResourceEntryId, &'_ CMemoryRange)],
+             admit: &mut dyn FnMut(&CMemoryRange, &CMemoryRange) -> bool| {
+                for (left_entry, left_range) in lefts {
+                    for (right_entry, right_range) in rights {
+                        if left_entry == right_entry {
+                            continue;
+                        }
+                        crate::instrumentation::record_deterministic_work(1);
+                        if resources_structurally_separate(
+                            &CResource::Memory((*left_range).clone()),
+                            &CResource::Memory((*right_range).clone()),
+                        ) {
+                            continue;
+                        }
+                        if admit(left_range, right_range) {
+                            return Some((*left_entry, *right_entry));
+                        }
+                    }
+                }
+                None
+            };
+        let member = |entry: ResourceEntryId| {
+            crate::instrumentation::record_deterministic_work(1);
+            self.fact(entry)
+                .memory_own_range()
+                .map(|range| (entry, range))
+        };
+        if let (Some(left_nominees), Some(right_nominees)) = (
+            self.owned_members_nominated_at(block, left_at, assumptions),
+            self.owned_members_nominated_at(block, right_at, assumptions),
+        ) {
+            let lefts = left_nominees
+                .into_iter()
+                .filter_map(member)
+                .filter(|(entry, range)| ask(&mut left_answers, &mut left, *entry, range))
+                .collect::<Vec<_>>();
+            if !lefts.is_empty() {
+                let rights = right_nominees
+                    .into_iter()
+                    .filter_map(member)
+                    .filter(|(entry, range)| ask(&mut right_answers, &mut right, *entry, range))
+                    .collect::<Vec<_>>();
+                if let Some((left_entry, right_entry)) = pair(&lefts, &rights, &mut admit) {
+                    return Some((
+                        self.fact(left_entry).memory_own_range()?,
+                        self.fact(right_entry).memory_own_range()?,
+                    ));
+                }
+            }
         }
         let owned = self
             .storage
@@ -4113,42 +4197,68 @@ impl ResourceContext {
             .get(block)
             .into_iter()
             .flat_map(ResourceEntryIds::iter)
-            .filter_map(|entry| {
-                crate::instrumentation::record_deterministic_work(1);
-                self.fact(*entry)
-                    .memory_own_range()
-                    .map(|range| (*entry, range))
-            })
+            .filter_map(|entry| member(*entry))
             .collect::<Vec<_>>();
         let lefts = owned
             .iter()
-            .filter(|(_, range)| left(range))
+            .copied()
+            .filter(|(entry, range)| ask(&mut left_answers, &mut left, *entry, range))
             .collect::<Vec<_>>();
         if lefts.is_empty() {
             return None;
         }
         let rights = owned
             .iter()
-            .filter(|(_, range)| right(range))
+            .copied()
+            .filter(|(entry, range)| ask(&mut right_answers, &mut right, *entry, range))
             .collect::<Vec<_>>();
-        for (left_entry, left_range) in &lefts {
-            for (right_entry, right_range) in &rights {
-                if left_entry == right_entry {
-                    continue;
-                }
+        let (left_entry, right_entry) = pair(&lefts, &rights, &mut admit)?;
+        Some((
+            self.fact(left_entry).memory_own_range()?,
+            self.fact(right_entry).memory_own_range()?,
+        ))
+    }
+
+    /// The owned members of `block` filed under the root of `at`
+    /// (`memory_base_root`) or under the root of one of its same-block exact
+    /// aliases: the members a query at `at` asks first. `None` when `at` is
+    /// outside `block` or its root has no symbolic atom, whose bucket would
+    /// be every constant-offset base of the block; the caller then asks the
+    /// whole block. Charges one unit per root and per nominated member.
+    fn owned_members_nominated_at(
+        &self,
+        block: &PointerBlock,
+        at: &Pointer,
+        assumptions: &crate::kernel::PureFactContext,
+    ) -> Option<BTreeSet<ResourceEntryId>> {
+        if &at.block != block {
+            return None;
+        }
+        let mut roots = BTreeSet::new();
+        for spelling in std::iter::once(at).chain(assumptions.exact_pointer_aliases(at)) {
+            crate::instrumentation::record_deterministic_work(1);
+            if &spelling.block != block {
+                continue;
+            }
+            let root = memory_base_root(spelling);
+            root.1.as_ref()?;
+            roots.insert(root);
+        }
+        let mut nominees = BTreeSet::new();
+        for root in &roots {
+            for entry in self
+                .storage
+                .index
+                .owned_memory_by_root
+                .get(root)
+                .into_iter()
+                .flat_map(ResourceEntryIds::iter)
+            {
                 crate::instrumentation::record_deterministic_work(1);
-                if resources_structurally_separate(
-                    &CResource::Memory((*left_range).clone()),
-                    &CResource::Memory((*right_range).clone()),
-                ) {
-                    continue;
-                }
-                if admit(left_range, right_range) {
-                    return Some((left_range, right_range));
-                }
+                nominees.insert(*entry);
             }
         }
-        None
+        Some(nominees)
     }
 
     /// Whether two distinct owned members of one block that the composition

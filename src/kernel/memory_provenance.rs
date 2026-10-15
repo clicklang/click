@@ -2248,8 +2248,8 @@ pub(in crate::kernel) fn typed_store_separated_ranges_evidence(
     // The composition law asked on demand: an owned member holding the
     // written address and a different one holding the read.
     let (resources, left, right) = assumptions.composition_separated_members(
-        &write.block,
-        &pointer.block,
+        write,
+        pointer,
         |range| AccessInRangeEvidence::for_access(write, write_bytes, range, assumptions).is_some(),
         |range| {
             AccessInRangeEvidence::for_access(pointer, load_bytes, range, assumptions).is_some()

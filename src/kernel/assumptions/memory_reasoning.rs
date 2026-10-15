@@ -2040,8 +2040,8 @@ impl PureFactContext {
             return true;
         }
         if let Some((resources, _, _)) = self.composition_separated_members(
-            &left.block,
-            &right.block,
+            left,
+            right,
             |range| contains(left, range),
             |range| contains(right, range),
             |left_range, right_range| {
@@ -2091,8 +2091,8 @@ impl PureFactContext {
             })
             || self
                 .composition_separated_members(
-                    &left.block,
-                    &right.block,
+                    left,
+                    right,
                     |range| contains(left, range),
                     |range| contains(right, range),
                     |left_range, right_range| {
@@ -2237,8 +2237,8 @@ impl PureFactContext {
         // membership relation: two owned members, one holding each pointer.
         let composition_candidate = |contains: &dyn Fn(&Pointer, &CMemoryRange) -> bool| {
             let found = self.composition_separated_members(
-                &left.block,
-                &right.block,
+                left,
+                right,
                 |range| {
                     #[cfg(test)]
                     MEMORY_SEPARATION_CANDIDATE_CHECKS.with(|checks| checks.set(checks.get() + 1));
@@ -3136,16 +3136,23 @@ impl PureFactContext {
                 self.prop_facts.iter().any(entails)
             }
         };
-        let residual_hit = scan_facts(&|proposition| {
-            let Proposition::CResourceSeparate {
-                left: fact_left,
-                right: fact_right,
-            } = proposition
-            else {
-                return false;
-            };
-            separation_fact_entails(fact_left, fact_right)
-        });
+        let residual_hit = crate::instrumentation::measure_operation(
+            "kernel",
+            "resource separation",
+            "resource separation: residual facts",
+            || {
+                scan_facts(&|proposition| {
+                    let Proposition::CResourceSeparate {
+                        left: fact_left,
+                        right: fact_right,
+                    } = proposition
+                    else {
+                        return false;
+                    };
+                    separation_fact_entails(fact_left, fact_right)
+                })
+            },
+        );
         if residual_hit {
             return true;
         }
@@ -3153,18 +3160,30 @@ impl PureFactContext {
         // asked of each held composition: two owned members of one valid
         // composition are separate.
         if let (CResource::Memory(left_range), CResource::Memory(right_range)) = (left, right)
-            && (self
-                .memory_separation_candidates(&left_range.base().block, &right_range.base().block)
-                .any(|(_, fact_left, fact_right)| {
-                    separation_fact_entails(
-                        &CResource::Memory(fact_left.clone()),
-                        &CResource::Memory(fact_right.clone()),
-                    )
-                })
-                || self
-                    .composition_separated_members(
+            && (crate::instrumentation::measure_operation(
+                "kernel",
+                "resource separation",
+                "resource separation: stated block pair",
+                || {
+                    self.memory_separation_candidates(
                         &left_range.base().block,
                         &right_range.base().block,
+                    )
+                    .any(|(_, fact_left, fact_right)| {
+                        separation_fact_entails(
+                            &CResource::Memory(fact_left.clone()),
+                            &CResource::Memory(fact_right.clone()),
+                        )
+                    })
+                },
+            ) || crate::instrumentation::measure_operation(
+                "kernel",
+                "resource separation",
+                "resource separation: composition members",
+                || {
+                    self.composition_separated_members(
+                        left_range.base(),
+                        right_range.base(),
                         |member| {
                             self.proves_resource_contains_inner(
                                 &CResource::Memory(member.clone()),
@@ -3184,16 +3203,23 @@ impl PureFactContext {
                             )
                         },
                     )
-                    .is_some())
+                    .is_some()
+                },
+            ))
         {
             return true;
         }
 
-        if self
-            .resource_compositions
-            .iter()
-            .any(|resources| resources.proves_owned_resources_separate(left, right, self))
-        {
+        if crate::instrumentation::measure_operation(
+            "kernel",
+            "resource separation",
+            "resource separation: owned resources",
+            || {
+                self.resource_compositions
+                    .iter()
+                    .any(|resources| resources.proves_owned_resources_separate(left, right, self))
+            },
+        ) {
             return true;
         }
 
@@ -3225,11 +3251,23 @@ impl PureFactContext {
                     range_intervals_cover_target(target, intervals)
                 })
             };
-            if composition_covers(left, right) || composition_covers(right, left) {
+            if crate::instrumentation::measure_operation(
+                "kernel",
+                "resource separation",
+                "resource separation: composition covers",
+                || composition_covers(left, right) || composition_covers(right, left),
+            ) {
                 return true;
             }
-            return self.range_covered_by_resource_separate_ranges(left, right)
-                || self.range_covered_by_resource_separate_ranges(right, left);
+            return crate::instrumentation::measure_operation(
+                "kernel",
+                "resource separation",
+                "resource separation: separate-range covers",
+                || {
+                    self.range_covered_by_resource_separate_ranges(left, right)
+                        || self.range_covered_by_resource_separate_ranges(right, left)
+                },
+            );
         }
 
         false

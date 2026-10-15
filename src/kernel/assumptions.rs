@@ -4888,14 +4888,19 @@ impl PureFactContext {
     /// same-block pair has such members. Each composition asks its members
     /// of that block, so the query costs the members it reads and never
     /// their pairs, and nothing is stated into this context beforehand.
+    ///
+    /// `left_at` and `right_at` are addresses the two sides are spelled at;
+    /// they choose which members are asked first and never change the
+    /// answer (`ResourceContext::separated_owned_members_in_block`).
     pub(in crate::kernel) fn composition_separated_members<'a>(
         &'a self,
-        left_block: &PointerBlock,
-        right_block: &PointerBlock,
+        left_at: &Pointer,
+        right_at: &Pointer,
         left: impl Fn(&CMemoryRange) -> bool,
         right: impl Fn(&CMemoryRange) -> bool,
         admit: impl Fn(&CMemoryRange, &CMemoryRange) -> bool,
     ) -> Option<(&'a ResourceContext, &'a CMemoryRange, &'a CMemoryRange)> {
+        let (left_block, right_block) = (&left_at.block, &right_at.block);
         if left_block != right_block {
             return None;
         }
@@ -4906,7 +4911,9 @@ impl PureFactContext {
             .into_iter()
             .find_map(|resources| {
                 resources
-                    .separated_owned_members_in_block(left_block, &left, &right, &admit)
+                    .separated_owned_members_in_block(
+                        left_block, left_at, right_at, self, &left, &right, &admit,
+                    )
                     .map(|(left, right)| (resources, left, right))
             })
     }
