@@ -3,7 +3,7 @@ use super::*;
 const SIDECAR: &str = include_str!("../../design/charon-trial/function-pointers/callback.click");
 
 fn function_pointer_project() -> Project {
-    let p = Project::new("");
+    let p = Project::isolated("");
     for (name, bytes) in [
         (
             "callback.rs",
@@ -32,6 +32,30 @@ fn function_pointer_project() -> Project {
         fs::write(p.root.join(name), bytes).unwrap();
     }
     p
+}
+
+#[test]
+fn callable_signature_mismatch_displays_both_signatures() {
+    let p = function_pointer_project();
+    let prepared = load_import(&p.config()).unwrap();
+    let mismatched = SIDECAR
+        .replacen("f: fn(i32) -> i32", "f: fn(u32) -> u32", 1)
+        .replacen("    requires Doubling(f);\n", "", 1);
+    let error = C0VerificationSession::new_program_prepared(&mismatched, &prepared)
+        .err()
+        .expect("the callable signature mismatch must be refused");
+    assert!(
+        error
+            .message()
+            .contains(".click has uint32 (*)(uint32) f, C has int32 (*)(int32) f"),
+        "{}",
+        error.message()
+    );
+    assert!(
+        !error.message().contains("FunctionPointer("),
+        "{}",
+        error.message()
+    );
 }
 
 // `apply` calls through `f` under the contract it requires of `f`, `relay`

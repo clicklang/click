@@ -387,6 +387,10 @@ tactics) are the same in every language.
 
 ### Function pointers and named contracts
 
+A sidecar callable parameter must match the source signature. A mismatch
+reports both types in C spelling, such as `uint32 (*)(uint32)` against
+`int32 (*)(int32)`.
+
 A parameter of a safe Rust-ABI function-pointer type of scalar parameters and
 a scalar or unit result, `f: fn(i32) -> i32`, is a callback, as in C. A named
 contract is written as a Rust item, `contract fn Doubling(x: i32) -> i32 {
