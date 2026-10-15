@@ -935,3 +935,18 @@ compiler ran concurrently; that case passes alone in 6.8s, and the complete
 rerun passes without changing limits. Formatting, mdBook, docs lint and whitespace
 checks pass; advisory Vale is unavailable. The full gate and nightly remain CI
 work.
+
+### Contained-range counterpart of the read-frame bridge
+
+PR #1055 merged; both pushed commits `825879a46` and `61c6ae286` are verified
+upstream. The same selected complete-read bridge also applies to a
+`CResourceContains` body fact whose child range has another recorded pointer
+name. Keep the exact parent, bounds, width and unique-source checks; only the
+selected bases use the existing eight-byte frame certificate.
+
+All four targeted controls and all 708 scaling tests pass (two workers, 52.8s
+scaling harness). The containment case uses a separate pointer cell, so an
+earlier loadability proof cannot warm the equality being tested. Changed
+parents/bounds, ambiguous sources and an upper-half overwrite reject. Formatting,
+mdBook, docs lint and whitespace checks pass; the full gate and nightly remain
+CI work. No native input promise or allocation-token equivalence is broadened.
