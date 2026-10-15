@@ -65,6 +65,7 @@ fn store_byte(memory: CMemory, offset: i64, byte: CValue, byte_order: ByteOrder)
         value_type,
         volatile: false,
         pointee_constant: false,
+        source: Default::default(),
     };
     let paths = execute_c_statement_paths(
         &state,

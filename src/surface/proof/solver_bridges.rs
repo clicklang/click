@@ -102,11 +102,19 @@ impl MachineOrder {
     /// library states one.
     fn range(self) -> Option<(&'static str, &'static str, &'static str)> {
         match self {
-            Self::Int32 => Some(("int32_to_integer_bounds", "-2147483648", "2147483647")),
+            Self::Int32 => Some((
+                "click::integer::int32_to_integer_bounds",
+                "-2147483648",
+                "2147483647",
+            )),
             Self::Wide(carrier) => match carrier.name() {
-                "uint64" => Some(("uint64_to_integer_bounds", "0", "18446744073709551615")),
+                "uint64" => Some((
+                    "click::integer::uint64_to_integer_bounds",
+                    "0",
+                    "18446744073709551615",
+                )),
                 "int64" => Some((
-                    "int64_to_integer_bounds",
+                    "click::integer::int64_to_integer_bounds",
                     "-9223372036854775808",
                     "9223372036854775807",
                 )),
@@ -242,13 +250,21 @@ impl Carried {
 fn range_items(value: &ContractExpression) -> Vec<Carried> {
     let mut items = Vec::new();
     for (theorem, minimum, maximum) in [
-        ("int32_to_integer_bounds", "-2147483648", "2147483647"),
         (
-            "int64_to_integer_bounds",
+            "click::integer::int32_to_integer_bounds",
+            "-2147483648",
+            "2147483647",
+        ),
+        (
+            "click::integer::int64_to_integer_bounds",
             "-9223372036854775808",
             "9223372036854775807",
         ),
-        ("uint64_to_integer_bounds", "0", "18446744073709551615"),
+        (
+            "click::integer::uint64_to_integer_bounds",
+            "0",
+            "18446744073709551615",
+        ),
     ] {
         let bounds = apply(theorem, vec![value.clone()], Vec::new());
         for bound in [

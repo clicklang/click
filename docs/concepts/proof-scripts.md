@@ -298,4 +298,5 @@ with something written after it; `simp()` closes a goal and is checked only as a
 body's last step (`mdtests/have_body_declines_names_the_goal.md`).
 
 The [proof tactics reference](../reference/tactics/index.md) is the exhaustive inventory
-and compatibility guide.
+and compatibility guide; start with its
+[core tactics](../reference/tactics/index.md#core-tactics).

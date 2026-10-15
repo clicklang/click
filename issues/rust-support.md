@@ -237,10 +237,14 @@ needed to finish a claim already made:
   - parent reuse after the child's last use;
   - the read-only import-bound checker for same-block scalar reborrows,
     with indexed access certificates and scaling checks.
+  - operation identities carried through lowering into completed kernel reads
+    and stores, including cached scalar reads; indexed bindings retain the
+    actual pointer and reject another locked import identity. Failed writes
+    produce no store observation, and source deltas have ambient-scaling checks.
 
-  Those identities must still travel through C0 lowering and bind actual
-  memory permission. Local reference access binding and kernel recovery at
-  checked frontiers also remain open. A reproduced false acceptance here
+  Those executed observations must still bind live local-child permission
+  and the actual ending frontier/invocation. Kernel recovery at checked
+  frontiers remains open. A reproduced false acceptance here
   would be `unsound`, and so P1, under the [issue rules](README.md).
 - **Stable proof observations.** Provide source-facing slice, array and
   iterator observations, so that contracts need not depend on compiler

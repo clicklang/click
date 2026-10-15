@@ -7893,6 +7893,7 @@ impl ExecutionPureFact {
             transport: None,
             generated_load_binding: None,
             generated_load_source_events: Default::default(),
+            reference_read: Default::default(),
         }
     }
 
@@ -7907,6 +7908,7 @@ impl ExecutionPureFact {
             transport: None,
             generated_load_binding: None,
             generated_load_source_events: Default::default(),
+            reference_read: Default::default(),
         }
     }
 
@@ -7940,6 +7942,7 @@ impl ExecutionPureFact {
             transport: None,
             generated_load_binding: None,
             generated_load_source_events: Default::default(),
+            reference_read: Default::default(),
         }
     }
 
@@ -7980,10 +7983,12 @@ impl ExecutionPureFact {
                 pointer,
                 value,
                 authorized_range,
+                source: Default::default(),
             })),
             transport: None,
             generated_load_binding: None,
             generated_load_source_events: Default::default(),
+            reference_read: Default::default(),
         }
     }
 
@@ -7997,6 +8002,7 @@ impl ExecutionPureFact {
             || self.generated_load_binding.as_ref().is_some_and(|binding| {
                 !generated_load_binding_matches_proposition(binding, &proposition)
             })
+            || !self.reference_read.matches_proposition(&proposition)
         {
             // A transported or rewritten fact no longer denotes the exact
             // producer equation.  Retaining its binding would let a later
@@ -8005,6 +8011,10 @@ impl ExecutionPureFact {
             self.logical_read_equation = false;
             self.generated_load_binding = None;
             self.generated_load_source_events = Default::default();
+            self.reference_read = Default::default();
+            if let Some(store) = &mut self.certified_store {
+                store.source = Default::default();
+            }
         }
         self.proposition = proposition;
         self
@@ -8045,6 +8055,7 @@ impl ExecutionPureFact {
             })),
             generated_load_binding: None,
             generated_load_source_events: Default::default(),
+            reference_read: Default::default(),
         }
     }
 

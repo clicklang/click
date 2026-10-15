@@ -2558,8 +2558,11 @@ void call(int32* p, int32* q, int32* anchor) {
                 "{message}"
             );
             assert!(message.contains("held:"), "{message}");
-            assert!(message.contains("held: owns cursor(q"), "{message}");
-            assert!(message.contains("required: owns cursor(p"), "{message}");
+            assert!(message.contains("cursor(ptr<int32*>(q)"), "{message}");
+            assert!(
+                message.contains("required: owns cursor(ptr<int32*>(p)"),
+                "{message}"
+            );
         };
         if tracing {
             with_proof_trace("call", check);
@@ -2593,7 +2596,7 @@ fn call_resource_diagnostic_read_shows_snapshot_and_access() {
         "{rendered}"
     );
     assert!(
-        rendered.contains("required: views selected_child_cell[0..1]"),
+        rendered.contains("required: views memory(") && rendered.contains("stride=4"),
         "{rendered}"
     );
     assert!(!rendered.contains("snapshot#"), "{rendered}");
@@ -3112,4 +3115,70 @@ void symbolic(int32* p, const struct callbacks* cb) {
             }
         });
     }
+}
+
+/// Resource comparisons must not collapse snapshot-dependent pointer arguments
+/// to one source address, or replace an unnamed offset with an ellipsis.
+#[test]
+fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_snapshots() {
+    use crate::kernel::{
+        AlgebraicValue, CMemory, CPointerValue, CResource, CType, CValue, LoadKind, Pointer,
+        PointerBlock, PointerOffsetTerm, Variable, intern_c_memory,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    let read = Pointer {
+        block: PointerBlock::Concrete("child_cell".into()),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let before = CMemory::new();
+    let after = before.clone().store(read.clone(), int32(7));
+    let argument = |memory: CMemory| {
+        AlgebraicValue::C(CValue::Pointer(CPointerValue::new(
+            Pointer {
+                block: PointerBlock::Concrete("nodes".into()),
+                offset: PointerOffsetTerm::scale_int32(
+                    Bitvector32Term::Subtract(
+                        Box::new(Bitvector32Term::MemoryLoad(
+                            intern_c_memory(memory),
+                            Box::new(read.clone()),
+                            LoadKind::Bits32,
+                        )),
+                        Box::new(Bitvector32Term::Variable(Variable(993451))),
+                    ),
+                    4,
+                ),
+            },
+            CType::Int32Pointer,
+        )))
+    };
+    let resource = |argument| {
+        CResourceFact::own(CResource::Composite {
+            name: "optional_size".into(),
+            arguments: vec![argument].into(),
+        })
+    };
+    let error = crate::kernel::CRuntimeError::ContractResourceDiagnostic {
+        reason: "equality of resource argument 1 was not established".into(),
+        held: Some(Box::new(resource(argument(before)))),
+        required: Box::new(resource(argument(after))),
+        memory: None,
+    };
+    let rendered = super::diagnostics::describe_runtime_error(&error, ParameterBinding::default());
+    let held = rendered
+        .lines()
+        .find(|line| line.contains("held:"))
+        .unwrap();
+    let required = rendered
+        .lines()
+        .find(|line| line.contains("required:"))
+        .unwrap();
+    assert!(held.contains("ptr<int32*>(value#1)"), "{rendered}");
+    assert!(required.contains("ptr<int32*>(value#2)"), "{rendered}");
+    assert!(
+        rendered.contains("snapshot#1") && rendered.contains("snapshot#2"),
+        "{rendered}"
+    );
+    assert!(rendered.contains("read<Bits32>"), "{rendered}");
+    assert!(rendered.contains("store"), "{rendered}");
+    assert!(!rendered.contains('…'), "{rendered}");
 }

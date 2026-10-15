@@ -4,11 +4,11 @@ use super::prelude::*;
 
 pub(crate) fn integer_truncation_law_requirements(name: &str) -> Option<usize> {
     Some(match name {
-        "integer_truncation_identity" => 1,
-        "integer_positive_divisor_remainder_lower" | "integer_positive_divisor_remainder_upper" => {
-            2
-        }
-        "integer_nonnegative_dividend_remainder" | "integer_nonpositive_dividend_remainder" => 2,
+        "click::integer::integer_truncation_identity" => 1,
+        "click::integer::integer_positive_divisor_remainder_lower"
+        | "click::integer::integer_positive_divisor_remainder_upper" => 2,
+        "click::integer::integer_nonnegative_dividend_remainder"
+        | "click::integer::integer_nonpositive_dividend_remainder" => 2,
         _ => return None,
     })
 }
@@ -32,7 +32,7 @@ pub(crate) fn prove_integer_truncation_law(
     ));
     let remainder = IntegerTerm::truncating_remainder(n.clone(), d.clone());
     let (premises, conclusion) = match name {
-        "integer_truncation_identity" => {
+        "click::integer::integer_truncation_identity" => {
             let quotient = IntegerTerm::truncating_quotient(n.clone(), d.clone());
             let reconstructed = IntegerTerm::add(IntegerTerm::multiply(quotient, d), remainder);
             (
@@ -40,21 +40,21 @@ pub(crate) fn prove_integer_truncation_law(
                 condition(ConditionTerm::IntegerEqual(n.into(), reconstructed.into())),
             )
         }
-        "integer_positive_divisor_remainder_lower" => (
+        "click::integer::integer_positive_divisor_remainder_lower" => (
             vec![nonzero, positive],
             condition(ConditionTerm::IntegerLessEqual(
                 IntegerTerm::subtract(one, d).into(),
                 remainder.into(),
             )),
         ),
-        "integer_positive_divisor_remainder_upper" => (
+        "click::integer::integer_positive_divisor_remainder_upper" => (
             vec![nonzero, positive],
             condition(ConditionTerm::IntegerLessEqual(
                 remainder.into(),
                 IntegerTerm::subtract(d, one).into(),
             )),
         ),
-        "integer_nonnegative_dividend_remainder" => (
+        "click::integer::integer_nonnegative_dividend_remainder" => (
             vec![
                 nonzero,
                 condition(ConditionTerm::IntegerLessEqual(
@@ -67,7 +67,7 @@ pub(crate) fn prove_integer_truncation_law(
                 remainder.into(),
             )),
         ),
-        "integer_nonpositive_dividend_remainder" => (
+        "click::integer::integer_nonpositive_dividend_remainder" => (
             vec![
                 nonzero,
                 condition(ConditionTerm::IntegerLessEqual(
@@ -101,11 +101,11 @@ mod tests {
     const N: Variable = Variable(310_001);
     const D: Variable = Variable(310_002);
     const NAMES: [&str; 5] = [
-        "integer_truncation_identity",
-        "integer_positive_divisor_remainder_lower",
-        "integer_positive_divisor_remainder_upper",
-        "integer_nonnegative_dividend_remainder",
-        "integer_nonpositive_dividend_remainder",
+        "click::integer::integer_truncation_identity",
+        "click::integer::integer_positive_divisor_remainder_lower",
+        "click::integer::integer_positive_divisor_remainder_upper",
+        "click::integer::integer_nonnegative_dividend_remainder",
+        "click::integer::integer_nonpositive_dividend_remainder",
     ];
 
     // Independent sign/magnitude specification, including negative divisors.

@@ -115,7 +115,9 @@ by {
 
 Current tactics. The [proof tactics reference](../reference/tactics/index.md) is the
 authoritative inventory and classifies each spelling as simple, smart, or
-control flow.
+control flow. Its [core tactics](../reference/tactics/index.md#core-tactics)
+are the fifteen or so a hand-written proof needs; the rest are specialized or
+expansion output.
 
 - `step()`: execute the next C statement with every fact in the proof
   context visible to the kernel. A fact about a cell the context proves the

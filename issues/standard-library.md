@@ -196,9 +196,18 @@ Each step is a separate PR that leaves every example verifying:
    stay generated rather than becoming `library/cpp/` and `library/rust/`
    files; a templated library file needs a generic mechanism Click does not
    have yet.
-5. Qualified names, as described above, in four PRs. The first is done:
-   `click::m::name` and in-scope `m::name` resolve to the library
-   declaration before parsing, and a full path brings its module.
+5. Qualified names, as described above, in small PRs:
+   - Done: `click::m::name` and in-scope `m::name` resolve to the library
+     declaration before parsing, and a full path brings its module.
+   - Done: library theorems have qualified verifier identities. Tactics and
+     kernel-checked standard theorems use them, a file theorem may share a
+     library theorem's bare name, and `click expand` spells a cited library
+     theorem by its bare name unless the file shadows it.
+   - Next: qualified identities for library predicates, functions, resources
+     and types.
+   - Then the rename, one module per PR, with selective imports arriving
+     with the first; `machine_integer` and `integer` wait on the
+     Integer-default arithmetic decision.
 6. Document the primitives in the language reference, and describe the
    library per module in the reference.
 7. Apply the consistency rules below: generic `count` and `permutation`,

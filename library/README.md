@@ -22,9 +22,11 @@ The implicit set is `IMPLICIT_LIBRARY_MODULES` in
 the modules a program's declarations and calls bring
 (`library_contract_module` in `src/languages/c/syntax.rs`). A module lists the earlier
 modules its declarations use with its own `import click::...;` lines.
-Built-in tactics apply library theorems whatever a file imports, so theorem
-names stay reserved; imports gate the declarations a file names. A library
-module's own proofs are checked against the whole library.
+Built-in tactics apply library theorems whatever a file imports; a library
+theorem's verifier identity is its qualified name, `click::module::name`,
+so a file theorem may share its bare name (`library_theorem_identity` in
+`src/surface/parser.rs`). Imports gate the declarations a file names. A
+library module's own proofs are checked against the whole library.
 
 Each module is parsed with the declarations of the modules before it, and
 its diagnostics name its own file and line. Types, pure functions, and
