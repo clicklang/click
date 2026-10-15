@@ -1804,6 +1804,7 @@ impl<'a> Proof<'a> {
         step: &ProofStep,
         requirements: &[&UnresolvedRequirement],
     ) -> Result<Result<(Self, Vec<StepRequirementCertificate>), usize>, ClickError> {
+        let _implicit_auto = crate::surface::proof::timing::TacticTiming::implicit_auto();
         let mut current = self.clone();
         let mut entries = Vec::with_capacity(requirements.len());
         for (index, requirement) in requirements.iter().enumerate() {

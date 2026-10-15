@@ -251,8 +251,10 @@ cold-check option. `step_with_written_obligation_proof_scales_near_linearly_with
 (nightly) checks, cold, a call step whose open obligation a written `by`
 body proves, beside a growing set of unrelated facts.
 
-Implicit `auto` has its own budget, and profiling attributing its work to
-`auto` rather than the simple tactic remains to do.
+Implicit `auto` is its own smart tactic at the simple tactic's site: its
+work is charged to the smart budget and profiled as `implicit auto`, whose
+expansion command expands the claim
+(`implicit_auto_is_a_smart_tactic_at_the_simple_tactic_site`).
 
 ### 5. Other simple tactics
 
@@ -410,6 +412,16 @@ grants its body facts (unsound), a float-cast `branch` prerequisite prints
 `<unnamed A>` and raw bits, and a post-execution `if` ignores an earlier
 `have`.
 
+**The expanded corpus without the implicit `auto` (checked).** With the
+implicit `auto` disabled, 11 mdtests and 7 example sidecars fail: they are the
+claims whose bare simple tactics it proves. Expanding each failing claim with
+`click expand --claim` (repeated while another claim of the file still
+failed) gave files that all verify with the implicit `auto` disabled. This
+was one measurement on master after #1035; `click audit` checks a claim's
+expansion this way only when the claim also has a smart site, so a claim
+whose only automation is the implicit `auto` is not yet audited.
+`examples/rbtree-erase` was left out: it exhausts its loop budget on master.
+
 ## Acceptance criteria
 
 - No simple tactic performs a search over the proof context; its cost is
@@ -424,7 +436,10 @@ grants its body facts (unsound), a float-cast `branch` prerequisite prints
 - `docs/reference/tactics/index.md` documents the requirement rule, the fast
   path, and both syntax forms, each backed by an mdtest.
 - Production C is unchanged. `scripts/check.sh` passes, and both fixture
-  harnesses report a zero hidden-derivation census.
+  harnesses count no `TacticSearch` in the hidden-derivation census. The
+  `KernelCondition` counts are the kernel's own condition decision, which a
+  simple tactic may consult; [difference-logic.md](difference-logic.md)
+  drives them to zero.
 
 ## Not in scope
 

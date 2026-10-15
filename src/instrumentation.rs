@@ -9,6 +9,11 @@ use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+/// The tactic name under which the implicit `auto` proving a simple tactic's
+/// open requirement is profiled, at that tactic's site. A bare simple tactic
+/// is not a selectable expansion site, so its claim is expanded instead.
+pub const IMPLICIT_AUTO_TACTIC: &str = "implicit auto";
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TacticEvent {
     pub source_tactic_path: Option<Vec<usize>>,

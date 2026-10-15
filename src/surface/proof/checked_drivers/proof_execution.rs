@@ -278,7 +278,13 @@ fn checked_execution_arm_tactics_end(
             flat_post_execution_tactic(&indexed.tactic)?;
             continue;
         }
-        if matches!(indexed.tactic, ProofTactic::SmartExecute) {
+        // A step written with its obligation proofs classifies as the step
+        // it proves.
+        let tactic = match &indexed.tactic {
+            ProofTactic::StepProved { step, .. } => step.as_ref(),
+            tactic => tactic,
+        };
+        if matches!(tactic, ProofTactic::SmartExecute) {
             at_function_exit = true;
             continue;
         }
@@ -287,7 +293,7 @@ fn checked_execution_arm_tactics_end(
         // that successor is function exit, so a `loop` classifies like a
         // `step()`: it may exit, and the driver checks the actual frontier.
         if matches!(
-            indexed.tactic,
+            tactic,
             ProofTactic::Step
                 | ProofTactic::StepContract(_)
                 | ProofTactic::StepBind(_)
@@ -297,10 +303,10 @@ fn checked_execution_arm_tactics_end(
             may_exit = true;
             continue;
         }
-        if linear_execution_proof_step(&indexed.tactic).is_none()
-            && !closes_loop_invariants(&indexed.tactic)
+        if linear_execution_proof_step(tactic).is_none()
+            && !closes_loop_invariants(tactic)
             && !matches!(
-                indexed.tactic,
+                tactic,
                 ProofTactic::ApplyTheorem(_)
                     | ProofTactic::Transport { .. }
                     | ProofTactic::Have(_)
