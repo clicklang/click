@@ -576,6 +576,8 @@ mod tests {
             parameter_struct_casts: BTreeMap::new(),
             parameter_field_places: BTreeMap::new(),
             pointee_field_places: BTreeMap::new(),
+            value_binders: Vec::new(),
+            witness_count: 0,
             one_call_proof: false,
             tactic_procedure: false,
             requires,

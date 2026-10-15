@@ -1076,7 +1076,21 @@ pub struct CallBinderTransport {
     produced: Vec<CallBinderBinding>,
     /// Runtime binders that name a resource type, with the type written.
     type_arguments: Vec<(String, Variable, ResourceClause)>,
+    /// Value binders the map selects an instance for, `s: cstr_at(src, n)`
+    /// or `s: str`, in written order.
+    value_arguments: Vec<(String, ValueBinderArgument)>,
     result: Option<String>,
+}
+
+/// What a call map entry for a callee's value binder names.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ValueBinderArgument {
+    /// A resource term, `cstr_at(src, n)`: the binder's `_` arguments take
+    /// the term's arguments at those positions.
+    Term(ResourceClause),
+    /// One of the caller's own value binders: the callee's binder takes the
+    /// instance the caller's selects.
+    Binder(String),
 }
 
 impl CallBinderTransport {
@@ -1103,7 +1117,26 @@ impl CallBinderTransport {
             .into_iter()
             .map(|(name, identity, resource)| Ok((name, identity, map(resource)?)))
             .collect::<Result<_, ClickError>>()?;
+        self.value_arguments = self
+            .value_arguments
+            .into_iter()
+            .map(|(name, argument)| {
+                Ok((
+                    name,
+                    match argument {
+                        ValueBinderArgument::Term(resource) => {
+                            ValueBinderArgument::Term(map(resource)?)
+                        }
+                        binder @ ValueBinderArgument::Binder(_) => binder,
+                    },
+                ))
+            })
+            .collect::<Result<_, ClickError>>()?;
         Ok(self)
+    }
+
+    pub fn value_arguments(&self) -> &[(String, ValueBinderArgument)] {
+        &self.value_arguments
     }
 
     /// `binder: instance` and `binder: Type(args)` entries in written order
@@ -1115,6 +1148,16 @@ impl CallBinderTransport {
             .chain(self.type_arguments.iter().map(|(name, _, resource)| {
                 format!("{name}: {}", printing::format_resource_call(resource))
             }))
+            .chain(
+                self.value_arguments
+                    .iter()
+                    .map(|(name, argument)| match argument {
+                        ValueBinderArgument::Term(resource) => {
+                            format!("{name}: {}", printing::format_resource_call(resource))
+                        }
+                        ValueBinderArgument::Binder(binder) => format!("{name}: {binder}"),
+                    }),
+            )
             .collect()
     }
 
@@ -1302,6 +1345,36 @@ pub struct FunctionBlock {
     /// The scalar fields of each struct those places point to, by struct
     /// name, transitively. Printing only, as above.
     pointee_field_places: BTreeMap<String, Vec<FieldPlace>>,
+    /// The contract's value binders, `views s: cstr_at(bytes, _);`, in
+    /// declaration order.
+    value_binders: Vec<ValueBinder>,
+    /// How many of the signature's parameters, at its end, are the value
+    /// parameters its binders' `_` arguments introduce, such as `s.len`.
+    /// They are not C parameters: a call supplies them from the instance
+    /// the binder selects, and the body is proved for every value.
+    witness_count: usize,
+}
+
+/// A contract binder that names the instance one resource clause selects:
+/// `views s: cstr_at(bytes, _);`. Each `_` argument is a value parameter of
+/// the contract named `s.<parameter>`, and `s.<parameter>` of a written
+/// argument is that argument.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValueBinder {
+    pub(in crate::surface) name: String,
+    pub(in crate::surface) resource: String,
+    /// The written arguments, `None` at each `_`.
+    pub(in crate::surface) arguments: Vec<Option<ContractExpression>>,
+    /// The position of the binder's clause among the block's `requires`.
+    pub(in crate::surface) requirement_index: usize,
+}
+
+impl ValueBinder {
+    /// The placeholder the parser writes for the `_` at `index`, before the
+    /// resource's parameter names are known.
+    pub(in crate::surface) fn placeholder(binder: &str, index: usize) -> String {
+        format!("{binder}.#{index}")
+    }
 }
 
 /// Turns the source clause of each flattened clause into its position among
@@ -7726,6 +7799,16 @@ impl ContractDefinition {
 impl FunctionBlock {
     pub fn signature(&self) -> &FunctionSignature {
         &self.signature
+    }
+
+    pub(in crate::surface) fn value_binders(&self) -> &[ValueBinder] {
+        &self.value_binders
+    }
+
+    /// The number of trailing signature parameters that are contract value
+    /// parameters rather than C parameters.
+    pub(in crate::surface) fn witness_count(&self) -> usize {
+        self.witness_count
     }
 
     /// Adds a crate trait method's interface to this implementation's

@@ -1157,7 +1157,54 @@ impl<'a> Proof<'a> {
                     ),
                 );
             }
+            // A value binder's entry names the instance that gives the
+            // callee's `_` arguments their values, as a resource term at the
+            // call's state; the kernel takes the values from it and still
+            // requires the clause.
+            let mut value_instances = Vec::new();
+            for (binder, argument) in transport.value_arguments() {
+                crate::instrumentation::record_deterministic_work(1);
+                let clause = match argument {
+                    crate::surface::ValueBinderArgument::Term(resource) => resource.clone(),
+                    crate::surface::ValueBinderArgument::Binder(caller) => {
+                        let Some(own) = context
+                            .function_block
+                            .value_binders()
+                            .iter()
+                            .find(|own| own.name == *caller)
+                        else {
+                            return Err(self.step_error(format!(
+                                "`{caller}` is not a value binder of this function"
+                            )));
+                        };
+                        match context.function_block.requires().get(own.requirement_index) {
+                            Some(Requirement::Resource(clause)) => clause.clone(),
+                            _ => {
+                                return Err(self.step_error(format!(
+                                    "value binder `{caller}` has no resource clause"
+                                )));
+                            }
+                        }
+                    }
+                };
+                let state = &*self
+                    .execution()
+                    .ok_or_else(|| {
+                        self.step_error(format!("binder `{binder}` needs an execution state"))
+                    })?
+                    .core
+                    .state;
+                value_instances.push(crate::surface::lowering::lower_resource_clause_at_state(
+                    &clause,
+                    context.parameter_binding(),
+                    state,
+                )?);
+            }
             let mut environment = context.function_environment.clone();
+            if !value_instances.is_empty() {
+                environment =
+                    environment.with_selected_call_value_instances(callee, value_instances);
+            }
             let arity = if transport.is_named_contract() {
                 let definition = context
                     .spec_definitions

@@ -2610,7 +2610,13 @@ fn verify_c0_sources_in_context(
                         function_block.signature.name()
                     ))
                 })?;
-        check_signature(&function_block.signature, parsed_function, source_path)?;
+        check_signature(
+            &function_block.signature,
+            function_block.witness_count(),
+            parsed_function,
+            source_path,
+        )?;
+        let parsed_function = &*witnessed_function(parsed_function, &function_block);
         validate_region_proof_clauses(&function_block, parsed_function)?;
         // Dev-only `sorry`: a contract proved entirely by `sorry` is
         // admitted without checking, like an `extern` declaration. Callers
@@ -5657,7 +5663,13 @@ pub(in crate::surface) fn build_function_environment(
         }
         let function = match function_block {
             Some(function_block) => {
-                check_signature(function_block.signature(), function, source_path)?;
+                check_signature(
+                    function_block.signature(),
+                    function_block.witness_count(),
+                    function,
+                    source_path,
+                )?;
+                let function = &*witnessed_function(function, function_block);
                 let (resource_requires, resource_ensures) = function_resource_summary(
                     function_block,
                     function,
@@ -5724,6 +5736,14 @@ pub(in crate::surface) fn build_function_environment(
                 }
                 function = function.with_recursion_binder(recursion_binder);
                 function = function.with_recursion_measure(recursion_measure);
+                function = function
+                    .with_trailing_value_parameters(function_block.witness_count())
+                    .ok_or_else(|| {
+                        ClickError::new(format!(
+                            "`{}` has more contract value parameters than parameters",
+                            function_block.signature().name()
+                        ))
+                    })?;
                 if function_block.signature().exceptional_type().is_some() {
                     function = function
                         .with_int32_exceptional_outcome()
@@ -7305,11 +7325,41 @@ pub(in crate::surface) fn assumptions_from_propositions(
     propositions.pure_context()
 }
 
+/// `parsed_function` with the block's contract value parameters after its C
+/// parameters, as the block's signature has them. Lowering the contract
+/// reads them as it reads the C parameters; the lowered function moves them
+/// back out ([`crate::kernel::CFunction::with_trailing_value_parameters`]).
+pub(in crate::surface) fn witnessed_function<'a>(
+    parsed_function: &'a syntax::C0Function,
+    function_block: &FunctionBlock,
+) -> std::borrow::Cow<'a, syntax::C0Function> {
+    if function_block.witness_count() == 0
+        || parsed_function.parameters().len() == function_block.signature().parameters().len()
+    {
+        return std::borrow::Cow::Borrowed(parsed_function);
+    }
+    std::borrow::Cow::Owned(
+        parsed_function.with_trailing_value_parameters(
+            function_block.signature().parameters()
+                [function_block.signature().parameters().len() - function_block.witness_count()..]
+                .iter()
+                .map(|parameter| {
+                    syntax::C0Parameter::new(parameter.c_type(), parameter.name().to_string(), None)
+                }),
+        ),
+    )
+}
+
+/// Checks a block's signature against its C declaration. The block's last
+/// `witness_count` signature parameters are contract value parameters, which
+/// C does not declare.
 pub(in crate::surface) fn check_signature(
     signature: &FunctionSignature,
+    witness_count: usize,
     parsed_function: &syntax::C0Function,
     source_path: &str,
 ) -> Result<(), ClickError> {
+    let c_parameters = &signature.parameters()[..signature.parameters().len() - witness_count];
     // A head restates the C declaration, so its types are the declaration's
     // exact C types: `long` and `long long` are distinct, as in C.
     if signature.return_type() != parsed_function.return_type() {
@@ -7339,18 +7389,17 @@ pub(in crate::surface) fn check_signature(
         .with_kind(ClickErrorKind::Type));
     }
 
-    if signature.parameters().len() != parsed_function.parameters().len() {
+    if c_parameters.len() != parsed_function.parameters().len() {
         return Err(ClickError::new(format!(
             "signature mismatch for `{}` in `{source_path}`: .click has {} parameters, C has {}",
             signature.name(),
-            signature.parameters().len(),
+            c_parameters.len(),
             parsed_function.parameters().len()
         ))
         .with_kind(ClickErrorKind::Type));
     }
 
-    for (index, (expected, actual)) in signature
-        .parameters()
+    for (index, (expected, actual)) in c_parameters
         .iter()
         .zip(parsed_function.parameters())
         .enumerate()
