@@ -218,15 +218,16 @@ C++ items were chosen explicitly; the rest are the recommended defaults.
   the cross-host fixture and the Linux rbtree integration are projects; the
   rbtree unit reads the extracted closure in place as its `inputs` root, and
   each re-locked artifact is byte-identical to its predecessor. The pinned
-  zlib fixture keeps its per-sidecar configs: its `zconf.h` includes
-  `<stdarg.h>` and `<sys/types.h>`, which Click's modeled headers refuse, so
-  current Click cannot re-lock it.
+  zlib fixture is a project too: Click now models the type-only
+  `<stdarg.h>` (`va_list`) and `<sys/types.h>` (`ssize_t`, `off_t`) its
+  `zconf.h` includes, and its unit drops the hand-copied host `-isystem`
+  directories, so its prepared sources hold no C library text.
 - **C++ migration.** `examples/basic-cpp` is a project with one C++ unit and
   committed, portable locks: `prepare.py` and the compilation-database
   template are gone, and it rejoins the nightly audit. The Bitcoin Core
   integration still uses per-sidecar configs: its real command names the
   machine's Clang resource directory, which a unit should not have to state.
-- **Remaining:** migrating zlib and the Bitcoin Core integration, then refusing per-sidecar
+- **Remaining:** migrating the Bitcoin Core integration, then refusing per-sidecar
   configs in the command line and deleting their loaders; the module root still comes
   from imports rather than the project file; the shared lock envelope; the
   optimization level and flag policy.

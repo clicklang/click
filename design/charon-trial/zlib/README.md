@@ -13,12 +13,15 @@ The C adapter uses the shared [checksum specification](../../adler32-spec.click)
 from revision `51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf` of
 [madler/zlib](https://github.com/madler/zlib/tree/51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf).
 The original zlib license is included. No implementation, loop, macro, or header
-was changed. The prepared input also contains GNU C Library declarations and
-inline header functions; their LGPL 2.1 license is included separately.
+was changed. The system headers zlib includes are Click's modeled headers, not
+a C library's.
 
 The locked selection uses `x86_64-linux-userspace`, LP64 little-endian layout,
-unsigned plain char, C11, and GCC 14. `NO_DIVIDE` and `Z_SOLO` are undefined.
-The compiler import supplies its normal POSIX profile flags. Its lock records
+unsigned plain char, C11, and GCC 13. `NO_DIVIDE` and `Z_SOLO` are undefined.
+The [project file](click.project.json) declares one C unit, `zlib`, for
+`adler32.c` and the `incremental.c` client, built with `-std=c11` as zlib's
+own build is. `zconf.h` takes `va_list` and `off_t` from Click's `<stdarg.h>`
+and `<sys/types.h>`. The lock records
 the driver, compiler resources, ABI probe, exact options, source closure, and
 prepared bytes. Ordinary verification loads the prepared input offline and
 checks original local inputs; it does not run or attest the compiler. The
@@ -37,11 +40,11 @@ target/debug/click verify design/charon-trial/zlib/sixteen.click
 target/debug/click verify design/charon-trial/zlib/full-stream.click
 ```
 
-To reproduce preparation on a machine with the compiler and include paths in
-`empty.click.import.json`, regenerate the lock and prepared input:
+To reproduce preparation on a machine with the unit's compiler, regenerate
+the lock and prepared sources:
 
 ```sh
-target/debug/click import lock design/charon-trial/zlib/empty.click
+target/debug/click import lock design/charon-trial/zlib
 target/debug/click verify design/charon-trial/zlib/empty.click
 ```
 
@@ -87,8 +90,8 @@ zero guard decrements the counter to UINT64_MAX before breaking; that exit
 owes no back-edge decrease. The proof uses the actual remaining count and
 saved pointer, with no generated processed counter. It records the whole
 remaining view at the pre-decrement checkpoint, then derives the next head's
-view from the checked byte offset and remaining capacity. Its import manifest
-and lock reuse the same unchanged prepared C source and source closure.
+view from the checked byte offset and remaining capacity. The project lock
+reuses the same unchanged prepared C source and source closure.
 
 The accumulator invariants identify A with one plus the consumed byte sum and
 B with the consumed length plus its weighted byte sum. `short-prefix.click`
@@ -123,7 +126,7 @@ the exact B invariant while deriving the final component equation. The
 subsequent zero-length scalar loop preserves both component equations, and
 the original reductions and packing establish the shared result.
 
-The manifest and lock reuse the unchanged prepared C input and source closure.
+The project lock reuses the unchanged prepared C input and source closure.
 The nightly offline regression relocates the fixture, checks all imported
 helper bodies and an expansion, and rejects missing or insufficient read
 authority, false A/B invariants, and a false checksum. This establishes one
@@ -162,7 +165,7 @@ weighted-sum invariant. Selected-premise reduction still uses the unchanged
 The offline repeated-block regression checks all dependency bodies, the
 complete expanded certificate, false checksum and A/B invariants, missing
 read authority, and a view one byte too short. It runs in nightly to preserve
-the gate budget. `repeated.click.import.json` and its lock reuse the unchanged
+the gate budget. The project lock reuses the unchanged
 prepared source and headers; compiler extraction is unnecessary. The
 full-stream and canonical sidecars below extend the length and seed ranges;
 the shared correspondence demonstration connects their results to Rust.
@@ -180,7 +183,7 @@ bounds use the selected snapshot's counter.
 
 The offline NMAX regression checks all helper bodies, complete certificate
 expansion, false results and component invariants, and missing or shortened
-read authority. It runs in nightly; the sidecar's import manifest and lock reuse
+read authority. It runs in nightly; the project lock reuses
 the unchanged prepared source and headers. The stream sidecar below extends
 this proof across multiple batches and their remaining tails.
 
@@ -207,7 +210,7 @@ unsigned decrement wraps.
 
 The offline stream regression checks every helper body, complete certificate
 expansion, false checksum, cursor and raw-seed invariants, and missing or
-shortened read authority. It runs in nightly. Its manifest and lock reuse the
+shortened read authority. It runs in nightly. The project lock reuses the
 unchanged prepared input; the C and headers remain byte-for-byte pinned.
 The full-stream sidecar below extends this proof to the shared signed length
 limit and covers every original return path.
@@ -230,7 +233,7 @@ postconditions across the four original return paths, complete certificate
 expansion, and negative checksum, cursor, raw-seed, authority, and length-ceiling
 cases. A separate nightly regression expands and checks every new helper claim
 and rejects invalid cast, pointer-sum, read-bound, and endpoint claims. The
-import manifest and lock reuse the unchanged prepared source and headers.
+project lock reuses the unchanged prepared source and headers.
 
 `canonical.click` now covers arbitrary canonical decoded seed components
 (0–65520 each), nonnull input, and every length 0–2147483647. It checks the
@@ -250,7 +253,7 @@ nonnull: `buf != 0` and `buf + split != 0`, including empty pieces, because zlib
 uses null as a reset request. Views establish read authority; they do not
 establish allocation provenance or make the suffix nonnull. Checked uint64
 field recovery and Integer round trips recover the first result's canonical
-state before the second call. The client import locks GCC 14, LP64 layout,
+state before the second call. The client source is locked with GCC 13, LP64 layout,
 headers, included original source and the prepared single translation unit.
 Its offline fixture also verifies the callee's complete proof against that
 unit, expands the client claim, and rejects invalid splits, null suffixes,
