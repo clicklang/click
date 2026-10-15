@@ -1,0 +1,20 @@
+{
+  "units": {
+    "zlib": {
+      "language": "c",
+      "compiler": "/usr/bin/gcc",
+      "environment": {
+        "PATH": "/usr/bin:/bin",
+        "LC_ALL": "C",
+        "SOURCE_DATE_EPOCH": "0"
+      },
+      "args": [
+        "-std=c11"
+      ],
+      "sources": {
+        "adler32.c": {},
+        "incremental.c": {}
+      }
+    }
+  }
+}

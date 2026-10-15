@@ -186,6 +186,8 @@ does. Verifying plain C needs no compiler or system headers; see the
 | `<stddef.h>` | user space | `NULL` |
 | `<string.h>` | user space | `memcpy`, `memcmp`, `memset`, `strlen`, and `NULL` |
 | `<stdlib.h>` | user space | `malloc`, `calloc`, `realloc`, `free`, and `NULL` |
+| `<stdarg.h>` | user space | the `va_list` type only, so prototypes that take one parse; `va_start`, `va_arg`, `va_copy` and `va_end` are not provided, since variadic bodies are not modeled |
+| `<sys/types.h>` | user space | `ssize_t` and `off_t`, both `long` on LP64 |
 | `<pthread.h>` | user space | the modeled pthread subset; see [the modeled binding](#conditional-modeled-pthread-binding) |
 | `<stdatomic.h>` | user space | the one-shot publication subset; see [publication](#one-shot-releaseacquire-publication) |
 
@@ -991,7 +993,8 @@ Supported C surface includes:
   `extern` contract, and even when it passes no variable arguments) and a
   function-address use are rejected at their own source line. A
   redeclaration must agree on being variadic. Variadic definitions,
-  variadic function-pointer signatures, and `<stdarg.h>` remain unsupported.
+  variadic function-pointer signatures, and the `<stdarg.h>` access macros
+  remain unsupported; `<stdarg.h>` supplies only the `va_list` type.
   See `mdtests/c_variadic_prototype_declared.md` and
   `mdtests/c_variadic_call_rejected.md`.
 - project-local quoted `#include "header.h"` declarations supplied in the

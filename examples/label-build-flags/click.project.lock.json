@@ -4,7 +4,7 @@
     "label": {
       "language": "c",
       "lock": {
-        "click_header_catalog_sha256": "008dc5a49ab534ad6969d4426dd52674ed498f07cf887b756b7cae21f0308bf0",
+        "click_header_catalog_sha256": "ca6c11f5d8c8749f7d2ed6edb814fdd6d2394edfc386a9659f69d750b48d404a",
         "compiler_path": "/usr/bin/x86_64-linux-gnu-gcc-13",
         "config_directory": "/home/user/click-p/examples/label-build-flags",
         "config_sha256": "7e6905ec427001773cf32602a466bb7a8c9552b26e8a2c61e1d37921d4b7cedb",
@@ -25,7 +25,7 @@
             "dependencies": {
               "/home/user/click-p/examples/label-build-flags/label.h": "6c588c7e8f6e1180c63f8a38a72de5ee0ae7bfc8d2d5574752fab41d5b2e8c91"
             },
-            "identity": "a47056fa95b168c253cbb5f1f387b256a42989aea1bdfb9552e0faf3031555be",
+            "identity": "076b1c3fe976533e2036dc6b86e6cc2d6f1c3e1312934ed1fbe8175674717bb2",
             "local_dependencies": {
               "label.h": "6c588c7e8f6e1180c63f8a38a72de5ee0ae7bfc8d2d5574752fab41d5b2e8c91"
             },
@@ -45,7 +45,7 @@
               "/home/user/click-p/examples/label-build-flags/include/label_config.h": "0df31092d5991f82d9d0dd156449f5932420fd74b247881d717bff19542fc3b8",
               "/home/user/click-p/examples/label-build-flags/label.h": "6c588c7e8f6e1180c63f8a38a72de5ee0ae7bfc8d2d5574752fab41d5b2e8c91"
             },
-            "identity": "5421206b3dce00b433dd8f7babe56adfeecba6b1ff21b2802285a00a460fa337",
+            "identity": "0cab79e919aedd4d4f1988bbee677048b5062f3ecb5b535f4ff045aef35145a7",
             "local_dependencies": {
               "include/label_config.h": "0df31092d5991f82d9d0dd156449f5932420fd74b247881d717bff19542fc3b8",
               "label.h": "6c588c7e8f6e1180c63f8a38a72de5ee0ae7bfc8d2d5574752fab41d5b2e8c91"
