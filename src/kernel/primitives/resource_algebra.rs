@@ -7289,32 +7289,6 @@ mod zero_quantity_graph_tests {
     }
 
     #[test]
-    fn quantity_query_work_is_indexed_over_separately_retained_units() {
-        let assumptions = PureFactContext::new();
-        let samples = [16_u32, 64, 256, 1024].map(|size| {
-            let context = ResourceContext::new()
-                .unchecked_with_facts((0..size).map(|_| required(Bitvector32Term::Constant(1))));
-            let ((), work) = crate::persistent::measure_persistent_work(|| {
-                assert!(
-                    context
-                        .satisfies_fact(&required(Bitvector32Term::Constant(size)), &assumptions)
-                );
-                assert!(
-                    !context.satisfies_fact(
-                        &required(Bitvector32Term::Constant(size + 1)),
-                        &assumptions
-                    )
-                );
-            });
-            work
-        });
-        assert!(samples[0] > 0, "{samples:?}");
-        for (index, work) in samples.iter().enumerate() {
-            assert!(*work <= samples[0] + 16 * index, "{samples:?}");
-        }
-    }
-
-    #[test]
     fn zero_ownership_uses_graph_with_snapshot_scope() {
         let _session = crate::kernel::VerificationSession::enter();
         let before = crate::kernel::intern_c_memory(CMemory::new().with_block("zero-quantity", 8));
@@ -7365,30 +7339,11 @@ mod zero_quantity_graph_tests {
         assert!(!empty.satisfies_fact(&source, &zero_withdrawn));
     }
 
-    #[test]
-    fn zero_ownership_graph_queries_scale_without_fact_index() {
-        for size in [16u64, 64, 256, 1024] {
-            let _session = crate::kernel::VerificationSession::enter();
-            let mut context = PureFactContext::new();
-            for index in 0..size {
-                context = context
-                    .assume_condition(ConditionTerm::equal(var(index), var(index + 1)), true);
-            }
-            context = context.assume_condition(
-                ConditionTerm::equal(var(size), Bitvector32Term::Constant(0)),
-                true,
-            );
-            let empty = ResourceContext::new();
-            let _scope = context.enter_id_scope();
-            PureFactContext::reset_bitvector_equality_index_fact_visits();
-            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
-                for index in 0..size {
-                    assert!(empty.satisfies_fact(&required(var(index)), &context));
-                }
-            });
-            assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
-            assert!(work < 300 * size as usize, "size={size}, work={work}");
-        }
+    #[cfg(test)]
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/primitives/resource_algebra/zero_quantity_graph_tests.rs"
+        );
     }
 }
 
@@ -10073,45 +10028,6 @@ mod support_removal_tests {
     use super::*;
 
     #[test]
-    fn frame_exchange_preserves_occurrences_and_does_not_scan_unrelated_frame() {
-        let assumptions = PureFactContext::new();
-        let before = CResourceFact::own_composite("before".into(), Vec::new());
-        let after = CResourceFact::own_composite("after".into(), Vec::new());
-        let body = ResourceContext::new().unchecked_with_fact(before.clone());
-        let exit = body
-            .clone()
-            .without_exact_representation(&before)
-            .unwrap()
-            .unchecked_with_fact(after.clone());
-        let occurrence = exit.unique_owned_occurrence_for_fact(&after).unwrap();
-        let mut measurements = Vec::new();
-        for size in [8, 32, 128] {
-            let mut frame = body.clone();
-            for index in 0..size {
-                frame = frame.unchecked_with_fact(CResourceFact::own_composite(
-                    format!("frame_{index}"),
-                    Vec::new(),
-                ));
-            }
-            let (restored, work) = crate::instrumentation::measure_deterministic_work(|| {
-                exit.restore_frame_after_exchange(&body, &frame, &assumptions)
-                    .unwrap()
-            });
-            assert!(!restored.contains_exact_representation(&before));
-            assert_eq!(
-                restored.unique_owned_occurrence_for_fact(&after),
-                Some(occurrence)
-            );
-            assert_eq!(restored.facts().len(), size + 1);
-            measurements.push(work);
-        }
-        assert!(
-            measurements.iter().all(|work| *work == measurements[0]),
-            "{measurements:?}"
-        );
-    }
-
-    #[test]
     fn frame_exchange_refuses_duplicate_authority_and_unrelated_histories() {
         let assumptions = PureFactContext::new();
         let authority = CResourceFact::own_memory(CMemoryRange::new(
@@ -10400,6 +10316,11 @@ mod support_removal_tests {
         context.remove_entry(left_entry);
 
         assert!(context.storage.facts.is_empty());
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/primitives/resource_algebra/support_removal_tests.rs");
     }
 }
 

@@ -2345,6 +2345,7 @@ mod expansion_tests;
 mod fold_body_tests;
 mod loop_tests;
 mod project_tests;
+#[path = "../scaling_tests/surface/tests/scaling_tests.rs"]
 mod scaling_tests;
 mod surface_syntax;
 mod tactic_tests;

@@ -250,7 +250,9 @@ fn arc_pointer(offset: i64) -> Pointer {
 mod external_array_tests;
 mod iterated_ownership_tests;
 mod memory_dag_tests;
+#[path = "../scaling_tests/kernel/tests/memory_scaling_tests.rs"]
 mod memory_scaling_tests;
+#[path = "../scaling_tests/kernel/tests/resource_scaling_tests.rs"]
 mod resource_scaling_tests;
 mod scalar_array_tests;
 

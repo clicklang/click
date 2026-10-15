@@ -90,14 +90,63 @@ fn language_proof_code_cannot_rebuild_the_kernel_proof_object() {
     }
 }
 
+/// Every file under `src/scaling_tests/` is the scaling tests of one module,
+/// included into that module's `scaling_tests` module (or, for a whole file
+/// of scaling tests, declared with `#[path]`). A file nothing includes
+/// compiles into nothing, so its tests would silently stop running.
+#[test]
+fn every_scaling_test_file_is_included_by_its_module() {
+    let mut sources = Vec::new();
+    files_with_extension(&root().join("src"), "rs", &mut sources);
+    let mut referenced = BTreeSet::new();
+    for path in &sources {
+        let source = fs::read_to_string(path).expect("read source");
+        for marker in ["include!(", "#[path = "] {
+            for piece in source.split(marker).skip(1) {
+                // rustfmt may move a long path onto the next line.
+                let Some(relative) = piece
+                    .trim_start()
+                    .strip_prefix('"')
+                    .and_then(|rest| rest.split_once('"'))
+                    .map(|(relative, _)| relative)
+                else {
+                    continue;
+                };
+                let target = path.parent().unwrap().join(relative);
+                if let Ok(target) = target.canonicalize() {
+                    referenced.insert(target);
+                }
+            }
+        }
+    }
+    let mut files = Vec::new();
+    files_with_extension(&root().join("src/scaling_tests"), "rs", &mut files);
+    assert!(
+        files.len() >= 100,
+        "expected the scaling tests under src/scaling_tests/"
+    );
+    for file in files {
+        let canonical = file.canonicalize().expect("canonical scaling test path");
+        assert!(
+            referenced.contains(&canonical),
+            "{} is not included by any module; include it from the module whose \
+             scaling tests it holds, in a `#[cfg(test)] mod scaling_tests`",
+            file.strip_prefix(root()).unwrap().display()
+        );
+    }
+}
+
 /// The part of a source file that ships: everything before an inline
 /// `#[cfg(test)] mod tests` block, or nothing for a file of tests.
 fn shipped_part<'a>(path: &Path, source: &'a str) -> Option<&'a str> {
     let name = path.file_name().unwrap().to_str().unwrap();
     if name.ends_with("tests.rs")
-        || path
-            .components()
-            .any(|component| component.as_os_str() == "tests")
+        || path.components().any(|component| {
+            matches!(
+                component.as_os_str().to_str(),
+                Some("tests" | "scaling_tests")
+            )
+        })
     {
         return None;
     }

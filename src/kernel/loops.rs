@@ -3482,42 +3482,6 @@ mod loop_exit_shared_fact_tests {
         );
     }
 
-    #[test]
-    fn merged_exit_equations_have_output_sized_work() {
-        let mut work = Vec::new();
-        for count in [4usize, 8, 16, 32] {
-            let fresh = CValue::Int32(Bitvector32Term::Variable(Variable(100)));
-            let (facts, measured) = crate::instrumentation::measure_deterministic_work(|| {
-                let exits = (0..count)
-                    .map(|value| {
-                        let mut restatement = LoopExitRestatement::default();
-                        restatement.pin(
-                            &fresh,
-                            &CValue::Int32(Bitvector32Term::Constant(value as u32)),
-                        );
-                        restatement.restate(
-                            vec![ExecutionPureFact::new(fact(1, value as i64))].into(),
-                            Vec::new(),
-                            crate::kernel::loans::empty_checked_loan_evidence_sequence(),
-                        )
-                    })
-                    .collect();
-                join_loop_exit_paths(exits).unwrap().0
-            });
-            assert_eq!(
-                facts.len(),
-                2,
-                "one historical and one successor disjunction"
-            );
-            work.push(measured);
-        }
-        assert!(work.windows(2).all(|pair| pair[1] > pair[0]), "{work:?}");
-        assert!(
-            work.windows(2).all(|pair| pair[1] <= 3 * pair[0] + 32),
-            "{work:?}"
-        );
-    }
-
     /// A fact is kept only when every exit restates that very proposition.
     #[test]
     fn only_a_fact_every_exit_restates_is_kept() {
@@ -3615,6 +3579,11 @@ mod loop_exit_shared_fact_tests {
                 comparisons.get()
             );
         }
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/loops/loop_exit_shared_fact_tests.rs");
     }
 }
 
@@ -4161,78 +4130,6 @@ mod contract_exit_join_tests {
     }
 
     #[test]
-    fn contract_exit_marker_join_work_is_linear_in_exits_and_skips_ambient_cells() {
-        let _session = crate::kernel::VerificationSession::enter();
-        let mut samples = Vec::new();
-        for count in [4usize, 64, 1024] {
-            let exits = marker_exits(count, 4);
-            let (successor, work) = measured_join(&exits);
-            samples.push((count, work));
-            assert!(work > 0 && work <= count * 30 + 32, "{samples:?}");
-            assert_eq!(successor.memory.cells, exits[0].memory.cells);
-            assert_eq!(
-                crate::kernel::reasoning::memory_resolution::havoc_marker_blocks(
-                    &successor.memory.blocks
-                )
-                .count(),
-                2
-            );
-        }
-        eprintln!("(exits, marker join work): {samples:?}");
-        let mut ambient_work = Vec::new();
-        for ambient in [4usize, 64, 1024] {
-            let (_, work) = measured_join(&marker_exits(4, ambient));
-            ambient_work.push(work);
-        }
-        assert!(
-            ambient_work.iter().all(|work| *work <= ambient_work[0] * 2),
-            "{ambient_work:?}"
-        );
-    }
-
-    #[test]
-    fn optional_exit_cache_reconciliation_does_not_walk_unrelated_store_history() {
-        let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer {
-            block: "shared".into(),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let other = Pointer {
-            block: "other".into(),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let mut samples = Vec::new();
-        for count in [4usize, 64, 1024] {
-            let mut memory = CMemory::new()
-                .with_block("shared", 4)
-                .with_block("other", 4);
-            for index in 0..count {
-                memory = memory.store(other.clone(), int32(index as u32));
-            }
-            let mut exits = [
-                CState::new().with_memory(memory.clone().store(pointer.clone(), int32(0))),
-                CState::new().with_memory(memory),
-            ];
-            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-                retain_proven_loop_exit_cells(
-                    &mut exits,
-                    &[&ExecutionFacts::new(), &ExecutionFacts::new()],
-                    &PureFactContext::new(),
-                    true,
-                )
-            });
-            result.unwrap();
-            assert!(exits[1].memory().known_value(&pointer).is_none());
-            samples.push(work);
-        }
-        assert!(
-            samples[0] > 0 && samples.iter().all(|work| *work <= samples[0] * 2),
-            "{samples:?}"
-        );
-        eprintln!("optional cache lookup work at 4/64/1024 old stores: {samples:?}");
-    }
-
-    #[test]
     fn numeric_float_equality_does_not_materialize_positive_zero_bits() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Pointer {
@@ -4304,6 +4201,11 @@ mod contract_exit_join_tests {
             .unwrap()
             .contains("memory")
         );
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/loops/contract_exit_join_tests.rs");
     }
 }
 
@@ -4672,80 +4574,6 @@ mod exit_local_argument_tests {
         (binder, instances)
     }
 
-    // A declared argument selects one local; growing the unrelated environment
-    // must not introduce a scan or a search for equal-looking value vectors.
-    #[test]
-    fn exit_local_argument_lookup_skips_unrelated_locals() {
-        let _session = crate::kernel::VerificationSession::enter();
-        let (binder, instances) = fixture(CResourceSnapshot::Current);
-        let mut costs = Vec::new();
-        for size in [16, 64, 256, 1024] {
-            let mut ambient = CState::new();
-            for index in 0..size {
-                ambient = ambient.with_local(format!("other{index}"), int32(index));
-            }
-            let exits = [
-                ambient.clone().with_local("cur", int32(1)),
-                ambient.clone().with_local("cur", int32(2)),
-            ];
-            let successor = ambient.with_local("cur", int32(3));
-            let (arguments, work) = crate::instrumentation::measure_deterministic_work(|| {
-                loop_exit_local_arguments(
-                    &successor,
-                    &exits,
-                    &binder,
-                    &instances,
-                    &[PureFactContext::new(), PureFactContext::new()],
-                )
-            });
-            assert_eq!(arguments, vec![Some(AlgebraicValue::C(int32(3)))]);
-            costs.push(work);
-        }
-        assert!(
-            costs[0] > 0 && costs.iter().all(|work| *work <= costs[0] * 2),
-            "{costs:?}"
-        );
-    }
-
-    #[test]
-    fn exit_local_argument_context_indexing_is_linear_and_shared() {
-        let _session = crate::kernel::VerificationSession::enter();
-        let (binder, instances) = fixture(CResourceSnapshot::Current);
-        let exits = [
-            CState::new().with_local("cur", int32(1)),
-            CState::new().with_local("cur", int32(2)),
-        ];
-        let successor = CState::new().with_local("cur", int32(3));
-        for size in [16, 64, 256, 1024] {
-            let facts = (0..size)
-                .map(|index| {
-                    ExecutionPureFact::new(Proposition::ConditionIs(
-                        ConditionTerm::pointer_equal(
-                            Pointer::symbolic(Variable(10000 + index)),
-                            Pointer::symbolic(Variable(20000 + index)),
-                        ),
-                        true,
-                    ))
-                })
-                .collect::<ExecutionFacts>();
-            let (contexts, work) = crate::instrumentation::measure_deterministic_work(|| {
-                loop_exit_argument_contexts(&[&facts, &facts], &PureFactContext::new(), true)
-            });
-            assert!(work > 0 && work <= size as usize * 200, "{size}: {work}");
-            let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
-            for _ in 0..size {
-                assert_eq!(
-                    loop_exit_local_arguments(&successor, &exits, &binder, &instances, &contexts),
-                    vec![Some(AlgebraicValue::C(int32(3)))]
-                );
-            }
-            assert_eq!(
-                crate::kernel::reasoning::path_facts::context_rebuild_entries(),
-                before
-            );
-        }
-    }
-
     #[test]
     fn exit_local_argument_requires_current_snapshot_and_every_exit() {
         let _session = crate::kernel::VerificationSession::enter();
@@ -4782,6 +4610,11 @@ mod exit_local_argument_tests {
             ),
             vec![None]
         );
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/loops/exit_local_argument_tests.rs");
     }
 }
 
@@ -9937,91 +9770,6 @@ pub(super) fn statement_may_write_memory(state: &CState, statement: &CStatement)
 mod v10_tests {
     use super::*;
 
-    #[test]
-    #[ignore = "nightly: 1.3s in the parallel gate"]
-    fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
-        let _session = crate::kernel::VerificationSession::enter();
-        let source = Pointer::symbolic(Variable(916_100));
-        let alias = Pointer::symbolic(Variable(916_101));
-        let owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
-            source.clone(),
-            0u32.into(),
-            8u32.into(),
-            1,
-        ));
-        let target = Pointer {
-            block: source.block.clone(),
-            offset: PointerOffsetTerm::Constant(2),
-        };
-        let assumptions = PureFactContext::new()
-            .assume_condition(ConditionTerm::pointer_equal(alias.clone(), target), true);
-        let spec = CResourceSpec::new(
-            CResourceTerm::Memory(
-                CMemorySegment::new(c_variable("cursor"), c_int32_literal(0), c_int32_literal(4))
-                    .with_element_width(1),
-            ),
-            CResourceAccessMode::View,
-            CResourceQuantity::One,
-            CResourceTransferRole::Borrow,
-            CResourceSnapshot::Entry,
-        )
-        .unwrap();
-        let mut costs = Vec::new();
-        for size in [16, 64, 256, 1024] {
-            let mut resources = ResourceContext::new_with_equalities(&assumptions)
-                .unchecked_with_fact(owner.clone());
-            for index in 0..size {
-                resources = resources.unchecked_with_fact(CResourceFact::view_memory(
-                    CMemoryRange::new_with_element_width(
-                        source.clone(),
-                        ((index + 1) * 16).into(),
-                        ((index + 1) * 16 + 8).into(),
-                        1,
-                    ),
-                ));
-            }
-            resources.synchronize_memory_equalities(&assumptions);
-            let state = CState::new()
-                .with_local(
-                    "cursor",
-                    CValue::typed_pointer(alias.clone(), CType::UInt8Pointer),
-                )
-                .with_resource_context(resources);
-            let (partition, work) = crate::instrumentation::measure_deterministic_work(|| {
-                loop_declared_and_withheld_resources(
-                    &state,
-                    std::slice::from_ref(&spec),
-                    &assumptions,
-                    &mut ExecutionBudget::default(),
-                )
-                .unwrap()
-                .unwrap()
-            });
-            assert!(partition.1.contains_exact_representation(&owner));
-            assert!(partition.0.satisfies_fact(
-                &CResourceFact::view_memory(CMemoryRange::new_with_element_width(
-                    alias.clone(),
-                    0u32.into(),
-                    4u32.into(),
-                    1
-                ),),
-                &assumptions
-            ));
-            assert!(
-                loop_declared_and_withheld_resources(
-                    &state,
-                    std::slice::from_ref(&spec),
-                    &PureFactContext::new(),
-                    &mut ExecutionBudget::default()
-                )
-                .unwrap()
-                .is_err()
-            );
-            costs.push(work);
-        }
-        assert!(costs.iter().all(|work| *work <= costs[0] * 2), "{costs:?}");
-    }
-
     fn memory_range(base: u32, end: u32) -> CMemoryRange {
         CMemoryRange::new(
             Pointer {
@@ -10084,6 +9832,11 @@ mod v10_tests {
                 arguments: Vec::new().into(),
             }));
         assert_eq!(checked_owned_entry_footprint(&folded), None);
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/loops/v10_tests.rs");
     }
 }
 

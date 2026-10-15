@@ -2839,30 +2839,9 @@ mod proposition_identity_tests {
         assert!(!propositions_are_alpha_equal(&spelled, &changed_named));
     }
 
-    #[test]
-    fn alpha_identity_work_scales_with_nested_binder_depth() {
-        let make = |depth: u64, offset: u64| {
-            let mut proposition = equal(
-                Bitvector32Term::Variable(Variable(offset + depth - 1)),
-                Bitvector32Term::Constant(1),
-            );
-            for index in (0..depth).rev() {
-                proposition = forall(offset + index, proposition);
-            }
-            proposition
-        };
-        let mut work = Vec::new();
-        for depth in [8, 16, 32, 64] {
-            let left = make(depth, 20_000);
-            let right = make(depth, 30_000);
-            let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
-                assert!(propositions_are_alpha_equal(&left, &right));
-            });
-            work.push(measured);
-        }
-        for pair in work.windows(2) {
-            assert!(pair[1] <= pair[0] * 3 + 32, "alpha identity work: {work:?}");
-        }
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/proof/fact_keys/proposition_identity_tests.rs");
     }
 }
 
@@ -3311,42 +3290,6 @@ mod integer_alpha_scaling_tests {
     }
 
     #[test]
-    fn truncating_integer_alpha_keys_preserve_operator_and_shared_binders() {
-        for depth in [2usize, 8, 32, 128] {
-            let build = |variable, remainder| {
-                let mut term = IntegerTerm::var(Variable(variable));
-                for _ in 0..depth {
-                    let child: SharedIntegerTerm = term.into();
-                    term = if remainder {
-                        IntegerTerm::TruncatingRemainder(child.clone(), child)
-                    } else {
-                        IntegerTerm::TruncatingQuotient(child.clone(), child)
-                    };
-                }
-                term
-            };
-            let key = |variable, remainder| {
-                alpha_integer_key(
-                    &build(variable, remainder),
-                    &mut BTreeMap::from([(Variable(variable), 0)]),
-                )
-                .unwrap()
-            };
-            let (left, work) =
-                crate::instrumentation::measure_deterministic_work(|| key(91001, false));
-            let right = key(91002, false);
-            assert_eq!(left, right);
-            assert!(work <= 8 * depth + 16, "depth={depth}, work={work}");
-            assert_ne!(left, key(91001, true));
-            let mut a = DefaultHasher::new();
-            let mut b = DefaultHasher::new();
-            left.hash(&mut a);
-            right.hash(&mut b);
-            assert_eq!(a.finish(), b.finish());
-        }
-    }
-
-    #[test]
     fn alpha_integer_to_machine_keys_rename_math_binders_and_include_destination() {
         let make = |variable, destination| Bitvector32Term::IntegerToMachine {
             value: SharedIntegerTerm::from(IntegerTerm::Variable(variable)),
@@ -3502,27 +3445,9 @@ mod integer_alpha_scaling_tests {
         );
     }
 
-    #[test]
-    fn integer_fold_alpha_key_visits_shared_bodies_once_per_scope() {
-        let mut work = Vec::new();
-        for depth in [8, 16, 32, 64] {
-            let mut term = IntegerTerm::var(Variable(920));
-            for _ in 0..depth {
-                let child: SharedIntegerTerm = term.into();
-                term = integer_key_test_fold(
-                    Variable(921),
-                    IntegerTerm::constant_i64(0),
-                    IntegerTerm::Add(child.clone(), child),
-                );
-            }
-            let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
-                alpha_integer_key(&term, &mut BTreeMap::new()).unwrap()
-            });
-            work.push(measured);
-        }
-        for pair in work.windows(2) {
-            assert!(pair[1] <= pair[0] * 3, "{work:?}");
-        }
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/proof/fact_keys/integer_alpha_scaling_tests.rs");
     }
 }
 
@@ -3994,40 +3919,6 @@ mod snapshot_alpha_tests {
         assert_ne!(source, changed_snapshot);
     }
 
-    #[test]
-    fn snapshot_alpha_work_ignores_unrelated_heap_size() {
-        let make_memory = |unrelated_size| {
-            crate::kernel::intern_c_memory(
-                CMemory::new()
-                    .with_block("snapshot-alpha", 8)
-                    .with_block("unrelated-snapshot-alpha", unrelated_size),
-            )
-        };
-        let mut work = Vec::new();
-        for unrelated_size in [8, 128, 1024, 8192] {
-            let memory = make_memory(unrelated_size);
-            let term = fold_body(&memory, Variable(318_001));
-            let term = IntegerTerm::range_fold(
-                int32_index(),
-                IntegerTerm::constant_i64(0),
-                Variable(318_000),
-                Variable(318_001),
-                term,
-            );
-            let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
-                integer_equality_alpha_key(&equality(term)).expect("snapshot alpha key")
-            });
-            work.push(measured);
-        }
-        let first = work[0];
-        for measured in work.into_iter().skip(1) {
-            assert!(
-                measured <= first + 8,
-                "unrelated heap work: {measured} vs {first}"
-            );
-        }
-    }
-
     fn registered_load_chain(depth: usize) -> (SharedCMemory, Variable) {
         let block = format!("snapshot-alpha-registry-{depth}");
         let memory = crate::kernel::intern_c_memory(CMemory::new().with_block(block.clone(), 4096));
@@ -4089,62 +3980,6 @@ mod snapshot_alpha_tests {
             );
         }
         (memory, load)
-    }
-
-    #[test]
-    fn snapshot_alpha_registered_load_dags_scale_linearly() {
-        let mut work = Vec::new();
-        for depth in [8usize, 16, 32, 64] {
-            let (_memory, load) = registered_load_chain(depth);
-            let term = IntegerTerm::range_fold(
-                int32_index(),
-                IntegerTerm::constant_i64(0),
-                Variable(321_000),
-                Variable(321_001),
-                IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
-                    MachineIntegerType::Int32,
-                    Bitvector32Term::Variable(load),
-                )),
-            );
-            let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
-                integer_equality_alpha_key(&equality(term)).expect("registered load DAG key")
-            });
-            work.push(measured);
-        }
-        for pair in work.windows(2) {
-            assert!(
-                pair[1] <= pair[0] * 3 + 32,
-                "registered load work: {work:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn snapshot_alpha_registered_load_branching_dags_stay_linear() {
-        let mut work = Vec::new();
-        for depth in [8usize, 16, 32, 64] {
-            let (_memory, load) = registered_load_branching_chain(depth);
-            let term = IntegerTerm::range_fold(
-                int32_index(),
-                IntegerTerm::constant_i64(0),
-                Variable(323_000),
-                Variable(323_001),
-                IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
-                    MachineIntegerType::Int32,
-                    Bitvector32Term::Variable(load),
-                )),
-            );
-            let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
-                integer_equality_alpha_key(&equality(term)).expect("branching load DAG key")
-            });
-            work.push(measured);
-        }
-        for pair in work.windows(2) {
-            assert!(
-                pair[1] <= pair[0] * 3 + 32,
-                "branching registered load work: {work:?}"
-            );
-        }
     }
 
     #[test]
@@ -4272,32 +4107,9 @@ mod snapshot_alpha_tests {
         assert_eq!(registered_load_interner_stats(), (0, 0));
     }
 
-    #[test]
-    fn snapshot_alpha_nested_shared_load_dags_scale_linearly() {
-        let memory = crate::kernel::intern_c_memory(CMemory::new().with_block("snapshot-alpha", 8));
-        let mut work = Vec::new();
-        for depth in [8usize, 16, 32, 64] {
-            let item = Variable(315_001);
-            let mut body = fold_body(&memory, item);
-            for _ in 0..depth {
-                let child: SharedIntegerTerm = body.into();
-                body = IntegerTerm::Add(child.clone(), child);
-            }
-            let term = IntegerTerm::range_fold(
-                int32_index(),
-                IntegerTerm::constant_i64(0),
-                Variable(315_000),
-                item,
-                body,
-            );
-            let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
-                integer_equality_alpha_key(&equality(term)).expect("shared load DAG key")
-            });
-            work.push(measured);
-        }
-        for pair in work.windows(2) {
-            assert!(pair[1] <= pair[0] * 3 + 32, "snapshot alpha work: {work:?}");
-        }
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/proof/fact_keys/snapshot_alpha_tests.rs");
     }
 }
 
