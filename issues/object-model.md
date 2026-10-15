@@ -552,3 +552,28 @@ The full normal recovery audit now passes **45/52** in 109.05 seconds,
 restoring ring-buffer with no new failure. Remaining projects: arena,
 multifile-registry, owned-vector, rbtree-augmented, refcount, rust-byte-sum and
 rust-chunks-exact. No full green-gate or native-feature activation is claimed.
+
+Recovery checkpoint `0822e0f20` restores multifile-registry by completing an
+incomplete global array's executable row metadata from the compatible linked
+definition. Scalar type, rank and inner dimensions must match; source-resolved
+shadowing locals retain their own shapes. The kernel's strict shape checks are
+unchanged. Shared immutable/mutable exhaustive C AST child walks keep this
+source preparation linear in visited syntax with indexed declaration lookups.
+Three new completion controls, ten addressability controls and eleven selected
+array-row controls pass on the archive, including ambient-global scaling and
+existing strict shape rejections.
+
+The new upstream controls cover the extern reader, a shadowing local and an
+out-of-bounds row. All three pass on both trees; master refuses the last case
+for missing read authority and the archive rejects the invalid row before
+access. The two positive controls pass fresh, expanded, rewritten and retained
+checking upstream; the original registry result proof passes all four modes on
+the archive and all five original project proofs verify. The normal archive
+audit is **46/52** in 106.44 seconds, with no new failing project. The six
+remaining failures are arena, owned-vector, rbtree-augmented, refcount,
+rust-byte-sum and rust-chunks-exact. No full green gate or activation is claimed.
+
+The separate archive trace defect is preserved in
+[the refcount trace reproduction](https://github.com/lacker/click/blob/db1cc4541/bugs/archive-refcount-failure-loses-proof-trace.md).
+Its original post-call pure comparison loses the checked trace prefix; investigate
+that recording defect before guessing at its missing count relation.
