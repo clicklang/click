@@ -380,7 +380,7 @@ fn root_clause(trait_ref: &a::TraitRef) -> Option<a::TraitClauseId> {
 }
 
 /// Whether a callable value may take or return `ty`.
-fn callable_scalar(ty: &Type) -> bool {
+pub(super) fn callable_scalar(ty: &Type) -> bool {
     matches!(
         ty,
         Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Usize | Type::Bool
@@ -444,7 +444,13 @@ impl Adapter<'_> {
     /// Whether `ty` is `&dyn Fn(...)`.
     pub(super) fn is_dyn_fn_reference(&self, ty: &a::Ty) -> bool {
         matches!(ty.kind(), a::TyKind::Ref(_, pointee, a::RefKind::Shared)
-            if matches!(pointee.kind(), a::TyKind::DynTrait(_)))
+        if matches!(pointee.kind(), a::TyKind::DynTrait(predicate)
+            if predicate.binder.params.trait_clauses.iter().any(|clause| {
+                self.krate
+                    .trait_decls
+                    .get(clause.trait_.skip_binder.id)
+                    .is_some_and(|decl| decl.item_meta.lang_item == Some(LangItem::Fn))
+            })))
     }
 
     /// The closure creations and `&dyn Fn` calls in `body`.
@@ -717,7 +723,14 @@ impl Adapter<'_> {
                         return Err(unsupported("type parameter with two Fn bounds"));
                     }
                 }
-                _ => return Err(unsupported("trait bound other than Fn")),
+                // A crate trait's bound: the parameter is a type the
+                // function does not know, reached through the trait.
+                None if self.interface_trait(trait_ref.id)? => {
+                    if callable[id.index()].replace(Type::TraitObject).is_some() {
+                        return Err(unsupported("type parameter with two bounds"));
+                    }
+                }
+                _ => return Err(unsupported("trait bound other than Fn or a crate trait")),
             }
         }
         Ok(callable)

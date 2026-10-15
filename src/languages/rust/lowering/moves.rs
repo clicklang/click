@@ -1033,6 +1033,7 @@ mod tests {
             body: vec![],
             external: false,
             captures: 0,
+            implements: None,
             span: span.clone(),
             mir: Some(MirBody {
                 locals: vec![Place {
@@ -1080,6 +1081,7 @@ mod tests {
                     mir: None,
                     external: false,
                     captures: 0,
+                    implements: None,
                     span: span.clone(),
                 });
             }

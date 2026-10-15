@@ -9343,7 +9343,7 @@ pub(crate) fn c_type_spelling(c_type: CType) -> &'static str {
 /// mutable ranges may be narrower than the named contract's upper bounds.
 /// Stateful refinement is deliberately limited to memory propositions backed
 /// by a nonempty resource transition and unguarded named mutable footprint.
-fn function_refines_named_contract(
+pub(super) fn function_refines_named_contract(
     contract: &CFunctionContract,
     function: &CFunction,
     budget: &mut ExecutionBudget,

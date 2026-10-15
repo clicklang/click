@@ -4413,6 +4413,11 @@ fn declaration_source_index(
     // The block's type, its module when it is an inherent block for a type
     // named by a path, its trait argument's suffix, and where it closes.
     let mut impl_block: Option<(String, Option<String>, Option<String>, usize)> = None;
+    // The crate trait an `impl` block implements, whose methods are
+    // `<Type as Trait>::name`, or whose `trait` block declares its methods'
+    // interfaces, `Trait::name`.
+    let mut impl_trait: Option<String> = None;
+    let mut trait_block: Option<(String, usize)> = None;
     let mut index = 0;
     while index < tokens.len() {
         crate::instrumentation::record_deterministic_work(1);
@@ -4421,8 +4426,30 @@ fn declaration_source_index(
             .is_some_and(|(_, _, _, close)| index >= *close)
         {
             impl_block = None;
+            impl_trait = None;
+        }
+        if trait_block
+            .as_ref()
+            .is_some_and(|(_, close)| index >= *close)
+        {
+            trait_block = None;
         }
         match tokens[index].text.as_str() {
+            "trait"
+                if !cpp && impl_block.is_none() && trait_block.is_none() && candidate.is_none() =>
+            {
+                // `trait path {`: the path is all that comes between.
+                if let Some(open) = (index..tokens.len()).find(|at| tokens[*at].text == "{")
+                    && open > index + 1
+                    && open - 1 - 3 * (rust_path_ending_at(tokens, open - 1).len() - 1) == index + 1
+                {
+                    let close = matching_delimiter(tokens, open, "{", "}")?;
+                    let path = rust_path_ending_at(tokens, open - 1);
+                    trait_block = Some((crate::languages::rust::names::path_name(&path), close));
+                    index = open + 1;
+                    continue;
+                }
+            }
             "impl" if impl_block.is_none() && candidate.is_none() => {
                 if let Some(open) = (index..tokens.len()).find(|at| tokens[*at].text == "{") {
                     let close = matching_delimiter(tokens, open, "{", "}")?;
@@ -4437,6 +4464,17 @@ fn declaration_source_index(
                             })
                     });
                     let suffix = rust_trait_argument_suffix(&tokens[index..open], &impl_type);
+                    // `impl crate_name::Shape for Type`: a crate trait is
+                    // named by a path, the standard library's by a word.
+                    if let Some(at) = (index..open).find(|at| tokens[*at].text == "for")
+                        && suffix.is_none()
+                    {
+                        let trait_path = rust_path_ending_at(tokens, at - 1);
+                        if trait_path.len() > 1 {
+                            impl_trait =
+                                Some(crate::languages::rust::names::path_name(&trait_path));
+                        }
+                    }
                     impl_block = Some((impl_type, module, suffix, close));
                     index = open + 1;
                     continue;
@@ -4482,18 +4520,30 @@ fn declaration_source_index(
             "{" => {
                 let body_close = matching_delimiter(tokens, index, "{", "}")?;
                 if let Some(name) = candidate.take() {
-                    let name = match &impl_block {
-                        Some((impl_type, _, Some(suffix), _)) => {
-                            format!("{impl_type}_{name}_{suffix}")
-                        }
-                        Some((impl_type, module, None, _)) => {
-                            crate::languages::rust::names::inherent_method_name(
-                                module.as_deref(),
-                                impl_type,
-                                &name,
+                    let name = match (&impl_block, &impl_trait, &trait_block) {
+                        (Some((impl_type, ..)), Some(trait_name), _) => {
+                            crate::languages::rust::names::trait_method_name(
+                                impl_type, trait_name, &name,
                             )
                         }
-                        None => name,
+                        (None, _, Some((trait_name, _))) => {
+                            let mut encoded = trait_name.clone();
+                            crate::languages::rust::names::push_path_segment(&mut encoded, &name);
+                            encoded
+                        }
+                        (impl_block, ..) => match impl_block {
+                            Some((impl_type, _, Some(suffix), _)) => {
+                                format!("{impl_type}_{name}_{suffix}")
+                            }
+                            Some((impl_type, module, None, _)) => {
+                                crate::languages::rust::names::inherent_method_name(
+                                    module.as_deref(),
+                                    impl_type,
+                                    &name,
+                                )
+                            }
+                            None => name,
+                        },
                     };
                     result.insert(
                         name,
