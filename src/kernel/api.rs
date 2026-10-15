@@ -347,11 +347,37 @@ pub fn c_condition_facts_match_for_transport(
 /// The `transport` rule for one bare condition: `context` states it, it
 /// holds by memory resolution from the facts in `context`, or a quantified
 /// fact instantiated at its terms states it.
+/// A numeric equality of two producer-retained complete pointer reads may
+/// follow from the explicitly selected frame. This exports no designation
+/// promise and never uses equality unions from another proof context.
+fn pointer_read_target_has_checked_frame(context: &PureFactContext, target: &Proposition) -> bool {
+    let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) = target else {
+        return false;
+    };
+    let read = |pointer: &Pointer| {
+        let definition = crate::kernel::equality_graph::logical_pointer_read_term(pointer)?;
+        let definition = crate::kernel::eval::typed_pointer_read_variable(pointer)
+            .and_then(|variable| crate::kernel::registered_load_origin_term_for_variable(&variable))
+            .unwrap_or(definition);
+        let Bitvector32Term::MemoryLoad(memory, address, LoadKind::Bits32) = &definition else {
+            return None;
+        };
+        (crate::kernel::load_term_access_width(memory, address, LoadKind::Bits32)
+            == crate::kernel::C_POINTER_BYTE_WIDTH)
+            .then_some(definition)
+    };
+    let (Some(left), Some(right)) = (read(left), read(right)) else {
+        return false;
+    };
+    crate::kernel::memory_provenance::checked_recorded_atomic_load_equality(&left, &right, context)
+}
+
 fn condition_target_reaches(context: &PureFactContext, target: &Proposition) -> bool {
     let Proposition::ConditionIs(condition, value) = target else {
         return false;
     };
     context.proves_exact(target)
+        || pointer_read_target_has_checked_frame(context, target)
         || contract_certification::condition_holds_by_memory_resolution(context, condition, *value)
         || contract_certification::condition_holds_by_instantiated_fact(
             context,

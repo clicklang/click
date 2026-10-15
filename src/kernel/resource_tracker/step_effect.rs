@@ -763,7 +763,9 @@ pub(in crate::kernel) fn seeded_cell_effect(
     // A wider read can overlap several cached scalar slots. None supplies
     // its whole value, but materializing unchanged predecessor bytes still
     // writes nothing; do not misclassify the last slot as a partial write.
-    if bytes > run.value_width() && seeded_loads_preserve_base(step) {
+    if (bytes > run.value_width() || run.element_type().is_pointer())
+        && seeded_loads_preserve_base(step)
+    {
         return SeededCellEffect::Separate(vec![MemoryDagHopJustification::SeededLoadsOfBase]);
     }
     match crate::kernel::reasoning::memory_resolution::run_access(run, pointer) {
@@ -807,8 +809,9 @@ pub(in crate::kernel) fn seeded_cell_effect(
 }
 
 /// Loading each scalar from a byte-identical predecessor and caching that same
-/// value does not modify memory. Restrict this rule to byte-preserving scalar
-/// carriers: bool normalization and pointer representation have separate rules.
+/// value does not modify memory. Numeric scalars and complete native pointer
+/// carriers preserve their bytes; bool normalization and partial pointer
+/// encodings do not qualify.
 /// The producer-maintained read identity also covers successive materializations
 /// from one source. Its comparison and run metadata do not depend on run size.
 pub(in crate::kernel) fn seeded_loads_preserve_base(step: &CMemoryDerivation) -> bool {
@@ -819,7 +822,8 @@ pub(in crate::kernel) fn seeded_loads_preserve_base(step: &CMemoryDerivation) ->
     matches!(run.value_mode(), RunValueMode::Load)
         && run.source().read_identity() == base.read_identity()
         && run.element_type() != CType::Bool
-        && !run.element_type().is_pointer()
+        && (!run.element_type().is_pointer()
+            || run.value_width() == crate::kernel::C_POINTER_BYTE_WIDTH)
         && run.element_width() == run.value_width()
 }
 

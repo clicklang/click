@@ -313,8 +313,7 @@ fn a_symbolic_global_array_entry_holds_exactly_the_per_element_cells() {
             let source =
                 crate::kernel::intern_c_memory(symbolic_memory_base(entry.memory(), &base));
             let slot = |index: u32| base.offset_by_bytes(index * width);
-            // An object pointer's entry load records no width.
-            let expected_width = (!element_type.is_object_pointer()).then_some(width);
+            let expected_width = Some(width);
             let widths = |memory: &SharedCMemory| {
                 (0..length)
                     .map(|index| {

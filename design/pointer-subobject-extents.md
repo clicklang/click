@@ -1,10 +1,21 @@
 # Pointer subobject extents: closing the scalar-subobject P1
 
-Status: approved 2026-10-15; decisions D1-D5 accepted as recommended. It targets
-[the scalar-subobject bug](../bugs/pointer-arithmetic-crosses-scalar-subobject.md)
-on current master. It does not revive the archived object model. It reuses that
-model's semantic conclusions (`design/cpp-object-model.md` at `e3d84a785`) where they
-still apply, but proposes a narrower representation.
+Status: implemented on the scalar-member task branch. The staged proposal below
+records the investigation and the original decisions; current behavior is
+specified in [the memory model](../docs/concepts/memory-model.md) and
+[the language reference](../docs/reference/language/index.md).
+The [original scalar-subobject report](https://github.com/clicklang/click/blob/4f62b2ecb792fd309ad32130ec59f135b042430a/bugs/pointer-arithmetic-crosses-scalar-subobject.md)
+is archived at the integration baseline. This does not revive the archived
+object model.
+
+The modular implementation uses complete pointer values with a selected byte
+domain, relative position and retained origin. Source return and pointer-store
+domains are inferred from verified paths. Opaque pointer and integer inputs
+use explicit `pointer_origin(input, pointer)` promises, as approved during
+implementation. Numeric pointer equality remains address equality; it cannot
+issue a domain. Full value equality is required for resource arguments and
+algebraic pointer fields. Complete pointer cells retain all eight LP64 bytes,
+and declared selector-domain promises grant no additional byte permission.
 
 ## The hole, as it exists on master
 
@@ -224,7 +235,7 @@ both of these hold:
   by a designation equality.
 
 Designation equalities come only from value-level sources:
-- contract `==` on pointers (`requires`, `ensures`, invariants);
+- explicit `pointer_origin` promises in contracts, resource facts and invariants;
 - a pointer read back from memory and the value stored there;
 - resource argument binding at fold and unfold;
 - copies and pointer arithmetic, which keep the designation by construction.
@@ -234,12 +245,12 @@ corpus measurement after each step finds those sources.
 
 ### Contract `==`
 
-D2 applies. At a call the caller must establish a precondition `p == q`
-between pointers for their designations too. Member addresses written in
-contracts carry the member's extent, as program member addresses do. The
-callee adopts the designation a precondition equality states at entry. This
-closes the remaining entry case: a global initialized to `&g.first` that a
-callee steps past.
+The original D2 recommendation was replaced by explicit origin promises during
+implementation. Both C and contract pointer `==` compare addresses. An opaque
+alias uses `pointer_origin(p, q)` together with `p == q`; a verified function
+infers its source-backed return domain rather than deriving one from a numeric
+postcondition. Member addresses in contracts retain their selected domains,
+and a caller checks declared typed domains independently of byte permissions.
 
 ### Steps
 
@@ -262,14 +273,15 @@ are those that read through one designation with another's permission,
 related only by an address fact. The measurement found none outside the
 reproductions.
 
-## Decisions (approved as recommended)
+## Original staged recommendations
 
 - **D1. Resource clauses double as extent claims at calls and folds.**
   - Recommended: yes. There's no new syntax, and the meaning matches
     intent: `views p[0..2]` already says "p has two readable elements".
   - Alternative: a separate `valid(p[0..n])` clause. The archive's
     `valid_place` surface showed the migration cost.
-- **D2. Spec `==` on pointers means value equality (address and extent).**
+- **D2. Original proposal: spec `==` means value equality.**
+  - Superseded by the explicit origin promises described above.
   - Recommended: yes. `address(p) == address(q)` remains for address-only
     claims.
   - Without it, Phase B cannot be sound without new syntax.

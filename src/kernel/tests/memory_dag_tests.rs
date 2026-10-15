@@ -3825,3 +3825,67 @@ fn a_failed_kept_base_equality_is_reused_across_cell_lookups() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/tests/memory_dag_tests.rs");
 }
+
+#[test]
+fn selected_pointer_read_transport_checks_the_complete_explicit_frame() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let slot = Pointer::symbolic(Variable(98_910));
+    let write = Pointer::symbolic(Variable(98_911));
+    let before = CMemory::new();
+    let cached = before.clone().with_seeded_cells(
+        slot.clone(),
+        8,
+        CType::Int32Pointer,
+        0,
+        1,
+        intern_c_memory(before.clone()),
+    );
+    let empty = PureFactContext::new();
+    let after = cached
+        .clone()
+        .without_possible_aliasing_cells(&write, 4, &empty)
+        .store(write.clone(), int32(7));
+    let name = |memory: &CMemory| {
+        let Some(CValue::Pointer(value)) = crate::kernel::eval::symbolic_storage_cell_value(
+            memory,
+            &slot,
+            CType::Int32Pointer,
+            true,
+        ) else {
+            panic!("complete pointer read")
+        };
+        value.pointer().clone()
+    };
+    let old = name(&before);
+    let current = name(&after);
+    let source =
+        Proposition::ConditionIs(ConditionTerm::pointer_equal(old.clone(), old.clone()), true);
+    let target = Proposition::ConditionIs(ConditionTerm::pointer_equal(current, old.clone()), true);
+    let separate = empty
+        .clone()
+        .assume_proposition(Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+                slot.clone(),
+                0u32.into(),
+                1u32.into(),
+                8,
+            ))),
+            right: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+                write,
+                0u32.into(),
+                1u32.into(),
+                4,
+            ))),
+        });
+    let reaches = |target, context| {
+        crate::kernel::api::c_condition_fact_target_reaches_in_context(&source, target, context)
+    };
+    assert!(!reaches(&target, &empty));
+    assert!(reaches(&target, &separate));
+    assert!(!reaches(&target, &empty));
+    let partial = cached
+        .without_possible_aliasing_cells(&slot.offset_by_bytes(4), 4, &empty)
+        .store(slot.offset_by_bytes(4), int32(0));
+    let changed = Proposition::ConditionIs(ConditionTerm::pointer_equal(name(&partial), old), true);
+    assert!(!reaches(&changed, &separate));
+}

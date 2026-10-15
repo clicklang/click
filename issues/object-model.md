@@ -248,7 +248,7 @@ moved between gate and nightly. Report timeouts and budget failures as failures.
 ### 2. Extract the first independently green deliveries
 
 Prioritize reproduced P1 soundness defects, including the
-[scalar-subobject pointer defect](../bugs/pointer-arithmetic-crosses-scalar-subobject.md).
+[scalar-subobject pointer defect](https://github.com/clicklang/click/blob/4f62b2ecb792fd309ad32130ec59f135b042430a/bugs/pointer-arithmetic-crosses-scalar-subobject.md).
 Reproduce them on the fixed baseline and the archive before deciding which
 activation changes are mandatory. Independent small fixes can land while that
 work proceeds, with accurate scope and no claim that the object model is complete.

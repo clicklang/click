@@ -3183,7 +3183,7 @@ impl PureFactContext {
         self.register_cached_pointer_read_value(memory, address);
     }
 
-    /// Replay only immutable typed read definitions into this context. The
+    /// Register only immutable typed read definitions in this context. The
     /// equality must follow from this context's graph, never from unions in
     /// the context that originally named the read.
     pub(crate) fn proves_typed_pointer_read_equality(&self, fact: &Proposition) -> bool {

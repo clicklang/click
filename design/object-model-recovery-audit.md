@@ -322,7 +322,7 @@ expanded source in both fresh and retained state.
 ## P1 soundness recheck
 
 The ordinary C reproduction in
-[the scalar-subobject bug](../bugs/pointer-arithmetic-crosses-scalar-subobject.md)
+[the scalar-subobject bug](https://github.com/clicklang/click/blob/4f62b2ecb792fd309ad32130ec59f135b042430a/bugs/pointer-arithmetic-crosses-scalar-subobject.md)
 still verifies incorrectly on both `325f9f604` and `e3d84a785`:
 
 ```c

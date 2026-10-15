@@ -21,12 +21,14 @@ resource chain(p: struct item*) {
         Tree::Leaf(identity) => {
             owns p->word;
             fact p == identity;
+            fact pointer_origin(identity, p);
             fact (p->word & 1) == color_bit(Color::Red);
         },
         Tree::Parent(identity, child_model) => {
             owns p->child;
             owns child: chain(p->child);
             fact p == identity;
+            fact pointer_origin(identity, p);
             fact child.model == child_model;
         },
     }

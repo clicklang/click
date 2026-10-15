@@ -131,7 +131,9 @@ int32 caller(int32* data, struct box* b, {params}) {{
     return total;
 }}"
     );
-    let requires = lines(n, |i| format!("    requires q{i} == b;"));
+    let requires = lines(n, |i| {
+        format!("    requires q{i} == b; requires pointer_origin(q{i}, b);")
+    });
     let steps = steps(5);
     let click = format!(
         "verifying \"hunt.c\";

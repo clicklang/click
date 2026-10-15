@@ -702,10 +702,15 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
         // are exactly the stores of `symbolic_value_for_element` in element
         // order, skipping elements that already hold a cell, at a cost that
         // does not depend on how many elements there are.
-        let count = range.bytes.checked_div(range.element_width).unwrap_or(0);
+        let width = if element_type.is_pointer() {
+            element_type.byte_width()
+        } else {
+            range.element_width
+        };
+        let count = range.bytes.checked_div(width).unwrap_or(0);
         memory = memory.with_seeded_cells(
             range.base.clone(),
-            range.element_width,
+            width,
             element_type,
             0,
             count,
@@ -1120,6 +1125,22 @@ fn materialize_access_segment_cells(
     let element_type = contract_segment_element_type(parameter_binding.parameters, &segment.source);
     let element_width =
         contract_segment_element_width(parameter_binding.parameters, &segment.source);
+    if element_type.is_pointer() {
+        let bytes = (end - start)
+            .checked_mul(element_width)
+            .ok_or_else(|| ClickError::new("pointer-cell segment byte count overflows"))?;
+        let width = element_type.byte_width();
+        if bytes % width != 0 {
+            return Ok(memory);
+        }
+        let base = offset_pointer_by_elements(
+            segment.base.clone(),
+            Bitvector32Term::Constant(*start),
+            element_width,
+        );
+        let source = crate::kernel::intern_c_memory(memory.clone());
+        return Ok(memory.with_seeded_cells(base, width, element_type, 0, bytes / width, source));
+    }
     let source = crate::kernel::intern_c_memory(memory.clone());
     // One run for the segment's elements, spelled from the segment's own
     // base as each element's pointer is (see `memory_with_symbolic_loadable_cells`).

@@ -18034,15 +18034,15 @@ fn materialize_symbolic_array(
         );
     if length > 0 && has_value {
         let source = crate::kernel::intern_c_memory(symbolic_memory_base(&memory, base));
-        // An object pointer's load records no width, so it declares none.
-        let widths_declared = element_type.is_object_pointer()
-            || crate::kernel::eval::declare_symbolic_array_access_widths(
-                &source,
-                base,
-                element_type.byte_width(),
-                length,
-                element_type.byte_width(),
-            );
+        // Complete pointer cells declare the same eight-byte access as the
+        // per-cell producer, without enumerating the array.
+        let widths_declared = crate::kernel::eval::declare_symbolic_array_access_widths(
+            &source,
+            base,
+            element_type.byte_width(),
+            length,
+            element_type.byte_width(),
+        );
         if widths_declared {
             match memory.with_symbolic_storage_run(base.clone(), element_type, length, source) {
                 Ok(materialized) => return materialized,
@@ -18199,10 +18199,8 @@ fn materialize_symbolic_aggregate_array(
         && cells.len() <= length as usize
     {
         let source = crate::kernel::intern_c_memory(symbolic_memory_base(&memory, base));
-        // An object pointer's load records no width, so it declares none.
         let widths = cells
             .iter()
-            .filter(|(_, c_type)| !c_type.is_object_pointer())
             .map(|(offset, c_type)| (*offset, c_type.byte_width()))
             .collect::<Vec<_>>();
         let widths_declared = widths.is_empty()
@@ -25186,11 +25184,10 @@ pub(super) fn expand_composite_resource_fact_with_children(
     let children = if composite.is_own() {
         children.facts().to_vec()
     } else {
-        children
-            .facts()
-            .iter()
-            .map(|fact| CResourceFact::View(fact.resource().clone()))
-            .collect()
+        // Validate the owned body above, but keep its declared pieces when
+        // exposing a view. Coalescing owners first creates a new view range
+        // that cannot retain the source occurrences' loan dependencies.
+        raw_children.clone()
     };
     let mut expanded = expansion_base.clone();
     let missing = children

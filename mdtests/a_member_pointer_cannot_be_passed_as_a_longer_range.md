@@ -25,5 +25,5 @@ int32 caller(struct Pair* p) {
 ```
 
 ```expect
-fail: the clause's range of 4-byte elements reaches outside the 4-byte subobject its pointer designates
+fail: memory range leaves the pointer's selected object domain
 ```
