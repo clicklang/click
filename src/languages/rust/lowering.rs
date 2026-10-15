@@ -28,7 +28,9 @@ fn scalar_type(t: &Type) -> Result<C0Type, String> {
         Type::Bool => Ok(C0Type::Bool),
         Type::Unit => Ok(C0Type::Void),
         Type::Reference { pointee, .. } => match pointee.as_ref() {
-            Type::I32 | Type::Record { .. } => Ok(C0Type::Int32Pointer),
+            // A reference to a value of unknown type is opaque as a struct
+            // reference is: nothing is read through it without its fields.
+            Type::I32 | Type::Record { .. } | Type::TraitObject => Ok(C0Type::Int32Pointer),
             Type::U8 => Ok(C0Type::UInt8Pointer),
             Type::U16 => Ok(C0Type::UInt16Pointer),
             Type::U32 => Ok(C0Type::UInt32Pointer),
@@ -412,7 +414,8 @@ fn lower_function(
     let mut lowered = C0Function::external(return_type, f.name.clone(), parameters)
         .with_local_struct_values(local_records)
         .with_prelowered_kernel_function(kernel)
-        .with_closure_captures(f.captures);
+        .with_closure_captures(f.captures)
+        .with_trait_interface(f.implements.clone());
     if let Some((name, layout)) = return_layout {
         lowered = lowered.with_struct_return(name.clone(), layout.clone());
     }

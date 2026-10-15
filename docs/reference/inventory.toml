@@ -2450,6 +2450,10 @@ id = "library.predicate.cstr_readable"
 path = "reference/library/index.md#cstr_readable"
 
 [[item]]
+id = "library.resource.cstr_at"
+path = "reference/library/index.md#cstr_at"
+
+[[item]]
 id = "library.predicate.cstr_bounded"
 path = "reference/library/index.md#cstr_bounded"
 

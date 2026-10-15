@@ -846,8 +846,11 @@ A clause without a coefficient transfers one unit: consuming one
 user-declared resource may use `owns amount of object_ref(object)`,
 `consumes amount of ...`, or `produces amount of ...` to transfer a runtime
 `int32` quantity algebraically. The coefficient must be proved nonnegative at
-the contract snapshot, and zero grants no authority. Viewed facts remain
-idempotent and do not carry a count.
+the contract snapshot, and zero grants no authority. It grants no body facts
+either: a composite's body facts describe each instance a quantity counts, so
+they are available only where the quantity is known to be positive
+([`owning_zero_of_a_composite_grants_no_body_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/owning_zero_of_a_composite_grants_no_body_fact.md)).
+Viewed facts remain idempotent and do not carry a count.
 
 Symbolic coefficients are rejected for memory, allocation, and recursively
 defined composite resources. Those families need distinct semantics; Click

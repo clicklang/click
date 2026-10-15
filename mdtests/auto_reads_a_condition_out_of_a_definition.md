@@ -6,7 +6,9 @@ the fact forces that condition. `auto` proves it as a proof would by hand:
 `if` the condition holds it is the goal; otherwise it splits on each condition
 met before it, and at each end unfolds the definition at the constructor,
 normalizes with the conditions taken to a constant other than `1`, and
-contradicts the fact.
+contradicts the fact. A fact over a value that a connected equation names as
+a constructor, `balanced(tree) == 1` beside `tree == Node(..)`, is first
+restated over the constructor by rewriting with that equation.
 
 ```click
 spec enum Tree {
@@ -63,6 +65,12 @@ theorem same_depth(value: int, left: Tree, right: Tree) {
 theorem positive_value(value: int, left: Tree, right: Tree) {
     requires 1 == balanced(Tree::Node(value, left, right));
     ensures value > 0 by auto;
+}
+
+theorem through_a_constructor_equation(tree: Tree, value: int, left: Tree, right: Tree) {
+    requires tree == Tree::Node(value, left, right);
+    requires balanced(tree) == 1;
+    ensures balanced(left) == 1 by auto;
 }
 
 theorem in_a_have(value: int, left: Tree, right: Tree) {

@@ -884,6 +884,7 @@ struct LoanLedgerData {
     local_reference_holders: PersistentMap<LoanParticipantId, u64>,
     source_local_references:
         PersistentMap<(LoanParticipantId, crate::kernel::ScalarReferencePlanKey), LocalReferenceId>,
+    local_reference_scope: Option<Arc<local_references::scopes::LocalReferenceScope>>,
     next_scope: u64,
     next_loan: u64,
     next_share: u64,
@@ -4305,6 +4306,7 @@ impl LoanLedger {
                     local_reference_roots: PersistentMap::default(),
                     local_reference_holders: PersistentMap::default(),
                     source_local_references: PersistentMap::default(),
+                    local_reference_scope: None,
                     next_scope: 0,
                     next_loan: 0,
                     next_share: 0,
@@ -4335,7 +4337,8 @@ impl LoanLedger {
 
     pub(crate) fn is_pristine(&self) -> bool {
         let data = &self.storage.data;
-        if !data.exclusive_calls.is_empty()
+        if data.local_reference_scope.is_some()
+            || !data.exclusive_calls.is_empty()
             || !data.exclusive_holders.is_empty()
             || !data.local_references.is_empty()
             || !data.local_reference_roots.is_empty()
@@ -5931,6 +5934,7 @@ impl LoanLedger {
     ) -> Result<LoanLedgerData, LoanRefusal> {
         crate::instrumentation::record_deterministic_work(1);
         let mut data = self.storage.data.clone();
+        self.advance_local_reference_scope(&mut data, evidence)?;
         match evidence {
             LoanTransitionEvidence::RegisterLocalReference(binding) => {
                 self.apply_local_reference_registration(&mut data, binding)?

@@ -8,8 +8,13 @@ typed C++ artifact described below. [Language coverage](../coverage.md) summariz
 what the C and C++ import paths admit.
 
 ```text
-usage: click import lock <sidecar.click>
+usage: click import lock [<project-dir> | <sidecar.click>]
 ```
+
+With no path, or a directory or `click.project.json`, the command prepares the
+units of the nearest project file at or above that directory (see
+[Project units](#project-units)). With a sidecar, it refreshes the sidecar's own
+import config when one exists, and otherwise its project's units.
 
 ## Interface boundary
 
@@ -41,6 +46,89 @@ system headers, or frontend toolchain.
   [the C++ standard library](#c-standard-library).
 - **The default workflow needs none of it.** `click verify` on plain C needs
   no compiler or system headers.
+
+## Project units
+
+A project's root `click.project.json` can declare C compiler-import units and
+Rust crate units. The
+project file is found from a sidecar as the nearest ancestor directory that
+contains one, so sidecars may live in any subdirectory beneath it. A unit names
+a source root, which may be the project directory or any external tree the user
+manages (a git submodule, a sibling checkout, copied files), and Click's own
+description of how its sources are built. Click reads the tree in place,
+requires no layout or file names in it, and never writes into it.
+
+```json
+{
+  "target": "x86_64-linux-userspace",
+  "units": {
+    "label": {
+      "language": "c",
+      "root": "../vendor/label-1.0",
+      "compiler": "/usr/bin/gcc",
+      "environment": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+      "args": ["-Isrc/include", "-DLABEL_CAPACITY=32"],
+      "sources": {
+        "src/label_fit.c": {},
+        "src/label_copy.c": {"args": ["-DCOPY_CHECKS=1"]}
+      }
+    }
+  }
+}
+```
+
+- A unit name is 1 to 64 ASCII letters, digits, `_` or `-`. `"language"` is
+  `"c"` or `"rust"`; C++ still uses per-sidecar import configs.
+- `root` is relative to the project directory and defaults to `.`. It is the
+  compiler's working directory, so `-I` paths and source keys are relative to
+  it. Source keys are relative paths inside the root, without `..`.
+- `compiler` is required, relative to the project directory or absolute. Plain
+  C that Click preprocesses itself needs no unit.
+- `environment` holds the allowlisted variables of a per-sidecar config's
+  `environment.allow`. `option_profile` and per-source `projection` are as in a
+  per-sidecar config.
+- Unit `args` precede each source's own `args`; together they are validated
+  exactly as a per-sidecar config's `args`. The target is the project's
+  `target`, or the default target.
+
+A Rust unit is one crate. Its `crate` object has the fields of a schema-4
+per-sidecar config's `crate` (see the [Rust reference](../rust.md)), and
+`sources` lists exactly the crate root, with no arguments; it takes no
+`compiler`, `environment`, `option_profile` or `args`:
+
+```json
+"adler2": {
+  "language": "rust",
+  "root": "../vendor/adler2-2.0.1",
+  "crate": {"name": "adler2", "edition": "2021", "features": ["std"],
+            "roots": ["adler2::adler32_slice", "adler2::Adler32::from_checksum"],
+            "files": ["src/lib.rs", "src/algo.rs"]},
+  "sources": {"src/lib.rs": {}}
+}
+```
+
+`roots` lists every entry point the project's sidecars verify; one extraction
+serves every sidecar that verifies the crate root, and such a sidecar verifies
+no other source. `click import lock` runs the pinned Charon named by the
+`CLICK_CHARON` environment variable, writes `.click/<unit>/<crate root>.ullbc`,
+and records each crate file's digest so that a changed file is refused by name.
+Verification needs neither Charon nor `CLICK_CHARON`.
+
+A sidecar selects a unit source with an ordinary `verifying` path, relative to
+the sidecar, that resolves to a file the unit lists; for example a sidecar in
+`proofs/checks/` above writes `verifying "../../vendor/label-1.0/src/label_fit.c";`.
+Either every `verifying` source of a sidecar is a unit source or none is. A
+sidecar with its own `<sidecar>.import.json` whose sources a unit also lists is
+refused.
+
+`click import lock` prepares every unit into `click.project.lock.json` beside
+the project file, with one entry per unit, and writes the artifacts to
+`.click/<unit>/<source>.i` there. Commit both so others verify without the
+toolchain. Each unit's entry records the digest of its description and the
+project target; editing either refuses the lock until it is prepared again.
+Loading rechecks the unit's sources and every header the compiler opened under
+the project directory or the unit root, so the lock still loads after the whole
+checkout moves, and a changed input is refused with the file named.
 
 ## Configure and lock an import
 

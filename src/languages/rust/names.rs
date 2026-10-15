@@ -17,6 +17,11 @@
 //! `<adler2::algo::U32X4 as MulAssign<u32>>::mul_assign` and
 //! `<adler2::Adler32 as Default>::default`. A name with any other suffix
 //! keeps the importer's spelling.
+//!
+//! A crate trait's method implementation is named by its type, `_R` and the
+//! trait's own importer name with its length, and the method
+//! (`trait_method_name`), and prints as `<traits::Square as
+//! traits::Shape>::area`.
 
 use std::borrow::Cow;
 
@@ -56,6 +61,18 @@ pub(crate) fn closure_segment(index: u32) -> String {
 /// type's own importer name's length, `_`, and that name.
 pub(crate) fn push_impl_type(encoded: &mut String, type_name: &str) {
     encoded.push_str(&format!("_T{}_{type_name}", type_name.len()));
+}
+
+/// The name of crate trait `trait_name`'s method `method` implemented for
+/// the type named `type_name`: the type, the trait, and the method,
+/// `<traits::Square as traits::Shape>::area`. A type implements a trait
+/// once, so the `impl` block's module is not needed.
+pub(crate) fn trait_method_name(type_name: &str, trait_name: &str, method: &str) -> String {
+    let mut encoded = PREFIX.to_string();
+    push_impl_type(&mut encoded, type_name);
+    encoded.push_str(&format!("_R{}_{trait_name}", trait_name.len()));
+    push_path_segment(&mut encoded, method);
+    encoded
 }
 
 /// The importer name of the item at a path, `quad::walk` or
@@ -219,6 +236,7 @@ fn decode(text: &str) -> Option<(String, &str)> {
         let (kind, tail) = match tail.as_bytes().first() {
             Some(b'I') => ('I', &tail[1..]),
             Some(b'T') => ('T', &tail[1..]),
+            Some(b'R') => ('R', &tail[1..]),
             _ => break,
         };
         let digits = tail.bytes().take_while(u8::is_ascii_digit).count();
@@ -234,7 +252,14 @@ fn decode(text: &str) -> Option<(String, &str)> {
         let Some(segment) = segment_start.get(..length) else {
             break;
         };
-        if kind == 'T' {
+        if kind == 'R' {
+            // The trait an `impl` block for the type before it implements.
+            let (Some((trait_path, "")), [type_path]) = (decode(segment), segments.as_slice())
+            else {
+                break;
+            };
+            segments = vec![format!("<{type_path} as {trait_path}>")];
+        } else if kind == 'T' {
             // A type is named by its own path, which includes its module:
             // the method's module is not written again.
             let Some((type_path, "")) = decode(segment) else {
@@ -324,6 +349,15 @@ mod tests {
             )
             .as_deref(),
             Some("adler2::Adler32::compute::MOD")
+        );
+        assert_eq!(
+            rust_display_name(&trait_method_name(
+                "__rust_q_I6_traits_I6_Square",
+                "__rust_q_I6_traits_I5_Shape",
+                "area"
+            ))
+            .as_deref(),
+            Some("<traits::Square as traits::Shape>::area")
         );
         // A suffix that is no operator method keeps the importer's spelling.
         assert_eq!(

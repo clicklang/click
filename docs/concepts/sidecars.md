@@ -50,7 +50,10 @@ sidecars can name multiple C files when a proof depends on helper functions.
 A directory can set the C target and modeled runtime once for its sidecars in
 `click.project.json`, with optional `target` and `runtime` string fields. For
 example, `{"target":"x86_64-linux-userspace","runtime":"modeled-pthread"}`
-selects the conditional pthread model. Existing `target` and `runtime`
+selects the conditional pthread model. A sidecar in a subdirectory without
+its own file uses the nearest one above it. The file can also declare the
+project's compiler-import units ([Project units](../reference/cli/import.md#project-units)).
+Existing `target` and `runtime`
 directives in `.click` files remain valid when they agree with the project
 config. The selected profile is bound to proof artifacts and incremental
 sessions; configuration changes require a fresh verification.
@@ -129,9 +132,12 @@ import click::machine_integer;
 A proof that cites a theorem of a module the file does not import is refused
 before any proof runs, and the message names the import to add
 (`mdtests/a_cited_library_theorem_needs_its_module_import.md`).
-A predicate or function of an unimported module is not visible either, so a
-file may declare its own declaration with that name
-(`mdtests/an_unimported_library_name_is_free_for_a_user_definition.md`).
+A predicate, function, or resource of an unimported module is not visible
+either, so a file may declare its own declaration with that name
+(`mdtests/an_unimported_library_name_is_free_for_a_user_definition.md`,
+`mdtests/an_unimported_library_resource_name_is_free_for_a_user_definition.md`).
+A resource named in a contract without its module's import is refused with
+the import to add (`mdtests/a_library_resource_needs_its_module_import.md`).
 Built-in tactics such as `simp`, `arithmetic` and loop-invariant closing
 apply library theorems as part of their own reasoning, whatever the file
 imports. They name a library theorem by its qualified identity, such as

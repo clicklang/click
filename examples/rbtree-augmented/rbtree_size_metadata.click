@@ -145,44 +145,9 @@ tactic rb_identity_at(p: struct rb_node*) {
 theorem sized_valid_parts(identity: struct rb_node*, parent: struct rb_node*, color: Color,
                           value: int32, left: SizedTree, right: SizedTree) {
     requires sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 1;
-    ensures to_integer(value) == 1 + to_integer(sized_value(left)) + to_integer(sized_value(right)) by {
-        if to_integer(value) == 1 + to_integer(sized_value(left)) + to_integer(sized_value(right)) {
-            assumption();
-        } else {
-            have sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 0 by {
-                unfold(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)));
-                normalize() using { not(to_integer(value) == 1 + to_integer(sized_value(left)) + to_integer(sized_value(right))); }
-            }
-            have not(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 1) by {
-                rewrite(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 0); normalize();
-            }
-            contradiction(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 1);
-        }
-    }
-    ensures sized_counts_valid(left) == 1 by {
-        if sized_counts_valid(left) == 1 { assumption(); } else {
-            have sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 0 by {
-                unfold(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)));
-                normalize() using { not(sized_counts_valid(left) == 1); }
-            }
-            have not(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 1) by {
-                rewrite(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 0); normalize();
-            }
-            contradiction(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 1);
-        }
-    }
-    ensures sized_counts_valid(right) == 1 by {
-        if sized_counts_valid(right) == 1 { assumption(); } else {
-            have sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 0 by {
-                unfold(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)));
-                normalize() using { not(sized_counts_valid(right) == 1); }
-            }
-            have not(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 1) by {
-                rewrite(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 0); normalize();
-            }
-            contradiction(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 1);
-        }
-    }
+    ensures to_integer(value) == 1 + to_integer(sized_value(left)) + to_integer(sized_value(right)) by auto;
+    ensures sized_counts_valid(left) == 1 by auto;
+    ensures sized_counts_valid(right) == 1 by auto;
 }
 
 tactic join_sized_tree(p: struct rb_node*) {

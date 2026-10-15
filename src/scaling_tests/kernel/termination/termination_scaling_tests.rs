@@ -167,3 +167,98 @@ fn a_layered_dag_costs_linear_termination_work() {
     report("layered DAG", &samples);
     assert_near_linear("layered DAG", &samples);
 }
+
+/// One function of `n` sequential ranked loops, each with its certified
+/// rule. Binding every rule to its source loop and checking every measure's
+/// address escape read the function once, not once per loop: the loop
+/// lookup and the address-taken walk were each a whole-function walk per
+/// loop, so the check was quadratic in the loops of one function
+/// (`bugs/sequential-loop-clause-grows-with-earlier-loops.md`).
+#[test]
+fn many_ranked_loops_in_one_function_cost_linear_termination_work() {
+    let ranked_loop = || {
+        let i = CExpression::Variable("i".to_string());
+        CStatement::While {
+            condition: CExpression::LessThan(
+                Box::new(i.clone()),
+                Box::new(crate::kernel::c_int32_literal(4)),
+            ),
+            invariant: Vec::new(),
+            invariant_checks: Vec::new(),
+            effect_checks: Vec::new(),
+            resource_specs: Vec::new(),
+            ranking_measures: vec![CRankingComponent::CExpression(CExpression::Subtract(
+                Box::new(crate::kernel::c_int32_literal(4)),
+                Box::new(i),
+            ))],
+            structural_measure: None,
+            do_while: false,
+            backedge_target: None,
+            natural_exit_target: None,
+            body: Box::new(CStatement::Skip),
+        }
+    };
+    // Balanced, as `calls_body` builds its calls, so the walks measure work
+    // rather than the host's stack.
+    fn sequence(statements: &[CStatement]) -> CStatement {
+        match statements {
+            [] => CStatement::Skip,
+            [only] => only.clone(),
+            _ => {
+                let (left, right) = statements.split_at(statements.len() / 2);
+                CStatement::Seq(Arc::new(sequence(left)), Arc::new(sequence(right)))
+            }
+        }
+    }
+    let mut samples = Vec::new();
+    for size in SIZES {
+        let loops = (0..size).map(|_| ranked_loop()).collect::<Vec<_>>();
+        let function = CFunction::new(CType::Void, "loops", Vec::new(), sequence(&loops));
+        let loop_rules = BTreeMap::from([(
+            "loops".to_string(),
+            (0..size)
+                .map(|index| CVerifiedLoopRule {
+                    symbolic_entry_state: CState::default(),
+                    loop_statement: ranked_loop(),
+                    loop_index: Some(index),
+                    required_assumptions: PureFactContext::new(),
+                    paths: Vec::new(),
+                    composite_resource_definitions: Vec::new(),
+                    recursion_anchor: None,
+                })
+                .collect::<Vec<_>>(),
+        )]);
+        let rules = [CVerifiedFunctionRule {
+            function,
+            loop_semantics: CLoopSemantics::ApplyVerifiedRules,
+            checked_callees: None,
+            applied_tactics: Default::default(),
+        }];
+        let heights = c_termination_height_plan(&rules, &[]);
+        let (verdicts, check_work) = crate::instrumentation::measure_deterministic_work(|| {
+            c_verified_function_termination_rules(
+                &rules,
+                &[],
+                &loop_rules,
+                &[],
+                &heights,
+                &BTreeSet::new(),
+                &BTreeSet::new(),
+                &BTreeSet::new(),
+            )
+            .expect("certified ranked loops check")
+        });
+        assert!(
+            verdicts.refusals.is_empty() && verdicts.rules.len() == 1,
+            "every loop is ranked: {verdicts:?}"
+        );
+        samples.push(Sample {
+            size,
+            nodes: size,
+            plan_work: 1,
+            check_work,
+        });
+    }
+    report("ranked loops", &samples);
+    assert_near_linear("ranked loops", &samples);
+}

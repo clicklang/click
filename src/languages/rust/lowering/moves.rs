@@ -763,7 +763,15 @@ pub(super) fn lower(
         nodes[block] = Some(c_seq(prefix, c_seq(statements, terminal)));
     }
     let mut emitted = vec![false; mir.blocks.len()];
-    let structured = region(cx, mir, &nodes, &flow, &mut emitted, 0, mir.blocks.len())?;
+    let structured = region(
+        cx,
+        mir,
+        &nodes,
+        &flow,
+        &mut emitted,
+        0..mir.blocks.len(),
+        leases.as_ref(),
+    )?;
     Ok(c_seq(declarations, structured))
 }
 
@@ -846,9 +854,11 @@ fn region(
     nodes: &[Option<CStatement>],
     flow: &flow::Flow,
     emitted: &mut [bool],
-    mut block: usize,
-    stop: usize,
+    bounds: std::ops::Range<usize>,
+    leases: Option<&super::scalar_leases::Prepared>,
 ) -> Result<CStatement, String> {
+    let mut block = bounds.start;
+    let stop = bounds.end;
     let mut result = c_skip();
     while block != stop && block != mir.blocks.len() {
         if std::mem::replace(&mut emitted[block], true) {
@@ -858,7 +868,7 @@ fn region(
             let T::If { condition, .. } = &mir.blocks[loop_.test].terminator else {
                 return Err("natural while header is not conditional".into());
             };
-            let body = region(cx, mir, nodes, flow, emitted, loop_.body, block)?;
+            let body = region(cx, mir, nodes, flow, emitted, loop_.body..block, leases)?;
             let condition = flow::header_condition(
                 mir,
                 &loop_.headers,
@@ -913,9 +923,22 @@ fn region(
                 } else {
                     flow.joins[block]
                 };
-                let yes = region(cx, mir, nodes, flow, emitted, *then_target, join)?;
-                let no = region(cx, mir, nodes, flow, emitted, *else_target, join)?;
-                result = c_seq(result, c_if(cx.expr(condition)?, yes, no));
+                let yes = region(cx, mir, nodes, flow, emitted, *then_target..join, leases)?;
+                let no = region(cx, mir, nodes, flow, emitted, *else_target..join, leases)?;
+                let branch =
+                    if let Some(scope) = leases.and_then(|leases| leases.scopes.get(&block)) {
+                        c_seq(
+                            scope.operation(false),
+                            c_if(
+                                cx.expr(condition)?,
+                                c_seq(yes, scope.operation(true)),
+                                c_seq(no, scope.operation(true)),
+                            ),
+                        )
+                    } else {
+                        c_if(cx.expr(condition)?, yes, no)
+                    };
+                result = c_seq(result, branch);
                 block = join;
             }
             T::Goto { target } | T::Drop { target, .. } | T::Call { target, .. } => block = *target,
@@ -1010,6 +1033,7 @@ mod tests {
             body: vec![],
             external: false,
             captures: 0,
+            implements: None,
             span: span.clone(),
             mir: Some(MirBody {
                 locals: vec![Place {
@@ -1057,6 +1081,7 @@ mod tests {
                     mir: None,
                     external: false,
                     captures: 0,
+                    implements: None,
                     span: span.clone(),
                 });
             }
@@ -1146,8 +1171,8 @@ mod tests {
                     metadata_names: BTreeSet::new(),
                 },
                 &mut emitted,
-                0,
-                mir.blocks.len(),
+                0..mir.blocks.len(),
+                None,
             )
             .unwrap();
             assert!(emitted.iter().all(|b| *b));

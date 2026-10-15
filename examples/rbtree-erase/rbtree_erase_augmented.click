@@ -214,15 +214,7 @@ tactic graft_erase_spine(focus: struct rb_node*, anchor: struct rb_node*, root: 
                 rewrite(EraseSpine::Left(identity, grandparent, color, sibling_model, up_model) == old(c.model)); assumption();
             }
             unfold(erase_spine_links(EraseSpine::Left(identity, grandparent, color, sibling_model, up_model), anchor));
-            have grandparent == erase_spine_parent(up_model, anchor) by {
-                if grandparent == erase_spine_parent(up_model, anchor) { assumption(); } else {
-                    have erase_spine_links(EraseSpine::Left(identity, grandparent, color, sibling_model, up_model), anchor) != 1 by {
-                        unfold(erase_spine_links(EraseSpine::Left(identity, grandparent, color, sibling_model, up_model), anchor));
-                        normalize() using { not(grandparent == erase_spine_parent(up_model, anchor)); }
-                    }
-                    contradiction(erase_spine_links(EraseSpine::Left(identity, grandparent, color, sibling_model, up_model), anchor) == 1);
-                }
-            }
+            have grandparent == erase_spine_parent(up_model, anchor) by auto;
             have erase_spine_links(up_model, anchor) == 1 by auto;
             let { sibling: sibling, up: path_tail } = unfold(c);
             apply(erase_spine_depth_is_nonnegative(up_model));
@@ -1577,14 +1569,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                             have ctx_node_is(Context::Top, erased_parent) == 1 by {
                                                 rewrite(Context::Top == remaining.model); rewrite(remaining.model == old(up.model)); assumption();
                                             }
-                                            have erased_parent == 0 by {
-                                                if erased_parent == 0 { assumption(); } else {
-                                                    have ctx_node_is(Context::Top, erased_parent) != 1 by {
-                                                        unfold(ctx_node_is(Context::Top, erased_parent)); normalize() using { not(erased_parent == 0); };
-                                                    }
-                                                    contradiction(ctx_node_is(Context::Top, erased_parent) == 1);
-                                                }
-                                            }
+                                            have erased_parent == 0 by auto;
                                             have old(up.model) == Context::Top by { rewrite(old(up.model) == remaining.model); assumption(); }
                                             have is_rb_root(RbTree::Empty) == 1 by {
                                                 unfold(is_rb_root(RbTree::Empty)); unfold(is_rb(RbTree::Empty)); unfold(rb_root_black(RbTree::Empty)); normalize();
@@ -1640,14 +1625,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                             have ctx_node_is(Context::Left(pid, gp, pc_model, sibling_model, above_model), erased_parent) == 1 by {
                                                 rewrite(Context::Left(pid, gp, pc_model, sibling_model, above_model) == old(up.model)); assumption();
                                             }
-                                            have erased_parent == pid by {
-                                                if erased_parent == pid { assumption(); } else {
-                                                    have ctx_node_is(Context::Left(pid, gp, pc_model, sibling_model, above_model), erased_parent) != 1 by {
-                                                        unfold(ctx_node_is(Context::Left(pid, gp, pc_model, sibling_model, above_model), erased_parent)); normalize() using { not(erased_parent == pid); };
-                                                    }
-                                                    contradiction(ctx_node_is(Context::Left(pid, gp, pc_model, sibling_model, above_model), erased_parent) == 1);
-                                                }
-                                            }
+                                            have erased_parent == pid by auto;
                                             have erase_leaf_outcome(erased_color, old(up.model)) == EraseOutcome::Deficit(old(up.model)) by {
                                                 rewrite(erased_color == Color::Black);
                                                 rewrite(old(up.model) == Context::Left(pid, gp, pc_model, sibling_model, above_model));
@@ -1697,14 +1675,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                             have ctx_node_is(Context::Right(pid, gp, pc_model, sibling_model, above_model), erased_parent) == 1 by {
                                                 rewrite(Context::Right(pid, gp, pc_model, sibling_model, above_model) == old(up.model)); assumption();
                                             }
-                                            have erased_parent == pid by {
-                                                if erased_parent == pid { assumption(); } else {
-                                                    have ctx_node_is(Context::Right(pid, gp, pc_model, sibling_model, above_model), erased_parent) != 1 by {
-                                                        unfold(ctx_node_is(Context::Right(pid, gp, pc_model, sibling_model, above_model), erased_parent)); normalize() using { not(erased_parent == pid); };
-                                                    }
-                                                    contradiction(ctx_node_is(Context::Right(pid, gp, pc_model, sibling_model, above_model), erased_parent) == 1);
-                                                }
-                                            }
+                                            have erased_parent == pid by auto;
                                             have erase_leaf_outcome(erased_color, old(up.model)) == EraseOutcome::Deficit(old(up.model)) by {
                                                 rewrite(erased_color == Color::Black);
                                                 rewrite(old(up.model) == Context::Right(pid, gp, pc_model, sibling_model, above_model));

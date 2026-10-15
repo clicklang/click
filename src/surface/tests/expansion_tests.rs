@@ -18281,3 +18281,39 @@ fn rejoined_model_match_in_open_expands_without_moving_the_continuation_inside()
 mod scaling_tests {
     include!("../../scaling_tests/surface/tests/expansion_tests.rs");
 }
+
+#[test]
+fn retained_project_recheck_ignores_shifted_import_positions_but_checks_paths() {
+    let source = r#"import "helper.click";
+theorem selected(x: int32) { ensures x == x by { normalize(); } }
+theorem untouched() { ensures 1 == 1 by { normalize(); } }
+"#;
+    let project = ClickProject::new(
+        "main.click",
+        [
+            ClickModuleSource::new("main.click", source, ["helper.click".to_owned()]),
+            ClickModuleSource::new("helper.click", "spec enum Helper { Empty }", []),
+        ],
+    );
+    let expanded = format!("import click::integer;\n{source}");
+    let position = expansion::position_at_offset(&expanded, expanded.find("ensures x").unwrap());
+    let (session, _) = C0VerificationSession::new_project(&project, &[]).unwrap();
+    session
+        .verify_at_project(&expanded, position.line, position.column)
+        .expect("an added library import only shifts the file import's source position");
+    let changed_contract = expanded.replace("ensures 1 == 1", "ensures 1 == 2");
+    assert!(
+        session
+            .verify_at_project(&changed_contract, position.line, position.column)
+            .unwrap_err()
+            .to_string()
+            .contains("outside the selected proof unit")
+    );
+    let changed_path = expanded.replace("helper.click", "other.click");
+    assert!(
+        session
+            .verify_at_project(&changed_path, position.line, position.column)
+            .is_err(),
+        "a changed import path must still be rejected"
+    );
+}

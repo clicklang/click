@@ -170,6 +170,9 @@ pub struct C0Function {
     /// sidecar names only the closure's own parameters; its contract reads
     /// the captures by name.
     closure_captures: usize,
+    /// The interface function a crate trait method's implementation
+    /// implements, whose contract its own must refine.
+    trait_interface: Option<String>,
     parameters: Vec<C0Parameter>,
     body: C0Statement,
     /// Compiler-created carriers for statement-form callback calls. Keeping
@@ -3215,6 +3218,18 @@ impl C0Function {
         self
     }
 
+    /// A crate trait method's implementation of `interface`.
+    pub(crate) fn with_trait_interface(mut self, interface: Option<String>) -> Self {
+        self.trait_interface = interface;
+        self
+    }
+
+    /// The interface function this function implements, when it is a crate
+    /// trait method's implementation.
+    pub(crate) fn trait_interface(&self) -> Option<&str> {
+        self.trait_interface.as_deref()
+    }
+
     /// A closure's function whose first `count` parameters are captures.
     pub(crate) fn with_closure_captures(mut self, count: usize) -> Self {
         self.closure_captures = count;
@@ -3280,6 +3295,7 @@ impl C0Function {
             requires_read_only_contract: false,
             positional_parameters: false,
             closure_captures: 0,
+            trait_interface: None,
             program_entry_state: None,
             prelowered_kernel_function: None,
             parameters,
@@ -9611,6 +9627,7 @@ impl Parser {
             requires_read_only_contract: false,
             positional_parameters: false,
             closure_captures: 0,
+            trait_interface: None,
             program_entry_state: None,
             prelowered_kernel_function: None,
             parameters: header.parameters,

@@ -4247,8 +4247,9 @@ impl PureFactContext {
         self.algebraic_constructor_conflicts = crate::persistent::PersistentMap::default();
         self.algebraic_variable_constructors = crate::persistent::PersistentMap::default();
         self.algebraic_variable_variant_evidence = crate::persistent::PersistentMap::default();
-        self.resource_compositions = std::sync::Arc::new(BTreeSet::new());
+        self.resource_compositions = crate::persistent::PersistentSet::default();
         self.store_owners = None;
+        self.composition_members = Default::default();
         self.composition_object_resources = Default::default();
         self.memory_read_defined_facts = crate::persistent::PersistentMap::default();
         self.memory_loadable_facts = std::sync::Arc::new(BTreeMap::new());
@@ -4898,11 +4899,16 @@ impl PureFactContext {
         if left_block != right_block {
             return None;
         }
-        self.resource_compositions.iter().find_map(|resources| {
-            resources
-                .separated_owned_members_in_block(left_block, &left, &right, &admit)
-                .map(|(left, right)| (resources, left, right))
-        })
+        // Both members lie in `left_block`, so a composition holding the
+        // pair is listed under it (`CompositionMemberIndex`).
+        self.composition_members
+            .listed_under([], [left_block])
+            .into_iter()
+            .find_map(|resources| {
+                resources
+                    .separated_owned_members_in_block(left_block, &left, &right, &admit)
+                    .map(|(left, right)| (resources, left, right))
+            })
     }
 
     /// Separation of an exposed owner and a checked loan-bound projection.
@@ -4941,7 +4947,10 @@ impl PureFactContext {
 
     pub(super) fn insert_proposition_fact(&mut self, proposition: Proposition) {
         if let Proposition::CResourceComposition(resources) = proposition {
-            if std::sync::Arc::make_mut(&mut self.resource_compositions).insert(resources.clone()) {
+            if !self.resource_compositions.contains(&resources) {
+                self.resource_compositions =
+                    self.resource_compositions.with_value(resources.clone());
+                self.composition_members.admit(&resources);
                 self.composition_object_resources.admit(&resources);
                 self.composition_object_resources
                     .advance_memory_equalities(self);
@@ -5077,7 +5086,9 @@ impl PureFactContext {
             && self
                 .algebraic_variable_constructors
                 .shares_root_with(&other.algebraic_variable_constructors)
-            && std::sync::Arc::ptr_eq(&self.resource_compositions, &other.resource_compositions)
+            && self
+                .resource_compositions
+                .shares_root_with(&other.resource_compositions)
             && std::sync::Arc::ptr_eq(&self.memory_loadable_facts, &other.memory_loadable_facts)
             && self
                 .memory_loadable_object_facts
@@ -5145,6 +5156,11 @@ impl PureFactContext {
         self.content_fingerprint ^= Self::fingerprint(5, &owners);
         self.store_owners = Some(owners);
         self
+    }
+
+    /// The compositions the writer stated as its store owners, if it did.
+    pub(in crate::kernel) fn store_owners(&self) -> Option<&[ResourceContext]> {
+        self.store_owners.as_deref().map(Vec::as_slice)
     }
 
     /// The compositions store separation reads: the store owners alone when

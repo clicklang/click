@@ -992,3 +992,54 @@ All 47 heap controls pass (1.13s harness), including deterministic
 composite view at both free and reallocation. Formatting, mdBook, structural
 documentation lint and whitespace checks pass. Advisory Vale is unavailable;
 the full gate and nightly were not run locally.
+
+### Scalar field observations exclude alignment padding
+
+PR #1062 merged; final head `7acb5544a` is verified upstream. The next
+independent extraction addresses the source projector's scalar field names.
+A field's physical ownership span can include alignment padding before the
+next member. That span does not declare more scalar values. Name only the
+retained scalar or scalar-array element count, using its actual value width
+and checking that the complete observation fits inside the owned span.
+Ownership extents stay as declared.
+
+The recovery checkpoint `f53b66c39` also reconstructs the owned C input's
+parametric observations and attaches read cores to its exact owner. Its 98
+focused and 341 broader controls pass; the next modular application repair
+is separate from this source-only scalar extraction. The last normal archive
+audit remains 42/52, and no archive activation is claimed here.
+
+All 13 focused projection controls pass, including owned/viewed scalar padding
+and scalar-array counts at 0/16/64/256 sizes. All 52 normal example projects
+pass (328.71s harness, concurrent recovery compilation; not a performance
+comparison). Formatting, mdBook, structural documentation lint and whitespace
+checks pass. Advisory Vale is unavailable; the full gate and nightly were not
+run locally. The initial extraction referenced an archive-only type helper;
+this delivery uses master's existing array variants.
+
+The first CI run exposed a guarded recursive-view unfold regression. The
+rewrite compared read descriptions using actual supplier merging, which correctly
+refuses to merge separately bound loans. Description equivalence now checks
+coverage of the existing read cores without changing any supplier or loan binding.
+Owned resources and before/after loan consistency still require their existing
+checks. A real-loan regression covers contiguous coverage, gaps, excess extent,
+absence of ownership grants, unchanged bindings, and unrelated ranges at
+0/16/64/256 sizes. All 413 selected kernel controls and all 3,979 normal Markdown
+fixtures pass. Clippy with warnings denied also passes. These checks follow the
+earlier 52-example run; the full gate and nightly were not run locally.
+
+### Modular C prefix compatibility control
+
+PR #1063 merged; both pushed commits `d0900a8ba` and `fc69c7a10` are
+verified upstream. All 711 scaling tests also pass with the gate's 8 MiB Rust
+test stack setting; the initial run omitted that setting and overflowed a Rust
+importer test.
+
+The next small delivery retains the unchanged vector-push C body, storage
+resource and contract, with a caller that exports its prefix guarantee. The
+caller uses `simp` to bridge the callee's returned read observations; exact
+`assumption` alone is insufficient. Fresh verification, expansion, rewritten
+verification and retained rechecking pass on current upstream. The same control
+passes all four modes in recovery checkpoint `417678854`. This is a shared C
+compatibility baseline, not activation of the recovery model. The archive's
+grow-then-push proof and ten-failure audit remain open.

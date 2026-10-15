@@ -345,27 +345,29 @@ impl ProofSourceIndex {
                 .tactics
                 .get(&current)
                 .ok_or_else(|| ClickError::new("source tactic has no nested body"))?;
-            let (open, child) =
-                if matches!(self.tokens[current].text.as_str(), "if" | "cases" | "both") {
-                    let &(open, _) = tactic
-                        .arms
-                        .get(index)
-                        .ok_or_else(|| ClickError::new("source arm is missing"))?;
-                    (
-                        open,
-                        indices
-                            .next()
-                            .ok_or_else(|| ClickError::new("source arm tactic is missing"))?,
-                    )
-                } else {
-                    (
-                        tactic
-                            .body
-                            .ok_or_else(|| ClickError::new("source tactic body is missing"))?
-                            .0,
-                        index,
-                    )
-                };
+            let (open, child) = if matches!(
+                self.tokens[current].text.as_str(),
+                "if" | "cases" | "both" | "match"
+            ) {
+                let &(open, _) = tactic
+                    .arms
+                    .get(index)
+                    .ok_or_else(|| ClickError::new("source arm is missing"))?;
+                (
+                    open,
+                    indices
+                        .next()
+                        .ok_or_else(|| ClickError::new("source arm tactic is missing"))?,
+                )
+            } else {
+                (
+                    tactic
+                        .body
+                        .ok_or_else(|| ClickError::new("source tactic body is missing"))?
+                        .0,
+                    index,
+                )
+            };
             current = *self
                 .blocks
                 .get(&open)

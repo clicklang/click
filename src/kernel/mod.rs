@@ -13,16 +13,17 @@ pub(crate) use source_access::{
     ExecutedReferenceAccess, ExecutedReferenceBoundary, ReferenceAccessKind,
     ReferenceAccessSourceId, ReferenceBorrowSourceId,
 };
-pub use source_loans::CScalarReferenceEnd;
+pub use source_loans::{CScalarReferenceEnd, CScalarReferenceScope};
 pub(crate) use source_loans::{
-    ScalarReferencePlanFamily, ScalarReferencePlanKey, ScalarReferenceSourcePlan,
+    ScalarReferencePlanFamily, ScalarReferencePlanKey, ScalarReferenceScopeKey,
+    ScalarReferenceScopePlan, ScalarReferenceSourcePlan,
 };
 
 /// Version of the resource and stable-view semantics used by proof
 /// artifacts.  This is deliberately separate from source and compiler
 /// identities: changing the authority interpretation must invalidate an old
 /// certificate even when its inputs are byte-identical.
-pub const RESOURCE_SEMANTICS_VERSION: u32 = 68;
+pub const RESOURCE_SEMANTICS_VERSION: u32 = 69;
 
 pub(crate) mod assumptions;
 mod difference_graph;
@@ -204,6 +205,7 @@ pub(crate) use reasoning::resolve_load_variables_from_registry;
 pub(crate) use reasoning::resolve_minted_load_variables;
 pub(crate) use reasoning::substitute_integer_variable_in_pure_proposition;
 pub(crate) use reasoning::substitute_pointer_variable_in_proposition;
+pub(crate) use reasoning::try_resolve_load_variables_from_registry;
 pub use reasoning::{LoweringIntroduction, LoweringIntroductions};
 pub(crate) use reasoning::{
     collect_bitvector_variables, collect_c_value_bitvector_variables,

@@ -438,6 +438,7 @@ fn prove_claims_by_checked_tactics(
             assumptions: &assumptions_from_propositions(&pure_facts),
             checked_entry_state: None,
         }),
+        None,
     )?;
     let state = canonical_claim_caller_state(
         state,
@@ -1636,6 +1637,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     assumptions: &assumptions_from_propositions(entry_pure_facts.as_slice()),
                     checked_entry_state: proof_context.constants.function_entry_state.as_ref(),
                 }),
+                None,
             )
         })
         .transpose()?;

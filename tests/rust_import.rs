@@ -4307,6 +4307,8 @@ mod function_pointers;
 mod impl_fn;
 #[path = "rust_import/parameterized_contracts.rs"]
 mod parameterized_contracts;
+#[path = "rust_import/trait_methods.rs"]
+mod trait_methods;
 
 #[path = "rust_import/loop_headers.rs"]
 mod loop_headers;
@@ -4558,4 +4560,98 @@ fn rust_scalar_borrow_stays_live_through_both_branch_arms_and_ends_at_join() {
         fs::read_to_string(p.root.join("borrow.rs")).unwrap(),
         source
     );
+}
+
+#[test]
+#[ignore = "nightly: fully closed arm-local scalar borrows with checked expansion"]
+fn rust_arm_local_borrows_close_without_escaping_before_the_join() {
+    let source = include_str!("../design/charon-trial/gate-fixtures/scalar-arm-scopes/borrow.rs");
+    let p = gate_fixtures::project("scalar-arm-scopes", source);
+    let proof = "verifying \"borrow.rs\";\nfn scoped_update(parent: &mut i32, choose: bool) { owns *parent; ensures *parent == (if choose { 8 } else { 10 }); } by { execute(); simp(); }\nfn nested_scopes(parent: &mut i32, choose: bool, inner: bool) { owns *parent; ensures *parent == (if choose { if inner { 9 } else { 11 } } else { 12 }); } by { execute(); simp(); }\nfn scoped_caller(parent: &mut i32, choose: bool) { owns *parent; ensures *parent == (if choose { 8 } else { 10 }); } by { execute(); simp(); }\n";
+    fs::write(p.root.join("borrow.click"), proof).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(proof, &prepared).unwrap();
+    for invalid in [
+        proof.replacen(
+            "if choose { 8 } else { 10 }",
+            "if choose { 7 } else { 9 }",
+            1,
+        ),
+        proof.replace("if inner { 9 } else { 11 }", "if inner { 8 } else { 10 }"),
+        proof.replacen("owns *parent;", "views *parent;", 1),
+    ] {
+        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+    }
+    for claim in [
+        "scoped_update.contract",
+        "nested_scopes.contract",
+        "scoped_caller.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+    }
+    assert_cli(&p, &["verify"]);
+    assert_eq!(
+        fs::read_to_string(p.root.join("borrow.rs")).unwrap(),
+        source
+    );
+}
+
+/// One crate unit in a project, read from an external tree in place: both
+/// adler2 sidecars, which lock the crate with different roots on their own,
+/// verify against one extraction of the union of their roots.
+#[test]
+#[ignore = "requires the separately built pinned Charon/compiler"]
+fn charon_project_crate_unit_serves_every_sidecar_of_the_crate() {
+    let trial = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/adler2");
+    let root = std::env::temp_dir().join(format!("click-rust-project-unit-{}", std::process::id()));
+    let crate_root = root.join("vendor/adler2-2.0.1");
+    fs::create_dir_all(crate_root.join("src")).unwrap();
+    fs::create_dir_all(root.join("proofs")).unwrap();
+    for file in ["src/lib.rs", "src/algo.rs"] {
+        fs::copy(trial.join(file), crate_root.join(file)).unwrap();
+    }
+    for sidecar in ["helpers.click", "restoration.click"] {
+        let proof = fs::read_to_string(trial.join(sidecar)).unwrap().replace(
+            "verifying \"src/lib.rs\";",
+            "verifying \"../vendor/adler2-2.0.1/src/lib.rs\";",
+        );
+        fs::write(root.join("proofs").join(sidecar), proof).unwrap();
+    }
+    fs::write(
+        root.join("proofs/click.project.json"),
+        serde_json::json!({"units": {"adler2": {
+            "language": "rust",
+            "root": "../vendor/adler2-2.0.1",
+            "crate": {"name": "adler2", "edition": "2021", "features": ["std"],
+                "roots": ["adler2::adler32_slice", "adler2::Adler32::from_checksum"],
+                "files": ["src/lib.rs", "src/algo.rs"]},
+            "sources": {"src/lib.rs": {}}
+        }}})
+        .to_string(),
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_click"))
+        .args(["import", "lock"])
+        .arg(root.join("proofs"))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read_dir(crate_root.join("src")).unwrap().count(), 2);
+    for sidecar in ["helpers.click", "restoration.click"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_click"))
+            .arg("verify")
+            .arg(root.join("proofs").join(sidecar))
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{sidecar}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let _ = fs::remove_dir_all(&root);
 }

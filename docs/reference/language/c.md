@@ -62,7 +62,10 @@ beside its sidecars. For example, the JSON object
 the user-space target and Click's conditional pthread model for every sidecar
 in that directory. The two fields are optional. When a command is given an
 explicit project root and the sidecar directory has no config, it looks for
-the config at that root. Conflicting sidecar directives are rejected.
+the config at that root, and otherwise in the nearest directory above the
+sidecar that has one. Conflicting sidecar directives are rejected. The same
+file can declare compiler-import units; see
+[Project units](../cli/import.md#project-units).
 
 Existing sidecars may also select the C target with a top-level directive
 alongside `verifying`:

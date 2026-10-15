@@ -145,6 +145,10 @@ const NIGHTLY: &[(&str, &str)] = &[
         "rbtree-erase",
         "the general unlink and color repair take minutes; 347 s in a debug test build (2026-10-14)",
     ),
+    (
+        "rbtree-augmented",
+        "261 s in a debug test build on 4 cores, 44 s release, the gate's long pole (2026-10-15)",
+    ),
 ];
 
 #[test]

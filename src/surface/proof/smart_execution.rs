@@ -974,6 +974,19 @@ impl<'a> Proof<'a> {
                 self.step_error("pure theorem-application search requires a proposition goal")
             );
         };
+        let written_application = application;
+        let application = &self.resolve_theorem_application(application)?;
+        let mut integer_values = context.theorem_context.integer_values.clone();
+        for name in application
+            .arguments
+            .iter()
+            .flat_map(contract_expression_referenced_names)
+            .collect::<BTreeSet<_>>()
+        {
+            if let Some(value) = self.local_integer_values().get(&name) {
+                integer_values = integer_values.with_inserted(name, value.clone());
+            }
+        }
         let state = CState::new().with_memory(context.theorem_context.memory.clone());
         let recorded_snapshots = RecordedSnapshots::new();
         let algebraic_values = application
@@ -1005,7 +1018,7 @@ impl<'a> Proof<'a> {
             post_state: &state,
             result: None,
             recorded_snapshots: &recorded_snapshots,
-            integer_values: &context.theorem_context.integer_values,
+            integer_values: &integer_values,
             pointer_element_widths: BTreeMap::new(),
         };
         let unfolded_predicates = self.active_unfolded_predicates();
@@ -1043,7 +1056,7 @@ impl<'a> Proof<'a> {
             .iter()
             .map(FunctionParameter::name)
             .map(str::to_string)
-            .zip(application.arguments.iter().cloned())
+            .zip(written_application.arguments.iter().cloned())
             .collect::<BTreeMap<_, _>>();
 
         let source_requirements =
@@ -1128,7 +1141,7 @@ impl<'a> Proof<'a> {
             &premises,
         )?);
         Ok(ProofStep::ApplyTheoremUsing {
-            application: application.clone(),
+            application: written_application.clone(),
             premises,
         })
     }

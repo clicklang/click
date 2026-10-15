@@ -1,4 +1,4 @@
-//! Lexically scoped constructor elimination at an execution frontier.
+//! Lexically scoped constructor cases for execution frontiers and pure goals.
 //!
 //! The frontier may be a function entry, a point after checked C steps, or a
 //! loop body. Where the arms end is the caller's business: a function proof
@@ -792,5 +792,237 @@ impl<'a> Proof<'a> {
             parent_execution: execution,
         };
         Ok((successor, record))
+    }
+}
+
+/// Pure matches reduce to constructor implications, not execution partitions.
+pub(in crate::surface::proof) struct PureMatchPlan {
+    source: Arc<ProofMatch>,
+    presentation: PropositionPresentation,
+    locals: ProofLocals,
+    site: ProofStepSite,
+}
+
+impl<'a> Proof<'a> {
+    pub(in crate::surface::proof) fn prepare_pure_match(
+        &self,
+        source: &Arc<ProofMatch>,
+    ) -> Result<(Self, PureMatchPlan), ClickError> {
+        if source.ensuring.is_some() {
+            return Err(self.step_error(
+                "pure proof `match` proves the current goal and does not take `ensuring`",
+            ));
+        }
+        let ProofContext::Pure(context) = self.context.as_ref() else {
+            return Err(self.step_error("this match requires a pure proposition proof"));
+        };
+        let value = self.capture_pure_algebraic_witness(&source.scrutinee)?;
+        let variants = &value.algebraic_type.variants;
+        let indices: BTreeMap<_, _> = variants
+            .iter()
+            .enumerate()
+            .map(|(index, variant)| (variant.name.as_str(), index))
+            .collect();
+        let mut seen = BTreeSet::new();
+        let mut order = Vec::new();
+        for arm in &source.arms {
+            if arm.type_name != value.algebraic_type.name {
+                return Err(self.step_error("proof `match` pattern has the wrong datatype"));
+            }
+            let Some(&index) = indices.get(arm.variant.as_str()) else {
+                return Err(self.step_error("proof `match` names an unknown constructor"));
+            };
+            if !seen.insert(index) {
+                return Err(self.step_error("proof `match` repeats a constructor"));
+            }
+            if arm.bindings.len() != variants[index].fields.len() {
+                return Err(self.step_error("proof `match` pattern has the wrong number of fields"));
+            }
+            let mut bindings = BTreeSet::new();
+            for name in &arm.bindings {
+                if !bindings.insert(name)
+                    || self.state.locals().values.contains_key(name)
+                    || context.theorem_context.values.contains_key(name)
+                    || context.theorem_context.integer_values.contains_key(name)
+                    || context
+                        .theorem_context
+                        .declaration_bindings
+                        .contains_key(name)
+                    || context
+                        .structural_induction_setup
+                        .as_ref()
+                        .is_some_and(|setup| setup.algebraic_values.contains_key(name))
+                {
+                    return Err(
+                        self.step_error(format!("match binding `{name}` is already in scope"))
+                    );
+                }
+            }
+            order.push(index);
+        }
+        let presentation = self
+            .focused_branch()
+            .and_then(|branch| match &branch.obligation {
+                Obligation::Proposition(goal) => Some(goal.presentation.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| self.step_error("pure match requires a proposition goal"))?;
+        let state = self
+            .state
+            .refine_proposition_algebraic_match(&value, &order)
+            .map_err(|message| self.step_error(message))?;
+        Ok((
+            self.with_kernel_state(state),
+            PureMatchPlan {
+                source: source.clone(),
+                presentation,
+                locals: self.state.locals().clone(),
+                site: self.site.clone(),
+            },
+        ))
+    }
+
+    pub(in crate::surface::proof) fn split_pure_match_group(
+        &self,
+    ) -> Result<(Self, SplitId, [BranchId; 2]), ClickError> {
+        let (state, split, ids) = self
+            .state
+            .split_proposition_both(|parent, _| parent.clone())
+            .map_err(|message| self.step_error(message))?
+            .into_parts();
+        Ok((
+            Self {
+                node: ProofNode::marker(&self.node, self.focused_branch_id(), ids.to_vec()),
+                ..self.with_kernel_state(state)
+            },
+            split,
+            ids,
+        ))
+    }
+
+    pub(in crate::surface::proof) fn enter_pure_match_case(
+        &self,
+        plan: &PureMatchPlan,
+        index: usize,
+    ) -> Result<Self, ClickError> {
+        let mut proof = self
+            .with_kernel_state(self.state.with_locals(plan.locals.clone()))
+            .at_site(&plan.site);
+        for name in &plan.source.arms[index].bindings {
+            let sort = match proof.proposition_goal("match field requires a universal goal")? {
+                Proposition::ForAll { sort, .. } => sort.clone(),
+                _ => return Err(proof.step_error("match field requires a universal goal")),
+            };
+            let mut witness = None;
+            let state = proof
+                .state
+                .apply_intro(|presentation, introduction, _| {
+                    if let PropositionIntroduction::Universal { variable, .. } = introduction {
+                        witness = Some(variable);
+                    }
+                    presentation.clone()
+                })
+                .map_err(|_| proof.step_error("could not introduce a fresh match field"))?;
+            let variable = witness.expect("kernel introduced the checked universal");
+            let mut locals = state.locals().clone();
+            let expression = match sort {
+                Sort::Algebraic(algebraic_type) => {
+                    locals.algebraic_values = locals.algebraic_values.with_inserted(
+                        name.clone(),
+                        crate::kernel::SpecAlgebraicExpression {
+                            algebraic_type,
+                            node: crate::kernel::SpecAlgebraicExpressionNode::Variable(variable),
+                        },
+                    );
+                    ContractExpression::Binding(name.clone())
+                }
+                Sort::Integer => {
+                    locals.integer_values = locals.integer_values.with_inserted(
+                        name.clone(),
+                        crate::kernel::SpecIntegerExpression::Term(
+                            crate::kernel::IntegerTerm::var(variable),
+                        ),
+                    );
+                    ContractExpression::Binding(name.clone())
+                }
+                Sort::CPointer(c_type) => ContractExpression::CFragment(CExpression::Value(
+                    crate::kernel::symbolic_call_result(c_type, variable),
+                )),
+                Sort::CInt32 => ContractExpression::CFragment(CExpression::Value(
+                    crate::kernel::symbolic_call_result(CType::Int32, variable),
+                )),
+                Sort::CInt64 => ContractExpression::CFragment(CExpression::Value(
+                    crate::kernel::symbolic_call_result(CType::Int64, variable),
+                )),
+                _ => return Err(proof.step_error("unsupported match field sort")),
+            };
+            locals.values = locals.values.with_inserted(name.clone(), expression);
+            proof = proof.with_kernel_state(state.with_locals(locals));
+        }
+        let state = proof
+            .state
+            .apply_intro(|_, introduction, _| {
+                assert!(matches!(introduction, PropositionIntroduction::Implication));
+                plan.presentation.clone()
+            })
+            .map_err(|_| {
+                proof.step_error("could not introduce the checked constructor equation")
+            })?;
+        let mut entered = proof.with_kernel_state(state);
+        entered.node = ProofNode::marker(
+            &proof.node,
+            proof.focused_branch_id(),
+            vec![proof.focused_branch_id()],
+        );
+        // Retain the constructor equation before running the arm, so even a
+        // rejected first tactic has the checked case in its failure trace.
+        if let Some(mut trace) = entered.new_pure_match_trace(&plan.source) {
+            let marker = entered.checkpoint();
+            trace.arms[index] =
+                Some(entered.pure_match_arm_trace(&entered, &marker, &plan.source, index));
+            crate::surface::proof_trace::record_match(Arc::as_ptr(&entered.node) as usize, trace);
+        }
+        Ok(entered)
+    }
+
+    pub(in crate::surface::proof) fn leave_pure_match_case(&self, plan: &PureMatchPlan) -> Self {
+        self.with_kernel_state(self.state.with_locals(plan.locals.clone()))
+    }
+}
+
+impl<'a> Proof<'a> {
+    pub(in crate::surface::proof) fn new_pure_match_trace(
+        &self,
+        source: &ProofMatch,
+    ) -> Option<crate::surface::proof_trace::TraceMatch> {
+        crate::surface::proof_trace::enabled_for(self.claim_label()).then(|| {
+            crate::surface::proof_trace::TraceMatch {
+                header: format!(
+                    "{}: match",
+                    self.site().path().unwrap_or_else(|| "checked match".into())
+                ),
+                source_tactic_path: self.site().source_tactic_path(),
+                arms: (0..source.arms.len()).map(|_| None).collect(),
+            }
+        })
+    }
+
+    pub(in crate::surface::proof) fn pure_match_arm_trace(
+        &self,
+        entered: &Self,
+        marker: &ProofCheckpoint<'a>,
+        source: &ProofMatch,
+        index: usize,
+    ) -> crate::surface::proof_trace::TraceMatchArm {
+        crate::surface::proof_trace::TraceMatchArm {
+            names: Box::new(entered.diagnostic_state()),
+            name: format!(
+                "{}::{}",
+                source.arms[index].type_name, source.arms[index].variant
+            ),
+            fact: entered.checked_trace_fact(entered.state.added_facts()[0].clone()),
+            lineage: trace_arm_lineage(&self.node, &marker.node, self.focused_branch_id()),
+            _retained: Box::new(self.node.clone()),
+        }
     }
 }

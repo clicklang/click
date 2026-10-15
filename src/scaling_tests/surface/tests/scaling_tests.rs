@@ -8290,3 +8290,39 @@ ensures result == {expected};
         );
     }
 }
+
+#[test]
+fn source_only_transport_does_not_reconstruct_unrelated_integer_facts() {
+    let mut work = Vec::new();
+    for size in [8, 32, 128] {
+        let (_, mut source) = function_with_unrelated_facts(
+            size,
+            "    step();\n    transport(target == 7, target == 7);\n    execute();\n    assumption();\n",
+        );
+        // Keep transport at a live statement frontier. A return would enter
+        // the distinct post-execution premise-search path.
+        let c = "int32 exact_fact_target(int32 target) { int32 copy = target; return copy; }";
+        for index in 0..size {
+            source = source.replace(
+                &format!("requires target != {};", index + 100),
+                &format!("requires to_integer(target) != {};", index + 100),
+            );
+        }
+        let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
+            verify_c0_sources(&source, &[("exact_fact_target.c", c)])
+        });
+        result.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
+        let selected = samples
+            .iter()
+            .filter(|sample| sample.tactic.tactic_name == "transport")
+            .collect::<Vec<_>>();
+        assert_eq!(selected.len(), 1);
+        assert!(!selected[0].failed);
+        work.push(selected[0].work);
+    }
+    assert!(work.iter().all(|count| *count > 0));
+    assert!(
+        work.windows(2).all(|pair| pair[1] <= pair[0] * 2),
+        "source-only transport must not reconstruct an ambient fact per input: {work:?}"
+    );
+}

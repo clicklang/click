@@ -72,6 +72,7 @@ pub(crate) use memory_state::{
 pub(crate) use persistent_map::{SnapshotMap, SnapshotMapChange, SnapshotSet};
 mod iterated;
 pub use iterated::{CIteratedGuard, CIteratedMemory};
+mod composition_member_index;
 mod memory_equality_index;
 mod resource_algebra;
 mod term_operations;
@@ -3105,6 +3106,7 @@ pub enum CStatement {
     },
     /// Consume one live source lease at its checked ending frontier.
     EndScalarReference(super::CScalarReferenceEnd),
+    ScalarReferenceScope(super::CScalarReferenceScope),
     TypedStore {
         pointer: CExpression,
         value: CExpression,
@@ -10805,7 +10807,7 @@ pub struct PureFactContext {
     /// case search proportional to possible case splits rather than every
     /// unrelated proposition in the context.
     pub(super) disjunction_facts: crate::persistent::PersistentSet<Proposition>,
-    pub(super) resource_compositions: std::sync::Arc<BTreeSet<ResourceContext>>,
+    pub(super) resource_compositions: crate::persistent::PersistentSet<ResourceContext>,
     /// The ownership a store in this context writes under, when the writer
     /// stated it: the current state's observable composition and any
     /// composition the store opened from held folded instances, all also
@@ -10817,6 +10819,10 @@ pub struct PureFactContext {
     /// Derived provenance-only footprints published with each explicitly
     /// admitted composition. This is not consumable resource authority.
     pub(super) composition_object_resources: memory_equality_index::ObjectEvidenceSources,
+    /// Candidate lookup over `resource_compositions` by owned member, so
+    /// separation by ownership reads the compositions that can answer rather
+    /// than every one the path stated.
+    pub(super) composition_members: composition_member_index::CompositionMemberIndex,
     pub(super) memory_read_defined_facts: crate::persistent::PersistentMap<
         (Pointer, CType),
         crate::persistent::PersistentSet<Proposition>,

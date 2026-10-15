@@ -3225,6 +3225,32 @@ pub(in crate::surface) fn contract_segment_element_width_with_pointer_types(
         })
 }
 
+pub(in crate::surface) fn declared_segment_observation_count(
+    segment: &ContractSegment,
+) -> Option<u32> {
+    segment.field_element_type()?;
+    match &segment.base {
+        CExpression::TypedLoad {
+            value_type:
+                CType::Int8Array(count)
+                | CType::UInt8Array(count)
+                | CType::Int16Array(count)
+                | CType::UInt16Array(count)
+                | CType::Int32Array(count)
+                | CType::UInt32Array(count)
+                | CType::Int64Array(count)
+                | CType::UInt64Array(count)
+                | CType::Int128Array(count)
+                | CType::UInt128Array(count)
+                | CType::Float32Array(count)
+                | CType::Float64Array(count)
+                | CType::PointerArray(_, count),
+            ..
+        } => Some(*count),
+        _ => Some(1),
+    }
+}
+
 pub(in crate::surface) fn contract_segment_element_type(
     parameters: &[syntax::C0Parameter],
     segment: &ContractSegment,

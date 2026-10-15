@@ -529,6 +529,69 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
     }
 }
 
+/// Without a store owner, separation by ownership reads only the stated
+/// compositions listed under the two objects' members
+/// (`CompositionMemberIndex`). A path states, per object, a snapshot of the
+/// one context that holds them all and a separately built composition of
+/// that object alone, as a call and an unfolding do. Admitting the last
+/// composition, separating the newest object from the oldest, and failing to
+/// separate an object from memory no composition owns each cost the same at
+/// every size.
+#[test]
+fn store_separation_without_an_owner_reads_only_listed_compositions() {
+    let object = |index: u32| Pointer::symbolic(Variable(98_900 + u64::from(index)));
+    let unowned = Pointer::symbolic(Variable(98_899));
+    let mut admitted = Vec::new();
+    let mut proved = Vec::new();
+    let mut refused = Vec::new();
+    for size in [8u32, 32, 128, 512] {
+        let mut resources = ResourceContext::new();
+        let mut context = PureFactContext::new();
+        let mut last = 0;
+        for index in 0..size {
+            resources = resources.unchecked_with_fact(own_memory_fact(object(index), 0, 1));
+            let alone =
+                ResourceContext::new().unchecked_with_fact(own_memory_fact(object(index), 0, 1));
+            let (next, used) = crate::instrumentation::measure_deterministic_work(|| {
+                context
+                    .clone()
+                    .assume_proposition(Proposition::CResourceComposition(resources.clone()))
+                    .assume_proposition(Proposition::CResourceComposition(alone))
+            });
+            context = next;
+            last = used;
+        }
+        admitted.push(last);
+        let (newest, oldest) = (object(size - 1), object(0));
+        let (separated, used) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::memory_provenance::owned_composition_store_separated_evidence(
+                &newest, 4, &oldest, 4, &context,
+            )
+            .is_some()
+        });
+        assert!(separated, "size={size}");
+        proved.push(used);
+        let (separated, used) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::memory_provenance::owned_composition_store_separated_evidence(
+                &newest, 4, &unowned, 4, &context,
+            )
+            .is_some()
+        });
+        assert!(!separated, "size={size}");
+        refused.push(used);
+    }
+    for (what, work) in [
+        ("admitting a composition", &admitted),
+        ("separating two owned objects", &proved),
+        ("refusing an unowned load", &refused),
+    ] {
+        assert!(
+            work.windows(2).all(|pair| pair[1] <= pair[0] + 4),
+            "{what} grows with the compositions stated earlier: {work:?}"
+        );
+    }
+}
+
 /// A store is separated by what its writer owns now. A path that stated a
 /// composition at each of `size` earlier steps leaves them all among the
 /// context's facts, and store separation does not read them: with the

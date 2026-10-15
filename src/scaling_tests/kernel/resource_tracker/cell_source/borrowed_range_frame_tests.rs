@@ -119,7 +119,7 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
         );
         // Keep the candidate index while withdrawing its retained authority.
         let mut withdrawn = context.clone();
-        std::sync::Arc::make_mut(&mut withdrawn.resource_compositions).remove(&bound);
+        withdrawn.resource_compositions = withdrawn.resource_compositions.without_value(&bound);
         assert!(!proof.checks(&backing, &field, 8, &withdrawn));
         assert!(
             typed_range_disjoint_from_pointer_evidence(&backing, &field, 8, &withdrawn).is_none()

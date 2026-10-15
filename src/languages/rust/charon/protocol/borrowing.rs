@@ -24,7 +24,7 @@ impl Adapter<'_> {
         let a::FnOperand::Regular(ptr) = &call.func else {
             return Ok(None);
         };
-        if self.is_dyn_fn_call(ptr) {
+        if self.is_dyn_fn_call(ptr) || self.interface_call(ptr)?.is_some() {
             return Ok(None);
         }
         let callee = self
