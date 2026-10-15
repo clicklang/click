@@ -394,9 +394,44 @@ reifies it as a pointer; the caller's proof needs `twice` to meet the
 contract, which Click checks at the call from `twice`'s own contract, or an
 `executes` theorem shows. The importer reads Charon's `CastKind::FnPtr` of a
 crate function item and its `FnOperand::Dynamic` call through a local, and
-refuses unsafe or foreign function pointers, pointers of non-scalar
-parameters, closures and `dyn Fn`
+refuses unsafe or foreign function pointers and pointers of non-scalar
+parameters
 ([`design/charon-trial/function-pointers`](https://github.com/clicklang/click/blob/master/design/charon-trial/function-pointers/callback.click)).
+
+A named contract's value parameter is written with a Rust type,
+`contract fn Adds(x: i32) -> i32 { let amount: i32; ensures result == x +
+amount; }`, and attached with `requires Adds(f, { amount: k });`, as in C
+([`design/charon-trial/parameterized-contracts`](https://github.com/clicklang/click/blob/master/design/charon-trial/parameterized-contracts/adds.click)).
+
+A closure that captures nothing can be passed for such a pointer,
+`apply(|y| y + y, x)`. The sidecar names it as rustc does, by its enclosing
+function and its index there: `fn closures::caller::{closure#0}(y: i32) ->
+i32 { requires ...; ensures ...; } by { ... }`, verified like any function,
+and the caller's proof shows it meets the contract the callee requires of
+the pointer. The importer keeps the closure's `Fn::call` body, rewritten as
+a function of the closure's parameters, and reads Charon's cast of the
+generated `ClosureAsFn` function as the closure's address. A closure called
+directly and `impl Fn` parameters are refused
+([`design/charon-trial/closures`](https://github.com/clicklang/click/blob/master/design/charon-trial/closures/closure.click)).
+
+A `&dyn Fn(i32) -> i32` parameter of scalar parameters and result is a
+callback as a `fn` pointer is, and a closure passed for it may capture
+variables, `shift(&|y| y + k, x, k)`. The closure's contract names its
+captures as its body does, `fn capturing_closures::caller::{closure#0}(y:
+i32) -> i32 { requires 0 <= k and k <= 1000; ensures result == y + k; }`,
+and the callee states what it needs with a parameterized contract,
+`requires Adds(f, { amount: k });`. Creating the closure gives a function
+value carrying the closure's contract with its captures fixed to the values
+captured, and a call requiring another contract of it holds when that
+contract refines the required one, the caller's facts about the captured
+values included. The refinement uses exact routes and the condition
+decider, not search: a capture of `k + 1` whose bound follows from a bound
+on `k` is not shown. A shared borrow of a scalar is read when the closure
+is created, which safe Rust's freezing of the borrowed variable makes
+exact, and a `move` capture is copied. A closure that captures nothing is
+its function's address. Captures by mutable reference, `FnMut` and
+`FnOnce` callees, and non-scalar captures are refused
+([`design/charon-trial/capturing-closures`](https://github.com/clicklang/click/blob/master/design/charon-trial/capturing-closures/closure.click)).
 
 ### `extern` block functions
 

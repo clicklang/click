@@ -4340,7 +4340,7 @@ impl PureFactContext {
         &self,
         value: &CPointerValue,
     ) -> Option<CPointerValue> {
-        if value.domain().is_some() {
+        if value.domain().is_some() || value.extent().is_some() {
             return None;
         }
         let premise = self
@@ -4367,6 +4367,7 @@ impl PureFactContext {
                 Term::CValue(CValue::Pointer(_)),
             ] = arguments.as_slice()
             && value.domain().is_none()
+            && value.extent().is_none()
         {
             let mut origins = self
                 .pointer_value_input_origins
@@ -5336,6 +5337,26 @@ impl PureFactContext {
     /// about `condition` (`issues/difference-logic.md`), with `extra` facts
     /// assumed on top: a path's facts not yet in the context.
     pub(crate) fn difference_decision(
+        &self,
+        condition: &ConditionTerm,
+        extra: &[(ConditionTerm, bool)],
+    ) -> Option<bool> {
+        self.fast_leaf_decision(condition, extra).or_else(|| {
+            // A 64-bit word equality may relate tagged addresses
+            // (`address(p) + tag`): the pointer-tag rules decide it, asking
+            // only these fast decisions at their leaves.
+            let ConditionTerm::Bitvector64Equal(left, right) = condition else {
+                return None;
+            };
+            let mut used = crate::kernel::eval::pointer_tags::UsedFacts::fast_only();
+            self.decide_pointer_word_equality_citing(left, right, &mut used)
+        })
+    }
+
+    /// The fast decisions with no search: the difference graph, asked the
+    /// question and its canonical form, and the keyed pointer and division
+    /// rules.
+    pub(in crate::kernel) fn fast_leaf_decision(
         &self,
         condition: &ConditionTerm,
         extra: &[(ConditionTerm, bool)],
@@ -8037,6 +8058,7 @@ impl ExecutionPureFact {
             transport: None,
             generated_load_binding: None,
             generated_load_source_events: Default::default(),
+            reference_observation: Default::default(),
         }
     }
 
@@ -8051,6 +8073,7 @@ impl ExecutionPureFact {
             transport: None,
             generated_load_binding: None,
             generated_load_source_events: Default::default(),
+            reference_observation: Default::default(),
         }
     }
 
@@ -8084,6 +8107,7 @@ impl ExecutionPureFact {
             transport: None,
             generated_load_binding: None,
             generated_load_source_events: Default::default(),
+            reference_observation: Default::default(),
         }
     }
 
@@ -8124,10 +8148,12 @@ impl ExecutionPureFact {
                 pointer,
                 value,
                 authorized_range,
+                source: Default::default(),
             })),
             transport: None,
             generated_load_binding: None,
             generated_load_source_events: Default::default(),
+            reference_observation: Default::default(),
         }
     }
 
@@ -8141,6 +8167,7 @@ impl ExecutionPureFact {
             || self.generated_load_binding.as_ref().is_some_and(|binding| {
                 !generated_load_binding_matches_proposition(binding, &proposition)
             })
+            || !self.reference_observation.matches_proposition(&proposition)
         {
             // A transported or rewritten fact no longer denotes the exact
             // producer equation.  Retaining its binding would let a later
@@ -8149,6 +8176,10 @@ impl ExecutionPureFact {
             self.logical_read_equation = false;
             self.generated_load_binding = None;
             self.generated_load_source_events = Default::default();
+            self.reference_observation = Default::default();
+            if let Some(store) = &mut self.certified_store {
+                store.source = Default::default();
+            }
         }
         self.proposition = proposition;
         self
@@ -8189,6 +8220,7 @@ impl ExecutionPureFact {
             })),
             generated_load_binding: None,
             generated_load_source_events: Default::default(),
+            reference_observation: Default::default(),
         }
     }
 

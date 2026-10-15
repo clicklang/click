@@ -10647,7 +10647,11 @@ impl ExecutionProofCore {
                 }
             };
             if *before != expected {
-                return Err("return observation has a different published state".into());
+                let difference = before.first_difference(&expected).unwrap_or_default();
+                return Err(format!(
+                    "return observation has a different published state: {difference}"
+                )
+                .into());
             }
             Some(Arc::new(ReturnResourceObservation {
                 context,
@@ -10849,7 +10853,12 @@ impl ExecutionProofCore {
             }
         };
         if *presented_before_state != expected {
-            return Err("return composite exchange has a different published state".into());
+            let difference = presented_before_state
+                .first_difference(&expected)
+                .unwrap_or_default();
+            return Err(format!(
+                "return composite exchange has a different published state: {difference}"
+            ));
         }
         let presented = CheckedResourceRewrite::check_with_children(
             function,

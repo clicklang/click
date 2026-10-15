@@ -1704,7 +1704,7 @@ fn integer_certificate_can_follow_a_checked_int32_to_integer_bridge() {
         .expanded_proof_source()
         .expect("bridge and Integer certificate should expand");
     assert!(
-        expanded.contains("int32_less_equal_to_integer"),
+        expanded.contains("click::integer::int32_less_equal_to_integer"),
         "{expanded}"
     );
     assert!(expanded.contains("arithmetic_certificate {"), "{expanded}");
@@ -2247,7 +2247,7 @@ fn pure_simp_exposes_an_explicit_theorem_certificate() {
     assert!(matches!(
         verified[0].proof_tactics().as_deref(),
         Some([ProofTactic::ApplyTheoremUsing { application, premises }])
-            if application.name == "int32_positive_is_nonnegative"
+            if application.name == "click::machine_integer::int32_positive_is_nonnegative"
             && premises.len() == 1
     ));
 }

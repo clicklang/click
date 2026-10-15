@@ -3144,6 +3144,10 @@ fn simplify_c_int32_add_operand(
         .unwrap_or(simplified)
 }
 
+/// Splits the paths on the formation guards. The formed value keeps the
+/// operand's type, volatility and subobject extent. It drops the operand's
+/// `const` pointee qualifier, as formation always has; the write-through-const
+/// check reads the lvalue's static type.
 fn apply_pointer_formation_guards(
     pointer: CPointerValue,
     guards: Vec<PointerFormationGuard>,

@@ -336,7 +336,7 @@ pub(super) fn apply(
 ) -> ProofStep {
     ProofStep::ApplyTheoremUsing {
         application: TheoremApplication {
-            name: name.to_string(),
+            name: crate::surface::parser::library_theorem_identity(name),
             arguments,
         },
         premises,
@@ -527,7 +527,11 @@ impl<'a> Proof<'a> {
             for atom in &atoms {
                 let lower = order(literal("0"), to_integer(atom), false);
                 let upper = order(to_integer(atom), literal(UINT64_MAX), false);
-                let bounds = apply("uint64_to_integer_bounds", vec![atom.clone()], Vec::new());
+                let bounds = apply(
+                    "click::integer::uint64_to_integer_bounds",
+                    vec![atom.clone()],
+                    Vec::new(),
+                );
                 let Ok(next) = proof
                     .apply_step(have(lower.clone(), vec![bounds.clone()]))
                     .and_then(|proof| proof.apply_step(have(upper.clone(), vec![bounds])))
@@ -733,7 +737,7 @@ impl<'a> Proof<'a> {
                             let lower = order(literal("0"), to_integer(operation), false);
                             let upper = order(to_integer(operation), literal(UINT64_MAX), false);
                             let bounds = apply(
-                                "uint64_to_integer_bounds",
+                                "click::integer::uint64_to_integer_bounds",
                                 vec![operation.clone()],
                                 Vec::new(),
                             );

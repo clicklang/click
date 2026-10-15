@@ -747,6 +747,56 @@ pub(crate) fn render_resource_fact_labeled(
     renderer.output
 }
 
+/// Resource facts follow the same source/typed policy as propositions.
+pub(crate) fn render_resource_fact_spelled(
+    fact: &CResourceFact,
+    labels: &mut SnapshotLabels,
+) -> String {
+    if typed_notation() {
+        render_resource_fact_labeled(fact, labels)
+    } else {
+        surface::source_resource_fact(fact, labels)
+    }
+}
+
+pub(in crate::surface) fn render_resource_fact_diagnostic(
+    fact: &CResourceFact,
+    binding: ParameterBinding<'_>,
+) -> String {
+    let mut labels = SnapshotLabels::naming(binding);
+    let mut text = render_resource_fact_spelled(fact, &mut labels);
+    text.push_str(&labels.trace_legend());
+    text
+}
+
+pub(in crate::surface) fn render_resource_facts_diagnostic(
+    facts: &[CResourceFact],
+    binding: ParameterBinding<'_>,
+) -> String {
+    let mut labels = SnapshotLabels::naming(binding);
+    let mut text = crate::surface::diagnostics::describe_bounded_list(facts, |fact| {
+        render_resource_fact_spelled(fact, &mut labels)
+    });
+    text.push_str(&labels.trace_legend());
+    text
+}
+
+pub(in crate::surface) fn render_resource_diagnostic(
+    resource: &CResource,
+    binding: ParameterBinding<'_>,
+) -> String {
+    let mut labels = SnapshotLabels::naming(binding);
+    let mut text = if typed_notation() {
+        let fact =
+            render_resource_fact_labeled(&CResourceFact::View(resource.clone()), &mut labels);
+        fact.strip_prefix("views ").unwrap_or(&fact).to_owned()
+    } else {
+        surface::source_resource(resource, &mut labels)
+    };
+    text.push_str(&labels.trace_legend());
+    text
+}
+
 /// One proposition display policy for facts, requirements, and goals.
 /// Ordinary verifier errors spell every proposition in Click or source
 /// syntax (`surface::source`). A `--trace-proof` trace uses source spelling
@@ -1907,11 +1957,24 @@ impl Renderer<'_> {
     }
     fn resource(&mut self, resource: &CResource) {
         match resource {
-            CResource::MutexGuard(_) => self.push("mutex-guard"),
-            CResource::MutexLive(_) => self.push("mutex-live"),
+            CResource::MutexGuard(identity) => {
+                self.push("mutex_guard(");
+                self.pointer(identity.mutex());
+                self.push(")");
+            }
+            CResource::MutexLive(identity) => {
+                self.push("mutex_live(");
+                self.pointer(identity.mutex());
+                self.push(")");
+            }
             CResource::MutexUse(identity) => {
                 self.push("mutex_use(");
                 self.pointer(identity.mutex());
+                if let Some(ty) = identity.protected_type() {
+                    self.push(", ");
+                    self.push(ty.family());
+                    self.resource_arguments(ty.arguments());
+                }
                 self.push(")");
             }
             CResource::Publication(right) => {
@@ -1920,6 +1983,11 @@ impl Renderer<'_> {
                 self.pointer(right.flag());
                 self.push(", ");
                 self.push(right.payload().family());
+                self.resource_arguments(right.payload().arguments());
+                if let Some(observed) = right.observed() {
+                    self.push(", observed=");
+                    self.cvalue(observed);
+                }
                 self.push(")");
             }
             CResource::PopulationAuthority(description) => {
@@ -1976,7 +2044,34 @@ impl Renderer<'_> {
                 self.bitvector(iterated.lower());
                 self.push("..");
                 self.bitvector(iterated.upper());
-                self.push(")");
+                let index = Variable(u64::MAX - 7);
+                self.bound_names.push((index, "k".into()));
+                let guard_range = iterated.guard_range();
+                self.fmt(format_args!(", k: guard<{:?}>(", guard_range.kind()));
+                self.pointer(iterated.guard().base());
+                self.fmt(format_args!("[k], stride={})", guard_range.element_width()));
+                self.push(if iterated.guard().holds_when_equal() {
+                    " == "
+                } else {
+                    " != "
+                });
+                self.bitvector(iterated.guard().value());
+                self.push(", element=");
+                self.resource(&CResource::Memory(
+                    iterated.element_range(&Bitvector32Term::Variable(index)),
+                ));
+                self.bound_names.pop();
+                self.push(", holes=[");
+                for (index, hole) in iterated.holes().iter().enumerate() {
+                    if !self.visit() {
+                        break;
+                    }
+                    if index > 0 {
+                        self.push(", ");
+                    }
+                    self.bitvector(hole);
+                }
+                self.push("])");
             }
         }
     }
@@ -2479,5 +2574,88 @@ mod wide_range_reader_tests {
         };
         let text = render_internal_proposition_labeled(&fact, &mut SnapshotLabels::default());
         assert!(text.contains("8589934592"), "{text}");
+    }
+}
+
+#[cfg(test)]
+mod resource_detail_tests {
+    use super::*;
+    use crate::kernel::{
+        CIteratedGuard, CIteratedMemory, CType, CValue, PublicationRight, PublicationSide,
+        ResourceDescription, ResourceFieldSchema,
+    };
+
+    #[test]
+    fn typed_resource_arguments_keep_publication_payload_values() {
+        let flag = Pointer {
+            block: "ready".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let publication = |value| {
+            CResourceFact::own(CResource::Publication(PublicationRight::new(
+                PublicationSide::Publisher,
+                flag.clone(),
+                ResourceDescription::new(
+                    "payload".into(),
+                    vec![AlgebraicValue::C(CValue::Int32(Bitvector32Term::Constant(
+                        value,
+                    )))]
+                    .into(),
+                    ResourceFieldSchema::new(vec![]).unwrap(),
+                ),
+            )))
+        };
+        let first = render_resource_fact(&publication(7));
+        let second = render_resource_fact(&publication(8));
+        assert!(first.contains("payload(int32(7))"), "{first}");
+        assert!(second.contains("payload(int32(8))"), "{second}");
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn typed_iterated_resources_keep_guards_elements_and_taken_indices() {
+        let base = Pointer {
+            block: "elements".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let guard = Pointer {
+            block: "flags".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let iterated = CIteratedMemory::new(
+            "selected",
+            base,
+            4,
+            2,
+            0,
+            1,
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(8),
+            CIteratedGuard::new(guard, CType::Int32, 4, true, Bitvector32Term::Constant(1)),
+        )
+        .unwrap();
+        let render = |hole| {
+            let fact = CResourceFact::own(CResource::Iterated(std::sync::Arc::new(
+                iterated.with_hole(Bitvector32Term::Constant(hole)),
+            )));
+            let mut labels = SnapshotLabels::default();
+            let mut text = render_resource_fact_labeled(&fact, &mut labels);
+            text.push_str(&labels.trace_legend());
+            text
+        };
+        let first = render(3);
+        let second = render(5);
+        assert!(
+            first.contains("guard<Int32>(value#1[k], stride=4) == 1"),
+            "{first}"
+        );
+        assert!(first.contains("element=memory("), "{first}");
+        assert!(first.contains("holes=[3]"), "{first}");
+        assert!(second.contains("holes=[5]"), "{second}");
+        assert!(
+            first.contains("flags") && first.contains("elements"),
+            "{first}"
+        );
+        assert!(!first.contains("source binding unavailable"), "{first}");
     }
 }

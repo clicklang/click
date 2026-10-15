@@ -75,6 +75,7 @@ const NIGHTLY: &[&str] = &[
     "bubble_sort3_loop_sorted.md",                                             // 0.6s
     "bubble_sort3_two_pass_sorted.md",                                         // 0.9s
     "byte_count_of_two_merged_branches_matches_the_c_count.md",                // 1.2s
+    "c_buffer_resource_modular_output.md",                                     // 0.5s
     "c_chained_field_access.md",                                               // 1.1s
     "c_contract_executes_status.md",                                           // 0.6s
     "c_contract_executes_status_nested.md",                                    // 0.9s
@@ -266,15 +267,7 @@ const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] 
             HiddenPrerequisiteRoute::KernelCondition,
             "decide_with_facts",
         ),
-        32,
-    ),
-    // `issues/simplify-step.md` step 5 drives these to zero.
-    (
-        (
-            HiddenPrerequisiteRoute::TacticSearch,
-            "fold projected body fact",
-        ),
-        4,
+        22,
     ),
 ];
 

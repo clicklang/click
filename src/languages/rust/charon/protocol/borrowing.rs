@@ -24,6 +24,9 @@ impl Adapter<'_> {
         let a::FnOperand::Regular(ptr) = &call.func else {
             return Ok(None);
         };
+        if self.is_dyn_fn_call(ptr) {
+            return Ok(None);
+        }
         let callee = self
             .krate
             .fun_decls

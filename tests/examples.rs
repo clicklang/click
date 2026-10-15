@@ -49,30 +49,7 @@ const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] 
             HiddenPrerequisiteRoute::KernelCondition,
             "decide_with_facts",
         ),
-        66,
-    ),
-    ((HiddenPrerequisiteRoute::KernelCondition, "path facts"), 10),
-    // `issues/simplify-step.md` step 5 drives these to zero.
-    (
-        (
-            HiddenPrerequisiteRoute::TacticSearch,
-            "have separation away from the frontier",
-        ),
-        1,
-    ),
-    (
-        (
-            HiddenPrerequisiteRoute::TacticSearch,
-            "fold unspellable body fact",
-        ),
-        1,
-    ),
-    (
-        (
-            HiddenPrerequisiteRoute::TacticSearch,
-            "fold projected body fact",
-        ),
-        14,
+        40,
     ),
 ];
 
@@ -2388,4 +2365,51 @@ fn uint64_successor_auto_answers_on_the_normal_cli_stack() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(String::from_utf8_lossy(&output.stdout).contains("1 selected proof verified"));
+}
+
+/// Modular pointer-field outputs must keep the same proof meaning after expansion.
+#[test]
+#[ignore = "nightly: fresh, expanded and retained buffer output checks"]
+fn c_buffer_resource_modular_output_expands_and_rechecks() {
+    limits::spawn(
+        "buffer output proof modes",
+        "click-buffer-output-modes".into(),
+        || {
+            let path = Path::new("mdtests/c_buffer_resource_modular_output.md");
+            let fixture = click::cli::parse_mdtest(
+                path,
+                include_str!("../mdtests/c_buffer_resource_modular_output.md"),
+            )
+            .unwrap();
+            let source = fixture.click_source.as_deref().unwrap();
+            let sources = source_refs(&fixture.c_sources);
+            verify_c0_sources(source, &sources).unwrap();
+            for name in ["init", "probe"] {
+                let expanded = click::surface::expand_c0_claim_source(
+                    source,
+                    &sources,
+                    name,
+                    click::surface::CProofClaim::Grouped,
+                )
+                .expect("the complete buffer output claim must expand");
+                verify_c0_sources(&expanded, &sources)
+                    .expect("the written buffer output certificate must check fresh");
+                let needle = format!("void {name}(");
+                let declaration = expanded.find(&needle).unwrap();
+                let offset = declaration + expanded[declaration..].find("ensures").unwrap();
+                let line = expanded[..offset]
+                    .bytes()
+                    .filter(|byte| *byte == b'\n')
+                    .count()
+                    + 1;
+                let column = expanded[..offset].rsplit('\n').next().unwrap().len() + 1;
+                let (session, _) =
+                    click::surface::C0VerificationSession::new(source, &sources).unwrap();
+                session
+                    .verify_at(&expanded, line, column)
+                    .expect("the expanded buffer output must check in its retained session");
+            }
+        },
+    )
+    .unwrap();
 }

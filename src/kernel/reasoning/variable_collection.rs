@@ -864,7 +864,7 @@ fn collect_c_value_bound_identities(
             if let Some(domain) = pointer.domain() {
                 collect_shared_integer_bound_identities(&domain.position, variables, _integer_seen);
             }
-            for designation in [pointer.pointer(), pointer.origin()] {
+            for designation in pointer.pointers() {
                 if let PointerBlock::PureFunctionApplication(application) = &designation.block
                     && _integer_seen.pointers.insert(application.id())
                 {
@@ -2125,9 +2125,8 @@ fn collect_c_value_integer_variables(
             collect_bitvector_integer_variables_seen(value, variables, seen)
         }
         CValue::Pointer(pointer) => {
-            collect_pointer_integer_variables(pointer.pointer(), variables, seen);
-            if pointer.origin() != pointer.pointer() {
-                collect_pointer_integer_variables(pointer.origin(), variables, seen);
+            for address in pointer.pointers() {
+                collect_pointer_integer_variables(address, variables, seen);
             }
             if let Some(domain) = pointer.domain() {
                 collect_integer_variables_seen(domain.position.as_ref(), variables, seen);
@@ -2748,8 +2747,9 @@ fn collect_capture_variables_in_c_value(
             collect_bitvector_capture_variables_seen(bits, variables, integer_seen)
         }
         CValue::Pointer(pointer) => {
-            collect_pointer_capture_variables(pointer.pointer(), variables, integer_seen);
-            collect_pointer_capture_variables(pointer.origin(), variables, integer_seen);
+            for address in pointer.pointers() {
+                collect_pointer_capture_variables(address, variables, integer_seen);
+            }
             if let Some(domain) = pointer.domain() {
                 collect_shared_integer_bitvector_capture_variables(
                     &domain.position,
@@ -3433,8 +3433,10 @@ fn collect_c_value_scope_summary(
         | CValue::Float32(term)
         | CValue::Float64(term) => collect_bitvector_scope_summary(term, summaries),
         CValue::Pointer(pointer) => {
-            let mut summary = collect_pointer_scope_summary(pointer.pointer(), summaries);
-            summary.merge(collect_pointer_scope_summary(pointer.origin(), summaries));
+            let mut summary = IntegerScopeSummary::default();
+            for address in pointer.pointers() {
+                summary.merge(collect_pointer_scope_summary(address, summaries));
+            }
             if let Some(domain) = pointer.domain() {
                 summary.merge(collect_integer_scope_summary_shared(
                     &domain.position,
@@ -4130,18 +4132,14 @@ fn collect_binder_variables_in_c_value(
             integer_seen,
         ),
         CValue::Pointer(pointer) => {
-            collect_pointer_binder_variables(
-                pointer.pointer(),
-                integer_variables,
-                bitvector_variables,
-                integer_seen,
-            );
-            collect_pointer_binder_variables(
-                pointer.origin(),
-                integer_variables,
-                bitvector_variables,
-                integer_seen,
-            );
+            for address in pointer.pointers() {
+                collect_pointer_binder_variables(
+                    address,
+                    integer_variables,
+                    bitvector_variables,
+                    integer_seen,
+                );
+            }
             if let Some(domain) = pointer.domain() {
                 collect_integer_binder_variables_shared(
                     &domain.position,
@@ -5109,9 +5107,8 @@ pub(crate) fn collect_c_value_bitvector_variables(
         | CValue::Float32(bits)
         | CValue::Float64(bits) => collect_bitvector_variables(bits, variables),
         CValue::Pointer(pointer) => {
-            collect_pointer_bitvector_variables(pointer, variables);
-            if let Some(origin) = pointer.retained_origin() {
-                collect_pointer_bitvector_variables(origin, variables);
+            for address in pointer.pointers() {
+                collect_pointer_bitvector_variables(address, variables);
             }
             if let Some(domain) = pointer.domain() {
                 collect_integer_capture_bitvector_variables(domain.position.as_ref(), variables);

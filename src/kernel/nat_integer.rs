@@ -77,28 +77,28 @@ pub(crate) fn check_nat_integer_law(name: &str, proposition: &Proposition) -> Op
         goal => (None, goal),
     };
     let valid = match (name, goal) {
-        ("nat_integer_zero", Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true)) => {
+        ("click::nat::nat_integer_zero", Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true)) => {
             guard.is_none() && observed_nat(left).is_some_and(|n| {
                 matches!(&n.node, AlgebraicTermNode::Constructor { variant, fields } if variant == "Zero" && fields.is_empty())
             }) && right.as_ref() == &IntegerTerm::constant_i64(0)
         }
-        ("nat_integer_succ", Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true)) => {
+        ("click::nat::nat_integer_succ", Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true)) => {
             let n = observed_nat(left)?;
             let AlgebraicTermNode::Constructor { variant, fields } = &n.node else { return None };
             let [AlgebraicValue::Algebraic(previous)] = fields.as_slice() else { return None };
             guard.is_none() && variant == "Succ" && right.as_ref() == &IntegerTerm::add(observe(previous.clone()), IntegerTerm::constant_i64(1))
         }
-        ("nat_integer_nonnegative", Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(left, right), true)) => {
+        ("click::nat::nat_integer_nonnegative", Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(left, right), true)) => {
             guard.is_none() && observed_nat(left).is_some() && right.as_ref() == &IntegerTerm::constant_i64(0)
         }
-        ("integer_nat_round_trip", Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true)) => {
+        ("click::nat::integer_nat_round_trip", Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true)) => {
             let z = converted_integer(observed_nat(left)?)?;
             right.as_ref() == z && guard == Some(&nonnegative(z.clone()))
         }
-        ("nat_integer_round_trip", Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))) => {
+        ("click::nat::nat_integer_round_trip", Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))) => {
             guard.is_none() && observed_nat(converted_integer(left)?) == Some(right)
         }
-        ("integer_to_nat_zero", Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))) => {
+        ("click::nat::integer_to_nat_zero", Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))) => {
             guard.is_none() && converted_integer(left) == Some(&IntegerTerm::constant_i64(0))
                 && right.algebraic_type == left.algebraic_type
                 && matches!(&right.node, AlgebraicTermNode::Constructor { variant, fields } if variant == "Zero" && fields.is_empty())
@@ -232,23 +232,26 @@ mod tests {
         for n in 0..8 {
             for (name, proposition) in [
                 (
-                    "nat_integer_zero",
+                    "click::nat::nat_integer_zero",
                     eq(observe(nat(0)), IntegerTerm::constant_i64(0)),
                 ),
                 (
-                    "nat_integer_succ",
+                    "click::nat::nat_integer_succ",
                     eq(
                         observe(nat(n + 1)),
                         IntegerTerm::add(observe(nat(n)), IntegerTerm::constant_i64(1)),
                     ),
                 ),
-                ("nat_integer_nonnegative", nonnegative(observe(nat(n)))),
                 (
-                    "nat_integer_round_trip",
+                    "click::nat::nat_integer_nonnegative",
+                    nonnegative(observe(nat(n))),
+                ),
+                (
+                    "click::nat::nat_integer_round_trip",
                     algebraic_eq(convert(observe(nat(n))), nat(n)),
                 ),
                 (
-                    "integer_to_nat_zero",
+                    "click::nat::integer_to_nat_zero",
                     algebraic_eq(convert(IntegerTerm::constant_i64(0)), nat(0)),
                 ),
             ] {
@@ -269,11 +272,13 @@ mod tests {
             let guarded =
                 Proposition::Implies(Box::new(nonnegative(value)), Box::new(conclusion.clone()));
             assert!(holds(
-                check_nat_integer_law("integer_nat_round_trip", &guarded)
+                check_nat_integer_law("click::nat::integer_nat_round_trip", &guarded)
                     .unwrap()
                     .proposition()
             ));
-            assert!(check_nat_integer_law("integer_nat_round_trip", &conclusion).is_none());
+            assert!(
+                check_nat_integer_law("click::nat::integer_nat_round_trip", &conclusion).is_none()
+            );
             assert_eq!(holds(&conclusion), z.to_i64() != Some(-1));
         }
         let ordinary = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
@@ -282,7 +287,7 @@ mod tests {
         ));
         assert!(
             check_nat_integer_law(
-                "nat_integer_zero",
+                "click::nat::nat_integer_zero",
                 &eq(ordinary, IntegerTerm::constant_i64(0))
             )
             .is_none()
@@ -295,14 +300,14 @@ mod tests {
         .into();
         assert!(
             check_nat_integer_law(
-                "nat_integer_zero",
+                "click::nat::nat_integer_zero",
                 &eq(observe(malformed), IntegerTerm::constant_i64(0))
             )
             .is_none()
         );
         assert!(
             check_nat_integer_law(
-                "nat_integer_succ",
+                "click::nat::nat_integer_succ",
                 &eq(observe(nat(1)), IntegerTerm::constant_i64(2))
             )
             .is_none()

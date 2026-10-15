@@ -10393,15 +10393,15 @@ fn uint64_integer_bridges_match_full_width_wrap_and_division_boundary_models() {
         actual == *expected
     }
     for name in [
-        "uint64_add_to_integer",
-        "uint64_subtract_to_integer",
-        "uint64_multiply_to_integer",
-        "uint64_divide_to_integer",
-        "uint64_remainder_to_integer",
-        "uint64_less_than_to_integer",
-        "uint64_less_than_implies_not_greater_equal",
-        "uint64_less_equal_to_integer",
-        "uint64_to_integer_less_equal_implies_less_equal",
+        "click::integer::uint64_add_to_integer",
+        "click::integer::uint64_subtract_to_integer",
+        "click::integer::uint64_multiply_to_integer",
+        "click::integer::uint64_divide_to_integer",
+        "click::integer::uint64_remainder_to_integer",
+        "click::integer::uint64_less_than_to_integer",
+        "click::integer::uint64_less_than_implies_not_greater_equal",
+        "click::integer::uint64_less_equal_to_integer",
+        "click::integer::uint64_to_integer_less_equal_implies_less_equal",
     ] {
         for a in [
             0,
@@ -10433,12 +10433,13 @@ fn uint64_integer_bridges_match_full_width_wrap_and_division_boundary_models() {
                     panic!("missing guard");
                 };
                 let allowed = match name {
-                    "uint64_add_to_integer" => a.checked_add(b).is_some(),
-                    "uint64_subtract_to_integer" => a.checked_sub(b).is_some(),
-                    "uint64_multiply_to_integer" => a.checked_mul(b).is_some(),
-                    "uint64_divide_to_integer" | "uint64_remainder_to_integer" => b != 0,
-                    "uint64_less_than_to_integer"
-                    | "uint64_less_than_implies_not_greater_equal" => a < b,
+                    "click::integer::uint64_add_to_integer" => a.checked_add(b).is_some(),
+                    "click::integer::uint64_subtract_to_integer" => a.checked_sub(b).is_some(),
+                    "click::integer::uint64_multiply_to_integer" => a.checked_mul(b).is_some(),
+                    "click::integer::uint64_divide_to_integer"
+                    | "click::integer::uint64_remainder_to_integer" => b != 0,
+                    "click::integer::uint64_less_than_to_integer"
+                    | "click::integer::uint64_less_than_implies_not_greater_equal" => a < b,
                     _ => a <= b,
                 };
                 assert_eq!(truth(guard), allowed, "{name}/{a}/{b}");
@@ -10457,7 +10458,8 @@ fn uint64_integer_bridges_match_full_width_wrap_and_division_boundary_models() {
                     assert!(truth(conclusion), "{name}/{a}/{b}");
                 } else if !matches!(
                     name,
-                    "uint64_divide_to_integer" | "uint64_remainder_to_integer"
+                    "click::integer::uint64_divide_to_integer"
+                        | "click::integer::uint64_remainder_to_integer"
                 ) {
                     assert!(
                         !truth(conclusion),
@@ -11665,7 +11667,10 @@ fn uint64_unpacking_rules_require_bounded_fields_and_preserve_packed_bits() {
     values.extend((0..16).map(|bit| 1u64 << bit));
     for &low in &values {
         for &high in &values {
-            for name in ["uint64_unpack_uint16_low", "uint64_unpack_uint16_high"] {
+            for name in [
+                "click::integer::uint64_unpack_uint16_low",
+                "click::integer::uint64_unpack_uint16_high",
+            ] {
                 let theorem = prove_uint64_integer_bridge(
                     name,
                     Bitvector32Term::UInt64Constant(low),

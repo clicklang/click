@@ -4295,10 +4295,16 @@ mod parity;
 mod array_lengths;
 #[path = "rust_import/array_values.rs"]
 mod array_values;
+#[path = "rust_import/capturing_closures.rs"]
+mod capturing_closures;
+#[path = "rust_import/closures.rs"]
+mod closures;
 #[path = "rust_import/extern_functions.rs"]
 mod extern_functions;
 #[path = "rust_import/function_pointers.rs"]
 mod function_pointers;
+#[path = "rust_import/parameterized_contracts.rs"]
+mod parameterized_contracts;
 
 #[path = "rust_import/loop_headers.rs"]
 mod loop_headers;

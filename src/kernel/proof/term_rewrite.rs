@@ -275,12 +275,20 @@ fn replace_binding_variable(
                     PointerBlock::Symbolic(_) | PointerBlock::FunctionSymbolic(_)
                 ) =>
             {
-                let mut replaced = pointer.pointer().clone();
-                replaced.block = match replaced.block {
+                // Rename the binder's block wherever the value names it: in
+                // its address and in its extent's start.
+                let old = pointer.block.clone();
+                let new = match old {
                     PointerBlock::FunctionSymbolic(_) => PointerBlock::FunctionSymbolic(variable),
                     _ => PointerBlock::Symbolic(variable),
                 };
-                pointer.replace_pointer(replaced);
+                *pointer = pointer.map_pointers(|address| {
+                    let mut renamed = address.clone();
+                    if renamed.block == old {
+                        renamed.block = new.clone();
+                    }
+                    renamed
+                });
             }
             _ => {}
         },
@@ -2574,7 +2582,18 @@ impl<'a> TermRewrite<'a> {
             CValue::Float32(v) => CValue::Float32(self.bits(v)),
             CValue::Float64(v) => CValue::Float64(self.bits(v)),
             CValue::Pointer(v) => {
-                let mut result = v.clone();
+                let adopted = if v.extent().is_none() {
+                    self.replaced_pointer_extent(v.pointer())
+                } else {
+                    None
+                };
+                let extent = adopted.or_else(|| v.extent().cloned()).map(|extent| {
+                    crate::kernel::SubobjectExtent {
+                        start: self.pointer(&extent.start),
+                        width: extent.width,
+                    }
+                });
+                let mut result = v.clone().with_extent(extent);
                 if let PointerBlock::Symbolic(variable) = &v.block
                     && v.domain().is_none()
                     && let Some(TypedCReplacement::PointerValue(replacement)) = self
@@ -3715,6 +3734,22 @@ impl<'a> TermRewrite<'a> {
         } else {
             crate::instrumentation::record_deterministic_work(work);
         }
+    }
+
+    /// The extent a value at `p` adopts when `p`'s block is a typed
+    /// variable replaced by a pointer value with an extent.
+    fn replaced_pointer_extent(&self, p: &Pointer) -> Option<crate::kernel::SubobjectExtent> {
+        let (PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable)) =
+            &p.block
+        else {
+            return None;
+        };
+        let Some(TypedCReplacement::PointerValue(replacement)) =
+            self.typed_variables.as_ref()?.c.get(variable)
+        else {
+            return None;
+        };
+        replacement.extent().cloned()
     }
 
     fn pointer(&mut self, p: &Pointer) -> Pointer {

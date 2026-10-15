@@ -46,9 +46,11 @@ whole program-language boundary. Rust follows once the shared borrowing model
 and that boundary have evidence behind them. Avoid doing both frontends
 simultaneously for the first milestone.
 
-The bounded C++ slice was P1 by explicit user direction and has landed. The
-selected safe-Rust and shared C/Rust checksum milestones are now also P1 by
-user direction; [rust-support.md](../issues/rust-support.md) owns that roadmap.
+The bounded C++ slice and the safe-Rust Adler-32 checksum milestone have
+landed and are the launch demonstrations for those languages. The remaining
+P1 work for both is a well-designed front end, installed and located without
+a repository checkout; [cpp-support.md](../issues/cpp-support.md) and
+[rust-support.md](../issues/rust-support.md) own it.
 The launch remains P1 -> unchanged Linux rbtree verification -> public launch
 with rbtree as the key demo. Broad C++ and Rust coverage remain later work.
 Neither a successful

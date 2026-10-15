@@ -4,6 +4,7 @@
 mod array_lengths_tests;
 mod assignment_operators;
 mod chunks;
+mod closures;
 mod constants;
 mod constructors;
 mod protocol;
@@ -17,6 +18,7 @@ mod split_slices_tests;
 use super::profile;
 use super::schema::{self as out, Expression as E, MirStatement as S, MirTerminator as T, Type};
 use crate::languages::compiler_process::{CompilerLimits, run_compiler};
+use charon_lib::ast::AstVisitable;
 use charon_lib::ast::from_rustc::LangItem;
 use charon_lib::{ast as a, ullbc_ast as u};
 use std::collections::{BTreeMap, BTreeSet};
@@ -313,6 +315,7 @@ impl Adapter<'_> {
             body: vec![],
             mir: None,
             external: true,
+            captures: 0,
             span: span(f.item_meta.span),
         })
     }
@@ -333,6 +336,12 @@ impl Adapter<'_> {
                 a::PathElem::Impl(a::ImplElem::Ty(binder)) if binder.params.is_empty() => {
                     let id = self.record_id(&binder.skip_binder)?;
                     super::names::push_impl_type(&mut encoded, &self.records[&id]);
+                }
+                a::PathElem::Builtin(a::BuiltinPathElem::Closure, d) => {
+                    super::names::push_path_segment(
+                        &mut encoded,
+                        &super::names::closure_segment(d.index() as u32),
+                    )
                 }
                 _ => return Err(unsupported("qualified function path component")),
             }
@@ -374,6 +383,13 @@ struct Adapter<'a> {
     records: BTreeMap<a::TypeDeclId, String>,
     functions: BTreeMap<a::FunDeclId, String>,
     destructors: BTreeMap<a::TypeDeclId, a::FunDeclId>,
+    /// Each closure's `ClosureAsFn` function, by the closure's name.
+    closure_shims: BTreeMap<a::FunDeclId, String>,
+    /// The `Fn::call` methods of closures, imported as the closures, with
+    /// each closure's state type.
+    closure_calls: BTreeMap<a::FunDeclId, a::TypeDeclId>,
+    /// The variables each closure captures, by its state type.
+    closure_captures: BTreeMap<a::TypeDeclId, Vec<closures::Capture>>,
 }
 impl Adapter<'_> {
     fn ty(&self, t: &a::Ty) -> Result<Type, String> {
@@ -406,6 +422,28 @@ impl Adapter<'_> {
                     element: Box::new(element),
                 }
             }
+            // A `&dyn Fn(A) -> R` is a callable value, as a `fn` pointer is.
+            a::TyKind::Ref(_, pointee, a::RefKind::Shared)
+                if matches!(pointee.kind(), a::TyKind::DynTrait(_)) =>
+            {
+                let a::TyKind::DynTrait(predicate) = pointee.kind() else {
+                    unreachable!()
+                };
+                let (parameters, result) = self.dyn_fn_signature(predicate)?;
+                let scalar = |ty: &Type| {
+                    matches!(
+                        ty,
+                        Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Usize | Type::Bool
+                    )
+                };
+                if !parameters.iter().all(scalar) || !(scalar(&result) || result == Type::Unit) {
+                    return Err(unsupported("dyn Fn of non-scalar parameters or result"));
+                }
+                Type::FnPointer {
+                    parameters,
+                    result: Box::new(result),
+                }
+            }
             a::TyKind::Ref(_, pointee, kind) => Type::Reference {
                 mutable: *kind == a::RefKind::Mut,
                 pointee: Box::new(self.ty(pointee)?),
@@ -430,6 +468,8 @@ impl Adapter<'_> {
             a::TyKind::Adt(_) if self.chunk_type(t) => Type::ChunkIterator,
             a::TyKind::Adt(_) if self.chunk_option_type(t) => Type::ChunkOption,
             a::TyKind::Adt(r) if r.id == a::TypeDeclId::UNIT => Type::Unit,
+            // A closure that captures nothing has no state to carry.
+            a::TyKind::Adt(r) if self.empty_closure_state(r.id) => Type::Unit,
             a::TyKind::FnPtr(binder) => {
                 let signature = &binder.skip_binder;
                 if signature.is_unsafe || signature.abi != a::Abi::Rust || signature.is_variadic {
@@ -517,6 +557,7 @@ impl Adapter<'_> {
 struct BodyAdapter<'a, 'b> {
     adapter: &'a Adapter<'b>,
     body: &'a u::ExprBody,
+    plumbing: closures::ClosurePlumbing,
     names: BTreeMap<a::LocalId, String>,
     slice_pairs: BTreeMap<a::LocalId, [String; 2]>,
     iterator_refs: BTreeMap<a::LocalId, a::LocalId>,
@@ -525,6 +566,13 @@ struct BodyAdapter<'a, 'b> {
 impl BodyAdapter<'_, '_> {
     /// Named interpretations for compiler-resolved slice length and unsigned From.
     fn modeled_call(&self, t: &u::Terminator) -> Result<Option<S>, String> {
+        // A call through a `&dyn Fn` is no modeled library call.
+        if let u::TerminatorKind::Call { call, .. } = &t.kind
+            && let a::FnOperand::Regular(pointer) = &call.func
+            && self.adapter.is_dyn_fn_call(pointer)
+        {
+            return Ok(None);
+        }
         if let Some(protocol::BorrowedProtocolCall::Next {
             source,
             option,
@@ -816,6 +864,15 @@ impl BodyAdapter<'_, '_> {
         call: &a::Call,
         target: u::BlockId,
     ) -> Result<T, String> {
+        self.pointer_call_with(pointer, &call.args, call, target)
+    }
+    fn pointer_call_with(
+        &self,
+        pointer: &a::Operand,
+        args: &[a::Operand],
+        call: &a::Call,
+        target: u::BlockId,
+    ) -> Result<T, String> {
         let (a::Operand::Move(place) | a::Operand::Copy(place)) = pointer else {
             return Err(unsupported("call through a constant function pointer"));
         };
@@ -829,15 +886,14 @@ impl BodyAdapter<'_, '_> {
             return Err(unsupported("projected call destination"));
         };
         if call.safety == a::CallSafety::Unsafe
-            || call.args.len() != parameters.len()
+            || args.len() != parameters.len()
             || self.adapter.ty(&call.dest.ty)? != *result
         {
             return Err(unsupported(
                 "function pointer call signature/destination type",
             ));
         }
-        let arguments = call
-            .args
+        let arguments = args
             .iter()
             .zip(&parameters)
             .map(|(argument, parameter)| {
@@ -1028,6 +1084,7 @@ impl BodyAdapter<'_, '_> {
                         .adapter
                         .functions
                         .get(&id)
+                        .or_else(|| self.adapter.closure_shims.get(&id))
                         .ok_or_else(|| unsupported("function pointer to an unmodeled function"))?
                         .clone(),
                     value_type: self.adapter.ty(ty)?,
@@ -1073,6 +1130,9 @@ impl BodyAdapter<'_, '_> {
         })
     }
     fn statement(&self, s: &u::Statement) -> Result<Option<S>, String> {
+        if let Some(statement) = self.closure_statement(s)? {
+            return Ok(statement);
+        }
         if let Some(statement) = self.iterator_statement(s)? {
             return Ok(statement);
         }
@@ -1080,7 +1140,9 @@ impl BodyAdapter<'_, '_> {
             u::StatementKind::Assign(p, v) => {
                 if self.adapter.ty(&p.ty)? == Type::Unit {
                     // Only the literal unit value can disappear; never discard a call/read.
-                    if !matches!(v, a::Rvalue::Aggregate(a::AggregateKind::Adt(r, None, None), fields) if r.id == a::TypeDeclId::UNIT && fields.is_empty())
+                    if !matches!(v, a::Rvalue::Aggregate(a::AggregateKind::Adt(r, None, None), fields)
+                        if (r.id == a::TypeDeclId::UNIT || self.adapter.empty_closure_state(r.id))
+                            && fields.is_empty())
                     {
                         return Err(unsupported("nonliteral unit assignment"));
                     }
@@ -1261,6 +1323,9 @@ impl BodyAdapter<'_, '_> {
             }
             u::TerminatorKind::Call { call, target, .. } => {
                 let ptr = match &call.func {
+                    a::FnOperand::Regular(ptr) if self.adapter.is_dyn_fn_call(ptr) => {
+                        return self.dyn_fn_call(call, *target);
+                    }
                     a::FnOperand::Regular(ptr) => ptr,
                     a::FnOperand::Dynamic(pointer) => {
                         return self.pointer_call(pointer, call, *target);
@@ -1479,9 +1544,23 @@ pub(super) fn decode_crate(
         records: BTreeMap::new(),
         functions: BTreeMap::new(),
         destructors: BTreeMap::new(),
+        closure_shims: BTreeMap::new(),
+        closure_calls: BTreeMap::new(),
+        closure_captures: BTreeMap::new(),
     };
+    if crate_config.is_some() {
+        adapter.record_closure_captures()?;
+    }
     for (id, record) in krate.type_decls.iter_indexed() {
         if record.item_meta.is_local {
+            // A closure's state is not a record: its captures become the
+            // closure's leading parameters.
+            if let a::TypeSource::Closure { .. } = &record.src {
+                if !record.generics.types.is_empty() {
+                    return Err(unsupported("generic closure"));
+                }
+                continue;
+            }
             if !record.generics.types.is_empty()
                 || !record.generics.const_generics.is_empty()
                 || !matches!(record.src, a::TypeSource::Normal)
@@ -1503,6 +1582,13 @@ pub(super) fn decode_crate(
             continue;
         }
         let name = match &f.src {
+            a::FunSource::Normal
+                if crate_config.is_some() && adapter.closure_as_fn_name(f)?.is_some() =>
+            {
+                let closure = adapter.closure_as_fn_name(f)?.unwrap();
+                adapter.closure_shims.insert(id, closure);
+                continue;
+            }
             a::FunSource::Normal => {
                 if crate_config.is_some() {
                     adapter.qualified_function_name(&f.item_meta.name)?
@@ -1520,6 +1606,30 @@ pub(super) fn decode_crate(
                     .get(trait_ref.id)
                     .ok_or_else(|| unsupported("missing trait"))?;
                 if tr.item_meta.lang_item == Some(LangItem::Destruct) {
+                    continue;
+                }
+                // A closure's `Fn::call` is the closure; its `FnMut` and
+                // `FnOnce` methods only forward to it.
+                if matches!(
+                    tr.item_meta.lang_item,
+                    Some(LangItem::Fn | LangItem::FnMut | LangItem::FnOnce)
+                ) {
+                    let imp = krate
+                        .trait_impls
+                        .get(impl_ref.id)
+                        .ok_or_else(|| unsupported("missing Fn impl"))?;
+                    let (closure, state) = adapter
+                        .closure_impl_path(imp)
+                        .ok_or_else(|| unsupported("Fn trait implementation outside a closure"))?;
+                    if crate_config.is_none() {
+                        return Err(unsupported("closure outside crate imports"));
+                    }
+                    if tr.item_meta.lang_item != Some(LangItem::Fn) {
+                        continue;
+                    }
+                    adapter.closure_calls.insert(id, state);
+                    let name = adapter.closure_name(closure)?;
+                    adapter.functions.insert(id, name);
                     continue;
                 }
                 if tr.item_meta.lang_item != Some(LangItem::Drop) {
@@ -1547,6 +1657,17 @@ pub(super) fn decode_crate(
                 }
                 format!("{}_drop", adapter.records[&rec])
             }
+            // A `dyn Fn` value's vtable and its shims carry no behavior the
+            // importer reads: a call through the value is checked against a
+            // contract of the value, not the vtable's entries.
+            a::FunSource::GlobalInitializer(reference)
+                if krate.global_decls.get(reference.id).is_some_and(|global| {
+                    matches!(global.src, a::GlobalSource::VTableInstance { .. })
+                }) =>
+            {
+                continue;
+            }
+            a::FunSource::VTableShim => continue,
             a::FunSource::GlobalInitializer(reference) => {
                 adapter.constant_initializer_name(id, f, reference)?
             }
@@ -1624,13 +1745,34 @@ pub(super) fn decode_crate(
         let a::Body::Unstructured(body) = &f.body else {
             return Err(unsupported("missing or non-CFG source body"));
         };
+        // A closure's parameters are its captures, then the fields of its
+        // argument tuple.
+        let captures = adapter.closure_calls.get(id).map(|state| {
+            adapter
+                .closure_captures
+                .get(state)
+                .cloned()
+                .unwrap_or_default()
+        });
+        let closure_body;
+        let body = if let Some(captures) = &captures {
+            closure_body = closures::closure_call_body(body, captures)?;
+            &closure_body
+        } else {
+            body
+        };
+        let inputs = if let Some(captures) = &captures {
+            closures::closure_parameter_types(&f.signature, captures)?
+        } else {
+            f.signature.inputs.clone()
+        };
         if adapter.crate_mode {
             let return_local = body
                 .locals
                 .locals
                 .first()
                 .ok_or_else(|| unsupported("missing function return local"))?;
-            if body.locals.arg_count != f.signature.inputs.len()
+            if body.locals.arg_count != inputs.len()
                 || adapter.ty(&return_local.ty)? != adapter.ty(&f.signature.output)?
             {
                 return Err(unsupported("function body return/argument signature"));
@@ -1641,7 +1783,7 @@ pub(super) fn decode_crate(
                 .iter()
                 .skip(1)
                 .take(body.locals.arg_count)
-                .zip(&f.signature.inputs)
+                .zip(&inputs)
             {
                 if adapter.ty(&local.ty)? != adapter.ty(ty)? {
                     return Err(unsupported("function parameter local type"));
@@ -1649,6 +1791,7 @@ pub(super) fn decode_crate(
             }
         }
         let (iterator_refs, iterator_discriminants) = protocol::bindings(&adapter, body)?;
+        let plumbing = adapter.closure_plumbing(body)?;
         let mut names = BTreeMap::new();
         let mut slice_pairs = BTreeMap::new();
         let mut parameters = Vec::new();
@@ -1663,6 +1806,9 @@ pub(super) fn decode_crate(
             }
         }
         for local in &body.locals.locals {
+            if plumbing.elided.contains(&local.index) {
+                continue;
+            }
             let param = local.index.index() > 0 && local.index.index() <= body.locals.arg_count;
             let n = if param {
                 local
@@ -1736,6 +1882,7 @@ pub(super) fn decode_crate(
         let b = BodyAdapter {
             adapter: &adapter,
             body,
+            plumbing,
             names,
             slice_pairs,
             iterator_refs,
@@ -1807,6 +1954,7 @@ pub(super) fn decode_crate(
             body: vec![],
             mir: Some(out::MirBody { locals, blocks }),
             external: false,
+            captures: captures.as_ref().map_or(0, Vec::len),
             span: span(f.item_meta.span),
         });
     }

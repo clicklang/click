@@ -3765,8 +3765,11 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                             crate::kernel::IntegerTerm::Constant(0.into()),
                         );
                         let required = Proposition::ConditionIs(nonnegative, true);
-                        if super::check_nat_integer_law("nat_integer_nonnegative", &required)
-                            .is_none()
+                        if super::check_nat_integer_law(
+                            "click::nat::nat_integer_nonnegative",
+                            &required,
+                        )
+                        .is_none()
                         {
                             retain_required_integer_obligation(
                                 &mut obligations,

@@ -399,7 +399,11 @@ fn canonical_c_memory_deep_uncached(memory: &CMemory) -> CMemory {
                 CValue::Pointer(pointer) => {
                     let mut value = pointer.clone();
                     value.replace_pointer(canonicalize_pointer_loads(pointer.pointer()));
-                    CValue::Pointer(value)
+                    CValue::Pointer(
+                        value
+                            .with_pointee_volatile(false)
+                            .with_pointee_constant(false),
+                    )
                 }
             };
             (key, value)
@@ -463,7 +467,11 @@ fn canonical_c_memory_deep_uncached(memory: &CMemory) -> CMemory {
             CValue::Pointer(pointer) => {
                 let mut value = pointer.clone();
                 value.replace_pointer(canonicalize_pointer_loads(pointer.pointer()));
-                CValue::Pointer(value)
+                CValue::Pointer(
+                    value
+                        .with_pointee_volatile(false)
+                        .with_pointee_constant(false),
+                )
             }
         };
         std::sync::Arc::make_mut(&mut canonical.union_cells).insert((key, *c_type), value);
@@ -1994,36 +2002,6 @@ pub(super) fn with_extended_dag_bridging<T>(body: impl FnOnce() -> T) -> T {
     result
 }
 
-pub(in crate::kernel) fn exact_separation_fact_covers_range_and_pointer(
-    fact: &Proposition,
-    range: &CMemoryRange,
-    pointer: &Pointer,
-    assumptions: &PureFactContext,
-) -> bool {
-    let Some((left, right)) = fact.memory_separation() else {
-        return false;
-    };
-    let (left, right) = (left.clone(), right.clone());
-    if assumptions.memory_ranges_overlap_after_base_equality(&left, &right) {
-        return false;
-    }
-    super::assumptions::memory_range_shallowly_contained_with_facts(range, &left, assumptions)
-        && super::assumptions::pointer_in_memory_range_shallow_with_facts(
-            pointer,
-            &right,
-            assumptions,
-        )
-        || super::assumptions::memory_range_shallowly_contained_with_facts(
-            range,
-            &right,
-            assumptions,
-        ) && super::assumptions::pointer_in_memory_range_shallow_with_facts(
-            pointer,
-            &left,
-            assumptions,
-        )
-}
-
 pub(in crate::kernel) fn forward_range_offset_from_pointer(
     range: &CMemoryRange,
     pointer: &Pointer,
@@ -2074,6 +2052,23 @@ pub(in crate::kernel) fn direct_constant_element_index(
 /// access is only outside the range when *every* element it touches is.
 pub(in crate::kernel) fn access_element_span(bytes: u32, element_width: u32) -> Option<i64> {
     (element_width > 0).then(|| i64::from(bytes.div_ceil(element_width).max(1)))
+}
+
+// Probe the original indexed spelling as well as one exact concrete alias.
+// Aliases only choose buckets; retained membership still authenticates the
+// original address and every byte of the access.
+fn separation_index_blocks(pointer: &Pointer, assumptions: &PureFactContext) -> Vec<PointerBlock> {
+    let mut blocks = vec![pointer.block.clone()];
+    if let Some(alias) = assumptions.exact_pointer_aliases(pointer).find(|alias| {
+        !matches!(
+            alias.block,
+            PointerBlock::Symbolic(_) | PointerBlock::FunctionSymbolic(_)
+        )
+    }) && alias.block != pointer.block
+    {
+        blocks.push(alias.block.clone());
+    }
+    blocks
 }
 
 /// Whether the `bytes` bytes at `pointer` can be shown to miss every byte of
@@ -2127,13 +2122,42 @@ pub(in crate::kernel) fn typed_range_disjoint_from_pointer_evidence(
             },
         )));
     }
-    if let Some(fact) = assumptions.prop_facts.iter().find(|fact| {
-        exact_separation_fact_covers_range_and_pointer(fact, range, pointer, assumptions)
+    let range_blocks = separation_index_blocks(range.base(), assumptions);
+    let access_blocks = separation_index_blocks(pointer, assumptions);
+    for (fact, left, right) in range_blocks.iter().flat_map(|range_block| {
+        access_blocks.iter().flat_map(move |access_block| {
+            assumptions.memory_separation_candidates(range_block, access_block)
+        })
     }) {
-        crate::kernel::record_implicit_reasoning_provenance(assumptions, fact);
-        return Some(RangeDisjointFromPointerEvidence::ExactSeparationFact(
-            fact.clone(),
-        ));
+        if fact.memory_separation().is_none()
+            || assumptions.memory_ranges_overlap_after_base_equality(left, right)
+        {
+            continue;
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        for (range_member, access_member) in [(left, right), (right, left)] {
+            if !crate::kernel::assumptions::memory_range_shallowly_contained_with_facts(
+                range,
+                range_member,
+                assumptions,
+            ) {
+                continue;
+            }
+            let Some(membership) =
+                AccessInRangeEvidence::for_access(pointer, bytes, access_member, assumptions)
+            else {
+                continue;
+            };
+            crate::kernel::record_implicit_reasoning_provenance(assumptions, fact);
+            return Some(RangeDisjointFromPointerEvidence::ExactSeparationFact(
+                Box::new(SeparatedRangeEvidence {
+                    fact: fact.clone(),
+                    range_member: range_member.clone(),
+                    access_member: access_member.clone(),
+                    membership,
+                }),
+            ));
+        }
     }
     // Native footprints need native separation evidence, never a signed
     // forward-offset certificate. Distinct blocks and exact facts above

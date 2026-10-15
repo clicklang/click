@@ -211,6 +211,7 @@ pub(in crate::kernel) fn memory_effect_execution_facts(
     // the corresponding explicit transport step.
     facts.persistent_facts().filtered(|fact| {
         fact.transport_theorem().is_some()
+            || fact.reference_observation.is_some()
             || matches!(
                 fact.proposition(),
                 Proposition::CMemoryMutatesOnly { .. }
@@ -1579,6 +1580,25 @@ fn merge_facts_with_changes(
     let mut saw_memory_effect = false;
     for (source_index, fact) in suffix.iter().enumerate() {
         let before = facts.len();
+        // These private records describe completed, checked accesses, not
+        // conditions selecting a path. Keep each producer occurrence even
+        // when another access has the same semantic memory proposition.
+        // Appending the selected delta also avoids searching old facts for
+        // a source observation that must not be deduplicated.
+        if fact.is_certified()
+            && !fact.is_public()
+            && (fact.reference_observation.is_some()
+                || fact
+                    .certified_store_data()
+                    .is_some_and(|store| store.source.as_ref().is_some()))
+        {
+            crate::instrumentation::record_deterministic_work(1);
+            saw_memory_effect |= fact.certified_store_data().is_some();
+            facts.push(fact.clone());
+            appended.push(source_index);
+            changed.push(before);
+            continue;
+        }
         add_path_fact_with_visibility_after_effect(
             &mut facts,
             assumptions,

@@ -76,7 +76,9 @@ documentation inventory keep the following accepted words synchronized.
 | `as`, `else`, `ensuring`, `then` | Names and branches inside structural proof forms. `as` also introduces the target contract's proof instances on an `executes` conclusion. |
 | `function`, `loop`, `statement`, `assignment`, `read`, `back_edge`, `entry`, `exit` | Program-region and program-point selectors. `assignment(local, N)`, `read(N)` and `back_edge()` are execution targets only. |
 
-See [Tactics](../tactics/index.md) for tactic syntax and classification. A word
+See [Tactics](../tactics/index.md) for tactic syntax and classification, and
+[Core tactics](../tactics/index.md#core-tactics) for the ones a hand-written
+proof needs; the other tactic words are specialized or expansion output. A word
 listed here isn't necessarily valid in every identifier or expression
 position; the construct entry defines its allowed context.
 

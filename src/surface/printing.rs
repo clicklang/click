@@ -249,6 +249,19 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 ),
             );
         }
+        ProofTactic::UnfoldWitnesses { resource, names } => line(
+            output,
+            &prefix,
+            &format!(
+                "let {{ {} }} = unfold({});",
+                names
+                    .iter()
+                    .map(|(slot, name)| format!("{slot}: {name}"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                format_resource_target(resource)
+            ),
+        ),
         ProofTactic::UnfoldResource(resource) => line(
             output,
             &prefix,
@@ -465,7 +478,14 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 &format!("open({}) {{", format_resource_call(&open.resource)),
             );
             write_tactics(output, &open.tactics, indent + 1);
-            line(output, &prefix, "}");
+            match &open.close_proof {
+                Some(close_proof) => {
+                    line(output, &prefix, "} by {");
+                    write_tactics(output, close_proof, indent + 1);
+                    line(output, &prefix, "}");
+                }
+                None => line(output, &prefix, "}"),
+            }
         }
         ProofTactic::If(proof_if) => {
             output.push_str(&prefix);

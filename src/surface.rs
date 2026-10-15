@@ -964,6 +964,10 @@ pub struct TheoremExecution {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractDefinition {
     proof_parameters: Option<Vec<ResourceClause>>,
+    /// Value parameters, `let amount: int32;`, in declaration order. They are
+    /// the last parameters of the block's signature and are not part of the
+    /// function type the contract applies to.
+    value_parameters: Vec<String>,
     function_block: FunctionBlock,
 }
 
@@ -3662,6 +3666,13 @@ pub enum ProofTactic {
         premises: Vec<ClickProposition>,
     },
     UnfoldResource(ResourceClause),
+    /// `let { witness: name, ... } = unfold(resource)` on a declared
+    /// resource: the unfold, with each named `let ... where` witness of the
+    /// opened body bound to a proof name.
+    UnfoldWitnesses {
+        resource: ResourceClause,
+        names: Vec<(String, String)>,
+    },
     FoldResource(ResourceClause),
     Induct {
         parameter: String,
@@ -3774,10 +3785,16 @@ fn tactic_sorry_outside_have(tactic: &ProofTactic, in_have: bool) -> bool {
                 .any(|tactic| tactic_sorry_outside_have(tactic, true)),
             SourceProof::Default | SourceProof::Tactic(_) => false,
         },
-        ProofTactic::Open(open) => open
-            .tactics
-            .iter()
-            .any(|tactic| tactic_sorry_outside_have(tactic, in_have)),
+        // The close's `by` proves a body fact as a `have` does.
+        ProofTactic::Open(open) => {
+            open.tactics
+                .iter()
+                .any(|tactic| tactic_sorry_outside_have(tactic, in_have))
+                || open
+                    .close_proof
+                    .as_ref()
+                    .is_some_and(|body| tactic_sorry_outside_have_in(body, true))
+        }
         ProofTactic::If(proof_if) => {
             tactic_sorry_outside_have_in(&proof_if.then_tactics, in_have)
                 || tactic_sorry_outside_have_in(&proof_if.else_tactics, in_have)
@@ -4298,6 +4315,13 @@ pub enum ProofStep {
         premises: Vec<ClickProposition>,
     },
     UnfoldResource(ResourceClause),
+    /// `let { witness: name, ... } = unfold(resource)` on a declared
+    /// resource: the unfold, with each named `let ... where` witness of the
+    /// opened body bound to a proof name.
+    UnfoldWitnesses {
+        resource: ResourceClause,
+        names: Vec<(String, String)>,
+    },
     FoldResource(ResourceClause),
     Induct {
         parameter: String,
@@ -4354,6 +4378,8 @@ pub enum ProofStep {
     Open {
         resource: ResourceClause,
         proof: Box<ProofCertificate>,
+        /// The closing fold's proof of its one open body fact.
+        close_proof: Option<Box<ProofCertificate>>,
     },
     If {
         condition: ClickProposition,
@@ -4548,7 +4574,19 @@ pub(crate) fn proof_step_contains_arithmetic_using(step: &ProofStep) -> bool {
                 }
                 ProofStep::CloseInvariantsBy(proof)
                 | ProofStep::Have { proof, .. }
-                | ProofStep::Open { proof, .. } => pending.extend(proof.steps.iter()),
+                | ProofStep::Open {
+                    proof,
+                    close_proof: None,
+                    ..
+                } => pending.extend(proof.steps.iter()),
+                ProofStep::Open {
+                    proof,
+                    close_proof: Some(close_proof),
+                    ..
+                } => {
+                    pending.extend(proof.steps.iter());
+                    pending.extend(close_proof.steps.iter());
+                }
                 ProofStep::StepProved { step, proof } => {
                     pending.push(step);
                     match proof {
@@ -4682,6 +4720,10 @@ impl ProofStep {
                 premises: premises.clone(),
             },
             ProofTactic::UnfoldResource(resource) => Self::UnfoldResource(resource.clone()),
+            ProofTactic::UnfoldWitnesses { resource, names } => Self::UnfoldWitnesses {
+                resource: resource.clone(),
+                names: names.clone(),
+            },
             ProofTactic::FoldResource(resource) => Self::FoldResource(resource.clone()),
             ProofTactic::ConstructResource(resource) => Self::ConstructResource(resource.clone()),
             ProofTactic::Induct {
@@ -4803,6 +4845,11 @@ impl ProofStep {
                         .map(Self::from_validated_tactic)
                         .collect(),
                 )),
+                close_proof: proof_open.close_proof.as_ref().map(|body| {
+                    Box::new(ProofCertificate::from_validated_steps(
+                        body.iter().map(Self::from_validated_tactic).collect(),
+                    ))
+                }),
             },
             ProofTactic::If(proof_if) => Self::If {
                 condition: proof_if.condition.clone(),
@@ -4940,6 +4987,10 @@ impl ProofStep {
                 premises: premises.clone(),
             },
             Self::UnfoldResource(resource) => ProofTactic::UnfoldResource(resource.clone()),
+            Self::UnfoldWitnesses { resource, names } => ProofTactic::UnfoldWitnesses {
+                resource: resource.clone(),
+                names: names.clone(),
+            },
             Self::FoldResource(resource) => ProofTactic::FoldResource(resource.clone()),
             Self::ConstructResource(resource) => ProofTactic::ConstructResource(resource.clone()),
             Self::Induct {
@@ -5039,9 +5090,14 @@ impl ProofStep {
                 proposition: proposition.clone(),
                 proof: proof.to_source_proof(),
             }),
-            Self::Open { resource, proof } => ProofTactic::Open(ProofOpen {
+            Self::Open {
+                resource,
+                proof,
+                close_proof,
+            } => ProofTactic::Open(ProofOpen {
                 resource: resource.clone(),
                 tactics: proof.to_proof_tactics(),
+                close_proof: close_proof.as_ref().map(|body| body.to_proof_tactics()),
             }),
             Self::If {
                 condition,
@@ -5204,7 +5260,9 @@ fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::UnfoldFunction(_) | ProofStep::PeelFunction { .. } => {
             TacticClass::Simple(SimpleTactic::UnfoldFunction)
         }
-        ProofStep::UnfoldResource(_) => TacticClass::Simple(SimpleTactic::UnfoldResource),
+        ProofStep::UnfoldResource(_) | ProofStep::UnfoldWitnesses { .. } => {
+            TacticClass::Simple(SimpleTactic::UnfoldResource)
+        }
         ProofStep::ObserveResource(_) => TacticClass::Simple(SimpleTactic::ObserveResource),
         ProofStep::Iterated(_) => TacticClass::Simple(SimpleTactic::IteratedOwnership),
         ProofStep::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
@@ -5389,9 +5447,17 @@ fn validate_certificate_tactics(
                         unreachable!("tactic class and variant must agree")
                     };
                     path.push(CertificatePathSegment::OpenBody);
-                    let result = validate_certificate_tactics(&proof_open.tactics, path);
+                    validate_certificate_tactics(&proof_open.tactics, path)?;
                     path.pop();
-                    result
+                    match &proof_open.close_proof {
+                        Some(close_proof) => {
+                            path.push(CertificatePathSegment::StepBody);
+                            let result = validate_certificate_tactics(close_proof, path);
+                            path.pop();
+                            result
+                        }
+                        None => Ok(()),
+                    }
                 }
                 TacticClass::Control(ControlTactic::If) => {
                     let ProofTactic::If(proof_if) = tactic else {
@@ -5556,7 +5622,9 @@ impl ProofTactic {
             Self::UnfoldFunction(_) | Self::PeelFunction { .. } => {
                 TacticClass::Simple(SimpleTactic::UnfoldFunction)
             }
-            Self::UnfoldResource(_) => TacticClass::Simple(SimpleTactic::UnfoldResource),
+            Self::UnfoldResource(_) | Self::UnfoldWitnesses { .. } => {
+                TacticClass::Simple(SimpleTactic::UnfoldResource)
+            }
             Self::ObserveResource(_) => TacticClass::Simple(SimpleTactic::ObserveResource),
             Self::Iterated(_) => TacticClass::Simple(SimpleTactic::IteratedOwnership),
             Self::Induct { .. } => TacticClass::Simple(SimpleTactic::Induct),
@@ -5672,6 +5740,26 @@ impl ProofHave {
 pub struct ProofOpen {
     resource: ResourceClause,
     tactics: Vec<ProofTactic>,
+    /// `open(r) { ... } by { ... }`: the proof of the one body fact the
+    /// scope's closing fold leaves open, as `fold(r) by { ... }` proves a
+    /// fold's.
+    close_proof: Option<Vec<ProofTactic>>,
+}
+
+impl ProofOpen {
+    /// The proof a deferred close of `open(resource)` recorded for the body
+    /// fact its closing fold left open: an `open` with no body, which the
+    /// certificate attaches to the scope it closes as that scope's `by`.
+    pub(crate) fn deferred_close_proof(
+        resource: ResourceClause,
+        close_proof: Vec<ProofTactic>,
+    ) -> Self {
+        Self {
+            resource,
+            tactics: Vec::new(),
+            close_proof: Some(close_proof),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -7588,11 +7676,21 @@ impl ContractDefinition {
         &self.function_block
     }
 
+    /// The value parameters, `let amount: int32;`, in declaration order.
+    pub fn value_parameters(&self) -> &[String] {
+        &self.value_parameters
+    }
+
+    /// The parameters of the function type the contract applies to: the
+    /// signature's, without the trailing value parameters.
+    pub fn call_parameters(&self) -> &[FunctionParameter] {
+        let parameters = self.function_block.signature().parameters();
+        &parameters[..parameters.len() - self.value_parameters.len()]
+    }
+
     pub fn function_pointer_type(&self) -> C0Type {
         let parameter_types = self
-            .function_block
-            .signature()
-            .parameters()
+            .call_parameters()
             .iter()
             .map(|parameter| {
                 (
@@ -8408,7 +8506,12 @@ fn collect_unfold_tactic_names(tactics: &[ProofTactic], names: &mut Vec<String>)
                     collect_unfold_tactic_names(tactics, names);
                 }
             }
-            ProofTactic::Open(open) => collect_unfold_tactic_names(&open.tactics, names),
+            ProofTactic::Open(open) => {
+                collect_unfold_tactic_names(&open.tactics, names);
+                if let Some(close_proof) = &open.close_proof {
+                    collect_unfold_tactic_names(close_proof, names);
+                }
+            }
             ProofTactic::If(proof_if) => {
                 collect_unfold_tactic_names(&proof_if.then_tactics, names);
                 collect_unfold_tactic_names(&proof_if.else_tactics, names);

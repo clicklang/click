@@ -24,7 +24,7 @@ struct node* list_empty() {
     ensures aligned(result, 8);
 } by {
     execute();
-    fold(marked_list(result));
+    fold(marked_list(result)) by { simp(); }
     simp();
 }
 
@@ -40,9 +40,7 @@ struct node* list_prepend(int32 value, struct node* tail) {
     if result == tail {
         simp();
     } else {
-        // The tag bit `fold` needs below the stored pointer.
-        have ((uint64)tail & 1) == 0 by auto;
-        fold(marked_list(result));
+        fold(marked_list(result)) by { simp(); }
         simp();
     }
 }

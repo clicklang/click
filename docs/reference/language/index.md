@@ -2162,6 +2162,16 @@ clearing tag bits needs the tag proven below 4, and a function such as
 second fact `(p->__rb_parent_color & 1) == color_bit(color)` then ties the bit
 to the model.
 
+Resource facts may compose nonrecursive, read-free model getters, such as
+`child(child(model))`. Inspection checks the caller's argument reads and the
+written getter body separately; each read-free definition is inspected once.
+Nested syntax does not imply source recursion. Recursive resource-fact
+inspection remains rejected, and a read hidden in a getter argument still
+needs a covering owned or viewed resource. The fixtures
+`resource_fact_accepts_nested_model_getters.md`,
+`resource_fact_still_rejects_recursive_getters.md`, and
+`resource_fact_nested_getter_argument_requires_authority.md` cover these rules.
+
 There is no `else`: when the guard is false, the body is empty. The guard must
 be load-free, because it decides which memory resource facts exist and therefore
 cannot depend on reading that same memory. A guarded body may directly contain

@@ -788,7 +788,7 @@ impl<'a> Proof<'a> {
                     if old != new {
                         let description = match self.context.as_ref() {
                             ProofContext::Execution(context) => trace_resource_fact(fact, context),
-                            _ => crate::surface::diagnostics::describe_resource_fact(
+                            _ => crate::surface::proof_diagnostics::render::render_resource_fact_diagnostic(
                                 fact,
                                 ParameterBinding::default(),
                             ),
@@ -861,6 +861,18 @@ impl<'a> Proof<'a> {
         }
         if let ProofStep::Have { proposition, proof } = &step {
             return self.apply_have_step(proposition, proof);
+        }
+        // A certificate checked step by step, such as an obligation proof in
+        // a `step` or `fold` `by` body, carries `both` as its checked arms.
+        if let ProofStep::Both {
+            left_proof,
+            right_proof,
+        } = &step
+        {
+            return self.apply_both_source(&ProofBoth {
+                left_tactics: left_proof.to_proof_tactics(),
+                right_tactics: right_proof.to_proof_tactics(),
+            });
         }
         // A bare `fold` is checked as a bare step is: its fast path, then the
         // implicit `auto` for each body fact it leaves open.
@@ -1079,16 +1091,39 @@ impl<'a> Proof<'a> {
                     self.apply_execution_resource_unfold(resource)
                 }
             }
+            ProofStep::UnfoldWitnesses { resource, names } => {
+                let resource = &self.resolve_proof_resource_arguments(resource)?;
+                self.apply_execution_resource_unfold_naming_witnesses(resource, names)
+            }
             ProofStep::FoldResource(resource) => {
                 // Resolve proof bindings before either the execution or
                 // outcome path interprets ordinary resource arguments.
                 let source_resource = resource;
                 let resource = &self.resolve_proof_resource_arguments(resource)?;
-                if self.focused_outcome_data().is_some() {
-                    self.apply_outcome_resource_fold(resource)
-                } else {
-                    self.apply_execution_resource_fold(resource, source_resource)
-                }
+                // A body fact over a witness an unfold named is spelled with
+                // that name.
+                let named_values = self
+                    .state()
+                    .locals()
+                    .values
+                    .iter()
+                    .filter_map(|(name, value)| match value {
+                        ContractExpression::CFragment(CExpression::Value(value)) => {
+                            Some((value.clone(), name.clone()))
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                crate::surface::proof::surface_synthesis::with_proof_local_value_names(
+                    named_values,
+                    || {
+                        if self.focused_outcome_data().is_some() {
+                            self.apply_outcome_resource_fold(resource)
+                        } else {
+                            self.apply_execution_resource_fold(resource, source_resource)
+                        }
+                    },
+                )
             }
             ProofStep::ConstructResource(resource) => {
                 if self.focused_outcome_data().is_some() {
@@ -3406,7 +3441,7 @@ fn trace_resource_fact(fact: &CResourceFact, context: &ExecutionProofContext<'_>
             if let CExpression::Value(CValue::Pointer(base)) = argument
                 && base.pointer() == range.base()
             {
-                return crate::surface::diagnostics::describe_resource_fact(
+                return crate::surface::proof_diagnostics::render::render_resource_fact_diagnostic(
                     fact,
                     ParameterBinding::new(
                         std::slice::from_ref(parameter),
@@ -3415,13 +3450,11 @@ fn trace_resource_fact(fact: &CResourceFact, context: &ExecutionProofContext<'_>
                 );
             }
         }
-        return if fact.is_own() {
-            "ownership of a memory range (no source name)".into()
-        } else {
-            "view of a memory range (no source name)".into()
-        };
     }
-    crate::surface::diagnostics::describe_resource_fact(fact, context.parameter_binding())
+    crate::surface::proof_diagnostics::render::render_resource_fact_diagnostic(
+        fact,
+        context.parameter_binding(),
+    )
 }
 
 fn describe_assumption_goal(goal: &Proposition) -> &'static str {
@@ -3677,6 +3710,7 @@ fn trace_function_pointer_load(
                 value_type: CType::FunctionPointer(_),
                 ..
             },
+        ..
     } = statement.as_ref()
     else {
         return None;

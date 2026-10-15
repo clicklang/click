@@ -2137,7 +2137,9 @@ pub(in crate::kernel) fn c_pointer_values_proven_equal(
     assumptions: &PureFactContext,
 ) -> bool {
     let geometry_matches = |left: &CPointerValue, right: &CPointerValue| {
-        left.origins_match(right) && left.domain() == right.domain()
+        left.origins_match(right)
+            && left.domain() == right.domain()
+            && left.extent() == right.extent()
     };
     let same_geometry = geometry_matches(left, right)
         || assumptions

@@ -319,6 +319,9 @@ enum ProofScopeStructure {
         resource: ResourceClause,
         source_index: usize,
         preserve_exposed_body: bool,
+        /// The source's `open(r) { ... } by { ... }` proof of the body fact
+        /// the closing fold leaves open.
+        written_close_proof: Option<Vec<ProofTactic>>,
     },
 }
 
@@ -2929,7 +2932,8 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::UnfoldPredicate(_)
         | ProofStep::UnfoldFunction(_)
         | ProofStep::PeelFunction { .. }
-        | ProofStep::UnfoldResource(_) => "unfold",
+        | ProofStep::UnfoldResource(_)
+        | ProofStep::UnfoldWitnesses { .. } => "unfold",
         ProofStep::FoldResource(_) => "fold",
         ProofStep::ConstructResource(_) => "construct",
         ProofStep::ObserveResource(_) => "observe",

@@ -1991,7 +1991,18 @@ fn scan_source_tokens(source: &str) -> Result<Vec<SourceToken>, ClickError> {
             continue;
         }
         let start = index;
-        if character.is_ascii_alphabetic() || character == '_' {
+        let after_path_separator = tokens.len() >= 2
+            && tokens[tokens.len() - 2..]
+                .iter()
+                .all(|token: &SourceToken| token.text == ":");
+        if character == '{'
+            && after_path_separator
+            && let Some(length) = closure_segment_length(&source[index..])
+        {
+            // A Rust closure's path segment, `caller::{closure#0}`, is one
+            // name, as the surface tokenizer reads it.
+            index += length;
+        } else if character.is_ascii_alphabetic() || character == '_' {
             index += character.len_utf8();
             while index < source.len() {
                 let next = source[index..]
@@ -2068,6 +2079,14 @@ fn scan_source_tokens(source: &str) -> Result<Vec<SourceToken>, ClickError> {
     with_implicit_proof_blocks(tokens)
 }
 
+/// The length of a closure path segment, `{closure#0}`, at the start of
+/// `text`.
+fn closure_segment_length(text: &str) -> Option<usize> {
+    let rest = text.strip_prefix("{closure#")?;
+    let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+    (digits > 0 && rest[digits..].starts_with('}')).then_some("{closure#".len() + digits + 1)
+}
+
 /// A proof written as one tactic, `by T(args);`, is the block
 /// `by { T(args); }` without its braces. Every reader below addresses a
 /// proof's tactics through the block that holds them, so the scan supplies
@@ -2121,6 +2140,8 @@ fn splice_source(
     span: &Range<usize>,
     replacement: &str,
 ) -> String {
+    let replacement = library_citation_spelling(source, replacement);
+    let replacement = replacement.as_str();
     let mut open_blocks = Vec::new();
     let mut enclosing: Option<Range<usize>> = None;
     for token in tokens.iter().filter(|token| token.span.is_empty()) {
@@ -2163,6 +2184,42 @@ fn splice_source(
         }
     }
     with_cited_library_imports(spliced, replacement)
+}
+
+/// `replacement` with each library theorem a tactic cited by its qualified
+/// identity written as the file writes it: by its bare name, unless `source`
+/// declares a theorem of that name, which the bare name would mean instead.
+fn library_citation_spelling(source: &str, replacement: &str) -> String {
+    let mut spelled = String::with_capacity(replacement.len());
+    let mut rest = replacement;
+    while let Some(start) = rest.find("click::") {
+        let path_end = rest[start..]
+            .find(|character: char| {
+                !(character.is_alphanumeric() || character == '_' || character == ':')
+            })
+            .map_or(rest.len(), |offset| start + offset);
+        let path = &rest[start..path_end];
+        let bare = path.rsplit("::").next().unwrap_or(path);
+        let shadowed = source.lines().any(|line| {
+            line.trim_start()
+                .strip_prefix("theorem ")
+                .is_some_and(|after| {
+                    after
+                        .split(|character: char| !(character.is_alphanumeric() || character == '_'))
+                        .next()
+                        == Some(bare)
+                })
+        });
+        spelled.push_str(&rest[..start]);
+        if !shadowed && crate::surface::parser::library_theorem_identity(bare) == path {
+            spelled.push_str(bare);
+        } else {
+            spelled.push_str(path);
+        }
+        rest = &rest[path_end..];
+    }
+    spelled.push_str(rest);
+    spelled
 }
 
 /// `source` with an `import click::...;` line for each Click library module
@@ -4930,7 +4987,9 @@ fn tactic_contains_smart_tactic(tactic: &ProofTactic) -> bool {
         },
         ProofTactic::StructuralInduct { arms, .. } => arms.iter().any(|arm| any(&arm.tactics)),
         ProofTactic::Have(have) => proof(&have.proof),
-        ProofTactic::Open(open) => any(&open.tactics),
+        ProofTactic::Open(open) => {
+            any(&open.tactics) || open.close_proof.as_deref().is_some_and(any)
+        }
         ProofTactic::If(proof_if) => any(&proof_if.then_tactics) || any(&proof_if.else_tactics),
         ProofTactic::Match(proof_match) => proof_match.arms.iter().any(|arm| any(&arm.tactics)),
         ProofTactic::Cases(cases) => cases.arms().iter().any(|arm| any(arm.tactics())),

@@ -270,19 +270,9 @@ fn library_theorem_owners() -> Result<&'static BTreeMap<String, usize>, ClickErr
 pub(in crate::surface) fn reject_unimported_library_citations(
     file: &ClickFile,
 ) -> Result<(), ClickError> {
-    // Built-in tactics apply library theorems by name whatever a file
-    // imports, so no file theorem may take a library theorem's name.
+    // Library theorems are cited by their qualified identity, so a file
+    // theorem may share a library theorem's bare name.
     let owners = library_theorem_owners()?;
-    if let Some(theorem) = file
-        .theorem_definitions()
-        .iter()
-        .find(|theorem| owners.contains_key(theorem.name()))
-    {
-        return Err(ClickError::new(format!(
-            "theorem `{}` has the name of a Click library theorem, which built-in tactics apply; rename it",
-            theorem.name()
-        )));
-    }
     let mut cited = BTreeSet::new();
     for theorem in file.theorem_definitions() {
         for clause in theorem.ensures() {
@@ -310,8 +300,9 @@ pub(in crate::surface) fn reject_unimported_library_citations(
         if let Some(index) = owners.get(name)
             && visible & (1 << index) == 0
         {
+            let bare = name.rsplit("::").next().unwrap_or(name);
             return Err(ClickError::new(format!(
-                "unknown theorem `{name}`{}",
+                "unknown theorem `{bare}`{}",
                 library_import_hint(name)
             )));
         }
@@ -342,11 +333,10 @@ pub(in crate::surface) fn library_modules_to_import<'a>(
     let mut needed = 0u64;
     for (index, module) in modules.iter().enumerate() {
         if visible & (1 << index) == 0
-            && module
-                .file
-                .theorem_definitions()
-                .iter()
-                .any(|theorem| cited.contains(theorem.name()))
+            && module.file.theorem_definitions().iter().any(|theorem| {
+                let name = theorem.name();
+                cited.contains(name.rsplit("::").next().unwrap_or(name))
+            })
         {
             needed |= 1 << index;
         }
@@ -518,6 +508,11 @@ fn load_library_modules(modules: &[(&str, &str)]) -> Result<Vec<LibraryModule>, 
                     ))
                 })?;
             closure |= loaded[index].closure;
+        }
+        let mut module = module;
+        let path = crate::surface::library_module_path(identity);
+        for theorem in &mut module.theorem_definitions {
+            theorem.name = format!("{path}::{}", theorem.name);
         }
         append_library_module(&mut context, module.clone());
         loaded.push(LibraryModule {
@@ -1277,6 +1272,7 @@ fn expand_declared_resource_tactic(
             expand_declared_resource_tactic_with_propositions(tactic, resource_definitions)
         }
         tactic @ (ProofTactic::UnfoldResource(_)
+        | ProofTactic::UnfoldWitnesses { .. }
         | ProofTactic::ObserveResource(_)
         | ProofTactic::FoldResource(_)
         | ProofTactic::ConstructResource(_)
@@ -1943,6 +1939,10 @@ fn expand_declared_resource_tactic_with_resources(
         ProofTactic::UnfoldResource(resource) => Ok(ProofTactic::UnfoldResource(
             expand_declared_resource_clause(resource, resource_definitions)?,
         )),
+        ProofTactic::UnfoldWitnesses { resource, names } => Ok(ProofTactic::UnfoldWitnesses {
+            resource: expand_declared_resource_clause(resource, resource_definitions)?,
+            names,
+        }),
         ProofTactic::ObserveResource(resource) => Ok(ProofTactic::ObserveResource(
             expand_declared_resource_clause(resource, resource_definitions)?,
         )),
@@ -1989,6 +1989,14 @@ fn expand_declared_resource_tactic_with_nested_proofs(
                 .into_iter()
                 .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
                 .collect::<Result<Vec<_>, _>>()?,
+            close_proof: open
+                .close_proof
+                .map(|body| {
+                    body.into_iter()
+                        .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .transpose()?,
         })),
         ProofTactic::If(proof_if) => Ok(ProofTactic::If(ProofIf {
             condition: expand_declared_resource_proposition(

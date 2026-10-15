@@ -3043,7 +3043,8 @@ impl<'a> Proof<'a> {
                     disequality_scope
                         .apply_step(ProofStep::ApplyTheoremUsing {
                             application: TheoremApplication {
-                                name: "int32_less_than_implies_not_equal".to_string(),
+                                name: "click::machine_integer::int32_less_than_implies_not_equal"
+                                    .to_string(),
                                 arguments: vec![left, right],
                             },
                             premises: vec![condition.clone()],
@@ -3075,7 +3076,7 @@ impl<'a> Proof<'a> {
                     nonstrict_scope
                         .apply_step(ProofStep::ApplyTheoremUsing {
                             application: TheoremApplication {
-                                name: "int32_less_than_increment_implies_less_equal".to_string(),
+                                name: "click::machine_integer::int32_less_than_increment_implies_less_equal".to_string(),
                                 arguments: surface_nonstrict_parts(&nonstrict)
                                     .map(|(left, right)| vec![left, right])?,
                             },
@@ -3199,7 +3200,8 @@ impl<'a> Proof<'a> {
                     }
                     let theorem = ProofStep::ApplyTheoremUsing {
                         application: TheoremApplication {
-                            name: "int32_greater_equal_transitive".to_string(),
+                            name: "click::machine_integer::int32_greater_equal_transitive"
+                                .to_string(),
                             arguments: vec![last.clone(), middle.clone(), first.clone()],
                         },
                         premises: vec![second_surface.clone(), first_surface.clone()],
@@ -3279,7 +3281,8 @@ impl<'a> Proof<'a> {
                     }
                     let theorem = ProofStep::ApplyTheoremUsing {
                         application: TheoremApplication {
-                            name: "int32_increment_preserves_order".to_string(),
+                            name: "click::machine_integer::int32_increment_preserves_order"
+                                .to_string(),
                             arguments: vec![
                                 lower_value.clone(),
                                 surface_lower.clone(),
@@ -5376,9 +5379,9 @@ impl<'a> Proof<'a> {
             let theorem = ProofStep::ApplyTheoremUsing {
                 application: TheoremApplication {
                     name: if lower_bound {
-                        "int32_greater_equal_transitive".to_string()
+                        "click::machine_integer::int32_greater_equal_transitive".to_string()
                     } else {
-                        "int32_less_equal_transitive".to_string()
+                        "click::machine_integer::int32_less_equal_transitive".to_string()
                     },
                     arguments: vec![
                         surface_value.clone(),
@@ -5483,7 +5486,8 @@ impl<'a> Proof<'a> {
         let proof = self
             .apply_step(ProofStep::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "uint32_greater_than_implies_reversed_less_than".to_string(),
+                    name: "click::machine_integer::uint32_greater_than_implies_reversed_less_than"
+                        .to_string(),
                     arguments: vec![upper.clone(), lower.clone()],
                 },
                 premises: vec![surface],
@@ -5574,7 +5578,11 @@ impl<'a> Proof<'a> {
             };
             // Each reversal lemma takes the operands in the order its
             // premise writes them.
-            let arguments = if name.starts_with("uint32_g") {
+            let arguments = if name
+                .rsplit("::")
+                .next()
+                .is_some_and(|name| name.starts_with("uint32_g"))
+            {
                 vec![upper, lower]
             } else {
                 vec![lower, upper]
@@ -5590,7 +5598,7 @@ impl<'a> Proof<'a> {
                         self.unsigned_strict_fact(&zero, &right, surface_fact)
                     {
                         return proof.close_with_unsigned_lemma(
-                            "uint32_positive_predecessor_strictly_decreases",
+                            "click::machine_integer::uint32_positive_predecessor_strictly_decreases",
                             vec![value],
                             premise,
                         );
@@ -5617,7 +5625,7 @@ impl<'a> Proof<'a> {
                         let proof = proof
                             .apply_step(ProofStep::ApplyTheoremUsing {
                                 application: TheoremApplication {
-                                    name: "uint32_less_than_implies_positive_difference"
+                                    name: "click::machine_integer::uint32_less_than_implies_positive_difference"
                                         .to_string(),
                                     arguments: vec![lower, upper],
                                 },
@@ -5625,7 +5633,7 @@ impl<'a> Proof<'a> {
                             })
                             .ok()?;
                         return proof.close_with_unsigned_lemma(
-                            "uint32_positive_predecessor_strictly_decreases",
+                            "click::machine_integer::uint32_positive_predecessor_strictly_decreases",
                             vec![difference],
                             positive,
                         );
@@ -5650,14 +5658,14 @@ impl<'a> Proof<'a> {
                         self.unsigned_strict_fact(value, right_offset, surface_fact)
                 {
                     return proof.close_with_unsigned_lemma(
-                        "uint32_difference_decreases_after_increment",
+                        "click::machine_integer::uint32_difference_decreases_after_increment",
                         vec![value, bound],
                         premise,
                     );
                 }
                 reversed_fact(
                     ConditionTerm::unsigned_greater_than(right, left),
-                    "uint32_greater_than_implies_reversed_less_than",
+                    "click::machine_integer::uint32_greater_than_implies_reversed_less_than",
                     true,
                 )
             }
@@ -5669,25 +5677,25 @@ impl<'a> Proof<'a> {
                         self.unsigned_strict_fact(value, &right, surface_fact)
                 {
                     return proof.close_with_unsigned_lemma(
-                        "uint32_increment_upper_bound",
+                        "click::machine_integer::uint32_increment_upper_bound",
                         vec![value, upper],
                         premise,
                     );
                 }
                 reversed_fact(
                     ConditionTerm::unsigned_greater_equal(right, left),
-                    "uint32_greater_equal_implies_reversed_less_equal",
+                    "click::machine_integer::uint32_greater_equal_implies_reversed_less_equal",
                     false,
                 )
             }
             UnsignedOrder::Greater => reversed_fact(
                 ConditionTerm::unsigned_less_than(right, left),
-                "uint32_less_than_implies_reversed_greater_than",
+                "click::machine_integer::uint32_less_than_implies_reversed_greater_than",
                 true,
             ),
             UnsignedOrder::GreaterEqual => reversed_fact(
                 ConditionTerm::unsigned_less_equal(right, left),
-                "uint32_less_equal_implies_reversed_greater_equal",
+                "click::machine_integer::uint32_less_equal_implies_reversed_greater_equal",
                 false,
             ),
         }
@@ -5763,7 +5771,8 @@ impl<'a> Proof<'a> {
                 let joined = scope.join().ok()?;
                 let theorem = ProofStep::ApplyTheoremUsing {
                     application: TheoremApplication {
-                        name: "int32_nonnegative_predecessor_upper_bound".to_string(),
+                        name: "click::machine_integer::int32_nonnegative_predecessor_upper_bound"
+                            .to_string(),
                         arguments: vec![surface_value.clone(), surface_upper.clone()],
                     },
                     premises: vec![nonnegative_surface.clone(), upper_surface.clone()],

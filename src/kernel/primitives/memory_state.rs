@@ -6432,6 +6432,107 @@ impl CMemory {
 }
 
 impl CState {
+    /// The first part of `self` that differs from `other`, named for a
+    /// diagnostic, or `None` when the states are equal. A differing resource
+    /// context names a resource fact held on one side only; every other part
+    /// is named by what it is.
+    pub(crate) fn first_difference(&self, other: &CState) -> Option<String> {
+        if self.resources != other.resources {
+            let only_in = |left: &ResourceContext, right: &ResourceContext| {
+                left.facts()
+                    .iter()
+                    .find(|fact| !right.facts().contains(fact))
+                    .map(CResourceFact::diagnostic_summary)
+            };
+            return Some(match only_in(&self.resources, &other.resources) {
+                Some(fact) => format!("`{fact}` is held only before the rewrite"),
+                None => match only_in(&other.resources, &self.resources) {
+                    Some(fact) => format!("`{fact}` is held only in the published state"),
+                    None => "the resource facts are held in a different representation".to_string(),
+                },
+            });
+        }
+        let parts: [(&str, bool); 22] = [
+            ("memory", self.memory != other.memory),
+            ("the local variables", self.locals != other.locals),
+            (
+                "the resource bindings",
+                self.resource_bindings != other.resource_bindings,
+            ),
+            (
+                "the instance field scope",
+                self.instance_field_scope != other.instance_field_scope,
+            ),
+            (
+                "the aggregate destination",
+                self.aggregate_destination != other.aggregate_destination,
+            ),
+            ("the loan ledger", self.loan_ledger != other.loan_ledger),
+            (
+                "the loan participant",
+                self.loan_participant != other.loan_participant,
+            ),
+            (
+                "the loan view bindings",
+                self.loan_view_bindings != other.loan_view_bindings,
+            ),
+            (
+                "the thread ledger",
+                self.thread_ledger != other.thread_ledger,
+            ),
+            ("the mutex ledger", self.mutex_ledger != other.mutex_ledger),
+            (
+                "the mutex protocol mode",
+                self.preserves_mutex_protocols != other.preserves_mutex_protocols,
+            ),
+            (
+                "the mutex input reservations",
+                self.mutex_input_reservations != other.mutex_input_reservations,
+            ),
+            (
+                "the opaque mutex acquisitions",
+                self.opaque_mutex_acquisitions != other.opaque_mutex_acquisitions,
+            ),
+            (
+                "the named mutex authorities",
+                self.named_mutex_authorities != other.named_mutex_authorities,
+            ),
+            (
+                "the pending thread creation",
+                self.pending_thread_create != other.pending_thread_create,
+            ),
+            (
+                "the population access",
+                self.population_access != other.population_access,
+            ),
+            (
+                "the observed population families",
+                self.observed_population_families != other.observed_population_families,
+            ),
+            (
+                "the population effects",
+                self.population_effects != other.population_effects,
+            ),
+            (
+                "the next stack frame identity",
+                self.next_local_frame != other.next_local_frame,
+            ),
+            (
+                "the next automatic-storage identity",
+                self.next_local_lifetime != other.next_local_lifetime,
+            ),
+            (
+                "whether an enclosing frame holds locals",
+                self.enclosing_frame_holds_locals != other.enclosing_frame_holds_locals,
+            ),
+            ("the state", self != other),
+        ];
+        parts
+            .into_iter()
+            .find(|(_, differs)| *differs)
+            .map(|(part, _)| format!("{part} differs"))
+    }
+
     /// Selects a call destination without allocating, initializing, or granting
     /// authority. Function entry validates it against the construction layout.
     pub fn with_aggregate_return_destination(

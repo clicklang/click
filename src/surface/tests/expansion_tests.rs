@@ -1,6 +1,31 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: static refold expansion and retained-session checks take 0.9s"]
+fn static_return_refold_before_named_resource_rechecks_in_all_proof_modes() {
+    let (source, sources) = mdtest_sources("mdtests/static_return_refold_before_named_resource.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded =
+        expand_c0_claim_source(&source, &sources, "inspect", CProofClaim::Grouped).unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+    let position =
+        expansion::position_at_offset(&expanded, expanded.find("ensures tag.value").unwrap());
+    let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+    session
+        .verify_at(&expanded, position.line, position.column)
+        .unwrap();
+    drop(session);
+    let false_value = source.replace("ensures tag.value == 1;", "ensures tag.value == 2;");
+    assert!(verify_c0_sources(&false_value, &sources).is_err());
+    let unowned = source.replace("owns cell(p);", "views cell(p);");
+    assert!(verify_c0_sources(&unowned, &sources).is_err());
+}
+
+#[test]
 #[ignore = "nightly: checks two post-return unfolds through expansion and retained verification"]
 fn call_produced_instances_unfold_after_return_in_all_proof_modes() {
     for fixture in [
@@ -8857,13 +8882,16 @@ fn execution_bare_apply_selects_and_retains_its_step_through_proof() {
     assert!(matches!(
         expanded.first(),
         Some(ProofTactic::ApplyTheoremUsing { application, premises })
-            if application.name == "int32_less_than_implies_less_equal" && premises.len() == 1
+            if application.name == "click::machine_integer::int32_less_than_implies_less_equal" && premises.len() == 1
     ));
     let retained_source = verified[0]
         .expanded_proof_source()
         .expect("the checked execution apply should have canonical source");
     assert!(
-        retained_source.contains("apply(int32_less_than_implies_less_equal(value, upper)) using {")
+        retained_source.contains(
+            "apply(click::machine_integer::int32_less_than_implies_less_equal(value, upper)) using {"
+        ),
+        "the canonical source cites the library theorem by its qualified identity: {retained_source}"
     );
     let expanded = expand_c0_claim_source(
         click_source,
@@ -9673,7 +9701,7 @@ fn linear_open_retains_a_direct_bare_theorem_application() {
                     [
                         ProofTactic::ApplyTheoremUsing { application, premises },
                         ProofTactic::Step,
-                    ] if application.name == "int32_less_than_implies_less_equal" && premises.len() == 1
+                    ] if application.name == "click::machine_integer::int32_less_than_implies_less_equal" && premises.len() == 1
                 )
         ),
         "{tactics:#?}"
@@ -10322,11 +10350,11 @@ fn branch_arms_retain_bare_theorem_applications_on_proof() {
                 if matches!(
                     branch.then_tactics.as_slice(),
                     [ProofTactic::Step, ProofTactic::ApplyTheoremUsing { application, premises }]
-                        if application.name == "int32_less_than_implies_less_equal" && premises.len() == 1
+                        if application.name == "click::machine_integer::int32_less_than_implies_less_equal" && premises.len() == 1
                 ) && matches!(
                     branch.else_tactics.as_slice(),
                     [ProofTactic::Step, ProofTactic::ApplyTheoremUsing { application, premises }]
-                        if application.name == "int32_less_than_implies_less_equal" && premises.len() == 1
+                        if application.name == "click::machine_integer::int32_less_than_implies_less_equal" && premises.len() == 1
                 )
         ),
         "{tactics:#?}"
@@ -10397,7 +10425,7 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
                 )
                 && matches!(branch.then_tactics.as_slice(), [ProofTactic::Step])
                 && matches!(branch.else_tactics.as_slice(), [ProofTactic::Step])
-                && application.name == "int32_less_than_implies_less_equal"
+                && application.name == "click::machine_integer::int32_less_than_implies_less_equal"
                 && premises.len() == 1
         ),
         "{tactics:#?}"
@@ -10556,7 +10584,7 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
                     [
                         ProofTactic::ApplyTheoremUsing { application, premises },
                         ProofTactic::Assumption,
-                    ] if application.name == "int32_positive_is_nonnegative"
+                    ] if application.name == "click::machine_integer::int32_positive_is_nonnegative"
                             && premises.len() == 1
                 )
         ),
@@ -12233,7 +12261,7 @@ fn assert_bound_universal_fixture_has_no_outcome_fallbacks(filename: &str, funct
         path.display()
     );
     assert!(
-        expanded.contains("int32_less_than_increment_implies_less_equal"),
+        expanded.contains("click::machine_integer::int32_less_than_increment_implies_less_equal"),
         "expanded proof from `{}` omitted the split's explicit bound theorem",
         path.display()
     );
@@ -17864,15 +17892,15 @@ int32 caller(int32 a, int32 b) {
 
 #[test]
 fn a_bare_fold_expands_its_body_fact_proof_and_needs_it() {
-    let c_source = "void make(int32 x) { }\n";
+    let c_source = "void make(int32 x, int32 y) { }\n";
     let click_source = r#"
 verifying "make.c";
-resource positive(n: int32) { fact n > 0; }
-void make(int32 x) {
-    requires x >= 1;
-    produces positive(x);
+resource either(n: int32, m: int32) { fact n > 0 or m > 0; }
+void make(int32 x, int32 y) {
+    requires x > 0;
+    produces either(x, y);
 } by {
-    fold(positive(x));
+    fold(either(x, y));
     execute();
     simp();
 }
@@ -17881,27 +17909,74 @@ void make(int32 x) {
     let expanded = expand_c0_claim_source(click_source, &c_sources, "make", CProofClaim::Grouped)
         .expect("the bare fold should expand");
     assert!(
-        expanded.contains("fold(positive(x)) by {"),
+        expanded.contains("fold(either(x, y)) by {"),
         "the implicit `auto`'s proof of the open body fact should print as the fold's `by`: {expanded}"
     );
     crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &c_sources))
         .expect("the expansion should reverify cold");
     let start = expanded
-        .find("fold(positive(x)) by {")
+        .find("fold(either(x, y)) by {")
         .expect("the expanded fold");
     let body_end = expanded[start..]
         .find("\n    }\n")
         .map(|offset| start + offset + "\n    }\n".len())
         .expect("the fold's `by` closes");
     let mut without_proof = expanded.clone();
-    without_proof.replace_range(start..body_end, "fold(positive(x));\n");
+    without_proof.replace_range(start..body_end, "fold(either(x, y));\n");
     let error = crate::surface::proof::without_implicit_auto(|| {
         verify_c0_sources(&without_proof, &c_sources)
     })
     .expect_err("with the implicit `auto` off, the fold refuses its unproved body fact");
     assert!(
-        error.message().contains("x > 0"),
+        error
+            .message()
+            .replace(['(', ')'], "")
+            .contains("x > 0 or y > 0"),
         "the refusal should name the body fact: {}",
+        error.message()
+    );
+}
+
+#[test]
+fn a_bare_open_expands_its_close_proof_and_needs_it() {
+    let c_source = "void set(int32* p, int32* q, int32 x) { p[0] = x; q[0] = 1; }\n";
+    let click_source = r#"
+verifying "set.c";
+resource cell(p: int32*) { owns p[0..1]; fact p[0] > 0 or p[0] < -1; }
+void set(int32* p, int32* q, int32 x) {
+    requires x > 0;
+    owns cell(p);
+    owns q[0..1];
+} by {
+    open(cell(p)) { step(); }
+    execute();
+    simp();
+}
+"#;
+    let c_sources = [("set.c", c_source)];
+    let expanded = expand_c0_claim_source(click_source, &c_sources, "set", CProofClaim::Grouped)
+        .expect("the bare open should expand");
+    let start = expanded.find("open(cell(p)) {").expect("the expanded open");
+    let by = start + expanded[start..].find("} by {").unwrap_or_else(|| {
+        panic!(
+            "the implicit `auto`'s proof of the close should print as the open's `by`: {expanded}"
+        )
+    });
+    crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &c_sources))
+        .expect("the expansion should reverify cold");
+    let by_end = by
+        + expanded[by..]
+            .find("\n    }\n")
+            .expect("the open's `by` closes");
+    let mut without_proof = expanded.clone();
+    without_proof.replace_range(by..by_end + "\n    }".len(), "}");
+    let error = crate::surface::proof::without_implicit_auto(|| {
+        verify_c0_sources(&without_proof, &c_sources)
+    })
+    .expect_err("with the implicit `auto` off, the close refuses its unproved body fact");
+    assert!(
+        error.message().contains("fold(cell(p))"),
+        "the refusal should name the closing fold: {}",
         error.message()
     );
 }
@@ -18211,4 +18286,50 @@ fn call_step_keeps_snapshot_bound_through_expansion_and_retained_check() {
     session
         .verify_at(&expanded, position.line, position.column)
         .unwrap();
+}
+
+#[test]
+fn terminal_model_match_in_open_keeps_expanded_outcome_steps_in_its_arms() {
+    let (click, sources) = mdtest_sources("mdtests/open_scope_model_match_terminal.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(&click, &sources, "read.contract").unwrap();
+    verify_c0_sources(&expanded, &sources)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+    let open = expanded
+        .find("open(table")
+        .expect("the resource scope is retained");
+    let first = expanded[open..].find("Pair::First(value) =>").unwrap() + open;
+    let second = expanded[first..].find("Pair::Second(value) =>").unwrap() + first;
+    assert!(
+        expanded[first..second].contains("model: Pair::First(value)"),
+        "{expanded}"
+    );
+    assert!(
+        expanded[second..].contains("model: Pair::Second(value)"),
+        "{expanded}"
+    );
+    assert!(
+        !expanded.contains("if match c.model"),
+        "arm suffixes escaped their lexical match: {expanded}"
+    );
+}
+
+#[test]
+fn rejoined_model_match_in_open_expands_without_moving_the_continuation_inside() {
+    let (click, sources) = mdtest_sources("mdtests/open_scope_model_match_rejoins.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(&click, &sources, "read.contract").unwrap();
+    verify_c0_sources(&expanded, &sources)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+    assert_eq!(expanded.matches("open(table").count(), 2, "{expanded}");
+    assert!(
+        expanded.contains("ensuring"),
+        "the nonterminal match must retain its interface: {expanded}"
+    );
 }

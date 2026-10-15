@@ -3,6 +3,9 @@ use crate::kernel::ExecutionFactSource;
 use crate::kernel::ResourceInstance;
 use crate::surface::planning::proposition_search::proves_by_tactic_search;
 use crate::surface::proof::execution_planning::refuse_or_record_open_obligation;
+use crate::surface::proof_diagnostics::render::{
+    render_resource_fact_diagnostic, render_resource_facts_diagnostic,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ResourceBodyAccess {
@@ -2591,7 +2594,7 @@ fn append_composite_resource_declared_facts<F: ResourcePureFacts>(
                 definition.name(),
                 describe_click_proposition(&fact),
                 describe_pure_facts(&propositions.materialize()),
-                describe_resource_facts(contained_resources.facts(), parameter_binding)
+                render_resource_facts_diagnostic(contained_resources.facts(), parameter_binding)
             )
         })?;
         for fact in facts {
@@ -2632,7 +2635,7 @@ fn describe_resource_context_validity_error(
         ResourceContextValidityError::DuplicateOwnedResourceFact(resource) => {
             format!(
                 "duplicate resource fact `{}`",
-                describe_resource_fact(&resource, parameter_binding)
+                render_resource_fact_diagnostic(&resource, parameter_binding)
             )
         }
         ResourceContextValidityError::OverlappingOwnedMemoryResources { left, right } => {
@@ -2896,6 +2899,75 @@ fn unfold_composite_resource_for_proof_with_access(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// The values a held declared resource's `let ... where` witnesses take at
+/// `state`, by name, as an unfold of it binds them; empty when its body
+/// declares none.
+pub(super) fn declared_resource_witness_values(
+    resource_environment: &ResourceEnvironment,
+    resource: &ResourceClause,
+    parameter_binding: ParameterBinding<'_>,
+    state: &CState,
+    assumptions: &PureFactContext,
+    spec_definitions: SpecDefinitions<'_>,
+    claim_label: &str,
+    tactic_index: usize,
+) -> Result<Vec<(String, CValue)>, ClickError> {
+    let definition = composite_resource_law_definition(
+        resource_environment,
+        resource,
+        "unfold",
+        claim_label,
+        tactic_index,
+    )?;
+    let Some(body) = definition.composite_body() else {
+        return Ok(Vec::new());
+    };
+    let mut substitutions = BTreeMap::new();
+    extend_substitutions_with_witnesses(
+        &mut substitutions,
+        definition,
+        resource,
+        parameter_binding,
+        state,
+        None,
+        assumptions,
+        resource_environment,
+        spec_definitions,
+        None,
+    )?;
+    Ok(body
+        .witnesses()
+        .iter()
+        .filter_map(|witness| match substitutions.get(witness.name()) {
+            Some(ContractExpression::CFragment(CExpression::Value(value))) => {
+                Some((witness.name().to_string(), value.clone()))
+            }
+            _ => None,
+        })
+        .collect())
+}
+
+/// Whether the kernel's condition decision settles `required`: a condition,
+/// a negated condition, or a conjunction of them.
+fn decided_by_kernel_condition_decision(
+    assumptions: &PureFactContext,
+    required: &Proposition,
+) -> bool {
+    match required {
+        Proposition::And(left, right) => {
+            decided_by_kernel_condition_decision(assumptions, left)
+                && decided_by_kernel_condition_decision(assumptions, right)
+        }
+        Proposition::ConditionIs(condition, value) => assumptions.decide(condition) == Some(*value),
+        Proposition::Not(body) => matches!(
+            body.as_ref(),
+            Proposition::ConditionIs(condition, value)
+                if assumptions.decide(condition) == Some(!*value)
+        ),
+        _ => false,
+    }
+}
+
 fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     resource_environment: &ResourceEnvironment,
     resource: &ResourceClause,
@@ -3968,8 +4040,12 @@ fn fold_composite_resources_on_outcome_with_facts(
             // work proportional to the fact being checked, so an exactly
             // available body fact never rides on the open-ended kernel search
             // below, which can consume a large share of the fold's budget.
-            let exactly_available =
-                pure_facts.exact_available_across_effects(&required, execution_pure_facts);
+            // The kernel's condition decision settles a condition body fact
+            // as it settles a step's: the difference graph, then the
+            // decision's checked rules (a tagged pointer word's low bits, say).
+            let exactly_available = pure_facts
+                .exact_available_across_effects(&required, execution_pure_facts)
+                || decided_by_kernel_condition_decision(&body_assumptions, &required);
             // A body fact the exact checks miss is a requirement of this
             // `fold`, spelled as the definition's fact over the arguments as
             // written; the fold never searches the proof context for it
@@ -3977,13 +4053,13 @@ fn fold_composite_resources_on_outcome_with_facts(
             // implicit `auto`, which proves it and folds again.
             let open = !exactly_available
                 && !matches!(normalize_proposition(&required), SimpProposition::True);
-            // A fact read in the projected authority state is not a
-            // proposition at the frontier, and a witness the proof cannot
-            // name has no source expression, so neither has a requirement
-            // spelling yet; each keeps the counted search.
-            let projected = authority_closing_fact_state.is_some();
+            // A witness the proof cannot name has no source expression, so
+            // its body fact has no requirement spelling and the fold refuses
+            // it. A fact read in the projected authority state is spelled as
+            // any other: its `have` at the frontier is what the closing fold
+            // reads.
             let spelling_resource = source_resource.unwrap_or(resource);
-            let spelled = if open && !projected {
+            let spelled = if open {
                 (|| -> Result<Option<ClickProposition>, ClickError> {
                     // The arguments as written, and each witness as it was
                     // inferred or given.
@@ -4030,22 +4106,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             } else {
                 None
             };
-            if open
-                && !(spelled.is_none()
-                    && proves_by_tactic_search(
-                        &body_assumptions,
-                        &required,
-                        if projected {
-                            "fold projected body fact"
-                        } else {
-                            "fold unspellable body fact"
-                        },
-                    ))
-            {
-                // `proves` returns false when the active budget runs out
-                // mid-derivation. Reporting that truncation as a missing fact
-                // is misleading, so surface the budget state itself first.
-                check_verification_deadline()?;
+            if open {
                 let available_pure_facts = pure_facts.materialize();
                 let resources = match &outcome {
                     CFunctionOutcome::Return { state, .. } => state.resources().facts(),
@@ -4195,7 +4256,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                             return Err(ClickError::new(format!(
                                 "`{claim_label}` path {path_index}: `fold({})` body views memory this context owns: `{}` is backed by an owner that can still write it, so the folded facts would not be stable; own it in the body or borrow it through a call",
                                 describe_resource_clause(resource),
-                                describe_resource_fact(&lowered, parameter_binding)
+                                render_resource_fact_diagnostic(&lowered, parameter_binding)
                             )));
                         }
                         body_has_unbound_view = true;

@@ -28,7 +28,9 @@ pub(crate) fn candidates(function: &CFunction) -> Vec<CPointerStoreEffect> {
                 scan.locals.insert(name.clone(), effect);
                 Some(true)
             }
-            CStatement::Assign { name, expression } => {
+            CStatement::Assign {
+                name, expression, ..
+            } => {
                 let effect = pointer_domain_inference::expression(expression, &scan.locals);
                 scan.locals.insert(name.clone(), effect);
                 Some(true)

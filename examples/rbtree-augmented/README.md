@@ -173,8 +173,13 @@ size. All nine split/rejoin expansion sites pass.
 `rbtree_size_callback_frames.click` supplies `CopySizedStructure`: the unchanged
 copy callback updates its two metadata cells while preserving independently
 owned `rb_at` trees. Its execution theorem and expansion audit check the
-returned structural ownership and models. This is a callback frame contract;
-writable callback-table integration with insertion and erasure remains pending.
+returned structural ownership and models. `RotateSizedStructure` also certifies
+that the unchanged rotation callback preserves an independently owned `rb_at`
+tree at its new root while updating the source and target cache values. Its
+proof exposes the existing guarded separation premises in all four child
+null/non-null cases, then checks the call and returned frame. These are callback
+frame contracts; writable callback-table integration with insertion and erasure
+remains pending.
 
 `rbtree_size_callbacks.click` connects the writable copy interface to the
 concrete generated callback table. Its C translation unit combines the unchanged
@@ -184,5 +189,11 @@ no insertion or erasure body changes. `sized_callback_table` packages the proved
 interfaces with stable views of the three fields. The concrete client constructs
 that package from the execution theorems and lends it to the generic copy
 dispatcher. The indirect call preserves both `rb_at` models and the source cache
-while copying its value into the target cache. Rotation and propagation dispatch,
-then connection to insertion and erasure, remain to be checked.
+while copying its value into the target cache. Propagation dispatch uses the same
+package and returns the whole repaired sized tree, preserving its root and
+erased shape and establishing recursive count validity through the previously
+checked arbitrary ancestor loop. Rotation dispatch accepts a left or right dirty
+subtree model, selects the corresponding proved callback interface inside the
+borrowed table scope, and returns a recursively valid sized subtree. Both named
+rotation interfaces preserve the structural shape and establish the repaired
+root count. Connection to insertion and erasure remains to be checked.

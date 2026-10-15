@@ -87,8 +87,16 @@ impl Parser {
                 self.position += 1;
                 continue;
             }
-            if self.peek_ident() == Some("fn") && self.peek_next() == Some(&Token::LParen) {
-                let (c_type, signature) = self.parse_rust_fn_pointer_type()?;
+            let dyn_fn = self.peek() == Some(&Token::Amp)
+                && matches!(self.tokens.get(self.position + 1), Some(Token::Ident(word)) if word == "dyn");
+            if dyn_fn
+                || (self.peek_ident() == Some("fn") && self.peek_next() == Some(&Token::LParen))
+            {
+                let (c_type, signature) = if dyn_fn {
+                    self.parse_rust_dyn_fn_type()?
+                } else {
+                    self.parse_rust_fn_pointer_type()?
+                };
                 parameters.push(FunctionParameter {
                     click_type: ClickType::C(c_type),
                     name: parameter_name,
@@ -511,10 +519,32 @@ impl Parser {
     /// or a struct by name.
     /// A function-pointer type, `fn(i32, u32) -> bool`, of scalar parameters
     /// and a scalar or unit result.
+    /// A `&dyn Fn(i32) -> i32`, a callable value of the same type as the
+    /// `fn` pointer of its parameters and result.
+    fn parse_rust_dyn_fn_type(
+        &mut self,
+    ) -> Result<(C0Type, syntax::C0FunctionPointerSignature), ClickError> {
+        self.expect(Token::Amp)?;
+        self.skip_rust_lifetime();
+        self.expect_ident_spelling("dyn")?;
+        if self.peek_ident() != Some("Fn") {
+            return Err(self.error("a `&dyn` parameter is supported only for `Fn(...) -> ...`"));
+        }
+        self.position += 1;
+        self.parse_rust_callable_signature()
+    }
+
     fn parse_rust_fn_pointer_type(
         &mut self,
     ) -> Result<(C0Type, syntax::C0FunctionPointerSignature), ClickError> {
         self.expect_ident_spelling("fn")?;
+        self.parse_rust_callable_signature()
+    }
+
+    /// The parameter list and result of a callable type, after `fn` or `Fn`.
+    fn parse_rust_callable_signature(
+        &mut self,
+    ) -> Result<(C0Type, syntax::C0FunctionPointerSignature), ClickError> {
         self.expect(Token::LParen)?;
         let mut parameters = Vec::new();
         while self.peek() != Some(&Token::RParen) {

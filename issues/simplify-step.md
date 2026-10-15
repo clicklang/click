@@ -315,16 +315,16 @@ carried by `transport` from the cell's reflexive equality at a recorded point
 (`mdtests/simp_frames_a_read_across_a_separate_store.md`). Three gaps remain:
 
 - A body fact of an authority control resource is lowered in the authority's
-  projected state, which a `have` at the frontier does not see, so it keeps
-  the counted search (`fold projected body fact`).
+  projected state, so it keeps the counted search (`fold projected body
+  fact`). Step 5g removes it.
 - A body fact over a witness the proof cannot name, such as the `next` an
   `unfold` exposed in `examples/marked-linked-list`'s `list_mark`, has no
   source spelling, so it keeps the counted search too
-  (`fold unspellable body fact`). Naming unfolded witnesses removes it.
+  (`fold unspellable body fact`). Step 5f removes it.
 - `mdtests/resource_witness_fold_infers_origin.md` and
   `examples/marked-linked-list`'s `list_prepend` state the low-bit lemma the
   search used to find, which `auto` proves alone but not inside the body
-  fact.
+  fact. Step 5f removes these too.
 
 **5c, outcome `if` and the step's atomic derivation (landed).** Every
 outcome `if` condition the census counted was `not (v == c)` with `v` decided
@@ -351,6 +351,45 @@ facts. That is the fast path's kind of decision, like the condition decision
 a step makes, not a search, so it is no longer counted. The rule: a simple
 tactic may consult the context through the kernel's indexed, bounded
 decisions, never through a `PropositionSearch`.
+
+**5e, naming unfolded witnesses (landed).** `let { witness: name } =
+unfold(resource)` on a declared resource binds a `let ... where` witness to a
+proof name, and a `fold` spells a body fact over that witness with the name,
+so the body fact gets a requirement spelling instead of the counted search.
+`examples/marked-linked-list`'s `list_mark` keeps its bare `unfold` and the
+counted search for now: with `next` named, its body fact needs
+`(w | 1) == n + 1` from `w == n + (w & 1)` and `aligned(n, 8)`, which `auto`
+does not prove. A `by` body containing `both` now rechecks when checked step by step as a
+certificate (`mdtests/fold_by_with_both_rechecks_after_execute.md`).
+
+**5f, `fold` consults the kernel's condition decision (landed).** The search
+proved `list_mark`'s `(w | 1) == n + 1` soundly, and not by search: its
+proving route was the kernel's condition decision, which settles the low bit
+of a tagged pointer word from checked `PointerWord` evidence (the unfold fact
+`w == n + (w & 1)` and the alignment facts). `fold` now offers each body fact
+that is a condition, or a conjunction or negation of conditions, to that
+decision before recording a requirement, as a step's fast path does. So
+`list_mark` folds with no requirement and no search, and `list_prepend` and
+`mdtests/resource_witness_fold_infers_origin.md` no longer state the low-bit
+`have`. No unspellable body fact remains in the corpus. Fold mdtests whose
+body fact the decision now settles state a disjunction instead, so they still
+exercise a requirement.
+
+**5g, `open(r) { ... } by { ... }` (landed).** The four remaining counted
+searches were the close of `open(child_control(p->kid)) { execute(); }` in
+the shared-heap `parent_read_payload`, needing `defined(p->kid->refs)` from
+the unfold across an execution that never writes it. The note in 5b was
+wrong: the fact read in the projected authority state has a frontier
+spelling, and a `have` of it at the end of the block satisfies the closing
+fold. What was missing was a requirement path for a scope's close. A fact the
+closing fold leaves open is now a requirement like a `fold`'s: the implicit
+`auto` proves it where the block ends, or after execution when the block
+reaches function exit, and expansion prints that proof as the `open`'s `by`
+(here a frame `transport` from function entry). A written `by` gives the
+close another proof; one that proves nothing, or a close that leaves several
+facts open, is refused. The fold no longer searches at all: a body fact over
+a witness the proof cannot name is refused. The census counts no tactic
+search in the corpus.
 
 ## Acceptance criteria
 

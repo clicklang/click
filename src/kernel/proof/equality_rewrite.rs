@@ -626,11 +626,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             CValue::UInt128(term) => CValue::UInt128(rewrite_term(term)),
             CValue::Float32(term) => CValue::Float32(rewrite_term(term)),
             CValue::Float64(term) => CValue::Float64(rewrite_term(term)),
-            CValue::Pointer(pointer) => {
-                let mut rewritten = pointer.clone();
-                rewritten.replace_pointer(rewrite_pointer(pointer.pointer()));
-                CValue::Pointer(rewritten)
-            }
+            CValue::Pointer(pointer) => CValue::Pointer(pointer.map_pointers(rewrite_pointer)),
         }
     }
 

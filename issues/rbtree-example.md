@@ -1410,8 +1410,13 @@ arbitrary-length C loop. It checks both exits, invariant preservation, and
 termination by context depth, then returns ownership of the valid sized tree
 with its original root and erased shape and recursively valid counts.
 Checked projection of the loop exit disjunction establishes that the joined
-walk is finished. Writable callback-table integration with the augmented
-entry points remains.
+walk is finished. `rbtree_size_callbacks.click` packages these checked contracts in a borrowed
+callback table. Its copy dispatcher preserves independent structural ownership;
+its propagation dispatcher returns the whole repaired sized tree. Its rotation
+dispatcher selects the left or right dirty model and returns a valid sized
+subtree, with separately checked interfaces for both directions. The callback
+bodies remain unchanged. Writable callback-table integration with insertion
+and erasure remains.
 
 
 ### Pinned source

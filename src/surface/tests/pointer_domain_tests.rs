@@ -274,7 +274,10 @@ fn pure_array_models_use_explicit_input_origin_promises() {
 
 #[test]
 fn scalar_domains_survive_expansion_and_retained_proof_edits() {
-    let c = [("scalar.c", "struct Pair { int32 first; int32 second; }; int32 probe(struct Pair* p) { return *(&p->first + 0); }")];
+    let c = [(
+        "scalar.c",
+        "struct Pair { int32 first; int32 second; }; int32 probe(struct Pair* p) { return *(&p->first + 0); }",
+    )];
     let proof = r#"verifying "scalar.c";
         int32 probe(struct Pair* p) {
             views p->first; views p->second; ensures result == p->first;
@@ -282,9 +285,19 @@ fn scalar_domains_survive_expansion_and_retained_proof_edits() {
     let expanded = expand_c0_claim_source(proof, &c, "probe", CProofClaim::Grouped).unwrap();
     verify_c0_sources(&expanded, &c).unwrap();
     let (session, _) = C0VerificationSession::new(proof, &c).unwrap();
-    let position = expansion::position_at_offset(&expanded, expanded.find("ensures result").unwrap());
-    session.verify_at(&expanded, position.line, position.column).unwrap();
-    let forged = proof.replace("execute();", "have pointer_origin(&p->first + 1, &p->second) by simp; execute();");
+    let position =
+        expansion::position_at_offset(&expanded, expanded.find("ensures result").unwrap());
+    session
+        .verify_at(&expanded, position.line, position.column)
+        .unwrap();
+    let forged = proof.replace(
+        "execute();",
+        "have pointer_origin(&p->first + 1, &p->second) by simp; execute();",
+    );
     let position = expansion::position_at_offset(&forged, forged.find("ensures result").unwrap());
-    assert!(session.verify_at(&forged, position.line, position.column).is_err());
+    assert!(
+        session
+            .verify_at(&forged, position.line, position.column)
+            .is_err()
+    );
 }

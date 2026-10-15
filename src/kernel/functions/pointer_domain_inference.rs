@@ -370,6 +370,7 @@ fn statements(
         CStatement::Assign {
             name,
             expression: value,
+            ..
         } => {
             let value = expression(value, locals);
             changed.names.insert(name.clone());
@@ -510,6 +511,7 @@ mod tests {
             let assign = CStatement::Assign {
                 name: "selected".into(),
                 expression: CExpression::Variable("selected".into()),
+                source: Default::default(),
             };
             let branch = CStatement::If {
                 condition: CExpression::Value(CValue::Int32(Bitvector32Term::Constant(1))),

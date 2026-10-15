@@ -788,6 +788,8 @@ enum AlphaCValueKey {
         pointee_volatile: bool,
         pointee_constant: bool,
         pointer: AlphaPointerKey,
+        /// The subobject extent's start key and byte width.
+        extent: Option<(AlphaPointerKey, u64)>,
     },
 }
 
@@ -1778,6 +1780,17 @@ fn alpha_c_value_key_with_bindings<const ALLOW_LOADS: bool>(
                 bindings,
                 next_binder,
             )?,
+            extent: match pointer.extent() {
+                Some(extent) => Some((
+                    alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
+                        &extent.start,
+                        bindings,
+                        next_binder,
+                    )?,
+                    extent.width,
+                )),
+                None => None,
+            },
         },
         other => {
             let (ty, term) = match other {

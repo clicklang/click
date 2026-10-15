@@ -147,7 +147,8 @@ all-target Clippy and selected expansion/fresh/retained rechecks pass before the
 upstream rebase. After rebasing onto `7920aaf0e`, all 52 normal examples, 3,764 Markdown
 fixtures, 37 documentation checks, all-target Clippy and the three selected
 expansion/fresh/retained checks pass. The first attributed archive group is the
-[conditional native-composite output check](../bugs/native-composite-output-requires-decided-body-guard.md):
+conditional native-composite output check, now locked in by the
+[conditional allocated-record regression](../mdtests/conditional_allocated_record_output.md):
 a minimal C producer/caller passes on the fixed baseline and fails on the
 archive. Repair checkpoint `132cb424b` on the preserved recovery branch restores
 allocated-linked-list, heap-object and the reduction. Three targeted kernel
@@ -202,9 +203,19 @@ selects the same live loan-bound descriptor view and backing owner through their
 indexed address keys and retains the existing full-range/full-width certificate.
 All 87 selected controls pass, including a multi-size witness below 200 work
 units and width/overlap/ordinary-view/withdrawn-authority rejection controls.
-The original loop passes all four proof modes with the safe lookup rule. This
-remains an archive-dependent recovery slice; the upstream range-certificate
-prerequisite must be extracted before this implementation can be delivered.
+The original loop passes all four proof modes with the safe lookup rule. The
+independent exact-arithmetic borrow-frame extraction landed as `3b0550fbc`, using
+existing containment and full-access membership. It does not depend on the
+archive's broader range-certificate machinery. PR #987 now covers the remaining
+full-width explicit-separation repair and indexed candidate selection.
+
+The post-loop-repair example audit at `53da27b58` completes with 39/52 passing
+and the same 13 failures as `bd6659d9a`. The next compatibility investigation is
+the [reduced modular buffer fold](../bugs/modular-buffer-ranges-fail-to-rejoin.md):
+a held prefix and tail use pointer reads from different call snapshots and fail
+to rejoin. The identical reduction passes on the upstream-based verifier. Locate
+the missing checked frame/transport step before importing broader range rules;
+the split-buffer failure needs separate confirmation.
 
 ## Recovery and delivery sequence
 
@@ -321,7 +332,7 @@ cause or that each is introduced by this branch:
 | Observed group | Existing reproduction or check |
 | --- | --- |
 | Pointer-field frames and stored values | [C frame bug](https://github.com/lacker/click/blob/e3d84a785792c007da19d2f42d75b9e143372164/bugs/c-pointer-field-postconditions-lose-frame-evidence.md); original owned-vector and owned-string projects |
-| Nullable allocated resource bodies | [Reduced conditional-output defect](../bugs/native-composite-output-requires-decided-body-guard.md); original allocated-linked-list and heap-object projects |
+| Nullable allocated resource bodies | [Conditional allocated-record regression](../mdtests/conditional_allocated_record_output.md); original allocated-linked-list and heap-object projects |
 | Borrowed/owned buffer and cursor transfer | Original arena, detachable-buffer, owned-segmented-buffer, owned-split-buffer, input-cursor, binary-tree, concurrency-fork-join, multifile-registry and ring-buffer projects |
 | Other C proof failures after upstream integration | Original refcount and rbtree-augmented projects |
 | Rust availability/ranges and proof cost | Original rust-chunks-exact and rust-byte-sum projects |
@@ -383,3 +394,20 @@ introduced regressions are closed, the acceptance evidence and supported limits
 are documented, and remaining excluded features belong to their existing
 roadmaps. Preserve durable design and delivery records, then delete this issue
 under the normal issue lifecycle.
+
+### Buffer-join recovery checkpoint
+
+`477784302` preserves the selected supplier-coordinate repair described in the
+[recovery audit](../design/object-model-recovery-audit.md#checked-coordinate-buffer-join-repair).
+Both original buffer pipelines and the reduction pass all four proof modes;
+86 selected kernel controls pass. The example stage improves to 41/52 with no
+new failures. This supersedes the earlier unconfirmed split-buffer attribution.
+Next assess an independent upstream extraction, then reduce the remaining eleven
+compatibility failures. Do not activate the archive as a whole.
+
+The supplier-coordinate extraction landed in PR #1011. Recovery checkpoint
+`c6d5c4200` additionally checks registered read prefixes during interior-write
+lookup (87 selected kernel controls passing). This is partial progress: the
+[two-store execution reduction](../bugs/pointer-field-reload-loses-backing-write-authority.md)
+still fails, as do the original string/vector postconditions. Continue there;
+keep the 41/52 audit count until a new complete example run establishes otherwise.

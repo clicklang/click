@@ -226,6 +226,8 @@ pub(super) fn lower(
         ))
     };
     for &block in &flow.order {
+        cx.mir_point = None;
+        cx.mir_nodes.clear();
         let terminal = match &mir.blocks[block].terminator {
             T::Goto { .. } => c_skip(),
             T::If { condition, .. } => accesses(&[condition], &live),
@@ -383,7 +385,16 @@ pub(super) fn lower(
             }
         };
         let mut statements = c_skip();
-        for s in &mir.blocks[block].statements {
+        for (statement_index, s) in mir.blocks[block].statements.iter().enumerate() {
+            cx.mir_point = Some(super::super::borrow_frontiers::MirPoint {
+                block,
+                statement: statement_index,
+            });
+            cx.mir_nodes = if cx.import_identity.is_some() {
+                super::super::borrow_frontiers::mir_expression_nodes(s)
+            } else {
+                BTreeMap::new()
+            };
             let statement = match s {
                 S::SliceSplit {
                     slice,
@@ -454,6 +465,52 @@ pub(super) fn lower(
                         }
                     }
                 }
+                // A new closure instance is the value its instance function
+                // returns for the captured values.
+                S::Assign {
+                    target: E::Local { name },
+                    value:
+                        E::ClosureInstance {
+                            function,
+                            captures,
+                            value_type,
+                        },
+                } => {
+                    let closure = cx
+                        .functions
+                        .get(function.as_str())
+                        .ok_or("Rust closure instance of an unknown closure")?;
+                    let Type::FnPointer { parameters, result } = value_type else {
+                        return Err("Rust closure instance requires a callable type".into());
+                    };
+                    if closure.captures != captures.len()
+                        || closure.return_type != **result
+                        || closure.parameters.len() != closure.captures + parameters.len()
+                        || closure.parameters[closure.captures..]
+                            .iter()
+                            .zip(parameters)
+                            .any(|(parameter, expected)| parameter.value_type != *expected)
+                    {
+                        return Err(format!(
+                            "Rust closure instance of `{function}` does not have the closure's type"
+                        ));
+                    }
+                    let mut checks = c_skip();
+                    let mut values = Vec::new();
+                    for capture in captures {
+                        let (capture_checks, value) = cx.prepared_expr(capture)?;
+                        checks = c_seq(checks, capture_checks);
+                        values.push(value);
+                    }
+                    c_seq(
+                        checks,
+                        c_call_assign(
+                            name,
+                            crate::languages::rust::names::closure_instance_name(function),
+                            values,
+                        ),
+                    )
+                }
                 S::Assign {
                     target: E::Local { name },
                     value,
@@ -489,9 +546,10 @@ pub(super) fn lower(
                             value = c_variable(name);
                         }
                         let (target_checks, address) = cx.prepared_address(target)?;
+                        let value_type = cx.place_type(target)?;
                         c_seq(
                             c_seq(checks, target_checks),
-                            c_typed_store(address, value, cx.place_type(target)?),
+                            cx.source_store(target, address, value, value_type),
                         )
                     }
                 }
@@ -927,6 +985,7 @@ mod tests {
             parameters: vec![],
             body: vec![],
             external: false,
+            captures: 0,
             span: span.clone(),
             mir: Some(MirBody {
                 locals: vec![Place {
@@ -973,6 +1032,7 @@ mod tests {
                     }],
                     mir: None,
                     external: false,
+                    captures: 0,
                     span: span.clone(),
                 });
             }
@@ -1036,6 +1096,9 @@ mod tests {
                 function: "scale",
                 fields: &fields,
                 next_load: 0,
+                import_identity: None,
+                mir_point: None,
+                mir_nodes: BTreeMap::new(),
                 next_temporary: 0,
                 locals: BTreeSet::new(),
                 return_type: C0Type::Void,

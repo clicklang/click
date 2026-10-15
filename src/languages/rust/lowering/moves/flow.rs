@@ -383,6 +383,7 @@ mod tests {
             parameters: vec![],
             body: vec![],
             external: false,
+            captures: 0,
             span: span.clone(),
             mir: Some(MirBody {
                 locals: vec![Place {

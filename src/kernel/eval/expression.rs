@@ -2521,6 +2521,32 @@ fn read_c_lvalue_paths_without_ranges(
                     source,
                     budget.c_byte_order(),
                 );
+                if let Some(source) = source.and_then(|source| source.reference_access.as_ref())
+                    && source.kind == crate::kernel::ReferenceAccessKind::Read
+                {
+                    for path in &mut paths {
+                        if matches!(path.outcome, CExpressionOutcome::Value(_)) {
+                            let mut fact =
+                                ExecutionPureFact::certified(Proposition::CMemoryReadDefined {
+                                    memory: state.memory.clone(),
+                                    pointer: pointer.clone(),
+                                    value_type: lvalue.value_type,
+                                });
+                            fact.public = false;
+                            // This is a consequence of completing the read,
+                            // never a condition selecting an evaluation path.
+                            fact.logical_read_equation = true;
+                            fact.reference_observation =
+                                crate::kernel::source_access::ReferenceObservationSource::new(
+                                    source.clone(),
+                                    pointer.clone(),
+                                    &state.memory,
+                                    lvalue.value_type,
+                                );
+                            path.facts.push(fact);
+                        }
+                    }
+                }
                 if !lvalue.is_volatile() {
                     return Ok(paths);
                 }

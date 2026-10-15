@@ -147,7 +147,7 @@ PR [#937](https://github.com/clicklang/click/pull/937) merged the entry-read fol
 repair; final pushed head `2ad128f94` is an ancestor of fetched upstream master.
 This is an independent upstream delivery, separate from native-entry activation.
 
-The [conditional-record reduction](../bugs/native-composite-output-requires-decided-body-guard.md)
+The [conditional-record reduction](../mdtests/conditional_allocated_record_output.md)
 now has a preserved archive-based repair at `132cb424b` on
 `codex/object-model-failure-reduction`. The original allocated-linked-list and
 heap-object projects and the reduced producer/caller pass. Three kernel controls
@@ -434,12 +434,16 @@ fresh, expanded, rewritten and retained checking. Wrong-cell controls reject.
 The reduced C indexed-cell contracts use the existing viewed range; no unmerged
 object-model activation is included.
 
-The [conditional-output reduction](../bugs/native-composite-output-requires-decided-body-guard.md)
+The [conditional-output reduction](../mdtests/conditional_allocated_record_output.md)
 attributes the allocated-list/heap-object error group to a native composite
 formation check demanding a decided guard on a verified conditional output.
 The small producer/caller passes baseline proof modes and fails on `e3d84a785`.
 A setter-shadowing experiment did not fix the original list and was discarded.
-The introducing commit and the sound conditional-admission repair remain open.
+The defect never reached master; the reduction is now a master regression
+fixture, so any object-model activation must keep this producer/caller passing.
+Checkpoint `132cb424b` repairs only conditional heads without native promises;
+a guarded native promise with an undecided guard still needs admission under
+its guard before activation.
 
 ## Backing-range fold reduction after the read-index safeguard
 
@@ -538,3 +542,116 @@ with a regression covering fresh checking, expansion, rewritten checking and a
 retained session. This extraction completes the remaining borrow-frame slice of
 the retained-resource lookup repair; broader object-model activation remains
 separate.
+
+## Full-width explicit-separation integration
+
+While PR #987 was open, upstream `3b0550fbc` independently delivered the bounded
+borrow-frame producer and its actual-loop equality/expansion controls. Reconcile
+#987 with that implementation and keep the upstream boxed borrow certificate and
+its stronger overlap/widened-footprint tests. The remaining delivery changes only
+explicit-separation frames: retain the two selected members and full-width read
+membership in a boxed certificate, authenticate the live fact and full mutable
+footprint when checking, and select candidates through address-indexed buckets.
+
+The previous explicit-separation certificate checked only the starting address.
+The regression rejects a read that starts in the final descriptor cell and extends
+past it, an enlarged mutable footprint, and a withdrawn separation fact. Its
+multi-size witness checks bounded, identical producer work beside 16, 64, 256 and
+1,024 unrelated separation facts. Symbolic ordered-subrange and after-end evidence
+remain separate recovery candidates; this repair uses existing exact arithmetic.
+
+On the rebased implementation, all 149 selected frame/index/borrow kernel controls
+pass (7.85s harness). Both focused explicit-separation controls pass after adding
+a concrete overlap witness: a read [4, 8) is separate from mutable bytes [8, 12),
+while a read [4, 12) must not frame that mutation. The selected upstream
+`descriptor_backing_range_loop_survives_all_proof_modes` test passes (2.12s),
+covering fresh verification, expansion, rewritten checking and retained rechecking
+of the unchanged C/proof. The full nightly suite was not run.
+
+## Completed post-loop-repair example audit
+
+Checkpoint `53da27b58` completes the example-stage run lost during the outage:
+**39 of 52 pass, 13 fail**, in 111.28s (nextest harness). The failed project set
+is identical to `bd6659d9a`: arena, binary-tree, input-cursor, multifile-registry,
+owned-segmented-buffer, owned-split-buffer, owned-string, owned-vector,
+rbtree-augmented, refcount, ring-buffer, rust-byte-sum and rust-chunks-exact.
+There are no restored or newly failing projects. Examples and the example-test
+harness have no changes between those two revisions. This is not a green gate.
+
+```sh
+source /workspace/.click-tools/activate.sh
+CARGO_BUILD_JOBS=1 RUST_MIN_STACK=8388608 \
+CARGO_TARGET_DIR=/workspace/click-object-failure-reduction/target \
+CLICK_CPP_EXPORTER=/workspace/click-object-failure-reduction/target/cpp-exporter/click-cpp-exporter \
+cargo nextest run --test examples --no-fail-fast -E 'test(example_projects)'
+```
+
+The fresh original segmented-buffer trace leads to the complete
+[modular buffer reduction](../bugs/modular-buffer-ranges-fail-to-rejoin.md).
+All three reduced proofs pass on the upstream-based `73cff194e` verifier. The
+archive rejects the final fold: the held prefix and tail use descriptor pointer
+reads from different call snapshots. Field-preservation equalities are present;
+the precise missing checked frame/transport step is not yet attributed. Keep
+native pointer-origin checking intact and diagnose that certificate path before
+extracting additional general range rules. The split-buffer failure still needs
+an independent reduction before claiming the same cause.
+
+## Checked-coordinate buffer join repair
+
+Archive checkpoint `477784302` restores both original buffer projects without
+changing their C or claims. The selected pointer read has a checked, full-width
+endpoint through the call frame. Candidate lookup uses that endpoint in a
+query-local address graph, but scratch normalization previously reinserted the
+original supplier ranges and lost their common coordinates. The repair restates
+only selected byte-footprint suppliers in the query's checked coordinates before
+joining them. It publishes no equality and changes no object designation,
+validity, pointer-origin rule, or loan/support exclusion.
+
+Validation on that implementation:
+
+- All 86 selected memory-index, pointer-designation, native-span, loop-carrier
+  and borrow-partition kernel controls pass (8.12s harness). The new regression
+  fails before the repair and passes afterward. It rejects withdrawn separation,
+  missing ownership and a partially overwritten pointer field; measured selected
+  work stays bounded beside 16, 64, 256 and 1024 unrelated owners.
+- The unchanged reduced bug and both original segmented/split-buffer pipelines
+  pass fresh verification, expansion, rewritten checking and retained rechecking.
+  The helper was explicitly relinked after `cargo build --lib`; an earlier helper
+  invocation had used a stale top-level library artifact and is not evidence of
+  a proof-mode disagreement.
+- The normal 52-project example stage completes in 130.78s: **41 pass, 11 fail**.
+  Segmented-buffer and split-buffer are restored; there are no new failures.
+  Remaining failures: arena, binary-tree, input-cursor, multifile-registry,
+  owned-string, owned-vector, rbtree-augmented, refcount, ring-buffer, rust-byte-sum
+  and rust-chunks-exact. The gate remains non-green; no full nightly run was made.
+
+This is a preserved archive repair, not activation of the archive. The next
+step is to assess whether this small supplier-coordinate repair has independent
+upstream value and can be extracted with its checked-frame prerequisites, then
+continue reducing the remaining compatibility failures.
+
+## Interior-write query follow-up
+
+PR #1011 merged the supplier-coordinate join repair; its pushed head
+`f2b2962a3` is verified in upstream history. Recovery checkpoint `c6d5c4200`
+then repairs a separate indexed lookup gap: scalar interior-write queries must
+ask for the checked endpoint of producer-registered pointer-read prefixes, as
+footprint queries already do. It keeps the relation query-local and checks the
+live supplier's ownership and bounds. All 87 selected recovery kernel controls
+pass (6.75s harness), including the original manual-snapshot rejection and a
+failing-before/passing-after interior-write regression at 16/64/256 unrelated
+owners. The regression rejects weakened separation, removed ownership, partial
+pointer overwrites and a write past the owned extent.
+
+This does not yet restore owned-string or owned-vector. Fresh verification still
+rejects their original postconditions. The [two-store C reduction](../bugs/pointer-field-reload-loses-backing-write-authority.md)
+also still rejects its second write, so execution-side pointer reload/authority
+tracking remains the next reduced investigation. No C, contract, proof, tactic
+budget or language-profile change is included in this checkpoint. No new full
+example-stage count is claimed; the last completed audit remains 41/52.
+
+The independently extracted query-prefix repair also passes all 63 selected
+current-upstream controls (8.33s harness). It uses upstream's existing typed-load
+API and omits the archive-only frame-context adapter. Formatting, book rendering
+and structural documentation lint pass. The full gate and nightly suite were not
+run locally; required CI supplies the integration verdict.

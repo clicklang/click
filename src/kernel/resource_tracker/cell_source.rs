@@ -295,7 +295,7 @@ pub(in crate::kernel) enum RangeBoundEvidence {
 pub(in crate::kernel) enum RangeDisjointFromPointerEvidence {
     DistinctBlocks,
     BorrowPartition(Box<BorrowPartitionRangeEvidence>),
-    ExactSeparationFact(Proposition),
+    ExactSeparationFact(Box<SeparatedRangeEvidence>),
     DirectConstantOutside {
         index: i64,
         /// The access width the index was judged against. A range is a byte
@@ -310,6 +310,42 @@ pub(in crate::kernel) enum RangeDisjointFromPointerEvidence {
         offset: Bitvector32Term,
         positive: PositiveTermEvidence,
     },
+}
+
+/// A selected explicit separation, complete mutable footprint, and full read.
+/// The selected members are retained input, rather than rediscovered by checking.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::kernel) struct SeparatedRangeEvidence {
+    pub(in crate::kernel) fact: Proposition,
+    pub(in crate::kernel) range_member: CMemoryRange,
+    pub(in crate::kernel) access_member: CMemoryRange,
+    pub(in crate::kernel) membership: AccessInRangeEvidence,
+}
+
+impl SeparatedRangeEvidence {
+    fn checks(
+        &self,
+        range: &CMemoryRange,
+        pointer: &Pointer,
+        bytes: u32,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        assumptions.prop_facts.contains(&self.fact)
+            && self.fact.memory_separation().is_some_and(|(left, right)| {
+                left == &self.range_member && right == &self.access_member
+                    || right == &self.range_member && left == &self.access_member
+            })
+            && !assumptions
+                .memory_ranges_overlap_after_base_equality(&self.range_member, &self.access_member)
+            && crate::kernel::assumptions::memory_range_shallowly_contained_with_facts(
+                range,
+                &self.range_member,
+                assumptions,
+            )
+            && self
+                .membership
+                .checks(pointer, bytes, &self.access_member, assumptions)
+    }
 }
 
 /// A complete mutable footprint and read selected from one live borrowed
@@ -704,14 +740,8 @@ impl RangeDisjointFromPointerEvidence {
         match self {
             Self::DistinctBlocks => range.base.blocks_proven_distinct(pointer),
             Self::BorrowPartition(evidence) => evidence.checks(range, pointer, bytes, assumptions),
-            Self::ExactSeparationFact(fact) => {
-                assumptions.prop_facts.contains(fact)
-                    && exact_separation_fact_covers_range_and_pointer(
-                        fact,
-                        range,
-                        pointer,
-                        assumptions,
-                    )
+            Self::ExactSeparationFact(evidence) => {
+                evidence.checks(range, pointer, bytes, assumptions)
             }
             Self::DirectConstantOutside {
                 index,
@@ -1699,5 +1729,102 @@ mod borrowed_range_frame_tests {
                 typed_range_disjoint_from_pointer_evidence(&backing, &field, 8, &views).is_none()
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod separated_range_frame_tests {
+    use super::*;
+    use crate::kernel::{Proposition, PureFactContext, Variable};
+
+    #[test]
+    fn separated_range_frame_retains_full_access_and_range_extents() {
+        let mut samples = Vec::new();
+        for size in [16u64, 64, 256, 1024] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let data = Pointer::symbolic(Variable(9_901_001));
+            let field = Pointer::symbolic(Variable(9_901_002));
+            let backing = CMemoryRange::new(data.clone(), 0u32.into(), 2u32.into());
+            let descriptor = CMemoryRange::new(field.clone(), 0u32.into(), 2u32.into());
+            let separate = |left, right| Proposition::CResourceSeparate {
+                left: Box::new(CResource::Memory(left)),
+                right: Box::new(CResource::Memory(right)),
+            };
+            let authority = separate(backing.clone(), descriptor.clone());
+            let mut context = PureFactContext::new().assume_proposition(authority.clone());
+            for index in 0..size {
+                context = context.assume_proposition(separate(
+                    CMemoryRange::new(
+                        Pointer::symbolic(Variable(9_902_000 + index * 2)),
+                        0u32.into(),
+                        2u32.into(),
+                    ),
+                    CMemoryRange::new(
+                        Pointer::symbolic(Variable(9_902_001 + index * 2)),
+                        0u32.into(),
+                        2u32.into(),
+                    ),
+                ));
+            }
+            let child = CMemoryRange::new(data.clone(), 1u32.into(), 2u32.into());
+            let read = field.offset_by_bytes(4);
+            let (proof, work) = crate::instrumentation::measure_deterministic_work(|| {
+                typed_range_disjoint_from_pointer_evidence(&child, &read, 4, &context)
+            });
+            let proof = proof.expect("selected separation covers the complete subrange and read");
+            assert!(matches!(
+                &proof,
+                RangeDisjointFromPointerEvidence::ExactSeparationFact(_)
+            ));
+            assert!(proof.checks(&child, &read, 4, &context));
+            // The first element belongs to the descriptor, but the second does not.
+            assert!(!proof.checks(&child, &read, 8, &context));
+            assert!(
+                typed_range_disjoint_from_pointer_evidence(&child, &read, 8, &context).is_none()
+            );
+            let too_large = CMemoryRange::new(data, 0u32.into(), 3u32.into());
+            assert!(!proof.checks(&too_large, &read, 4, &context));
+            assert!(
+                typed_range_disjoint_from_pointer_evidence(&too_large, &read, 4, &context)
+                    .is_none()
+            );
+            let withdrawn = context.without_exact_fact(&authority);
+            assert!(!proof.checks(&child, &read, 4, &withdrawn));
+            assert!(
+                typed_range_disjoint_from_pointer_evidence(&child, &read, 4, &withdrawn).is_none()
+            );
+            assert!(work < 200, "size={size}, work={work}");
+            samples.push(work);
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[0] == pair[1]),
+            "unrelated separations changed work: {samples:?}"
+        );
+    }
+
+    #[test]
+    fn separated_read_start_does_not_frame_an_overlapping_wide_read() {
+        let field = Pointer {
+            block: "separated-frame".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let backing = CMemoryRange::new(field.offset_by_bytes(8), 0u32.into(), 1u32.into());
+        let descriptor = CMemoryRange::new(field.clone(), 0u32.into(), 2u32.into());
+        let context = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(backing.clone())),
+            right: Box::new(CResource::Memory(descriptor)),
+        });
+        let read = field.offset_by_bytes(4);
+        let proof = typed_range_disjoint_from_pointer_evidence(&backing, &read, 4, &context)
+            .expect("read [4, 8) is separated from mutable bytes [8, 12)");
+        assert!(matches!(
+            &proof,
+            RangeDisjointFromPointerEvidence::ExactSeparationFact(_)
+        ));
+        assert!(proof.checks(&backing, &read, 4, &context));
+        // The start still belongs to the descriptor, but [4, 12) actually
+        // overlaps the mutable footprint. Point membership cannot frame it.
+        assert!(!proof.checks(&backing, &read, 8, &context));
+        assert!(typed_range_disjoint_from_pointer_evidence(&backing, &read, 8, &context).is_none());
     }
 }

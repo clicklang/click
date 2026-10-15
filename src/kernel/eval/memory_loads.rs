@@ -4957,6 +4957,7 @@ mod tests {
                 function: std::sync::Arc::from("read"),
             },
             occurrence,
+            reference_access: None,
         }
     }
 

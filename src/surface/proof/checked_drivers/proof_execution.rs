@@ -109,6 +109,7 @@ fn bridges_without_executing(tactic: &ProofTactic) -> bool {
         tactic,
         ProofTactic::Have(_)
             | ProofTactic::UnfoldResource(_)
+            | ProofTactic::UnfoldWitnesses { .. }
             | ProofTactic::UnfoldPredicate(_)
             | ProofTactic::UnfoldFunction(_)
             | ProofTactic::PeelFunction { .. }
@@ -164,6 +165,10 @@ fn linear_execution_proof_step(tactic: &ProofTactic) -> Option<ProofStep> {
             premises: premises.clone(),
         }),
         ProofTactic::UnfoldResource(resource) => Some(ProofStep::UnfoldResource(resource.clone())),
+        ProofTactic::UnfoldWitnesses { resource, names } => Some(ProofStep::UnfoldWitnesses {
+            resource: resource.clone(),
+            names: names.clone(),
+        }),
         ProofTactic::FoldResource(resource) => Some(ProofStep::FoldResource(resource.clone())),
         ProofTactic::ObserveResource(resource) => {
             Some(ProofStep::ObserveResource(resource.clone()))
@@ -1373,6 +1378,7 @@ fn try_check_structural_function_proof_inner<'a>(
                 index,
                 source_index,
                 resource,
+                close_proof,
                 body,
                 continuation,
             } => {
@@ -1381,7 +1387,8 @@ fn try_check_structural_function_proof_inner<'a>(
                 }
                 saw_structure = true;
                 proof = proof.with_execution_tactic_index(*index)?;
-                let scope = proof.begin_open(resource.clone(), *source_index)?;
+                let scope =
+                    proof.begin_open(resource.clone(), *source_index, close_proof.clone())?;
                 let Some(scope) = advance_checked_open_scope(
                     scope,
                     body,
@@ -2748,11 +2755,12 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a>(
             index,
             source_index,
             resource,
+            close_proof,
             body,
             continuation,
         } => {
             let proof = proof.with_execution_tactic_index(*index)?;
-            let scope = proof.begin_open(resource.clone(), *source_index)?;
+            let scope = proof.begin_open(resource.clone(), *source_index, close_proof.clone())?;
             let Some(scope) = advance_checked_open_scope(
                 scope,
                 body,
@@ -3293,21 +3301,34 @@ fn advance_execution_match<'a>(
     owning_source_index: usize,
     depth: usize,
 ) -> Result<Option<Proof<'a>>, ClickError> {
-    // With tactics written after it, the `match` must rejoin its live arms:
-    // they are checked once, from the one state every arm ends in. Without
-    // any, each arm completes the function proof on its own.
+    let proof = proof.prepare_execution_match(source.ensuring.is_some(), source_index)?;
+    advance_prepared_execution_match(
+        proof,
+        source,
+        arms,
+        continuation,
+        expansion_capture,
+        proof_site,
+        owning_source_index,
+        depth,
+    )
+}
+
+/// Checks the existing model-match rule from its exact prepared marker.
+/// Both ordinary execution and resource scopes use this same driver.
+fn advance_prepared_execution_match<'a>(
+    proof: Proof<'a>,
+    source: &Arc<ProofMatch>,
+    arms: &[InternalProofNode],
+    continuation: &InternalProofNode,
+    expansion_capture: Option<&mut ExpansionCapture>,
+    proof_site: Option<&ProofSite>,
+    owning_source_index: usize,
+    depth: usize,
+) -> Result<Option<Proof<'a>>, ClickError> {
+    // With a continuation the live arms must rejoin; otherwise each arm
+    // completes the function proof on its own.
     let rejoins = source.ensuring.is_some() || !matches!(continuation, InternalProofNode::Done);
-    let proof = if source.ensuring.is_some() {
-        proof.prepare_entry_interface()?
-    } else {
-        proof
-    };
-    let proof = if crate::surface::proof_trace::enabled_for(proof.claim_label()) {
-        proof.at_source_tactic(source_index)
-    } else {
-        proof
-    };
-    let proof = proof.begin_execution_match();
     let marker = proof.checkpoint();
     let mut plan = proof.plan_execution_match(source, |index| {
         execution_region_leading_tactic(&arms[index])
@@ -3689,12 +3710,14 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                 index,
                 source_index,
                 resource,
+                close_proof,
                 body,
                 continuation,
             } => {
                 let owner = proof.clone();
                 let opened = proof.with_execution_tactic_index(*index)?;
-                let scope = opened.begin_open(resource.clone(), *source_index)?;
+                let scope =
+                    opened.begin_open(resource.clone(), *source_index, close_proof.clone())?;
                 let Some(scope) = advance_checked_open_scope(
                     scope,
                     body,
@@ -4717,16 +4740,51 @@ fn advance_checked_open_scope<'a>(
             owning_source_index,
         );
     }
+    if let InternalProofNode::Match {
+        index,
+        source_index,
+        proof_match,
+        arms,
+        continuation,
+        ..
+    } = body
+    {
+        let scope = scope.with_execution_tactic_index(*index)?;
+        let Some(scope) =
+            scope.try_execution_match(proof_match.ensuring.is_some(), *source_index, |proof| {
+                advance_prepared_execution_match(
+                    proof,
+                    proof_match,
+                    arms,
+                    continuation,
+                    expansion_capture.as_deref_mut(),
+                    proof_site,
+                    owning_source_index,
+                    0,
+                )
+            })?
+        else {
+            return decline();
+        };
+        return advance_checked_open_scope(
+            scope,
+            continuation,
+            expansion_capture,
+            proof_site,
+            owning_source_index,
+        );
+    }
     if let InternalProofNode::Open {
         index,
         source_index,
         resource,
+        close_proof,
         body: nested_body,
         continuation,
     } = body
     {
         let scope = scope.with_execution_tactic_index(*index)?;
-        let nested = scope.begin_open(resource.clone(), *source_index)?;
+        let nested = scope.begin_open(resource.clone(), *source_index, close_proof.clone())?;
         let Some(nested) = advance_checked_open_scope(
             nested,
             nested_body,

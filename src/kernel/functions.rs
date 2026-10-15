@@ -4589,11 +4589,12 @@ pub(super) fn execute_c_function_call_paths(
         .as_deref()
     {
         let pointer = Pointer::function(function.name());
-        let contracts = assumptions
-            .function_contract_facts_for(&pointer)
-            .filter_map(|(name, _)| execution_context.environment.get_function_contract(&name))
-            .filter(|contract| contract.function_pointer_type() == function.function_pointer_type())
-            .collect::<Vec<_>>();
+        let owned = contracts_from_facts(
+            assumptions.function_contract_facts_for(&pointer),
+            execution_context.environment,
+            &function.function_pointer_type(),
+        );
+        let contracts = owned.iter().collect::<Vec<_>>();
         if !contracts.iter().any(|contract| contract.name() == selected) {
             return Ok(vec![resource_call_failure(
                 "selected contract is not established for this function with its call signature",
@@ -4637,6 +4638,7 @@ pub(super) fn execute_c_function_call_paths(
                 storage: Some(&rule.function),
                 evidence: None,
                 representation_copy: rule.representation_copy(),
+                value_arguments: &[],
             }],
             None,
             binder_application
@@ -5079,6 +5081,7 @@ fn execute_verified_function_rule(
             storage: Some(&rule.function),
             evidence: Some(&rule.function),
             representation_copy: None,
+            value_arguments: &[],
         }],
         None,
         binder_application
@@ -5123,6 +5126,7 @@ pub(super) fn suspend_verified_worker(
             storage: Some(&rule.function),
             evidence: Some(&rule.function),
             representation_copy: None,
+            value_arguments: &[],
         }],
         None,
         None,
@@ -5266,6 +5270,8 @@ struct CFunctionContractApplication<'a> {
     /// The checked representation-copy effect of a recognized byte-copy
     /// declaration, if this application is one.
     representation_copy: Option<RepresentationCopyEffect>,
+    /// The values a named contract's fact fixed for its value parameters.
+    value_arguments: &'a [CValue],
 }
 
 /// Transfers initialized typed cells across a recognized byte-copy call.
@@ -7778,6 +7784,34 @@ fn prepare_verified_function_call<'a>(
             argument_obligations,
         )));
     };
+    // A named contract's value parameters take the values its fact fixed,
+    // as the call parameters take the call's arguments.
+    if application.value_arguments.len() != contract_interface.value_parameters().len() {
+        return Ok(Err(CFunctionPath::new(
+            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
+                "contract `{}` needs values for its value parameters",
+                application.interface_name
+            ))),
+            arguments_path.facts,
+            argument_obligations,
+        )));
+    }
+    for (parameter, value) in contract_interface
+        .value_parameters()
+        .iter()
+        .zip(application.value_arguments)
+    {
+        entry_state.locals.set_typed_qualified_with_all_qualifiers(
+            parameter.name().to_string(),
+            value.clone(),
+            parameter.c_type(),
+            CMemory::value_parameter_pointer(parameter.name()),
+            false,
+            false,
+            false,
+            false,
+        );
+    }
     let path_assumptions =
         assumptions_with_path_context(assumptions, &arguments_path.facts, &argument_obligations);
     if let Some(application) = resource_application {
@@ -8339,6 +8373,7 @@ fn prepare_verified_function_call<'a>(
             }
             let contract_requirement_is_proven = function_contract_requirement_is_proven(
                 &requirement_path.proposition,
+                &path_assumptions,
                 environment,
                 budget,
             )?;
@@ -8851,6 +8886,35 @@ fn prepare_verified_function_call<'a>(
     }))
 }
 
+/// The contracts facts attach to a function value, each with the values
+/// its fact fixes for its value parameters, that apply to a call of type
+/// `function_type`. A fact whose values do not have its contract's value
+/// parameter types contributes nothing.
+pub(super) fn contracts_from_facts(
+    facts: impl Iterator<Item = (String, Proposition)>,
+    environment: &CExecutionEnvironment,
+    function_type: &CType,
+) -> Vec<CFunctionContract> {
+    facts
+        .filter_map(|(name, fact)| {
+            let contract = environment.get_function_contract(&name)?;
+            let Proposition::Predicate { arguments, .. } = &fact else {
+                return None;
+            };
+            let values = arguments
+                .iter()
+                .skip(2)
+                .map(|argument| match argument {
+                    Term::CValue(value) => Some(value.clone()),
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()?;
+            contract.instantiated(&values)
+        })
+        .filter(|contract| &contract.function_pointer_type() == function_type)
+        .collect()
+}
+
 pub(super) fn execute_c_function_contracts_paths(
     caller_state: &CState,
     contracts: &[&CFunctionContract],
@@ -8949,6 +9013,7 @@ pub(super) fn execute_c_function_contracts_paths(
             storage: None,
             evidence: None,
             representation_copy: None,
+            value_arguments: contract.value_arguments(),
         })
         .collect::<Vec<_>>();
     execute_verified_function_applications(
@@ -9069,37 +9134,82 @@ fn separation_requirement_parts_are_established(
 
 fn function_contract_requirement_is_proven(
     proposition: &Proposition,
+    assumptions: &PureFactContext,
     environment: &CExecutionEnvironment,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<bool> {
     match proposition {
         Proposition::And(left, right) => {
             Ok(
-                function_contract_requirement_is_proven(left, environment, budget)?
-                    && function_contract_requirement_is_proven(right, environment, budget)?,
+                function_contract_requirement_is_proven(left, assumptions, environment, budget)?
+                    && function_contract_requirement_is_proven(
+                        right,
+                        assumptions,
+                        environment,
+                        budget,
+                    )?,
             )
         }
         Proposition::Predicate { name, arguments } => {
             let Some(contract_name) = CFunctionContract::surface_name_from_predicate(name) else {
                 return Ok(false);
             };
-            let [Term::CState(_), Term::CValue(CValue::Pointer(pointer))] = arguments.as_slice()
+            let [
+                Term::CState(_),
+                Term::CValue(CValue::Pointer(pointer)),
+                values @ ..,
+            ] = arguments.as_slice()
             else {
                 return Ok(false);
             };
-            let Pointer {
-                block: PointerBlock::Function(target),
-                offset: PointerOffsetTerm::Constant(0),
-            } = pointer.pointer()
+            let target = match pointer.pointer() {
+                Pointer {
+                    block: PointerBlock::Function(target),
+                    offset: PointerOffsetTerm::Constant(0),
+                } => Some(target),
+                Pointer {
+                    block: PointerBlock::FunctionSymbolic(_),
+                    offset: PointerOffsetTerm::Constant(0),
+                } => None,
+                _ => return Ok(false),
+            };
+            // The fact's values fix the contract's value parameters for the
+            // refinement check.
+            let Some(values) = values
+                .iter()
+                .map(|value| match value {
+                    Term::CValue(value) => Some(value.clone()),
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()
             else {
                 return Ok(false);
             };
-            let Some(contract) = environment.get_function_contract(contract_name) else {
+            let Some(contract) = environment
+                .get_function_contract(contract_name)
+                .and_then(|contract| contract.instantiated(&values))
+            else {
                 return Ok(false);
             };
+            let contract = &contract;
             if pointer.c_type() != contract.function_pointer_type() {
                 return Ok(false);
             }
+            // A function value known only by the contracts its facts attach
+            // has those contracts as its implementations: a closure instance
+            // carries its own contract, fixed to its captured values.
+            let Some(target) = target else {
+                for source in contracts_from_facts(
+                    assumptions.function_contract_facts_for(pointer.pointer()),
+                    environment,
+                    &pointer.c_type(),
+                ) {
+                    if contract_refines_contract(contract, &source, assumptions, budget)? {
+                        return Ok(true);
+                    }
+                }
+                return Ok(false);
+            };
             if let Some(rule) = environment.get_verified_function_rule(target) {
                 return function_refines_named_contract(contract, &rule.function, budget);
             }
@@ -9335,7 +9445,44 @@ fn function_refines_named_contract(
     else {
         return Ok(false);
     };
-    function_refines_named_contract_in_case(&context, &[], &BTreeSet::new(), false, budget)
+    function_refines_named_contract_in_case(&context, &[], &BTreeSet::new(), false, None, budget)
+}
+
+/// Whether `source`, a named contract a fact fixed, implements `contract`.
+/// It is the automatic route of an explicit contract-to-contract refinement
+/// theorem, with the source's value parameters bound to the fact's values.
+/// The values are the caller's terms, so the caller's facts about them hold.
+fn contract_refines_contract(
+    contract: &CFunctionContract,
+    source: &CFunctionContract,
+    caller_facts: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<bool> {
+    if contract.name() == source.name() && contract.value_arguments() == source.value_arguments() {
+        return Ok(true);
+    }
+    let target = contract.interface();
+    let implementation = source.interface();
+    if !source.proof_parameters().is_empty()
+        || target.predicate_unfoldings() != implementation.predicate_unfoldings()
+        || !target.has_compatible_signature_and_composite_vocabulary(implementation)
+    {
+        return Ok(false);
+    }
+    let Some(mut context) =
+        contract_refinement_context_for_interface(contract, source.name(), implementation, budget)
+    else {
+        return Ok(false);
+    };
+    context.function_value_arguments = source.value_arguments().to_vec();
+    function_refines_named_contract_in_case(
+        &context,
+        &[],
+        &BTreeSet::new(),
+        false,
+        Some(caller_facts),
+        budget,
+    )
 }
 
 pub(super) fn prepare_function_contract_refinement_context(
@@ -9391,8 +9538,22 @@ pub(super) fn contract_refinement_context_for_interface(
         argument_values.push(symbolic_call_result(parameter.c_type(), variable));
     }
     let result_variable = budget.allocate_kernel_variable().ok()?;
+    // A contract not fixed by a fact holds for arbitrary values of its value
+    // parameters.
+    let contract =
+        if contract.value_arguments().len() == contract.interface().value_parameters().len() {
+            contract.clone()
+        } else {
+            let mut values = Vec::new();
+            for parameter in contract.interface().value_parameters() {
+                let variable = budget.allocate_kernel_variable().ok()?;
+                values.push(symbolic_call_result(parameter.c_type(), variable));
+            }
+            contract.instantiated(&values)?
+        };
+    let pointer_type = contract.function_pointer_type();
     Some(CFunctionContractRefinementContext {
-        contract: contract.clone(),
+        contract,
         function_interface: function_interface.clone(),
         function_name: function_name.to_string(),
         pointer: CPointerValue::new(
@@ -9400,9 +9561,10 @@ pub(super) fn contract_refinement_context_for_interface(
                 block: PointerBlock::Function(function_name.to_string()),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            contract.function_pointer_type(),
+            pointer_type,
         ),
         source_contract: None,
+        function_value_arguments: Vec::new(),
         argument_values,
         result_variable,
         next_kernel_variable: budget.next_kernel_variable(),
@@ -9412,11 +9574,58 @@ pub(super) fn contract_refinement_context_for_interface(
 pub(super) fn function_contract_refinement_entry_state(
     context: &CFunctionContractRefinementContext,
 ) -> CState {
-    with_contract_interface_argument_views(
+    let mut state = with_contract_interface_argument_views(
         &CState::new().with_population_creation_tracking(),
         &context.contract.interface,
         &context.argument_values,
-    )
+    );
+    for (parameter, value) in context
+        .contract
+        .interface
+        .value_parameters()
+        .iter()
+        .zip(context.contract.value_arguments())
+    {
+        state.locals.set_typed_with_all_qualifiers(
+            parameter.name().to_string(),
+            value.clone(),
+            parameter.c_type(),
+            false,
+            false,
+            false,
+            false,
+        );
+    }
+    state
+}
+
+/// The implementation side's entry frame: the shared arguments, and the
+/// values its fact fixed for its own value parameters.
+fn function_contract_refinement_implementation_state(
+    context: &CFunctionContractRefinementContext,
+) -> CState {
+    let mut state = with_contract_interface_argument_views(
+        &CState::new().with_population_creation_tracking(),
+        &context.function_interface,
+        &context.argument_values,
+    );
+    for (parameter, value) in context
+        .function_interface
+        .value_parameters()
+        .iter()
+        .zip(&context.function_value_arguments)
+    {
+        state.locals.set_typed_with_all_qualifiers(
+            parameter.name().to_string(),
+            value.clone(),
+            parameter.c_type(),
+            false,
+            false,
+            false,
+            false,
+        );
+    }
+    state
 }
 
 pub(super) fn prepare_contract_refinement_obligations(
@@ -9426,11 +9635,7 @@ pub(super) fn prepare_contract_refinement_obligations(
     let source = &context.function_interface;
     let mut budget = ExecutionBudget::continuing_from(context.next_kernel_variable);
     let entry = function_contract_refinement_entry_state(context);
-    let source_entry = with_contract_interface_argument_views(
-        &CState::new().with_population_creation_tracking(),
-        source,
-        &context.argument_values,
-    );
+    let source_entry = function_contract_refinement_implementation_state(context);
     let mut assumptions = PureFactContext::new();
     if !assume_contract_propositions(
         &entry,
@@ -9910,6 +10115,7 @@ fn function_refines_named_contract_in_case(
     case_assumptions: &[Proposition],
     unfolded_predicates: &BTreeSet<String>,
     explicit_case: bool,
+    caller_facts: Option<&PureFactContext>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<bool> {
     let contract = &context.contract;
@@ -9942,16 +10148,8 @@ fn function_refines_named_contract_in_case(
         return Ok(false);
     }
 
-    let contract_frame = with_contract_interface_argument_views(
-        &CState::new().with_population_creation_tracking(),
-        contract_interface,
-        &context.argument_values,
-    );
-    let function_frame = with_contract_interface_argument_views(
-        &CState::new().with_population_creation_tracking(),
-        function_interface,
-        &context.argument_values,
-    );
+    let contract_frame = function_contract_refinement_entry_state(context);
+    let function_frame = function_contract_refinement_implementation_state(context);
     // Resource arguments are written over the two parameter lists, which the
     // views above already bind, so the pairing is decided before either
     // contract's own requirements are assumed.
@@ -9983,7 +10181,14 @@ fn function_refines_named_contract_in_case(
     ) else {
         return Ok(false);
     };
-    let mut preconditions = PureFactContext::new();
+    // Value arguments fixed by facts are the caller's terms, and a pure
+    // contract reads nothing else of the caller, so the caller's facts about
+    // those terms hold here. A contract over memory would read the frames'
+    // own memories, which those facts do not describe.
+    let mut preconditions = match caller_facts {
+        Some(facts) if state_independent => facts.clone(),
+        _ => PureFactContext::new(),
+    };
     if !assume_contract_propositions(
         &contract_entry,
         &contract_entry,

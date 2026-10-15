@@ -147,7 +147,11 @@ that writes `int32` for such a source already writes the source's spelling.
   and a `fn(i32) -> i32` parameter is a callback under it, with a crate
   function item passed for one. `extern fn` states the trusted contract of
   a scalar `safe fn` in an `unsafe extern "C"` block, the head naming its
-  parameters. No functions of other crates, closures or `dyn Fn`. A
+  parameters. A closure that captures nothing can be passed for a `fn`
+  pointer; the sidecar names it as rustc does,
+  `fn closures::caller::{closure#0}(y: i32) -> i32`. A closure capturing
+  scalars can be passed for a `&dyn Fn` parameter, its contract naming its
+  captures. No functions of other crates or `impl Fn`. A
   diagnostic's suggested refinement theorem still uses the importer's name
   and C's `&f` spelling.
 
@@ -167,9 +171,18 @@ that writes `int32` for such a source already writes the source's spelling.
    heads, members included, and calls through C++ function-pointer
    parameters under a named contract, and Rust `contract fn` with calls
    through `fn` pointers, Rust `extern fn` for `extern` block items, and
-   C++ function-pointer locals and forwarded pointers. Remaining:
-   `std::function` in C++ (whose call operator throws when empty), and
-   closures (`impl Fn`, `&dyn Fn`) in Rust,
+   C++ function-pointer locals and forwarded pointers, and Rust closures
+   that capture nothing passed for a `fn` pointer, named
+   `caller::{closure#0}`, and capturing closures passed for `&dyn Fn`
+   parameters. Remaining: `std::function` in C++ (whose call operator
+   throws when empty), and `impl Fn` in Rust. Decided 2026-10-14: a capturing closure's contract
+   names its captures as the body does (`ensures result == y + k;`), and a
+   callee states what it needs of the closure with a parameterized named
+   contract, whose value parameters are body clauses `let amount: i32;`
+   attached as `Adds(f, { amount: k })`. Parameterized contracts are done
+   for C and Rust function pointers, through automatic formation at
+   `&f`, and for capturing closures by contract-to-contract refinement;
+   refinement and execution theorems for them remain,
    through the C++ exporter and Charon, with the same refinement check as C
    (`Comparator(&f)`).
 4. **Base-class and trait method interfaces.** A contract on a C++ virtual

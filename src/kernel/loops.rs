@@ -1507,6 +1507,7 @@ fn modeled_pthread_handle_store(
         value_type: CType::UInt64,
         volatile: false,
         pointee_constant: false,
+        source: Default::default(),
     };
     let paths = super::eval::execute_c_statement_paths(
         state,
@@ -1975,13 +1976,12 @@ fn execute_c_indirect_call_paths(
                     PointerBlock::FunctionSymbolic(_) | PointerBlock::Function(_) => {
                         let target_assumptions =
                             assumptions_with_path_context(assumptions, &facts, &obligations);
-                        let contracts = target_assumptions
-                            .function_contract_facts_for(pointer.pointer())
-                            .filter_map(|(name, _)| {
-                                execution_context.environment.get_function_contract(&name)
-                            })
-                            .filter(|contract| contract.function_pointer_type() == function_type)
-                            .collect::<Vec<_>>();
+                        let owned = super::functions::contracts_from_facts(
+                            target_assumptions.function_contract_facts_for(pointer.pointer()),
+                            execution_context.environment,
+                            &function_type,
+                        );
+                        let contracts = owned.iter().collect::<Vec<_>>();
                         if let Some(selected) =
                             &execution_context.environment.selected_call_contract
                             && !contracts

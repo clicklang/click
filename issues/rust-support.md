@@ -1,298 +1,315 @@
-# P1: Support safe Rust and verify a shared C/Rust checksum specification
+# P1: A well-designed Rust front end
 
 Priority: P1.
 
-Soundness: incomplete. Language coverage. Unsupported Rust is refused. The
-pinned Charon front end is a documented trusted dependency.
+Soundness: soundness-adjacent. No false acceptance is known; unsupported Rust
+is refused, and the pinned Charon front end is a documented trusted
+dependency. The gap concerns how that dependency is identified. Refresh runs
+the executable at the config's `exporter` path, plus a file named
+`charon-driver` next to it. It checks only their self-reported `charon
+version` and the commit that `rustup run <toolchain> rustc -vV` reports
+(`src/languages/rust/charon.rs`). Locks hash locally built binaries that
+nothing compares with a released build. A second gap is recorded under
+After launch below: rustc's borrow checking alone does not establish that
+Click rejects forged sidecar authority.
 
-## Goal and scope
+## Ruling and scope
 
-Deliver a useful, explicitly bounded safe-Rust verification path through Click
-sidecars and the shared checked engine. Verify selected unchanged Rust and C
-Adler-32 implementations against one mathematical specification, then derive
-result equality under matched input and state conditions. This is P1; the Linux
-rbtree remains the key launch demo.
+Maintainer ruling, 2026-10-14, on design-review N5: Rust support stays P1.
+The adler2 Adler-32 work is enough as the Rust launch demonstration, together
+with its checked correspondence to zlib, the
+[basic Rust example](../examples/basic-rust/README.md) and the other
+synthetic examples. P1 does not require more checksum milestones or broader
+Rust coverage.
 
-The implemented shared construction/return-destination contract is recorded in
-[aggregate construction](../design/aggregate-construction.md). It preserves
-existing Rust aggregate return, initialization and move/drop protocols. The
-checksum milestones below can continue with their current semantics; they are not blocked on that design.
+The P1 work is the Charon front-end pipeline. It follows the
+[shared front-end design](cpp-support.md#shared-front-end-design) in
+[cpp-support.md](cpp-support.md), which covers:
 
-Experimental Rust support and the checksum demonstration are independently
-reviewable milestones. Document and ship the supported subset without waiting
-for the full library proof. Neither milestone implies general Rust coverage.
+- install layout and version pinning;
+- locating front ends;
+- the identity handshake;
+- the lock envelope;
+- errors.
 
-## Current capabilities and evidence
+This file adds only what is specific to Rust.
 
-The Charon migration is complete. Native Charon is the sole extraction path;
-canonical examples and compiler-backed regressions use it, and the legacy
-exporter and toolchain have been retired. No HIR/MIR frontend migration remains.
-Ordinary verification loads locked artifacts offline through the shared engine.
+## Goal
 
-Supported operations include checked scalar arithmetic, branches, direct calls,
-shared/mutable references and local reborrows, supported records and move/drop
-protocols, compact scalar arrays and snapshot copies, byte slices, splitting,
-and stored shared iterators with actual cursor/remaining state. Crate imports
-lock roots, edition, features, target, qualified declarations, and the complete
-compiler-observed source closure. Concrete constructors, record returns and
-parameters, and selected resolved operators execute verified imported bodies.
+A user with a Rust crate, within the supported subset, installs Click with
+`install.sh` or `install.ps1`, writes a sidecar and import configuration, and
+runs `click import lock` and `click verify`. No Click repository checkout and
+no Charon build from source are needed. The user also does not hand-install a
+pinned nightly toolchain, or Click installs it for them in one documented
+step.
 
-The unchanged pinned adler2 2.0.1 selection imports successfully. Its original
-`Adler32::compute` body now proves both final fields equal the common checksum
-specification on the entry input snapshot, for every length zero through
-2,147,483,647 bytes from any canonical initial state. It terminates, preserves
-input bytes, checks every native access and arithmetic guard, and stores both
-fields below 65,521. The proof follows actual full-width cursor and remaining
-state through full batches, the aligned remainder, scalar accumulation and the
-final tail. Checked signed observations impose the explicit proof range limit;
-no generated processed counter or assumed checksum summary supplies the result.
+## Delivered launch demonstration
 
-Checked helper bodies and lane-state lemmas connect the actual constructor
-bytes, four-byte recurrences, deferred B seed contributions, reductions and
-ordered recombination to the shared mathematical specification. Full-range
-native-count and byte-position bridges preserve exact values and addresses.
-The specification independently proves concatenation and incremental equality
-for A, B and the packed checksum under explicit signed-range split bounds and
-canonical A seeds. A locked real Rust client now performs two unchanged
-`write_slice` calls at every split of every supported input, including empty
-prefixes and suffixes, proves the full-input packed specification, and preserves
-all bytes. Its proof connects actual updated fields and suffix byte addresses
-to the checked concatenation theorem. A second locked client saves the prefix
-checksum, restores a fresh receiver through unchanged `from_checksum`, and
-proves the same full-input result and byte preservation after the suffix update.
-Bounded unpacking rules recover exactly the canonical fields produced by the
-first update; arbitrary saved words are not assumed canonical.
+These are delivered; details are in the
+[Rust reference](../docs/reference/rust.md) and
+[the Adler trial](../design/charon-trial/adler2/README.md).
 
-Constructors, one- through four-byte computations, and the shared checksum
-getter verify. The getter proves exact packing for any two u16 fields and has a
-checked bridge from field specifications to the packed specification. The
-unchanged `adler32_slice` entry point composes the checked constructor, general
-computation and getter for every length zero through 2,147,483,647, returns the
-common packed checksum, and preserves every input byte. `write_slice` accepts
-any canonical initial state and returns canonical fields satisfying the common
-A/B specification. Logical byte-index guards are bridged explicitly to native
-64-bit range membership. The specialized empty call needs no byte authority.
+- **Rust Adler-32.** The unchanged, pinned adler2 2.0.1 `Adler32::compute`,
+  `adler32_slice`, the constructors, the getter, `write_slice` and
+  `from_checksum` prove the common checksum specification. This holds for
+  every length from 0 through 2,147,483,647 bytes, from any canonical
+  state. The proofs include termination, byte preservation, every native
+  access and arithmetic guard, and incremental use at every split. Locked
+  real clients compose two calls, and save and restore a checksum.
+- **zlib Adler-32.** The unchanged, pinned zlib `adler32` proves the same
+  specification for arbitrary canonical A/B, nonnull input and the same
+  length range, on all of its original paths. A real incremental C client
+  composes every split.
+- **Correspondence.** Checked
+  [C/Rust correspondence](../design/charon-trial/checksum-correspondence.md)
+  derives equal return words from those independent proofs under matched
+  bytes and state, and connects the reset behaviors. It composes
+  independently checked programs; it does not claim a verified FFI boundary.
+- **Experimental subset.** The Rust reference lists the supported subset:
+  - checked scalar arithmetic, branches and direct calls;
+  - shared and mutable references with local reborrows;
+  - supported records and move/drop protocols;
+  - compact scalar arrays and byte slices;
+  - stored shared iterators;
+  - locked crate closures with qualified declarations.
 
-The independently locked, unchanged zlib one-byte and short-loop paths prove
-their packed results equal the same specification and preserve every input byte
-for canonical seed 1 and lengths 1–15; its empty path also verifies.
-The unified C sidecar now proves the same signed length range for arbitrary
-canonical decoded A/B and nonnull input, including all original return paths.
-The real incremental C client composes all splits under nonnull call-pointer
-contracts. Checked C/Rust result and reset correspondence now connect these
-independent proofs; the scoped demonstration records the precise conditions.
+  Ordinary verification loads locked artifacts offline.
 
-Full original-computation smart audits exhaust the standard ten-minute run
-bound before completing a site, while ordinary verification succeeds. Continue
-with ordinary verification and retain audits where they complete; the audit
-timeout supplies no proof verdict. Standalone native-count and chunk-position
-claims pass complete audits. Whole-body correctness, false final A/B claims,
-and larger proof-tool checks run nightly.
+Whole-body correctness, false final A/B claims, and larger proof-tool checks
+run nightly. Full smart audits of the original computation exceed the
+standard ten-minute bound and give no verdict; ordinary verification is the
+check that succeeds.
 
-Composition regressions cover record and scalar-array storage starts, shared
-chunk-view transport, and all four returned/copied vector lanes across local
-stores. Automatic scope exits retire construction ownership. Negative tests
-reject missing input authority, noncanonical seeds, and false induction or
-final bounds. Whole-proof verification and tool agreement run nightly.
+## Today's pipeline
 
-Detailed support boundaries and reproducible commands belong in
-[the Rust reference](../docs/reference/rust.md). Current checksum evidence lives
-in [the Adler trial](../design/charon-trial/adler2/README.md). Keep this issue a
-current roadmap: replace status when work lands rather than append checkpoints.
+Audit of the current path, from a user's point of view:
 
-## Remaining work, in delivery order
+1. **Charon is built from source.** `scripts/build-charon.sh` clones
+   `AeneasVerif/charon` into `target/charon-source` and checks out the
+   pinned revision `5d6b812e…`. It builds debug `charon` and `charon-driver`
+   binaries into `target/charon/debug` with `cargo +nightly-2026-09-17`, and
+   needs that nightly toolchain with `rustc-dev`, `rust-src` and the
+   `x86_64-unknown-linux-gnu` target (`--install-toolchain`). The installer
+   ships neither the binaries nor the toolchain. CI already packages both
+   binaries and the pinned sysroot to share them between shards
+   (`scripts/check.sh` and `scripts/charon-runtime.sh pack|restore`), but
+   releases do not include them.
+2. **Runtime discovery is implicit.** At refresh, Click finds `rustup` by
+   scanning `PATH` and runs the pinned toolchain through it
+   (`extract_crate` in `charon.rs`). It finds the driver as a file named
+   `charon-driver` beside the configured exporter (`refresh_import` in
+   `src/languages/rust/import.rs`). Neither requirement is documented to
+   users, beyond "run `scripts/build-charon.sh`".
+3. **There is no single way to locate Charon.** Configs name the exporter
+   by a path into the repository's build output: `../../target/charon/debug/charon`
+   in `examples/basic-rust/borrow.click.import.json`, and
+   `../../../target/charon/debug/charon` in the schema-4 example in the
+   [Rust reference](../docs/reference/rust.md). Tests and design notes use
+   `CLICK_CHARON` (`tests/rust_import.rs`, `design/charon-trial/README.md`),
+   which the `click` binary never reads.
+4. **Pinning is good, but the identity is per machine.**
+   `src/languages/rust/charon-profile.json` is compiled in. It pins the
+   extractor revision and version, the rustc commit, the toolchain, the
+   flags and the named semantic versions, and a unit test ties it to the
+   `charon` Cargo dependency's revision. The C++ front end should adopt this
+   model. However, the lock and its import identity include hashes of the
+   locally built `charon` and `charon-driver`. Refreshing unchanged inputs
+   on another machine therefore rewrites the lock, even though loading never
+   checks those hashes.
+5. **Historical "trial" naming reaches users.** Examples:
+   - the profile identity `click-charon-trial-v1`;
+   - `TrialArtifact`;
+   - the refusal "Charon trial requires its pinned extractor revision";
+   - the accepted `"backend": "charon-trial"` spelling;
+   - the configuration-error text about retired legacy extraction.
 
-### 1. Verify C and publish the shared demonstration
+   The canonical evidence lives under `design/charon-trial/`.
+6. **Config and lock formats differ from C++.** The config is schema 3 or 4
+   and the lock is schema 8, with fields named `config`, `source`,
+   `exporter`, …. The reading, hashing and atomic-write helpers (`read`,
+   `write_atomic`, `local_file` in `rust/import.rs`) duplicate their C++
+   counterparts.
+7. **Crate closures are hand-listed.** Schema 4 requires every file rustc
+   reads to appear in `files`. When the list is wrong, the refusal "Rust
+   compiler source closure differs from configured crate files" does not
+   say which files are missing or extra.
+8. **The target and host are fixed.** Extraction targets only
+   `x86_64-unknown-linux-gnu`. Releases build `click` for eight targets,
+   including macOS, Windows and aarch64 (`Cargo.toml`), and the Charon
+   toolchain must exist for whichever of those hosts are supported.
 
-Pin the selected configuration and revision of
-[zlib's Adler-32](https://github.com/madler/zlib/blob/develop/adler32.c), verify
-its unchanged optimized path against the same specification, and derive C/Rust
-result equality. Match seed/reset and null-buffer behavior explicitly.
+What already works and should be kept:
 
-The [unchanged pinned zlib trial](../design/charon-trial/zlib/README.md) imports
-all selected bodies and proves the canonical empty-input and one-byte cases
-offline; the one-byte result satisfies the shared specification and preserves
-the byte. Its null reset path verifies for any seed and nonunit length.
-Expression updates preserve consumed values, loop exit-side effects, native
-unsigned wrap, and checked pointer strides; nested `DO16` blocks also import.
-Ordinary loop memory footprints are captured before modified counters and
-cursors are havocked. Ranked reductions now cover a moving-cursor byte sum
-and `while (n--)`, including its wrapping zero exit, without a processed
-counter. Checked native 64-bit same-base prefixes now retain full-width
-coverage bounds and lifetime evidence; symbolic prefixes have explicit
-selected-premise proofs. Native byte subranges also retain a checked offset,
-nonwrapping remaining capacity, and lifetime evidence. The unchanged C short
-loop now proves the shared packed checksum, termination, and preservation of
-every input byte for canonical seed 1, nonnull input, and lengths 2–15. Exact
-component-sum invariants follow the actual remaining count, with checked byte
-promotion and native addition bounds. Checked native addition-pair and
-double-reduction packing lemmas are available for the larger computation.
-The locked DO16 sidecar now proves the shared checksum, termination, and
-preservation of all input bytes for canonical seed 1, nonnull input, and
-exactly 16 bytes. It follows actual remaining-count state, checks all sixteen
-native addition pairs, and preserves the component equations through the
-zero-length scalar tail. The offline nightly regression checks helper bodies,
-expansion, and rejection of false results/invariants and missing authority.
+- refresh is separate from offline loading, and locks are checked in and
+  portable;
+- the compiler runs on a private snapshot of the sources;
+- the environment is reduced to runtime selectors;
+- extraction runs as a bounded process;
+- the semantic profile is versioned per named semantics.
 
-Checked symbolic count-advance, lane-identity, and native read-bound lemmas
-now support the locked repeated-block sidecar for lengths 16–5551, canonical
-seed 1, and nonnull input. It proves the shared packed checksum, termination,
-and preservation of every input byte through repeated DO16 blocks and the
-nonempty scalar tail. The tail retains the caller's complete input view;
-native read matching keeps the bounded native index beside a narrow pointer
-alias. Its component bounds agree with the loop invariants. The offline
-nightly regression checks all helper bodies, complete certificate expansion,
-false results/invariants, and missing or shortened authority.
+## Design requirements
 
-The locked NMAX sidecar now proves exactly 5552 bytes, canonical seed 1, and
-nonnull input: shared checksum, termination, and preservation of every byte.
-It follows the unchanged outer loop and ranked do-while DO16 loop, closes the
-actual unsigned counter decrement and cursor advance, and maintains exact
-component equations through both original reductions and packing. Checked
-batch helpers and an offline nightly regression cover complete expansion and
-negative result, invariant, and authority cases.
+These are in addition to the
+[shared front-end design](cpp-support.md#shared-front-end-design):
 
-Checked seeded-batch helpers now carry arbitrary reduced entry components
-through one native addition pair, both modulo reductions, and concatenation
-with the previously processed prefix. Their nightly regression checks helper
-bodies and dependencies, complete expansion, and false component/composition
-claims. The locked stream sidecar now applies those lemmas to the unchanged C
-for lengths 5552–22208, canonical seed 1, and nonnull input. It proves checksum,
-termination, and byte preservation through up to four NMAX batches, remaining
-DO16 blocks, and a zero to fifteen-byte scalar tail. The scalar loop carries
-unreduced seeds; checked residue composition connects its final reductions to
-the complete input. The offline nightly regression checks every helper body,
-complete expansion, false checksum/cursor/seed claims, and missing or shortened
-read authority.
+1. **Ship Charon and its compiler runtime.** Each Click release provides a
+   release-built `charon` and `charon-driver` at the pinned revision, plus
+   the pinned rustc runtime they load, for every host platform that supports
+   Rust. They install into the versioned layout, or Click obtains them on
+   first Rust use and verifies their checksums. The user does not run rustup
+   for Click's toolchain, and Click does not depend on whatever `rustup` is
+   on `PATH`. A platform without them gets a diagnostic that says so.
+2. **Explicit driver and runtime location.** The `charon-driver` and the
+   runtime are part of the installed front end, not inferred from a
+   neighbouring file name. The handshake checks the driver and the compiler
+   commit together.
+3. **Release identity in locks.** The import identity binds the profile and
+   the front end's release identity, not local binary hashes, so equal
+   inputs produce identical locks on every machine. Migrating existing
+   checked-in locks is a single explicit refresh.
+4. **Remove "trial" from the user-facing interface.** The profile identity,
+   error messages and accepted backend spellings use the product name. Each
+   kept historical spelling stays only as a documented compatibility alias.
+5. **Helpful crate closures.** A wrong `files` list produces a diagnostic
+   that lists the missing and extra files from rustc's dep-info. Cargo
+   integration and third-party crates remain outside P1.
+6. **Updating the pin is a migration.** Updating Charon or the toolchain is a
+   new Click release that states its effect on sidecars, such as names of
+   compiler temporaries, and requires an explicit refresh. Making
+   observations stable across upgrades is after-launch work (see below).
+7. **Reproducible demonstration.** `examples/basic-rust` and the locked adler2
+   and correspondence fixtures verify from an installed Click, with README
+   commands that do not use `cargo run`.
 
-The unified full-stream sidecar now proves the unchanged C for every length
-0–2147483647, canonical seed 1, and nonnull input: shared packed checksum,
-termination, and preservation of every input byte. It combines the original
-one-byte fast return, short loop (including empty input), NMAX loop, DO16 tail,
-and scalar tail. Native global prefix and address observations reuse the Rust
-signed-range bridges. Chunk concatenation and pointer association prove their
-actual combined count fits the total; the local batch arithmetic ceilings
-remain unchanged. Offline nightly regressions check all dependency bodies,
-complete expansion for the C proof and every new helper claim, and rejection
-of invalid results/invariants/views and a ceiling above the signed limit.
+## Intended regression
 
-The canonical-seed sidecar now proves all original C paths for arbitrary
-canonical decoded A/B (0–65520 each), nonnull input, and the full shared signed
-length range. It checks both one-byte conditional reductions and the short
-path's conditional A reduction, and carries the initial state through every
-batch and tail. The real two-call C client proves the whole checksum and byte
-preservation at every split, including empty pieces, when both call pointers
-are nonnull. Checked packed-field recovery establishes the first result's
-canonical state before the second call. Its single translation unit includes
-the unchanged pinned C; the offline fixture verifies the callee against that
-unit too. Complete expansion and negative result, state, split and authority
-cases cover the C contracts and all new helper claims. Seed-rewrite goal
-presentation and theorem-argument Integer conversions were repaired with
-normal regressions; bounded uint64 unpacking rules now match the LP64 word.
+The Rust counterpart of the C++ installed-layout test, as described in
+[cpp-support.md](cpp-support.md#intended-regression):
 
-Checked correspondence now derives native C/Rust return-word equality from
-those independently proved postconditions, equal entry bytes and matched
-canonical state. A checked uint32-to-uint64 observation bridge preserves the
-Rust return word; specification extensionality handles distinct input buffers.
-The reset correspondence connects the existing C null/nonunit-length result
-with Rust new/default fields and the checked checksum getter. Normal negatives
-reject missing byte matching, mismatched state and false result/reset claims;
-a nightly fixture checks every specification body and all three expanded
-correspondence claims. The [scoped demonstration](../design/charon-trial/checksum-correspondence.md)
-records precise call conditions, proof dependencies and reproducible locked
-fixture commands. This composes independently checked programs; it does not
-claim a verified FFI boundary. Lengths beyond the shared signed specification
-range remain unproved for both implementations.
+1. Assemble the release layout, including the Rust front end, in a temporary
+   `CLICK_HOME`.
+2. Copy `examples/basic-rust` outside the repository.
+3. With no repository `target/` directory and no rustup toolchain from the
+   user, run the installed `click import lock` and `click verify`.
+4. Check that the refreshed lock is byte-identical to the checked-in one.
+5. Check the refusals: a wrong-version front end and a missing front end
+   each give the named diagnostic, and a wrong crate `files` list names the
+   difference.
 
-Next assess the experimental-support architecture requirements below against
-production evidence, starting with borrow-authority suspension and recovery.
+## Violated invariant
 
-Acceptance:
+A user who installs a Click release can verify a supported Rust crate with
+that release alone. The trusted extractor and compiler are identified by the
+release, and a lock depends only on the project and the pinned front end.
 
-- Both implementations independently satisfy the shared specification for
-  arbitrary inputs covered by their contracts; accesses, arithmetic, byte
-  preservation, termination, and incremental processing are proved.
-- Result equality follows from those proofs. Differential runtime tests are
-  supplementary evidence.
-- Publish reproducible locked fixtures and a scoped demonstration. Keep slow
-  whole-proof checks nightly and bounded regressions in the normal gate.
+## Acceptance criteria
 
-### 2. Close experimental-support architecture requirements
+- Releases ship, or Click fetches and verifies, a pinned `charon`,
+  `charon-driver` and rustc runtime for each supported host, installed into
+  the versioned layout.
+- Front ends are located only by the shared resolution order. No checked-in
+  user config names a repository build path, and `rustup` on `PATH` is not
+  required.
+- Locks record release identities and are byte-identical across machines,
+  using the shared lock envelope and input-handling code.
+- No "trial" spellings remain in user-facing names or diagnostics, except
+  documented compatibility aliases.
+- Crate-closure diagnostics name the differing files.
+- The installed-layout regression and its negative cases pass. The
+  [Rust reference](../docs/reference/rust.md),
+  [Language coverage](../docs/reference/coverage.md) and the basic Rust
+  README describe the installed workflow.
 
-Resolve these requirements alongside the library proof; do not postpone them
-behind new language coverage:
+## After launch (not P1)
 
-- **Borrow authority:** connect explicit exclusive-child suspension/recovery
-  to production resource transitions. Compiler borrow rejection alone does not
-  establish rejection of forged sidecar authority. Test stale child access,
-  forged/duplicate recovery, disjoint field borrowing, and parent reuse.
-  The [production assessment](../design/rust-borrow-authority-assessment.md)
-  records the integrated synchronous borrowed-memory call protocol: fresh
-  child identity, exact selected supports, nested dependency and checked
-  one-time return, using the existing resource partition and memory result. A native
-  regression now verifies parent reuse after child last use without ending
-  child storage, including helper/caller expansion and authority negatives.
-  Kernel negatives cover stale/wrong receipts, missing or duplicate return,
-  joined supports and fabricated rollback; indexed updates pass deterministic
-  ambient-scaling checks. The native fixture also checks nested calls and a
-  separately owned neighbor, with all three contracts expanded. A read-only
-  import-bound checker now certifies absence of future selected-reference uses
-  for same-block scalar reborrows with acyclic straight-line continuations. It
-  tracks copies and replacement definitions, refuses capture and unsupported
-  paths, and never uses storage death as a discharge. The native witness checks
-  actual imported MIR; bounded alias-chain tests check deterministic scaling.
-  Its certificate now indexes exact scalar reads/writes by borrow instance and
-  MIR point, distinguishes replacement definitions, and refuses shared writes
-  or value-dependent addresses as pointer identity. Native evidence binds the
-  original child store; access-index construction and lookup also have bounded
-  deterministic scaling checks. These identities still need to travel through
-  C0 lowering and bind actual memory permission.
-  Local reference access binding and kernel recovery at checked frontiers
-  remain open, so this does not close
-  the entire borrow-authority requirement.
-- **Stable proof observations:** provide source-facing slice, array, and
-  iterator observations so contracts need not depend on compiler temporary
-  names or storage details. Preserve qualified identities, shadowing, source
-  spans, snapshot meaning, and expanded-proof correspondence.
-- **Consistent library models:** consolidate supported resolved instances and
-  document their preconditions, effects, panic behavior, and named trust
-  assumptions. Validate declarations/signatures and bind model versions into
-  prepared identities; lookalike methods must not acquire models by spelling.
-- **Composition and scale:** keep one semantic execution path, shared CFG joins,
-  compact repeated initialization/copies, and checked cleanup on supported
-  exits. Combine references, arrays, arithmetic, iterators, owned records and
-  drops in regressions. Verify/profile/expansion/audit must agree where applicable.
+The checksum demonstration is complete for P1, and none of these items is
+needed to finish a claim already made:
 
-Assess each item against current production evidence before adding mechanisms;
-retain existing working representations where they already meet acceptance.
-The experimental milestone closes when its defining borrowing/move regressions,
-production negative tests, proof-tool agreement, and accurate public support
-and trust documentation satisfy these requirements.
+- **Wider checksum range.** Lengths beyond the shared signed specification
+  range (2,147,483,647 bytes) remain unproved for both implementations; the
+  current claims state that range explicitly.
+- **Borrow authority.** Connect explicit exclusive-child suspension and
+  recovery to production resource transitions. Compiler borrow rejection
+  alone does not establish rejection of forged sidecar authority. The
+  [production assessment](../design/rust-borrow-authority-assessment.md)
+  records what is delivered:
+  - the synchronous borrowed-memory call protocol, with kernel negatives;
+  - parent reuse after the child's last use;
+  - the read-only import-bound checker for same-block scalar reborrows,
+    with indexed access certificates and scaling checks.
+  - operation identities carried through lowering into completed kernel reads
+    and stores, including cached scalar reads; indexed bindings retain the
+    actual pointer and reject another locked import identity. Failed writes
+    produce no store observation, and source deltas have ambient-scaling checks.
+  - the checked kernel lifecycle for exclusive scalar-reference identities:
+    parent suspension, nested dependencies and one-time child recovery, with
+    exact owned-support checks and indexed scaling regressions. Rust execution
+    does not yet issue or consume these local-reference transitions.
+  - completed scalar-reborrow assignment receipts and execution-bound endings
+    immediately after selected child stores. Bindings require both operations
+    on one path, check the source and actual pointer, and refuse ambiguous
+    repeated observations. These receipts do not yet carry local-loan leases
+    or authorize recovery.
+
+  Those executed observations must still bind the local-reference lifecycle,
+  live memory permission and the actual ending frontier/invocation. Recovery
+  at checked frontiers remains open. A reproduced false acceptance here
+  would be `unsound`, and so P1, under the [issue rules](README.md).
+- **Stable proof observations.** Provide source-facing slice, array and
+  iterator observations, so that contracts need not depend on compiler
+  temporary names or storage details. They must preserve qualified
+  identities, shadowing, source spans, snapshot meaning, and correspondence
+  with expanded proofs.
+- **Consistent library models.** Consolidate the supported resolved
+  instances. Document their preconditions, effects, panic behavior and trust
+  assumptions. Validate their declarations, and bind model versions into
+  prepared identities. Lookalike methods must not acquire models by
+  spelling.
+- **Composition and scale.** Keep one execution path and shared CFG joins,
+  compact repeated initialization, and checked cleanup on every supported
+  exit. Add combined regressions, and verify that ordinary verification,
+  profile, expansion and audit agree.
+- **Broader coverage.** These stay outside the supported subset until a
+  selected program needs a precise slice of them:
+  - unsafe Rust and interior mutability;
+  - returned references;
+  - general traits and generics;
+  - closures, async and threading;
+  - heap support;
+  - mutable or adapted iterators;
+  - Cargo dependencies;
+  - broad standard-library verification.
 
 ## Semantic boundaries and delivery rules
 
 rustc establishes source typing and borrow legality. Click checks functional
-claims and supplied memory authority; references grant no allocation or
-deallocation authority. Keep allocation lifetime, access authority, and value
-validity distinct. Lock source, compiler/exporter, target/layout, semantic flags,
-models, and relevant dependencies. Preserve full-width Rust metadata and range
-endpoints. Proofs using signed index observations, including the current checksum
-trial, must state and check their narrower range explicitly.
+claims and supplied memory authority. References grant no allocation or
+deallocation authority. Keep allocation lifetime, access authority and value
+validity distinct. Lock all of these:
 
-Unsafe Rust, interior mutability, returned references, general traits/generics,
-closures, async, threading, heap support, mutable/adapted iterators, and broad
-standard-library verification are outside this issue unless a concrete instance
-needed for the selected checksum path is explicitly assessed.
+- the source;
+- the compiler and exporter;
+- the target and layout;
+- semantic flags;
+- models;
+- relevant dependencies.
 
-Keep original Rust and C sources unchanged when developing proofs. Repair
-lowering, resource rules, contracts or proof tooling instead of making source
-more verifier-friendly. Reproduce and fix tooling defects before extending
-examples; retain meaningful negative tests and deterministic scaling checks.
-Deliver coherent green increments through the fork PR and merge queue workflow.
-Delete this issue and its list entry when both milestones and documentation land.
+Preserve full-width Rust metadata and range endpoints. Proofs that use signed
+index observations must state and check their narrower range explicitly.
 
-Durable design references: [resource correspondence](../design/rust-resource-correspondence.md),
-[Charon assessment](../design/rust-charon-assessment.md),
-[adapter trial](../design/charon-trial/README.md),
-[language design](../design/supporting-more-languages.md), and
-[stable views](../docs/internals/stable-views.md).
+Keep the original Rust and C sources unchanged. Repair lowering, resource
+rules, contracts or proof tooling instead. The shared construction and
+return-destination contract is recorded in
+[aggregate construction](../design/aggregate-construction.md). Delete this
+issue and its list entry when the front-end acceptance criteria and their
+documentation land; move any remaining after-launch items to a P2 issue
+only at the user's request.
+
+Durable design references:
+
+- [resource correspondence](../design/rust-resource-correspondence.md);
+- [Charon assessment](../design/rust-charon-assessment.md);
+- [adapter trial](../design/charon-trial/README.md);
+- [checksum assessment](../design/rust-checksum-assessment.md);
+- [language design](../design/supporting-more-languages.md);
+- [stable views](../docs/internals/stable-views.md).

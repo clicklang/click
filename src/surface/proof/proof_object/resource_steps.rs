@@ -2149,6 +2149,75 @@ impl<'a> Proof<'a> {
         })
     }
 
+    /// `let { witness: name, ... } = unfold(resource)`: the unfold, with each
+    /// named `let ... where` witness bound to its proof name as the value the
+    /// body binds it to, so later facts and requirement spellings name it.
+    pub(super) fn apply_execution_resource_unfold_naming_witnesses(
+        &self,
+        resource: &ResourceClause,
+        names: &[(String, String)],
+    ) -> Result<CheckedFocusedTransition, ClickError> {
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return Err(self.step_error(
+                "`let { ... } = unfold(...)` names witnesses only at an execution frontier",
+            ));
+        };
+        let execution = self
+            .execution()
+            .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
+        if self.focused_outcome_data().is_some() {
+            return Err(self.step_error(
+                "`let { ... } = unfold(...)` names witnesses only before execution reaches function exit",
+            ));
+        }
+        let witnesses = super::super::resources::declared_resource_witness_values(
+            context.resource_environment,
+            resource,
+            context.parameter_binding(),
+            &execution.core.state,
+            self.facts().assumptions(),
+            context.spec_definitions,
+            context.claim_label,
+            context.tactic_index,
+        )?;
+        let mut transition = self.apply_execution_resource_unfold(resource)?;
+        for (slot, name) in names {
+            let Some((_, value)) = witnesses.iter().find(|(witness, _)| witness == slot) else {
+                let known = witnesses
+                    .iter()
+                    .map(|(witness, _)| format!("`{witness}`"))
+                    .collect::<Vec<_>>();
+                return Err(self.step_error(format!(
+                    "`{slot}` is not a witness of this resource's body{}",
+                    if known.is_empty() {
+                        ", which declares none".to_string()
+                    } else {
+                        format!("; its witnesses are {}", known.join(", "))
+                    }
+                )));
+            };
+            if name == "result"
+                || transition.locals.values.contains_key(name)
+                || transition.locals.integer_values.contains_key(name)
+                || execution.core.state.locals().contains_name(name)
+                || context
+                    .parsed_function
+                    .parameters()
+                    .iter()
+                    .any(|parameter| parameter.name() == name)
+            {
+                return Err(self.step_error(format!(
+                    "unfold witness binding `{name}` is already in scope"
+                )));
+            }
+            transition.locals.values = transition.locals.values.with_inserted(
+                name.clone(),
+                ContractExpression::CFragment(CExpression::Value(value.clone())),
+            );
+        }
+        Ok(transition)
+    }
+
     pub(super) fn apply_execution_resource_unfold(
         &self,
         resource: &ResourceClause,
@@ -2500,8 +2569,9 @@ impl<'a> Proof<'a> {
         };
         // Ordinary macro folds keep their final contract-definition law.
         // Authority wrappers and guarded ownership need an execution exchange.
-        // Named outputs also require the exact published frontier after a scope
-        // closes; contracts with ordinary outputs retain their definition law.
+        // Named outputs also require the exact published frontier after an
+        // ordinary refold, including a static wrapper with no guarded body.
+        // Contracts with only ordinary outputs retain their definition law.
         let operational_exchange = match checked.selected.resource() {
             CResource::Composite { name, .. } => context
                 .function
@@ -2524,12 +2594,11 @@ impl<'a> Proof<'a> {
         if retain_return_exchange
             && *state != *goal.data.core.state
             && (operational_exchange
-                || (matches!(closure, ResourceBodyClosure::CloseOpen { .. })
-                    && context
-                        .function
-                        .resource_ensures()
-                        .iter()
-                        .any(|spec| spec.is_instance()))
+                || context
+                    .function
+                    .resource_ensures()
+                    .iter()
+                    .any(|spec| spec.is_instance())
                 || (self.is_authority_transfer_wrapper(resource) && family_reaches_population))
         {
             let viewed = CResourceFact::View(checked.selected.resource().clone());

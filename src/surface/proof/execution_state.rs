@@ -530,10 +530,59 @@ fn append_surface_step_to_certificate(proof: &mut ProofCertificate, step: ProofS
     }
 }
 
+/// A scope ending in an unjoined model match completes execution in its
+/// lexical arms. Outcome suffixes must stay there so constructor bindings
+/// cannot escape the resource block. An `ensuring` match instead rejoins
+/// before scope close and leaves later operations outside the block.
+fn ends_in_terminal_match(steps: &[ProofStep]) -> bool {
+    match steps.last() {
+        Some(ProofStep::Match { ensuring: None, .. }) => true,
+        Some(ProofStep::Open { proof, .. }) => ends_in_terminal_match(proof.steps()),
+        _ => false,
+    }
+}
+
+/// A deferred `open` close that proved a body fact its closing fold left
+/// open is recorded as an `open` with no body and that proof (see
+/// `PostExecutionTactic::CloseOpen`). It is the `by` of the scope it closes,
+/// which is `steps`' last step; this attaches it there, and returns it when
+/// `step` is not one or `steps` does not end in its scope.
+fn attach_deferred_close_proof(steps: &mut [ProofStep], step: ProofStep) -> Option<ProofStep> {
+    let ProofStep::Open {
+        resource,
+        proof,
+        close_proof: Some(close_proof),
+    } = &step
+    else {
+        return Some(step);
+    };
+    if let Some(ProofStep::Open {
+        resource: scope,
+        close_proof: slot @ None,
+        ..
+    }) = steps.last_mut()
+        && proof.steps().is_empty()
+        && scope == resource
+    {
+        *slot = Some(close_proof.clone());
+        return None;
+    }
+    Some(step)
+}
+
 pub(super) fn append_surface_step_to_leaves(steps: &mut Vec<ProofStep>, step: ProofStep) {
     #[cfg(test)]
     SURFACE_LEAF_VISITS.with(|visits| visits.set(visits.get() + 1));
     if matches!(steps.last(), Some(ProofStep::Contradiction(_))) {
+        return;
+    }
+    let Some(step) = attach_deferred_close_proof(steps, step) else {
+        return;
+    };
+    if let Some(ProofStep::Open { proof, .. }) = steps.last_mut()
+        && ends_in_terminal_match(proof.steps())
+    {
+        append_surface_step_to_certificate(proof, step);
         return;
     }
     if let Some(ProofStep::Match {
@@ -784,6 +833,12 @@ pub(super) fn append_surface_tactics_by_leaf(
         if matches!(steps.last(), Some(ProofStep::Contradiction(_))) {
             return;
         }
+        if let Some(ProofStep::Open { proof, .. }) = steps.last_mut()
+            && ends_in_terminal_match(proof.steps())
+        {
+            append_certificate(proof, path_steps, next_path);
+            return;
+        }
         if let Some(ProofStep::Match { arms, .. }) = steps.last_mut() {
             for arm in arms {
                 append_certificate(&mut arm.proof, path_steps, next_path);
@@ -808,7 +863,11 @@ pub(super) fn append_surface_tactics_by_leaf(
             append_certificate(returned_proof, path_steps, next_path);
             append_certificate(threw_proof, path_steps, next_path);
         } else if let Some(suffix) = path_steps.get(*next_path) {
-            steps.extend(suffix.iter().cloned());
+            for step in suffix {
+                if let Some(step) = attach_deferred_close_proof(steps, step.clone()) {
+                    steps.push(step);
+                }
+            }
             *next_path += 1;
         }
     }
@@ -911,7 +970,7 @@ pub(super) fn append_surface_tactics_flat(
     // A proof `match` is a branch choice whose arms bind names. The tactics
     // that follow it were written inside an arm and may read those names, so
     // they go back inside the arms the match left open, not after it.
-    if matches!(steps.last(), Some(ProofStep::Match { .. })) {
+    if matches!(steps.last(), Some(ProofStep::Match { .. })) || ends_in_terminal_match(steps) {
         for step in proof.into_steps() {
             append_surface_step_to_leaves(steps, step);
         }
@@ -1256,6 +1315,8 @@ pub(super) enum PostExecutionTactic {
     CloseOpen {
         resource: ResourceClause,
         preserve_exposed_body: bool,
+        /// The source's `open(r) { ... } by { ... }` proof.
+        written_close_proof: Option<Vec<ProofTactic>>,
     },
     UnfoldPredicate(String),
     /// `unfold(f(args))`, with the `using` guard list when the source wrote
