@@ -278,6 +278,10 @@ pub(super) struct TermClasses {
             crate::kernel::SharedPureApplication,
         ),
     >,
+    // One exact constructor witness per typed model class. Only a selected
+    // equality's root operands are retained, once, so nested models are not
+    // copied at every subtree. Union carries this witness in constant work.
+    algebraic_constructors: PersistentMap<u64, Arc<crate::kernel::AlgebraicTerm>>,
     condition_kinds: PersistentSet<(congruence::ConditionKind, bool)>,
     // Truth is an annotation of a condition class, not a union between all
     // true facts. Unrelated order facts must not create value equivalences.
@@ -1557,6 +1561,13 @@ impl TermClasses {
             }
             self.merge_storage_addresses(moved, kept);
             self.merge_pointer_facts(moved, kept);
+            if let Some(constructor) = self.algebraic_constructors.get(&moved).cloned() {
+                crate::instrumentation::record_deterministic_work(1);
+                self.algebraic_constructors.remove(&moved);
+                if !self.algebraic_constructors.contains_key(&kept) {
+                    self.algebraic_constructors.insert(kept, constructor);
+                }
+            }
             self.merge_additive_addresses(moved, kept);
             self.merge_additive_offsets(moved, kept);
             self.merge_alignment_witnesses(moved, kept);

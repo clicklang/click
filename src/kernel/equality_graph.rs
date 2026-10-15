@@ -1364,6 +1364,17 @@ impl EqualityGraph {
         equal
     }
 
+    pub(in crate::kernel) fn known_algebraic_constructor(
+        &self,
+        model: &AlgebraicTerm,
+    ) -> Option<AlgebraicTerm> {
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_expression_operands(&mut state, [], [model]);
+        let constructor = state.terms.known_algebraic_constructor(model);
+        state.close(Vec::new());
+        constructor
+    }
+
     pub(in crate::kernel) fn add_algebraic_equality(
         &mut self,
         left: &AlgebraicTerm,
