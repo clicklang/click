@@ -1,6 +1,44 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: pointer equality expansion and retained checks took 0.95s in parallel"]
+fn shifted_pointer_equality_rewrites_expand_and_recheck() {
+    let sources = [(
+        "pointer.c",
+        "int32 same_block(int32* base, int32* cursor, uint64 remaining) { return 0; }",
+    )];
+    let source = r#"
+        verifying "pointer.c";
+        int32 same_block(int32* base, int32* cursor, uint64 remaining) {
+            requires ((int32)(uint32)remaining) == 4;
+            requires cursor == base + (4 - ((int32)(uint32)remaining));
+            ensures result == 0;
+        } by {
+            have cursor == base;
+            execute(); simp();
+        }
+    "#;
+    verify_c0_sources(source, &sources).unwrap();
+    let expanded =
+        expand_c0_claim_source(source, &sources, "same_block", CProofClaim::Grouped).unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+    let at = expansion::position_at_offset(source, source.find("have cursor == base;").unwrap());
+    let selected = expand_c0_tactic_source_at(source, &sources, at.line, at.column).unwrap();
+    verify_c0_sources(&selected, &sources).unwrap();
+    let (session, _) = C0VerificationSession::new(source, &sources).unwrap();
+    for rewritten in [&expanded, &selected] {
+        let proof = rewritten.find("by").unwrap();
+        let body = proof + rewritten[proof..].find('{').unwrap() + 1;
+        let first_step = body
+            + rewritten[body..]
+                .find(|c: char| !c.is_whitespace())
+                .unwrap();
+        let at = expansion::position_at_offset(rewritten, first_step);
+        session.verify_at(rewritten, at.line, at.column).unwrap();
+    }
+}
+
+#[test]
 #[ignore = "nightly: static refold expansion and retained-session checks take 0.9s"]
 fn static_return_refold_before_named_resource_rechecks_in_all_proof_modes() {
     let (source, sources) = mdtest_sources("mdtests/static_return_refold_before_named_resource.md");

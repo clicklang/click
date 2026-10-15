@@ -4,6 +4,197 @@
 
 use super::*;
 
+fn same_block_offset_rewrite_work(
+    pointer_history: usize,
+    snapshot_count: usize,
+    from_cursor: bool,
+) -> usize {
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let base = Pointer {
+        block: crate::kernel::PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Int32Scaled {
+            value: Box::new(Bitvector32Term::Variable(Variable(8_179_100))),
+            byte_width: 4,
+        },
+    };
+    let remaining = Bitvector32Term::Variable(Variable(8_179_101));
+    let k = Bitvector32Term::UInt32From64(Box::new(remaining.clone()));
+    let shifted = Pointer {
+        block: base.block.clone(),
+        offset: PointerOffsetTerm::Add(
+            Box::new(base.offset.clone()),
+            Box::new(PointerOffsetTerm::Int32Scaled {
+                value: Box::new(Bitvector32Term::Subtract(
+                    Box::new(Bitvector32Term::Constant(4)),
+                    Box::new(k.clone()),
+                )),
+                byte_width: 4,
+            }),
+        ),
+    };
+    let cursor = Pointer::symbolic(Variable(8_179_099));
+    let state = CState::new()
+        .with_local("cursor", CValue::pointer(cursor.clone()))
+        .with_local("base", CValue::pointer(base.clone()))
+        .with_local("k", CValue::UInt64(remaining));
+    let mut facts = (0..pointer_history)
+        .flat_map(|i| {
+            let old = Bitvector32Term::UInt32From64(Box::new(Bitvector32Term::Variable(Variable(
+                8_180_000 + i as u64,
+            ))));
+            [
+                Proposition::ConditionIs(
+                    ConditionTerm::pointer_equal(
+                        Pointer {
+                            block: base.block.clone(),
+                            offset: PointerOffsetTerm::Add(
+                                Box::new(base.offset.clone()),
+                                Box::new(PointerOffsetTerm::Int32Scaled {
+                                    value: Box::new(Bitvector32Term::Subtract(
+                                        Box::new(Bitvector32Term::Constant(4)),
+                                        Box::new(old.clone()),
+                                    )),
+                                    byte_width: 4,
+                                }),
+                            ),
+                        },
+                        base.clone(),
+                    ),
+                    true,
+                ),
+                Proposition::ConditionIs(
+                    ConditionTerm::Bitvector32Equal(
+                        Box::new(old),
+                        Box::new(Bitvector32Term::Constant(4)),
+                    ),
+                    true,
+                ),
+            ]
+        })
+        .collect::<Vec<_>>();
+    let bound = Proposition::ConditionIs(
+        ConditionTerm::Bitvector32Equal(Box::new(k), Box::new(Bitvector32Term::Constant(4))),
+        true,
+    );
+    facts.push(bound.clone());
+    let fixture = crate::surface::parse("theorem shifted(cursor: int32*, base: int32*, k: uint64) { requires ((int32)(uint32)k) == 4; requires cursor == base + (4 - ((int32)(uint32)k)); ensures true; }").unwrap();
+    let surface = fixture.theorem_definitions()[0].requires[0]
+        .proposition()
+        .unwrap()
+        .clone();
+    let mut surfaces = SurfacePropositionMap::default();
+    // The checked scalar fact has no recorded source form, as in a loop-head have.
+    let lowered = lower_fixed_state_proposition_with_assumptions(
+        &surface,
+        &PureFactContext::new(),
+        ParameterBinding::default(),
+        FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
+        SpecDefinitions::new(&predicates, &functions),
+    )
+    .unwrap();
+    assert_eq!(lowered, bound);
+    let entry = state.clone().with_local(
+        "k",
+        CValue::UInt64(Bitvector32Term::Variable(Variable(8_179_098))),
+    );
+    if from_cursor {
+        let relation = Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(cursor.clone(), shifted.clone()),
+            true,
+        );
+        let relation_surface = fixture.theorem_definitions()[0].requires[1]
+            .proposition()
+            .unwrap()
+            .clone();
+        assert_eq!(
+            lower_fixed_state_proposition_with_assumptions(
+                &relation_surface,
+                &PureFactContext::new(),
+                ParameterBinding::default(),
+                FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
+                SpecDefinitions::new(&predicates, &functions),
+            )
+            .unwrap(),
+            relation,
+        );
+        surfaces
+            .record_lowering(&relation_surface, &relation)
+            .unwrap();
+        facts.insert(0, relation);
+    }
+    let mut snapshots = RecordedSnapshots::new();
+    for i in 0..snapshot_count {
+        snapshots.insert(
+            ProgramPointRef {
+                region: CodeRegionRef::Statement(i),
+                kind: ProgramPointKind::Entry,
+            },
+            entry.clone(),
+        );
+    }
+    let anchor = ProgramPointRef {
+        region: CodeRegionRef::Statement(snapshot_count - 1),
+        kind: ProgramPointKind::Entry,
+    };
+    let root = Proof::for_fixed_state_goal_with_requirements(
+        "same-block offset equality",
+        0,
+        &facts,
+        Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(if from_cursor { cursor } else { shifted }, base),
+            true,
+        ),
+        ParameterBinding::default(),
+        FixedStateFrame::new(&entry, &state, None, &snapshots),
+        Some(&anchor),
+        &surfaces,
+        SpecDefinitions::new(&predicates, &functions),
+        &theorems,
+        &[],
+        &[],
+        &[],
+    );
+    let (closed, work) = crate::instrumentation::measure_deterministic_work(|| {
+        root.try_indexed_goal_equality_rewrite_closure()
+    });
+    let closed = closed.expect("the offset's k == 4 fact should close the pointer equality");
+    assert!(closed.is_complete());
+    assert!(matches!(
+        closed.certificate().steps().last(),
+        Some(ProofStep::Normalize)
+    ));
+    assert_eq!(
+        closed
+            .certificate()
+            .steps()
+            .iter()
+            .filter(|step| matches!(step, ProofStep::Rewrite(_)))
+            .count(),
+        if from_cursor { 2 } else { 1 }
+    );
+    work
+}
+
+#[test]
+fn same_block_pointer_offset_rewrite_ignores_other_pointers_at_the_base() {
+    let costs = [4, 8, 16, 32].map(|size| same_block_offset_rewrite_work(size, 4, false));
+    assert!(
+        costs[0] > 0 && costs.iter().all(|cost| *cost <= costs[0] + 64),
+        "{costs:?}"
+    );
+}
+
+#[test]
+fn same_block_pointer_offset_rewrite_does_not_search_recorded_snapshots() {
+    let costs = [4, 8, 16, 32].map(|size| same_block_offset_rewrite_work(4, size, true));
+    assert!(
+        costs[0] > 0 && costs.iter().all(|cost| *cost <= costs[0] + 64),
+        "{costs:?}"
+    );
+}
+
 #[test]
 fn both_and_scopes_are_isolated_check_provenance_and_scale() {
     let predicate_environment = PredicateEnvironment::new(&[]);

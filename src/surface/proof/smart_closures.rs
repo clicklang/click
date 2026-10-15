@@ -4429,6 +4429,31 @@ impl<'a> Proof<'a> {
         }) {
             return Some(surface.clone());
         }
+        // A selected fact can instead name a fresh loop-head value in the
+        // current state. Recover it there before searching older snapshots
+        // which cannot name that value at all.
+        let pointer_goal = matches!(
+            self.goal(),
+            Some(Proposition::ConditionIs(ConditionTerm::PointerEqual(..), _))
+        );
+        if pointer_goal
+            && let Some(surface) = surface_facts
+                .surfaces(kernel)
+                .find(|surface| matches_kernel(surface).is_some())
+        {
+            return Some(surface.clone());
+        }
+        if pointer_goal
+            && let Some(view) = self.premise_fixed_state_view()
+            && let Some(surface) = synthesize_surface_proposition(
+                kernel,
+                view.parameter_binding,
+                view.fixed_state.state,
+            )
+            && matches_kernel(&surface).is_some()
+        {
+            return Some(surface);
+        }
         // Function requirements retain their original unanchored Surface
         // form while their kernel fact is entry-relative. Probe that one
         // canonical source form before the moving statement-entry anchor;
@@ -4858,6 +4883,11 @@ impl<'a> Proof<'a> {
         // transport path; probing their snapshot aliases first repeats costly
         // premise spelling and changes the intended transport certificate.
         let scalar_goal = match self.goal()? {
+            Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), _)
+                if left.block == right.block =>
+            {
+                true
+            }
             Proposition::ConditionIs(
                 ConditionTerm::Bitvector32SignedLessThan(..)
                 | ConditionTerm::Bitvector32SignedLessEqual(..)
@@ -4966,7 +4996,14 @@ impl<'a> Proof<'a> {
         ) {
             return None;
         }
-        let _scope = SimpFallbackScope::enter(SimpFallback::EqualityRewrite)?;
+        // The direct-only chain never enters typed or function-unfold
+        // search. It can finish a pointer-offset rewrite inside the outer
+        // equality search without restarting that speculative fallback.
+        let _scope = if direct_only {
+            None
+        } else {
+            Some(SimpFallbackScope::enter(SimpFallback::EqualityRewrite)?)
+        };
         // A judgment stated at an execution frontier (a `have` inside an
         // `open` scope, before the outcome) reads its spellings from the
         // execution's surface map, anchored at the current statement entry.
@@ -5015,7 +5052,47 @@ impl<'a> Proof<'a> {
             // Pointer equalities between scaled offsets are candidates too:
             // `rewrite` carries one through the address of a load, so a
             // goal over `p->q->x` reaches `r->x` under `p->q == r`.
-            let equality_candidates = proof.facts().load_equalities_mentioning(&goal);
+            // Once both pointers have the same base, only their offsets
+            // need rewriting. Selecting on the shared base also nominates
+            // every historical pointer fact about that object, even when
+            // none mentions an offset operand of this comparison.
+            let equality_candidates = match &goal {
+                Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), value)
+                    if left.block == right.block =>
+                {
+                    // External arguments share a block and carry the
+                    // actual base as an offset prefix: `(base + i) == base`
+                    // needs facts about `i`, not old reads through `base`.
+                    let zero = crate::kernel::PointerOffsetTerm::Constant(0);
+                    let (left, right) = match (&left.offset, &right.offset) {
+                        (crate::kernel::PointerOffsetTerm::Add(base, index), right)
+                            if base.as_ref() == right =>
+                        {
+                            (index.as_ref(), &zero)
+                        }
+                        (left, crate::kernel::PointerOffsetTerm::Add(base, index))
+                            if left == base.as_ref() =>
+                        {
+                            (&zero, index.as_ref())
+                        }
+                        (
+                            crate::kernel::PointerOffsetTerm::Add(left_base, left_index),
+                            crate::kernel::PointerOffsetTerm::Add(right_base, right_index),
+                        ) if left_base == right_base => (left_index.as_ref(), right_index.as_ref()),
+                        (left, right) => (left, right),
+                    };
+                    proof
+                        .facts()
+                        .load_equalities_mentioning(&Proposition::ConditionIs(
+                            ConditionTerm::PointerOffsetEqual(
+                                Box::new(left.clone()),
+                                Box::new(right.clone()),
+                            ),
+                            *value,
+                        ))
+                }
+                _ => proof.facts().load_equalities_mentioning(&goal),
+            };
             let equalities = equality_candidates
                 .into_iter()
                 .chain(proof.facts().algebraic_equalities_mentioning(&goal));
@@ -5100,6 +5177,22 @@ impl<'a> Proof<'a> {
                         .try_direct_logical_closure()
                         .ok()
                         .flatten()
+                        .or_else(|| {
+                            (!direct_only
+                                && matches!(
+                                    rewritten.goal(),
+                                    Some(Proposition::ConditionIs(
+                                        ConditionTerm::PointerEqual(..),
+                                        _
+                                    ))
+                                ))
+                            .then(|| {
+                                rewritten.try_indexed_goal_equality_rewrite_direct_closure(
+                                    exclude_goal_fact,
+                                )
+                            })
+                            .flatten()
+                        })
                         .or_else(|| {
                             (!direct_only)
                                 .then(|| rewritten.try_typed_atomic_simp_closure())
