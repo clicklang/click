@@ -775,6 +775,12 @@ provable. Facts established after a closing
 step do not retroactively affect it. All claim proofs for one symbolic path use
 the same finalized specification.
 
+A post-execution `if` over a stable program-point condition (`old(x)` or `x@L`)
+selects its arm from the path's checked facts when that `if` is reached. An
+earlier `have` can establish the condition, including inside a selected arm;
+a later `have` cannot justify the selection. An undecided condition is refused
+at the `if`, with the condition and outcome path named.
+
 Inside a proof-level `if`, post-execution tactics apply only to execution paths
 compatible with that branch's checked condition. In particular, a closing step
 does not plan operations for a contradictory sibling outcome and then align
