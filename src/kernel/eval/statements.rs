@@ -2991,9 +2991,13 @@ fn execute_c_statement_leaf_paths(
             name,
             expression,
             source,
-        } => source
-            .lease_plan()
-            .is_none_or(|plan| plan.validates_assignment(name, expression)),
+        } => source.lease_plan().is_none_or(|plan| {
+            if source.is_lease_read_end() {
+                plan.validates_read_assignment(name, expression)
+            } else {
+                plan.validates_assignment(name, expression)
+            }
+        }),
         CStatement::TypedStore {
             pointer,
             value,
@@ -3284,7 +3288,12 @@ fn execute_c_statement_leaf_paths(
                             &path.facts,
                             &path.obligations,
                         );
-                        match plan.begin(state, after, &effective_assumptions) {
+                        let transition = if source.is_lease_read_end() {
+                            plan.end_read(state, after, &effective_assumptions)
+                        } else {
+                            plan.begin(state, after, &effective_assumptions)
+                        };
+                        match transition {
                             Ok(next) => **after = next,
                             Err(error) => {
                                 path.outcome = CStatementOutcome::RuntimeError(

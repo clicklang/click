@@ -333,28 +333,6 @@ fn source_scalar_lease_declared_local_parent_is_suspended_and_updated() {
 }
 
 #[test]
-fn source_scalar_lease_plan_preparation_scales_with_selected_function() {
-    let mut measurements = vec![];
-    for size in [16, 64, 256, 1024] {
-        let mut export = export();
-        let statements = &mut export.functions[0].mir.as_mut().unwrap().blocks[0].statements;
-        for _ in 0..size {
-            statements.insert(0, assign(local("x"), E::Integer { value: 1 }));
-        }
-        let (program, work) =
-            crate::instrumentation::measure_deterministic_work(|| body(&export, "locked-source"));
-        assert!(leaves(&program).iter().any(
-            |s| matches!(s, CStatement::Assign { source, .. } if source.lease_plan().is_some())
-        ));
-        measurements.push((size, work));
-    }
-    eprintln!("source scalar lease preparation: {measurements:?}");
-    for pair in measurements.windows(2) {
-        assert!(pair[1].1 <= pair[0].1 * 5 + 100, "{measurements:?}");
-    }
-}
-
-#[test]
 fn source_scalar_lease_unsigned_source_widths_preserve_updated_contents() {
     for (kind, value_type, pointer_type, initial_value, final_value) in [
         (
@@ -607,20 +585,206 @@ fn source_scalar_lease_alias_later_use_prevents_early_parent_recovery() {
     ));
 }
 
+fn read_export(aliases: usize) -> r::RustExport {
+    let mut source = alias_export(aliases);
+    let mir = source.functions[0].mir.as_mut().unwrap();
+    let reference = if aliases == 0 {
+        "child".into()
+    } else {
+        format!("alias_{}", aliases - 1)
+    };
+    let last = mir.blocks[0].statements.len() - 2;
+    mir.blocks[0].statements[last] = assign(local("x"), deref(&reference));
+    source
+}
+fn before_read(initial: &CState, body: &CStatement) -> (CState, CStatement) {
+    let mut state = initial.clone();
+    for statement in leaves(body) {
+        if matches!(&statement, CStatement::Assign { name, .. } if name == "x") {
+            return (state, statement);
+        }
+        state = normal(execute(&state, &statement));
+    }
+    panic!("read assignment missing");
+}
+
 #[test]
-fn source_scalar_lease_alias_plan_preparation_scales_with_alias_chain() {
-    let mut measurements = vec![];
-    for count in [16, 64, 256, 1024] {
-        let source = alias_export(count);
-        let (program, work) =
-            crate::instrumentation::measure_deterministic_work(|| body(&source, "locked-source"));
-        let statements = leaves(&program);
-        assert_eq!(statements.iter().filter(|s| matches!(s, CStatement::Assign { source, .. } if source.lease_plan().is_some())).count(), 1);
-        assert_eq!(statements.iter().filter(|s| matches!(s, CStatement::TypedStore { source, .. } if source.lease_plan().is_some())).count(), 1);
-        measurements.push((count, work));
+fn source_scalar_lease_read_ending_recovers_after_checked_cached_alias_read() {
+    for aliases in [0, 2] {
+        let (program, _scope) = alias_body(&read_export(aliases));
+        let (initial, support) = initial();
+        let (state, ending) = before_read(&initial, &program);
+        assert!(state.has_local_scalar_references());
+        assert!(
+            state
+                .resources()
+                .owned_fact_for_occurrence(support)
+                .is_none()
+        );
+        assert!(matches!(
+            read(&state, c_load(c_variable("parent"))),
+            CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource { .. })
+        ));
+        let reference = if aliases == 0 {
+            "child".into()
+        } else {
+            format!("alias_{}", aliases - 1)
+        };
+        for _ in 0..2 {
+            assert_eq!(
+                read(&state, c_load(c_variable(&reference))),
+                CExpressionOutcome::Value(int32(4))
+            );
+        }
+        let recovered = normal(execute(&state, &ending));
+        assert!(!recovered.has_local_scalar_references());
+        assert_eq!(
+            read(&recovered, c_variable("x")),
+            CExpressionOutcome::Value(int32(4))
+        );
+        assert_eq!(
+            read(&recovered, c_load(c_variable("parent"))),
+            CExpressionOutcome::Value(int32(4))
+        );
+        assert!(
+            recovered
+                .resources()
+                .owned_fact_for_occurrence(support)
+                .is_some()
+        );
+        for name in
+            std::iter::once("child".to_string()).chain((0..aliases).map(|i| format!("alias_{i}")))
+        {
+            assert!(matches!(
+                read(&recovered, c_load(c_variable(name))),
+                CExpressionOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+            ));
+        }
+        assert!(matches!(
+            execute(&recovered, &ending),
+            CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+        ));
+        let CStatementOutcome::Return { state, .. } = execute(&initial, &program) else {
+            panic!("read-ending function return");
+        };
+        assert_eq!(
+            read(&state, c_load(c_variable("parent"))),
+            CExpressionOutcome::Value(int32(8))
+        );
+        assert_eq!(
+            read(&state, c_variable("x")),
+            CExpressionOutcome::Value(int32(4))
+        );
     }
-    eprintln!("source scalar lease alias preparation: {measurements:?}");
-    for pair in measurements.windows(2) {
-        assert!(pair[1].1 <= pair[0].1 * 5 + 100, "{measurements:?}");
-    }
+}
+
+#[test]
+fn source_scalar_lease_read_ending_requires_exact_operation_and_actual_custody() {
+    let (program, _scope) = alias_body(&read_export(1));
+    let (initial, _) = initial();
+    let (state, ending) = before_read(&initial, &program);
+    assert!(state.has_local_scalar_references());
+    let mut altered = ending.clone();
+    let CStatement::Assign { expression, .. } = &mut altered else {
+        panic!();
+    };
+    *expression = c_int32_literal(4);
+    assert!(matches!(
+        execute(&state, &altered),
+        CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+    ));
+    let CValue::Pointer(parent) = initial.locals.get("parent").unwrap() else {
+        panic!();
+    };
+    let mut missing = initial
+        .clone()
+        .with_local("alias_0", CValue::Pointer(parent.clone()));
+    // Keep an ordinary owner: the load itself can succeed, but no birth or
+    // executed lease can be substituted with a matching source observation.
+    missing = normal(execute(&missing, &c_declare("x", CType::Int32)));
+    assert!(matches!(
+        execute(&missing, &ending),
+        CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+    ));
+}
+
+#[test]
+fn source_scalar_lease_read_ending_preserves_preceding_child_store() {
+    let mut source = read_export(1);
+    source.functions[0].mir.as_mut().unwrap().blocks[0]
+        .statements
+        .insert(2, assign(deref("child"), E::Integer { value: 7 }));
+    let (program, _scope) = alias_body(&source);
+    let (initial, _) = initial();
+    let (state, ending) = before_read(&initial, &program);
+    let recovered = normal(execute(&state, &ending));
+    assert_eq!(
+        read(&recovered, c_variable("x")),
+        CExpressionOutcome::Value(int32(7))
+    );
+    assert_eq!(
+        read(&recovered, c_load(c_variable("parent"))),
+        CExpressionOutcome::Value(int32(7))
+    );
+}
+
+#[test]
+fn source_scalar_lease_read_ending_role_and_success_are_semantic() {
+    let (program, _scope) = alias_body(&read_export(1));
+    let (initial, _) = initial();
+    let (state, ending) = before_read(&initial, &program);
+    let birth_source = leaves(&program)
+        .into_iter()
+        .find_map(|s| match s {
+            CStatement::Assign { source, .. }
+                if source.lease_plan().is_some() && !source.is_lease_read_end() =>
+            {
+                Some(source)
+            }
+            _ => None,
+        })
+        .unwrap();
+    let mut wrong_role = ending.clone();
+    let CStatement::Assign { source, .. } = &mut wrong_role else {
+        panic!();
+    };
+    *source = birth_source;
+    assert_ne!(ending, wrong_role);
+    assert!(matches!(
+        execute(&state, &wrong_role),
+        CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+    ));
+    let mut observation_only = ending.clone();
+    let CStatement::Assign { source, .. } = &mut observation_only else {
+        panic!();
+    };
+    *source = CStatementAssignSource::default();
+    assert_ne!(ending, observation_only);
+    let still_active = normal(execute(&state, &observation_only));
+    assert!(still_active.has_local_scalar_references());
+    assert!(matches!(
+        execute(&still_active, &c_return(c_void_value())),
+        CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+    ));
+    let mut constant_destination = state.clone();
+    constant_destination.locals.set_typed_with_all_qualifiers(
+        "x",
+        int32(0),
+        CType::Int32,
+        false,
+        false,
+        true,
+        false,
+    );
+    eval::sync_stack_local(&mut constant_destination, "x", &int32(0));
+    assert!(matches!(
+        execute(&constant_destination, &ending),
+        CStatementOutcome::RuntimeError(_) | CStatementOutcome::UndefinedBehavior(_)
+    ));
+    assert!(constant_destination.has_local_scalar_references());
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/kernel/source_loans/tests.rs");
 }

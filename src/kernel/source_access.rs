@@ -15,12 +15,17 @@ pub(crate) struct ReferenceBorrowSourceId {
 }
 
 /// Source observations compare neutrally. A checked lease plan participates in
-/// statement identity and executes an actual checked birth.
+/// statement identity and executes an actual checked birth or read ending.
 #[derive(Clone, Debug, Default)]
 pub struct CStatementAssignSource(
     Option<Arc<ReferenceBorrowSourceId>>,
-    Option<Arc<ScalarReferenceSourcePlan>>,
+    Option<Arc<ScalarReferenceAssignmentLease>>,
 );
+#[derive(Debug)]
+struct ScalarReferenceAssignmentLease {
+    plan: Arc<ScalarReferenceSourcePlan>,
+    read_ending: bool,
+}
 impl CStatementAssignSource {
     pub(crate) fn new(source: ReferenceBorrowSourceId) -> Self {
         Self(Some(Arc::new(source)), None)
@@ -29,11 +34,31 @@ impl CStatementAssignSource {
         self.0.as_deref()
     }
     pub(crate) fn with_lease_plan(mut self, plan: Arc<ScalarReferenceSourcePlan>) -> Self {
-        self.1 = Some(plan);
+        self.1 = Some(Arc::new(ScalarReferenceAssignmentLease {
+            plan,
+            read_ending: false,
+        }));
+        self
+    }
+    pub(crate) fn with_lease_read_end(mut self, plan: Arc<ScalarReferenceSourcePlan>) -> Self {
+        self.1 = Some(Arc::new(ScalarReferenceAssignmentLease {
+            plan,
+            read_ending: true,
+        }));
         self
     }
     pub(super) fn lease_plan(&self) -> Option<&Arc<ScalarReferenceSourcePlan>> {
-        self.1.as_ref()
+        self.1.as_ref().map(|operation| &operation.plan)
+    }
+    pub(super) fn is_lease_read_end(&self) -> bool {
+        self.1
+            .as_ref()
+            .is_some_and(|operation| operation.read_ending)
+    }
+    fn semantic_key(&self) -> Option<(bool, &ScalarReferencePlanKey)> {
+        self.1
+            .as_ref()
+            .map(|operation| (operation.read_ending, operation.plan.key()))
     }
     pub(super) fn completed(
         &self,
@@ -74,21 +99,18 @@ impl CStatementAssignSource {
 }
 impl PartialEq for CStatementAssignSource {
     fn eq(&self, other: &Self) -> bool {
-        self.1.as_ref().map(|plan| plan.key()) == other.1.as_ref().map(|plan| plan.key())
+        self.semantic_key() == other.semantic_key()
     }
 }
 impl Eq for CStatementAssignSource {}
 impl std::hash::Hash for CStatementAssignSource {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        std::hash::Hash::hash(&self.1.as_ref().map(|plan| plan.key()), state);
+        std::hash::Hash::hash(&self.semantic_key(), state);
     }
 }
 impl Ord for CStatementAssignSource {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.1
-            .as_ref()
-            .map(|plan| plan.key())
-            .cmp(&other.1.as_ref().map(|plan| plan.key()))
+        self.semantic_key().cmp(&other.semantic_key())
     }
 }
 impl PartialOrd for CStatementAssignSource {

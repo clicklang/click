@@ -256,7 +256,8 @@ needed to finish a claim already made:
     while a lease is active.
 
   - source-bound birth/end execution for one same-block scalar reborrow from a
-    reference parameter, ending after its final child store. Semantic plans
+    reference parameter, ending after its final child store or direct scalar
+    read assignment. Semantic plans
     bind exact lowered operands and locked source points; recovery consumes the
     actual store's live lease identity and restores the original owned support.
     The unchanged native reborrow witness verifies with real lease operations,
@@ -268,9 +269,14 @@ needed to finish a claim already made:
     Source tests cover delayed alias uses and missing actual alias custody;
     a native local-move fixture verifies the helper and caller with checked
     expansion, and alias-chain preparation has deterministic scaling coverage.
+    Direct read endings bind an exact load from a private reference local and
+    recover only after the checked load and destination assignment succeed.
+    Birth/end roles compare distinctly; cache hits and observation-only labels
+    cannot supply recovery. A native read helper/caller fixture checks returned
+    values, parent reuse and expansion; read preparation has scaling coverage.
 
-  Wider source coverage remains open: nested local references, read
-  endings, multiple blocks/loops, aggregates, shared aliases and call/havoc
+  Wider source coverage remains open: nested local references, more general read
+  expressions, multiple blocks/loops, aggregates, shared aliases and call/havoc
   transport need checked protocols. Observations remain read-only; only the
   activated source subset executes local leases. A reproduced false acceptance
   here would be `unsound`, and so P1, under the [issue rules](README.md).

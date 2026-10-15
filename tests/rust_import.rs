@@ -4459,3 +4459,39 @@ fn rust_scalar_lease_aliases_preserve_updates_and_parent_reuse() {
         source
     );
 }
+
+#[test]
+#[ignore = "nightly: scalar read-ending leases with checked proof expansion"]
+fn rust_scalar_lease_read_ending_preserves_read_value_and_parent_reuse() {
+    let source = include_str!("../design/charon-trial/gate-fixtures/scalar-read-end/borrow.rs");
+    let p = gate_fixtures::project("scalar-read-end", source);
+    let proof = "verifying \"borrow.rs\";\nfn read_before_reuse(parent: &mut i32) -> i32 { owns *parent; requires *parent == 4; ensures result == 4; ensures *parent == 8; } by { execute(); simp(); }\nfn read_caller(parent: &mut i32) -> i32 { owns *parent; requires *parent == 4; ensures result == 4; ensures *parent == 8; } by { execute(); simp(); }\n";
+    fs::write(p.root.join("borrow.click"), proof).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(proof, &prepared).unwrap();
+    for invalid in [
+        proof.replacen("ensures result == 4;", "ensures result == 8;", 1),
+        proof.replacen("ensures *parent == 8;", "ensures *parent == 4;", 1),
+        proof.replacen("owns *parent;", "views *parent;", 1),
+    ] {
+        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+    }
+    assert_cli(
+        &p,
+        &[
+            "expand",
+            "--claim",
+            "read_before_reuse.contract",
+            "--in-place",
+        ],
+    );
+    assert_cli(
+        &p,
+        &["expand", "--claim", "read_caller.contract", "--in-place"],
+    );
+    assert_cli(&p, &["verify"]);
+    assert_eq!(
+        fs::read_to_string(p.root.join("borrow.rs")).unwrap(),
+        source
+    );
+}
