@@ -703,3 +703,32 @@ fixture was run explicitly; the full nightly suite was not run.
 The current-upstream fixture also passes fresh verification, expansion, rewritten
 verification and retained rechecking after an explicit `cargo build --lib` and
 helper relink. The final filtered nightly-fixture rerun passes (1.02s harness).
+
+### Explicit stored-value proofs in the original examples
+
+Following PR #1023, `owned_string_set` and `vector_push` can discharge their
+original contracts by explicitly proving relevant equalities before folding
+their resources. The setter proves its stored value with `simp`; vector push
+proves the unchanged backing pointer and the stored value. The existing final
+`assumption` steps then consume those checked facts. C, claims, resource
+contracts and kernel rules are unchanged.
+
+The focused checks use the original functions in their full sidecars. Reduced
+projects copy the same C, resource definitions, contracts and proofs for fresh,
+expanded, rewritten and retained checks without admitting the unrelated failing
+functions. This is partial recovery, not closure of the
+[string/vector report](../bugs/c-pointer-field-postconditions-lose-frame-evidence.md):
+string push still rejects its terminator equality, while the vector project now
+reaches an allocation-resource fold in `allocated_vector_push`. The last full
+archive audit remains 41/52; no new full-stage verdict is claimed.
+
+Recovery checkpoint `d6caff076` preserves these proof changes and the updated
+bug report. Both reduced cases pass all four modes on that checkpoint; both
+wrong-stored-value controls are rejected. PR #1023's final pushed commit
+`4df6468ff` is verified in upstream history before beginning this extraction.
+
+With the CLI and library rebuilt at upstream `42315e69f`, both functions verify
+in their original full sidecars. The two reduced projects pass all four modes,
+and both wrong-value controls reject. mdBook, docs lint and whitespace checks
+pass; Vale is unavailable, so its advisory prose lint is skipped. No full gate
+or nightly suite was run locally.

@@ -2329,12 +2329,14 @@ impl Parser {
                 self.match_nesting += 1;
                 let saved_bindings = self.current_resource_bindings.clone();
                 let saved_targets = self.current_resource_targets.clone();
+                let saved_child_fields = self.hidden_child_fields.clone();
                 let saved_struct_params = self.current_struct_params.clone();
                 let saved_arm_binding_types = std::mem::take(&mut self.current_arm_binding_types);
                 self.bind_arm_binding_types(&type_name, &variant, &bindings);
                 let body = self.parse_composite_resource_body(resource_name);
                 self.current_resource_bindings = saved_bindings;
                 self.current_resource_targets = saved_targets;
+                self.hidden_child_fields = saved_child_fields;
                 self.current_struct_params = saved_struct_params;
                 self.current_arm_binding_types = saved_arm_binding_types;
                 self.match_nesting -= 1;
