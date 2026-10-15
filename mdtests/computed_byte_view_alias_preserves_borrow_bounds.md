@@ -14,6 +14,10 @@ uint8 first(const uint8* p) {
 uint8 read(const uint8* bytes, const uint8* base, uint64 length, uint64 index, int32 pos) {
  views bytes[0..length];
  requires index <= length;
+ requires base == bytes;
+ requires pointer_origin(base, bytes);
+ requires 0 <= pos;
+ requires (uint64)pos == index;
  requires 4u64 <= length - index;
  requires base + pos == bytes + index;
  ensures result == old((base + pos)[0]);

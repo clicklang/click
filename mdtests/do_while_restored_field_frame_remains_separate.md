@@ -19,7 +19,7 @@ resource list(p: struct Node*) {
             owns p->next;
             owns tail: list(p->next);
             fact p != 0;
-            fact p == identity;
+            fact p == identity; fact pointer_origin(identity, p);
             fact tail.model == rest;
         },
     }
@@ -32,7 +32,7 @@ resource path(p: struct Node*) {
             owns identity->next;
             owns up: path(identity);
             fact identity != 0;
-            fact identity->next == p;
+            fact identity->next == p; fact pointer_origin(identity->next, p);
             fact up.model == before;
         },
     }
@@ -52,10 +52,11 @@ void walk(struct Node* p, int32* marker) {
         decreases t;
         invariant p != 0;
         invariant p == q;
+        invariant pointer_origin(p, q);
         initialize by simp;
         preserve by {
             match t.model {
-                Chain::Empty => { unfold(t); contradiction(p == 0); },
+                Chain::Empty => { contradiction(t.model == Chain::Empty); },
                 Chain::Node(identity, rest) => {
                     let { tail: next } = unfold(t);
                     let frame = fold(path(p->next), { model: Path::Step(identity, c.model) }, { up: c });

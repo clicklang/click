@@ -26,7 +26,7 @@ resource cell_at(p: struct cell*) {
     match model {
         Cell::At(id) => {
             owns p->word;
-            fact p == id;
+            fact p == id; fact pointer_origin(id, p);
         },
     }
 }

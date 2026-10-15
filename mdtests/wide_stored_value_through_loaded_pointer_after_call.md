@@ -24,6 +24,7 @@ void caller(struct Node *p, struct Node *q) {
     consumes before: tag(p); produces after: tag(p);
     owns p->next; owns q->tag;
     requires p->next == q;
+    requires pointer_origin(p->next, q);
     ensures q->tag == 7;
 } by {
     step(); step(); step();

@@ -3793,47 +3793,6 @@ impl ResourceContext {
             })
     }
 
-    /// The owned memory members of this composition whose range base is
-    /// exactly `base`, as their entries and ranges.
-    ///
-    /// Read from the base index: logarithmic in the composition to position,
-    /// then the members returned. Unlike a block bucket, the answer does not
-    /// grow with the other objects the composition owns in the same block,
-    /// which for `ExternalArgument` is every object reached from a parameter.
-    pub(in crate::kernel) fn pointer_input_domain_has_object(
-        &self,
-        origin: &Pointer,
-        assumptions: &PureFactContext,
-    ) -> bool {
-        crate::instrumentation::record_deterministic_work(1);
-        self.storage
-            .index
-            .memory_by_origin
-            .get(&origin.object_base())
-            .into_iter()
-            .flat_map(ResourceEntryIds::iter)
-            .any(|entry| {
-                crate::instrumentation::record_deterministic_work(1);
-                let fact = self.fact(*entry);
-                if fact.is_own() && !fact.has_proven_positive_quantity(assumptions) {
-                    return false;
-                }
-                let Some(range) = fact.memory_range() else {
-                    return false;
-                };
-                if range.element_width() == 0 {
-                    return false;
-                }
-                let (start, end) = range.bound_terms();
-                let nonempty = if range.wide_bounds().is_some() {
-                    ConditionTerm::uint64_less_than(start.clone(), end.clone())
-                } else {
-                    ConditionTerm::signed_less_than(start.clone(), end.clone())
-                };
-                assumptions.decide(&nonempty) == Some(true)
-            })
-    }
-
     /// Authenticate a call's opaque input against the supplier's designation,
     /// before numeric resource alignment creates the callee's input view.
     pub(in crate::kernel) fn pointer_input_domain_contains_fact(
@@ -3853,21 +3812,27 @@ impl ResourceContext {
             return true;
         }
         let candidates = self.memory_fact_candidates(range, required.is_own(), assumptions);
-        candidates.entries.iter().any(|entry| {
+        let mut suppliers = Vec::new();
+        for entry in candidates.entries.iter() {
             crate::instrumentation::record_deterministic_work(1);
             let available = self.fact(entry);
             let Some(range) = available.memory_range() else {
-                return false;
+                continue;
             };
-            if range.base().offset_from_base(origin).is_none()
-                && origin.offset_from_base(range.base()).is_none()
-            {
-                return false;
+            if range.base().object_base() != origin.object_base() {
+                continue;
             }
-            candidates
+            if candidates
                 .requirement(entry, required)
                 .is_some_and(|aligned| resource_fact_entails(available, &aligned, assumptions))
-        })
+            {
+                return true;
+            }
+            suppliers.push(available.clone());
+        }
+        ResourceContext::new_with_equalities(assumptions)
+            .try_compose_with_facts(suppliers, assumptions)
+            .is_ok_and(|suppliers| suppliers.satisfies_fact(required, assumptions))
     }
 
     pub(in crate::kernel) fn pointer_input_domain_covers(
@@ -3877,28 +3842,92 @@ impl ResourceContext {
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> bool {
-        let Some(mut entries) = self.read_access_entries(pointer, bytes, assumptions) else {
-            return false;
-        };
-        while let Some(entry) = entries.next() {
-            crate::instrumentation::record_deterministic_work(1);
-            let fact = self.fact(entry);
-            if fact.is_own() && !fact.has_proven_positive_quantity(assumptions) {
-                continue;
+        let covers = |fact: &CResourceFact, address: &Pointer| {
+            if bytes != 0 {
+                return memory_resource_fact_permits_read(fact, address, bytes, assumptions);
             }
-            let (Some(range), Some(address)) = (fact.memory_range(), entries.address(entry)) else {
-                continue;
+            let Some(range) = fact.memory_range() else {
+                return false;
             };
-            // Address classes select candidates, but only a resource rooted
-            // in this designation can authenticate an opaque input domain.
-            if (range.base().offset_from_base(origin).is_some()
-                || origin.offset_from_base(range.base()).is_some())
-                && assumptions.pointer_access_in_memory_range(&address, bytes, range)
+            let holds = |condition| assumptions.decide(&condition) == Some(true);
+            if let Some((start, end)) = range.wide_bounds() {
+                if let Some(index) =
+                    address.wide_element_index_from_base(range.base(), range.element_width())
+                    && holds(ConditionTerm::uint64_less_equal(
+                        start.clone(),
+                        index.clone(),
+                    ))
+                    && holds(ConditionTerm::uint64_less_equal(index, end.clone()))
+                {
+                    return true;
+                }
+            } else if let Some(offset) = address.offset_from_base(range.base())
+                && let Some(index) = crate::kernel::reasoning::element_index_from_offset_with_facts(
+                    &offset,
+                    range.element_width(),
+                    assumptions,
+                )
+                && holds(ConditionTerm::signed_less_equal(
+                    range.start().clone(),
+                    index.clone(),
+                ))
+                && holds(ConditionTerm::signed_less_equal(index, range.end().clone()))
             {
                 return true;
             }
+            if pointers_proven_equal_for_memory_resolution(
+                address,
+                &range.start_pointer(),
+                assumptions,
+            ) {
+                return true;
+            }
+            [range.element_width().max(1), 1].into_iter().any(|width| {
+                memory_resource_fact_permits_read(fact, address, width, assumptions)
+                    || memory_resource_fact_permits_read(
+                        fact,
+                        &Pointer {
+                            block: address.block.clone(),
+                            offset: PointerOffsetTerm::add(
+                                address.offset.clone(),
+                                PointerOffsetTerm::Constant(-i64::from(width)),
+                            ),
+                        },
+                        width,
+                        assumptions,
+                    )
+            })
+        };
+        if let Some(mut entries) = self.read_access_entries(pointer, bytes, assumptions) {
+            while let Some(entry) = entries.next() {
+                crate::instrumentation::record_deterministic_work(1);
+                let fact = self.fact(entry);
+                if fact.is_own() && !fact.has_proven_positive_quantity(assumptions) {
+                    continue;
+                }
+                let (Some(range), Some(address)) = (fact.memory_range(), entries.address(entry))
+                else {
+                    continue;
+                };
+                // Address classes select candidates, but only a resource rooted
+                // in this designation can authenticate an opaque input domain.
+                if range.base().object_base() == origin.object_base() && covers(fact, &address) {
+                    return true;
+                }
+            }
         }
-        false
+        self.storage
+            .index
+            .memory_by_origin
+            .get(&origin.object_base())
+            .into_iter()
+            .flat_map(ResourceEntryIds::iter)
+            .any(|entry| {
+                crate::instrumentation::record_deterministic_work(1);
+                let fact = self.fact(*entry);
+                (!fact.is_own() || fact.has_proven_positive_quantity(assumptions))
+                    && covers(fact, pointer)
+            })
     }
 
     pub(in crate::kernel) fn owned_memory_members_with_base<'a>(

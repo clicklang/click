@@ -1592,6 +1592,13 @@ impl CCompositeResourceDefinition {
     }
 
     pub(crate) fn with_resource_match_body(mut self, body: Option<CResourceMatchBody>) -> Self {
+        let mut body = body;
+        if let Some(body) = &mut body {
+            for arm in &mut body.arms {
+                arm.facts
+                    .extend(resource_body_pointer_domain_requirements(&arm.contains));
+            }
+        }
         self.matched = body;
         self.thread_confined |= self.owns_population_authority();
         self
@@ -1611,6 +1618,8 @@ impl CCompositeResourceDefinition {
         facts: Vec<SpecProposition>,
     ) -> Self {
         let fact_source_indices = (0..facts.len()).collect();
+        let mut facts = facts;
+        facts.extend(resource_body_pointer_domain_requirements(&contains));
         let mut definition = Self {
             resource_parameters: Vec::new(),
             instance_schema: None,

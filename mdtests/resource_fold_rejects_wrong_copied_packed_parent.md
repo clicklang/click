@@ -22,7 +22,7 @@ resource cell(p: struct node*) {
     field model: Pair;
     match model { Pair::At(identity) => {
         owns p->tag;
-        fact p == identity;
+        fact p == identity; fact pointer_origin(identity, p);
     }, }
 }
 spec enum Tagged { At(struct node*, struct node*) }
@@ -30,7 +30,7 @@ resource tagged_at(p: struct node*) {
     field model: Tagged;
     match model { Tagged::At(identity, above) => {
         owns identity->tag;
-        fact p == identity;
+        fact p == identity; fact pointer_origin(p, identity);
         fact identity->tag == address(above) + (identity->tag & 1);
         fact (identity->tag & 1) == 1;
     }, }
@@ -43,6 +43,7 @@ resource parent_at(p: struct node*) {
     field model: Parent;
     match model {
         Parent::At(identity, sm) => {
+            fact pointer_origin(p, identity);
             owns identity->tag;
             fact identity->tag == address(identity) + (identity->tag & 1);
             fact (identity->tag & 1) == 1;
@@ -67,6 +68,8 @@ void inspect(struct node* parent) {
     loop {
         owns tree_context: parent_at(root);
         invariant parent == parent_identity(tree_context.model);
+        invariant parent == root;
+        invariant pointer_origin(parent, root);
         decreases 0;
         initialize by simp;
         preserve by {

@@ -1425,7 +1425,7 @@ fn canonicalized_pointer_value_from_int_cell(
         if matches!(purpose, LoadPurpose::Logical | LoadPurpose::Validity)
             && let Bitvector32Term::MemoryLoad(memory, address, _) = &load
         {
-            assumptions.register_pointer_read(&loaded, memory, address);
+            assumptions.register_checked_pointer_read(&loaded, memory, address);
         }
         // The cached scalar spelling still comes from this exact typed read.
         // Preserve the same producer evidence as the symbolic load route,
@@ -1685,11 +1685,14 @@ fn canonicalized_symbolic_load_value_with_identity(
     };
     if matches!(purpose, LoadPurpose::Logical | LoadPurpose::Validity) {
         record_pointer_read_observation(&pointer, memory, &address);
+        let snapshot = crate::kernel::intern_c_memory(memory.clone());
+        let application = Pointer::loaded_value(&snapshot, &address);
+        assumptions.register_checked_pointer_read(&application, &snapshot, &address);
         // The logical evaluator constructs a term, not a C access. Retain
         // its exact typed definition in the trusted graph's term metadata;
         // logical evaluation still exports no defining proposition premise.
         if let Bitvector32Term::MemoryLoad(memory, address, _) = &load {
-            assumptions.register_pointer_read(&pointer, memory, address);
+            assumptions.register_checked_pointer_read(&pointer, memory, address);
         }
     }
     record_load_variable_defining_fact_with_source_and_pointer(
@@ -1699,7 +1702,13 @@ fn canonicalized_symbolic_load_value_with_identity(
         source,
         (purpose == LoadPurpose::Program).then_some(&pointer),
     );
-    let mut value = pointer_value.clone().with_origin(pointer.clone());
+    // Naming this observation does not replace the complete value retained
+    // by an unchanged pointer cell. Numeric read names may be fresh while
+    // the stored domain, position and lifetime lease remain the same.
+    let mut value = match memory.known_value(&address) {
+        Some(CValue::Pointer(retained)) => retained.with_type(value_type),
+        _ => pointer_value.clone().with_origin(pointer.clone()),
+    };
     value.replace_pointer(pointer);
     Some(CValue::Pointer(value))
 }
@@ -3896,14 +3905,14 @@ pub(in crate::kernel) fn cached_symbolic_storage_cell_value(
         .map(wrap)
 }
 
-pub(in crate::kernel) fn symbolic_storage_cell_value(
+pub(crate) fn symbolic_storage_cell_value(
     memory: &CMemory,
     pointer: &Pointer,
     c_type: CType,
     record_width: bool,
 ) -> Option<CValue> {
     if c_type.is_object_pointer() {
-        if record_width && pointer.block.starts_with("local:") {
+        if record_width {
             record_load_access_width(memory, pointer, c_type.byte_width());
         }
         let load = Bitvector32Term::MemoryLoad(
@@ -3953,6 +3962,36 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn symbolic_pointer_read_keeps_the_cached_complete_value() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let slot = Pointer::symbolic(Variable(981_001));
+        let target = Pointer::symbolic(Variable(981_002));
+        let stored = CPointerValue::new(target.offset_by_bytes(4), CType::Int32Pointer)
+            .with_domain(Some(CPointerDomain {
+                bytes: 4,
+                position: IntegerTerm::constant_i64(4).into(),
+            }))
+            .with_origin(target.offset_by_bytes(4));
+        let memory = CMemory::new().store(slot.clone(), CValue::Pointer(stored.clone()));
+        let value = canonicalized_symbolic_load_value_with_identity(
+            &memory,
+            &slot,
+            CType::Int32Pointer,
+            &mut ExecutionFacts::new(),
+            &PureFactContext::new(),
+            true,
+            None,
+            LoadPurpose::Logical,
+        )
+        .unwrap();
+        let CValue::Pointer(value) = value else {
+            unreachable!()
+        };
+        assert_eq!(value.domain(), stored.domain());
+        assert_eq!(value.origin(), stored.origin());
+    }
 
     #[test]
     fn program_pointer_facts_retain_their_scoped_read_producer() {

@@ -1213,12 +1213,17 @@ fn cell_value_is_exactly_load(
             let target = value.pointer();
             value.domain().is_none()
                 && value.origin() == target
-                && target.block == pointer.block
-                && matches!(
-                    &target.offset,
-                    crate::kernel::PointerOffsetTerm::Int32Scaled { value, .. }
-                        if value.as_ref() == load
-                )
+                && value.extent().is_none()
+                && value.local_reference().is_none()
+                && ((target.block == pointer.block
+                    && matches!(
+                        &target.offset,
+                        crate::kernel::PointerOffsetTerm::Int32Scaled { value, .. }
+                            if value.as_ref() == load
+                    ))
+                    || matches!((&target.block, &target.offset, load),
+                        (crate::kernel::PointerBlock::Symbolic(variable), crate::kernel::PointerOffsetTerm::Constant(0), Bitvector32Term::Variable(expected))
+                            if variable == expected && crate::kernel::equality_graph::logical_pointer_read_term(target).is_some()))
         }
         _ => false,
     }
@@ -1321,22 +1326,47 @@ impl From<&str> for ResourceRewriteCheckError {
 }
 
 /// A checked body's identical readability range at a snapshot differing only
-/// by caches of unchanged reads. This transports neither values nor ownership,
-/// and admits no different address, extent, or wide/narrow representation.
+/// by caches of unchanged reads. The same rule carries a declared pointer
+/// domain without changing its complete pointer or extent. It transports
+/// neither values nor ownership and admits no different address or width.
 fn cached_body_loadability(
     fact: &Proposition,
     body_memory: &CMemory,
     allowed: &std::collections::BTreeSet<Proposition>,
     comparisons: &mut HashMap<((u32, u32), (u32, u32)), bool>,
 ) -> bool {
-    let Proposition::CMemoryLoadable {
-        memory,
-        base,
-        bytes,
-        wide,
-    } = fact
-    else {
-        return false;
+    let (memory, at_body_memory) = match fact {
+        Proposition::CMemoryLoadable {
+            memory,
+            base,
+            bytes,
+            wide,
+        } => (
+            memory,
+            Proposition::CMemoryLoadable {
+                memory: body_memory.clone(),
+                base: base.clone(),
+                bytes: bytes.clone(),
+                wide: *wide,
+            },
+        ),
+        Proposition::Predicate { name, arguments }
+            if name == crate::kernel::INPUT_POINTER_DOMAIN_PREDICATE_NAME =>
+        {
+            let [crate::kernel::Term::CMemory(memory), rest @ ..] = arguments.as_slice() else {
+                return false;
+            };
+            let mut arguments = vec![crate::kernel::Term::CMemory(body_memory.clone())];
+            arguments.extend_from_slice(rest);
+            (
+                memory,
+                Proposition::Predicate {
+                    name: name.clone(),
+                    arguments,
+                },
+            )
+        }
+        _ => return false,
     };
     let key = (
         crate::kernel::intern_c_memory_ref(memory).arena_id(),
@@ -1350,12 +1380,7 @@ fn cached_body_loadability(
     }) {
         return false;
     }
-    allowed.contains(&Proposition::CMemoryLoadable {
-        memory: body_memory.clone(),
-        base: base.clone(),
-        bytes: bytes.clone(),
-        wide: *wide,
-    })
+    allowed.contains(&at_body_memory)
 }
 
 impl CheckedResourceRewrite {
@@ -2862,7 +2887,7 @@ fn resource_delta_pointer_equality(
     }
     let (source_base, source_bytes, source_lifetime) = resource_read_key(source)?;
     let (goal_base, goal_bytes, goal_lifetime) = resource_read_key(goal)?;
-    (source_base.block == goal_base.block
+    (!source_base.blocks_proven_distinct(&goal_base)
         && source_bytes == goal_bytes
         && source_lifetime == goal_lifetime)
         .then(|| {
@@ -12370,6 +12395,30 @@ mod tests {
             8,
             false
         )));
+        let domain = |memory, pointer, bytes| Proposition::Predicate {
+            name: crate::kernel::INPUT_POINTER_DOMAIN_PREDICATE_NAME.into(),
+            arguments: vec![
+                crate::kernel::Term::CMemory(memory),
+                crate::kernel::Term::CValue(CValue::typed_pointer(
+                    pointer,
+                    crate::kernel::CType::UInt8Pointer,
+                )),
+                crate::kernel::Term::CValue(CValue::UInt32(Bitvector32Term::Constant(bytes))),
+            ],
+        };
+        let domain_allowed = [domain(before.clone(), at("body"), 8)]
+            .into_iter()
+            .collect();
+        let check_domain =
+            |fact| cached_body_loadability(&fact, &before, &domain_allowed, &mut HashMap::new());
+        assert!(check_domain(domain(cached.clone(), at("body"), 8)));
+        assert!(!check_domain(domain(cached.clone(), at("other"), 8)));
+        assert!(!check_domain(domain(cached.clone(), at("body"), 12)));
+        assert!(!check_domain(domain(
+            cached.clone().store(at("body"), int32(7)),
+            at("body"),
+            8
+        )));
         let havoc =
             cached.with_call_memory_havoc(Variable(901_020), &[], &PureFactContext::new(), None);
         assert!(!check(view(havoc, at("body"), 8, false)));
@@ -13405,9 +13454,16 @@ mod tests {
             false,
             vec![crate::kernel::CResourceSpec::owned_memory(
                 crate::kernel::CMemorySegment {
-                    base: CExpression::Value(CValue::pointer(crate::kernel::Pointer::symbolic(
-                        Variable(100),
-                    ))),
+                    base: CExpression::Value(CValue::Pointer(
+                        crate::kernel::CPointerValue::new(
+                            crate::kernel::Pointer::symbolic(Variable(100)),
+                            CType::Int32Pointer,
+                        )
+                        .with_domain(Some(crate::kernel::CPointerDomain {
+                            bytes: 4,
+                            position: crate::kernel::IntegerTerm::constant_i64(0).into(),
+                        })),
+                    )),
                     start: CExpression::Value(int32(0)),
                     end: CExpression::Value(int32(1)),
                     element_width: 4,

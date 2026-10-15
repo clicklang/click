@@ -24,12 +24,12 @@ resource focus_at(p: struct node*) {
     field model: Focus;
     match model {
         Focus::Empty => { fact p == 0; },
-        Focus::Live(identity) => { owns p->right; fact p == identity; fact p != 0; },
+        Focus::Live(identity) => { owns p->right; fact p == identity; fact pointer_origin(identity, p); fact p != 0; },
     }
 }
 resource leaf_at(p: struct node*) {
     field model: Identity;
-    match model { Identity::At(identity) => { owns p->right; fact p == identity; }, }
+    match model { Identity::At(identity) => { owns p->right; fact p == identity; fact pointer_origin(identity, p); }, }
 }
 resource cell(p: struct node*) {
     field model: Pair;
@@ -37,7 +37,7 @@ resource cell(p: struct node*) {
         Pair::At(identity, child) => {
             owns p->left;
             owns l: leaf_at(p->left);
-            fact p == identity;
+            fact p == identity; fact pointer_origin(identity, p);
             fact l.model == child;
         },
     }
@@ -50,6 +50,7 @@ resource parent_at(p: struct node*) {
     field model: Parent;
     match model {
         Parent::At(identity, sm, fm) => {
+            fact pointer_origin(p, identity);
             owns identity->left;
             owns identity->right;
             owns c: cell(identity->left);
@@ -68,6 +69,8 @@ void inspect(struct node* parent) {
     loop {
         owns tree_context: parent_at(root);
         invariant parent == parent_identity(tree_context.model);
+        invariant parent == root;
+        invariant pointer_origin(parent, root);
         decreases 0;
         initialize by simp;
         preserve by {

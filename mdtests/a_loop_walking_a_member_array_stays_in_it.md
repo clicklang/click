@@ -38,6 +38,7 @@ int32 walk(struct Rec* r, int32 n) {
         decreases n - i;
         invariant i >= 0 and i <= n;
         invariant p == &r->arr[0] + i;
+        invariant pointer_origin(p, &r->arr[0] + i);
         preserve by {
             step();
             step();

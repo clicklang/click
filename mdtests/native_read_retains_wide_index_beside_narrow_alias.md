@@ -15,6 +15,7 @@ int32 read(const uint8* cursor, const uint8* base, uint64 held, uint64 remaining
  requires held <= 15u64;
  requires cursor == alternate + narrow;
  requires cursor == base + (held - remaining);
+ requires pointer_origin(cursor, base + (held - remaining));
  views base[0u64..held];
  ensures 0 <= result and result <= 255;
 } by {

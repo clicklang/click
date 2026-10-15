@@ -1,11 +1,11 @@
 # A modular automatic-storage pointer return loses its ended lifetime
 
+Priority: P1.
+
 Soundness: unsound. A caller can compare a pointer returned into a callee's
 ended automatic object. C11 6.2.4p2 makes the pointer indeterminate when that
 object's lifetime ends; this is a use of the indeterminate pointer, beyond
 merely copying its representation.
-
-Priority: P1.
 
 Reproduced on the scalar-member worktree after merging `0486bf816`, without
 needing a member selector or memory permission. The return abstraction keeps

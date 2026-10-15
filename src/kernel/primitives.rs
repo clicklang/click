@@ -14,6 +14,192 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, OnceLock};
 
+pub(crate) const INPUT_POINTER_DOMAIN_PREDICATE_NAME: &str = "__click_input_pointer_domain";
+
+/// Domain evidence comes from a declared entry requirement, rather than a
+/// later address-only derivation of physical readability. The private memory
+/// argument cannot be constructed by a source predicate application.
+pub(crate) fn declared_input_pointer_domain_facts(proposition: &Proposition) -> Vec<Proposition> {
+    let mut pending = vec![proposition];
+    let mut facts = Vec::new();
+    while let Some(proposition) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        match proposition {
+            Proposition::And(left, right) => {
+                pending.push(right);
+                pending.push(left);
+            }
+            Proposition::CMemoryLoadable {
+                memory,
+                base,
+                bytes,
+                wide,
+            } => {
+                facts.push(Proposition::Predicate {
+                    name: INPUT_POINTER_DOMAIN_PREDICATE_NAME.into(),
+                    arguments: vec![
+                        Term::CMemory(memory.clone()),
+                        Term::CValue(CValue::typed_pointer(base.clone(), CType::UInt8Pointer)),
+                        Term::CValue(if *wide {
+                            CValue::UInt64(bytes.clone())
+                        } else {
+                            CValue::UInt32(bytes.clone())
+                        }),
+                    ],
+                });
+            }
+            _ => {}
+        }
+    }
+    facts
+}
+
+/// Checked geometry promised by typed selectors in a declared resource.
+/// These are ordinary resource-body obligations on folding, and entry
+/// assumptions only for the resources the contract actually declares.
+pub(crate) const INPUT_POINTER_DOMAIN_REQUIREMENT: &str = "@input_pointer_domain";
+
+pub(crate) fn resource_input_pointer_domain_requirements(
+    resources: &[CResourceSpec],
+) -> Vec<SpecProposition> {
+    resource_pointer_domain_requirements(resources, false)
+}
+pub(crate) fn resource_body_pointer_domain_requirements(
+    resources: &[CResourceSpec],
+) -> Vec<SpecProposition> {
+    resource_pointer_domain_requirements(resources, true)
+}
+fn resource_pointer_domain_requirements(
+    resources: &[CResourceSpec],
+    leaves: bool,
+) -> Vec<SpecProposition> {
+    fn collect(expression: &CExpression, output: &mut Vec<SpecProposition>) {
+        crate::instrumentation::record_deterministic_work(1);
+        let promise = match expression {
+            CExpression::Subobject { pointer, width } => Some((pointer.as_ref().clone(), *width)),
+            CExpression::PointerOffsetBytes {
+                pointer,
+                bytes,
+                object_bytes: Some(width),
+            } => Some((
+                CExpression::PointerOffsetBytes {
+                    pointer: pointer.clone(),
+                    bytes: *bytes,
+                    object_bytes: None,
+                },
+                *width,
+            )),
+            _ => None,
+        };
+        if let Some((pointer, bytes)) = promise {
+            output.push(SpecProposition::Predicate {
+                name: INPUT_POINTER_DOMAIN_REQUIREMENT.into(),
+                arguments: vec![
+                    SpecPredicateArgument::Value(SpecExpression::CExpression(pointer)),
+                    SpecPredicateArgument::Value(SpecExpression::Value(CValue::UInt32(
+                        Bitvector32Term::Constant(bytes),
+                    ))),
+                ],
+                resource_state_dependent: false,
+            });
+        }
+        match expression {
+            CExpression::Cast { expression, .. }
+            | CExpression::FloatClassification { expression, .. } => collect(expression, output),
+            CExpression::Subobject { pointer, .. }
+            | CExpression::PointerOffsetBytes { pointer, .. }
+            | CExpression::TypedLoad { pointer, .. } => collect(pointer, output),
+            CExpression::AddressOf(body)
+            | CExpression::CheckedObjectAddress(body)
+            | CExpression::Load(body)
+            | CExpression::Not(body)
+            | CExpression::BitwiseNot(body)
+            | CExpression::FloatNegate(body) => collect(body, output),
+            CExpression::Conditional {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                collect(condition, output);
+                collect(then_branch, output);
+                collect(else_branch, output);
+            }
+            CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => {}
+            CExpression::Add(a, b)
+            | CExpression::Subtract(a, b)
+            | CExpression::Multiply(a, b)
+            | CExpression::Divide(a, b)
+            | CExpression::Remainder(a, b)
+            | CExpression::ShiftLeft(a, b)
+            | CExpression::ShiftRight(a, b)
+            | CExpression::BitwiseAnd(a, b)
+            | CExpression::BitwiseOr(a, b)
+            | CExpression::BitwiseXor(a, b)
+            | CExpression::Index(a, b)
+            | CExpression::Equal(a, b)
+            | CExpression::NotEqual(a, b)
+            | CExpression::LessThan(a, b)
+            | CExpression::LessEqual(a, b)
+            | CExpression::GreaterThan(a, b)
+            | CExpression::GreaterEqual(a, b)
+            | CExpression::And(a, b)
+            | CExpression::Or(a, b) => {
+                collect(a, output);
+                collect(b, output);
+            }
+        }
+    }
+    let mut output = Vec::new();
+    for resource in resources {
+        if let Some(segment) = resource.memory_segment() {
+            let first = output.len();
+            collect(&segment.base, &mut output);
+            // Scalar fields are represented by a byte range whose base may
+            // already have discarded the final selector. Preserve that leaf
+            // promise as well as every enclosing typed selection above it.
+            let constant = |value: &CExpression| match value {
+                CExpression::Value(CValue::Int32(bits) | CValue::UInt32(bits)) => bits.as_const(),
+                _ => None,
+            };
+            if leaves
+                && let (Some(start), Some(end)) = (constant(&segment.start), constant(&segment.end))
+                && end >= start
+                && let Some(offset) = start.checked_mul(segment.element_width)
+                && let Some(bytes) = (end - start).checked_mul(segment.element_width)
+            {
+                let pointer = if offset == 0 {
+                    segment.base.clone()
+                } else {
+                    CExpression::PointerOffsetBytes {
+                        pointer: Box::new(segment.base.clone()),
+                        bytes: offset,
+                        object_bytes: None,
+                    }
+                };
+                output.push(SpecProposition::Predicate {
+                    name: INPUT_POINTER_DOMAIN_REQUIREMENT.into(),
+                    arguments: vec![
+                        SpecPredicateArgument::Value(SpecExpression::CExpression(pointer)),
+                        SpecPredicateArgument::Value(SpecExpression::Value(CValue::UInt32(
+                            Bitvector32Term::Constant(bytes),
+                        ))),
+                    ],
+                    resource_state_dependent: false,
+                });
+            }
+            if let Some(guard) = resource.guard() {
+                for requirement in &mut output[first..] {
+                    *requirement = SpecProposition::Implies(
+                        Box::new(guard.clone()),
+                        Box::new(requirement.clone()),
+                    );
+                }
+            }
+        }
+    }
+    output
+}
+
 pub(crate) const POINTER_ORIGIN_PREDICATE_NAME: &str = "__click_pointer_origin";
 pub(crate) const SAME_OBJECT_PREDICATE_NAME: &str = "__click_same_object";
 pub(crate) const MUTEX_HELD_PREDICATE_NAME: &str = "__click_mutex_held";
@@ -1033,6 +1219,7 @@ pub(crate) enum CPointerResultDomain {
     Meet {
         fixed: Option<CPointerDomain>,
         arguments: Vec<(usize, i64, i64)>,
+        selected_inputs: Vec<(usize, i64, i64)>,
     },
     Integer(Box<CPointerResultDomain>),
     Argument(usize),
@@ -1195,16 +1382,33 @@ impl CPointerValue {
                     .offset_from_base(&extent.start)
                     .and_then(|offset| offset.as_const()),
             );
-            let (bytes, position) = bounds.unwrap_or((0, -1));
-            self = self.with_domain(Some(CPointerDomain {
-                bytes,
-                position: IntegerTerm::constant_i64(position).into(),
-            }));
+            if let Some((bytes, position)) = bounds {
+                self = self.with_domain(Some(CPointerDomain {
+                    bytes,
+                    position: IntegerTerm::constant_i64(position).into(),
+                }));
+            }
         }
         if extent.is_some() || self.extent().is_some() {
             Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).extent = extent;
         }
         self
+    }
+
+    /// An opaque coordinate may be refined inside its retained extent, but
+    /// neither selected bounds nor local-reference custody can be replaced.
+    pub(crate) fn accepts_input_origin(&self, origin: &Self) -> bool {
+        self.domain().is_none()
+            && self.local_reference().is_none()
+            && match self.extent() {
+                None => true,
+                Some(extent) => {
+                    origin.extent() == Some(extent)
+                        && origin
+                            .domain()
+                            .is_some_and(|domain| u64::from(domain.bytes) == extent.width)
+                }
+            }
     }
 
     /// Applies a substitution to every address the value mentions: its own

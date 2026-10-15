@@ -23,7 +23,8 @@ designation; comparing or rewriting equal addresses does not select another
 object. Pointer offsets are separate terms, not raw integers. C pointer arithmetic is scaled by the pointee type: `int32*`
 adds four bytes per element, while `uint8*` adds one byte per element.
 The absolute `extent` carrier is preserved by value transport and authenticates
-these same domain bounds; unsupported extent coordinates are refused.
+these same domain bounds; symbolic coordinates retain the absolute check until a verified origin
+invariant supplies their relative position within that same extent.
 
 Click's integer constant `0` converts to a single canonical null pointer in
 pointer-valued return, initialization, assignment, argument, and comparison
@@ -95,12 +96,21 @@ and compared with `&p->second`, but dereferencing it is refused. `&p->first + 2`
 is refused at formation. Direct selection of `&p->second` has its own domain.
 An array member selects its complete array extent, permitting real traversal.
 These bounds survive pointer locals, stored values, integer round trips, and
-inferred modular return and pointer-cell effects. Effects come from complete
-checked returns and final cells, never from numeric address postconditions.
+inferred modular return and pointer-cell effects. Nonempty `viewable` ranges
+must also fit the selected domain; a byte-address alias cannot turn a scalar
+endpoint into a valid input range, even for a helper that returns no pointer.
+Effects come from complete checked returns and final cells, never from numeric address postconditions.
 A helper with several possible pointer returns exports only the displacement
 window common to all checked paths. An unknown return cannot supply a wider
 window. Contracts and proof expressions retain member selection just as C
 execution does, including inside origin propositions and snapshots.
+
+Declared typed memory clauses also promise the domains of their selected
+ancestors. Viewing only `p->values[0]` therefore still permits forming the
+one-past pointer of the complete declared array. These domain promises are
+checked when calling or folding and retained when unfolding; they grant no
+additional byte permission. Deriving `viewable(p[0..1])` later by rewriting
+`p == q` cannot issue an input-domain promise.
 
 An opaque pointer input may use `pointer_origin(p, q)` together with `p == q`
 when its authority is held through `q`. Numeric equality alone cannot issue
@@ -108,23 +118,21 @@ that input's object domain, including when a modular reader is called.
 
 Pointer arithmetic stays inside the pointed-to object (C11 6.5.6p8): the
 result must designate an element of the object or the position one past its
-end. For a block whose extent the kernel records, a local array or a heap
-allocation, the displacement is checked against that extent. For a block
-whose extent it does not record, which is every pointer parameter and every
-symbolic or loaded pointer, the ranges the state holds in that block are the
-extent it knows: forming `p + k` owes that the result lies within an `owns`
-or `views` range of the object, one-past end included, or inside a `viewable`
-extent. A range the facts exclude the result from drops out; when they
-exclude it from every held range the formation is refused as pointer
-arithmetic that left the object, and when one range is left undecided its
-bounds are owed as an obligation on the path where they fail; the normal path
-does not assume them. Only a range based in the pointer's own object judges
-it, so a range of `p` neither bounds nor refutes `q + i` under an alias
-`p == q`. Displacing by zero owes nothing, and
-a pointer whose object has no held range owes nothing at formation: the access
-through it is what is refused then. Element coordinates are compared with
-the range's own element width, so a byte pointer into an `int32` range is
-not bounded by that range.
+end. A pointer with a retained selected domain is checked against that domain,
+independently of the subset of bytes currently owned or viewed. Local arrays
+and heap allocations also retain their allocation bounds.
+
+For an opaque pointer without retained geometry, nonzero runtime displacement
+needs a memory resource or a declared input-domain promise rooted at that
+pointer's origin. Formation must stay within its supported range, one-past
+included. If the bounds remain undecided, the failing path is refused; the
+normal path does not assume the bounds. A range of `p` cannot authenticate
+`q + i` merely because `p == q`. A later `viewable` fact derived by rewriting
+equal addresses supplies physical readability, not an input domain.
+Displacing by zero owes no formation bounds. Logical expressions may name
+positions without asserting their runtime validity. Range checks use the
+range's element width, so a byte pointer into an `int32` range does not inherit
+that range's element coordinates.
 
 Pointers into distinct objects compare unequal under `==` and `!=`, with one
 exception. C11 6.5.9p6 lets a pointer one past the end of an object equal

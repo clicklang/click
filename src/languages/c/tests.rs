@@ -9951,8 +9951,11 @@ fn c0_struct_field_lowering_uses_explicit_byte_offsets() {
     };
     assert!(matches!(
         pointer.as_ref(),
-        crate::kernel::CExpression::PointerOffsetBytes { pointer, bytes: 0, object_bytes: Some(8) }
-            if matches!(pointer.as_ref(), crate::kernel::CExpression::PointerOffsetBytes { bytes: 8, object_bytes: None, .. })
+        crate::kernel::CExpression::PointerOffsetBytes {
+            bytes: 8,
+            object_bytes: None,
+            ..
+        }
     ));
 }
 
@@ -10180,14 +10183,6 @@ fn c0_struct_field_address_lowering_preserves_nested_byte_offset() {
     };
     let crate::kernel::CExpression::Subobject { pointer, .. } = pointer.as_ref() else {
         panic!("the leaf member address should designate the leaf member")
-    };
-    let crate::kernel::CExpression::PointerOffsetBytes {
-        pointer,
-        bytes: 0,
-        object_bytes: Some(4),
-    } = pointer.as_ref()
-    else {
-        panic!("leaf member must select its scalar object domain")
     };
     let crate::kernel::CExpression::PointerOffsetBytes {
         pointer: inner_pointer,

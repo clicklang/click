@@ -51,9 +51,9 @@ resource ptree_at(p: struct tree_node*, parent: struct tree_node*) {
             owns left: ptree_at(p->left, p);
             owns right: ptree_at(p->right, p);
             fact p != 0;
-            fact p == identity;
+            fact p == identity; fact pointer_origin(identity, p);
             fact p->value == value;
-            fact p->parent == parent;
+            fact p->parent == parent; fact pointer_origin(p->parent, parent);
             fact left.model == left_model;
             fact right.model == right_model;
         },
@@ -78,10 +78,10 @@ resource pctx_at(child: struct tree_node*, parent: struct tree_node*) {
             owns sibling: ptree_at(parent->right, parent);
             owns up: pctx_at(parent, grandparent);
             fact parent != 0;
-            fact parent == identity;
-            fact parent->left == child;
+            fact parent == identity; fact pointer_origin(identity, parent);
+            fact parent->left == child; fact pointer_origin(parent->left, child);
             fact parent->value == value;
-            fact parent->parent == grandparent;
+            fact parent->parent == grandparent; fact pointer_origin(parent->parent, grandparent);
             fact sibling.model == sibling_model;
             fact up.model == up_model;
         },
@@ -93,10 +93,10 @@ resource pctx_at(child: struct tree_node*, parent: struct tree_node*) {
             owns sibling: ptree_at(parent->left, parent);
             owns up: pctx_at(parent, grandparent);
             fact parent != 0;
-            fact parent == identity;
-            fact parent->right == child;
+            fact parent == identity; fact pointer_origin(identity, parent);
+            fact parent->right == child; fact pointer_origin(parent->right, child);
             fact parent->value == value;
-            fact parent->parent == grandparent;
+            fact parent->parent == grandparent; fact pointer_origin(parent->parent, grandparent);
             fact sibling.model == sibling_model;
             fact up.model == up_model;
         },

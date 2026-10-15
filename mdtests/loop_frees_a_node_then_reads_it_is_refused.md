@@ -101,5 +101,5 @@ void release(struct node* p) {
 ```
 
 ```expect
-fail: invalid memory access
+fail: missing resource fact `views *p`
 ```

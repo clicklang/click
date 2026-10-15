@@ -30,6 +30,7 @@ pub(in crate::kernel::equality_graph) enum PointerFactKey {
     Predicate(u64),
     PredicateShape(String, usize, usize, crate::kernel::CType),
     FunctionContracts,
+    InputOrigin,
 }
 
 /// The type-erased source handle breaks the recursive Send/Sync type path

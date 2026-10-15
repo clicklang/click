@@ -84,6 +84,14 @@ pub(in crate::surface) fn plan_special_arithmetic_certificate(
         && let Some(relation) = premises
             .iter()
             .position(|p| charge_proposition(p) && is_pointer_relation(p))
+            .or_else(|| {
+                premises.iter().position(|p| {
+                    matches!(
+                        p,
+                        Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+                    )
+                })
+            })
     {
         let bounds = premises
             .iter()

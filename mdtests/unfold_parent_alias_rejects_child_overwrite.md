@@ -21,7 +21,7 @@ resource frame(p: struct node*) {
             owns id->other;
             owns kid: child(id->other);
             fact kid.model == cm;
-            fact p == id;
+            fact p == id; fact pointer_origin(p, id);
         },
     }
 }
@@ -35,7 +35,7 @@ void probe(struct node *p, struct node *q) {
     match a.model {
         Tag::At(id, cm) => {
             let {kid: kid} = unfold(a);
-            have p == id by assumption();
+            have p == id by simp;
             step(); step();
             let b = fold(frame(p), {model: Tag::At(id, cm)}, {kid: kid});
             execute(); simp();

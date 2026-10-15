@@ -16,6 +16,7 @@ verifying "aligned_refutes_displaced.c";
 
 int32 aligned_refutes_displaced(uint8* p) {
     requires aligned(p, 8);
+    views p[0..1];
     ensures result == 0;
 } by {
     execute();

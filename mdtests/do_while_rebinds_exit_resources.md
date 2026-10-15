@@ -17,7 +17,7 @@ resource list(p: struct Node*) {
             owns p->next;
             owns tail: list(p->next);
             fact p != 0;
-            fact p == identity;
+            fact p == identity; fact pointer_origin(identity, p);
             fact tail.model == rest;
         },
     }

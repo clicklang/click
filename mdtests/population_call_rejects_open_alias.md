@@ -22,7 +22,7 @@ void inspect(struct object* obj) {
 } by { execute(); simp(); }
 void restored(struct object* obj, struct object* alias) {
     owns control(obj);
-    requires alias == obj;
+    requires alias == obj; requires pointer_origin(alias, obj);
 } by {
     open(control(obj)) {
         step();

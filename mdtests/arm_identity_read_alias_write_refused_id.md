@@ -19,7 +19,7 @@ resource tree(p: struct node*) {
             owns left: tree(p->left);
             owns right: tree(p->right);
             fact p != 0;
-            fact p == id;
+            fact p == id; fact pointer_origin(id, p);
             fact left.model == lm;
             fact right.model == rm;
         },
@@ -28,7 +28,7 @@ resource tree(p: struct node*) {
 void roundtrip(struct node* p, struct node* q) {
     owns t: tree(p);
     requires t.model != Tree::Empty;
-    requires q == p;
+    requires q == p; requires pointer_origin(q, p);
     requires p->tag == 0;
     ensures t.model == old(t.model);
 } by {

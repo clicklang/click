@@ -28,7 +28,7 @@ resource list(p: struct node*) {
     match model {
         Chain::Nil => { fact p == 0; },
         Chain::Cons(id, value, rest) => {
-            fact p == id;
+            fact p == id; fact pointer_origin(id, p);
             owns p->val;
             owns p->next;
             owns tail: list(p->next);

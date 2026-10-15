@@ -27,6 +27,7 @@ resource holder() {
 int32 read_child(int32* p) {
     owns root: holder();
     requires root.model == Address::At(p);
+    requires pointer_origin(p, model_pointer(root.model));
     ensures result == old(root.value);
     ensures root.model == old(root.model);
     ensures root.value == old(root.value);

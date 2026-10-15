@@ -318,6 +318,9 @@ impl PureFactContext {
 
     pub(crate) fn proves_atomic_without_search(&self, proposition: &Proposition) -> bool {
         match proposition {
+            Proposition::Predicate { name, .. } if name == INPUT_POINTER_DOMAIN_PREDICATE_NAME => {
+                self.contains_known(proposition)
+            }
             Proposition::ConditionIs(condition, value) => {
                 self.decide(condition) == Some(*value)
                     // The memory DAG answers first where it can.

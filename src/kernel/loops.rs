@@ -3017,6 +3017,11 @@ fn join_loop_exit_paths(
                         // Dropping this conjunct weakens the path disjunction
                         // and keeps its pure successor facts spellable.
                         && !matches!(proposition, Proposition::CResourceComposition(_))
+                        // Domain evidence is internal, not an observable exit
+                        // guard. Omitting it only weakens this disjunction;
+                        // common domain facts remain in the shared context.
+                        && !matches!(proposition, Proposition::Predicate { name, .. }
+                            if name == INPUT_POINTER_DOMAIN_PREDICATE_NAME)
                         && !matches!(
                             proposition,
                             Proposition::ConditionIs(ConditionTerm::Constant(actual), expected)
@@ -8958,9 +8963,9 @@ pub(super) fn evaluate_loop_effect_segment(
         "segment end",
         budget,
     )?;
-    if let (Some(domain), Ok(start), Ok(end)) = (base.domain(), &start_value, &end_value)
-        && !super::eval::pointer_domain_range_within(
-            domain,
+    if let (Ok(start), Ok(end)) = (&start_value, &end_value)
+        && !super::eval::pointer_value_range_within(
+            &base,
             start,
             end,
             segment.element_width,
@@ -8971,7 +8976,9 @@ pub(super) fn evaluate_loop_effect_segment(
             "memory range leaves the pointer's selected object domain".into(),
         ));
     }
-    let base = base.into_pointer();
+    // Address-only proof rewrites preserve this coordinate. Keeping it
+    // as the range anchor also keeps its original designation in the index.
+    let base = base.origin().clone();
     // A range with a 64-bit bound retains that bound's width.
     // Evaluate each endpoint only once.
     if let (Ok(start), Ok(end)) = (&start_value, &end_value)
@@ -9062,9 +9069,9 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     };
     let start_value = evaluate(&segment.start, "segment start")?;
     let end_value = evaluate(&segment.end, "segment end")?;
-    if let (Some(domain), Ok(start), Ok(end)) = (base.domain(), &start_value, &end_value)
-        && !super::eval::pointer_domain_range_within(
-            domain,
+    if let (Ok(start), Ok(end)) = (&start_value, &end_value)
+        && !super::eval::pointer_value_range_within(
+            &base,
             start,
             end,
             segment.element_width,
@@ -9075,7 +9082,9 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
             "memory range leaves the pointer's selected object domain".into(),
         ));
     }
-    let base = base.into_pointer();
+    // Address-only proof rewrites preserve this coordinate. Keeping it
+    // as the range anchor also keeps its original designation in the index.
+    let base = base.origin().clone();
     // A range with a 64-bit bound retains that bound's width.
     // Evaluate each endpoint only once.
     if let (Ok(start), Ok(end)) = (&start_value, &end_value)
@@ -9180,6 +9189,7 @@ pub(super) fn evaluate_resource_argument_value(
     budget: &mut ExecutionBudget,
     diagnostic: &mut Option<CRuntimeError>,
 ) -> ExecutionResult<Result<CValue, String>> {
+    let _logical_reads = super::eval::SpecificationReadScope::enter();
     Ok(evaluate_loop_effect_segment_value_capturing(
         state,
         expression,

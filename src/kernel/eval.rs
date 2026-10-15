@@ -88,6 +88,7 @@ pub(crate) use memory_loads::recorded_load_access_width;
 pub(crate) use memory_loads::registered_load_bytes_for_variable;
 pub(crate) use memory_loads::registered_load_for_variable;
 pub(crate) use memory_loads::registered_load_origin_for_variable;
+pub(crate) use memory_loads::symbolic_storage_cell_value;
 pub(crate) use memory_loads::terms_have_same_canonical_form;
 pub(crate) use memory_loads::viewed_as_memory_load;
 pub(crate) use memory_loads::{
@@ -97,7 +98,7 @@ pub(crate) use memory_loads::{
 };
 pub(in crate::kernel) use memory_loads::{
     cached_symbolic_storage_cell_value, declare_symbolic_array_access_widths,
-    declare_symbolic_element_access_widths, symbolic_storage_cell_value,
+    declare_symbolic_element_access_widths,
 };
 pub(super) use memory_loads::{
     canonical_offset_term, evaluate_c_memory_load_paths, evaluate_logical_memory_load_paths,

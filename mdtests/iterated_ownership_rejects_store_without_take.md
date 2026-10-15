@@ -28,6 +28,7 @@ verifying "iterated_ownership_rejects_store_without_take.c";
 
 void poke(int32* data, int32* occupied, int32 capacity, int32 index) {
     owns arena_cells(data, occupied, capacity);
+    views data[0..capacity];
     requires 0 <= index;
     requires index < capacity;
 } by {

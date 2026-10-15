@@ -1,6 +1,6 @@
 # Loop exit resource arguments
 
-One exit establishes p == q and hands back cursor(p, anchor) while cur is q. Rebinding uses that exit's checked equality, then keeps the resource argument tied to the joined cur.
+An entry origin promise and one exit's checked p == q and hands back cursor(p, anchor) while cur is q. Rebinding uses that exit's checked equality, then keeps the resource argument tied to the joined cur.
 
 ```c filename=loop_exit_resource_argument_uses_exit_alias.c
 void choose(int32 *p, int32 *q, int32 *anchor, int32 flag) {
@@ -28,6 +28,7 @@ tactic keep(p: int32*, anchor: int32*) {
     have b.tag == old(a.tag) by normalize();
 }
 void choose(int32* p, int32* q, int32* anchor, int32 flag) {
+    requires pointer_origin(q, p);
     consumes c: cursor(p, anchor);
     produces *anchor;
 } by {

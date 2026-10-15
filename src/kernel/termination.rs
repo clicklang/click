@@ -103,6 +103,11 @@ fn substitute_c_expression_variables(
             pointer,
             bytes,
             object_bytes,
+        } if *bytes == 0 && object_bytes.is_some() => *unary(pointer),
+        PointerOffsetBytes {
+            pointer,
+            bytes,
+            object_bytes,
         } => PointerOffsetBytes {
             object_bytes: *object_bytes,
             pointer: unary(pointer),
@@ -299,6 +304,15 @@ fn structural_guard_expression(proposition: &SpecProposition) -> Option<CExpress
     };
     let expression = |expression: &SpecExpression| match expression {
         SpecExpression::Value(value) => Some(CExpression::Value(value.clone())),
+        SpecExpression::Cast(expression, target_type) => Some(CExpression::Cast {
+            expression: Box::new(structural_child_argument(expression)?),
+            target_type: *target_type,
+            integer_mode: CIntegerCastMode::Standard,
+            pointee_struct: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        }),
         SpecExpression::CExpression(expression) => Some(expression.clone()),
         _ => None,
     };
@@ -594,12 +608,9 @@ fn structural_recursion_paths(
 }
 
 fn c_expression_mentions_variable(expression: &CExpression, variable: &str) -> bool {
-    let mut substitutions = BTreeMap::new();
-    substitutions.insert(
-        variable.to_string(),
-        CExpression::Value(CValue::Int32(Bitvector32Term::Constant(0))),
-    );
-    substitute_c_expression_variables(expression, &substitutions) != *expression
+    let mut names = BTreeSet::new();
+    collect_c_expression_variables(expression, &mut names);
+    names.contains(variable)
 }
 
 /// Assumes one evaluation path's facts. Loadability obligations are the
@@ -782,6 +793,50 @@ fn call_passes_witness_child(
     false
 }
 
+fn structural_child_argument(expression: &SpecExpression) -> Option<CExpression> {
+    match expression {
+        SpecExpression::CExpression(expression) => Some(expression.clone()),
+        SpecExpression::Value(value) => Some(CExpression::Value(value.clone())),
+        SpecExpression::MemoryLoad {
+            memory: SpecMemory::Current,
+            pointer,
+            value_type,
+        } => Some(CExpression::TypedLoad {
+            pointer: Box::new(structural_child_argument(pointer)?),
+            value_type: *value_type,
+            volatile: false,
+            pointee_constant: false,
+            source: CExpressionLoadSource::none(),
+        }),
+        SpecExpression::PointerOffset {
+            pointer,
+            elements,
+            byte_width,
+            object_bytes,
+        } => {
+            let index = int32_literal(&structural_child_argument(elements)?)?;
+            let bytes = u32::try_from(index.checked_mul(i64::from(*byte_width))?).ok()?;
+            let pointer = structural_child_argument(pointer)?;
+            Some(if bytes == 0 {
+                match object_bytes {
+                    Some(width) => CExpression::Subobject {
+                        pointer: Box::new(pointer),
+                        width: *width,
+                    },
+                    None => pointer,
+                }
+            } else {
+                CExpression::PointerOffsetBytes {
+                    pointer: Box::new(pointer),
+                    bytes,
+                    object_bytes: *object_bytes,
+                }
+            })
+        }
+        _ => None,
+    }
+}
+
 /// The bodies and direct recursive children of a measured entry resource.
 ///
 /// An `if`-guarded body is one arm selected by the definition's own condition.
@@ -859,8 +914,12 @@ fn structural_resource_children(
         let mut children = Vec::new();
         let mut witness_children = Vec::new();
         for spec in contained {
+            let term = spec
+                .term()
+                .instance_resource()
+                .unwrap_or_else(|| spec.term());
             let (Some(child_name), Some(child_arguments)) =
-                (spec.declared_name(), spec.declared_arguments())
+                (term.declared_name(), term.declared_arguments())
             else {
                 continue;
             };
@@ -898,25 +957,24 @@ fn structural_resource_children(
                 if child.resource != name {
                     continue;
                 }
-                if child.arguments.iter().any(|argument| match argument {
-                    SpecExpression::CExpression(argument) => {
-                        mentions_binding(argument, &bound) || mentions_witness(argument)
-                    }
-                    _ => true,
+                let Some(arguments) = child
+                    .arguments
+                    .iter()
+                    .map(structural_child_argument)
+                    .collect::<Option<Vec<_>>>()
+                else {
+                    continue;
+                };
+                if arguments.iter().any(|argument| {
+                    mentions_binding(argument, &bound) || mentions_witness(argument)
                 }) {
                     continue;
                 }
                 children.push(
-                    child
-                        .arguments
+                    arguments
                         .iter()
-                        .filter_map(|argument| match argument {
-                            SpecExpression::CExpression(argument) => {
-                                Some(substitute_c_expression_variables(argument, &substitutions))
-                            }
-                            _ => None,
-                        })
-                        .collect::<Vec<_>>(),
+                        .map(|argument| substitute_c_expression_variables(argument, &substitutions))
+                        .collect(),
                 );
             }
             if children.is_empty() && witness_children.is_empty() {

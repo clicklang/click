@@ -10,7 +10,7 @@ verifying "model_fold.c";
 spec enum Identity { At(struct node*) }
 resource modeled(p: struct node*) {
     field model: Identity;
-    match model { Identity::At(id) => { owns p->tag; fact p == id; }, }
+    match model { Identity::At(id) => { owns p->tag; fact p == id; fact pointer_origin(id, p); }, }
 }
 resource tag_at(p: struct node*) { owns p->tag; }
 void pack(struct node* p, struct node* id) {

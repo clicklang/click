@@ -32,5 +32,5 @@ int f() {
 ```
 
 ```expect
-fail: missing resource fact
+fail: memory range leaves the pointer's selected object domain
 ```

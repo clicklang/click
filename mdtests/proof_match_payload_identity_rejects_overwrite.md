@@ -15,10 +15,12 @@ function color_bit(color: Color) -> int { match color { Color::Red => 0, Color::
 spec enum Tag { At(struct node*, Color) }
 function identity(model: Tag) -> struct node* { match model { Tag::At(id, color) => id, } }
 resource child(p: struct node*) { field model: Color; owns p->tag; }
-resource frame() {
+resource frame(p: struct node*) {
     field model: Tag;
     match model {
         Tag::At(id, color) => {
+            fact p == id;
+            fact pointer_origin(p, id);
             owns id->tag;
             owns id->other;
             owns kid: child(id->other);
@@ -29,9 +31,9 @@ resource frame() {
     }
 }
 void probe(struct node *p) {
-    consumes a: frame();
+    consumes a: frame(p);
     requires p == identity(a.model);
-    produces b: frame();
+    produces b: frame(p);
     ensures b.model == old(a.model);
 } by {
     match a.model {
@@ -42,14 +44,14 @@ void probe(struct node *p) {
                 unfold(identity(Tag::At(id, color))); normalize();
             }
             let {kid: original_kid} = unfold(a);
-            let joined = fold(frame(), {model: Tag::At(id, color)}, {kid: original_kid});
+            let joined = fold(frame(p), {model: Tag::At(id, color)}, {kid: original_kid});
             match joined.model {
                 Tag::At(other, other_color) => {
                     have joined.model == Tag::At(other, other_color);
                     let {kid: kid} = unfold(joined);
                     step();
                     have (other->tag & 1) == 1;
-                    let b = fold(frame(), {model: Tag::At(id, color)}, {kid: kid});
+                    let b = fold(frame(p), {model: Tag::At(id, color)}, {kid: kid});
                     execute(); simp();
                 },
             }

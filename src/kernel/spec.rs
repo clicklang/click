@@ -4924,8 +4924,9 @@ mod algebraic_term_tests {
             &mut SpecEvaluation::logical(&mut ExecutionBudget::new()),
         )
         .unwrap();
-        assert_eq!(direct[0].facts.len(), 1);
-        assert!(direct[0].facts[0].is_logical_read_equation());
+        // The exact complete cached pointer now supplies its value through
+        // its typed definition, without exporting an equation premise.
+        assert!(direct[0].facts.is_empty());
         assert!(capture_spec_algebraic_value(&state, &body, None, &context).is_ok());
         let expression = SpecAlgebraicExpression {
             algebraic_type: result_type,
@@ -5594,165 +5595,181 @@ fn lower_spec_memory_loadable_at_state_in(
         budget,
     )?
     .into_iter()
-    .filter_map(|path| match path.values.as_slice() {
-        // The proposition describes the same native range as a resource
-        // clause, including its extent guards, and states the wide liveness
-        // fact a contract holding it is given. Neither endpoint is a signed
-        // observation of the source count.
-        [CValue::Pointer(base), start, end]
-            if crate::kernel::wide_range_bounds(start, end).is_some() =>
+    .filter_map(|path| {
+        if let [CValue::Pointer(base), start, end] = path.values.as_slice()
+            && !super::eval::pointer_value_range_within(
+                base,
+                start,
+                end,
+                element_width,
+                &assumptions_with_path_context(assumptions, &path.facts, &path.obligations),
+            )
         {
-            let (start, end) = crate::kernel::wide_range_bounds(start, end)?;
-            let range = CMemoryRange::new_wide(
-                Pointer {
-                    block: base.block.clone(),
-                    offset: crate::kernel::eval::canonical_offset_term(&base.offset),
-                },
-                crate::kernel::eval::canonical_term(&start),
-                crate::kernel::eval::canonical_term(&end),
-                element_width,
-            );
-            let mut obligations = path.obligations;
-            if enforce_range_guards {
-                for guard in crate::kernel::memory_range_extent_guards(&range) {
-                    add_proof_obligation(&mut obligations, assumptions, guard)?;
-                }
-            }
-            Some(SpecPropositionPath {
-                introductions: Vec::new(),
-                proposition: range.loadable_fact(memory),
-                facts: path.facts,
-                obligations,
-            })
+            return None;
         }
-        // A range from constant zero to a constant unsigned 64-bit bound is
-        // wide here too, so the proposition is the one a symbolic bound
-        // lowers to once that bound is substituted by the constant.
-        [
-            CValue::Pointer(base),
-            CValue::Int32(Bitvector32Term::Constant(0)),
-            CValue::UInt64(end),
-        ] => {
-            let range = CMemoryRange::new_wide(
-                Pointer {
-                    block: base.block.clone(),
-                    offset: crate::kernel::eval::canonical_offset_term(&base.offset),
-                },
-                Bitvector32Term::UInt64Constant(0),
-                crate::kernel::eval::canonical_term(end),
-                element_width,
-            );
-            let mut obligations = path.obligations;
-            if enforce_range_guards {
-                for guard in crate::kernel::memory_range_extent_guards(&range) {
-                    add_proof_obligation(&mut obligations, assumptions, guard)?;
-                }
-            }
-            Some(SpecPropositionPath {
-                introductions: Vec::new(),
-                proposition: range.loadable_fact(memory),
-                facts: path.facts,
-                obligations,
-            })
-        }
-        [
-            CValue::Pointer(base),
-            CValue::Int32(start),
-            CValue::Int32(end),
-        ] => {
-            // Terms are canonical at creation: the same segment lowered
-            // anywhere is one proposition.
-            let range_start = start.clone();
-            let range_end = end.clone();
-            let mut discarded_facts = ExecutionFacts::new();
-            let start =
-                crate::kernel::canonicalized_offset_index_term(start.clone(), &mut discarded_facts);
-            let base = Pointer {
-                block: base.block.clone(),
-                offset: canonical_offset_sum(
-                    base.offset.clone(),
-                    canonical_scaled_offset(start, i64::from(element_width)),
-                ),
-            };
-            let mut obligations = path.obligations;
-            if enforce_range_guards {
-                match crate::kernel::memory_range_byte_count_extent(
-                    range_start.clone(),
-                    range_end.clone(),
+        match path.values.as_slice() {
+            // The proposition describes the same native range as a resource
+            // clause, including its extent guards, and states the wide liveness
+            // fact a contract holding it is given. Neither endpoint is a signed
+            // observation of the source count.
+            [CValue::Pointer(base), start, end]
+                if crate::kernel::wide_range_bounds(start, end).is_some() =>
+            {
+                let (start, end) = crate::kernel::wide_range_bounds(start, end)?;
+                let range = CMemoryRange::new_wide(
+                    Pointer {
+                        block: base.block.clone(),
+                        offset: crate::kernel::eval::canonical_offset_term(&base.offset),
+                    },
+                    crate::kernel::eval::canonical_term(&start),
+                    crate::kernel::eval::canonical_term(&end),
                     element_width,
-                ) {
-                    crate::kernel::MemoryRangeExtent::ConstantValid => {}
-                    // A constant range that is reversed or wider than a `u32`
-                    // byte extent prunes this path. Record why: the surviving
-                    // path count alone said only "no path".
-                    crate::kernel::MemoryRangeExtent::ConstantInvalid {
-                        element_count,
-                        byte_limit,
-                    } => {
-                        budget.record_dropped_range_extent(
-                            element_count,
-                            element_width,
-                            byte_limit,
-                        );
-                        return None;
+                );
+                let mut obligations = path.obligations;
+                if enforce_range_guards {
+                    for guard in crate::kernel::memory_range_extent_guards(&range) {
+                        add_proof_obligation(&mut obligations, assumptions, guard)?;
                     }
-                    // The extent half of the stated range. It is owed here
-                    // like any other side condition of the lowering, and a
-                    // site assuming the lowered proposition as a hypothesis
-                    // proved elsewhere assumes it with the rest.
-                    crate::kernel::MemoryRangeExtent::Guards(guards) => {
-                        // Past one-byte elements the unsigned `fits` half is
-                        // the signed count bound, which is the spelling a
-                        // proof can write and a refusal can print.
-                        let guards = if element_width > 1 {
-                            crate::kernel::memory_range_extent_guards(
-                                &CMemoryRange::new_with_element_width(
-                                    base.clone(),
+                }
+                Some(SpecPropositionPath {
+                    introductions: Vec::new(),
+                    proposition: range.loadable_fact(memory),
+                    facts: path.facts,
+                    obligations,
+                })
+            }
+            // A range from constant zero to a constant unsigned 64-bit bound is
+            // wide here too, so the proposition is the one a symbolic bound
+            // lowers to once that bound is substituted by the constant.
+            [
+                CValue::Pointer(base),
+                CValue::Int32(Bitvector32Term::Constant(0)),
+                CValue::UInt64(end),
+            ] => {
+                let range = CMemoryRange::new_wide(
+                    Pointer {
+                        block: base.block.clone(),
+                        offset: crate::kernel::eval::canonical_offset_term(&base.offset),
+                    },
+                    Bitvector32Term::UInt64Constant(0),
+                    crate::kernel::eval::canonical_term(end),
+                    element_width,
+                );
+                let mut obligations = path.obligations;
+                if enforce_range_guards {
+                    for guard in crate::kernel::memory_range_extent_guards(&range) {
+                        add_proof_obligation(&mut obligations, assumptions, guard)?;
+                    }
+                }
+                Some(SpecPropositionPath {
+                    introductions: Vec::new(),
+                    proposition: range.loadable_fact(memory),
+                    facts: path.facts,
+                    obligations,
+                })
+            }
+            [
+                CValue::Pointer(base),
+                CValue::Int32(start),
+                CValue::Int32(end),
+            ] => {
+                // Terms are canonical at creation: the same segment lowered
+                // anywhere is one proposition.
+                let range_start = start.clone();
+                let range_end = end.clone();
+                let mut discarded_facts = ExecutionFacts::new();
+                let start = crate::kernel::canonicalized_offset_index_term(
+                    start.clone(),
+                    &mut discarded_facts,
+                );
+                let base = Pointer {
+                    block: base.block.clone(),
+                    offset: canonical_offset_sum(
+                        base.offset.clone(),
+                        canonical_scaled_offset(start, i64::from(element_width)),
+                    ),
+                };
+                let mut obligations = path.obligations;
+                if enforce_range_guards {
+                    match crate::kernel::memory_range_byte_count_extent(
+                        range_start.clone(),
+                        range_end.clone(),
+                        element_width,
+                    ) {
+                        crate::kernel::MemoryRangeExtent::ConstantValid => {}
+                        // A constant range that is reversed or wider than a `u32`
+                        // byte extent prunes this path. Record why: the surviving
+                        // path count alone said only "no path".
+                        crate::kernel::MemoryRangeExtent::ConstantInvalid {
+                            element_count,
+                            byte_limit,
+                        } => {
+                            budget.record_dropped_range_extent(
+                                element_count,
+                                element_width,
+                                byte_limit,
+                            );
+                            return None;
+                        }
+                        // The extent half of the stated range. It is owed here
+                        // like any other side condition of the lowering, and a
+                        // site assuming the lowered proposition as a hypothesis
+                        // proved elsewhere assumes it with the rest.
+                        crate::kernel::MemoryRangeExtent::Guards(guards) => {
+                            // Past one-byte elements the unsigned `fits` half is
+                            // the signed count bound, which is the spelling a
+                            // proof can write and a refusal can print.
+                            let guards = if element_width > 1 {
+                                crate::kernel::memory_range_extent_guards(
+                                    &CMemoryRange::new_with_element_width(
+                                        base.clone(),
+                                        range_start.clone(),
+                                        range_end.clone(),
+                                        element_width,
+                                    ),
+                                )
+                            } else {
+                                guards
+                            };
+                            let ordered = Proposition::ConditionIs(
+                                ConditionTerm::signed_less_equal(
                                     range_start.clone(),
                                     range_end.clone(),
-                                    element_width,
                                 ),
-                            )
-                        } else {
-                            guards
-                        };
-                        let ordered = Proposition::ConditionIs(
-                            ConditionTerm::signed_less_equal(
-                                range_start.clone(),
-                                range_end.clone(),
-                            ),
-                            true,
-                        );
-                        for guard in guards {
-                            // A guard this context refutes prunes the path;
-                            // record which, as the constant case does.
-                            let reversed = guard == ordered;
-                            if add_proof_obligation(&mut obligations, assumptions, guard).is_none()
-                            {
-                                budget.record_dropped_refuted_range_extent(reversed);
-                                return None;
+                                true,
+                            );
+                            for guard in guards {
+                                // A guard this context refutes prunes the path;
+                                // record which, as the constant case does.
+                                let reversed = guard == ordered;
+                                if add_proof_obligation(&mut obligations, assumptions, guard)
+                                    .is_none()
+                                {
+                                    budget.record_dropped_refuted_range_extent(reversed);
+                                    return None;
+                                }
                             }
                         }
                     }
                 }
+                Some(SpecPropositionPath {
+                    introductions: Vec::new(),
+                    proposition: Proposition::CMemoryLoadable {
+                        memory: memory.clone(),
+                        base,
+                        bytes: crate::kernel::memory_range_byte_count(
+                            range_start,
+                            range_end,
+                            element_width,
+                        ),
+                        wide: false,
+                    },
+                    facts: path.facts,
+                    obligations,
+                })
             }
-            Some(SpecPropositionPath {
-                introductions: Vec::new(),
-                proposition: Proposition::CMemoryLoadable {
-                    memory: memory.clone(),
-                    base,
-                    bytes: crate::kernel::memory_range_byte_count(
-                        range_start,
-                        range_end,
-                        element_width,
-                    ),
-                    wide: false,
-                },
-                facts: path.facts,
-                obligations,
-            })
+            _ => None,
         }
-        _ => None,
     })
     .collect())
 }
@@ -6160,6 +6177,25 @@ fn lower_spec_predicate_proposition_at_state_in(
         paths = next_paths;
     }
 
+    if name == INPUT_POINTER_DOMAIN_REQUIREMENT {
+        for path in &mut paths {
+            let Proposition::Predicate { name, arguments } = &mut path.proposition else {
+                unreachable!()
+            };
+            if !matches!(
+                arguments.as_slice(),
+                [
+                    Term::CState(_),
+                    Term::CValue(CValue::Pointer(_)),
+                    Term::CValue(CValue::UInt32(_))
+                ]
+            ) {
+                return Ok(Vec::new());
+            }
+            *name = INPUT_POINTER_DOMAIN_PREDICATE_NAME.into();
+            arguments[0] = Term::CMemory(state.memory().clone());
+        }
+    }
     if name == POINTER_ORIGIN_PREDICATE_NAME {
         for path in &mut paths {
             let Proposition::Predicate { arguments, .. } = &mut path.proposition else {
@@ -7015,7 +7051,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             }]
         }
         SpecExpression::Value(value) => vec![SpecExpressionPath {
-            value: value.clone(),
+            value: super::eval::recover_promised_pointer_input(value.clone(), assumptions),
             facts: Vec::new().into(),
             obligations: Vec::new(),
         }],
@@ -7929,10 +7965,16 @@ fn evaluate_spec_pointer_offset_paths_in(
                             ProofObligation::new(Proposition::ConditionIs(condition, true))
                         }),
                 );
-                result = result.with_domain(Some(CPointerDomain {
-                    bytes,
-                    position: IntegerTerm::constant_i64(0).into(),
-                }));
+                let start = result.pointer().clone();
+                result = result
+                    .with_domain(Some(CPointerDomain {
+                        bytes,
+                        position: IntegerTerm::constant_i64(0).into(),
+                    }))
+                    .with_extent(Some(SubobjectExtent {
+                        start,
+                        width: u64::from(bytes),
+                    }));
             }
             paths.push(SpecExpressionPath {
                 value: CValue::Pointer(result),

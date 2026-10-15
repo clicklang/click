@@ -8,10 +8,12 @@ int read_view(const int *(*f)(const int *), const int *p) { return f(p)[0]; }
 contract const int *Exact(const int *p) {
     views p[0..1];
     ensures result == p;
+    ensures pointer_origin(result, p);
 }
 contract const int *Readable(const int *p) {
     views p[0..1];
     ensures result == p;
+    ensures pointer_origin(result, p);
 }
 theorem lift(callback: const int* (*)(const int*)) executes callback(const int* p) {
     requires Exact(callback);

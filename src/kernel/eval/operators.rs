@@ -1728,7 +1728,7 @@ fn pointer_has_object_provenance_evidence(
                     wide: false,
                 } = proposition
                 else {
-                    unreachable!("viewability object index contains only viewability facts")
+                    return false;
                 };
                 crate::kernel::reasoning::memory_range_still_available(
                     memory,
@@ -2310,6 +2310,7 @@ fn pointer_offset_by_elements_paths(
     let result = displace(&pointer);
     // Arithmetic moves the designation. An address equality rewrite, in
     // contrast, preserves it through replace_pointer.
+    let input_origin = value.origin().clone();
     let origin = displace(value.origin());
     value = value.with_origin(origin);
     let displaces = offset != Bitvector32Term::Constant(0);
@@ -2320,6 +2321,24 @@ fn pointer_offset_by_elements_paths(
     };
     let requires_object = value.domain().is_some()
         && decide_with_facts(assumptions, &facts, &zero_index) != Some(true);
+    if value.domain().is_none()
+        && !super::expression::specification_read_active()
+        && decide_with_facts(assumptions, &facts, &zero_index) != Some(true)
+        && !pointer_input_domain_allows(
+            state,
+            &pointer,
+            value.origin(),
+            0,
+            true,
+            &assumptions_with_path_context(assumptions, &facts, &obligations),
+        )
+    {
+        return vec![CExpressionPath {
+            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic),
+            facts,
+            obligations,
+        }];
+    }
     let mut guards = Vec::new();
     let mut owed = Vec::new();
 
@@ -2356,8 +2375,13 @@ fn pointer_offset_by_elements_paths(
     // been materialized in the byte map yet. Let that explicit memory range
     // extend the concrete materialization bound; it is still only consulted
     // when the result (including a range endpoint) is provably in the range.
-    let membership =
-        held_range_membership(state, assumptions, &facts, &pointer, &result, byte_width);
+    let membership = if value.domain().is_some() {
+        // A selected object's geometry is independent of the subset of its
+        // bytes for which the current frame holds access permission.
+        HeldRangeMembership::Inside
+    } else {
+        held_range_membership(state, assumptions, &facts, &pointer, &result, byte_width)
+    };
     if !matches!(membership, HeldRangeMembership::Inside) {
         let Some(bounds) = pointer_block_bounds(state, &result, byte_width) else {
             return Vec::new();
@@ -2442,10 +2466,23 @@ fn pointer_offset_by_elements_paths(
         apply_pointer_formation_guards(value, guards, facts, obligations, assumptions)
     };
     owed.extend(if requires_object {
+        // A conditional return summary may carry its nonnull alternative's
+        // domain while the actual address is null. Use the origin as object
+        // evidence only when its address is checked equal to the operand.
+        let object = if decide_with_facts(
+            assumptions,
+            &facts,
+            &ConditionTerm::pointer_equal(pointer.clone(), input_origin.clone()),
+        ) == Some(true)
+        {
+            &input_origin
+        } else {
+            &pointer
+        };
         apply_pointer_object_nonnull_guard(
             state,
-            &pointer,
-            pointer_is_null_condition(pointer.clone()),
+            object,
+            pointer_is_null_condition(object.clone()),
             facts,
             obligations,
             assumptions,
@@ -5037,6 +5074,43 @@ fn subobject_extent_guards(
     extent: &SubobjectExtent,
     bytes: u32,
 ) -> Option<Vec<PointerFormationGuard>> {
+    if let Some(PointerOffsetTerm::Int64Scaled {
+        value,
+        byte_width,
+        unsigned,
+    }) = pointer.offset_from_base(&extent.start)
+    {
+        let stride = u64::try_from(byte_width)
+            .ok()
+            .filter(|stride| *stride != 0)?;
+        let upper = extent.width.checked_sub(u64::from(bytes))? / stride;
+        return Some(if unsigned {
+            vec![PointerFormationGuard {
+                condition: ConditionTerm::uint64_less_equal(
+                    *value,
+                    Bitvector32Term::UInt64Constant(upper),
+                ),
+                value: true,
+            }]
+        } else {
+            vec![
+                PointerFormationGuard {
+                    condition: ConditionTerm::int64_signed_less_equal(
+                        Bitvector32Term::Int64Constant(0),
+                        *value.clone(),
+                    ),
+                    value: true,
+                },
+                PointerFormationGuard {
+                    condition: ConditionTerm::int64_signed_less_equal(
+                        *value,
+                        Bitvector32Term::Int64Constant(i64::try_from(upper).ok()?),
+                    ),
+                    value: true,
+                },
+            ]
+        });
+    }
     let offset = pointer_byte_offset_from_base(pointer, &extent.start)?;
     let width = u32::try_from(extent.width).ok()?;
     Some(vec![
@@ -5111,6 +5185,18 @@ fn subobject_formation_guards(
     obligations: &[ProofObligation],
     assumptions: &PureFactContext,
 ) -> Result<Vec<PointerFormationGuard>, ()> {
+    // Zero displacement preserves the value, including a nullable modular
+    // result whose nonnull alternative carries a selected-object extent.
+    // Access and nonzero arithmetic still check that extent.
+    if value.pointer() == result {
+        return Ok(Vec::new());
+    }
+    // Complete relative geometry survives numeric address rewrites. Its
+    // position guards are checked by the caller; the legacy absolute window
+    // is only needed for carriers without that geometry.
+    if value.domain().is_some() {
+        return Ok(Vec::new());
+    }
     let Some(extent) = value.extent() else {
         return Ok(Vec::new());
     };
@@ -5173,31 +5259,6 @@ pub(in crate::kernel) fn subobject_paths(
             path
         })
         .collect()
-}
-
-#[cfg(test)]
-mod wide_range_reader_tests {
-    use super::*;
-    // Object provenance uses native nonemptiness, never the range's low word.
-    #[test]
-    fn wide_nonempty_owned_range_supplies_object_provenance() {
-        let base = Pointer::symbolic(Variable(985_100));
-        let wide = CMemoryRange::new_wide(
-            base.clone(),
-            Bitvector32Term::UInt64Constant(0),
-            Bitvector32Term::UInt64Constant(1 << 33),
-            4,
-        );
-        let state = CState::new().with_resource_context(
-            ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(wide)),
-        );
-        assert!(pointer_has_object_provenance_evidence(
-            &state,
-            &base,
-            &PureFactContext::new(),
-            &ExecutionFacts::new()
-        ));
-    }
 }
 
 /// A domain is a bound on a pointer value, never a fact about its address class.
@@ -5278,10 +5339,28 @@ pub(in crate::kernel) fn select_pointer_object_paths(
                     &assumptions_with_path_context(assumptions, &path.facts, &path.obligations),
                 )
             {
+                let effective_assumptions =
+                    assumptions_with_path_context(assumptions, &path.facts, &path.obligations);
+                let outcome = if !state.resources().permits_memory_read(
+                    pointer.pointer(),
+                    bytes,
+                    &effective_assumptions,
+                ) {
+                    CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource {
+                        resource: Box::new(CResourceFact::view_memory(
+                            CMemoryRange::new_with_element_width(
+                                pointer.pointer().clone(),
+                                0u32.into(),
+                                1u32.into(),
+                                bytes,
+                            ),
+                        )),
+                    })
+                } else {
+                    CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory)
+                };
                 return vec![CExpressionPath {
-                    outcome: CExpressionOutcome::UndefinedBehavior(
-                        CUndefinedBehavior::InvalidMemory,
-                    ),
+                    outcome,
                     facts: path.facts,
                     obligations: path.obligations,
                 }];
@@ -5293,10 +5372,16 @@ pub(in crate::kernel) fn select_pointer_object_paths(
                     value: true,
                 })
                 .collect();
-            let pointer = pointer.with_domain(Some(CPointerDomain {
-                bytes,
-                position: IntegerTerm::constant_i64(0).into(),
-            }));
+            let start = pointer.pointer().clone();
+            let pointer = pointer
+                .with_domain(Some(CPointerDomain {
+                    bytes,
+                    position: IntegerTerm::constant_i64(0).into(),
+                }))
+                .with_extent(Some(SubobjectExtent {
+                    start,
+                    width: u64::from(bytes),
+                }));
             apply_pointer_formation_guards(
                 pointer,
                 guards,
@@ -5470,38 +5555,125 @@ pub(in crate::kernel) fn pointer_input_domain_allows(
     pointer: &Pointer,
     origin: &Pointer,
     bytes: u32,
-    selecting: bool,
+    _selecting: bool,
     assumptions: &PureFactContext,
 ) -> bool {
-    let Some(displacement) = pointer.offset_from_base(origin) else {
-        return false;
-    };
     if state.memory().has_block(&origin.block)
         || state.memory().live_heap_block_size(origin).is_some()
     {
         return true;
     }
-    if selecting
-        && state
-            .resources()
-            .pointer_input_domain_has_object(origin, assumptions)
+    // Legacy kernel memories may describe fixed native storage by initialized
+    // bytes without an explicit block declaration. Opaque input/read roots
+    // cannot obtain a domain from logical cell materialization.
+    if matches!(origin.block, PointerBlock::Concrete(_))
+        && let PointerOffsetTerm::Constant(offset) = origin.offset
+        && let Some(first) = offset.checked_sub(16)
     {
-        return true;
-    }
-    if let Some(cell) = state.memory().known_value(&origin.object_base())
-        && let Some(PointerOffsetTerm::Constant(offset)) =
-            pointer.offset_from_base(&origin.object_base())
-        && offset >= 0
-        && u64::try_from(offset)
-            .ok()
-            .and_then(|offset| offset.checked_add(u64::from(bytes)))
-            .is_some_and(|end| end <= u64::from(cell.byte_width()))
-    {
-        return true;
+        let start = Pointer {
+            block: origin.block.clone(),
+            offset: PointerOffsetTerm::Constant(first),
+        };
+        for (cell, value) in state.memory().cells.range(start..=origin.clone()).rev() {
+            crate::instrumentation::record_deterministic_work(1);
+            let PointerOffsetTerm::Constant(cell_offset) = cell.offset else {
+                continue;
+            };
+            if offset
+                .checked_sub(cell_offset)
+                .and_then(|delta| delta.checked_add(i64::from(bytes)))
+                .is_some_and(|end| end <= i64::from(value.byte_width()))
+            {
+                return true;
+            }
+        }
     }
     if state
         .resources()
-        .pointer_input_domain_covers(pointer, origin, bytes, assumptions)
+        .pointer_input_domain_covers(origin, origin, bytes, assumptions)
+    {
+        return true;
+    }
+    if assumptions
+        .memory_loadable_candidates_for_object(origin)
+        .any(|fact| {
+            let Proposition::Predicate { name, arguments } = fact else {
+                return false;
+            };
+            if name != INPUT_POINTER_DOMAIN_PREDICATE_NAME {
+                return false;
+            }
+            let [
+                Term::CMemory(memory),
+                Term::CValue(CValue::Pointer(base)),
+                Term::CValue(extent),
+            ] = arguments.as_slice()
+            else {
+                return false;
+            };
+            let base = base.origin();
+            if base.object_base() != origin.object_base()
+                || !crate::kernel::reasoning::memory_range_still_available(
+                    memory,
+                    state.memory(),
+                    base,
+                    assumptions,
+                )
+            {
+                return false;
+            }
+            match extent {
+                CValue::UInt32(extent) => {
+                    let access = |pointer: &Pointer, bytes| {
+                        assumptions.pointer_access_in_range(
+                            pointer,
+                            bytes,
+                            base,
+                            &Bitvector32Term::Constant(0),
+                            extent,
+                            1,
+                        )
+                    };
+                    if bytes == 0 {
+                        pointers_proven_equal_for_memory_resolution(origin, base, assumptions)
+                            || access(origin, 1)
+                            || access(
+                                &Pointer {
+                                    block: origin.block.clone(),
+                                    offset: PointerOffsetTerm::add(
+                                        origin.offset.clone(),
+                                        PointerOffsetTerm::Constant(-1),
+                                    ),
+                                },
+                                1,
+                            )
+                    } else {
+                        access(origin, bytes)
+                    }
+                }
+                CValue::UInt64(extent) => {
+                    let Some(index) = assumptions.wide_element_index_of_access(origin, base, 1)
+                    else {
+                        return false;
+                    };
+                    let holds = |condition| assumptions.decide(&condition) == Some(true);
+                    holds(ConditionTerm::uint64_less_equal(
+                        extent.clone(),
+                        Bitvector32Term::UInt64Constant(i64::MAX as u64),
+                    )) && holds(ConditionTerm::uint64_less_equal(
+                        Bitvector32Term::UInt64Constant(u64::from(bytes)),
+                        extent.clone(),
+                    )) && holds(ConditionTerm::uint64_less_equal(
+                        index,
+                        Bitvector32Term::uint64_subtract(
+                            extent.clone(),
+                            Bitvector32Term::UInt64Constant(u64::from(bytes)),
+                        ),
+                    ))
+                }
+                _ => false,
+            }
+        })
     {
         return true;
     }
@@ -5515,18 +5687,20 @@ pub(in crate::kernel) fn pointer_input_domain_allows(
         let canonical_origin = Pointer::symbolic(variable);
         let canonical_pointer = Pointer {
             block: canonical_origin.block.clone(),
-            offset: PointerOffsetTerm::add(canonical_origin.offset.clone(), displacement),
+            offset: PointerOffsetTerm::add(
+                canonical_origin.offset.clone(),
+                match pointer.offset_from_base(origin) {
+                    Some(displacement) => displacement,
+                    None => return false,
+                },
+            ),
         };
-        return selecting
-            && state
-                .resources()
-                .pointer_input_domain_has_object(&canonical_origin, assumptions)
-            || state.resources().pointer_input_domain_covers(
-                &canonical_pointer,
-                &canonical_origin,
-                bytes,
-                assumptions,
-            );
+        return state.resources().pointer_input_domain_covers(
+            &canonical_pointer,
+            &canonical_origin,
+            bytes,
+            assumptions,
+        );
     }
     false
 }
@@ -5590,4 +5764,79 @@ pub(in crate::kernel) fn pointer_domain_range_within(
         .iter()
         .all(|condition| assumptions.decide(condition) == Some(true))
     })
+}
+
+pub(in crate::kernel) fn pointer_value_range_within(
+    pointer: &CPointerValue,
+    start: &CValue,
+    end: &CValue,
+    width: u32,
+    assumptions: &PureFactContext,
+) -> bool {
+    if pointer
+        .domain()
+        .is_some_and(|domain| !pointer_domain_range_within(domain, start, end, width, assumptions))
+    {
+        return false;
+    }
+    let Some(extent) = pointer.extent() else {
+        return true;
+    };
+    [start, end].into_iter().all(|endpoint| {
+        let Some(mut bits) = super::super::spec::c_value_bitvector_term(endpoint) else {
+            return false;
+        };
+        let (unsigned, wide) = match endpoint.c_type() {
+            CType::UInt64 => (true, true),
+            CType::Int64 => (false, true),
+            CType::UInt32 => {
+                bits = Bitvector32Term::uint64_from_32(bits);
+                (true, true)
+            }
+            CType::Bool
+            | CType::Int8
+            | CType::UInt8
+            | CType::Int16
+            | CType::UInt16
+            | CType::Int32 => (false, false),
+            _ => return false,
+        };
+        let address = pointer
+            .pointer()
+            .offset_by_typed_elements(bits, width, unsigned, wide);
+        subobject_access_refusal(
+            &address,
+            Some(extent),
+            0,
+            &ExecutionFacts::new(),
+            &[],
+            assumptions,
+        )
+        .is_none()
+    })
+}
+
+#[cfg(test)]
+mod wide_range_reader_tests {
+    use super::*;
+    // Object provenance uses native nonemptiness, never the range's low word.
+    #[test]
+    fn wide_nonempty_owned_range_supplies_object_provenance() {
+        let base = Pointer::symbolic(Variable(985_100));
+        let wide = CMemoryRange::new_wide(
+            base.clone(),
+            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::UInt64Constant(1 << 33),
+            4,
+        );
+        let state = CState::new().with_resource_context(
+            ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(wide)),
+        );
+        assert!(pointer_has_object_provenance_evidence(
+            &state,
+            &base,
+            &PureFactContext::new(),
+            &ExecutionFacts::new()
+        ));
+    }
 }

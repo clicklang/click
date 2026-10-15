@@ -43,6 +43,7 @@ int32 last_element(int32 arr[], int32 n, int32 cap) {
         decreases n - i;
         invariant i >= 0 and i <= n;
         invariant p == arr + i;
+        invariant pointer_origin(p, arr + i);
         preserve by {
             step();
             step();
@@ -55,19 +56,19 @@ int32 last_element(int32 arr[], int32 n, int32 cap) {
             close_invariants by simp;
         }
     }
-    step();
-    have result == arr[n] by {
-        have at(loop(0).exit, i) == at(loop(0).exit, n) by {
-            apply(int32_less_equal_and_not_less_than_implies_equal(at(loop(0).exit, i), at(loop(0).exit, n))) using {
-                at(loop(0).exit, i) <= at(loop(0).exit, n);
-                not at(loop(0).exit, i) < at(loop(0).exit, n);
-            }
+    have at(loop(0).exit, i) == at(loop(0).exit, n) by {
+        apply(int32_less_equal_and_not_less_than_implies_equal(at(loop(0).exit, i), at(loop(0).exit, n))) using {
+            at(loop(0).exit, i) <= at(loop(0).exit, n);
+            not at(loop(0).exit, i) < at(loop(0).exit, n);
         }
-        rewrite(at(loop(0).exit, p) == at(loop(0).exit, arr + i));
-        rewrite(at(loop(0).exit, i) == at(loop(0).exit, n));
-        normalize();
     }
-    assumption();
+    have p == arr + n by {
+        rewrite(p == arr + i);
+        rewrite(at(loop(0).exit, i) == at(loop(0).exit, n));
+        simp();
+    }
+    step();
+    simp();
 }
 ```
 

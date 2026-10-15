@@ -43,6 +43,9 @@ void checkout(struct pool* pool, struct payload* p) {
             pool->capacity == pool->checked_out + count(slot(pool));
         }
         step();
+        have count(item(pool, _)) == old(pool->checked_out) by simp;
+        have count(item(pool, _)) < 2147483647 by simp;
+        have defined(count(item(pool, _)) + 1) by simp;
         fold(item(pool, p));
     }
     execute(); simp();

@@ -6566,6 +6566,7 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
         let checked_premise_is_authorized =
             |_checked: &CCheckedFunctionExecution, premise: &Proposition| {
                 reuse_assumptions.proves_exact(premise)
+                    || reuse_assumptions.proves_typed_pointer_read_equality(premise)
                     || reuse_assumptions.states_required_goal(premise)
                     || matches!(premise, Proposition::CMemoryLoadable { .. })
                         && (resources_certify_loadability(

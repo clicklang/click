@@ -32,6 +32,7 @@ tactic pack(p: struct node*, q: struct node*) {
     consumes p->next;
     consumes child: leaf(q);
     requires p->next == q;
+    requires pointer_origin(p->next, q);
     produces whole: box(p);
     ensures whole.tag == old(child.tag);
 } by {

@@ -23,7 +23,17 @@ impl EqualityGraph {
             return None;
         };
         if name == crate::kernel::POINTER_ORIGIN_PREDICATE_NAME {
-            return None;
+            return match arguments.as_slice() {
+                [
+                    Term::CState(_),
+                    Term::CValue(CValue::Pointer(value)),
+                    Term::CValue(CValue::Pointer(_)),
+                ] => crate::kernel::reasoning::memory_resolution::pointer_input_read_address(
+                    value.origin(),
+                )
+                .map(|address| (address, terms::PointerFactKey::InputOrigin)),
+                _ => None,
+            };
         }
         let (position, pointer) =
             arguments
@@ -99,6 +109,26 @@ impl EqualityGraph {
             .expect("equality graph")
             .terms
             .pointer_facts(address, key)
+    }
+
+    pub(in crate::kernel) fn pointer_input_origin_candidates(
+        &self,
+        pointer: &Pointer,
+    ) -> Vec<crate::kernel::Proposition> {
+        let Some(address) =
+            crate::kernel::reasoning::memory_resolution::pointer_input_read_address(pointer)
+        else {
+            return Vec::new();
+        };
+        self.pointer_fact_candidates(&address, &terms::PointerFactKey::InputOrigin)
+            .get(&String::new())
+            .into_iter()
+            .flat_map(|bucket| bucket.iter())
+            .map(|(_, source)| {
+                crate::instrumentation::record_deterministic_work(1);
+                source.proposition().clone()
+            })
+            .collect()
     }
 
     pub(in crate::kernel) fn knows_pointer_predicate(

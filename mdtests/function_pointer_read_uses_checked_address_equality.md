@@ -21,11 +21,12 @@ executes target(int32* p) {
 }
 void symbolic(int32* p, const struct callbacks* cb) {
     requires cb == &table;
+    requires pointer_origin(cb, &table);
     views cb->call;
     ensures true;
 } by {
     step();
-    have cb == &table by { assumption(); }
+    have cb == &table by { simp(); }
     step();
     apply(target_has_contract());
     have Invoke(cb->call) by { assumption(); }

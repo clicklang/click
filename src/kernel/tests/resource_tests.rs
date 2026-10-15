@@ -1128,7 +1128,18 @@ fn instance_memory_fixture() -> (ResourceInstance, CCompositeResourceDefinition,
     let instance = ResourceInstance::new(
         Variable(1),
         "cell".into(),
-        vec![CValue::pointer(pointer).into()].into(),
+        vec![
+            CValue::Pointer(
+                CPointerValue::new(pointer, CType::Int32Pointer).with_domain(Some(
+                    CPointerDomain {
+                        bytes: 4,
+                        position: IntegerTerm::constant_i64(0).into(),
+                    },
+                )),
+            )
+            .into(),
+        ]
+        .into(),
         schema.clone(),
         vec![int32(7).into()].into(),
     )
@@ -1259,7 +1270,7 @@ fn recursive_child_fixture() -> (ResourceInstance, CCompositeResourceDefinition,
                 binding_types: ty.variants[1].fields.clone(),
                 binding_variables: vec![None, None, None, None],
                 contains: std::mem::take(&mut definition.contains),
-                facts: vec![],
+                facts: std::mem::take(&mut definition.facts),
                 children: vec![
                     CResourceChildSpec {
                         name: "left".into(),
@@ -1288,7 +1299,25 @@ fn recursive_child_fixture() -> (ResourceInstance, CCompositeResourceDefinition,
 
 #[test]
 fn stored_child_arguments_require_owned_memory() {
-    let (instance, mut definition, state) = recursive_child_fixture();
+    let (mut instance, mut definition, _) = recursive_child_fixture();
+    let CValue::Pointer(pointer) = instance.arguments()[0].as_c_value().unwrap() else {
+        unreachable!()
+    };
+    let pointer = pointer.pointer().clone();
+    instance.arguments = vec![
+        CValue::Pointer(
+            CPointerValue::new(pointer, CType::Int32Pointer).with_domain(Some(CPointerDomain {
+                bytes: 8,
+                position: IntegerTerm::constant_i64(0).into(),
+            })),
+        )
+        .into(),
+    ]
+    .into();
+    let state = CState::new().with_resource_context(
+        ResourceContext::new()
+            .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance.clone()))),
+    );
     let arm = &mut definition.matched.as_mut().unwrap().arms[1];
     let Some(segment) = arm.contains[0].memory_segment_mut() else {
         unreachable!()
@@ -1424,7 +1453,18 @@ fn stored_child_arguments_require_owned_memory() {
 
 #[test]
 fn instance_fold_preserves_memory_pieces_without_scanning_unrelated_resources() {
-    let (instance, mut definition, _) = instance_memory_fixture();
+    let (mut instance, mut definition, _) = instance_memory_fixture();
+    let CValue::Pointer(pointer) = instance.arguments()[0].as_c_value().unwrap() else {
+        unreachable!()
+    };
+    instance.arguments = vec![
+        CValue::Pointer(pointer.clone().with_domain(Some(CPointerDomain {
+            bytes: 12,
+            position: IntegerTerm::constant_i64(0).into(),
+        })))
+        .into(),
+    ]
+    .into();
     definition.contains = (0..3)
         .map(|i| {
             CResourceSpec::owned_memory(CMemorySegment {
@@ -1902,7 +1942,7 @@ fn resource_match_kernel_checks_schema_case_and_ownership() {
                 binding_types: vec![],
                 binding_variables: vec![],
                 contains: std::mem::take(&mut definition.contains),
-                facts: vec![],
+                facts: std::mem::take(&mut definition.facts),
             },
         ],
     });

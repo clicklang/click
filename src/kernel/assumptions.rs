@@ -2461,22 +2461,34 @@ pub(crate) fn algebraic_constructor_field_equalities(
     }
     let left_fields = left.checked_constructor_fields()?;
     let right_fields = right.checked_constructor_fields()?;
-    left_fields
-        .iter()
-        .zip(right_fields)
-        .map(|(left, right)| match (left, right) {
+    let mut equalities = Vec::new();
+    for (left, right) in left_fields.iter().zip(right_fields) {
+        match (left, right) {
             (AlgebraicValue::C(left), AlgebraicValue::C(right)) => {
-                c_value_comparison_proposition(left, CComparisonOperator::Equal, right)
+                if matches!(left, CValue::Pointer(_) | CValue::PointerInteger(_)) {
+                    // Constructor equality copies complete values. Its
+                    // congruence rule must demand more than address equality.
+                    equalities.push(Proposition::Equal(
+                        Term::CValue(left.clone()),
+                        Term::CValue(right.clone()),
+                    ));
+                }
+                equalities.push(c_value_comparison_proposition(
+                    left,
+                    CComparisonOperator::Equal,
+                    right,
+                )?);
             }
             (AlgebraicValue::Algebraic(left), AlgebraicValue::Algebraic(right)) => {
-                Some(Proposition::Equal(
+                equalities.push(Proposition::Equal(
                     Term::Algebraic(left.clone()),
                     Term::Algebraic(right.clone()),
                 ))
             }
-            _ => None,
-        })
-        .collect()
+            _ => return None,
+        }
+    }
+    Some(equalities)
 }
 
 fn is_algebraic_constructor_conflict(proposition: &Proposition) -> bool {
@@ -3184,11 +3196,37 @@ impl PureFactContext {
         self.register_cached_pointer_read_value(memory, address);
     }
 
+    /// Replay only immutable typed read definitions into this context. The
+    /// equality must follow from this context's graph, never from unions in
+    /// the context that originally named the read.
+    pub(crate) fn proves_typed_pointer_read_equality(&self, fact: &Proposition) -> bool {
+        let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) = fact else {
+            return false;
+        };
+        for pointer in [left, right] {
+            let Some(Bitvector32Term::MemoryLoad(memory, address, LoadKind::Bits32)) =
+                crate::kernel::equality_graph::logical_pointer_read_term(pointer)
+            else {
+                return false;
+            };
+            self.register_checked_pointer_read(pointer, &memory, &address);
+        }
+        let Proposition::ConditionIs(condition, _) = fact else {
+            unreachable!()
+        };
+        self.decide(condition) == Some(true)
+    }
+
     fn register_cached_pointer_read_value(&self, memory: &SharedCMemory, address: &Pointer) {
         let start = crate::kernel::prelude::canonical_load_projection_source(memory, address)
             .unwrap_or_else(|| memory.clone());
-        for spelling in self.equality_graph.pointer_spellings(address) {
-            if let Some(CValue::Pointer(value)) = start.known_value(&spelling) {
+        for spelling in
+            std::iter::once(address.clone()).chain(self.equality_graph.pointer_spellings(address))
+        {
+            if let Some(CValue::Pointer(value)) = memory
+                .known_value(&spelling)
+                .or_else(|| start.known_value(&spelling))
+            {
                 self.equality_graph.add_checked_read_equality(
                     &Pointer::loaded_value(memory, address),
                     value.pointer(),
@@ -4355,44 +4393,121 @@ impl PureFactContext {
         record_implicit_reasoning_provenance(self, premise);
         Some(pointer.clone())
     }
+    fn pointer_input_origin_key(pointer: &Pointer) -> Pointer {
+        let read =
+            crate::kernel::equality_graph::logical_pointer_read_term(pointer).or_else(|| {
+                match pointer {
+                    Pointer {
+                        block: PointerBlock::Symbolic(variable),
+                        offset: PointerOffsetTerm::Constant(0),
+                    } => crate::kernel::registered_load_origin_term_for_variable(variable),
+                    _ => None,
+                }
+            });
+        if let Some(Bitvector32Term::MemoryLoad(memory, address, kind)) = read
+            && let Bitvector32Term::Variable(variable) =
+                crate::kernel::eval::canonical_form_of_load(memory, *address, kind)
+        {
+            return Pointer::symbolic(variable);
+        }
+        pointer.clone()
+    }
+
     pub(in crate::kernel) fn promised_pointer_input_origin(
         &self,
         value: &CPointerValue,
     ) -> Option<CPointerValue> {
-        if value.domain().is_some() || value.extent().is_some() || value.local_reference().is_some()
-        {
+        if value.domain().is_some() || value.local_reference().is_some() {
             return None;
         }
-        let premise = self
+        if let Some(sources) = self
             .pointer_value_input_origins
-            .get(value.origin())?
-            .iter()
-            .next()?
-            .as_ref();
-        let Proposition::Predicate { arguments, .. } = premise else {
-            return None;
-        };
-        let Term::CValue(CValue::Pointer(pointer)) = arguments.last()? else {
-            return None;
-        };
-        record_implicit_reasoning_provenance(self, premise);
-        Some(pointer.clone())
+            .get(&Self::pointer_input_origin_key(value.origin()))
+        {
+            for premise in sources.iter() {
+                let pointer = match premise.as_ref() {
+                    Proposition::Predicate { arguments, .. } => match arguments.last() {
+                        Some(Term::CValue(CValue::Pointer(pointer))) => pointer,
+                        _ => continue,
+                    },
+                    field @ Proposition::Equal(
+                        Term::CValue(CValue::Pointer(left)),
+                        Term::CValue(CValue::Pointer(right)),
+                    ) => {
+                        let Some((parent, _)) =
+                            self.algebraic_constructor_field_sources(field).next()
+                        else {
+                            continue;
+                        };
+                        record_implicit_reasoning_provenance(self, parent);
+                        if Self::pointer_input_origin_key(left.origin())
+                            == Self::pointer_input_origin_key(value.origin())
+                        {
+                            right
+                        } else {
+                            left
+                        }
+                    }
+                    _ => continue,
+                };
+                if value.accepts_input_origin(pointer) {
+                    if matches!(premise.as_ref(), Proposition::Predicate { .. }) {
+                        record_implicit_reasoning_provenance(self, premise.as_ref());
+                    }
+                    return Some(pointer.clone());
+                }
+            }
+        }
+        // Numeric classes select candidates only. A different opaque input's
+        // address equation cannot transfer its promise; a second spelling of
+        // the same unchanged complete pointer-cell read can.
+        for premise in self
+            .equality_graph
+            .pointer_input_origin_candidates(value.origin())
+        {
+            let Proposition::Predicate { arguments, .. } = &premise else {
+                continue;
+            };
+            let [
+                Term::CState(_),
+                Term::CValue(CValue::Pointer(source)),
+                Term::CValue(CValue::Pointer(pointer)),
+            ] = arguments.as_slice()
+            else {
+                continue;
+            };
+            if value.accepts_input_origin(pointer)
+                && crate::kernel::reasoning::memory_resolution::pointer_read_origins_match(
+                    value.origin(),
+                    source.origin(),
+                    self,
+                )
+            {
+                record_implicit_reasoning_provenance(self, &premise);
+                return Some(pointer.clone());
+            }
+        }
+        None
     }
     fn adjust_pointer_predicate_fact(&mut self, proposition: &Proposition, insert: bool) {
+        if let Some(source) = self
+            .execution_fact_projection
+            .get(&ContextFactKey::Proposition(proposition.clone()))
+        {
+            self.equality_graph.adjust_pointer_predicate(source, insert);
+        }
         if let Proposition::Predicate { name, arguments } = proposition
             && name == POINTER_ORIGIN_PREDICATE_NAME
             && let [
                 Term::CState(_),
                 Term::CValue(CValue::Pointer(value)),
-                Term::CValue(CValue::Pointer(_)),
+                Term::CValue(CValue::Pointer(origin)),
             ] = arguments.as_slice()
-            && value.domain().is_none()
-            && value.extent().is_none()
-            && value.local_reference().is_none()
+            && value.accepts_input_origin(origin)
         {
             let mut origins = self
                 .pointer_value_input_origins
-                .get(value.origin())
+                .get(&Self::pointer_input_origin_key(value.origin()))
                 .cloned()
                 .unwrap_or_default();
             let source = SharedIndexFact::new(proposition.clone());
@@ -4402,10 +4517,11 @@ impl PureFactContext {
                 origins.without_value(&source)
             };
             if origins.is_empty() {
-                self.pointer_value_input_origins.remove(value.origin());
+                self.pointer_value_input_origins
+                    .remove(&Self::pointer_input_origin_key(value.origin()));
             } else {
                 self.pointer_value_input_origins
-                    .insert(value.origin().clone(), origins);
+                    .insert(Self::pointer_input_origin_key(value.origin()), origins);
             }
             return;
         }
@@ -4440,12 +4556,6 @@ impl PureFactContext {
         if !matches!(proposition, Proposition::Predicate { .. }) {
             return;
         }
-        if let Some(source) = self
-            .execution_fact_projection
-            .get(&ContextFactKey::Proposition(proposition.clone()))
-        {
-            self.equality_graph.adjust_pointer_predicate(source, insert);
-        }
     }
 
     pub(crate) fn function_contract_facts_for(
@@ -4464,6 +4574,32 @@ impl PureFactContext {
     }
 
     fn adjust_memory_loadable_fact(&mut self, proposition: &Proposition, insert: bool) {
+        if let Proposition::Predicate { name, arguments } = proposition
+            && name == INPUT_POINTER_DOMAIN_PREDICATE_NAME
+            && let [
+                Term::CMemory(_),
+                Term::CValue(CValue::Pointer(pointer)),
+                Term::CValue(_),
+            ] = arguments.as_slice()
+        {
+            let key = pointer.origin().object_identity();
+            let facts = self
+                .memory_loadable_object_facts
+                .get(&key)
+                .cloned()
+                .unwrap_or_default();
+            let facts = if insert {
+                facts.with_value(proposition.clone())
+            } else {
+                facts.without_value(proposition)
+            };
+            self.memory_loadable_object_facts = if facts.is_empty() {
+                self.memory_loadable_object_facts.without_key(&key)
+            } else {
+                self.memory_loadable_object_facts.with_inserted(key, facts)
+            };
+            return;
+        }
         if let Proposition::CMemoryReadDefined {
             pointer,
             value_type,
@@ -4570,8 +4706,39 @@ impl PureFactContext {
                     .without_key(&field)
             } else {
                 self.algebraic_constructor_field_equalities
-                    .with_inserted(field, sources)
+                    .with_inserted(field.clone(), sources)
             };
+            if let Proposition::Equal(
+                Term::CValue(CValue::Pointer(left)),
+                Term::CValue(CValue::Pointer(right)),
+            ) = &field
+            {
+                let supported = self.contains_algebraic_constructor_field_equality(&field);
+                for (input, target) in [(left, right), (right, left)] {
+                    if !input.accepts_input_origin(target)
+                        || (target.accepts_input_origin(input) && input.origin() <= target.origin())
+                    {
+                        continue;
+                    }
+                    let key = Self::pointer_input_origin_key(input.origin());
+                    let sources = self
+                        .pointer_value_input_origins
+                        .get(&key)
+                        .cloned()
+                        .unwrap_or_default();
+                    let source = SharedIndexFact::new(field.clone());
+                    let sources = if supported {
+                        sources.with_value(source)
+                    } else {
+                        sources.without_value(&source)
+                    };
+                    if sources.is_empty() {
+                        self.pointer_value_input_origins.remove(&key);
+                    } else {
+                        self.pointer_value_input_origins.insert(key, sources);
+                    }
+                }
+            }
         }
     }
 
@@ -5480,7 +5647,40 @@ impl PureFactContext {
         }
         match proposition {
             Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => {
-                self.equality_graph.are_algebraic_equal(a, b)
+                self.decide_algebraic_equality(a, b) == Some(true)
+            }
+            Proposition::Equal(Term::CValue(left), Term::CValue(right)) => {
+                self.contains_algebraic_constructor_field_equality(proposition)
+                    || crate::kernel::reasoning::c_values_proven_equal_for_memory_resolution(
+                        left, right, self,
+                    )
+            }
+            Proposition::Predicate { name, arguments }
+                if name == INPUT_POINTER_DOMAIN_PREDICATE_NAME =>
+            {
+                let [
+                    Term::CMemory(memory),
+                    Term::CValue(CValue::Pointer(pointer)),
+                    Term::CValue(CValue::UInt32(Bitvector32Term::Constant(bytes))),
+                ] = arguments.as_slice()
+                else {
+                    return false;
+                };
+                crate::kernel::eval::pointer_value_range_within(
+                    pointer,
+                    &CValue::UInt32(0u32.into()),
+                    &CValue::UInt32((*bytes).into()),
+                    1,
+                    self,
+                ) && (pointer.domain().is_some()
+                    || crate::kernel::eval::pointer_input_domain_allows(
+                        &CState::new().with_memory(memory.clone()),
+                        pointer.pointer(),
+                        pointer.origin(),
+                        *bytes,
+                        true,
+                        self,
+                    ))
             }
             Proposition::Predicate { name, arguments } if name == POINTER_ORIGIN_PREDICATE_NAME => {
                 match arguments.as_slice() {
@@ -5488,18 +5688,25 @@ impl PureFactContext {
                         Term::CState(_),
                         Term::CValue(CValue::PointerInteger(word)),
                         Term::CValue(CValue::Pointer(pointer)),
-                    ] => self
-                        .promised_pointer_origin(word)
-                        .is_some_and(|origin| origin.same_complete_origin(pointer)),
+                    ] => self.promised_pointer_origin(word).is_some_and(|origin| {
+                        crate::kernel::reasoning::c_pointer_values_proven_equal(
+                            &origin, pointer, self,
+                        )
+                    }),
                     [
                         Term::CState(_),
                         Term::CValue(CValue::Pointer(value)),
                         Term::CValue(CValue::Pointer(pointer)),
                     ] => {
-                        value.same_complete_origin(pointer)
-                            || self
-                                .promised_pointer_input_origin(value)
-                                .is_some_and(|origin| origin.same_complete_origin(pointer))
+                        crate::kernel::reasoning::c_pointer_values_proven_equal(
+                            value, pointer, self,
+                        ) || self
+                            .promised_pointer_input_origin(value)
+                            .is_some_and(|origin| {
+                                crate::kernel::reasoning::c_pointer_values_proven_equal(
+                                    &origin, pointer, self,
+                                )
+                            })
                     }
                     _ => false,
                 }
@@ -8706,6 +8913,69 @@ mod dynamic_current_load_tests {
 #[cfg(test)]
 mod pointer_origin_index_tests {
     use super::*;
+
+    #[test]
+    fn read_origin_queries_ignore_numerically_equal_unrelated_cells() {
+        let mut costs = Vec::new();
+        for size in [16, 64, 256, 1024] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let memory = CMemory::new();
+            let slot = Pointer {
+                block: "selected-slot".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let CValue::Pointer(input) =
+                memory.symbolic_pointer_load(&slot, 4, CType::Int32Pointer)
+            else {
+                unreachable!()
+            };
+            let target =
+                CPointerValue::new(Pointer::symbolic(Variable(8_870_001)), CType::Int32Pointer);
+            let mut context = PureFactContext::new();
+            for index in 0..size {
+                let other_slot = Pointer {
+                    block: format!("unrelated-slot-{index}").into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                };
+                let CValue::Pointer(other) =
+                    memory.symbolic_pointer_load(&other_slot, 4, CType::Int32Pointer)
+                else {
+                    unreachable!()
+                };
+                context = context
+                    .assume_condition(
+                        ConditionTerm::pointer_equal(
+                            other.pointer().clone(),
+                            input.pointer().clone(),
+                        ),
+                        true,
+                    )
+                    .assume_proposition(crate::kernel::pointer_origin_fact(
+                        CValue::Pointer(other),
+                        CValue::Pointer(target.clone()),
+                    ));
+            }
+            let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
+                context.promised_pointer_input_origin(&input)
+            });
+            assert!(answer.is_none());
+            costs.push(work);
+            let alias = Pointer::symbolic(Variable(8_870_002));
+            let CValue::Pointer(aliased) =
+                memory.symbolic_pointer_load(&alias, 4, CType::Int32Pointer)
+            else {
+                unreachable!()
+            };
+            context = context
+                .assume_condition(ConditionTerm::pointer_equal(alias, slot), true)
+                .assume_proposition(crate::kernel::pointer_origin_fact(
+                    CValue::Pointer(aliased),
+                    CValue::Pointer(target.clone()),
+                ));
+            assert_eq!(context.promised_pointer_input_origin(&input), Some(target));
+        }
+        assert!(costs[3] <= costs[0] * 4 + 32, "{costs:?}");
+    }
 
     #[test]
     fn input_origin_queries_are_indexed_and_follow_premise_lifetime() {

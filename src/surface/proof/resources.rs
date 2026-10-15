@@ -746,6 +746,13 @@ pub(in crate::surface) fn pair_instance_body_clause_presentations(
     }
     let mut paired = Vec::with_capacity(records.len());
     for record in records {
+        // These checked obligations are generated from typed memory clauses;
+        // they have no separate source `fact` declaration to present.
+        if matches!(&record.proposition, Proposition::Predicate { name, .. }
+            if name == crate::kernel::INPUT_POINTER_DOMAIN_PREDICATE_NAME)
+        {
+            continue;
+        }
         if record.arm.as_deref() != Some(variant) {
             return Err(ClickError::new("resource body clause changed selected arm"));
         }
@@ -2424,6 +2431,7 @@ fn append_composite_definition_observable_facts<F: ResourcePureFacts>(
         substitutions,
         parameter_binding,
         fact_state.memory(),
+        contained_resources,
         propositions,
     )?;
 
@@ -2484,6 +2492,7 @@ fn append_composite_resource_loadable_facts<F: ResourcePureFacts>(
     substitutions: &BTreeMap<String, ContractExpression>,
     parameter_binding: ParameterBinding<'_>,
     memory: &CMemory,
+    contained_resources: &ResourceContext,
     propositions: &mut F,
 ) -> Result<(), String> {
     for contained in composite_body.contains() {
@@ -2493,6 +2502,35 @@ fn append_composite_resource_loadable_facts<F: ResourcePureFacts>(
                 definition.name()
             )
         })?;
+        let spec = crate::surface::verification::resource_clause_to_resource_spec_for_body(
+            &contained,
+            &[],
+            None,
+        )
+        .map_err(|error| error.raw_summary().to_owned())?;
+        let domain_state = CState::new()
+            .with_memory(memory.clone())
+            .with_resource_context(contained_resources.clone());
+        for domain in crate::kernel::resource_body_pointer_domain_requirements(&[spec]) {
+            let (domain, facts, obligations) = crate::kernel::c_lower_spec_proposition_at_state(
+                &domain_state,
+                &domain,
+                None,
+                propositions.assumptions(),
+            )?;
+            if !obligations
+                .iter()
+                .all(|obligation| propositions.assumptions().settles_exactly(obligation))
+            {
+                return Err(
+                    "declared composite domain has unresolved evaluation conditions".into(),
+                );
+            }
+            for fact in facts {
+                propositions.insert(fact);
+            }
+            propositions.insert(domain);
+        }
         append_resource_clause_loadable_fact_with_store(
             &contained,
             parameter_binding,
@@ -5101,11 +5139,8 @@ fn materialize_composite_resource_cells_from_snapshot(
         return memory;
     }
 
-    // `*p` is one complete struct: its cells take the layout's field
-    // types, so a wide integer field reads back as itself. Pointer fields
-    // keep the int32 words this projection uses everywhere: a pointer cell
-    // must carry its load variable, which the load itself mints, whereas a
-    // raw load term embedded in a pointer offset is not canonical.
+    // Materialized pointer cells retain one complete LP64 value and its
+    // typed read origin. Independent low-word names cannot carry domains.
     if let Some(layout) = crate::surface::lowering::object_segment_layout(parameters, segment)
         && *start == 0
     {
@@ -5115,38 +5150,29 @@ fn materialize_composite_resource_cells_from_snapshot(
                 range.base(),
                 memory,
                 |mut memory, pointer, element_type| {
-                    let word_cells = if element_type.is_pointer() {
-                        (0..element_type.byte_width())
-                            .step_by(4)
-                            .collect::<Vec<_>>()
-                    } else {
-                        vec![0]
-                    };
-                    for word in word_cells {
-                        let pointer = pointer.offset_by_bytes(word);
-                        if matches!(memory.load(&pointer), CExpressionOutcome::Value(_)) {
-                            continue;
-                        }
-                        // A pointer field is held as its four-byte words.
-                        let kind = if element_type.is_pointer() {
-                            crate::kernel::LoadKind::Bits32
-                        } else {
-                            crate::surface::lowering::load_kind_of_element(element_type)
-                        };
-                        let load = crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_c_memory(naming_memory.clone()),
+                    if matches!(memory.load(&pointer), CExpressionOutcome::Value(value) if value.c_type() == element_type)
+                    {
+                        return memory;
+                    }
+                    if element_type.is_pointer() {
+                        match memory.with_named_cell_run(
                             pointer.clone(),
-                            kind,
-                        );
-                        let value = if element_type.is_pointer() {
-                            CValue::Int32(load)
-                        } else {
-                            crate::surface::lowering::symbolic_value_from_load(
-                                &pointer,
-                                element_type,
-                                load,
-                            )
-                        };
+                            element_type.byte_width(),
+                            element_type,
+                            0,
+                            1,
+                            crate::kernel::intern_c_memory(naming_memory.clone()),
+                        ) {
+                            Ok(memory) => return memory,
+                            Err(unchanged) => memory = unchanged,
+                        }
+                    }
+                    if let Some(value) = crate::kernel::symbolic_storage_cell_value(
+                        naming_memory,
+                        &pointer,
+                        element_type,
+                        true,
+                    ) {
                         memory = memory.materialize_named_cell(pointer, value);
                     }
                     memory
@@ -5157,6 +5183,23 @@ fn materialize_composite_resource_cells_from_snapshot(
     }
     let element_width = contract_segment_element_width(parameters, segment);
     let segment_type = contract_segment_element_type(parameters, segment);
+    if segment_type.is_pointer()
+        && let Some(bytes) = (end - start).checked_mul(element_width)
+        && bytes % segment_type.byte_width() == 0
+    {
+        let base = range.start_pointer();
+        let count = bytes / segment_type.byte_width();
+        return match memory.with_named_cell_run(
+            base,
+            segment_type.byte_width(),
+            segment_type,
+            0,
+            count,
+            crate::kernel::intern_c_memory(naming_memory.clone()),
+        ) {
+            Ok(memory) | Err(memory) => memory,
+        };
+    }
     // The cells below as one run. Every element's value is its load in the
     // naming memory, typed as the element for a scalar and kept as the word
     // the load names for a pointer, so the run's element type is that word's

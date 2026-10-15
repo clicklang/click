@@ -1339,6 +1339,13 @@ fn c_function_contract_entry_facts(
             CContractEntryFactOrigin::Requirement(requirement_index),
             path.proposition.clone(),
         );
+        for domain in declared_input_pointer_domain_facts(&path.proposition) {
+            assumptions = entry_facts.assume(
+                assumptions,
+                CContractEntryFactOrigin::RequirementLowering(requirement_index),
+                domain,
+            );
+        }
     }
     let quantity_assumptions = match quantified_resource_requirement_assumptions(
         &entry_state,
@@ -1420,6 +1427,17 @@ fn c_function_contract_entry_facts(
     // order reasoning through that equality. The joined range is exactly
     // the union of the clauses, so each clause's own facts hold of it.
     for clause in &required_entry_clauses {
+        if let Some(range) = clause.fact.memory_range() {
+            for domain in
+                declared_input_pointer_domain_facts(&range.loadable_fact(entry_state.memory()))
+            {
+                assumptions = entry_facts.assume(
+                    assumptions,
+                    CContractEntryFactOrigin::ClauseLoadable,
+                    domain,
+                );
+            }
+        }
         let Some(range) = clause
             .fact
             .memory_view_range()

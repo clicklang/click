@@ -17,6 +17,7 @@ resource box(p: struct Box*) {
             owns p->next;
             fact p != 0;
             fact p == identity;
+            fact pointer_origin(identity, p);
         },
     }
 }

@@ -139,6 +139,7 @@ pub(crate) use eval::registered_load_bytes_for_variable;
 pub(crate) use eval::registered_load_for_variable;
 pub(crate) use eval::registered_load_origin_for_variable;
 pub(crate) use eval::resolve_pending_heap_allocations;
+pub(crate) use eval::symbolic_storage_cell_value;
 pub(crate) use eval::terms_have_same_canonical_form;
 pub(crate) use eval::{
     CUndefinedBehaviorSite, locate_undefined_behavior, locate_undefined_behavior_in_condition,

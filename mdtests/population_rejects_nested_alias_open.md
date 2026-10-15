@@ -25,7 +25,7 @@ verifying "resource_population_open.c";
 
 int32 object_refcount(struct object* obj, struct object* alias) {
     owns control(obj);
-    requires alias == obj;
+    requires alias == obj; requires pointer_origin(alias, obj);
 
     ensures result == count(object_ref(obj));
 } by {

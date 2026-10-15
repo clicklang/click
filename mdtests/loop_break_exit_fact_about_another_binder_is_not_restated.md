@@ -43,11 +43,13 @@ resource cell_at(p: struct node*) {
             owns identity->shade;
             fact p != 0;
             fact p == identity;
+            fact pointer_origin(p, identity);
         },
         Cell::Black(identity) => {
             owns identity->shade;
             fact p != 0;
             fact p == identity;
+            fact pointer_origin(p, identity);
         },
     }
 }

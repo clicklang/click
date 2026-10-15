@@ -6497,7 +6497,7 @@ fn resource_clause_to_resource_spec_with_parameters(
     )
 }
 
-fn resource_clause_to_resource_spec_for_body(
+pub(in crate::surface) fn resource_clause_to_resource_spec_for_body(
     resource: &ResourceClause,
     parameters: &[syntax::C0Parameter],
     result_type: Option<crate::kernel::CType>,

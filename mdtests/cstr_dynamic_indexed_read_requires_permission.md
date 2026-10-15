@@ -25,5 +25,5 @@ int32 read_terminator_without_permission(uint8 bytes[]) {
 ```
 
 ```expect
-fail: missing resource fact `views bytes
+fail: pointer arithmetic left the pointed-to object
 ```

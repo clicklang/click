@@ -1405,8 +1405,10 @@ equality rewriting, or an equal sibling address. Source-function return domains
 are inferred from verified return paths; address-only postconditions do not
 create them. An opaque callback can state `ensures pointer_origin(result, p)`
 together with `ensures result == p` to supply its return origin explicitly.
-Without a checked return summary or such a promise, its result cannot supply
-access or nonzero displacement. See [the memory model](../../concepts/memory-model.md).
+Without a checked return summary or such a promise, its result needs object
+authority rooted at that result before access or nonzero displacement. A
+returned memory resource can supply that authority, including after its
+composite wrapper is opened. See [the memory model](../../concepts/memory-model.md).
 
 `aligned(pointer, n)` states that the pointer's address is a multiple of `n`,
 a power of two. It is sugar for `(address(pointer) & (n - 1)) == 0`. Click

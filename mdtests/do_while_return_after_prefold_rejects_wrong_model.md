@@ -18,7 +18,7 @@ resource list(p: struct Node*) {
             owns p->next;
             owns tail: list(p->next);
             fact p != 0;
-            fact p == identity;
+            fact p == identity; fact pointer_origin(identity, p);
             fact tail.model == rest;
         },
     }
@@ -31,7 +31,7 @@ resource path(p: struct Node*) {
             owns identity->next;
             owns up: path(identity);
             fact identity != 0;
-            fact identity->next == p;
+            fact identity->next == p; fact pointer_origin(identity->next, p);
             fact up.model == before;
         },
     }

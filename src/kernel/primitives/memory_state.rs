@@ -2187,6 +2187,8 @@ enum CallHavocCellRule {
     Separate,
     /// Kept because this member of what the caller keeps owning holds it.
     KeptByCaller,
+    /// The caller keeps a complete pointer value, including its designation.
+    CompletePointerKeptByCaller,
     Dropped,
 }
 
@@ -2243,6 +2245,14 @@ fn call_havoc_keeps_cell(
         return CallHavocCellRule::Separate;
     }
     match kept.and_then(|kept| kept.member_holding(pointer, bytes, assumptions)) {
+        Some(_)
+            if matches!(value, CValue::Pointer(_) | CValue::PointerInteger(_))
+                || matches!(value, CValue::Int32(Bitvector32Term::Variable(variable))
+                if crate::kernel::registered_load_bytes_for_variable(variable) == Some(crate::kernel::C_POINTER_BYTE_WIDTH)
+                    && crate::kernel::eval::registered_load_kind_for_variable(variable) == Some(LoadKind::Bits32)) =>
+        {
+            CallHavocCellRule::CompletePointerKeptByCaller
+        }
         Some(_) => CallHavocCellRule::KeptByCaller,
         None => CallHavocCellRule::Dropped,
     }
@@ -3922,7 +3932,9 @@ impl CMemory {
                 kept,
                 preserve_local_slots,
             ) {
-                CallHavocCellRule::Separate => CachedValueFate::Kept,
+                CallHavocCellRule::Separate | CallHavocCellRule::CompletePointerKeptByCaller => {
+                    CachedValueFate::Kept
+                }
                 // The cached value is dropped as before; the edge records
                 // the member that holds it, and a load after the call is
                 // named across the edge at its pre-call value.
@@ -4022,7 +4034,7 @@ impl CMemory {
         for (pointer, value) in entries {
             visited += 1;
             match call_havoc_keeps_cell(&pointer, &value, mutable_ranges, assumptions, kept, true) {
-                CallHavocCellRule::Separate => {}
+                CallHavocCellRule::Separate | CallHavocCellRule::CompletePointerKeptByCaller => {}
                 CallHavocCellRule::KeptByCaller => {
                     dropped_initialized.push((pointer.clone(), value.byte_width()));
                     dropped_cells.push(pointer);
@@ -4038,7 +4050,7 @@ impl CMemory {
         for (key, value) in candidates.entries(&before.union_cells) {
             visited += 1;
             match call_havoc_keeps_cell(&key.0, value, mutable_ranges, assumptions, kept, true) {
-                CallHavocCellRule::Separate => {}
+                CallHavocCellRule::Separate | CallHavocCellRule::CompletePointerKeptByCaller => {}
                 CallHavocCellRule::KeptByCaller => {
                     dropped_initialized.push((key.0.clone(), key.1.byte_width()));
                     dropped_union_cells.push(key);

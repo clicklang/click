@@ -15,12 +15,12 @@ function root_pointer(model: Tree) -> int32* {
 resource cache(p: int32*) {
     field model: Tree;
     match model {
-        Tree::Leaf(identity, value) => { owns p[0..1]; fact p == identity; fact p[0] == value; },
+        Tree::Leaf(identity, value) => { owns p[0..1]; fact p == identity; fact pointer_origin(identity, p); fact p[0] == value; },
         Tree::Branch(identity, left_model, right_model) => {
             owns p[0..1];
             owns left: cache(root_pointer(left_model));
             owns right: cache(root_pointer(right_model));
-            fact p == identity;
+            fact p == identity; fact pointer_origin(identity, p);
             fact left.model == left_model;
             fact right.model == right_model;
         },

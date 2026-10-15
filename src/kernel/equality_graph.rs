@@ -431,6 +431,15 @@ pub(crate) fn logical_pointer_read_term(value: &Pointer) -> Option<Bitvector32Te
         // A function read's value is exactly its load variable. Recover its
         // original definition when a restored table predates the read, while
         // preserving any producer definition already retained for the value.
+        if value.offset == PointerOffsetTerm::Constant(0)
+            && let Some(read) = value.as_loaded_value()
+        {
+            return Some(Bitvector32Term::MemoryLoad(
+                read.defining_memory,
+                Box::new(read.defining_address),
+                LoadKind::Bits32,
+            ));
+        }
         return match (&value.block, &value.offset) {
             (PointerBlock::FunctionSymbolic(variable), PointerOffsetTerm::Constant(0)) => {
                 crate::kernel::registered_load_term_for_variable(variable)

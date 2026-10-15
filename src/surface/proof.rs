@@ -1654,6 +1654,8 @@ pub(super) fn initial_claim_context_with_caller_owner(
     let mut requirement_pure_facts = Vec::with_capacity(lowered_requirement_facts.len());
     let mut entry_fact_origins = Vec::with_capacity(lowered_requirement_facts.len());
     for lowered in lowered_requirement_facts {
+        let input_domains =
+            crate::kernel::declared_input_pointer_domain_facts(&lowered.proposition);
         requirement_pure_facts.push(lowered.proposition);
         entry_fact_origins.push(match caller_owner {
             Some(owner) => EntryFactOrigin::Requirement {
@@ -1674,6 +1676,10 @@ pub(super) fn initial_claim_context_with_caller_owner(
             },
             None => EntryFactOrigin::Derived,
         });
+        for domain in input_domains {
+            requirement_pure_facts.push(domain);
+            entry_fact_origins.push(EntryFactOrigin::Derived);
+        }
     }
     // Each `_Bool` parameter's range, `flag == 0 or flag == 1`, is a
     // derived entry fact the kernel certifies from the parameter's normalized
@@ -2433,7 +2439,33 @@ fn evaluate_entry_resource_context(
     // owner observation `views r` that `owns r` publishes, and that view is
     // not separate from its own owner. Contract certification derives the
     // same facts from the same clause list, so the two entry contexts agree.
-    let entry_partition_facts = crate::kernel::contract_entry_partition_facts(&entry_clauses);
+    let mut entry_partition_facts = crate::kernel::contract_entry_partition_facts(&entry_clauses);
+    for domain in crate::kernel::resource_input_pointer_domain_requirements(&resource_specs) {
+        let (domain, _, obligations) = crate::kernel::c_lower_spec_proposition_at_state(
+            &evaluation_state,
+            &domain,
+            None,
+            &assumptions,
+        )
+        .map_err(ClickError::new)?;
+        if !obligations
+            .iter()
+            .all(|obligation| assumptions.proves_exact(obligation))
+        {
+            return Err(ClickError::new(
+                "declared pointer domain has unresolved guards",
+            ));
+        }
+        entry_partition_facts.push(domain);
+    }
+    for clause in &entry_clauses {
+        if let Some(range) = clause.fact.memory_range() {
+            entry_partition_facts.extend(crate::kernel::declared_input_pointer_domain_facts(
+                &range.loadable_fact(evaluation_state.memory()),
+            ));
+        }
+    }
+
     // Quantity guards are implicit requirements, just as they are in the
     // kernel's certified entry. Retain them in the proof context as well;
     // otherwise the checked boundary loses the very premise used above to

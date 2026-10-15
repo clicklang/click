@@ -47,5 +47,5 @@ int32 chase(struct box* box) {
 ```
 
 ```expect
-fail: `*(box) - i` decreases at the back edge
+fail: `*(box + 0 bytes) - i` decreases at the back edge
 ```

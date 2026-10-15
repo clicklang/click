@@ -5067,7 +5067,7 @@ fn a_missing_memory_fact_is_reported_as_a_place() {
         ),
         (
             "int32 read_inner(struct outer* o) { views o->head; }",
-            "missing resource fact `views o->inner.other`",
+            "missing resource fact `views o->inner`",
         ),
         (
             "int32 read_q(int32* q) { views q[0]; }",

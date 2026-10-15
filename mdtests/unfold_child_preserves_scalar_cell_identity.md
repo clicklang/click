@@ -27,7 +27,7 @@ resource frame(p: struct node*) {
             owns id->other;
             owns kid: child(id->other);
             fact kid.model == child_model;
-            fact p == id;
+            fact p == id; fact pointer_origin(p, id);
             fact id != 0;
             fact aligned(id, 8);
             fact aligned(gp, 8);

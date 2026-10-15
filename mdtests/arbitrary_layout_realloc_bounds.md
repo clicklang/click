@@ -30,5 +30,5 @@ int32 arbitrary_layout_realloc_bounds() {
 ```
 
 ```expect
-fail: missing resource fact
+fail: access outside the subobject the pointer designates
 ```

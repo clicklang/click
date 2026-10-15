@@ -52,6 +52,7 @@ int alias_write(struct holder *h, int *p) {
     views h->value;
     owns p[0..1];
     requires h->value == p;
+    requires pointer_origin(h->value, p);
     ensures result == 7;
     ensures p[0] == 7;
 } by { execute(); simp(); }

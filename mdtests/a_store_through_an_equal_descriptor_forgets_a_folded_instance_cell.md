@@ -36,7 +36,7 @@ resource slot_span(s: struct slot*) {
 verifying "a_store_through_an_equal_descriptor_forgets_a_folded_instance_cell.c";
 
 int32 touch(struct slot* s, struct slot* other) {
-    requires s == other;
+    requires s == other; requires pointer_origin(s, other);
     owns r: slot_span(s);
     owns *other;
     ensures result == old(s->at);

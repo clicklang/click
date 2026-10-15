@@ -3384,6 +3384,10 @@ fn pointer_read_single_store_uses_only_its_branch_address_equality() {
     ));
     assert!(!sibling.pointers_known_equal(&left, &right));
     assert!(!context.pointers_known_equal(&left, &right));
+    let equality = Proposition::ConditionIs(ConditionTerm::pointer_equal(left, right), true);
+    assert!(branch.proves_typed_pointer_read_equality(&equality));
+    assert!(!sibling.proves_typed_pointer_read_equality(&equality));
+    assert!(!context.proves_typed_pointer_read_equality(&equality));
     assert_eq!(branch.pure_facts().len(), context.pure_facts().len() + 1);
     assert!(!ResourceContext::new().permits_memory_read(&read, 8, &branch));
 }

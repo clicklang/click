@@ -18,6 +18,7 @@ resource holder(p: int32*) {
 }
 void overwrite(int32* p) {
     owns root: holder(p);
+    requires pointer_origin(p, model_pointer(root.model));
     ensures root.model == old(root.model);
     ensures root.tag == old(root.tag);
 } by {
@@ -31,6 +32,7 @@ void overwrite(int32* p) {
 }
 void caller(int32* p) {
     owns root: holder(p);
+    requires pointer_origin(p, model_pointer(root.model));
     ensures p[0] == 0;
 } by {
     let { child: c } = unfold(root);

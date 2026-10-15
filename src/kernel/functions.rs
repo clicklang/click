@@ -5933,9 +5933,16 @@ fn execute_verified_function_applications_with_suspension(
                             }),
                         }
                     };
-                    CValue::Pointer(pointer.with_domain(domain).with_retained_origin(
-                        origin.as_ref().map(|pointer| pointer.origin().clone()),
-                    ))
+                    CValue::Pointer(if let Some(origin) = origin {
+                        let mut value = origin
+                            .with_type(pointer.c_type())
+                            .with_pointee_volatile(pointer.pointee_volatile())
+                            .with_pointee_constant(pointer.pointee_constant());
+                        value.replace_pointer(pointer.pointer().clone());
+                        value
+                    } else {
+                        pointer.with_domain(domain)
+                    })
                 }
                 CValue::PointerInteger(result) => match application.pointer_result_domain {
                     Some(CPointerResultDomain::Integer(origin)) => {
@@ -5959,7 +5966,8 @@ fn execute_verified_function_applications_with_suspension(
                             None => result.numeric_value(),
                         }
                     }
-                    _ => CValue::PointerInteger(result),
+                    Some(_) => result.numeric_value(),
+                    None => CValue::PointerInteger(result),
                 },
                 result => result,
             }
@@ -5971,8 +5979,26 @@ fn execute_verified_function_applications_with_suspension(
             construction_return::initialize_summary(&mut post_state, &entry_contract_state);
         }
         if !application.pointer_store_effects.is_empty() {
+            let effect_assumptions =
+                assumptions_with_path_context(&effective_assumptions, &facts, &obligations);
+            if application.pointer_store_effects.iter().any(|effect| {
+                !pointer_result_inputs_valid(
+                    &effect.value,
+                    &entry_state,
+                    &argument_values,
+                    &effect_assumptions,
+                )
+            }) {
+                paths.push(CFunctionPath::new(
+                    CFunctionOutcome::UndefinedBehavior(CUndefinedBehavior::SubobjectAccess),
+                    facts,
+                    obligations,
+                ));
+                continue;
+            }
             let Some(memory) = pointer_store_effects::apply(
                 &post_state,
+                &entry_state,
                 &argument_values,
                 application.pointer_store_effects,
                 &effective_assumptions,
@@ -7376,7 +7402,8 @@ fn execute_verified_function_applications_with_suspension(
         // A named callback contract has no checked source return summary.
         // Its numeric postconditions cannot give an opaque result a wider
         // domain. An explicit, address-consistent origin promise can supply
-        // the complete value; otherwise keep a non-accessible result.
+        // the complete value. A resource explicitly produced at the result's
+        // own origin also authenticates that object (for opaque allocators).
         let result = match result {
             CValue::Pointer(pointer)
                 if application.pointer_result_domain.is_none()
@@ -7398,14 +7425,32 @@ fn execute_verified_function_applications_with_suspension(
                         .with_type(pointer.c_type())
                         .with_pointee_constant(pointer.pointee_constant())
                         .with_pointee_volatile(pointer.pointee_volatile()),
-                    None => pointer.with_domain(Some(CPointerDomain {
-                        bytes: 0,
-                        position: IntegerTerm::constant_i64(0).into(),
-                    })),
+                    None => pointer,
                 })
             }
             value => value,
         };
+        let result_assumptions =
+            assumptions_with_path_context(&effective_assumptions, &facts, &obligations);
+        let returns_null = matches!(&result, CValue::Pointer(pointer)
+            if result_assumptions.decide(&super::eval::pointer_is_null_condition(pointer.pointer().clone())) == Some(true));
+        if !returns_null
+            && application.pointer_result_domain.is_some_and(|effect| {
+                !pointer_result_inputs_valid(
+                    effect,
+                    &entry_state,
+                    &argument_values,
+                    &result_assumptions,
+                )
+            })
+        {
+            paths.push(CFunctionPath::new(
+                CFunctionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic),
+                facts,
+                obligations,
+            ));
+            continue;
+        }
         let outcome = CFunctionOutcome::Return {
             value: result,
             state: Box::new(return_state),
@@ -13748,6 +13793,11 @@ fn prove_contract_propositions(
 /// `contains_assumed_exact` and `evaluate_guarded_contract_condition` already
 /// read it.
 fn refinement_route_proves(assumptions: &PureFactContext, proposition: &Proposition) -> bool {
+    if matches!(proposition, Proposition::Predicate { name, .. } if name == INPUT_POINTER_DOMAIN_PREDICATE_NAME)
+        && assumptions.contains_known(proposition)
+    {
+        return true;
+    }
     if assumptions.proves_exact(proposition) {
         return true;
     }
@@ -16199,6 +16249,7 @@ fn instantiate_result_domain_meet(
     let CPointerResultDomain::Meet {
         fixed,
         arguments: sources,
+        ..
     } = effect
     else {
         return None;
@@ -16258,6 +16309,99 @@ fn instantiate_result_domain_meet(
     })
 }
 
+/// Checked source effects describe selections and displacements performed by
+/// the callee. Recheck them against the actual input domains even when the
+/// caller only returns the result and never dereferences it.
+fn pointer_result_inputs_valid(
+    effect: &CPointerResultDomain,
+    state: &CState,
+    arguments: &[CValue],
+    assumptions: &PureFactContext,
+) -> bool {
+    let span = |index: usize, low: i64, high: i64| {
+        let Some(pointer) = instantiate_result_pointer_geometry(
+            &CPointerResultDomain::Argument(index),
+            state,
+            arguments,
+            assumptions,
+        ) else {
+            return true;
+        };
+        let Some(width) = high
+            .checked_sub(low)
+            .and_then(|width| u32::try_from(width).ok())
+        else {
+            return false;
+        };
+        if let Some(domain) = pointer.domain() {
+            let domain = CPointerDomain {
+                bytes: domain.bytes,
+                position: IntegerTerm::add(
+                    domain.position.as_ref().clone(),
+                    IntegerTerm::constant_i64(low),
+                )
+                .into(),
+            };
+            if !super::eval::pointer_domain_conditions(Some(&domain), width)
+                .iter()
+                .all(|condition| assumptions.decide(condition) == Some(true))
+            {
+                return false;
+            }
+        }
+        let address = Pointer {
+            block: pointer.block.clone(),
+            offset: PointerOffsetTerm::add(
+                pointer.offset.clone(),
+                PointerOffsetTerm::Constant(low),
+            ),
+        };
+        super::eval::subobject_access_refusal(
+            &address,
+            pointer.extent(),
+            width,
+            &ExecutionFacts::new(),
+            &[],
+            assumptions,
+        )
+        .is_none()
+    };
+    match effect {
+        CPointerResultDomain::ArgumentOffset(index, offset) => span(*index, *offset, *offset),
+        CPointerResultDomain::Selected {
+            domain,
+            argument: Some((index, offset)),
+        } => {
+            let Some(position) = domain
+                .position
+                .as_const()
+                .and_then(num_traits::ToPrimitive::to_i64)
+            else {
+                return false;
+            };
+            let Some(low) = offset.checked_sub(position) else {
+                return false;
+            };
+            let Some(high) = low.checked_add(i64::from(domain.bytes)) else {
+                return false;
+            };
+            span(*index, low, high)
+        }
+        CPointerResultDomain::Integer(origin) => {
+            pointer_result_inputs_valid(origin, state, arguments, assumptions)
+        }
+        CPointerResultDomain::Meet {
+            arguments,
+            selected_inputs,
+            ..
+        } => arguments
+            .iter()
+            .chain(selected_inputs)
+            .all(|(index, low, high)| span(*index, *low, *high)),
+        _ => true,
+    }
+}
+
 fn instantiate_result_pointer_origin(
     effect: &CPointerResultDomain,
     arguments: &[CValue],
@@ -16296,7 +16440,20 @@ fn instantiate_result_pointer_origin(
         .into(),
     });
     if let Some(domain) = domain {
-        result = result.with_domain(Some(domain.clone()));
+        let position = num_traits::ToPrimitive::to_i64(domain.position.as_const()?)?;
+        let start = Pointer {
+            block: result.origin().block.clone(),
+            offset: PointerOffsetTerm::add(
+                result.origin().offset.clone(),
+                PointerOffsetTerm::Constant(position.checked_neg()?),
+            ),
+        };
+        result = result
+            .with_domain(Some(domain.clone()))
+            .with_extent(Some(SubobjectExtent {
+                start,
+                width: u64::from(domain.bytes),
+            }));
     }
     Some(result)
 }
@@ -20484,47 +20641,7 @@ fn prepare_contract_resource_transfer_unexplained(
     } else {
         caller_state.resources().clone()
     };
-    if purpose.lends() {
-        let _logical_reads = super::eval::SpecificationReadScope::enter();
-        for checked in &checked_required_resources {
-            // These use the existing checked local/intrinsic loan path;
-            // they have no explicit resource supplier to authenticate here.
-            if local_read_views.contains(checked) || intrinsic_read_views.contains(checked) {
-                continue;
-            }
-            let Some(spec) = checked
-                .section_index
-                .and_then(|index| interface.resource_requires().get(index))
-            else {
-                continue;
-            };
-            let CResourceTerm::Memory(segment) = spec.term() else {
-                continue;
-            };
-            let pointer = evaluate_loop_effect_segment_value(
-                callee_state,
-                &segment.base,
-                assumptions,
-                "call input domain",
-                budget,
-            )?;
-            let pointer = match pointer {
-                Ok(CValue::Pointer(pointer)) => pointer,
-                _ => continue,
-            };
-            if pointer.domain().is_none()
-                && !planning_resources.pointer_input_domain_contains_fact(
-                    &checked.fact,
-                    pointer.origin(),
-                    assumptions,
-                )
-            {
-                return Ok(Err(CRuntimeError::FunctionContract(
-                    "call memory range lacks the argument's original domain".into(),
-                )));
-            }
-        }
-    }
+    let domain_planning_resources = planning_resources.clone();
     let stable_view_plan = if purpose.lends() {
         let (ledger, caller) = match (
             caller_state.loan_ledger().cloned(),
@@ -20805,6 +20922,54 @@ fn prepare_contract_resource_transfer_unexplained(
     } else {
         None
     };
+    if purpose.lends() {
+        let _logical_reads = super::eval::SpecificationReadScope::enter();
+        for checked in &checked_required_resources {
+            // These use the existing checked local/intrinsic loan path;
+            // they have no explicit resource supplier to authenticate here.
+            if local_read_views.contains(checked) || intrinsic_read_views.contains(checked) {
+                continue;
+            }
+            let Some(spec) = checked
+                .section_index
+                .and_then(|index| interface.resource_requires().get(index))
+            else {
+                continue;
+            };
+            let CResourceTerm::Memory(segment) = spec.term() else {
+                continue;
+            };
+            let pointer = evaluate_loop_effect_segment_value(
+                callee_state,
+                &segment.base,
+                assumptions,
+                "call input domain",
+                budget,
+            )?;
+            let pointer = match pointer {
+                Ok(CValue::Pointer(pointer)) => pointer,
+                _ => continue,
+            };
+            let declared_domain = checked.fact.memory_range().is_some_and(|range| {
+                declared_input_pointer_domain_facts(&range.loadable_fact(caller_state.memory()))
+                    .iter()
+                    .any(|fact| assumptions.proves_exact(fact))
+            });
+            if pointer.domain().is_none()
+                && !declared_domain
+                && !caller_state.memory().has_block(&pointer.origin().block)
+                && !domain_planning_resources.pointer_input_domain_contains_fact(
+                    &checked.fact,
+                    pointer.origin(),
+                    assumptions,
+                )
+            {
+                return Ok(Err(CRuntimeError::FunctionContract(
+                    "call memory range lacks the argument's original domain".into(),
+                )));
+            }
+        }
+    }
     // Excluding a counted-population requirement from the exclusive
     // reservation costs nothing for a token population, whose units protect
     // no bytes. A population whose body owns memory is a different matter:
@@ -22710,6 +22875,7 @@ fn lower_selected_resource_body_clauses(
     let mut context = body_assumptions.clone();
     let mut records = Vec::with_capacity(source.len());
     let mut retained_conditions = Vec::new();
+    let visible_count = source.iter().take_while(|fact| !matches!(fact, SpecProposition::Predicate { name, .. } if name == INPUT_POINTER_DOMAIN_REQUIREMENT)).count();
     for (ordinal, clause) in source.iter().enumerate() {
         crate::instrumentation::record_deterministic_work(1);
         let clause = rewrite.spec_proposition(clause).map_err(
@@ -22765,7 +22931,7 @@ fn lower_selected_resource_body_clauses(
             return Err(ResourceRewriteRefusal::BodyFactPrerequisiteNotEstablished {
                 arm: arm.map(str::to_owned),
                 index: ordinal,
-                count: source.len(),
+                count: visible_count,
                 proposition: Box::new(fact.proposition().clone()),
             });
         }
@@ -22785,7 +22951,7 @@ fn lower_selected_resource_body_clauses(
             return Err(ResourceRewriteRefusal::BodyFactPrerequisiteNotEstablished {
                 arm: arm.map(str::to_owned),
                 index: ordinal,
-                count: source.len(),
+                count: visible_count,
                 proposition: Box::new(goal.proposition().clone()),
             });
         }
@@ -22798,7 +22964,7 @@ fn lower_selected_resource_body_clauses(
             return Err(ResourceRewriteRefusal::BodyFactNotEstablished {
                 arm: arm.map(str::to_owned),
                 index: ordinal,
-                count: source.len(),
+                count: visible_count,
                 spelling: None,
                 proposition: Box::new(path.proposition.clone()),
             });
@@ -23206,13 +23372,15 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
             count,
             spelling: None,
             proposition,
-        } if count == definition.facts.len() => ResourceRewriteRefusal::BodyFactNotEstablished {
-            arm: None,
-            index,
-            count,
-            spelling: definition.fact_source_spelling(index).map(str::to_owned),
-            proposition,
-        },
+        } if count == definition.fact_source_indices.len() => {
+            ResourceRewriteRefusal::BodyFactNotEstablished {
+                arm: None,
+                index,
+                count,
+                spelling: definition.fact_source_spelling(index).map(str::to_owned),
+                proposition,
+            }
+        }
         refusal => refusal,
     })
 }
@@ -23978,7 +24146,8 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         facts
             .into_iter()
             .filter(|fact| {
-                !entry_assumptions.states_required_goal(fact) && seen.insert(fact.clone())
+                (matches!(fact, Proposition::Predicate { name, .. } if name == INPUT_POINTER_DOMAIN_PREDICATE_NAME)
+                    || !entry_assumptions.states_required_goal(fact)) && seen.insert(fact.clone())
             })
             .collect()
     } else {
@@ -23991,7 +24160,8 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             .iter()
             .map(|clause| clause.proposition.clone())
             .filter(|fact| {
-                !entry_assumptions.states_required_goal(fact) && seen.insert(fact.clone())
+                (matches!(fact, Proposition::Predicate { name, .. } if name == INPUT_POINTER_DOMAIN_PREDICATE_NAME)
+                    || !entry_assumptions.states_required_goal(fact)) && seen.insert(fact.clone())
             })
             .collect()
     };
@@ -26565,10 +26735,9 @@ fn instantiate_composite_resource_facts_with_state(
             if !result.contains(&path.proposition) {
                 result.push(path.proposition.clone());
             }
-            declared.push((
-                definition.fact_source_index(index)?,
-                path.proposition.clone(),
-            ));
+            if let Some(source_index) = definition.fact_source_index(index) {
+                declared.push((source_index, path.proposition.clone()));
+            }
             fact_assumptions = fact_assumptions.assume_proposition(path.proposition.clone());
             made_progress = true;
         }

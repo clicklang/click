@@ -27,5 +27,5 @@ int32 malloc_pointer_array_bounds() {
 ```
 
 ```expect
-fail: missing resource fact
+fail: access outside the subobject the pointer designates
 ```

@@ -17,6 +17,7 @@ verifying "probe.c";
 void put(struct pair *p, struct pair *q, int32 x) {
     owns p->tag;
     requires p->tag == q;
+    requires pointer_origin(p->tag, q);
     owns q->tag;
     owns q->other;
     ensures q->tag == old(q->tag);

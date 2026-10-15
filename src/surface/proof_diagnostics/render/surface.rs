@@ -370,6 +370,10 @@ impl Printer<'_> {
                 let surface = crate::kernel::CFunctionContract::surface_name_from_predicate(name)
                     .map(str::to_owned)
                     .or_else(|| {
+                        (name == crate::kernel::POINTER_ORIGIN_PREDICATE_NAME)
+                            .then(|| "pointer_origin".to_owned())
+                    })
+                    .or_else(|| {
                         name.strip_prefix("__click_volatile_write_")
                             .map(|event| format!("volatile_write_event_{event}"))
                     })

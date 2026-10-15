@@ -16,6 +16,7 @@ verifying "cstr_offset_copy.c";
 
 uint64 offset(uint8 bytes[]) {
     requires cstr_readable(bytes);
+    views bytes[0..1];
     ensures result == result;
 } by {
     execute();

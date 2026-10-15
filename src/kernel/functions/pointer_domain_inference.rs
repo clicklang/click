@@ -25,7 +25,33 @@ pub(crate) fn candidate(function: &CFunction) -> CPointerResultDomain {
         &mut returns,
         &mut Changes::default(),
     );
-    join_returns(returns)
+    let effect = join_returns(returns);
+    fn loads_input(effect: &CPointerResultDomain) -> bool {
+        match effect {
+            CPointerResultDomain::Loaded { .. } => true,
+            CPointerResultDomain::Integer(inner) => loads_input(inner),
+            _ => false,
+        }
+    }
+    fn writes_memory(body: &CStatement) -> bool {
+        match body {
+            CStatement::TypedStore { .. } => true,
+            CStatement::Seq(left, right) => writes_memory(left) || writes_memory(right),
+            CStatement::If {
+                then_branch,
+                else_branch,
+                ..
+            } => writes_memory(then_branch) || writes_memory(else_branch),
+            _ => false,
+        }
+    }
+    // An entry-load summary is not a hypothesis about a value read after a
+    // store. Let the checked final value infer its actual origin instead.
+    if loads_input(&effect) && writes_memory(function.body()) {
+        CPointerResultDomain::Unknown
+    } else {
+        effect
+    }
 }
 
 /// Compile all source return cases once. Per-call work depends on the
@@ -42,9 +68,10 @@ pub(crate) fn join_returns(effects: Vec<CPointerResultDomain>) -> CPointerResult
     let mut upper = i64::MAX;
     let mut fixed = false;
     let mut arguments = BTreeMap::<usize, (i64, i64)>::new();
+    let mut selected_inputs = BTreeMap::<usize, (i64, i64)>::new();
     for effect in effects {
         match effect {
-            CPointerResultDomain::Selected { domain, .. } => {
+            CPointerResultDomain::Selected { domain, argument } => {
                 let Some(position) = domain.position.as_const().and_then(ToPrimitive::to_i64)
                 else {
                     return CPointerResultDomain::Unknown;
@@ -55,6 +82,17 @@ pub(crate) fn join_returns(effects: Vec<CPointerResultDomain>) -> CPointerResult
                 let Some(end) = i64::from(domain.bytes).checked_sub(position) else {
                     return CPointerResultDomain::Unknown;
                 };
+                if let Some((index, offset)) = argument {
+                    let Some(start) = offset.checked_sub(position) else {
+                        return CPointerResultDomain::Unknown;
+                    };
+                    let Some(end) = start.checked_add(i64::from(domain.bytes)) else {
+                        return CPointerResultDomain::Unknown;
+                    };
+                    let bounds = selected_inputs.entry(index).or_insert((start, end));
+                    bounds.0 = bounds.0.min(start);
+                    bounds.1 = bounds.1.max(end);
+                }
                 lower = lower.max(start);
                 upper = upper.min(end);
                 fixed = true;
@@ -100,6 +138,10 @@ pub(crate) fn join_returns(effects: Vec<CPointerResultDomain>) -> CPointerResult
     CPointerResultDomain::Meet {
         fixed,
         arguments: arguments
+            .into_iter()
+            .map(|(index, (low, high))| (index, low, high))
+            .collect(),
+        selected_inputs: selected_inputs
             .into_iter()
             .map(|(index, (low, high))| (index, low, high))
             .collect(),
@@ -495,6 +537,7 @@ mod tests {
             let CPointerResultDomain::Meet {
                 fixed: Some(domain),
                 arguments,
+                ..
             } = join_returns(effects)
             else {
                 panic!("mixed scalar endpoints must retain their intersection");
@@ -508,7 +551,7 @@ mod tests {
             let mut effects = vec![CPointerResultDomain::ArgumentOffset(0, 4); count];
             effects.push(CPointerResultDomain::Argument(0));
             assert!(matches!(join_returns(effects), CPointerResultDomain::Meet {
-                fixed: None, arguments,
+                fixed: None, arguments, ..
             } if arguments == vec![(0, 0, 4)]));
         }
     }

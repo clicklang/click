@@ -53,7 +53,9 @@ int32 caller(struct arena* arena, struct region* first, struct region* second) {
     owns *first;
     owns *second;
     requires first->arena == arena;
+    requires pointer_origin(first->arena, arena);
     requires second->arena == arena;
+    requires pointer_origin(second->arena, arena);
     ensures result == 0;
 } by {
     mark m;

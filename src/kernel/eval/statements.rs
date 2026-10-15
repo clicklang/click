@@ -524,6 +524,8 @@ fn write_c_lvalue_paths_without_local_reference(
     initialization: bool,
     store_source: CStatementStoreSource,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+    // The checked relative domain already authenticates selected pointers;
+    // numeric permission rebasing below must not demand it a second time.
     let input_designation = lvalue
         .pointer_domain
         .is_none()
@@ -537,7 +539,7 @@ fn write_c_lvalue_paths_without_local_reference(
     .any(|condition| decide_with_facts(assumptions, &facts, condition) != Some(true))
     {
         return Ok(vec![CStatementExecutionPath::new(
-            CStatementOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
+            CStatementOutcome::UndefinedBehavior(CUndefinedBehavior::SubobjectAccess),
             facts,
             obligations,
         )]);

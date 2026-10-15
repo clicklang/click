@@ -65,6 +65,7 @@ int32 caller(struct arena* arena, struct region* a) {
     owns st: state(arena);
     owns *a;
     requires a->arena == arena;
+    requires pointer_origin(a->arena, arena);
     ensures result == 0;
 } by {
     let r = fold(reg(a), { start: a->start });

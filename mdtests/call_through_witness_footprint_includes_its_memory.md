@@ -39,6 +39,7 @@ int32 caller(struct node* p, struct node* q) {
 resource hop(node: struct node*) {
     owns *node;
     let next: struct node* where aligned(next, 8) and node->word == address(next) + (node->word & 1);
+    fact pointer_origin(node->word, next);
     owns next->value;
 }
 

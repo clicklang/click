@@ -15,7 +15,7 @@ resource pair(p: struct node*) {
  field model: Pair;
  match model { Pair::At(pid,qid) => {
  owns pid->left; owns qid->right; owns qid->tag;
- fact p == pid; fact pid->left == qid;
+ fact p == pid; fact pointer_origin(p, pid); fact pid->left == qid; fact pointer_origin(pid->left, qid);
  }, }
 }
 struct node *read_right(struct node *p) {

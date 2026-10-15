@@ -156,6 +156,7 @@ theorem maybe_constructor_injectivity(left: int32, right: int32) {
 
 theorem maybe_pointer_constructor_rules(left: int32*, right: int32*) {
     requires left == right;
+    requires pointer_origin(left, right);
     ensures Maybe<int32*>::Some(left) == Maybe<int32*>::Some(right) by simp;
 }
 

@@ -20,7 +20,7 @@ spec enum Parent { At(struct node*, Identity) }
 resource cell(p: struct node*) {
     field model: Identity;
     match model {
-        Identity::At(identity) => { owns p->tag; fact p == identity; },
+        Identity::At(identity) => { owns p->tag; fact p == identity; fact pointer_origin(identity, p); },
     }
 }
 resource parent_at(p: struct node*) {
@@ -28,7 +28,7 @@ resource parent_at(p: struct node*) {
     match model {
         Parent::At(identity, child_model) => {
             owns p->left;
-            fact p == identity;
+            fact p == identity; fact pointer_origin(identity, p);
             owns child: cell(p->left);
             fact child.model == child_model;
         },
@@ -42,6 +42,7 @@ void inspect(struct node* root) {
     loop {
         owns tree: parent_at(root);
         invariant parent == root;
+        invariant pointer_origin(parent, root);
         decreases 0;
         initialize by simp;
         preserve by {

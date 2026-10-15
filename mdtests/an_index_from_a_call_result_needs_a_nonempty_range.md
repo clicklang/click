@@ -33,5 +33,5 @@ int32 through(const struct S* s) {
 ```
 
 ```expect
-fail: missing resource fact
+fail: pointer arithmetic left the pointed-to object
 ```

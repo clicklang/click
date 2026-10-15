@@ -23,10 +23,12 @@ uint64 f(const uint8* input, const uint8* buf, int32 narrow, uint64 native, uint
  requires n == 1u32;
  requires 0 <= narrow;
  requires narrow <= 5536;
+ requires native <= 5536u64;
  requires native < 5552u64;
  requires native + 1u64 < 5552u64;
  requires input + narrow == input + native;
  requires buf == input + narrow;
+ requires pointer_origin(buf, input + native);
  views input[0u64..5552u64];
  ensures result == 0u64;
 } by {
@@ -35,6 +37,7 @@ uint64 f(const uint8* input, const uint8* buf, int32 narrow, uint64 native, uint
   decreases to_integer(n);
   invariant n == 1u32;
   invariant buf == input + narrow;
+  invariant pointer_origin(buf, input + native);
   initialize by simp;
   preserve by { step(); step(); step(); step(); step(); step(); step(); step(); }
  }

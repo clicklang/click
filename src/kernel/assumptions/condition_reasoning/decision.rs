@@ -29,12 +29,49 @@ impl PureFactContext {
         (left_value == right_value).then(|| left_source.into_iter().chain(right_source).collect())
     }
 
-    pub(super) fn decide_algebraic_equality(
+    pub(in crate::kernel) fn decide_algebraic_equality(
         &self,
         left: &AlgebraicTerm,
         right: &AlgebraicTerm,
     ) -> Option<bool> {
         if self.equality_graph.are_algebraic_equal(left, right) {
+            return Some(true);
+        }
+        if let (Some(left), Some(right)) = (
+            self.known_algebraic_constructor(left),
+            self.known_algebraic_constructor(right),
+        ) && left.algebraic_type == right.algebraic_type
+            && let (
+                AlgebraicTermNode::Constructor {
+                    variant: left_variant,
+                    fields: left_fields,
+                },
+                AlgebraicTermNode::Constructor {
+                    variant: right_variant,
+                    fields: right_fields,
+                },
+            ) = (&left.node, &right.node)
+            && left_variant == right_variant
+            && left_fields.len() == right_fields.len()
+            && left_fields.iter().zip(right_fields).all(|(left, right)| {
+                crate::instrumentation::record_deterministic_work(1);
+                match (left, right) {
+                    (AlgebraicValue::C(left), AlgebraicValue::C(right)) => {
+                        crate::kernel::reasoning::c_values_proven_equal_for_memory_resolution(
+                            left, right, self,
+                        )
+                    }
+                    (AlgebraicValue::Algebraic(left), AlgebraicValue::Algebraic(right)) => {
+                        self.equality_graph.are_algebraic_equal(left, right)
+                    }
+                    (AlgebraicValue::Integer(left), AlgebraicValue::Integer(right)) => {
+                        self.decide(&ConditionTerm::integer_equal(left.clone(), right.clone()))
+                            == Some(true)
+                    }
+                    _ => false,
+                }
+            })
+        {
             return Some(true);
         }
         self.exact_condition_value(&ConditionTerm::AlgebraicEqual(
@@ -498,6 +535,20 @@ impl PureFactContext {
                 }
                 if let ConditionTerm::Bitvector64Equal(left, right) = condition
                     && crate::kernel::memory_provenance::wide_loads_have_same_canonical_value(
+                        left, right, self,
+                    )
+                {
+                    return Some(true);
+                }
+                if let ConditionTerm::PointerEqual(left, right) = condition
+                    && matches!(
+                        (&left.block, &right.block),
+                        (
+                            PointerBlock::PureFunctionApplication(_),
+                            PointerBlock::PureFunctionApplication(_)
+                        )
+                    )
+                    && crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                         left, right, self,
                     )
                 {

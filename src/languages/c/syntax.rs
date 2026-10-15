@@ -5486,10 +5486,7 @@ impl C0Expression {
                 source,
                 ..
             } => crate::kernel::c_qualified_typed_load_with_source(
-                crate::kernel::c_selected_object_pointer(
-                    pointer.lower_expression(),
-                    field_type.to_kernel_type().byte_width(),
-                ),
+                pointer.lower_expression(),
                 field_type.to_kernel_type(),
                 *pointee_constant,
                 source.as_ref().and_then(|source| {

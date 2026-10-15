@@ -16,6 +16,7 @@ verifying "symbolic_write.c";
 
 void put(int32* p, int32* q, int32 i, int32 n) {
     requires p == q;
+    requires pointer_origin(q, p);
     requires 1 <= i;
     requires i < n;
     owns p[1..n];

@@ -1102,6 +1102,7 @@ fn pointers_proven_equal_for_memory_resolution_unmemoized(
     // The shared graph answers known equality first. Offset reasoning below
     // is a stronger, separately guarded judgment, not another alias walk.
     let candidate = assumptions.pointers_known_equal(left, right)
+        || pure_pointer_applications_have_equal_arguments(left, right, assumptions)
         || left.block == right.block
             && pointer_offsets_proven_equal_for_memory_resolution(
                 &left.offset,
@@ -1111,6 +1112,119 @@ fn pointers_proven_equal_for_memory_resolution_unmemoized(
     candidate
         && !assumptions
             .pointers_proven_disjoint_by_explicit_range_for_memory_resolution(left, right)
+}
+
+/// Query only the two selected applications. An address equation between
+/// arguments is insufficient: complete pointer origins must also agree.
+fn pure_pointer_applications_have_equal_arguments(
+    left: &Pointer,
+    right: &Pointer,
+    assumptions: &PureFactContext,
+) -> bool {
+    let (
+        PointerBlock::PureFunctionApplication(left_application),
+        PointerBlock::PureFunctionApplication(right_application),
+    ) = (&left.block, &right.block)
+    else {
+        return false;
+    };
+    if left_application.name() != right_application.name()
+        || left_application.arguments().len() != right_application.arguments().len()
+        || !pointer_offsets_proven_equal_for_memory_resolution(
+            &left.offset,
+            &right.offset,
+            assumptions,
+        )
+    {
+        return false;
+    }
+    left_application
+        .arguments()
+        .iter()
+        .zip(right_application.arguments())
+        .all(|(left, right)| {
+            crate::instrumentation::record_deterministic_work(1);
+            match (left, right) {
+                (PureFunctionArgument::Value(left), PureFunctionArgument::Value(right)) => {
+                    c_values_proven_equal_for_memory_resolution(left, right, assumptions)
+                }
+                (
+                    PureFunctionArgument::ArrayRef {
+                        memory: left_memory,
+                        pointer: left,
+                        element_type: left_type,
+                    },
+                    PureFunctionArgument::ArrayRef {
+                        memory: right_memory,
+                        pointer: right,
+                        element_type: right_type,
+                    },
+                ) => {
+                    left_type == right_type
+                        && (left_memory.same_storage_roots(right_memory)
+                            || crate::kernel::intern_c_memory(left_memory.clone()).read_identity()
+                                == crate::kernel::intern_c_memory(right_memory.clone())
+                                    .read_identity())
+                        && c_values_proven_equal_for_memory_resolution(left, right, assumptions)
+                }
+                _ => left == right,
+            }
+        })
+}
+
+#[cfg(test)]
+#[test]
+fn pure_pointer_origin_congruence_ignores_unrelated_promises() {
+    let value = |id| CPointerValue::new(Pointer::symbolic(Variable(id)), CType::Int32Pointer);
+    let origin_fact = |left: CPointerValue, right: CPointerValue| Proposition::Predicate {
+        name: POINTER_ORIGIN_PREDICATE_NAME.into(),
+        arguments: vec![
+            Term::CState(Box::new(CState::new())),
+            Term::CValue(CValue::Pointer(left)),
+            Term::CValue(CValue::Pointer(right)),
+        ],
+    };
+    let application = |pointer| Pointer {
+        block: PointerBlock::PureFunctionApplication(SharedPureApplication::intern(
+            "selected".into(),
+            vec![PureFunctionArgument::ArrayRef {
+                memory: CMemory::new(),
+                pointer: CValue::Pointer(pointer),
+                element_type: CType::Int32,
+            }],
+        )),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let (left, right) = (value(970_001), value(970_002));
+    let equation = Proposition::ConditionIs(
+        ConditionTerm::pointer_equal(left.pointer().clone(), right.pointer().clone()),
+        true,
+    );
+    let (left_application, right_application) =
+        (application(left.clone()), application(right.clone()));
+    let mut costs = Vec::new();
+    for count in [16, 64, 256, 1024] {
+        let mut assumptions = PureFactContext::new().assume_proposition(equation.clone());
+        for index in 0..count {
+            assumptions = assumptions
+                .assume_proposition(origin_fact(value(980_000 + index), value(990_000 + index)));
+        }
+        assert!(!pointers_proven_equal_for_memory_resolution(
+            &left_application,
+            &right_application,
+            &assumptions
+        ));
+        assumptions = assumptions.assume_proposition(origin_fact(left.clone(), right.clone()));
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert!(pointers_proven_equal_for_memory_resolution(
+                &left_application,
+                &right_application,
+                &assumptions
+            ));
+        });
+        costs.push(work);
+    }
+    assert!(costs.iter().all(|cost| *cost <= costs[0] + 64), "{costs:?}");
 }
 
 /// Equal exact observations of a native unsigned index and a signed index
@@ -2099,7 +2213,7 @@ pub(in crate::kernel) fn c_values_proven_equal_for_memory_resolution(
             // Stored-value matching requires the complete origin as well.
             left.c_type() == right.c_type()
                 && left.is_input_origin() == right.is_input_origin()
-                && left.origin() == right.origin()
+                && crate::kernel::functions::pointer_integer_origins_match(left, right, assumptions)
                 && bitvector_terms_proven_equal_for_memory_resolution(
                     left.bits(),
                     right.bits(),
@@ -2131,15 +2245,335 @@ pub(in crate::kernel) fn c_values_proven_equal_for_memory_resolution(
     }
 }
 
+#[cfg(test)]
+#[test]
+fn complete_read_origins_follow_framing_but_not_a_numeric_store_equation() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let slot = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(9001)),
+    };
+    let unrelated = Pointer {
+        block: "unrelated".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let memory = CMemory::new();
+    let read = Pointer::loaded_value(&intern_c_memory(memory.clone()), &slot);
+    let cached = memory.clone().materialize_named_cell(
+        slot.clone(),
+        CValue::typed_pointer(read.clone(), CType::Int32Pointer),
+    );
+    let cached_read = Pointer::loaded_value(&intern_c_memory(cached.clone()), &slot);
+    assert!(pointer_read_origins_match(
+        &read,
+        &cached_read,
+        &PureFactContext::new()
+    ));
+    let partial = cached.store(slot.offset_by_bytes(4), CValue::Int32(0u32.into()));
+    let partial_read = Pointer::loaded_value(&intern_c_memory(partial), &slot);
+    assert!(!pointer_read_origins_match(
+        &read,
+        &partial_read,
+        &PureFactContext::new()
+    ));
+    let CValue::Pointer(first) = memory.symbolic_pointer_load(&slot, 4, CType::Int32Pointer) else {
+        unreachable!()
+    };
+    let framed = memory.clone().store(
+        unrelated.clone(),
+        CValue::Int32(Bitvector32Term::Constant(7)),
+    );
+    let CValue::Pointer(second) = framed.symbolic_pointer_load(&slot, 4, CType::Int32Pointer)
+    else {
+        unreachable!()
+    };
+    let equal_addresses = |right: &CPointerValue| {
+        PureFactContext::new()
+            .assume_proposition(Proposition::CResourceSeparate {
+                left: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+                    slot.clone(),
+                    0u32.into(),
+                    1u32.into(),
+                    8,
+                ))),
+                right: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+                    unrelated.clone(),
+                    0u32.into(),
+                    1u32.into(),
+                    4,
+                ))),
+            })
+            .assume_condition(
+                ConditionTerm::pointer_equal(first.pointer().clone(), right.pointer().clone()),
+                true,
+            )
+    };
+    assert!(c_pointer_values_proven_equal(
+        &first,
+        &second,
+        &equal_addresses(&second)
+    ));
+    let native = Pointer::loaded_value(&intern_c_memory(memory.clone()), &slot);
+    assert!(!pointer_read_origins_match(
+        &native.offset_by_bytes(4),
+        &native,
+        &PureFactContext::new()
+    ));
+    assert!(!c_pointer_values_proven_equal(
+        &CPointerValue::new(native.offset_by_bytes(4), CType::Int32Pointer),
+        &CPointerValue::new(native, CType::Int32Pointer),
+        &PureFactContext::new(),
+    ));
+    let changed = memory.clone().store(
+        slot.clone(),
+        CValue::typed_pointer(Pointer::symbolic(Variable(9002)), CType::Int32Pointer),
+    );
+    let CValue::Pointer(third) = changed.symbolic_pointer_load(&slot, 4, CType::Int32Pointer)
+    else {
+        unreachable!()
+    };
+    assert!(!c_pointer_values_proven_equal(
+        &first,
+        &third,
+        &equal_addresses(&third)
+    ));
+    let upper_half = Pointer {
+        block: slot.block.clone(),
+        offset: PointerOffsetTerm::add(slot.offset.clone(), PointerOffsetTerm::Constant(4)),
+    };
+    let changed = memory.store(upper_half, CValue::Int32(Bitvector32Term::Constant(0)));
+    let CValue::Pointer(fourth) = changed.symbolic_pointer_load(&slot, 4, CType::Int32Pointer)
+    else {
+        unreachable!()
+    };
+    assert!(!c_pointer_values_proven_equal(
+        &first,
+        &fourth,
+        &equal_addresses(&fourth)
+    ));
+}
+
+fn pointer_origin_read_coordinate(
+    pointer: &Pointer,
+) -> Option<(Bitvector32Term, PointerOffsetTerm)> {
+    if let Some(read) = pointer.as_loaded_value() {
+        return Some((
+            Bitvector32Term::MemoryLoad(
+                read.defining_memory,
+                Box::new(read.defining_address),
+                LoadKind::Bits32,
+            ),
+            read.displacement,
+        ));
+    }
+    let mut base = pointer.clone();
+    let mut displacement = PointerOffsetTerm::Constant(0);
+    loop {
+        crate::instrumentation::record_deterministic_work(1);
+        if let Some((memory, address)) = crate::kernel::eval::latest_pointer_read_observation(&base)
+        {
+            return Some((
+                Bitvector32Term::MemoryLoad(memory, Box::new(address), LoadKind::Bits32),
+                displacement,
+            ));
+        }
+        let read = (|| {
+            let variable = match &base {
+                Pointer {
+                    block: PointerBlock::Symbolic(variable),
+                    offset: PointerOffsetTerm::Constant(0),
+                } => Some(variable),
+                _ => base.as_loaded().and_then(|(_, term, _)| match term {
+                    Bitvector32Term::Variable(variable) => Some(variable),
+                    _ => None,
+                }),
+            }?;
+            if crate::kernel::registered_load_bytes_for_variable(variable)
+                != Some(C_POINTER_BYTE_WIDTH)
+                || crate::kernel::eval::registered_load_kind_for_variable(variable)
+                    != Some(LoadKind::Bits32)
+            {
+                return None;
+            }
+            crate::kernel::registered_load_origin_term_for_variable(variable)
+        })()
+        .or_else(|| crate::kernel::equality_graph::logical_pointer_read_term(&base));
+        if let Some(read) = read {
+            return Some((read, displacement));
+        }
+        let PointerOffsetTerm::Add(prefix, advance) = base.offset else {
+            return None;
+        };
+        base.offset = *prefix;
+        displacement = PointerOffsetTerm::add(*advance, displacement);
+    }
+}
+
+pub(in crate::kernel) fn pointer_input_read_address(pointer: &Pointer) -> Option<Pointer> {
+    let (Bitvector32Term::MemoryLoad(_, address, _), _) = pointer_origin_read_coordinate(pointer)?
+    else {
+        return None;
+    };
+    Some(*address)
+}
+
+pub(in crate::kernel) fn pointer_read_origins_match(
+    left: &Pointer,
+    right: &Pointer,
+    assumptions: &PureFactContext,
+) -> bool {
+    let (Some((left, left_displacement)), Some((right, right_displacement))) = (
+        pointer_origin_read_coordinate(left),
+        pointer_origin_read_coordinate(right),
+    ) else {
+        return false;
+    };
+    let (
+        Bitvector32Term::MemoryLoad(left_memory, left_address, left_kind),
+        Bitvector32Term::MemoryLoad(right_memory, right_address, right_kind),
+    ) = (&left, &right)
+    else {
+        return false;
+    };
+    if left_kind != right_kind
+        || !pointer_offsets_proven_equal_for_memory_resolution(
+            &left_displacement,
+            &right_displacement,
+            assumptions,
+        )
+        || !pointers_proven_equal_for_memory_resolution(left_address, right_address, assumptions)
+    {
+        return false;
+    }
+    // Naming an exposed complete cell records a conservative Store edge.
+    // The integer history query below cannot pin a Bits64 load to that typed
+    // pointer value. Select only the exact full-pointer endpoint, and compare
+    // its retained origin with the other read's immutable definition.
+    let copied_origin = |memory: &SharedCMemory,
+                         address: &Pointer,
+                         other: &(Bitvector32Term, PointerOffsetTerm)| {
+        crate::kernel::api::with_extended_dag_bridging(|| {
+            let cell = crate::kernel::resource_tracker::cell_source::memory_dag_cell_source_with_hop_limit(
+                memory,
+                address,
+                C_POINTER_BYTE_WIDTH,
+                assumptions,
+                64,
+            )?;
+            if !cell.checks_walk_from(memory, address, C_POINTER_BYTE_WIDTH, assumptions) {
+                return None;
+            }
+            let crate::kernel::resource_tracker::cell_source::MemoryDagCell::Stored {
+                value: CValue::Pointer(stored),
+                ..
+            } = cell
+            else {
+                return None;
+            };
+            (pointer_origin_read_coordinate(stored.origin()).as_ref() == Some(other)).then_some(())
+        })
+        .is_some()
+    };
+    if copied_origin(
+        left_memory,
+        left_address,
+        &(right.clone(), right_displacement.clone()),
+    ) || copied_origin(
+        right_memory,
+        right_address,
+        &(left.clone(), left_displacement.clone()),
+    ) {
+        return true;
+    }
+    // Legacy pointer read terms use Bits32 for their symbolic index. Their
+    // complete stored value still occupies eight bytes: an upper-half write
+    // changes its origin even when a numerical equation relates the reads.
+    let history = crate::kernel::api::with_extended_dag_bridging(|| {
+        crate::kernel::api::recorded_load_history(
+            left_memory,
+            right_memory,
+            left_address,
+            LoadKind::Bits64,
+            assumptions,
+        )
+    });
+    !matches!(history, crate::kernel::api::LoadHistory::DifferentVersions)
+        && (matches!(history, crate::kernel::api::LoadHistory::OneVersion(_))
+            || memory_snapshots_match_for_resolution(
+                left_memory,
+                right_memory,
+                left_address,
+                assumptions,
+            ))
+}
+
 pub(in crate::kernel) fn c_pointer_values_proven_equal(
     left: &CPointerValue,
     right: &CPointerValue,
     assumptions: &PureFactContext,
 ) -> bool {
+    let null = Pointer::null();
+    if pointers_proven_equal_for_memory_resolution(left.pointer(), &null, assumptions)
+        && pointers_proven_equal_for_memory_resolution(right.pointer(), &null, assumptions)
+    {
+        // Null values designate no object, independently of how they were read.
+        return true;
+    }
+    if left.c_type() == right.c_type() && matches!(left.c_type(), CType::FunctionPointer(_)) {
+        return left.pointer() == right.pointer()
+            || assumptions.pointers_known_equal(left.pointer(), right.pointer());
+    }
     let geometry_matches = |left: &CPointerValue, right: &CPointerValue| {
-        left.origins_match(right)
-            && left.domain() == right.domain()
-            && left.extent() == right.extent()
+        let same_coordinate = |left: &Pointer, right: &Pointer| {
+            if left == right {
+                return true;
+            }
+            if pointer_origin_read_coordinate(left).is_some()
+                || pointer_origin_read_coordinate(right).is_some()
+            {
+                // Exact typed reads of unchanged complete storage establish
+                // their coordinate as well as their designation. This remains
+                // a complete-value query, never a raw-address graph union.
+                return pointer_read_origins_match(left, right, assumptions);
+            }
+            left.object_base() == right.object_base()
+                && pointers_proven_equal_for_memory_resolution(left, right, assumptions)
+        };
+        // Complete carriers keep extent and relative position coherent. Two
+        // spellings of one coordinate in the same retained extent may use
+        // different machine-observation terms for that relative position.
+        let shared_extent = left
+            .extent()
+            .zip(right.extent())
+            .is_some_and(|(left, right)| {
+                left.width == right.width && same_coordinate(&left.start, &right.start)
+            });
+        let domain_matches = match (left.domain(), right.domain()) {
+            (None, None) => true,
+            (Some(left), Some(right)) => {
+                left.bytes == right.bytes
+                    && (shared_extent
+                        || left.position == right.position
+                        || assumptions.decide(&ConditionTerm::integer_equal(
+                            left.position.as_ref().clone(),
+                            right.position.as_ref().clone(),
+                        )) == Some(true))
+            }
+            _ => false,
+        };
+        let extent_matches = match (left.extent(), right.extent()) {
+            (None, None) => true,
+            (Some(left), Some(right)) => {
+                left.width == right.width && same_coordinate(&left.start, &right.start)
+            }
+            _ => false,
+        };
+        ((!left.c_type().is_object_pointer() && !right.c_type().is_object_pointer())
+            || same_coordinate(left.origin(), right.origin()))
+            && domain_matches
+            && extent_matches
+            && left.local_reference().map(|reference| reference.id())
+                == right.local_reference().map(|reference| reference.id())
     };
     let same_geometry = geometry_matches(left, right)
         || assumptions
@@ -2149,7 +2583,13 @@ pub(in crate::kernel) fn c_pointer_values_proven_equal(
             .promised_pointer_input_origin(right)
             .is_some_and(|origin| geometry_matches(left, &origin));
     same_geometry
-        && pointers_proven_equal_for_memory_resolution(left.pointer(), right.pointer(), assumptions)
+        && (pointers_proven_equal_for_memory_resolution(
+            left.pointer(),
+            right.pointer(),
+            assumptions,
+        ) || (left.pointer() == left.origin()
+            && right.pointer() == right.origin()
+            && pointer_read_origins_match(left.origin(), right.origin(), assumptions)))
 }
 
 /// The only `local:` block a snapshot comparison with **no load pointer** may
@@ -4481,6 +4921,13 @@ impl StoreByteInterval {
 /// load means.
 fn materialized_cell_source(cell_pointer: &Pointer, value: &CValue) -> Option<SharedCMemory> {
     let bits = match value {
+        CValue::PointerInteger(carrier)
+            if carrier.is_input_origin()
+                && CPointerIntegerValue::from_input(carrier.bits().clone(), carrier.c_type())
+                    .is_some_and(|input| input.origin() == carrier.origin()) =>
+        {
+            carrier.bits()
+        }
         CValue::PointerInteger(_) => return None,
 
         CValue::Int8(bits)
@@ -4503,6 +4950,21 @@ fn materialized_cell_source(cell_pointer: &Pointer, value: &CValue) -> Option<Sh
         // one loaded from another cell, is a write and never qualifies.
         CValue::Pointer(value) => {
             let stored = value.pointer();
+            if value.domain().is_none()
+                && value.extent().is_none()
+                && value.local_reference().is_none()
+                && value.origin() == stored
+                && let Pointer {
+                    block: PointerBlock::Symbolic(variable),
+                    offset: PointerOffsetTerm::Constant(0),
+                } = stored
+                && let Some(Bitvector32Term::MemoryLoad(source, address, kind)) =
+                    crate::kernel::registered_load_origin_term_for_variable(variable)
+            {
+                return (address.as_ref() == cell_pointer
+                    && LoadKind::of_type(value.c_type()) == Some(kind))
+                .then_some(source);
+            }
             if stored.block != cell_pointer.block {
                 return None;
             }

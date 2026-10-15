@@ -21,6 +21,7 @@ uint8 read(const uint8* bytes, uint64 length, const uint8* cursor, uint64 index)
     requires index <= length;
     requires 4u64 <= length - index;
     requires cursor == bytes + index;
+    requires pointer_origin(cursor, bytes + index);
     views bytes[0..length];
     ensures result == old(cursor[0]);
 } by { execute(); simp(); }

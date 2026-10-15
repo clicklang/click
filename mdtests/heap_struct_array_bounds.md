@@ -28,5 +28,5 @@ int32 heap_struct_array_bounds() {
 ```
 
 ```expect
-fail: missing resource fact
+fail: pointer arithmetic left the pointed-to object
 ```

@@ -494,34 +494,51 @@ thread_local! {
 pub(in crate::kernel) struct SpecificationReadScope(());
 
 pub(in crate::kernel) fn recover_promised_pointer_input(
-    mut value: CValue,
+    value: CValue,
     assumptions: &PureFactContext,
 ) -> CValue {
-    if let CValue::Pointer(pointer) = &mut value
-        && pointer.pointer() != pointer.origin()
-        && assumptions.pointers_known_equal(pointer.pointer(), pointer.origin())
-    {
-        let origin = pointer.origin().clone();
-        pointer.replace_pointer(origin);
-    }
-    let CValue::Pointer(pointer) = &value else {
+    let CValue::Pointer(mut pointer) = value else {
         return value;
     };
-    let Some(origin) = assumptions.promised_pointer_input_origin(pointer) else {
-        return value;
-    };
-    if assumptions.decide(&ConditionTerm::pointer_equal(
-        pointer.pointer().clone(),
-        origin.pointer().clone(),
-    )) != Some(true)
-    {
-        return value;
+    let value_type = pointer.c_type();
+    let constant = pointer.pointee_constant();
+    let volatile = pointer.pointee_volatile();
+    let mut seen = BTreeMap::new();
+    let mut history: Vec<CPointerValue> = Vec::new();
+    loop {
+        if let Some(first) = seen.get(pointer.origin()).copied() {
+            // A prefix leading into a cycle does not belong to the cycle.
+            // In particular p -> q -> q must retain q's promised domain.
+            return CValue::Pointer(
+                history[first..]
+                    .iter()
+                    .min_by_key(|value| value.origin())
+                    .expect("nonempty origin cycle")
+                    .clone(),
+            );
+        }
+        seen.insert(pointer.origin().clone(), history.len());
+        history.push(pointer.clone());
+        let Some(origin) = assumptions.promised_pointer_input_origin(&pointer) else {
+            return CValue::Pointer(pointer);
+        };
+        if assumptions.decide(&ConditionTerm::pointer_equal(
+            pointer.pointer().clone(),
+            origin.pointer().clone(),
+        )) != Some(true)
+        {
+            return CValue::Pointer(pointer);
+        }
+        let address = pointer.pointer().clone();
+        pointer = origin
+            .with_type(value_type)
+            .with_pointee_constant(constant)
+            .with_pointee_volatile(volatile);
+        // An origin promise transports designation, not the C expression's
+        // address spelling. Read caches and numeric equations still name the
+        // value the original program evaluated.
+        pointer.replace_pointer(address);
     }
-    let result = origin
-        .with_type(pointer.c_type())
-        .with_pointee_constant(pointer.pointee_constant())
-        .with_pointee_volatile(pointer.pointee_volatile());
-    CValue::Pointer(result)
 }
 
 pub(super) fn specification_read_active() -> bool {
@@ -2341,7 +2358,7 @@ pub(in crate::kernel) fn read_c_lvalue_paths(
         .any(|condition| decide_with_facts(assumptions, &facts, condition) != Some(true))
     {
         return Ok(vec![CExpressionPath {
-            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
+            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::SubobjectAccess),
             facts,
             obligations,
         }]);
@@ -2417,21 +2434,18 @@ pub(in crate::kernel) fn read_c_lvalue_paths(
     }
     let input_domain_valid = specification_read_active()
         || match &outcome {
-            CLValueOutcome::LValue(lvalue) if lvalue.pointer_domain.is_none() => {
-                match (&lvalue.storage, &lvalue.pointer_origin) {
-                    (CLValueStorage::Memory { pointer }, Some(origin)) => {
-                        pointer_input_domain_allows(
-                            access_state.as_ref().unwrap_or(state),
-                            pointer,
-                            origin,
-                            lvalue.value_type.byte_width(),
-                            false,
-                            &assumptions_with_path_context(assumptions, &facts, &obligations),
-                        )
-                    }
-                    _ => true,
-                }
-            }
+            CLValueOutcome::LValue(lvalue) if lvalue.pointer_domain.is_some() => true,
+            CLValueOutcome::LValue(lvalue) => match (&lvalue.storage, &lvalue.pointer_origin) {
+                (CLValueStorage::Memory { pointer }, Some(origin)) => pointer_input_domain_allows(
+                    access_state.as_ref().unwrap_or(state),
+                    pointer,
+                    origin,
+                    lvalue.value_type.byte_width(),
+                    false,
+                    &assumptions_with_path_context(assumptions, &facts, &obligations),
+                ),
+                _ => true,
+            },
             _ => true,
         };
     let mut paths = read_c_lvalue_paths_without_ranges(

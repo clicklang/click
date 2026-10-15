@@ -2092,6 +2092,16 @@ pub(in crate::surface) fn function_contract_summary(
         ));
     }
     let recursion_measure = lowerer.function_recursion_measure(function_block, &context)?;
+    let (resources, _) = function_resource_summary(
+        function_block,
+        parsed_function,
+        spec_definitions,
+        _resource_environment,
+    )?;
+    for domain in crate::kernel::resource_input_pointer_domain_requirements(&resources) {
+        requires.push(domain);
+        contract_requirement_sources.push(None);
+    }
     Ok((
         requires,
         contract_requirement_sources,

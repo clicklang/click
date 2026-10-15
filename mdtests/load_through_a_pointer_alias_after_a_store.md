@@ -33,7 +33,7 @@ resource frame_at(c: struct node*) {
             owns c->up;
             owns id->word;
             fact id != 0;
-            fact c->up == id;
+            fact c->up == id; fact pointer_origin(c->up, id);
             fact id->word == value;
         },
     }

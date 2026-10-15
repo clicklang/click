@@ -522,18 +522,25 @@ fn describe_context_facts_labeled(
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
 ) -> String {
-    let total = pure_facts.len() + execution_pure_facts.len();
-    if total == 0 {
-        return "[]".to_string();
-    }
-    let item_limit = diagnostic_item_limit();
-    let mut entries = pure_facts
+    let visible = pure_facts
         .iter()
         .chain(
             execution_pure_facts
                 .fact_iter()
                 .map(ExecutionPureFact::proposition),
         )
+        .filter(|fact| {
+            !matches!(fact, Proposition::Predicate { name, .. }
+        if name == crate::kernel::INPUT_POINTER_DOMAIN_PREDICATE_NAME)
+        })
+        .collect::<Vec<_>>();
+    let total = visible.len();
+    if total == 0 {
+        return "[]".to_string();
+    }
+    let item_limit = diagnostic_item_limit();
+    let mut entries = visible
+        .into_iter()
         .take(item_limit)
         .map(|fact| {
             crate::surface::proof_diagnostics::render::render_proposition_labeled(fact, labels)
@@ -6464,6 +6471,12 @@ pub(super) fn describe_parameter_bitvector(
             }
             CExpression::Value(CValue::UInt32(value))
                 if value == term && parameter.c_type() == C0Type::UInt32 =>
+            {
+                return Some(parameter.name().to_string());
+            }
+            CExpression::Value(CValue::PointerInteger(value))
+                if value.bits() == term
+                    && parameter.c_type().to_kernel_type() == value.c_type() =>
             {
                 return Some(parameter.name().to_string());
             }

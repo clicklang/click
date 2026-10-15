@@ -28,5 +28,5 @@ struct node* forge(unsigned long word) {
 ```
 
 ```expect
-fail: integer-to-pointer cast requires a value that is a recorded pointer address or zero
+fail: integer-to-pointer cast requires a pointer_origin input promise
 ```

@@ -1,6 +1,7 @@
 # a call refusal names the cell an earlier argument reserved
 
-With `i < j` and no upper bound on `j`, the call reserves
+The declared readable extent permits forming both arguments while only the
+first four cells are owned. With `i < j` and `j < 8`, the call reserves
 `owns x[i..(i + 1)]` for `p` first, which carves the caller's `owns x[0..4]`
 into `x[0..i]` and `x[(i + 1)..4]`. Neither piece need cover `x[j..(j + 1)]`,
 since `j` may be 4 or more, so the owner `q` needs is missing and the call is
@@ -40,6 +41,8 @@ int32 caller(int32* x, int32 i, int32 j) {
     requires 0 <= i;
     requires i < 4;
     requires i < j;
+    requires j < 8;
+    requires viewable(x[0..8]);
     owns x[0..4];
     ensures result == 1 by auto;
 }

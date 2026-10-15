@@ -3860,7 +3860,7 @@ fn contains_local_aggregate_pipeline(statement: &CStatement, local: &str) -> [bo
                 {
                     found[1] = true;
                 }
-                if let CExpression::PointerOffsetBytes { pointer, bytes } = pointer
+                if let CExpression::PointerOffsetBytes { pointer, bytes, .. } = pointer
                     && matches!(pointer.as_ref(), CExpression::Variable(name) if name == local)
                 {
                     if *bytes == 0 && *value_type == CType::Int32Pointer {

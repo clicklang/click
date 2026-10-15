@@ -17,7 +17,7 @@ verifying "link.c";
 resource links(p: struct node*, next: struct node*) {
     field model: int32;
     owns p->tag; owns p->right; owns p->left;
-    fact p->right == next;
+    fact p->right == next; fact pointer_origin(p->right, next);
     fact p->left == 0;
 }
 void link(struct node* p, struct node* q) {

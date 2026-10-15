@@ -28,6 +28,7 @@ uint64 measure(const char* src) {
 
 uint64 outer(const char* src) {
     requires cstr_readable(src);
+    views src[0..1];
     ensures src[result] == '\0';
 } by {
     execute();

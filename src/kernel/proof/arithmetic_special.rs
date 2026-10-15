@@ -1369,8 +1369,30 @@ fn pointer_translation(
     let Some((goal_left, goal_right, goal_blocks)) = pointer_sides(goal) else {
         return false;
     };
-    let Some((premise_left, premise_right, premise_blocks)) = pointer_sides(relation) else {
-        return false;
+    if pointer_sides(relation).is_some()
+        && goal_blocks.is_none_or(|(left, right)| pointer_block_equal(left, right))
+        && pointer_translation(
+            &Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+            bound_propositions,
+            goal,
+        )
+    {
+        return true;
+    }
+    let zero = PointerOffsetTerm::Constant(0);
+    let (premise_left, premise_right, premise_blocks) = match pointer_sides(relation) {
+        Some(sides) => sides,
+        None if matches!(
+            relation,
+            Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+        ) && goal_blocks.is_none_or(|(left, right)| pointer_block_equal(left, right)) =>
+        {
+            // A retained complete pointer can make the cited entry relation
+            // reflexive. Check the exact offset identity against zero instead;
+            // scalar bounds must still justify every machine addition.
+            (&zero, &zero, goal_blocks)
+        }
+        None => return false,
     };
     if !charge_pointer_offset(goal_left)
         || !charge_pointer_offset(goal_right)
@@ -1457,6 +1479,12 @@ fn pointer_translation(
         };
         xmin + ymin >= SIGNED_MIN && xmax + ymax <= SIGNED_MAX
     };
+    let difference_is_defined = |x: &Bitvector32Term, y: &Bitvector32Term| {
+        let (Some((xmin, xmax)), Some((ymin, ymax))) = (atom_range(x), atom_range(y)) else {
+            return false;
+        };
+        xmin - ymax >= SIGNED_MIN && xmax - ymin <= SIGNED_MAX
+    };
     let mut terms = BTreeMap::<PointerOffsetTerm, i128>::new();
     let mut constant = 0i128;
     for (offset, sign) in [
@@ -1497,6 +1525,16 @@ fn pointer_translation(
                 {
                     pending.push(OffsetPart::Scaled(left, width));
                     pending.push(OffsetPart::Scaled(right, width));
+                    continue;
+                }
+                OffsetPart::Scaled(Bitvector32Term::Subtract(left, right), width)
+                    if difference_is_defined(left, right) =>
+                {
+                    let Some(negative_width) = width.checked_neg() else {
+                        return false;
+                    };
+                    pending.push(OffsetPart::Scaled(left, width));
+                    pending.push(OffsetPart::Scaled(right, negative_width));
                     continue;
                 }
                 OffsetPart::Scaled(value, width) => PointerOffsetTerm::Int32Scaled {
@@ -3151,6 +3189,103 @@ mod tests {
             Err(SpecialArithmeticCheckError::NodeResultMismatch(0))
                 | Err(SpecialArithmeticCheckError::InvalidPremise(_))
         ));
+    }
+
+    #[test]
+    fn translation_of_a_reflexive_entry_still_checks_overflow_and_blocks() {
+        let index = Bitvector32Term::Variable(crate::kernel::Variable(81));
+        let base = PointerOffsetTerm::Variable(crate::kernel::Variable(82));
+        let left = add(
+            add(base.clone(), scaled(index.clone())),
+            PointerOffsetTerm::Constant(4),
+        );
+        let right = add(
+            base,
+            scaled(Bitvector32Term::add(
+                index.clone(),
+                Bitvector32Term::Constant(1),
+            )),
+        );
+        let relation = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let bound = Proposition::ConditionIs(
+            ConditionTerm::signed_less_than(index, Bitvector32Term::Constant(i32::MAX as u32)),
+            true,
+        );
+        let goal = pointer_eq(left.clone(), right.clone());
+        let certificate = SpecialArithmeticCertificate {
+            nodes: vec![SpecialArithmeticNode::PointerTranslation {
+                relation: 0,
+                bounds: vec![1],
+                result: goal.clone(),
+            }],
+            conclusion: 0,
+        };
+        certificate
+            .check(&goal, &[relation.clone(), bound.clone()])
+            .unwrap();
+        let unbounded = SpecialArithmeticCertificate {
+            nodes: vec![SpecialArithmeticNode::PointerTranslation {
+                relation: 0,
+                bounds: vec![],
+                result: goal.clone(),
+            }],
+            conclusion: 0,
+        };
+        assert!(
+            unbounded
+                .check(&goal, std::slice::from_ref(&relation))
+                .is_err()
+        );
+        let cross_object = Proposition::ConditionIs(
+            ConditionTerm::PointerEqual(
+                Box::new(Pointer {
+                    block: "left".into(),
+                    offset: left,
+                }),
+                Box::new(Pointer {
+                    block: "right".into(),
+                    offset: right,
+                }),
+            ),
+            true,
+        );
+        let cross_certificate = SpecialArithmeticCertificate {
+            nodes: vec![SpecialArithmeticNode::PointerTranslation {
+                relation: 0,
+                bounds: vec![1],
+                result: cross_object.clone(),
+            }],
+            conclusion: 0,
+        };
+        assert!(
+            cross_certificate
+                .check(&cross_object, &[relation, bound])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn pointer_subtraction_translation_requires_nonwrapping_operands() {
+        let index = Bitvector32Term::Variable(crate::kernel::Variable(83));
+        let base = PointerOffsetTerm::Variable(crate::kernel::Variable(84));
+        let difference = Bitvector32Term::Subtract(
+            Box::new(index.clone()),
+            Box::new(Bitvector32Term::Constant(1)),
+        );
+        let goal = pointer_eq(
+            add(base.clone(), scaled(index.clone())),
+            add(
+                add(base, scaled(difference)),
+                PointerOffsetTerm::Constant(4),
+            ),
+        );
+        let relation = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let bound = Proposition::ConditionIs(
+            ConditionTerm::signed_greater_than(index, Bitvector32Term::Constant(i32::MIN as u32)),
+            true,
+        );
+        assert!(pointer_translation(&relation, &[&bound], &goal));
+        assert!(!pointer_translation(&relation, &[], &goal));
     }
 
     #[test]

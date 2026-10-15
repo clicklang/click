@@ -931,14 +931,24 @@ fn materialized_load_is_unchanged(
         // its load variable) by the pointee width, as the kernel's own
         // symbolic pointer loads do.
         CValue::Pointer(pointer_value) => {
-            let Pointer {
-                offset: PointerOffsetTerm::Int32Scaled { value: bits, .. },
-                ..
-            } = pointer_value.pointer()
-            else {
+            if pointer_value.domain().is_some()
+                || pointer_value.extent().is_some()
+                || pointer_value.local_reference().is_some()
+                || pointer_value.origin() != pointer_value.pointer()
+            {
                 return false;
-            };
-            load_of(bits)
+            }
+            crate::kernel::equality_graph::logical_pointer_read_term(pointer_value.pointer())
+                .or_else(|| {
+                    let Pointer {
+                        offset: PointerOffsetTerm::Int32Scaled { value: bits, .. },
+                        ..
+                    } = pointer_value.pointer()
+                    else {
+                        return None;
+                    };
+                    load_of(bits)
+                })
         }
         _ => return false,
     };
@@ -1648,6 +1658,7 @@ fn function_claim_holds_on_prepared_path(
 
                 proof.specification.requires().iter().all(|requirement| {
                     assumptions.proves_exact(requirement)
+                        || assumptions.proves_typed_pointer_read_equality(requirement)
                         || assumptions.states_required_goal(requirement)
                         || (matches!(requirement, Proposition::CMemoryLoadable { .. })
                             && load_obligation_holds(requirement))
@@ -2762,9 +2773,35 @@ pub(crate) fn c_verified_function_contract_claims_with_checked_propositions(
                     let destination = crate::kernel::functions::pointer_store_effects::destination(
                         effect, &arguments,
                     )?;
-                    let value =
-                        crate::kernel::functions::pointer_store_effects::value(effect, &arguments)?;
-                    if state.memory().known_value(&destination).as_ref() != Some(&value) {
+                    let value = crate::kernel::functions::pointer_store_effects::value(
+                        effect,
+                        &path.entry_state,
+                        &arguments,
+                        &path.assumptions,
+                    )?;
+                    let final_value = match &effect.value {
+                        CPointerResultDomain::Loaded {
+                            argument,
+                            offset,
+                            value_type,
+                        } if *argument == effect.destination
+                            && *offset == effect.offset
+                            && *value_type == effect.value_type =>
+                        {
+                            crate::kernel::functions::pointer_store_effects::value(
+                                effect,
+                                state,
+                                &arguments,
+                                &path.assumptions,
+                            )
+                        }
+                        _ => state.memory().known_value(&destination),
+                    }?;
+                    if !c_values_proven_equal_for_memory_resolution(
+                        &final_value,
+                        &value,
+                        &path.assumptions,
+                    ) {
                         return None;
                     }
                 }
@@ -2941,7 +2978,24 @@ fn infer_return_pointer_origin(
         match argument {
             Some((index, 0)) => CPointerResultDomain::Argument(index),
             Some((index, offset)) => CPointerResultDomain::ArgumentOffset(index, offset),
-            None => CPointerResultDomain::Unknown,
+            None => match &pointer.origin().block {
+                PointerBlock::StringLiteral { bytes, .. } => {
+                    let PointerOffsetTerm::Constant(position) = pointer.origin().offset else {
+                        return CPointerResultDomain::Unknown;
+                    };
+                    let Ok(bytes) = u32::try_from(bytes.len()) else {
+                        return CPointerResultDomain::Unknown;
+                    };
+                    CPointerResultDomain::Selected {
+                        domain: CPointerDomain {
+                            bytes,
+                            position: IntegerTerm::constant_i64(position).into(),
+                        },
+                        argument: None,
+                    }
+                }
+                _ => CPointerResultDomain::Unknown,
+            },
         }
     }
 }

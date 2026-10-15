@@ -7,9 +7,11 @@ int caller(int *p) { return use_view(&view, p); }
 ```
 
 ```click
-contract const int *View(int *p) { ensures result == p; }
+contract const int *View(int *p) { ensures result == p;
+    ensures pointer_origin(result, p); }
 verifying "main.c";
-const int *view(int *p) { ensures result == p; } by { execute(); simp(); }
+const int *view(int *p) { ensures result == p;
+    ensures pointer_origin(result, p); } by { execute(); simp(); }
 int use_view(const int *(*f)(int *), int *p) {
     requires View(f);
     views p[0..1];
