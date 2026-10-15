@@ -5478,6 +5478,10 @@ fn c0_syntax_retains_struct_pointee_types_across_chained_fields() {
     else {
         panic!("the terminal scalar field should retain its resolved type")
     };
+    // `value` designates its own four bytes of the loaded `child` pointer.
+    let syntax::C0Expression::Subobject { pointer, width: 4 } = pointer.as_ref() else {
+        panic!("the terminal field should designate its member")
+    };
     assert!(matches!(
         pointer.as_ref(),
         syntax::C0Expression::Field {
@@ -6653,14 +6657,17 @@ fn c0_syntax_parses_chained_field_store_targets() {
             if matches!(
                 first.as_ref(),
                 syntax::C0Statement::Store {
-                    pointer: syntax::C0Expression::Field {
+                    pointer: syntax::C0Expression::Subobject { pointer, width: 4 },
+                    value_type: Some(syntax::C0Type::Int32),
+                    ..
+                } if matches!(
+                    pointer.as_ref(),
+                    syntax::C0Expression::Field {
                         field_type: syntax::C0Type::Int32Pointer,
                         field_struct_name: Some(name),
                         ..
-                    },
-                    value_type: Some(syntax::C0Type::Int32),
-                    ..
-                } if name == "leaf"
+                    } if name == "leaf"
+                )
             )
     ));
 }
