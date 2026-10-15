@@ -229,3 +229,11 @@ The wrappers accept the checked writable callback directly or through the
 borrowed table field. This is the first insertion path that invokes a writable
 metadata callback. Other rotation shapes, color flips, arbitrary ancestor
 contexts and writable erase integration remain unfinished.
+
+
+`rbtree_size_insert_mirrored_rotation.click` checks the mirrored right-right
+three-node root case through the same three entry points, using
+`RotateTreeLeft` for the writable callback. The returned model has the demoted
+grandparent on the left and the inserted node on the right, with recursively
+valid cached sizes. Both single-rotation directions are covered; double
+rotations, color flips and arbitrary ancestor contexts remain.

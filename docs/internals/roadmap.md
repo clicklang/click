@@ -86,10 +86,10 @@ Click verifies function bodies copied byte for byte from Linux v6.8.12 (commit
   dispatch connects the copy, rotation and propagation interfaces to the
   generated size callbacks.
 - Sized insertion covers the no-parent root case, the immediate black-parent
-  exit, and a left-left three-node root rotation through both augmented
-  wrappers. The rotation checks an indirect writable callback against
-  `RotateTreeRight` and returns the exact repaired tree shape with valid cached
-  sizes. General sized insertion and writable erase integration remain.
+  exit, and both mirrored three-node single rotations at the root through
+  both augmented wrappers. The rotations check indirect writable callbacks
+  against `RotateTreeRight` or `RotateTreeLeft` and return the exact repaired
+  tree shape with valid cached sizes. General sized insertion and writable erase integration remain.
 
 The proofs establish memory safety and absence of undefined behavior,
 termination, red-black validity with a black root, parent-pointer consistency,

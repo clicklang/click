@@ -1597,3 +1597,10 @@ writable callback through the proved `RotateTreeRight` contract and returns the
 expected black-root/two-red-leaf shape with recursively valid cached sizes.
 The original insertion C is unchanged. Other rotation shapes, color flips,
 arbitrary ancestor contexts and writable erase integration remain.
+
+
+The mirrored right-right root case and both wrappers also verify in
+`rbtree_size_insert_mirrored_rotation.click`, using `RotateTreeLeft` for the
+writable callback. All 17 expansion sites in each single-rotation sidecar
+pass. Double rotations, color flips, arbitrary ancestor contexts and writable
+erase integration remain.
