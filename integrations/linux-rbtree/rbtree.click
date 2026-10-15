@@ -1,1 +1,1 @@
-verifying "lib/rbtree.c";
+verifying "inputs/lib/rbtree.c";

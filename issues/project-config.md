@@ -214,8 +214,15 @@ C++ items were chosen explicitly; the rest are the recommended defaults.
   project with an `adler2` crate unit and two client units. No per-sidecar
   Rust import config remains in the repository; the loaders remain for the
   library-level tests until the command line refuses them.
-- **Remaining:** migrating C and C++ configs, then refusing per-sidecar configs
-  in the command line and deleting their loaders; the module root still comes
+- **C migration.** `examples/label-build-flags` (with the own-project guide),
+  the cross-host fixture and the Linux rbtree integration are projects; the
+  rbtree unit reads the extracted closure in place as its `inputs` root, and
+  each re-locked artifact is byte-identical to its predecessor. The pinned
+  zlib fixture keeps its per-sidecar configs: its `zconf.h` includes
+  `<stdarg.h>` and `<sys/types.h>`, which Click's modeled headers refuse, so
+  current Click cannot re-lock it.
+- **Remaining:** migrating zlib and the C++ configs, then refusing per-sidecar
+  configs in the command line and deleting their loaders; the module root still comes
   from imports rather than the project file; the shared lock envelope; the
   optimization level and flag policy.
 

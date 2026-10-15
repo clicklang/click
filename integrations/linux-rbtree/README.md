@@ -19,23 +19,24 @@ a whole kernel tree.
   the tag and commit, the compiler and `cc1` hashes, the preprocessing
   argument vector and environment, the size and SHA-256 of the preprocessed
   output, and the size and SHA-256 of every closure file.
-- [`rbtree.click`](rbtree.click) and
-  [`rbtree.click.import.json`](rbtree.click.import.json): the sidecar and the
-  compiler-import configuration for the recorded invocation. The sidecar has
-  no contracts yet.
-- [`rbtree.click.import.lock.json`](rbtree.click.import.lock.json) and
-  [`rbtree.i`](rbtree.i): the lock and the preprocessed artifact that
-  `click import lock` produced. The artifact is the recorded 637,604 bytes.
+- [`rbtree.click`](rbtree.click) and [`click.project.json`](click.project.json):
+  the sidecar and the project, whose `linux` C unit is the recorded
+  invocation with `inputs/` as its root. The sidecar has no contracts yet.
+- [`click.project.lock.json`](click.project.lock.json) and
+  [`.click/linux/lib/rbtree.c.i`](.click/linux/lib/rbtree.c.i): the lock and
+  the preprocessed artifact that `click import lock` produced. The artifact is
+  the recorded 637,604 bytes.
 - [`make-closure.py`](make-closure.py): rebuilds the archive from a configured
   tree.
 
-The configuration's working directory is `inputs/`, which is not checked in.
-To load or refresh the import, extract the closure there first:
+The unit's root is `inputs/`, which is not checked in, and the sidecar
+verifies `inputs/lib/rbtree.c`. To load or refresh the import, extract the
+closure there first:
 
 ```sh
 mkdir -p integrations/linux-rbtree/inputs
 tar -xzf integrations/linux-rbtree/input-closure.tar.gz -C integrations/linux-rbtree/inputs
-click import lock integrations/linux-rbtree/rbtree.click
+click import lock integrations/linux-rbtree
 ```
 
 Refreshing needs the recorded compiler; loading does not.
@@ -53,15 +54,15 @@ build.
 
 `linux_rbtree_closure_matches_its_provenance` runs everywhere. It checks the
 archive hash, every member's size and hash, that no recorded file is missing
-and no unrecorded file is present, and that the import configuration carries
+and no unrecorded file is present, and that the project's unit carries
 every recorded argument except `-E` and the source operand, which the
-importer supplies. The configuration selects the `linux-6.8-x86_64-kbuild`
+importer supplies. The unit selects the `linux-6.8-x86_64-kbuild`
 option profile, which accepts every recorded option; the classification and
 reasons are in [`docs/reference/cli/import.md`](../../docs/reference/cli/import.md).
 The options are not removed to make the import fit.
 
 `linux_rbtree_locked_import_loads_offline` runs everywhere. It extracts the
-closure into `inputs/` beside the committed configuration, lock, and
+closure into `inputs/` beside the committed project file, lock, and
 artifact, loads them without the compiler, and parses the projected unit with
 the optimizer-promise attributes refused. It pins the 26 functions the
 dependency-closure projection defines, and checks that a changed header
@@ -75,7 +76,7 @@ declarations of 2,575.
 
 `linux_rbtree_pinned_translation_unit_locks_and_reproduces_its_frontier` needs
 the recorded compiler, identified by the SHA-256 of the driver and of `cc1`.
-With it, `click import lock` locks the configuration in a fresh copy; the
+With it, `click import lock` locks the project in a fresh copy; the
 artifact is the recorded output and the lock agrees with the committed one in
 everything but the paths of the preparing checkout. The recorded
 preprocessing, run directly in the extracted closure, also yields exactly the
@@ -87,7 +88,7 @@ the closure, prints `linux-rbtree: NOT CHECKED` with the reason, and passes:
 a different GCC is not a defect in the tree under test. Set
 `CLICK_LINUX_RBTREE_REQUIRE_TOOLCHAIN=1` to make that case fail instead.
 
-The configuration omits `HOME` from the recorded environment, and the
+The unit omits `HOME` from the recorded environment, and the
 importer does not allowlist it, because preprocessing does not read it: the
 compiler driver and `cc1` do not name it, a traced run opens nothing under
 it, and the output is byte-identical with it unset or set elsewhere. The
