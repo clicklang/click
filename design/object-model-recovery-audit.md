@@ -1053,9 +1053,10 @@ return-outcome proposition scopes. These scopes lack the frontier/outcome
 carrier that already retained the spellings for outer proofs. A later rewrite
 can otherwise repeat the C expression's memory reasoning.
 
-The existing persistent proof-local index now carries those spellings. Rewrites
-substitute proof binders before indexed lookup and still require an available
-checked fact. Instantiation freezes its evaluated argument so historical
+A dedicated persistent proof-local cache carries normalized spellings, separate
+from authored forms used for certificate printing. Rewrites keep authored lookup
+precedence and presentation, substitute binders only for internal lookup, and
+still require an available checked fact. Instantiation freezes its evaluated argument so historical
 expressions cannot evaluate it at a different point. Unsupported spellings
 remain optional, and new goals still lower against their actual state. No
 resource, pointer-origin or object authority is introduced.
@@ -1067,3 +1068,15 @@ All 107 selected logical/expansion/index controls pass on current upstream.
 The normal Markdown audit is running separately. The recovery return-frontier
 repair is checkpointed at `3712a8fb2`; the original vector remains incomplete,
 and the last archive audit remains 42/52.
+
+CI caught a printable-certificate regression in the original augmented-tree
+`compute_size_restores_subtree_size` proof. Normalized internal values had
+leaked into authored source selection and rewritten goal presentation. The
+lookup cache is now separate, and rewrites preserve their original written
+equality when presenting the successor. A third regression pins the authored
+proof-local name in that successor; the first two also pin that authored
+source-index storage is unchanged. All 46 normal fixed-state recovery controls
+pass with the gate stack setting (16 nightly tests skipped), and the exact
+upstream sidecar that failed CI now verifies unchanged. The initial broader
+recovery run omitted the gate stack setting and overflowed a deep case test;
+its gate-setting rerun passes. Broader upstream checking continues separately.
