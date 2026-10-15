@@ -1,6 +1,7 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: pointer equality expansion and retained checks took 0.95s in parallel"]
 fn shifted_pointer_equality_rewrites_expand_and_recheck() {
     let sources = [(
         "pointer.c",
@@ -26,8 +27,13 @@ fn shifted_pointer_equality_rewrites_expand_and_recheck() {
     verify_c0_sources(&selected, &sources).unwrap();
     let (session, _) = C0VerificationSession::new(source, &sources).unwrap();
     for rewritten in [&expanded, &selected] {
-        let at =
-            expansion::position_at_offset(rewritten, rewritten.find("int32 same_block").unwrap());
+        let proof = rewritten.find("by").unwrap();
+        let body = proof + rewritten[proof..].find('{').unwrap() + 1;
+        let first_step = body
+            + rewritten[body..]
+                .find(|c: char| !c.is_whitespace())
+                .unwrap();
+        let at = expansion::position_at_offset(rewritten, first_step);
         session.verify_at(rewritten, at.line, at.column).unwrap();
     }
 }

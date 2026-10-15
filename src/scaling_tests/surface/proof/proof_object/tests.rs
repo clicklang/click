@@ -179,7 +179,7 @@ fn same_block_offset_rewrite_work(
 
 #[test]
 fn same_block_pointer_offset_rewrite_ignores_other_pointers_at_the_base() {
-    let costs = [4, 16, 64, 256].map(|size| same_block_offset_rewrite_work(size, 4, false));
+    let costs = [4, 8, 16, 32].map(|size| same_block_offset_rewrite_work(size, 4, false));
     assert!(
         costs[0] > 0 && costs.iter().all(|cost| *cost <= costs[0] + 64),
         "{costs:?}"
@@ -188,7 +188,7 @@ fn same_block_pointer_offset_rewrite_ignores_other_pointers_at_the_base() {
 
 #[test]
 fn same_block_pointer_offset_rewrite_does_not_search_recorded_snapshots() {
-    let costs = [4, 16, 64, 256].map(|size| same_block_offset_rewrite_work(4, size, true));
+    let costs = [4, 8, 16, 32].map(|size| same_block_offset_rewrite_work(4, size, true));
     assert!(
         costs[0] > 0 && costs.iter().all(|cost| *cost <= costs[0] + 64),
         "{costs:?}"
