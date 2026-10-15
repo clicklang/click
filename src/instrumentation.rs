@@ -1935,10 +1935,6 @@ pub enum HiddenPrerequisiteRoute {
     ContextualCondition,
     /// The same, under the explicit policy.
     ExplicitCondition,
-    /// A condition the kernel's own evaluation decided with the general
-    /// condition decision after the difference graph left it open
-    /// (`issues/difference-logic.md`). The rule names the evaluation site.
-    KernelCondition,
     /// A premise a simple tactic other than `step` proved by searching the
     /// proof context after the exact lookup missed
     /// (`issues/simplify-step.md`, step 5). The rule names the tactic site.
@@ -1959,14 +1955,10 @@ thread_local! {
 }
 
 pub(crate) fn record_hidden_prerequisite(route: HiddenPrerequisiteRoute, rule: &'static str) {
-    // A kernel condition decision is evaluation and a tactic search is not a
-    // statement's: each counts in the corpus census, not in a step's
-    // planning count.
+    // A tactic search is not a statement's: it counts in the corpus census,
+    // not in a step's planning count.
     #[cfg(test)]
-    if !matches!(
-        route,
-        HiddenPrerequisiteRoute::KernelCondition | HiddenPrerequisiteRoute::TacticSearch
-    ) {
+    if !matches!(route, HiddenPrerequisiteRoute::TacticSearch) {
         HIDDEN_PREREQUISITES_ON_THREAD.with(|count| count.set(count.get() + 1));
     }
     *HIDDEN_PREREQUISITE_CENSUS

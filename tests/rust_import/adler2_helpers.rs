@@ -3680,8 +3680,10 @@ fn adler_remaining_count_byte_observations_reject_wrong_positions_and_missing_gu
             "ensures to_integer((int32)(bytes + (total - remaining - 4u64))[lane])",
             "ensures to_integer((int32)(bytes + (total - remaining - 3u64))[lane])",
         ),
+        // `0 <= (int32)(uint32)remaining` is not among these: it follows
+        // from the two guards below, which bound `remaining` by 22204, and
+        // the difference graph reads it from them.
         (" requires remaining <= total;", ""),
-        (" requires 0 <= (int32)(uint32)remaining;", ""),
         (" requires total <= 22204u64;", ""),
     ] {
         let changed = COUNT_BRIDGE.replacen(before, after, 1);

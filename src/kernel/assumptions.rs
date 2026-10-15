@@ -5326,7 +5326,8 @@ impl PureFactContext {
             return graph
                 .decide(condition)
                 .or_else(|| canonical().and_then(|canonical| graph.decide(&canonical)))
-                .or_else(pointer_disequality);
+                .or_else(pointer_disequality)
+                .or_else(|| aliased_operands(graph, condition));
         }
         let mut graph = graph.clone();
         for (fact, value) in extra {
@@ -5336,6 +5337,7 @@ impl PureFactContext {
             .decide(condition)
             .or_else(|| canonical().and_then(|canonical| graph.decide(&canonical)))
             .or_else(pointer_disequality)
+            .or_else(|| aliased_operands(&graph, condition))
     }
 
     pub(crate) fn proves_exact(&self, proposition: &Proposition) -> bool {
@@ -8428,4 +8430,90 @@ mod dynamic_current_load_tests {
         });
         assert!(current_memory_loads_in_term(&term, &memory).is_err());
     }
+}
+
+/// An arithmetic overflow question whose two operands are load variables
+/// reading one cell, as `a -= a` reads `this->size` and `other.size` when
+/// `other` is `*this`: the operands are one value, so the question is asked
+/// of that value with itself. Two registry lookups, one pointer decision in
+/// the graph, and exact cell lookups; nothing is searched.
+fn aliased_operands(
+    graph: &super::difference_graph::DifferenceGraph,
+    condition: &ConditionTerm,
+) -> Option<bool> {
+    use ConditionTerm as C;
+    let (a, b) = match condition {
+        C::Bitvector32SignedAddOverflows(a, b)
+        | C::Bitvector32SignedSubtractOverflows(a, b)
+        | C::Bitvector32SignedMultiplyOverflows(a, b)
+        | C::Bitvector64SignedAddOverflows(a, b)
+        | C::Bitvector64SignedSubtractOverflows(a, b)
+        | C::Bitvector64SignedMultiplyOverflows(a, b) => (a, b),
+        _ => return None,
+    };
+    let (Bitvector32Term::Variable(left), Bitvector32Term::Variable(right)) =
+        (a.as_ref(), b.as_ref())
+    else {
+        return None;
+    };
+    if left == right
+        || !crate::kernel::eval::is_load_variable(left)
+        || !crate::kernel::eval::is_load_variable(right)
+        || crate::kernel::registered_load_kind_for_variable(left)?
+            != crate::kernel::registered_load_kind_for_variable(right)?
+    {
+        return None;
+    }
+    let (left_memory, left_pointer) = crate::kernel::registered_load_for_variable(left)?;
+    let (right_memory, right_pointer) = crate::kernel::registered_load_for_variable(right)?;
+    let same_cell = graph.decide(&C::PointerEqual(
+        Box::new(left_pointer.clone()),
+        Box::new(right_pointer.clone()),
+    )) == Some(true)
+        || (left_pointer.block == right_pointer.block
+            && graph.decide(&C::PointerOffsetEqual(
+                Box::new(left_pointer.offset.clone()),
+                Box::new(right_pointer.offset.clone()),
+            )) == Some(true));
+    // The two snapshots agree at the cell when they are one snapshot, or
+    // when one materialized the other's read there (`this->size` read
+    // first, then `other.size` from a snapshot that records it): an exact
+    // cell lookup each way.
+    let holds = |memory: &SharedCMemory, pointer: &Pointer, variable: &Variable| {
+        matches!(
+            memory.known_value(pointer),
+            Some(CValue::Int32(Bitvector32Term::Variable(held))
+                | CValue::Int64(Bitvector32Term::Variable(held))
+                | CValue::UInt64(Bitvector32Term::Variable(held))) if held == *variable
+        )
+    };
+    if !same_cell
+        || !(left_memory == right_memory
+            || holds(&right_memory, &left_pointer, left)
+            || holds(&left_memory, &right_pointer, right))
+    {
+        return None;
+    }
+    let itself = match condition {
+        C::Bitvector32SignedAddOverflows(..) => {
+            C::Bitvector32SignedAddOverflows(a.clone(), a.clone())
+        }
+        C::Bitvector32SignedSubtractOverflows(..) => {
+            C::Bitvector32SignedSubtractOverflows(a.clone(), a.clone())
+        }
+        C::Bitvector32SignedMultiplyOverflows(..) => {
+            C::Bitvector32SignedMultiplyOverflows(a.clone(), a.clone())
+        }
+        C::Bitvector64SignedAddOverflows(..) => {
+            C::Bitvector64SignedAddOverflows(a.clone(), a.clone())
+        }
+        C::Bitvector64SignedSubtractOverflows(..) => {
+            C::Bitvector64SignedSubtractOverflows(a.clone(), a.clone())
+        }
+        C::Bitvector64SignedMultiplyOverflows(..) => {
+            C::Bitvector64SignedMultiplyOverflows(a.clone(), a.clone())
+        }
+        _ => unreachable!("matched above"),
+    };
+    graph.decide(&itself)
 }
