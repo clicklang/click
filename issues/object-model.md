@@ -418,7 +418,7 @@ keep the 41/52 audit count until a new complete example run establishes otherwis
 bindings, including retained-session checking, without publishing their value
 bridges to sibling contexts. The positive regression passes all four proof
 modes; 133 selected recovery controls pass. Continue with the
-[string/vector postcondition gap](../bugs/c-pointer-field-postconditions-lose-frame-evidence.md),
+[string/vector postcondition gap](https://github.com/clicklang/click/blob/439b841c4633c9282354e772ffdf95748fb5dc41/bugs/c-pointer-field-postconditions-lose-frame-evidence.md),
 keeping C and claims intact and distinguishing an explicit checked equality
 proof from `assumption`'s exact-fact lookup. The full example audit remains 41/52.
 
@@ -648,3 +648,16 @@ compilation affected timing. CI's byte-sum mirror checks caught the stale
 migrated `sum-proof.click`; it now matches the explicit canonical proof. Both
 failing Rust parity checks pass locally. The original frozen sidecar and its
 hash are unchanged.
+
+The remaining pointer-field postcondition report is closed by recovery candidate
+`ebe4f69a1` on `codex/pointer-field-recovery` (based on `80d5584ac`). The original
+vector and string projects verify all 13 and 15 proofs, respectively, with C,
+contracts, resources and limits unchanged. The vector caller now explicitly uses
+push's exact call-exit prefix guarantee and frames its two sides separately.
+Structural branch joins also retain their already walked statement-effect
+records, restoring `vector_replace_if` after complete-pointer call refinement.
+The affected caller, branch reduction and string push/clear audits pass expansion,
+cold and retained checks. See the
+[closure evidence](../design/object-model-recovery-audit.md#pointer-field-postcondition-closure).
+This is an independently preserved recovery candidate and a shared upstream
+repair, not archived object-model activation or a new full example-audit count.
