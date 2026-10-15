@@ -11,6 +11,10 @@ program `step` cannot check at a cost proportional to the line being checked.
 
     python3 scripts/step-scaling-hunt.py [SHAPE ...] [--sizes 1,4,16,64,128]
 
+The gate runs these shapes at small sizes in
+`src/scaling_tests/surface/tests/step_shape_scaling_tests.rs`; this script is
+for larger sizes and timing.
+
 Uses the optimized verifier at `$CARGO_TARGET_DIR/profiling/click` (build it
 with `cargo build --profile profiling --bin click`). Generated mdtests are
 kept under a temporary directory, printed at the end, for reproduction.

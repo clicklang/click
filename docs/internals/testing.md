@@ -673,6 +673,23 @@ cargo nextest run --lib -E 'test(/scaling_tests/)'
 includes. Before changing a hot path, read the scaling tests of the modules it
 touches; add new ones beside them.
 
+Most scaling tests measure one kernel operation beside unrelated state built
+in advance. Growth that comes from the proof itself, such as state each
+statement leaves for the next, needs whole functions:
+`src/scaling_tests/surface/tests/step_shape_scaling_tests.rs` verifies the
+shapes of `scripts/step-scaling-hunt.py` at gate sizes with one `step()` per
+statement. Its main check needs one size. Steps that execute the same
+statement at different positions (each `drop_box(p#)`, each call) must cost
+the same, so a step whose work moves the same way by more than a small band
+at each of its last positions depends on how many statements ran before it.
+A warm-up, such as the first call or the first store into a block, jumps once
+and then holds, which this does not flag. Shapes whose every step sees the
+same growing state (unrelated facts, aliases, owned objects) compare one
+step across two sizes instead. Known growth is asserted as still present
+(`known_drift_` tests naming their issue or bug), so a fix fails the test that
+records it and the record is updated with it. `step-scaling-hunt.py` runs the
+same shapes at larger sizes, with timing, when a curve needs investigating.
+
 The built-in standard library is parsed and resource-expanded once per process.
 Only immutable surface declarations are shared; each verification constructs
 its own environments and kernel session. The initialization-count regression
