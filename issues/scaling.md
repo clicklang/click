@@ -57,25 +57,20 @@ largest step of 69,033.
 Each is the same pattern: a step recomputes something from the whole state
 instead of from what the step changed.
 
-1. **A store through an unresolved pointer visits every cached cell.**
-   `CMemory::without_possible_aliasing_cells` takes
-   `AliasCandidates::of_block` of the written block, and a `Symbolic` block
-   (a pointer an extern returned) admits every block. Each candidate is then
-   asked the ownership question and the distinctness ladder. In
-   `heap_objects` the candidates are mostly the earlier locals' own stack
-   slots, about 4 units each, all kept: the store's remaining drift, 4 units
-   per earlier object at N = 64 (stores cost 103, 139, 143, ... 195). Locals
-   whose address is never taken are already proven distinct from every
-   pointer value (`never_address_taken_local_versus_pointer_value`), but the
-   store still visits them. A store should frame out everything outside its
-   footprint without asking each cell.
+1. **Fixed: a store through an unresolved pointer visited every cached
+   cell**, including the slot of every earlier local, which no pointer value
+   can reach. The cell store now keeps the pointer-reachable cell keys
+   (`CellStore::pointer_reachable_cells`), caught up by diffing, and a store
+   through a `Symbolic` pointer visits only those. `heap_objects` stores now
+   cost 135 units at every position at N = 64.
 2. **Composition evidence is a list that only grows.** Every step states
    about four snapshots of the whole resource context as
    `Proposition::CResourceComposition` facts. Stores no longer read them:
    the write path states the writer's current composition as the store owner
    (`PureFactContext::with_store_owner`), and `owned_store_footprint` and
    `owned_composition_store_separated_evidence` read it alone. That removed
-   25 of the 29 units per earlier object a `heap_objects` store cost, and no
+   25 of the 29 units per earlier object a `heap_objects` store cost (cause 1
+   was the rest), and no
    mdtest, example or unit test depended on the older compositions. About
    twenty other `resource_compositions.iter()` sites, in load resolution and
    condition reasoning, still scan the whole set. Indexing the set does not
@@ -105,15 +100,16 @@ End-to-end, `src/scaling_tests/surface/tests/step_shape_scaling_tests.rs`
 runs the `scripts/step-scaling-hunt.py` shapes in the gate: a step repeated at
 several positions must not drift with the statements before it, and a call
 must not grow with unrelated facts, aliases or owned objects.
-`known_drift_heap_object_stores_and_releases` records the `heap_objects` drift
-of causes 1 to 3 and fails when it stops, so the fix updates this issue.
+`known_drift_heap_object_stores_and_releases` records the remaining
+`heap_objects` drift, the release of cause 3, and fails when it stops, so the
+fix updates this issue.
 
 ## Acceptance
 
 - Each known cause above is fixed in its representation, with a
   deterministic regression at four or more sizes.
-- `known_drift_heap_object_stores_and_releases` becomes an ordinary
-  no-drift test, and `step-scaling-hunt.py heap_objects` shows every simple
+- `known_drift_heap_object_stores_and_releases` (now `drop_box` alone)
+  becomes an ordinary no-drift test, and `step-scaling-hunt.py heap_objects` shows every simple
   step's work constant in N, up to logarithmic factors; ownership is still
   checked at every store and release.
 - No budget or threshold is raised to get there.

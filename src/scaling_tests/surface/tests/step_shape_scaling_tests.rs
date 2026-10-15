@@ -736,7 +736,7 @@ fn known_drift_heap_object_stores_and_releases() {
         .collect::<Vec<_>>();
     assert_eq!(
         roles,
-        ["drop_box(p#);", "p#->v = #;"],
+        ["drop_box(p#);"],
         "heap_objects drift changed; if a step stopped drifting, it is fixed: update this \
          test and issues/scaling.md ({drifting:?})"
     );
