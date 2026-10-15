@@ -471,15 +471,19 @@ own contract.
 Each implementation is written in an `impl` block naming the trait and the
 type by their paths, `impl trait_methods::Shape for trait_methods::Square
 { fn area(&self, scale: i32) -> i32 { ... } by { ... } }`, and verified as
-any method is. Its contract must refine the interface, by the check that
-forms a named contract at `&f`: it must accept every call the interface
-allows, and guarantee what the interface promises. The check reads each
-clause exactly or decides a bare comparison, without search, so an
-implementation states the interface's guarantees in its own contract, where
-its proof establishes them; a wider precondition written as bare
-comparisons, `requires 0 <= scale; requires scale <= 2000;`, is accepted.
-An implementation that does not refine the interface is refused, naming
-both. Without a `trait` block, a call through the trait has no contract.
+any method is. It inherits the interface: the interface's `ensures` join its
+own, labeled `<trait_methods::Circle as
+trait_methods::Shape>::area.interface_ensures_0`, and its proof establishes
+them all; an implementation that writes no `requires` takes the
+interface's. It names its parameters as the interface does, so the
+inherited clauses read the same. It may accept more calls than the
+interface, a wider precondition, and its `requires` are checked to follow
+from the interface's by the check that forms a named contract at `&f`,
+which reads each clause exactly or decides a bare comparison: `requires 0
+<= scale; requires scale <= 2000;` follows from `requires 0 <= scale and
+scale <= 1000;`. An implementation whose `requires` do not follow is
+refused, naming both, as is one with no contract. Without a `trait` block,
+a call through the trait has no contract.
 
 The interface's receiver is a reference to a value of a type it does not
 know: the interface reads nothing through `self` and holds none of its
