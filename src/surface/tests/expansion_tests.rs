@@ -18340,6 +18340,7 @@ fn modular_buffer_ranges_rejoin_in_all_proof_modes() {
 }
 
 #[test]
+#[ignore = "nightly: repeated-retain whole-proof and four selected-call expansions took 11.4s in parallel"]
 fn repeated_retains_expand_with_checked_count_bounds() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/repeated_child_retains_keep_the_entry_count_bound.md");

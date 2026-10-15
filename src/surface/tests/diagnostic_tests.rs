@@ -3387,6 +3387,7 @@ mod scaling_tests {
 }
 
 #[test]
+#[ignore = "nightly: repeated-retain source diagnostic took 0.63s in parallel"]
 fn a_failed_retain_names_the_population_count_requirement() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/repeated_child_retains_require_enough_count_capacity.md");
