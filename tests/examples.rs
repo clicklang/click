@@ -339,6 +339,12 @@ fn rbtree_insert_uses_the_unchanged_c_and_the_shared_model() {
 
 /// A wholly selected claim's failure must be an audit failure, without a
 /// per-site retry that can hide a broken combined expansion.
+///
+/// The failure is forced through the claim's verification budget. A wholly
+/// selected claim is expanded from the certificates the audit session
+/// retained, which renders source without verifier work (`expand 0 units`),
+/// so an expansion budget of one unit cannot fail it; reverifying the
+/// expanded claim spends hundreds of units.
 #[test]
 #[ignore = "nightly: audit process regression stays outside the verification gate"]
 fn audit_whole_claim_failure_is_fatal() {
@@ -354,7 +360,7 @@ fn audit_whole_claim_failure_is_fatal() {
             "audit",
             "--claim",
             "scalar.arithmetic_result",
-            "--expansion-work-limit",
+            "--verification-work-limit",
             "1",
         ]);
         if keep_going {
@@ -370,6 +376,7 @@ fn audit_whole_claim_failure_is_fatal() {
         assert!(!output.status.success());
         let stdout = String::from_utf8(output.stdout).unwrap();
         assert!(stdout.contains("1 claim failures"), "{stdout}");
+        assert!(stdout.contains("over its 1-unit budget"), "{stdout}");
         assert!(!stdout.contains("auditing each alone"), "{stdout}");
         assert!(!stdout.contains("NOTE "), "{stdout}");
         assert!(stdout.contains("--start-at"), "{stdout}");
