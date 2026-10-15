@@ -1,22 +1,16 @@
-# Recovery loses a declared record pointer through a modular identity call
+# A modular record-pointer identity call loses access to caller-local storage
 
-Soundness: incomplete. The recovery object model rejects a caller that passes a
-live declared record through an identity helper, then reads its first member.
+Soundness: incomplete. A valid caller cannot read its initialized local record
+through the pointer returned by an independently verified identity helper.
 No false acceptance is demonstrated by this reproduction.
 
-Priority: P2. Blocks activation of the recovery model.
+Priority: P2.
 
-## Reproduction
+## Reproduction on master
 
-On recovery checkpoint `2cab205db`, run with the gate stack setting:
-
-```sh
-RUST_MIN_STACK=8388608 cargo test --lib \
-  canonical_surface_record_pointer_identity_transports_declared_domain_modularly
-```
-
-The same failure reproduces with the canonical opaque C value-input prerequisite
-in checkpoint `d06045be7`. The original regression's C is unchanged:
+Reproduced on upstream master `979df5bbd` with a freshly built CLI. Put the
+following C and Click blocks in a Markdown fixture (the C block must use
+`filename=identity.c`), then run `click verify <fixture.md>`:
 
 ```c
 struct Pair { int first; int second; };
@@ -39,15 +33,30 @@ int32 caller() {
 } by { execute(); simp(); }
 ```
 
-Recovery rejects `caller.contract` at tactic 0 with invalid memory access at
-`return q->first;`, operation `&q->first`. This is a recovery-specific result;
-these runs do not establish a failure on current upstream.
+`caller.contract` fails at tactic 0 with `missing resource fact views q->first`
+at `return q->first;`. A focused `click verify --trace-proof caller <fixture.md>`
+shows the identity call establishing that `q` equals the local record's address.
+Ordinary record declarations do not retain a complete-storage ownership fact,
+so the symbolic returned pointer fails the subsequent resource check. A direct
+local-record pointer assignment, a scalar-local identity call, and a
+record-pointer parameter identity call all verify.
 
 ## Acceptance
 
-Retain the original C, resource requirement and claims. Preserve the complete
-actual argument's pointer identity through the independently checked return,
-so the caller can read the declared record. Do not treat `result == pair` alone
-as full-pointer identity: an address equation must not authenticate a one-past,
-forged, or unrelated loaded pointer. Pass fresh, expanded, rewritten and retained
-checking, and keep the pointer-field address-equality rejection control negative.
+Preserve the original C, helper resource requirement and claims. Give ordinary
+automatic records the storage ownership needed by the existing modular-call and
+byte-range coverage rules. Keep construction destinations from receiving that
+ownership twice. Verify the original example fresh, expanded, rewritten and in
+a retained session, plus access to a nonzero-offset member and writes through
+the returned pointer. Missing alias guarantees, false value claims and
+uninitialized field reads must still reject.
+
+## Scope correction
+
+The original report described recovery checkpoints `2cab205db` and `d06045be7`
+and required a pointer-domain rejection control. That archived experimental
+model is not active on master. Master's existing
+`c0_const_pointer_fields_alias_proof_expands_and_reverifies` test explicitly
+accepts the same address-equality example; changing that semantic boundary is
+not part of this master storage-ownership fix. This correction does not claim
+to repair or activate the archived model.
