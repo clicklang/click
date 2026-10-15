@@ -168,9 +168,10 @@ the head's copy-back has already kept the cell's value because the checked
 footprint is disjoint from it.
 
 A scalar seeded run that caches loads from the same producer-maintained read
-identity as its base does not change bytes. When ordinary cell lookup cannot
-prove separation, `SeededLoadsOfBase` carries that local fact across the edge.
-The same witness preserves a read wider than a cached slot: two four-byte
+identity as its base does not change bytes. `SeededLoadsOfBase` carries that
+local fact across the edge before slot selection: an exact slot match is a
+cached read, not a new write or cell version. The same witness preserves a
+read wider than a cached slot: two four-byte
 loads of unchanged bytes do not partially overwrite an eight-byte pointer.
 A real partial store remains a barrier before those cache-only edges.
 Checking compares the source identity, load mode and exact scalar stride; it
@@ -364,3 +365,19 @@ coverage in `src/kernel/tests/heap_tests.rs`.
 The chronological implementation record, measurements, and rejected
 experiments are preserved in `design/memory-dag.md`. They aren't part of the
 current architecture contract.
+
+## Failed explicit transport walks
+
+A rejected `transport(source, target) using { ... }` reports the cell walks
+actually performed while checking that operation. Each observation identifies
+the queried address and byte width, starting and stopping snapshots, number of
+crossed edges, stopping reason, and the extended/explicit DAG modes used by the
+query. The address and snapshot identities share the checked source, target,
+and effect facts' exact formatter and construction legend.
+
+These observations are captured as each walk returns, not reconstructed by
+walking memory again while rendering the error. They describe checker queries,
+not additional facts or a proposed missing premise. Repeated identical
+observations are shown once; memo hits perform no new walk. Capture is scoped
+to the explicit check and restored on return or unwind; ordinary memory
+queries retain no diagnostic history.

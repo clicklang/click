@@ -3381,6 +3381,46 @@ fn rejected_loop_transport_premise_uses_shared_exact_diagnostic() {
     });
 }
 
+#[test]
+fn rejected_wide_transport_shows_actual_walk_stop_and_prefix() {
+    let c = "void f(uint64 *p) { p[0] = 9; int32 y = 0; return; }";
+    let source = r#"verifying "f.c";
+        void f(uint64 *p) {
+            owns p[0]; requires p[0] == 7u64; ensures true;
+        } by {
+            mark before_write; step();
+            transport(at(before_write, p[0] == 7u64), p[0] == 7u64) using {
+                at(before_write, p[0] == 7u64);
+            };
+            execute(); normalize();
+        }
+    "#;
+    with_proof_trace("f", || {
+        let error = verify_c0_sources(source, &[("f.c", c)])
+            .expect_err("a real write invalidates the old word");
+        let message = error.message();
+        for expected in [
+            "cell walks performed while checking transport",
+            "address: value#",
+            "width: 8 bytes",
+            "start: snapshot#",
+            "stop: snapshot#",
+            "oldest recorded snapshot reached",
+            "step affects the queried bytes",
+            "transport label definitions",
+            "store",
+            "read<Bits64>",
+        ] {
+            assert!(message.contains(expected), "missing {expected}: {message}");
+        }
+        assert!(!message.contains("information unavailable"), "{message}");
+        let trace = error
+            .trace_context_report()
+            .expect("retain the failed written check's prefix");
+        assert!(trace.contains("steps through: p[0] = 9"), "{trace}");
+    });
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/surface/tests/diagnostic_tests.rs");
