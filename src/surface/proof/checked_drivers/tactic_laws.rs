@@ -93,6 +93,9 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
     // its first `step()` no longer owns that instance where the frontier
     // begins, and re-evaluating the transition there would fail on a proof
     // step that is none of the frame's business.
+    // The proof's own layout of this function: built once for the claim,
+    // with the whole-function indexes every loop reads.
+    let source_layout = proof_context.constants.source_layout.clone();
     let annotated = annotated_function_with_assumptions(
         &bound_function_block,
         parsed_function,
@@ -104,6 +107,10 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
             assumptions: &entry_assumptions,
             checked_entry_state: proof_context.constants.function_entry_state.as_ref(),
         }),
+        Some(
+            source_layout
+                .local_pointer_element_types(|| local_pointer_element_types(parsed_function)),
+        ),
     )?;
     if execution.core.frontier.is_at_function_entry() {
         let entry_state = c_function_entry_state(&initial_state, &annotated, arguments)
@@ -127,7 +134,6 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
             ))
         })?;
 
-    let source_layout = SourceExecutionLayout::for_function(parsed_function)?;
     let loop_certificates = std::cell::RefCell::new(LoopProofCertificates::default());
     let loop_source = FrontierLoopProofSource::new(
         loop_template,

@@ -944,6 +944,7 @@ pub(in crate::surface) fn annotated_function(
         spec_definitions,
         resource_environment,
         None,
+        None,
     )
 }
 
@@ -970,6 +971,7 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
     spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
     frame_entry: Option<ResourceFrameEntry<'_>>,
+    pointer_element_types: Option<&BTreeMap<String, CType>>,
 ) -> Result<CFunction, ClickError> {
     // A frontier loop clause carries the proof scope it was written under;
     // lowering reads every clause through that scope.
@@ -1083,10 +1085,15 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
         snapshots: None,
     };
     let parsed_kernel_function = parsed_function.to_kernel_function();
-    collect_local_pointer_element_types(
-        parsed_kernel_function.body(),
-        &mut lowerer.pointer_element_types,
-    );
+    match pointer_element_types {
+        Some(types) => lowerer
+            .pointer_element_types
+            .extend(types.iter().map(|(name, element)| (name.clone(), *element))),
+        None => collect_local_pointer_element_types(
+            parsed_kernel_function.body(),
+            &mut lowerer.pointer_element_types,
+        ),
+    }
     // Loop-level resource declarations are lowered once, before the body, so
     // every loop reaches its footprint and its body resource context without
     // re-walking the contract.
@@ -2126,6 +2133,17 @@ fn proposition_supported_in_opaque_contract(proposition: &ClickProposition) -> b
         ClickProposition::Comparison { .. } | ClickProposition::PredicateCall { .. } => true,
         ClickProposition::FloatClassification { .. } => true,
     }
+}
+
+/// The pointee type of each of `parsed_function`'s local pointers and arrays,
+/// for a caller that annotates the function repeatedly and indexes it once
+/// (`SourceExecutionLayout::local_pointer_element_types`).
+pub(in crate::surface) fn local_pointer_element_types(
+    parsed_function: &syntax::C0Function,
+) -> BTreeMap<String, CType> {
+    let mut types = BTreeMap::new();
+    collect_local_pointer_element_types(parsed_function.to_kernel_function().body(), &mut types);
+    types
 }
 
 /// Index declarations once, before any loop resource or invariant is lowered.
