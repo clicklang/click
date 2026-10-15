@@ -1,0 +1,10 @@
+{
+  "units": {
+    "arrays": {
+      "language": "rust",
+      "sources": {
+        "arrays.rs": {}
+      }
+    }
+  }
+}

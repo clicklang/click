@@ -1,26 +1,8 @@
 use super::*;
 
 fn project(fixture: &str) -> Project {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("design/charon-trial/iterator-proof")
-        .join(fixture);
-    let p = Project::new("");
-    for (destination, original) in [
-        ("sum.rs", "sum.rs"),
-        ("sum.ullbc", "sum.ullbc"),
-        ("borrow.click", "sum.click"),
-        ("borrow.click.import.json", "sum.click.import.json"),
-        (
-            "borrow.click.import.json.lock",
-            "sum.click.import.json.lock",
-        ),
-    ] {
-        fs::write(
-            p.root.join(destination),
-            fs::read(root.join(original)).unwrap(),
-        )
-        .unwrap();
-    }
+    let p = Project::from_fixture(&format!("design/charon-trial/iterator-proof/{fixture}"));
+    fs::copy(p.root.join("sum.click"), p.root.join("borrow.click")).unwrap();
     p
 }
 fn preserves_source_and_checks_obligations(fixture: &str) {
@@ -38,7 +20,7 @@ fn preserves_source_and_checks_obligations(fixture: &str) {
         fs::read(original.join("sum.click")).unwrap()
     );
     let p = project(fixture);
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     let proof = fs::read_to_string(p.root.join("borrow.click")).unwrap();
     assert!(!proof.contains("__rust_"));
     assert!(!proof.contains("statement("));

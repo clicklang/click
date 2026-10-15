@@ -3,30 +3,8 @@ use super::*;
 const SIDECAR: &str = include_str!("../../design/charon-trial/closures/closure.click");
 
 fn closure_project() -> Project {
-    let p = Project::new("");
-    for (name, bytes) in [
-        (
-            "closure.rs",
-            include_bytes!("../../design/charon-trial/closures/closure.rs").as_slice(),
-        ),
-        ("borrow.click", SIDECAR.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!("../../design/charon-trial/closures/closure.click.import.json")
-                .as_slice(),
-        ),
-        (
-            "closure.ullbc",
-            include_bytes!("../../design/charon-trial/closures/closure.ullbc").as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!("../../design/charon-trial/closures/closure.click.import.json.lock")
-                .as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/closures");
+    fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
     p
 }
 
@@ -37,7 +15,7 @@ fn closure_project() -> Project {
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn charon_closures_passed_for_a_function_pointer_meet_its_named_contract() {
     let p = closure_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     let caller_closure = "fn closures::caller::{closure#0}(y: i32) -> i32 {\n    requires 0 <= y and y <= 1000;\n    ensures result == y + y;\n} by { execute(); simp(); }\n";

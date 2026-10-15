@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "units": {
+    "operators": {
+      "language": "rust",
+      "lock": {
+        "artifact": "9e12e5bc5470e483cbe9d005a33085da7b0cbd8fd57ae0e51d8792ced6a25951",
+        "charon_driver": "645ab4b0456083642cafa05da8b1d58aca0c6d3349c2b7921b0820cbb465fb72",
+        "config": "67f3517018f3d48cfb07bb664075fef4843ef71ffa05994fb4805ea0be78a612",
+        "exporter": "c6cc5acf5bb7e4d4bb6bef5265639d1b05b0138e3072767825cc2aa62a5040e4",
+        "identity": "b768462eb8db094eb8322fd78b44c1ea0040dc0a16cd8f320f8055839b8aa002",
+        "schema": 8,
+        "source": "82a24bd7ff46702e7525a5486f0216816b729b30c629f9b5704fd3f9d42dd081",
+        "source_files": {
+          "operators.rs": "82a24bd7ff46702e7525a5486f0216816b729b30c629f9b5704fd3f9d42dd081"
+        }
+      }
+    }
+  }
+}

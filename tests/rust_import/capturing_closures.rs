@@ -3,34 +3,8 @@ use super::*;
 const SIDECAR: &str = include_str!("../../design/charon-trial/capturing-closures/closure.click");
 
 fn capturing_closure_project() -> Project {
-    let p = Project::new("");
-    for (name, bytes) in [
-        (
-            "closure.rs",
-            include_bytes!("../../design/charon-trial/capturing-closures/closure.rs").as_slice(),
-        ),
-        ("borrow.click", SIDECAR.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!(
-                "../../design/charon-trial/capturing-closures/closure.click.import.json"
-            )
-            .as_slice(),
-        ),
-        (
-            "closure.ullbc",
-            include_bytes!("../../design/charon-trial/capturing-closures/closure.ullbc").as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!(
-                "../../design/charon-trial/capturing-closures/closure.click.import.json.lock"
-            )
-            .as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/capturing-closures");
+    fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
     p
 }
 
@@ -41,7 +15,7 @@ fn capturing_closure_project() -> Project {
 #[ignore = "nightly: 4.2s in the parallel gate"]
 fn charon_capturing_closures_meet_parameterized_contracts() {
     let p = capturing_closure_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     // The caller's facts about a captured value hold in the refinement: the

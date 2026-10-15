@@ -37,7 +37,7 @@ is included. Neither modules, derives, methods, operators, nor loops were edited
 
 ## Current checked boundary
 
-Schema 4 locks the Rust-2021 crate root, `std` feature, selected entry point,
+The `adler2` crate unit locks the Rust-2021 crate root, `std` feature, selected entry point,
 and complete rustc dep-info closure. Both module files enter the prepared
 identity. Missing, extra, changed, escaping, or symlinked inputs are rejected.
 Qualified declaration identities distinguish module functions, inherent
@@ -49,8 +49,8 @@ including `Adler32::compute`. Constructor regressions prove that the actual
 initializer contracts prove `MOD = 65521` and `CHUNK_SIZE = 22208` by executing
 their imported CFGs.
 
-The [helper sidecar](helpers.click) uses the [locked configuration](helpers.click.import.json)
-and native Charon artifact to prove every lane of these original helpers:
+The [helper sidecar](helpers.click) uses the `adler2` unit of the
+[project file](click.project.json) and its native Charon artifact to prove every lane of these original helpers:
 
 | Body | Contract |
 | --- | --- |
@@ -607,14 +607,13 @@ cargo nextest run --test rust_import --run-ignored all \
   -E 'test(charon_adler2_short_tail_compute) | test(charon_adler2_two_byte_compute) | test(charon_adler2_three_byte_compute)'
 ```
 
-Refresh the entire selected crate through the production adapter:
+Refresh every unit of the project through the production adapter:
 
 ```sh
 target/debug/click import lock design/charon-trial/adler2/helpers.click
 ```
 
-The configured exporter path is relative to this directory. Run the focused
-live regression to refresh a private copy and reprove the original helper bodies:
+`CLICK_CHARON` selects a source-built Charon. Run the focused live regression to refresh a private copy and reprove the original helper bodies:
 
 ```sh
 export CLICK_CHARON="$PWD/target/charon/debug/charon"

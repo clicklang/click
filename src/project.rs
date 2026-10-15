@@ -18,10 +18,9 @@
 //! unit lists logical sources and the functions selected from each; the
 //! pinned exporter named by `CLICK_CPP_EXPORTER` exports them at lock time
 //! from a compilation database Click synthesizes from the unit's arguments.
-//! A Rust
-//! unit is one crate and lists its root; the pinned Charon named by
-//! The pinned Rust frontend extracts it at lock time, and the crate's `roots` are the
-//! entry points every sidecar verifying it sees.
+//! A Rust unit is one crate, or a single-file program, and lists its root;
+//! the pinned Rust front end extracts it at lock time, and a crate's `roots`
+//! are the entry points every sidecar verifying it sees.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -292,11 +291,7 @@ impl Project {
                 .root
                 .join(format!("{ARTIFACT_DIRECTORY}/{name}/{source}.ullbc")),
             source,
-            crate_config: unit
-                .spec
-                .crate_config
-                .clone()
-                .expect("a validated Rust unit has a crate"),
+            crate_config: unit.spec.crate_config.clone(),
             lock_path: self.lock_path(),
         })
     }
@@ -623,9 +618,6 @@ fn validate_unit(name: &str, unit: &UnitJson) -> Result<(), String> {
             }
         }
         "rust" => {
-            if unit.crate_config.is_none() {
-                return Err(format!("Rust unit `{name}` needs a `crate` description"));
-            }
             if unit.compiler.is_some()
                 || !unit.environment.is_empty()
                 || unit.option_profile.is_some()
@@ -752,10 +744,6 @@ mod tests {
                 r#"{"c": {"language": "c", "compiler": "/usr/bin/gcc",
                     "sources": {"a.c": {"functions": ["f"]}}}}"#,
                 "take only `args` and `projection`",
-            ),
-            (
-                r#"{"rs": {"language": "rust", "sources": {"src/lib.rs": {}}}}"#,
-                "needs a `crate` description",
             ),
             (
                 r#"{"rs": {"language": "rust", "compiler": "/usr/bin/gcc",

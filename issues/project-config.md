@@ -208,8 +208,15 @@ C++ items were chosen explicitly; the rest are the recommended defaults.
   functions of a file. Preprocessor inputs under the unit or project roots
   are rechecked relative to them and outside inputs are pinned by digest, so
   C++ unit locks load after the checkout moves.
-- **Remaining:** the module root still comes from imports rather than the
-  project file; the shared lock envelope; migrating existing configs; the
+- **Rust migration.** Every committed Rust fixture and example is a project:
+  a Rust unit without a `crate` object is a single-file Rust 2024 program, and
+  the adler2 helper, restoration, incremental and resumed sidecars share one
+  project with an `adler2` crate unit and two client units. No per-sidecar
+  Rust import config remains in the repository; the loaders remain for the
+  library-level tests until the command line refuses them.
+- **Remaining:** migrating C and C++ configs, then refusing per-sidecar configs
+  in the command line and deleting their loaders; the module root still comes
+  from imports rather than the project file; the shared lock envelope; the
   optimization level and flag policy.
 
 ## Intended regressions

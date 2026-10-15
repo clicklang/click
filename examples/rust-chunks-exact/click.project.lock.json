@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "units": {
+    "chunks": {
+      "language": "rust",
+      "lock": {
+        "artifact": "6ae0adb4b42cf2c8cce691b7a515a14175bd81d0353dd8331cc5ea1ff4618dfe",
+        "charon_driver": "645ab4b0456083642cafa05da8b1d58aca0c6d3349c2b7921b0820cbb465fb72",
+        "config": "2bd402cdcb5cf5458b9ec48afb8a527a62f340c57cc7f7aec58d6b4cb79d541c",
+        "exporter": "c6cc5acf5bb7e4d4bb6bef5265639d1b05b0138e3072767825cc2aa62a5040e4",
+        "identity": "24af582fcda52c08554e07dbe1fa018d46b69eb2595004f16b5a124044ed7e6e",
+        "schema": 8,
+        "source": "8e06f0311715da73c6328a862d5bf4a1c36cb612ea46fc1ac65cd2202f0620c4",
+        "source_files": {
+          "chunks.rs": "8e06f0311715da73c6328a862d5bf4a1c36cb612ea46fc1ac65cd2202f0620c4"
+        }
+      }
+    }
+  }
+}
