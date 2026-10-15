@@ -960,6 +960,20 @@ stays off this path, which is what the comment on
 Cost: an emptiness gate first, then two block-bucket lookups per composition
 held, no pair materialization and no expansion.
 
+At a store the compositions held are the writer's current ownership only.
+The write path states the observable composition of the state's resources,
+and any composition `store_opened_instance_composition` opens, as the
+context's store owners (`PureFactContext::with_store_owner` and
+`with_additional_store_owner`), and the rule and `owned_store_footprint`
+read those alone in a context that has them
+(`PureFactContext::store_compositions`). A composition stated at an earlier
+point stays true and stays a path fact, but a store reading every one would
+cost work in the length of the path at every store (`issues/scaling.md`).
+`store_separation_work_is_independent_of_earlier_compositions`
+(`src/scaling_tests/kernel/tests/memory_reasoning_tests.rs`) is the
+regression and `store_separation_reads_the_store_owners_and_not_earlier_compositions`
+(`src/kernel/tests/memory_reasoning_tests.rs`) the attack set.
+
 `CMemory::without_possible_aliasing_cells` also asks the same law *first*, in
 an indexed form. Every pointer parameter shares the one `ExternalArgument`
 block, so neither `AliasCandidates` nor the block-pair separation index

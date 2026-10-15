@@ -548,13 +548,17 @@ fn write_c_lvalue_paths_without_local_reference(
     let effective_assumptions = if direct_local_copy {
         effective_assumptions
     } else {
-        state
+        // The store is separated by what the writer owns now, not by every
+        // composition stated earlier on the path.
+        let owner = state
             .resources()
             .observable_facts_assuming_valid(&effective_assumptions)
             .into_iter()
-            .fold(effective_assumptions, |assumptions, fact| {
-                assumptions.assume_proposition(fact)
-            })
+            .find_map(|fact| match fact {
+                Proposition::CResourceComposition(owner) => Some(owner),
+                _ => None,
+            });
+        effective_assumptions.with_store_owner(owner)
     };
     let mut facts = facts;
     let constant = lvalue.is_constant();
@@ -863,9 +867,10 @@ fn write_c_lvalue_paths_without_local_reference(
                     &effective_assumptions,
                 ) {
                     Some(opened) => {
-                        let fact = Proposition::CResourceComposition(opened);
-                        facts.push(ExecutionPureFact::new(fact.clone()));
-                        effective_assumptions.assume_proposition(fact)
+                        facts.push(ExecutionPureFact::new(Proposition::CResourceComposition(
+                            opened.clone(),
+                        )));
+                        effective_assumptions.with_additional_store_owner(opened)
                     }
                     None => effective_assumptions,
                 };

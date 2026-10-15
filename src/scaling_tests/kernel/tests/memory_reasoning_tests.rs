@@ -528,3 +528,41 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
         );
     }
 }
+
+/// A store is separated by what its writer owns now. A path that stated a
+/// composition at each of `size` earlier steps leaves them all among the
+/// context's facts, and store separation does not read them: with the
+/// writer's current composition as the store owner, separating the newest
+/// object from the oldest costs the same at every size, and still succeeds.
+#[test]
+fn store_separation_work_is_independent_of_earlier_compositions() {
+    let object = |index: u32| Pointer::symbolic(Variable(98_300 + u64::from(index)));
+    let mut work = Vec::new();
+    for size in [8u32, 32, 128] {
+        let mut resources = ResourceContext::new();
+        let mut context = PureFactContext::new();
+        for index in 0..size {
+            resources = resources.unchecked_with_fact(own_memory_fact(object(index), 0, 1));
+            context =
+                context.assume_proposition(Proposition::CResourceComposition(resources.clone()));
+        }
+        let context = context.with_store_owner(Some(resources));
+        let (first, last) = (object(0), object(size - 1));
+        let (separated, used) = crate::instrumentation::measure_deterministic_work(|| {
+            let footprint = context.owned_store_footprint(&last, 4);
+            (
+                context.access_owned_apart_from_store(&footprint, &last, &first, 4),
+                crate::kernel::memory_provenance::owned_composition_store_separated_evidence(
+                    &last, 4, &first, 4, &context,
+                )
+                .is_some(),
+            )
+        });
+        assert_eq!(separated, (true, true), "size={size}");
+        work.push(used);
+    }
+    assert!(
+        work.windows(2).all(|pair| pair[1] <= pair[0] + 8),
+        "store separation work grows with the compositions stated earlier: {work:?}"
+    );
+}

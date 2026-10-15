@@ -10796,6 +10796,14 @@ pub struct PureFactContext {
     /// unrelated proposition in the context.
     pub(super) disjunction_facts: crate::persistent::PersistentSet<Proposition>,
     pub(super) resource_compositions: std::sync::Arc<BTreeSet<ResourceContext>>,
+    /// The ownership a store in this context writes under, when the writer
+    /// stated it: the current state's observable composition and any
+    /// composition the store opened from held folded instances, all also
+    /// among `resource_compositions` (empty when the state holds none). Store
+    /// separation then reads these alone rather than every composition the
+    /// path stated before (`issues/scaling.md`). `None` (the default) leaves
+    /// store separation reading them all.
+    pub(super) store_owners: Option<std::sync::Arc<Vec<ResourceContext>>>,
     /// Derived provenance-only footprints published with each explicitly
     /// admitted composition. This is not consumable resource authority.
     pub(super) composition_object_resources: memory_equality_index::ObjectEvidenceSources,
@@ -10831,6 +10839,7 @@ impl PartialEq for PureFactContext {
             && self.typed_pointer_read_definitions == other.typed_pointer_read_definitions
             && self.prop_facts == other.prop_facts
             && self.resource_compositions == other.resource_compositions
+            && self.store_owners == other.store_owners
             && self.reasoning_policy == other.reasoning_policy
     }
 }
