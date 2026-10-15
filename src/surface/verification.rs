@@ -7312,6 +7312,7 @@ pub(in crate::surface) fn describe_parameter_type(
         Some(name) if matches!(c_type, C0Type::UInt8Array(_)) => format!("struct {name}"),
         Some(name) if reference => format!("struct {name}&"),
         Some(name) => format!("struct {name}*"),
+        None if matches!(c_type, C0Type::FunctionPointer(_)) => describe_c0_type(c_type),
         None => match c_type.pointee_type().filter(|_| reference) {
             Some(referent) => format!("{}&", referent.ranked_diagnostic_name()),
             None => c_type.ranked_diagnostic_name(),
