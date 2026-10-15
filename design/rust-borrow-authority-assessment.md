@@ -204,6 +204,8 @@ without the selected borrow receipt suffice.
 These receipts are execution evidence, not recovery rights. They do not yet
 carry a local-reference lease or establish a dynamic invocation identity, and
 ordinary memory producers still use their existing authority checks. Private
+provenance tags remain comparison-neutral; recovery must additionally establish
+the selected operation's membership in the locked source plan. Private
 receipt deltas retain each producer occurrence without scanning ambient facts;
 the existing 16/64/256/1024 regression now also checks borrow receipts.
 
