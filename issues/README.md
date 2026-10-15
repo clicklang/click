@@ -122,11 +122,10 @@ reference-counted version differs from the sequential one.
 Specification and proof:
 
 - [Verify the Linux rbtree example on the recursive structure models](rbtree-example.md)
-- [SMT-backed automation with kernel-checked certificates](smt-auto.md)
 - [Make simple tactics fast: exact requirements, expandable `auto` for the rest](simplify-step.md)
 - [Scaling: stamp out quadratic work in simple checking](scaling.md)
 - [Difference logic: the fast path for arithmetic requirements and conditions](difference-logic.md)
-- [Launch design review: open critiques, each to be fixed or ruled wontfix](design-review.md) (depends on smt-auto.md and simplify-step.md)
+- [Launch design review: open critiques, each to be fixed or ruled wontfix](design-review.md) (depends on simplify-step.md)
 - [Finish place-based resource clauses](resource-place-syntax.md)
 
 ## P2: after launch (14)
