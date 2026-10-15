@@ -1817,30 +1817,40 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 ));
                 continue;
             }
-            let resource_assumptions = state
-                .resources()
-                .observable_facts_assuming_valid(&effective_assumptions)
-                .into_iter()
-                .fold(effective_assumptions.clone(), |assumptions, fact| {
-                    assumptions.assume_proposition(fact)
-                });
-            if let Some(stale) = resources.facts().iter().find(|resource| {
-                resource.may_refer_to_memory_block(&old_pointer.block)
-                    && !resource.is_proven_separate_from_allocation_with_element_width(
-                        &old_pointer,
-                        &old_bytes,
-                        old_range_width,
-                        &resource_assumptions,
-                    )
-            }) {
-                paths.push(CStatementExecutionPath::new(
-                    CStatementOutcome::RuntimeError(CRuntimeError::StaleResourceAfterFree {
-                        resource: Box::new(stale.clone()),
-                    }),
-                    all_facts,
-                    all_obligations,
-                ));
-                continue;
+            // Reallocation retires the old block under the same conservative
+            // reference check as free. Select that block's dependents before
+            // projecting resource facts; unrelated holdings cannot become stale.
+            {
+                let mut candidates =
+                    resources.facts_that_may_refer_to_memory_block(&old_pointer.block);
+                if let Some(first) = candidates.next() {
+                    let resource_assumptions = state
+                        .resources()
+                        .observable_facts_assuming_valid(&effective_assumptions)
+                        .into_iter()
+                        .fold(effective_assumptions.clone(), |assumptions, fact| {
+                            assumptions.assume_proposition(fact)
+                        });
+                    if let Some(stale) = std::iter::once(first).chain(candidates).find(|resource| {
+                        !resource.is_proven_separate_from_allocation_with_element_width(
+                            &old_pointer,
+                            &old_bytes,
+                            old_range_width,
+                            &resource_assumptions,
+                        )
+                    }) {
+                        paths.push(CStatementExecutionPath::new(
+                            CStatementOutcome::RuntimeError(
+                                CRuntimeError::StaleResourceAfterFree {
+                                    resource: Box::new(stale.clone()),
+                                },
+                            ),
+                            all_facts,
+                            all_obligations,
+                        ));
+                        continue;
+                    }
+                }
             }
 
             let old_cells = state
