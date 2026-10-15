@@ -529,6 +529,41 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
     }
 }
 
+/// Ordering two snapshots of one path, which share all but one of `size`
+/// entries, reads their cached content hashes and never walks the shared
+/// entries, for memories and for resource contexts alike: sets of facts and
+/// of stated compositions compare such snapshots at every lookup.
+#[test]
+fn ordering_snapshots_of_one_path_does_not_walk_their_shared_entries() {
+    let object = |index: u32| Pointer::symbolic(Variable(99_400 + u64::from(index)));
+    for size in [16u32, 64, 256] {
+        let mut memory = CMemory::new();
+        let mut resources = ResourceContext::new();
+        for index in 0..size {
+            memory = memory.store(object(index), int32(index));
+            resources = resources.unchecked_with_fact(own_memory_fact(object(index), 0, 1));
+        }
+        let later_memory = memory.clone().store(object(0), int32(size));
+        let later_resources =
+            resources
+                .clone()
+                .unchecked_with_fact(own_memory_fact(object(size), 0, 1));
+        let (orders, walked) = crate::kernel::primitives::count_structural_comparisons(|| {
+            (
+                memory.cmp(&later_memory),
+                resources.cmp(&later_resources),
+                memory.cmp(&memory.clone()),
+                resources.cmp(&resources.clone()),
+            )
+        });
+        assert_ne!(orders.0, std::cmp::Ordering::Equal, "size={size}");
+        assert_ne!(orders.1, std::cmp::Ordering::Equal, "size={size}");
+        assert_eq!(orders.2, std::cmp::Ordering::Equal, "size={size}");
+        assert_eq!(orders.3, std::cmp::Ordering::Equal, "size={size}");
+        assert_eq!(walked, 0, "size={size}: ordering walked a snapshot");
+    }
+}
+
 /// Without a store owner, separation by ownership reads only the stated
 /// compositions listed under the two objects' members
 /// (`CompositionMemberIndex`). A path states, per object, a snapshot of the
