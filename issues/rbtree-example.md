@@ -1584,3 +1584,8 @@ and accepts any typed callback because this branch makes no callback call.
 This is a root-case boundary, not the ancestor/rotation integration or a new
 balancing theorem. The constructor validation paths now agree with lowering
 that literal `0` can initialize a known pointer-valued model field.
+
+The complementary black-parent exit and both wrappers now verify in
+`rbtree_size_insert_black_parent.click`. They preserve the focused sized model
+and the full ancestor tag, with no callback premise. This proves both immediate
+insertion exits; continuing ancestor/color-flip and rotation paths remain.

@@ -208,3 +208,11 @@ so it accepts any correctly typed callback without the plain insertion proof's
 read-only `AugmentRotate` premise. `InsertSizedRoot` exposes the checked root-case
 interface. This is not yet the ancestor or rotation paths of sized insertion,
 and does not establish balancing from arbitrary child colors.
+
+`rbtree_size_insert_black_parent.click` checks the other immediate insertion
+exit and both wrappers: a red focus beneath a nonnull black parent. Its
+`sized_black_parent_at` resource owns the sized subtree and ancestor tag;
+the exact subtree model and full ancestor tag are preserved. It needs neither
+root-field ownership nor a callback contract because this path reads neither
+the root field nor calls the callback. The ancestor can be at any depth, but
+this case stops immediately; color flips and rotations are still pending.
