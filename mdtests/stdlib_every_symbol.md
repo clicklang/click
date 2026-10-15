@@ -444,27 +444,27 @@ theorem one_plus_one() {
 }
 
 theorem length_laws<T>(head: T, xs: List<T>, ys: List<T>) {
-    ensures list_length(List<T>::Nil) == Nat::Zero by {
-        apply(list_length_nil(List<T>::Nil));
+    ensures list::length(List<T>::Nil) == Nat::Zero by {
+        apply(list::length_nil(List<T>::Nil));
     }
-    ensures list_length(List<T>::Cons(head, xs)) == Nat::Succ(list_length(xs)) by {
-        apply(list_length_cons(head, xs));
+    ensures list::length(List<T>::Cons(head, xs)) == Nat::Succ(list::length(xs)) by {
+        apply(list::length_cons(head, xs));
     }
-    ensures list_length(list_append(xs, ys)) == nat_add(list_length(xs), list_length(ys)) by {
-        apply(list_length_append(xs, ys));
+    ensures list::length(list::append(xs, ys)) == nat_add(list::length(xs), list::length(ys)) by {
+        apply(list::length_append(xs, ys));
     }
 }
 
 theorem nested_length(xs: List<List<int32>>, ys: List<List<int32>>) {
-    ensures list_length(list_append(xs, ys)) == nat_add(list_length(xs), list_length(ys)) by {
-        apply(list_length_append(xs, ys));
+    ensures list::length(list::append(xs, ys)) == nat_add(list::length(xs), list::length(ys)) by {
+        apply(list::length_append(xs, ys));
     }
 }
 
 theorem singleton_length(value: int32) {
-    ensures list_length(List<int32>::Cons(value, List<int32>::Nil)) == Nat::Succ(Nat::Zero) by {
-        unfold(list_length(List<int32>::Cons(value, List<int32>::Nil)));
-        unfold(list_length(List<int32>::Nil));
+    ensures list::length(List<int32>::Cons(value, List<int32>::Nil)) == Nat::Succ(Nat::Zero) by {
+        unfold(list::length(List<int32>::Cons(value, List<int32>::Nil)));
+        unfold(list::length(List<int32>::Nil));
         simp();
     }
 }
@@ -472,49 +472,49 @@ theorem singleton_length(value: int32) {
 verifying "stdlib_every_symbol.c";
 
 theorem list_laws(xs: List<int32>, ys: List<int32>, zs: List<int32>, value: int32) {
-    ensures list_contains(list_append(xs, ys), value)
-        == if list_contains(xs, value) { true } else { list_contains(ys, value) } by {
-        apply(list_contains_append(xs, ys, value));
+    ensures list::contains(list::append(xs, ys), value)
+        == if list::contains(xs, value) { true } else { list::contains(ys, value) } by {
+        apply(list::contains_append(xs, ys, value));
     }
-    ensures list_append(List<int32>::Nil, xs) == xs by {
-        apply(list_append_left_identity(xs));
+    ensures list::append(List<int32>::Nil, xs) == xs by {
+        apply(list::append_left_identity(xs));
         assumption();
     }
-    ensures list_append(xs, List<int32>::Nil) == xs by {
-        apply(list_append_right_identity(xs));
+    ensures list::append(xs, List<int32>::Nil) == xs by {
+        apply(list::append_right_identity(xs));
         assumption();
     }
-    ensures list_append(list_append(xs, ys), zs) == list_append(xs, list_append(ys, zs)) by {
-        apply(list_append_associative(xs, ys, zs));
+    ensures list::append(list::append(xs, ys), zs) == list::append(xs, list::append(ys, zs)) by {
+        apply(list::append_associative(xs, ys, zs));
         assumption();
     }
-    ensures list_contains(List<int32>::Nil, value) == false by {
-        apply(list_contains_nil(value));
+    ensures list::contains(List<int32>::Nil, value) == false by {
+        apply(list::contains_nil(value));
         assumption();
     }
-    ensures list_contains(List<int32>::Cons(value, xs), value) by {
-        apply(list_contains_cons(value, xs, value));
+    ensures list::contains(List<int32>::Cons(value, xs), value) by {
+        apply(list::contains_cons(value, xs, value));
         simp();
     }
 }
 
 theorem pointer_lists(xs: List<int32*>, ys: List<int32*>, zs: List<int32*>, value: int32*) {
-    ensures list_append(list_append(xs, ys), zs) == list_append(xs, list_append(ys, zs)) by {
-        apply(list_append_associative(xs, ys, zs));
+    ensures list::append(list::append(xs, ys), zs) == list::append(xs, list::append(ys, zs)) by {
+        apply(list::append_associative(xs, ys, zs));
         assumption();
     }
 }
 
 theorem nested_lists(xs: List<List<int32>>) {
-    ensures list_append(xs, List<List<int32>>::Nil) == xs by {
-        apply(list_append_right_identity(xs));
+    ensures list::append(xs, List<List<int32>>::Nil) == xs by {
+        apply(list::append_right_identity(xs));
         assumption();
     }
 }
 theorem append_constructor(head: int32, tail: List<int32>, ys: List<int32>) {
-    ensures list_append(List<int32>::Cons(head, tail), ys)
-        == List<int32>::Cons(head, list_append(tail, ys)) by {
-        apply(list_append_cons(head, tail, ys));
+    ensures list::append(List<int32>::Cons(head, tail), ys)
+        == List<int32>::Cons(head, list::append(tail, ys)) by {
+        apply(list::append_cons(head, tail, ys));
     }
 }
 

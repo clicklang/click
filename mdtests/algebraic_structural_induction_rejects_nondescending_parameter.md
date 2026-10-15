@@ -16,8 +16,8 @@ function rev_onto(xs: List<int32>, acc: List<int32>) -> List<int32>
 }
 
 theorem rev_onto_length_transport(xs: List<int32>, a: List<int32>, b: List<int32>) {
-    requires list_length(a) == list_length(b);
-    ensures list_length(rev_onto(xs, a)) == list_length(rev_onto(xs, b)) by {
+    requires list::length(a) == list::length(b);
+    ensures list::length(rev_onto(xs, a)) == list::length(rev_onto(xs, b)) by {
         induct(xs) as ih {
             List::Nil => {
                 unfold(rev_onto(List<int32>::Nil, a));
@@ -25,11 +25,11 @@ theorem rev_onto_length_transport(xs: List<int32>, a: List<int32>, b: List<int32
                 assumption();
             }
             List::Cons(head, tail) => {
-                have list_length(List<int32>::Cons(head, a))
-                    == list_length(List<int32>::Cons(head, b)) by {
-                    unfold(list_length(List<int32>::Cons(head, a)));
-                    unfold(list_length(List<int32>::Cons(head, b)));
-                    rewrite(list_length(a) == list_length(b));
+                have list::length(List<int32>::Cons(head, a))
+                    == list::length(List<int32>::Cons(head, b)) by {
+                    unfold(list::length(List<int32>::Cons(head, a)));
+                    unfold(list::length(List<int32>::Cons(head, b)));
+                    rewrite(list::length(a) == list::length(b));
                     normalize();
                 }
                 apply(ih(xs, List<int32>::Cons(head, a), List<int32>::Cons(head, b)));

@@ -493,7 +493,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
     ensures rb_tree_parent_consistent(erase_out_tree(out.model)) == 1;
     ensures erase_out_tree(out.model) == plug(old(up.model), erase_splice(old(tree.model)));
     ensures rb_inorder(erase_splice(old(tree.model)))
-        == list_append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model))));
+        == list::append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model))));
 } by {
     // The deeper-successor exits come first: their proofs name the tree's
     // shape themselves.
@@ -849,7 +849,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                                 rewrite(erase_minimum_identity(rb_minimum(right_model)) == mid);
                                                                 rewrite(deficit.model == rb_successor_context(mid, parent_model, color, left_model, right_model, old(up.model))); assumption();
                                                             }
-                                                            have rb_inorder(erase_deep_model(old(tree.model))) == list_append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
+                                                            have rb_inorder(erase_deep_model(old(tree.model))) == list::append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
                                                                 rewrite(old(tree.model) == RbTree::Node(identity, parent_model, color, left_model, right_model));
                                                                 unfold(erase_deep_model(RbTree::Node(identity, parent_model, color, left_model, right_model)));
                                                                 unfold(rb_left(RbTree::Node(identity, parent_model, color, left_model, right_model)));
@@ -914,7 +914,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                                 unfold(erase_deep_splice(RbTree::Node(identity, parent_model, color, RbTree::Node(lid, lp, lc, ll, lr), RbTree::Node(rid, rp, rc, RbTree::Node(iid, ip, ic, il, ir), rr)), RbMinimum::Found(mid, Color::Black, RbTree::Empty)));
                                                                 normalize();
                                                             }
-                                                            have rb_inorder(erase_splice(old(tree.model))) == list_append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
+                                                            have rb_inorder(erase_splice(old(tree.model))) == list::append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
                                                                 rewrite(erase_splice(old(tree.model)) == erase_deep_model(old(tree.model))); assumption();
                                                             }
                                                             unfold(hole);
@@ -1414,7 +1414,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                                 rewrite(context.model == old(up.model));
                                                                 rewrite(subtree.model == rb_successor_child_splice(mid, parent_model, color, left_model, right_model)); assumption();
                                                             }
-                                                            have rb_inorder(subtree.model) == list_append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
+                                                            have rb_inorder(subtree.model) == list::append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
                                                                 rewrite(subtree.model == rb_successor_child_splice(mid, parent_model, color, left_model, right_model));
                                                                 rewrite(rb_left(old(tree.model)) == left_model); rewrite(rb_right(old(tree.model)) == right_model); assumption();
                                                             }
@@ -1426,7 +1426,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                                 rewrite(context.model == old(up.model));
                                                                 rewrite(subtree.model == erase_child_deep_model(old(tree.model))); normalize();
                                                             }
-                                                            have rb_inorder(erase_child_deep_model(old(tree.model))) == list_append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
+                                                            have rb_inorder(erase_child_deep_model(old(tree.model))) == list::append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
                                                                 rewrite(erase_child_deep_model(old(tree.model)) == subtree.model); assumption();
                                                             }
                                                             mark closing_root;
@@ -1447,7 +1447,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                                     RbTree::Node(mid, parent_model, color, RbTree::Node(lid, mid, lc, ll, lr),
                                                                         RbTree::Node(rid, mid, rc, rb_remove_min_blackened(rl), rr)))); assumption();
                                                             }
-                                                            have rb_inorder(erase_child_deep_model(old(tree.model))) == list_append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model))));
+                                                            have rb_inorder(erase_child_deep_model(old(tree.model))) == list::append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model))));
                                                             observe(erase_callbacks(augment));
                                                             execute();
                                                             have result == 0;
@@ -1475,7 +1475,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                                 rewrite(rb_minimum(RbTree::Node(rid, rp, rc, RbTree::Node(iid, ip, ic, il, ir), rr)) == RbMinimum::Found(mid, mc, mr));
                                                                 rewrite(RbTree::Node(identity, parent_model, color, RbTree::Node(lid, lp, lc, ll, lr), RbTree::Node(rid, rp, rc, RbTree::Node(iid, ip, ic, il, ir), rr)) == old(tree.model)); assumption();
                                                             }
-                                                            have rb_inorder(erase_splice(old(tree.model))) == list_append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
+                                                            have rb_inorder(erase_splice(old(tree.model))) == list::append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
                                                                 rewrite(erase_splice(old(tree.model)) == erase_child_deep_model(old(tree.model))); assumption();
                                                             }
                                                             have rb_tree_parent_consistent(plug(old(up.model), erase_child_deep_model(old(tree.model)))) == 1 by {
@@ -1527,11 +1527,11 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                             have rb_right(old(tree.model)) == RbTree::Empty by auto;
                             have erase_outcome(old(tree.model), old(up.model)) == erase_leaf_outcome(erased_color, old(up.model)) by auto;
                             have erase_splice(old(tree.model)) == RbTree::Empty by auto;
-                            have rb_inorder(erase_splice(old(tree.model))) == list_append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
+                            have rb_inorder(erase_splice(old(tree.model))) == list::append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
                                 rewrite(erase_splice(old(tree.model)) == RbTree::Empty);
                                 rewrite(rb_left(old(tree.model)) == RbTree::Empty); rewrite(rb_right(old(tree.model)) == RbTree::Empty);
                                 unfold(rb_inorder(RbTree::Empty));
-                                unfold(list_append(List<struct rb_node*>::Nil, List<struct rb_node*>::Nil)); normalize();
+                                unfold(list::append(List<struct rb_node*>::Nil, List<struct rb_node*>::Nil)); normalize();
                             }
                             have ctx_consistent(up.model, RbTree::Node(erased, erased_parent, erased_color, erased_left, erased_right), 0) == 1 by {
                                 rewrite(RbTree::Node(erased, erased_parent, erased_color, erased_left, erased_right) == tree.model); assumption();
@@ -1865,13 +1865,13 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                 rewrite(erased_left == RbTree::Empty);
                                 unfold(rb_erase_root_child(RbTree::Node(erased, erased_parent, erased_color, RbTree::Empty, erased_right))); normalize();
                             }
-                            have rb_inorder(erase_splice(old(tree.model))) == list_append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
+                            have rb_inorder(erase_splice(old(tree.model))) == list::append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
                                 rewrite(erase_splice(old(tree.model)) == rb_erase_one_child_model(old(tree.model)));
                                 rewrite(rb_erase_one_child_model(old(tree.model)) == rb_reparent(rb_recolor(erased_right, Color::Black), erased_parent));
                                 rewrite(rb_inorder(rb_reparent(rb_recolor(erased_right, Color::Black), erased_parent)) == rb_inorder(erased_right));
                                 rewrite(rb_left(old(tree.model)) == RbTree::Empty); rewrite(rb_right(old(tree.model)) == erased_right);
                                 unfold(rb_inorder(RbTree::Empty));
-                                unfold(list_append(List<struct rb_node*>::Nil, rb_inorder(erased_right))); normalize();
+                                unfold(list::append(List<struct rb_node*>::Nil, rb_inorder(erased_right))); normalize();
                             }
                             let { left: l, right: r } = unfold(tree);
                             unfold(l);
@@ -1990,14 +1990,14 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                 unfold(rb_erase_root_child(RbTree::Node(erased, erased_parent, erased_color, RbTree::Node(el_id, el_parent, el_color, el_left, el_right), RbTree::Empty)));
                                 normalize();
                             }
-                            have rb_inorder(erase_splice(old(tree.model))) == list_append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
+                            have rb_inorder(erase_splice(old(tree.model))) == list::append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
                                 rewrite(erase_splice(old(tree.model)) == rb_erase_one_child_model(old(tree.model)));
                                 rewrite(rb_erase_one_child_model(old(tree.model)) == rb_reparent(rb_recolor(erased_left, Color::Black), erased_parent));
                                 rewrite(rb_inorder(rb_reparent(rb_recolor(erased_left, Color::Black), erased_parent)) == rb_inorder(erased_left));
                                 rewrite(rb_left(old(tree.model)) == erased_left); rewrite(rb_right(old(tree.model)) == RbTree::Empty);
                                 unfold(rb_inorder(RbTree::Empty));
-                                apply(list_append_right_identity(rb_inorder(erased_left)));
-                                rewrite(list_append(rb_inorder(erased_left), List<struct rb_node*>::Nil) == rb_inorder(erased_left)); normalize();
+                                apply(list::append_right_identity(rb_inorder(erased_left)));
+                                rewrite(list::append(rb_inorder(erased_left), List<struct rb_node*>::Nil) == rb_inorder(erased_left)); normalize();
                             }
                             let { left: l, right: r } = unfold(tree);
                             unfold(r);
@@ -2108,7 +2108,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                         unfold(rb_erase_immediate_leaf_model(RbTree::Node(erased, erased_parent, erased_color, erased_left, RbTree::Node(er_id, er_parent, er_color, er_left, er_right))));
                                                         normalize();
                                                     }
-                                                    have rb_inorder(erase_splice(old(tree.model))) == list_append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
+                                                    have rb_inorder(erase_splice(old(tree.model))) == list::append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
                                                         rewrite(erase_splice(old(tree.model)) == rb_erase_immediate_leaf_model(old(tree.model)));
                                                         rewrite(rb_erase_immediate_leaf_model(old(tree.model)) == rb_successor_splice(er_id, erased_parent, erased_color, erased_left, erased_right));
                                                         rewrite(rb_left(old(tree.model)) == erased_left); rewrite(rb_right(old(tree.model)) == erased_right); assumption();
@@ -2246,7 +2246,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                         unfold(rb_erase_immediate_leaf_model(RbTree::Node(erased, erased_parent, erased_color, erased_left, RbTree::Node(er_id, er_parent, er_color, er_left, er_right))));
                                                         normalize();
                                                     }
-                                                    have rb_inorder(erase_splice(old(tree.model))) == list_append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
+                                                    have rb_inorder(erase_splice(old(tree.model))) == list::append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
                                                         rewrite(erase_splice(old(tree.model)) == rb_erase_immediate_leaf_model(old(tree.model)));
                                                         rewrite(rb_erase_immediate_leaf_model(old(tree.model)) == rb_successor_splice(er_id, erased_parent, erased_color, erased_left, erased_right));
                                                         rewrite(rb_left(old(tree.model)) == erased_left); rewrite(rb_right(old(tree.model)) == erased_right); assumption();
@@ -2461,7 +2461,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                 unfold(rb_erase_immediate_child_model(RbTree::Node(erased, erased_parent, erased_color, erased_left, RbTree::Node(er_id, er_parent, er_color, er_left, er_right))));
                                                 normalize();
                                             }
-                                            have rb_inorder(erase_splice(old(tree.model))) == list_append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
+                                            have rb_inorder(erase_splice(old(tree.model))) == list::append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
                                                 rewrite(erase_splice(old(tree.model)) == rb_erase_immediate_child_model(old(tree.model)));
                                                 rewrite(rb_erase_immediate_child_model(old(tree.model)) == rb_immediate_successor_child(er_id, erased_parent, erased_color, erased_left, er_right));
                                                 rewrite(rb_left(old(tree.model)) == erased_left); rewrite(rb_right(old(tree.model)) == erased_right);

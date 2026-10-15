@@ -338,9 +338,9 @@ theorem add_two(n: Nat) {
     }
 }
 theorem singleton<T>(x: T) {
-    ensures list_length(List<T>::Cons(x, List<T>::Nil)) == Nat::Succ(Nat::Zero) by {
-        unfold(list_length(List<T>::Cons(x, List<T>::Nil)));
-        unfold(list_length(List<T>::Nil));
+    ensures list::length(List<T>::Cons(x, List<T>::Nil)) == Nat::Succ(Nat::Zero) by {
+        unfold(list::length(List<T>::Cons(x, List<T>::Nil)));
+        unfold(list::length(List<T>::Nil));
         normalize();
     }
 }
@@ -366,8 +366,8 @@ theorem independent<T, U>(x: T, y: U) {
     ensures y == y by { simp(); }
 }
 theorem lists<T>(xs: List<List<T>>) {
-    ensures list_append(xs, List<List<T>>::Nil) == xs by {
-        apply(list_append_right_identity(xs));
+    ensures list::append(xs, List<List<T>>::Nil) == xs by {
+        apply(list::append_right_identity(xs));
     }
 }
 "#;
@@ -467,9 +467,9 @@ theorem client(xs: List<int32>, ys: List<int32>) {
 fn nested_list_membership_expands_and_rechecks() {
     let source = r#"
 theorem client(xs: List<List<int32>>, ys: List<List<int32>>, value: List<int32>) {
-    ensures list_contains(list_append(xs, ys), value)
-        == if list_contains(xs, value) { true } else { list_contains(ys, value) } by {
-        apply(list_contains_append(xs, ys, value));
+    ensures list::contains(list::append(xs, ys), value)
+        == if list::contains(xs, value) { true } else { list::contains(ys, value) } by {
+        apply(list::contains_append(xs, ys, value));
     }
 }
 "#;
@@ -485,7 +485,7 @@ fn scalar_call_congruence_expands_and_rejects_tampering() {
     let source = r#"
 theorem client(xs: List<int32>, ys: List<int32>, value: int32) {
     requires xs == ys;
-    ensures list_contains(xs, value) == list_contains(ys, value) by {
+    ensures list::contains(xs, value) == list::contains(ys, value) by {
         rewrite(xs == ys);
         simp();
     }
@@ -504,8 +504,8 @@ theorem client(xs: List<int32>, ys: List<int32>, value: int32) {
 fn library_list_theorem_application_expands_and_rechecks() {
     let source = r#"
 theorem client(xs: List<int32>, ys: List<int32>, zs: List<int32>) {
-    ensures list_append(list_append(xs, ys), zs) == list_append(xs, list_append(ys, zs)) by {
-        apply(list_append_associative(xs, ys, zs));
+    ensures list::append(list::append(xs, ys), zs) == list::append(xs, list::append(ys, zs)) by {
+        apply(list::append_associative(xs, ys, zs));
     }
 }
 "#;
@@ -515,6 +515,29 @@ theorem client(xs: List<int32>, ys: List<int32>, zs: List<int32>) {
     let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column)
         .expect("library theorem application expands");
     verify_c0_sources(&expanded, &[]).expect("expanded library client rechecks");
+}
+
+#[test]
+fn expansion_spells_qualified_module_citations_by_their_in_scope_path() {
+    let source = "theorem client() {}\n";
+    assert_eq!(
+        library_citation_spelling(
+            source,
+            "apply(click::list::append_cons(x, xs, ys)); \
+             apply(click::machine_integer::int32_positive_is_nonnegative(x));"
+        ),
+        "apply(list::append_cons(x, xs, ys)); apply(int32_positive_is_nonnegative(x));"
+    );
+    let shadowing = "theorem append_cons() {}\n";
+    assert_eq!(
+        library_citation_spelling(shadowing, "apply(click::list::append_cons(x, xs, ys));"),
+        "apply(list::append_cons(x, xs, ys));"
+    );
+    let selective = "import click::list::{append, append_cons};\n";
+    assert_eq!(
+        library_citation_spelling(selective, "apply(click::list::append_cons(x, xs, ys));"),
+        "apply(append_cons(x, xs, ys));"
+    );
 }
 
 #[test]

@@ -156,7 +156,7 @@ function heap_inorder(tree: HeapTree) -> List<struct tree_node*>
     match tree {
         HeapTree::Empty => List::Nil,
         HeapTree::Node(node, value, left, right) =>
-            list_append(heap_inorder(left), List::Cons(node, heap_inorder(right))),
+            list::append(heap_inorder(left), List::Cons(node, heap_inorder(right))),
     }
 }
 
@@ -179,12 +179,12 @@ function heap_member(tree: HeapTree, target: struct tree_node*) -> bool
 }
 
 theorem heap_member_is_inorder_membership(tree: HeapTree, target: struct tree_node*) {
-    ensures heap_member(tree, target) == list_contains(heap_inorder(tree), target) by {
+    ensures heap_member(tree, target) == list::contains(heap_inorder(tree), target) by {
         induct(tree) as ih {
             HeapTree::Empty => {
                 unfold(heap_member(HeapTree::Empty, target));
                 unfold(heap_inorder(HeapTree::Empty));
-                unfold(list_contains(List::Nil, target));
+                unfold(list::contains(List::Nil, target));
                 normalize();
             }
             HeapTree::Node(node, value, left, right) => {
@@ -192,24 +192,24 @@ theorem heap_member_is_inorder_membership(tree: HeapTree, target: struct tree_no
                 apply(ih(right));
                 unfold(heap_member(HeapTree::Node(node, value, left, right), target));
                 unfold(heap_inorder(HeapTree::Node(node, value, left, right)));
-                apply(list_contains_append(heap_inorder(left),
+                apply(list::contains_append(heap_inorder(left),
                     List::Cons(node, heap_inorder(right)), target));
-                rewrite(list_contains(list_append(heap_inorder(left),
+                rewrite(list::contains(list::append(heap_inorder(left),
                     List::Cons(node, heap_inorder(right))), target)
-                    == if list_contains(heap_inorder(left), target) {
+                    == if list::contains(heap_inorder(left), target) {
                         true
                     } else {
-                        list_contains(List::Cons(node, heap_inorder(right)), target)
+                        list::contains(List::Cons(node, heap_inorder(right)), target)
                     });
-                apply(list_contains_cons(node, heap_inorder(right), target));
-                rewrite(list_contains(List::Cons(node, heap_inorder(right)), target)
+                apply(list::contains_cons(node, heap_inorder(right), target));
+                rewrite(list::contains(List::Cons(node, heap_inorder(right)), target)
                     == if node == target {
                         true
                     } else {
-                        list_contains(heap_inorder(right), target)
+                        list::contains(heap_inorder(right), target)
                     });
-                rewrite(heap_member(left, target) == list_contains(heap_inorder(left), target));
-                rewrite(heap_member(right, target) == list_contains(heap_inorder(right), target));
+                rewrite(heap_member(left, target) == list::contains(heap_inorder(left), target));
+                rewrite(heap_member(right, target) == list::contains(heap_inorder(right), target));
                 if node == target {
                     normalize() using { node == target; }
                 } else {
@@ -238,16 +238,16 @@ theorem heap_rotate_left_node_preserves_inorder(node: struct tree_node*, value: 
                     HeapTree::Node(pivot, pivot_value, middle, far_right))));
                 unfold(heap_inorder(HeapTree::Node(node, value, left, middle)));
                 unfold(heap_inorder(HeapTree::Node(pivot, pivot_value, middle, far_right)));
-                apply(list_append_associative(heap_inorder(left),
+                apply(list::append_associative(heap_inorder(left),
                     List::Cons(node, heap_inorder(middle)),
                     List::Cons(pivot, heap_inorder(far_right))));
-                rewrite(list_append(list_append(heap_inorder(left),
+                rewrite(list::append(list::append(heap_inorder(left),
                     List::Cons(node, heap_inorder(middle))),
                     List::Cons(pivot, heap_inorder(far_right)))
-                    == list_append(heap_inorder(left),
-                        list_append(List::Cons(node, heap_inorder(middle)),
+                    == list::append(heap_inorder(left),
+                        list::append(List::Cons(node, heap_inorder(middle)),
                             List::Cons(pivot, heap_inorder(far_right)))));
-                unfold(list_append(List::Cons(node, heap_inorder(middle)),
+                unfold(list::append(List::Cons(node, heap_inorder(middle)),
                     List::Cons(pivot, heap_inorder(far_right))));
                 normalize();
             }
@@ -288,16 +288,16 @@ theorem heap_rotate_right_node_preserves_inorder(node: struct tree_node*, value:
                     HeapTree::Node(pivot, pivot_value, far_left, middle), right)));
                 unfold(heap_inorder(HeapTree::Node(node, value, middle, right)));
                 unfold(heap_inorder(HeapTree::Node(pivot, pivot_value, far_left, middle)));
-                apply(list_append_associative(heap_inorder(far_left),
+                apply(list::append_associative(heap_inorder(far_left),
                     List::Cons(pivot, heap_inorder(middle)),
                     List::Cons(node, heap_inorder(right))));
-                rewrite(list_append(list_append(heap_inorder(far_left),
+                rewrite(list::append(list::append(heap_inorder(far_left),
                     List::Cons(pivot, heap_inorder(middle))),
                     List::Cons(node, heap_inorder(right)))
-                    == list_append(heap_inorder(far_left),
-                        list_append(List::Cons(pivot, heap_inorder(middle)),
+                    == list::append(heap_inorder(far_left),
+                        list::append(List::Cons(pivot, heap_inorder(middle)),
                             List::Cons(node, heap_inorder(right)))));
-                unfold(list_append(List::Cons(pivot, heap_inorder(middle)),
+                unfold(list::append(List::Cons(pivot, heap_inorder(middle)),
                     List::Cons(node, heap_inorder(right))));
                 normalize();
             }

@@ -203,11 +203,15 @@ Each step is a separate PR that leaves every example verifying:
      kernel-checked standard theorems use them, a file theorem may share a
      library theorem's bare name, and `click expand` spells a cited library
      theorem by its bare name unless the file shadows it.
-   - Next: qualified identities for library predicates, functions, resources
-     and types.
-   - Then the rename, one module per PR, with selective imports arriving
-     with the first; `machine_integer` and `integer` wait on the
-     Integer-default arithmetic decision.
+   - Done: selective imports, and the `list` rename. `click::list`
+     functions, predicates and theorems have qualified identities and need
+     a path or a selective import; `List` and its constructors stay bare.
+     Qualifying predicates and functions with each module's rename made a
+     separate identities step unnecessary.
+   - Next: the remaining renames, one module per PR (`nat`, `bytes`,
+     `cstr`, `permutation`), each joining `QUALIFIED_MODULES` in
+     `src/surface/parser/library_paths.rs`; `machine_integer` and
+     `integer` wait on the Integer-default arithmetic decision.
 6. Document the primitives in the language reference, and describe the
    library per module in the reference.
 7. Apply the consistency rules below: generic `count` and `permutation`,
