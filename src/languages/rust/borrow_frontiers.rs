@@ -1341,8 +1341,81 @@ mod tests {
         assert_eq!(occurrences, vec![0, 1, 2]);
     }
 
+    #[test]
+    fn scalar_lease_forest_matches_independent_frontier_checks() {
+        let reborrow = || E::Borrow {
+            place: Box::new(deref("child")),
+            value_type: reference_type(),
+        };
+        for statements in [
+            vec![
+                assign(local("child"), borrow_parent()),
+                assign(local("alias"), reborrow()),
+                assign(deref("alias"), E::Integer { value: 7 }),
+                assign(deref("parent"), E::Integer { value: 8 }),
+            ],
+            vec![
+                assign(local("child"), borrow_parent()),
+                assign(local("alias"), reborrow()),
+                assign(deref("alias"), E::Integer { value: 7 }),
+                assign(deref("child"), E::Integer { value: 8 }),
+                assign(deref("parent"), E::Integer { value: 9 }),
+            ],
+            vec![
+                assign(local("child"), borrow_parent()),
+                assign(local("alias"), reborrow()),
+                assign(deref("parent"), E::Integer { value: 8 }),
+            ],
+            vec![
+                assign(local("child"), borrow_parent()),
+                assign(local("alias"), local("child")),
+                assign(local("child"), local("other")),
+                assign(deref("alias"), E::Integer { value: 7 }),
+                assign(deref("parent"), E::Integer { value: 8 }),
+            ],
+        ] {
+            let mut f = function();
+            f.mir.as_mut().unwrap().blocks[0].statements = statements;
+            let forest = lease_forest::certify(&f, Some("locked")).unwrap();
+            for birth in forest.births.values() {
+                certify_scalar_reference_end(
+                    &f,
+                    "locked",
+                    point(birth.key.borrow),
+                    point(birth.key.end),
+                )
+                .unwrap();
+                for earlier in birth.key.borrow + 1..birth.key.end {
+                    assert!(
+                        certify_scalar_reference_end(
+                            &f,
+                            "locked",
+                            point(birth.key.borrow),
+                            point(earlier)
+                        )
+                        .is_err()
+                    );
+                }
+            }
+        }
+        let mut f = function();
+        f.mir.as_mut().unwrap().blocks[0].statements = vec![
+            assign(local("child"), borrow_parent()),
+            assign(local("alias"), reborrow()),
+            assign(deref("alias"), E::Integer { value: 7 }),
+        ];
+        let forest = lease_forest::certify(&f, Some("locked")).unwrap();
+        let endings = &forest.endings[&3];
+        assert_eq!(
+            endings.iter().map(|key| key.borrow).collect::<Vec<_>>(),
+            vec![1, 0]
+        );
+    }
+
     #[cfg(test)]
     mod scaling_tests {
         include!("../../scaling_tests/languages/rust/borrow_frontiers/tests.rs");
     }
 }
+
+pub(super) mod lease_forest;

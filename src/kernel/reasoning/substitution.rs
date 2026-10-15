@@ -848,6 +848,7 @@ fn walk_c_state<S: VariableSubstitution + ?Sized>(state: &CState, s: &S) -> CSta
 fn walk_c_statement<S: VariableSubstitution + ?Sized>(statement: &CStatement, s: &S) -> CStatement {
     match statement {
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -2424,6 +2425,7 @@ pub(in crate::kernel) fn collect_c_statement_bound_variables(
 ) {
     match statement {
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue

@@ -100,6 +100,7 @@ fn statement_expressions<'a>(
         CStatement::ForStep { step, .. } => statement_expressions(step, expressions),
         CStatement::Seq(first, _) => statement_expressions(first, expressions),
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }

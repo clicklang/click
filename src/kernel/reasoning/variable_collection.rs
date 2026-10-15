@@ -490,6 +490,7 @@ pub(in crate::kernel) fn collect_c_statement_bitvector_variables(
 ) {
     match statement {
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue

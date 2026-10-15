@@ -449,20 +449,7 @@ fn write_c_lvalue_paths_for_initialization(
             obligations,
         )]);
     }
-    let ending = store_source.lease_plan().cloned();
-    if ending.is_some() && lvalue.local_reference.is_none() {
-        return Ok(vec![CStatementExecutionPath::new(
-            CStatementOutcome::RuntimeError(crate::kernel::source_loans::source_loan_error(
-                crate::kernel::loans::LoanRefusal::MissingLoanBinding,
-            )),
-            facts,
-            obligations,
-        )]);
-    }
     if let Some(reference) = &lvalue.local_reference {
-        let executed_reference = *reference;
-        let executed_pointer = lvalue.pointer(state).expect("memory reference lvalue");
-        let executed_type = lvalue.value_type;
         let effective_assumptions =
             assumptions_with_path_context(assumptions, &facts, &obligations);
         let result = lvalue
@@ -509,22 +496,6 @@ fn write_c_lvalue_paths_for_initialization(
                     .without_exact_representation_for_occurrence(occurrence)
                     .expect("scalar store retains its temporary owner");
                 **state = (**state).clone().with_resource_context(resources);
-                if let Some(plan) = &ending {
-                    match plan.end(
-                        state,
-                        executed_reference,
-                        executed_pointer.clone(),
-                        executed_type,
-                        &effective_assumptions,
-                    ) {
-                        Ok(next) => **state = next,
-                        Err(error) => {
-                            path.outcome = CStatementOutcome::RuntimeError(
-                                crate::kernel::source_loans::source_loan_error(error),
-                            )
-                        }
-                    }
-                }
             }
         }
         return Ok(paths);
@@ -2631,6 +2602,7 @@ fn collect_scope_declared_names(statement: &CStatement, names: &mut Vec<String>)
         | CStatement::TryCatchInt32 { .. }
         // Everything else declares nothing.
         | CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
@@ -2991,23 +2963,9 @@ fn execute_c_statement_leaf_paths(
             name,
             expression,
             source,
-        } => source.lease_plan().is_none_or(|plan| {
-            if source.is_lease_read_end() {
-                plan.validates_read_assignment(name, expression)
-            } else {
-                plan.validates_assignment(name, expression)
-            }
-        }),
-        CStatement::TypedStore {
-            pointer,
-            value,
-            value_type,
-            volatile,
-            pointee_constant,
-            source,
-        } => source.lease_plan().is_none_or(|plan| {
-            plan.validates_store(pointer, value, *value_type, *volatile, *pointee_constant)
-        }),
+        } => source
+            .lease_plan()
+            .is_none_or(|plan| plan.validates_assignment(name, expression)),
         _ => true,
     };
     if !valid_source_operation {
@@ -3020,6 +2978,16 @@ fn execute_c_statement_leaf_paths(
         )]);
     }
     let paths = match statement {
+        CStatement::EndScalarReference(source) => vec![CStatementExecutionPath::new(
+            match source.execute(state, assumptions) {
+                Ok(next) => CStatementOutcome::Normal(Box::new(next)),
+                Err(error) => CStatementOutcome::RuntimeError(
+                    crate::kernel::source_loans::source_loan_error(error),
+                ),
+            },
+            Vec::new().into(),
+            Vec::new(),
+        )],
         CStatement::Skip => vec![CStatementExecutionPath::new(
             CStatementOutcome::Normal(Box::new(state.clone())),
             Vec::new().into(),
@@ -3288,11 +3256,7 @@ fn execute_c_statement_leaf_paths(
                             &path.facts,
                             &path.obligations,
                         );
-                        let transition = if source.is_lease_read_end() {
-                            plan.end_read(state, after, &effective_assumptions)
-                        } else {
-                            plan.begin(state, after, &effective_assumptions)
-                        };
+                        let transition = plan.begin(state, after, &effective_assumptions);
                         match transition {
                             Ok(next) => **after = next,
                             Err(error) => {

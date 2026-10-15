@@ -382,12 +382,11 @@ fn lower_function(
         records,
         functions,
     };
-    let mut body = match &f.mir {
+    let body = match &f.mir {
         Some(mir) if f.body.is_empty() => moves::lower(&mut cx, f, mir)?,
         Some(_) => return Err("Rust function must select exactly one body representation".into()),
         None => cx.body(&f.body)?,
     };
-    scalar_leases::activate(f, identity, &mut body)?;
     let mut kernel = c_function(
         return_type.to_kernel_type(),
         &f.name,
