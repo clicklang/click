@@ -3720,8 +3720,9 @@ struct holder {
             ),
         };
         let c_source = format!("{STRUCTS}\n{big_c}{FIXED_C}");
-        let click_source =
-            format!("{RESOURCES}\nverifying \"order.c\";\n\n{big_proof}{FIXED_PROOF}");
+        let click_source = format!(
+            "import click::machine_integer;\n\n{RESOURCES}\nverifying \"order.c\";\n\n{big_proof}{FIXED_PROOF}"
+        );
         let (result, events) = crate::instrumentation::collect(|| {
             verify_c0_sources(&click_source, &[("order.c", &c_source)])
         });

@@ -1,0 +1,10 @@
+{
+  "units": {
+    "loop": {
+      "language": "rust",
+      "sources": {
+        "loop.rs": {}
+      }
+    }
+  }
+}

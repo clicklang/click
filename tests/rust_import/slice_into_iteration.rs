@@ -1,27 +1,12 @@
 use super::*;
 
 fn project(name: &str) -> Project {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/into-slices");
-    let p = Project::new("");
-    for (destination, original) in [
-        (format!("{name}.rs"), format!("{name}.rs")),
-        (format!("{name}.ullbc"), format!("{name}.ullbc")),
-        ("borrow.click".into(), format!("{name}.click")),
-        (
-            "borrow.click.import.json".into(),
-            format!("{name}.click.import.json"),
-        ),
-        (
-            "borrow.click.import.json.lock".into(),
-            format!("{name}.click.import.json.lock"),
-        ),
-    ] {
-        fs::write(
-            p.root.join(destination),
-            fs::read(root.join(original)).unwrap(),
-        )
-        .unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/into-slices");
+    fs::copy(
+        p.root.join(format!("{name}.click")),
+        p.root.join("borrow.click"),
+    )
+    .unwrap();
     p
 }
 
@@ -36,7 +21,7 @@ fn charon_slice_into_iter_imports_unchanged_sum_and_tracks_the_remaining_proof_g
         include_str!("../../design/charon-trial/iterator-proof/rust-iterators/frozen.click")
     );
     let p = project("sum");
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     let error = C0VerificationSession::new_program_prepared(
         &super::parity::frozen_proof_input(
             &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
@@ -57,7 +42,7 @@ fn charon_slice_into_iter_imports_unchanged_sum_and_tracks_the_remaining_proof_g
 #[ignore = "nightly: 5s in the parallel gate"]
 fn charon_slice_into_iter_tools_agree_on_typed_reads_empty_inputs_and_expansion() {
     let p = project("iteration");
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     let empty = include_str!("../../design/charon-trial/into-slices/empty.click");
     C0VerificationSession::new_program_prepared(empty, &prepared).unwrap();
     for command in ["verify", "profile", "audit"] {
@@ -79,14 +64,8 @@ fn charon_slice_into_iter_tools_agree_on_typed_reads_empty_inputs_and_expansion(
 fn charon_slice_into_iter_live_refresh_and_rejected_mutable_or_owned_shapes() {
     for name in ["sum", "iteration"] {
         let p = project(name);
-        let mut config: serde_json::Value =
-            serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
-        config["exporter"] = serde_json::json!(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
-        );
-        fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-        refresh_import(&p.config()).unwrap();
-        let prepared = load_import(&p.config()).unwrap();
+        p.refresh().unwrap();
+        let prepared = p.prepared().unwrap();
         if name == "sum" {
             let error = C0VerificationSession::new_program_prepared(
                 &super::parity::frozen_proof_input(
@@ -122,18 +101,11 @@ fn charon_slice_into_iter_live_refresh_and_rejected_mutable_or_owned_shapes() {
             "pub fn bad(values: &[i32], values_len: usize)->i32 { for &value in values { return value; } 0 }",
         ] {
             fs::write(p.root.join("iteration.rs"), source).unwrap();
-            let old_artifact = fs::read(p.root.join("iteration.ullbc")).unwrap();
-            let old_lock =
-                fs::read(p.config().with_file_name("borrow.click.import.json.lock")).unwrap();
-            assert!(refresh_import(&p.config()).is_err());
-            assert_eq!(
-                fs::read(p.root.join("iteration.ullbc")).unwrap(),
-                old_artifact
-            );
-            assert_eq!(
-                fs::read(p.config().with_file_name("borrow.click.import.json.lock")).unwrap(),
-                old_lock
-            );
+            let old_artifact = fs::read(p.artifact("iteration.rs")).unwrap();
+            let old_lock = fs::read(p.lock_file()).unwrap();
+            assert!(p.refresh().is_err());
+            assert_eq!(fs::read(p.artifact("iteration.rs")).unwrap(), old_artifact);
+            assert_eq!(fs::read(p.lock_file()).unwrap(), old_lock);
         }
     }
 }

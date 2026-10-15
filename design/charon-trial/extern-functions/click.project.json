@@ -1,0 +1,21 @@
+{
+  "units": {
+    "extern_functions": {
+      "language": "rust",
+      "sources": {
+        "ffi.rs": {}
+      },
+      "crate": {
+        "name": "extern_functions",
+        "edition": "2024",
+        "features": [],
+        "roots": [
+          "extern_functions::caller"
+        ],
+        "files": [
+          "ffi.rs"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "units": {
+    "copy_source_after_call": {
+      "language": "rust",
+      "sources": {
+        "copy.rs": {}
+      },
+      "crate": {
+        "name": "copy_source_after_call",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "copy_source_after_call::caller"
+        ],
+        "files": [
+          "copy.rs"
+        ]
+      }
+    }
+  }
+}

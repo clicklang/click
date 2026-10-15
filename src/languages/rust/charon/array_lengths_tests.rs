@@ -2,7 +2,7 @@ use super::*;
 use crate::surface::C0VerificationSession;
 
 const ARTIFACT: &[u8] =
-    include_bytes!("../../../../design/charon-trial/array-lengths/bounds.ullbc");
+    include_bytes!("../../../../design/charon-trial/array-lengths/.click/bounds/bounds.rs.ullbc");
 const SOURCE: &[u8] = include_bytes!("../../../../design/charon-trial/array-lengths/bounds.rs");
 
 #[test]

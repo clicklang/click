@@ -23,6 +23,11 @@ formatters") changed how resource facts and their pointers are rendered.
 A third case, `shared_heap_detach_leak_diagnostic`, failed the same way on
 `7efa75c47` and passes on `765ede188`.
 
+The nightly lib test
+`surface::tests::diagnostic_tests::unfinished_callback_scripts_report_the_missing_authority_to_continue`
+checks the same `rb_augment_callbacks_helper_rejects_changed_cell` fragment
+and fails the same way on master `26caef84b`.
+
 Acceptance: decide which rendering is intended for each case. Either restore
 that rendering or update the expected fragment to the accurate one. Both
 mdtests pass under `CLICK_NIGHTLY=1`.

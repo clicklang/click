@@ -1,0 +1,10 @@
+{
+  "units": {
+    "snapshots": {
+      "language": "rust",
+      "sources": {
+        "snapshots.rs": {}
+      }
+    }
+  }
+}

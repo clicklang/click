@@ -22,7 +22,9 @@ fn charon_array_reference_assignments_preserve_bounded_storage_and_proof_work() 
         }
     }
     let export = super::super::charon::decode(
-        include_bytes!("../../../../design/charon-trial/array-values/bounds.ullbc"),
+        include_bytes!(
+            "../../../../design/charon-trial/array-values/.click/bounds/bounds.rs.ullbc"
+        ),
         "bounds.rs",
         include_bytes!("../../../../design/charon-trial/array-values/bounds.rs"),
     )
@@ -66,7 +68,9 @@ fn charon_array_reference_assignments_preserve_bounded_storage_and_proof_work() 
 #[ignore = "nightly: 2.1s in the parallel gate"]
 fn charon_external_array_operations_keep_lowering_and_proof_work_bounded() {
     let export = super::super::charon::decode(
-        include_bytes!("../../../../design/charon-trial/array-values/external.ullbc"),
+        include_bytes!(
+            "../../../../design/charon-trial/array-values/.click/external/external.rs.ullbc"
+        ),
         "external.rs",
         include_bytes!("../../../../design/charon-trial/array-values/external.rs"),
     )
