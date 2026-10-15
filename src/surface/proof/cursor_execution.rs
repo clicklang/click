@@ -2042,21 +2042,23 @@ pub(super) fn execute_step_successor_from_frontier_position(
     })
 }
 
-/// A refused C operation spelled over the parameters' entry values; where
-/// they leave a place unnamed (`…`), over them and then the locals live
-/// before the operation, so an address no parameter reaches but a local
-/// holds, such as a heap block or a pointer a call returned, reads as that
-/// local and, through its declared struct type, as the field the source
-/// names. A place the parameters name keeps the spelling the held resources
-/// it is compared with use.
+/// Prefer parameter-relative places; where those leave a value unnamed, try
+/// the locals live before the operation too. Recognize the shared printer's
+/// explicit placeholders as well as legacy source-place elisions.
 fn describe_runtime_error_before_statement(
     error: &crate::kernel::CRuntimeError,
     state: &CState,
     function: &syntax::C0Function,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
+    let missing_names = |text: &str| {
+        text.matches('…').count()
+            + text.matches("<pointer ").count()
+            + text.matches("<unnamed ").count()
+    };
     let over_parameters = describe_runtime_error(error, parameter_binding);
-    if !over_parameters.contains('…') {
+    let missing_parameters = missing_names(&over_parameters);
+    if missing_parameters == 0 {
         return over_parameters;
     }
     let (locals, local_values) =
@@ -2066,7 +2068,7 @@ fn describe_runtime_error_before_statement(
     names.extend(locals);
     values.extend(local_values);
     let over_locals = describe_runtime_error(error, ParameterBinding::new(&names, &values));
-    if over_locals.matches('…').count() < over_parameters.matches('…').count() {
+    if missing_names(&over_locals) < missing_parameters {
         over_locals
     } else {
         over_parameters

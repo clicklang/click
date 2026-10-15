@@ -1,5 +1,6 @@
 use super::diagnostics::*;
 use super::*;
+use crate::surface::proof_diagnostics::render::render_resource_fact_diagnostic;
 
 mod contract_evaluation;
 mod integer_affine_planner;
@@ -294,7 +295,7 @@ pub(super) fn prove_ensure_resource<'e>(
                 | ResourceClause::ViewMemory(_)
                 | ResourceClause::MemoryAggregate { .. }
         ) {
-            requirement = Some(describe_resource_fact(expected, parameter_binding));
+            requirement = Some(render_resource_fact_diagnostic(expected, parameter_binding));
         }
         Err(ClickError::new(format!(
             "`{claim_label}` failed on path {path_index}: {}",

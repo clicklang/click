@@ -788,7 +788,7 @@ impl<'a> Proof<'a> {
                     if old != new {
                         let description = match self.context.as_ref() {
                             ProofContext::Execution(context) => trace_resource_fact(fact, context),
-                            _ => crate::surface::diagnostics::describe_resource_fact(
+                            _ => crate::surface::proof_diagnostics::render::render_resource_fact_diagnostic(
                                 fact,
                                 ParameterBinding::default(),
                             ),
@@ -3441,7 +3441,7 @@ fn trace_resource_fact(fact: &CResourceFact, context: &ExecutionProofContext<'_>
             if let CExpression::Value(CValue::Pointer(base)) = argument
                 && base.pointer() == range.base()
             {
-                return crate::surface::diagnostics::describe_resource_fact(
+                return crate::surface::proof_diagnostics::render::render_resource_fact_diagnostic(
                     fact,
                     ParameterBinding::new(
                         std::slice::from_ref(parameter),
@@ -3450,13 +3450,11 @@ fn trace_resource_fact(fact: &CResourceFact, context: &ExecutionProofContext<'_>
                 );
             }
         }
-        return if fact.is_own() {
-            "ownership of a memory range (no source name)".into()
-        } else {
-            "view of a memory range (no source name)".into()
-        };
     }
-    crate::surface::diagnostics::describe_resource_fact(fact, context.parameter_binding())
+    crate::surface::proof_diagnostics::render::render_resource_fact_diagnostic(
+        fact,
+        context.parameter_binding(),
+    )
 }
 
 fn describe_assumption_goal(goal: &Proposition) -> &'static str {

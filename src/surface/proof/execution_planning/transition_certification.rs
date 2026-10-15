@@ -186,10 +186,11 @@ fn proof_condition_runtime_error(
         crate::kernel::CRuntimeError::MissingResource { resource }
             if resource.memory_view_range().is_some() =>
         {
-            let required = crate::surface::diagnostics::describe_resource_fact(
-                resource,
-                ParameterBinding::new(&parameters, &arguments),
-            );
+            let required =
+                crate::surface::proof_diagnostics::render::render_resource_fact_diagnostic(
+                    resource,
+                    ParameterBinding::new(&parameters, &arguments),
+                );
             (
                 format!("the read requires `{required}`, which is not available"),
                 " The condition's Boolean value does not need to be known in advance: `branch` can split on either value once the field can be read. Unfold the resource that exposes this field before `execute()`. If a read is valid only under a separate condition, establish that guard before executing the read.",
