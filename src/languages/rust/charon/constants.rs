@@ -164,7 +164,7 @@ mod tests {
     const ARTIFACT: &[u8] =
         include_bytes!("../../../../design/charon-trial/scalar-constants/constants.ullbc");
     const SOURCE: &[u8] = include_bytes!("../../../../design/charon-trial/scalar-constants/lib.rs");
-    fn decode(artifact: &TrialArtifact) -> Result<out::RustExport, String> {
+    fn decode(artifact: &ExtractionArtifact) -> Result<out::RustExport, String> {
         let sources = [("lib.rs".into(), SOURCE.to_vec())].into_iter().collect();
         decode_crate(
             &serde_json::to_vec(artifact).unwrap(),
@@ -178,7 +178,7 @@ mod tests {
 
     #[test]
     fn charon_constants_verify_bodies_and_reject_assumed_values() {
-        let artifact: TrialArtifact = serde_json::from_slice(ARTIFACT).unwrap();
+        let artifact: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
         let export = decode(&artifact).unwrap();
         let prepared = super::super::super::import::prepared_for_test(export.clone()).unwrap();
         crate::surface::C0VerificationSession::new_program_prepared(PROOF, &prepared).unwrap();
@@ -203,7 +203,7 @@ mod tests {
         assert!(
             crate::surface::C0VerificationSession::new_program_prepared(PROOF, &prepared).is_err()
         );
-        let mut overflowing: TrialArtifact = serde_json::from_slice(ARTIFACT).unwrap();
+        let mut overflowing: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
         let f = &mut overflowing.data.translated.fun_decls[a::FunDeclId::from(8)];
         let a::Body::Unstructured(body) = &mut f.body else {
             panic!()
@@ -230,7 +230,7 @@ mod tests {
     #[test]
     fn charon_constants_reject_corrupt_identity_effects_and_cycles() {
         for mutation in 0..14 {
-            let mut artifact: TrialArtifact = serde_json::from_slice(ARTIFACT).unwrap();
+            let mut artifact: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
             let krate = &mut artifact.data.translated;
             let global_id = a::GlobalDeclId::from(2);
             let function_id = krate.global_decls[global_id].init_fun_id().unwrap();

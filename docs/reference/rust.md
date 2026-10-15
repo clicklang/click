@@ -33,7 +33,14 @@ Click version, pinned Charon version/revision, compiler commit and host before
 compiling. The Charon wrapper's paired-driver layout is validated against the
 explicit driver entry. The bundle supplies its own target libraries and loader
 paths; installed extraction does not search for rustup or use ambient compiler
-flags. A missing or mismatched bundle gives an installation/version diagnostic.
+flags. A missing bundle names `click install VERSION --rust`. A mismatched or
+incomplete installed bundle names its exact frontend path to remove before
+reinstalling: ordinary installation retains an existing bundle. Version errors
+show the expected identity and the bounded identity actually reported. A
+`CLICK_CHARON` override instead points to correcting/unsetting that override
+and the source-build setup command. Hosts without a packaged bundle are
+reported as unavailable rather than being given an install command that
+cannot supply their platform.
 Only the Linux x86-64 GNU host is packaged initially.
 
 Rust project units use this frontend automatically. `CLICK_CHARON` is a
@@ -98,6 +105,12 @@ changes require refresh. The saved lock includes the compiler/exporter identity.
 extractor or adapter semantics, refresh existing imports. Configurations use
 schema 3 and native `.ullbc` artifacts. Omitting `backend` selects Charon;
 `"charon"` and the historical `"charon-trial"` spelling are also accepted.
+New lock identities use the `click-rust-v1` profile name. Existing
+`click-charon-trial-v1` lock identities remain accepted with the same exact
+input, artifact and semantic-profile checks; loading preserves their original
+identities. The backend spelling is likewise a compatibility alias. Historical
+single-file crate/output labels inside serialized artifacts remain stable, so
+this naming cleanup requires no artifact rewrite or forced lock refresh.
 Schema 2 is rejected with a migration diagnostic. The normal example gate
 checks locked native inputs offline, while the nightly gate's live Charon
 tests refresh and verify all 16 original Rust fixtures.
@@ -128,7 +141,12 @@ This invokes rustc directly; it does not execute Cargo manifests or build
 scripts, resolve third-party dependencies, or enable features implicitly.
 Editions 2021 and 2024 are supported. Roots are explicit qualified paths.
 All compiler-read inputs, including unused modules and included data, must
-appear exactly once in `files`. rustc dep-info checks that closure. Files must
+appear exactly once in `files`. rustc dep-info checks that closure. A mismatch lists missing entries in
+`crate.files` and extra configured entries, with bounded lists. If a module or
+include is omitted, rustc may fail before emitting dep-info because only the
+configured files are copied into the private compiler snapshot. That error
+retains rustc's filename/module diagnostic and explains how to check
+`crate.files`; it never expands the compiler snapshot implicitly. Files must
 be regular, use normalized relative paths, and stay inside the configuration
 directory without symlinks. Environment-dependent source macros are rejected.
 
@@ -182,7 +200,7 @@ contracts use `struct <qualified-record> <function>(...)` and can state
 `ensures result.field == value;`; those contracts must verify before callers
 can use them.
 
-The unchanged adler2 trial proves `Adler32::default` and `Adler32::new` return
+The unchanged adler2 example proves `Adler32::default` and `Adler32::new` return
 `a = 1`, `b = 0`. Concrete assignment operators also accept supported
 by-value record operands through the checked call interface. Selecting the
 complete checksum loop now produces a locked, prepared import, and its
@@ -826,7 +844,7 @@ and attempts to write through yielded shared references are rejected.
 Shared iteration over fixed `i32`, `u8`, and `u32` arrays is also supported,
 including borrowed arrays, local arrays, explicit `.iter()` calls, stored
 `Iter` locals, and moves of the remaining iterator. See the locked
-[array iteration trial](https://github.com/clicklang/click/tree/master/design/charon-trial/array-iteration).
+[array iteration example](https://github.com/clicklang/click/tree/master/design/charon-trial/array-iteration).
 Moving an iterator retires its source; repeated exhaustion yields no element.
 `.iter_mut()`, by-value array iteration, custom iterators, labels, `break`, and
 `continue` remain outside this subset.

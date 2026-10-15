@@ -339,7 +339,7 @@ mod tests {
     const SOURCE: &[u8] = include_bytes!("../../../../design/charon-trial/trait-methods/shapes.rs");
     const INTERFACE: &str = "__rust_q_I13_trait_methods_I5_Shape_I4_area";
 
-    fn decode_fixture(artifact: &TrialArtifact) -> Result<out::RustExport, String> {
+    fn decode_fixture(artifact: &ExtractionArtifact) -> Result<out::RustExport, String> {
         let sources = [("shapes.rs".into(), SOURCE.to_vec())]
             .into_iter()
             .collect();
@@ -369,7 +369,7 @@ mod tests {
     // and a call through a bound or a `dyn` vtable calls it.
     #[test]
     fn charon_trait_methods_import_interfaces_and_dispatch() {
-        let artifact: TrialArtifact = serde_json::from_slice(ARTIFACT).unwrap();
+        let artifact: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
         let export = decode_fixture(&artifact).unwrap();
         let function = |name: &str| export.functions.iter().find(|f| f.name == name).unwrap();
         let interface = function(INTERFACE);
@@ -419,7 +419,7 @@ mod tests {
                 "crate trait with generics, associated items, or supertraits",
             ),
         ] {
-            let mut artifact: TrialArtifact = serde_json::from_slice(ARTIFACT).unwrap();
+            let mut artifact: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
             let krate = &mut artifact.data.translated;
             let shape = krate
                 .trait_decls

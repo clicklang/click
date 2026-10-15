@@ -1,5 +1,8 @@
 //! The compiled-in extraction and semantic profile. Changes to interpretation
 //! must version its named semantic entry; existing lock byte order is stable.
+/// Historical spelling accepted only when checking an existing lock identity.
+pub(super) const LEGACY_IDENTITY: &str = "click-charon-trial-v1";
+
 use serde::Deserialize;
 use std::sync::OnceLock;
 

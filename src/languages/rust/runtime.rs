@@ -30,19 +30,42 @@ pub(super) struct Runtime {
     compiler: PathBuf,
     compiler_prefix: Vec<String>,
     pub sysroot: Option<PathBuf>,
+    recovery: String,
 }
 
 pub(super) fn resolve(legacy: Option<&Path>) -> Result<Runtime, String> {
     if let Some(path) = legacy {
-        return Runtime::legacy(path);
+        return with_recovery(
+            Runtime::legacy(path),
+            "Correct the legacy `exporter` path; for a source build run `scripts/build-charon.sh --install-toolchain`, or omit `exporter` to select the installed Rust frontend"
+                .into(),
+        );
     }
     if let Some(path) = std::env::var_os("CLICK_CHARON").filter(|s| !s.is_empty()) {
         let path = PathBuf::from(path);
-        return if path.is_dir() {
+        let runtime = if path.is_dir() {
             Runtime::bundle(&path)
         } else {
             Runtime::legacy(&path)
         };
+        return with_recovery(
+            runtime,
+            format!(
+                "Correct or unset CLICK_CHARON to select the installed Rust frontend. For a source-built executable, run `scripts/build-charon.sh --install-toolchain` (toolchain {})",
+                profile::get().toolchain
+            ),
+        );
+    }
+    if !cfg!(all(
+        target_os = "linux",
+        target_arch = "x86_64",
+        target_env = "gnu"
+    )) {
+        return Err(format!(
+            "Rust frontend bundle for Click {VERSION} is unavailable on {}/{}; the packaged host is {HOST}",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        ));
     }
     let home = std::env::var_os("CLICK_HOME")
         .filter(|s| !s.is_empty())
@@ -54,7 +77,7 @@ pub(super) fn resolve(legacy: Option<&Path>) -> Result<Runtime, String> {
         })
         .ok_or("cannot locate the Rust frontend; set CLICK_HOME")?;
     let bundle = home.join("versions").join(VERSION).join("frontends/rust");
-    if !bundle.join("frontend.json").is_file() {
+    if !bundle.exists() {
         return Err(format!(
             "Rust frontend is not installed for Click {VERSION} ({}/{}); run `click install {VERSION} --rust` to install its pinned bundle at `{}`. CLICK_CHARON is a development override",
             std::env::consts::OS,
@@ -62,7 +85,23 @@ pub(super) fn resolve(legacy: Option<&Path>) -> Result<Runtime, String> {
             bundle.display()
         ));
     }
-    Runtime::bundle(&bundle)
+    with_recovery(
+        Runtime::bundle(&bundle),
+        format!(
+            "Remove the Rust frontend at `{}` and reinstall with `click install {VERSION} --rust`",
+            bundle.display()
+        ),
+    )
+}
+
+fn with_recovery(result: Result<Runtime, String>, recovery: String) -> Result<Runtime, String> {
+    match result {
+        Ok(mut runtime) => {
+            runtime.recovery = recovery;
+            Ok(runtime)
+        }
+        Err(error) => Err(format!("{error}. {recovery}")),
+    }
 }
 
 fn bundled_path(root: &Path, name: &str) -> Result<PathBuf, String> {
@@ -81,6 +120,17 @@ impl Runtime {
     fn legacy(path: &Path) -> Result<Self, String> {
         let executable = std::fs::canonicalize(path)
             .map_err(|e| format!("Rust frontend `{}`: {e}", path.display()))?;
+        let driver = executable.with_file_name(if cfg!(windows) {
+            "charon-driver.exe"
+        } else {
+            "charon-driver"
+        });
+        if !driver.is_file() {
+            return Err(format!(
+                "Rust source-built frontend is missing its paired driver at `{}`",
+                driver.display()
+            ));
+        }
         let environment: BTreeMap<_, _> = [
             "PATH",
             "HOME",
@@ -98,11 +148,7 @@ impl Runtime {
         .find(|p| p.is_file())
         .ok_or("development Charon runtime needs rustup; use an installed Rust frontend bundle to extract without rustup")?;
         Ok(Self {
-            driver: executable.with_file_name(if cfg!(windows) {
-                "charon-driver.exe"
-            } else {
-                "charon-driver"
-            }),
+            driver,
             executable,
             environment,
             compiler,
@@ -112,6 +158,7 @@ impl Runtime {
                 "rustc".into(),
             ],
             sysroot: None,
+            recovery: String::new(),
         })
     }
 
@@ -136,8 +183,15 @@ impl Runtime {
             || m.compiler_commit != p.compiler_commit
         {
             return Err(format!(
-                "Rust frontend version mismatch; expected Click {VERSION}, Charon {} ({}), rustc {}",
-                p.extractor_version, p.extractor_revision, p.compiler_commit
+                "Rust frontend version mismatch; expected bundle schema 1 for Click {VERSION}, Charon {} ({}), rustc {}; got schema {}, Click {}, Charon {} ({}), rustc {}",
+                p.extractor_version,
+                p.extractor_revision,
+                p.compiler_commit,
+                m.schema,
+                short_identity(&m.click_version),
+                short_identity(&m.extractor_version),
+                short_identity(&m.extractor_revision),
+                short_identity(&m.compiler_commit)
             ));
         }
         if m.host != HOST
@@ -186,6 +240,7 @@ impl Runtime {
             compiler,
             compiler_prefix: vec![],
             sysroot: Some(sysroot),
+            recovery: String::new(),
         })
     }
 
@@ -214,6 +269,11 @@ impl Runtime {
     }
 
     pub(super) fn check(&self, root: &Path, limits: CompilerLimits) -> Result<(), String> {
+        self.check_identity(root, limits)
+            .map_err(|error| format!("{error}. {}", self.recovery))
+    }
+
+    fn check_identity(&self, root: &Path, limits: CompilerLimits) -> Result<(), String> {
         let p = profile::get();
         let version = run_compiler(
             &self.executable,
@@ -226,8 +286,14 @@ impl Runtime {
             != format!("{} ({})", p.extractor_version, p.extractor_revision)
         {
             return Err(format!(
-                "Rust frontend version mismatch; expected Charon {} ({})",
-                p.extractor_version, p.extractor_revision
+                "Rust frontend version mismatch; expected Charon {} ({}), got {:?}",
+                p.extractor_version,
+                p.extractor_revision,
+                String::from_utf8_lossy(&version.stdout)
+                    .trim()
+                    .chars()
+                    .take(160)
+                    .collect::<String>()
             ));
         }
         let expected = format!("commit-hash: {}", p.compiler_commit);
@@ -237,8 +303,9 @@ impl Runtime {
             .any(|s| s == expected)
         {
             return Err(format!(
-                "Rust frontend compiler version mismatch; expected rustc {}",
-                p.compiler_commit
+                "Rust frontend compiler version mismatch; expected rustc {}, got {}",
+                p.compiler_commit,
+                reported_commit(&compiler.stdout)
             ));
         }
         if self.sysroot.is_some() {
@@ -254,11 +321,26 @@ impl Runtime {
                 .any(|s| s == expected)
             {
                 return Err(format!(
-                    "Rust frontend driver version mismatch; expected rustc {}",
-                    p.compiler_commit
+                    "Rust frontend driver version mismatch; expected rustc {}, got {}",
+                    p.compiler_commit,
+                    reported_commit(&driver.stdout)
                 ));
             }
         }
         Ok(())
     }
+}
+
+fn reported_commit(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes)
+        .lines()
+        .find_map(|line| line.strip_prefix("commit-hash: "))
+        .map_or_else(
+            || "no compiler commit reported".into(),
+            |s| format!("{:?}", s.chars().take(160).collect::<String>()),
+        )
+}
+
+fn short_identity(value: &str) -> String {
+    format!("{:?}", value.chars().take(160).collect::<String>())
 }

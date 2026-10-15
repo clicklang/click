@@ -80,10 +80,15 @@ fn rust_crate_locks_all_compiler_inputs_and_preserves_qualified_calls() {
     let fresh_artifact = fs::read(p.root.join("crate.ullbc")).unwrap();
     let fresh_lock = fs::read(p.root.join("borrow.click.import.json.lock")).unwrap();
     fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    let mismatch = refresh_import(&p.config()).unwrap_err();
+    assert!(mismatch.contains("source closure differs"), "{mismatch}");
     assert!(
-        refresh_import(&p.config())
-            .unwrap_err()
-            .contains("source closure differs")
+        mismatch.contains("missing from `crate.files`: none"),
+        "{mismatch}"
+    );
+    assert!(
+        mismatch.contains("extra in `crate.files`: \"extra.rs\""),
+        "{mismatch}"
     );
     assert_eq!(
         fs::read(p.root.join("crate.ullbc")).unwrap(),
@@ -98,7 +103,12 @@ fn rust_crate_locks_all_compiler_inputs_and_preserves_qualified_calls() {
         .unwrap()
         .retain(|name| name != "extra.rs" && name != "src/unused.rs");
     fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-    assert!(refresh_import(&p.config()).is_err());
+    let missing = refresh_import(&p.config()).unwrap_err();
+    assert!(missing.contains("crate input check failed"), "{missing}");
+    assert!(
+        missing.contains("crate.files") && missing.contains("src/unused.rs"),
+        "{missing}"
+    );
     assert_eq!(
         fs::read(p.root.join("crate.ullbc")).unwrap(),
         fresh_artifact

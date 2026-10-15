@@ -818,7 +818,7 @@ fn charon_checksum_arithmetic_live_refresh_and_rejected_modes() {
         fs::remove_file(p.root.join("arithmetic.ullbc")).unwrap();
         fs::write(p.root.join("arithmetic.rs"), source).unwrap();
         let error = refresh_import(&p.config()).unwrap_err();
-        assert!(error.contains("Charon trial does not support"), "{error}");
+        assert!(error.contains("Rust frontend does not support"), "{error}");
         assert!(!p.root.join("arithmetic.ullbc").exists());
         fs::write(p.root.join("arithmetic.rs"), CHARON_ARITHMETIC_SOURCE).unwrap();
         refresh_import(&p.config()).unwrap();
@@ -913,7 +913,7 @@ fn charon_nested_live_refresh_and_rejected_array_borrows() {
         ),
         (
             "pub fn bad()->usize { let bytes=[7u16;8]; let slice:&[u16]=&bytes; slice.len() }",
-            "Charon trial does not support",
+            "Rust frontend does not support",
         ),
         (
             "pub fn bad(n:i32) { let mut i=0; while i<n { let mut j=0; while j<n { if j==2 { break; } j+=1; } i+=1; } }",
@@ -1054,11 +1054,11 @@ fn charon_chunks_live_refresh_and_rejected_protocols() {
         ),
         (
             "pub fn bad(x:&[u16])->usize { x.chunks_exact(4).remainder().len() }",
-            "Charon trial does not support",
+            "Rust frontend does not support",
         ),
         (
             "pub fn bad(x:&[u8]) { for chunk in x.chunks_exact(4).rev() { let a=chunk[0]; } }",
-            "Charon trial does not support",
+            "Rust frontend does not support",
         ),
     ] {
         fs::remove_file(p.root.join("chunks.ullbc")).unwrap();

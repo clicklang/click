@@ -99,8 +99,15 @@ and the relocated installation locks/verifies the basic example and adler2
 outside the checkout. Packaging pull requests and tagged releases run this
 check before publication.
 
-Other host bundles, release identity contributions to the shared project lock,
-removing historical trial names, and richer crate-closure diagnostics remain.
+Rust diagnostics now list bounded crate-closure differences and preserve
+compiler filename diagnostics for omitted snapshot inputs. The canonical
+profile identity is `click-rust-v1`; existing locks and the historical backend
+spelling remain checked compatibility aliases without artifact rewrites.
+Frontend failures distinguish absent, incomplete and mismatched installations
+from development overrides, and name the corresponding recovery action.
+
+Other host bundles and release identity contributions to the shared project
+lock remain.
 The audit below records the original pipeline; legacy per-sidecar/source-build
 paths remain available during the project-config migration.
 
