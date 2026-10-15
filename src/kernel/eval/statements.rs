@@ -449,7 +449,20 @@ fn write_c_lvalue_paths_for_initialization(
             obligations,
         )]);
     }
+    let ending = store_source.lease_plan().cloned();
+    if ending.is_some() && lvalue.local_reference.is_none() {
+        return Ok(vec![CStatementExecutionPath::new(
+            CStatementOutcome::RuntimeError(crate::kernel::source_loans::source_loan_error(
+                crate::kernel::loans::LoanRefusal::MissingLoanBinding,
+            )),
+            facts,
+            obligations,
+        )]);
+    }
     if let Some(reference) = &lvalue.local_reference {
+        let executed_reference = *reference;
+        let executed_pointer = lvalue.pointer(state).expect("memory reference lvalue");
+        let executed_type = lvalue.value_type;
         let effective_assumptions =
             assumptions_with_path_context(assumptions, &facts, &obligations);
         let result = lvalue
@@ -496,6 +509,22 @@ fn write_c_lvalue_paths_for_initialization(
                     .without_exact_representation_for_occurrence(occurrence)
                     .expect("scalar store retains its temporary owner");
                 **state = (**state).clone().with_resource_context(resources);
+                if let Some(plan) = &ending {
+                    match plan.end(
+                        state,
+                        executed_reference,
+                        executed_pointer.clone(),
+                        executed_type,
+                        &effective_assumptions,
+                    ) {
+                        Ok(next) => **state = next,
+                        Err(error) => {
+                            path.outcome = CStatementOutcome::RuntimeError(
+                                crate::kernel::source_loans::source_loan_error(error),
+                            )
+                        }
+                    }
+                }
             }
         }
         return Ok(paths);
@@ -2957,6 +2986,35 @@ fn execute_c_statement_leaf_paths(
             Vec::new(),
         )]);
     }
+    let valid_source_operation = match statement {
+        CStatement::Assign {
+            name,
+            expression,
+            source,
+        } => source
+            .lease_plan()
+            .is_none_or(|plan| plan.validates_assignment(name, expression)),
+        CStatement::TypedStore {
+            pointer,
+            value,
+            value_type,
+            volatile,
+            pointee_constant,
+            source,
+        } => source.lease_plan().is_none_or(|plan| {
+            plan.validates_store(pointer, value, *value_type, *volatile, *pointee_constant)
+        }),
+        _ => true,
+    };
+    if !valid_source_operation {
+        return Ok(vec![CStatementExecutionPath::new(
+            CStatementOutcome::RuntimeError(crate::kernel::source_loans::source_loan_error(
+                crate::kernel::loans::LoanRefusal::InvalidEvidence,
+            )),
+            Vec::new().into(),
+            Vec::new(),
+        )]);
+    }
     let paths = match statement {
         CStatement::Skip => vec![CStatementExecutionPath::new(
             CStatementOutcome::Normal(Box::new(state.clone())),
@@ -3219,10 +3277,26 @@ fn execute_c_statement_leaf_paths(
                 budget,
             )?;
             for path in &mut paths {
-                if let CStatementOutcome::Normal(after) = &path.outcome
-                    && let Some(fact) = source.completed(state, after, name)
-                {
-                    path.facts.push(fact);
+                if let CStatementOutcome::Normal(after) = &mut path.outcome {
+                    if let Some(plan) = source.lease_plan() {
+                        let effective_assumptions = assumptions_with_path_context(
+                            assumptions,
+                            &path.facts,
+                            &path.obligations,
+                        );
+                        match plan.begin(state, after, &effective_assumptions) {
+                            Ok(next) => **after = next,
+                            Err(error) => {
+                                path.outcome = CStatementOutcome::RuntimeError(
+                                    crate::kernel::source_loans::source_loan_error(error),
+                                );
+                                continue;
+                            }
+                        }
+                    }
+                    if let Some(fact) = source.completed(state, after, name) {
+                        path.facts.push(fact);
+                    }
                 }
             }
             paths

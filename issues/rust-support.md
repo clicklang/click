@@ -243,8 +243,8 @@ needed to finish a claim already made:
     produce no store observation, and source deltas have ambient-scaling checks.
   - the checked kernel lifecycle for exclusive scalar-reference identities:
     parent suspension, nested dependencies and one-time child recovery, with
-    exact owned-support checks and indexed scaling regressions. Rust execution
-    does not yet issue or consume these local-reference transitions.
+    exact owned-support checks and indexed scaling regressions. The restricted
+    source integration below now issues and consumes these transitions.
   - completed scalar-reborrow assignment receipts and execution-bound endings
     immediately after selected child stores. Bindings require both operations
     on one path, check the source and actual pointer, and refuse ambiguous
@@ -254,13 +254,23 @@ needed to finish a claim already made:
     checks custody in ordinary loads/stores, preserves child writes through
     recovery and rejects copied stale children after ownership returns. Kernel
     execution negatives and indexed adapter scaling checks cover this layer;
-    Rust source execution does not yet activate it. Calls, reference storage,
-    aggregates and loop summarization remain refused while a lease is active.
+    restricted Rust source execution now activates it as described below.
+    Calls, reference storage, aggregates and loop summarization remain refused
+    while a lease is active.
 
-  Those executed observations must still bind the local-reference lifecycle
-  and private memory adapter to the actual ending frontier/invocation. Recovery
-  at checked frontiers remains open. A reproduced false acceptance here
-  would be `unsound`, and so P1, under the [issue rules](README.md).
+  - source-bound birth/end execution for one same-block scalar reborrow from a
+    reference parameter, ending after its final child store. Semantic plans
+    bind exact lowered operands and locked source points; recovery consumes the
+    actual store's live lease identity and restores the original owned support.
+    The unchanged native reborrow witness verifies with real lease operations,
+    including proof expansion/recheck and authority/value negatives. New source
+    tests reject missing births, stale/foreign handles and transplanted plans.
+
+  Wider source coverage remains open: copies and nested local references, read
+  endings, multiple blocks/loops, aggregates, shared aliases and call/havoc
+  transport need checked protocols. Observations remain read-only; only the
+  activated source subset executes local leases. A reproduced false acceptance
+  here would be `unsound`, and so P1, under the [issue rules](README.md).
 - **Stable proof observations.** Provide source-facing slice, array and
   iterator observations, so that contracts need not depend on compiler
   temporary names or storage details. They must preserve qualified

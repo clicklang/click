@@ -2,8 +2,8 @@
 //!
 //! Registration checks an existing owned occurrence; no lifecycle transition
 //! creates or returns an owned fact. The private memory adapter reserves that
-//! occurrence and checks leases at ordinary scalar loads/stores. A frontend
-//! must still bind birth and ending to a checked source plan and invocation.
+//! occurrence and checks leases at ordinary scalar loads/stores. Checked source
+//! plans bind supported births and endings to actual executed custody.
 
 use super::*;
 use crate::kernel::{CType, Pointer};
@@ -18,6 +18,7 @@ struct LocalReferenceBacking {
     owned: CResourceFact,
     value_type: CType,
     reservation: Option<Arc<crate::kernel::primitives::ReservedLocalScalarOwner>>,
+    source_plan: Option<crate::kernel::ScalarReferencePlanKey>,
 }
 
 /// A reference instance, rather than a variable name or raw pointer value.
@@ -126,6 +127,7 @@ impl LoanLedger {
                 owned: owned.clone(),
                 value_type,
                 reservation: None,
+                source_plan: None,
             }),
         };
         let transition = self.issue(LoanTransitionEvidence::RegisterLocalReference(
@@ -267,8 +269,11 @@ impl LoanLedger {
                 range
                     .signed_constant_end()
                     .zip(range.signed_constant_start())
-                    .is_some_and(|(end, start)| end.checked_sub(start) == Some(1))
-                    && range.element_width() == backing.value_type.byte_width()
+                    .is_some_and(|(end, start)| {
+                        end.checked_sub(start)
+                            .and_then(|count| count.checked_mul(i64::from(range.element_width())))
+                            == Some(i64::from(backing.value_type.byte_width()))
+                    })
             })
         {
             return Err(LoanRefusal::InvalidEvidence);

@@ -32,7 +32,8 @@
     "shared-scalar-slice-into-iteration-v1",
     "shared-byte-split-at-pair-v1",
     "borrowed-iterator-forwarding-v1",
-    "stable-extraction-output-metadata-v1"
+    "stable-extraction-output-metadata-v1",
+    "checked-straightline-scalar-reference-leases-v1"
   ],
   "extractor_version": "0.1.279"
 }
