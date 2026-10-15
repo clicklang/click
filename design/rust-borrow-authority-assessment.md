@@ -147,12 +147,48 @@ that subset. It does not grant memory authority, end a production loan or
 change ordinary import/verification acceptance. An unsupported ending query
 does not itself reject the Rust program.
 
+## Checked local-reference lifecycle
+
+`src/kernel/loans/local_references.rs` adds the local-reference lifecycle to
+the existing immutable `LoanLedger` and its sealed, predecessor-bound checked
+transitions. This is a kernel protocol increment; ordinary Rust lowering does
+not yet issue these transitions or use their access checks.
+
+Registration checks an exact live owned occurrence for one scalar (`i32`,
+`u8`, `u16` or `u32`) and retains its holder, footprint and type. It reserves
+one root identity for that occurrence. A reborrow has a fresh reference identity
+and the exact parent's shared backing; names and pointer equality cannot
+substitute for it. While the child is active, the protocol refuses parent
+access, another child from that parent, and parent retirement. Nested borrowing
+suspends the intermediate reference too. Independent scalar roots remain usable.
+
+Recovery requires the exact live child, original holder, live ownership support
+and absence of a dependent child. It retires that child once and restores its
+parent's lifecycle custody. A copied child binding remains expired even after
+a new borrow of the same address. Root retirement also waits for its child;
+registering the same support afterward creates a fresh identity. Reused checked
+transitions require the exact predecessor; altered evidence is refused.
+
+The protocol neither partitions nor mints ownership, stores memory contents,
+or rolls memory back. Its access check additionally requires the exact scalar
+pointer and type; normal checked memory producers must still establish their
+ordinary authority. Whole scalars are the initial subset: aggregate subranges,
+fragment joining, shared aliases and call transport need their own integration.
+Regression tests cover nested order, copied stale bindings, disjoint roots,
+wrong holders/arenas/types/pointers, missing or replaced supports, duplicate
+recovery and stale or altered transitions. A test-only invariant walk checks
+the dependency/root indexes. Deterministic measurements at 16, 64, 256 and 1024
+unrelated roots bound selected lifecycle operations by persistent indexed
+lookups; production transitions do not walk the ledger or resource context.
+
 ## Remaining local-reference work
 
-A call-scoped child identity does not close local-reference lifetime handling.
-The verifier still must bind these executed accesses to live local-child
-authority, validate the exact execution frontier and invocation, and connect
-checked borrow-end frontiers to kernel recovery. An access observation is not
+A checked kernel lifecycle does not by itself enforce local references in
+ordinary Rust execution. The verifier still must issue births from actual
+source execution, preserve reference identity through copies and accesses,
+validate the exact ending frontier and invocation, and connect checked
+borrow-end frontiers to kernel recovery. Runtime enforcement must also cover
+pointer casts, untagged aliases, call transfer and memory havoc. An access observation is not
 evidence that the ending frontier has executed. The ending certificate
 alone is insufficient: recovery must also match the source identity, reference
 access, borrowed footprint and exact program frontier. Neither last-use guesses nor `StorageDead`
@@ -169,6 +205,7 @@ With the pinned tools activated and `CLICK_CHARON` set to the pinned exporter:
 cargo test --lib rust_correspondence_
 cargo test --lib correspondence_calls_production_
 cargo test --lib exclusive_call_
+cargo test --lib local_reference_
 cargo test --lib scalar_reference_
 cargo test --test rust_import rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop -- --ignored
 cargo test --test rust_import rust_owned_field_parent_can_write_after_explicit_child_drop -- --ignored

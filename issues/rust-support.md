@@ -241,10 +241,14 @@ needed to finish a claim already made:
     and stores, including cached scalar reads; indexed bindings retain the
     actual pointer and reject another locked import identity. Failed writes
     produce no store observation, and source deltas have ambient-scaling checks.
+  - the checked kernel lifecycle for exclusive scalar-reference identities:
+    parent suspension, nested dependencies and one-time child recovery, with
+    exact owned-support checks and indexed scaling regressions. Rust execution
+    does not yet issue or consume these local-reference transitions.
 
-  Those executed observations must still bind live local-child permission
-  and the actual ending frontier/invocation. Kernel recovery at checked
-  frontiers remains open. A reproduced false acceptance here
+  Those executed observations must still bind the local-reference lifecycle,
+  live memory permission and the actual ending frontier/invocation. Recovery
+  at checked frontiers remains open. A reproduced false acceptance here
   would be `unsound`, and so P1, under the [issue rules](README.md).
 - **Stable proof observations.** Provide source-facing slice, array and
   iterator observations, so that contracts need not depend on compiler
