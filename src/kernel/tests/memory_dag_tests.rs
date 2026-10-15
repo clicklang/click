@@ -3474,7 +3474,7 @@ fn kept_constant_offset_fields_have_checkable_call_havoc_evidence() {
         .unchecked_with_fact(CResourceFact::own_memory(memory_range(owner.clone(), 0, 4)));
     let kept = CallKeptOwnership::new(
         residual,
-        CallKeptRanges::new(ResourceContext::new(), vec![]),
+        CallKeptRanges::new(ResourceContext::new(), vec![], None),
         &assumptions,
     );
     let base = CMemory::new().with_block("local:kept-offset-owner", 16);

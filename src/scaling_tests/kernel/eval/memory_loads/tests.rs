@@ -170,6 +170,7 @@ fn naming_a_load_after_a_call_is_flat_in_its_address_read_depth() {
                 ResourceContext::new()
                     .unchecked_with_facts([CResourceFact::own_memory(range(element(992_102)))]),
                 Vec::new(),
+                None,
             ),
             &empty,
         );

@@ -103,3 +103,49 @@ fn independent_body_expansion_indexes_definitions_and_walks_depth_once() {
         );
     }
 }
+
+/// A call keeps the memory of every held argument-direct composite without
+/// opening one: recording the kept memory costs the same beside 16, 64 or
+/// 256 of them, and a question about one composite's cell opens only it.
+#[test]
+fn a_call_keeps_argument_direct_composites_in_work_independent_of_their_number() {
+    let mut recording = Vec::new();
+    let mut asking = Vec::new();
+    for size in [16u64, 64, 256] {
+        let _session = VerificationSession::enter();
+        let object = |index: u64| Pointer::symbolic(Variable(782_000 + index));
+        let residual = (0..size).fold(ResourceContext::new(), |residual, index| {
+            residual.unchecked_with_fact(CResourceFact::own_composite(
+                "boxed".into(),
+                vec![CValue::pointer(object(index))],
+            ))
+        });
+        let memory = CMemory::new();
+        let assumptions = PureFactContext::new();
+        let state = CState::new()
+            .with_memory(memory.clone())
+            .with_resource_context(residual.clone());
+        let written = CMemoryRange::new(
+            object(size + 1),
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(1),
+        );
+        let (after, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let kept = call_kept_ownership(&residual, &[boxed_definition()], &state, &assumptions);
+            memory.with_call_memory_havoc(Variable(782_900), &[written], &assumptions, Some(&kept))
+        });
+        recording.push(work);
+        let recorded = CallKeptRanges::recorded_on(&after).expect("kept memory is recorded");
+        let (kept, work) = crate::instrumentation::measure_deterministic_work(|| {
+            recorded.holds_access(&object(size / 2), 4, &assumptions)
+        });
+        assert!(kept, "size {size}");
+        asking.push(work);
+    }
+    for (name, work) in [("recording", &recording), ("asking", &asking)] {
+        assert!(
+            work.windows(2).all(|pair| pair[1] <= pair[0] + 8),
+            "{name} kept memory grows with the held composites: {work:?}"
+        );
+    }
+}

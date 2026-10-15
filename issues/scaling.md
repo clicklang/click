@@ -77,13 +77,16 @@ instead of from what the step changed.
    help on its own: each step rebuilds its assumptions in a fresh context and
    re-admits the snapshots with no lineage to diff against (tried on branch
    `claude/blissful-cori-zfd8s9`, commit `3513b5d2`).
-3. **A call rebuilds what the caller keeps.** `call_kept_ownership` expands
-   every kept composite at every call (`expand_composites_for_frame`) to
-   list the memory the caller keeps, and `CallKeptRanges::with_residual`
-   merges every opened range into the edge's identity. At N = 64 this is
-   nearly all of `drop_box`'s growth; the rest of the call path is flat.
-   The havoc should be defined by the callee's footprint, with "kept" meaning
-   everything else, recorded as the residual and answered per address.
+3. **A call rebuilds what the caller keeps.** `call_kept_ownership` expanded
+   every kept composite at every call to list the memory the caller keeps.
+   Fixed for composites whose definition is argument-direct, such as
+   `boxed`: the call opens none of them, and the recorded kept memory opens
+   only the composites a question's address can name
+   (`CallKeptRanges::range_holding`). `heap_objects` now costs 1,401 units per
+   `drop_box` at every position at N = 64, and the whole proof 204,585 units
+   (was 695,291). Still per call: residual instances and composites whose
+   bodies read memory, a condition or a witness are opened at every call, so
+   a function holding many of those still pays for each.
 
 Related scaling bugs stay in `bugs/` until fixed:
 [sequential-loop-clause-grows-with-earlier-loops.md](../bugs/sequential-loop-clause-grows-with-earlier-loops.md).
@@ -100,16 +103,17 @@ End-to-end, `src/scaling_tests/surface/tests/step_shape_scaling_tests.rs`
 runs the `scripts/step-scaling-hunt.py` shapes in the gate: a step repeated at
 several positions must not drift with the statements before it, and a call
 must not grow with unrelated facts, aliases or owned objects.
-`known_drift_heap_object_stores_and_releases` records the remaining
-`heap_objects` drift, the release of cause 3, and fails when it stops, so the
-fix updates this issue.
+`heap_object_stores_and_releases_cost_the_same_at_every_position` holds
+`heap_objects` flat; `known_drift_sequential_loop_clauses` records the loop
+bug's drift and fails when it stops.
 
 ## Acceptance
 
-- Each known cause above is fixed in its representation, with a
-  deterministic regression at four or more sizes.
-- `known_drift_heap_object_stores_and_releases` (now `drop_box` alone)
-  becomes an ordinary no-drift test, and `step-scaling-hunt.py heap_objects` shows every simple
-  step's work constant in N, up to logarithmic factors; ownership is still
-  checked at every store and release.
+- Each remaining cause above is fixed in its representation, with a
+  deterministic regression at four or more sizes: the composition scans
+  outside stores (cause 2), and calls beside held instances or composites
+  whose bodies read memory, a condition or a witness (cause 3).
+- `step-scaling-hunt.py` shows every simple step of every shape constant in
+  N, up to logarithmic factors and work proportional to the step's own
+  effect (as the final `return` ending N locals in `heap_objects` is).
 - No budget or threshold is raised to get there.

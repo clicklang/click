@@ -504,17 +504,17 @@ fn cell_effect(
                 }
                 let first = super::cell_source::PointerInRangeEvidence::for_pointer(
                     pointer,
-                    range,
+                    &range,
                     assumptions,
                 )?;
                 let last_pointer =
                     pointer.offset_by_elements(Bitvector32Term::Constant(bytes / width - 1), width);
                 let last = super::cell_source::PointerInRangeEvidence::for_pointer(
                     &last_pointer,
-                    range,
+                    &range,
                     assumptions,
                 )?;
-                Some((range.clone(), first, last))
+                Some((range, first, last))
             }) {
                 hop(MemoryDagHopJustification::CallHavocKeptRange { range, first, last })
             } else if assumptions.ranges_proven_disjoint_from_pointer_for_frame(

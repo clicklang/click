@@ -3035,7 +3035,7 @@ fn resource_delta_pointer_equality(
         })
 }
 
-/// A selected loadability range may use another name for the same complete
+/// A selected resource range may use another name for the same complete
 /// pointer-cell read. Retain the checked frame in this rewrite's existing
 /// capture; this proves address equality only, never a referent designation.
 fn resource_delta_has_checked_pointer_read_frame(
@@ -3043,10 +3043,16 @@ fn resource_delta_has_checked_pointer_read_frame(
     goal: &Proposition,
     facts: &PureFactContext,
 ) -> bool {
-    let (Some((source, _, _)), Some((goal, _, _))) =
-        (resource_read_key(source), resource_read_key(goal))
-    else {
-        return false;
+    let (source, goal) = match (source.memory_containment(), goal.memory_containment()) {
+        (Some((_, source)), Some((_, goal))) => (source.base().clone(), goal.base().clone()),
+        _ => {
+            let (Some((source, _, _)), Some((goal, _, _))) =
+                (resource_read_key(source), resource_read_key(goal))
+            else {
+                return false;
+            };
+            (source, goal)
+        }
     };
     let (
         crate::kernel::PointerOffsetTerm::Int32Scaled {

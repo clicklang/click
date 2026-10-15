@@ -776,6 +776,7 @@ fn instance_rewrite_certificate_rejects_unrelated_state_and_fact_changes() {
 #[test]
 fn resource_read_alias_uses_only_a_checked_complete_pointer_cell_frame() {
     let mut samples = Vec::new();
+    let mut containment_samples = Vec::new();
     for size in [0, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let cell = Pointer {
@@ -784,10 +785,10 @@ fn resource_read_alias_uses_only_a_checked_complete_pointer_cell_frame() {
         };
         let before = CMemory::new().with_block("descriptor", 24);
         let after = before.clone().store(cell.offset_by_bytes(16), int32(7));
-        let range = |memory: &CMemory, kind, width| {
+        let named_range = |memory: &CMemory, address: &Pointer, kind, width| {
             let name = crate::kernel::eval::load_variable_for_exact_cell(
                 &crate::kernel::intern_c_memory_ref(memory),
-                &cell,
+                address,
                 kind,
                 width,
             );
@@ -804,6 +805,7 @@ fn resource_read_alias_uses_only_a_checked_complete_pointer_cell_frame() {
                 wide: false,
             }
         };
+        let range = |memory: &CMemory, kind, width| named_range(memory, &cell, kind, width);
         let source = range(&before, crate::kernel::LoadKind::Bits32, 8);
         let goal = range(&after, crate::kernel::LoadKind::Bits32, 8);
         let index = ResourceDeltaPremises::new(std::slice::from_ref(&source));
@@ -822,6 +824,74 @@ fn resource_read_alias_uses_only_a_checked_complete_pointer_cell_frame() {
         });
         assert!(proof.unwrap().matches_completed_goal());
         samples.push(work);
+        let contains = |read: &Proposition, name: &str, end: u32| {
+            let Proposition::CMemoryLoadable { base, .. } = read else {
+                unreachable!()
+            };
+            Proposition::CResourceContains {
+                parent: Box::new(CResource::Composite {
+                    name: name.into(),
+                    arguments: Vec::new().into(),
+                }),
+                child: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+                    base.clone(),
+                    0u32.into(),
+                    end.into(),
+                    4,
+                ))),
+            }
+        };
+        // A separate cell keeps this proof cold: a loadability query must not
+        // establish the containment equality before the path under test runs.
+        let contained_cell = cell.offset_by_bytes(8);
+        let contained_source =
+            named_range(&before, &contained_cell, crate::kernel::LoadKind::Bits32, 8);
+        let contained_goal =
+            named_range(&after, &contained_cell, crate::kernel::LoadKind::Bits32, 8);
+        let source_contains = contains(&contained_source, "owner", 1);
+        let goal_contains = contains(&contained_goal, "owner", 1);
+        let containment = ResourceDeltaPremises::new(std::slice::from_ref(&source_contains));
+        let (proof, work) = crate::instrumentation::measure_deterministic_work(|| {
+            containment.prove_with_facts(&goal_contains, &facts)
+        });
+        assert!(proof.unwrap().matches_completed_goal());
+        containment_samples.push(work);
+        assert!(
+            containment
+                .prove_with_facts(&contains(&contained_goal, "other_owner", 1), &facts)
+                .is_none()
+        );
+        assert!(
+            containment
+                .prove_with_facts(&contains(&contained_goal, "owner", 2), &facts)
+                .is_none()
+        );
+        let unrelated = Proposition::CMemoryLoadable {
+            memory: after.clone(),
+            base: Pointer::symbolic(Variable(999_990)),
+            bytes: 4u32.into(),
+            wide: false,
+        };
+        assert!(
+            ResourceDeltaPremises::new(&[source_contains, contains(&unrelated, "owner", 1)])
+                .prove_with_facts(&goal_contains, &facts)
+                .is_none(),
+            "ambiguous containment sources must not launch pair search"
+        );
+        let contained_upper_write = before
+            .clone()
+            .store(contained_cell.offset_by_bytes(4), int32(9));
+        let invalid_contained = named_range(
+            &contained_upper_write,
+            &contained_cell,
+            crate::kernel::LoadKind::Bits32,
+            8,
+        );
+        assert!(
+            containment
+                .prove_with_facts(&contains(&invalid_contained, "owner", 1), &facts)
+                .is_none()
+        );
         let changed = before.clone().store(
             cell.clone(),
             CValue::pointer(Pointer {
@@ -858,6 +928,12 @@ fn resource_read_alias_uses_only_a_checked_complete_pointer_cell_frame() {
                 .is_none()
         );
     }
+    assert!(
+        containment_samples
+            .iter()
+            .all(|work| *work > 0 && *work <= containment_samples[0] + 16),
+        "containment frame inspected unrelated facts: {containment_samples:?}"
+    );
     assert!(samples.iter().all(|work| *work > 0));
     assert!(
         samples.iter().all(|work| *work <= samples[0] + 16),
