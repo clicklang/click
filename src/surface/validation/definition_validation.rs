@@ -1607,6 +1607,7 @@ fn resource_body_fields_as_parameters(
         composite_body: Some(view),
         field_schema: definition.field_schema.clone(),
         authorized: definition.authorized,
+        sealed: definition.sealed,
     }))
 }
 

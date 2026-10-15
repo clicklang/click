@@ -753,11 +753,20 @@ struct Parser {
     current_arm_binding_types: BTreeMap<String, AlgebraicFieldType>,
     current_integer_params: BTreeSet<String>,
     current_integer_lets: BTreeSet<String>,
+    /// Every parameter of the theorem being parsed, of any type, so a
+    /// `have name: P` cannot take a parameter's name.
+    current_theorem_param_names: BTreeSet<String>,
     /// Names introduced by `obtain (...)` in this proof block only.
     /// Nested `have` and branch blocks start a new lexical binder scope;
     /// semantic freshness is checked again by the proof object.
     current_proof_let_names: BTreeSet<String>,
     proof_let_restores: Vec<ProofLetParserRestore>,
+    /// The facts `have name: P` named, visible from the `have` to the end
+    /// of its block, nested blocks included. A citation by name is read as
+    /// the proposition, exactly as if it were restated there.
+    fact_names: BTreeMap<String, ClickProposition>,
+    /// The bindings each name shadowed, undone when its block ends.
+    fact_name_restores: Vec<(String, Option<ClickProposition>)>,
     integer_literal_context: bool,
     /// Instance binders declared by each C function block already parsed,
     /// keyed by function name. A call step reads exactly the entry for its
@@ -1146,8 +1155,11 @@ impl Parser {
             current_arm_binding_types: BTreeMap::new(),
             current_integer_params: BTreeSet::new(),
             current_integer_lets: BTreeSet::new(),
+            current_theorem_param_names: BTreeSet::new(),
             current_proof_let_names: BTreeSet::new(),
             proof_let_restores: Vec::new(),
+            fact_names: BTreeMap::new(),
+            fact_name_restores: Vec::new(),
             callee_resource_binders: BTreeMap::new(),
             contract_resource_binders: BTreeMap::new(),
             in_contract_definition: false,
@@ -2120,8 +2132,23 @@ impl Parser {
                     .error("a resource without a body must be declared with `abstract resource`"));
             }
             Some(Token::LBrace) if !is_abstract => Some(self.parse_composite_resource_body(&name)?),
+            // An abstract resource may declare fields, and nothing else: its
+            // instances carry them, but it has no body to fold or unfold.
             Some(Token::LBrace) => {
-                return Err(self.error("an `abstract resource` cannot have a body"));
+                let body = self.parse_composite_resource_body(&name)?;
+                if body.fields.is_empty()
+                    || !body.children.is_empty()
+                    || body.matched.is_some()
+                    || body.condition.is_some()
+                    || !body.contains.is_empty()
+                    || !body.facts.is_empty()
+                    || !body.witnesses.is_empty()
+                {
+                    return Err(self.error(
+                        "an `abstract resource` body declares only fields: it has no clauses of its own",
+                    ));
+                }
+                Some(body)
             }
             Some(token) => {
                 return Err(self.error(format!("expected resource body, got {token}")));
@@ -2149,6 +2176,7 @@ impl Parser {
             name,
             parameters: parsed_parameters.parameters,
             resource_parameters,
+            sealed: is_abstract && composite_body.is_some(),
             composite_body,
             field_schema: None,
             authorized: false,
@@ -2858,6 +2886,10 @@ impl Parser {
             .iter()
             .map(|parameter| parameter.name().to_string())
             .collect::<BTreeSet<_>>();
+        let previous_theorem_param_names = std::mem::replace(
+            &mut self.current_theorem_param_names,
+            parameter_names.clone(),
+        );
         let previous_struct_params = std::mem::replace(
             &mut self.current_struct_params,
             parsed_parameters.struct_params,
@@ -3054,6 +3086,7 @@ impl Parser {
         self.current_reference_params = previous_reference_params;
         self.current_algebraic_params = previous_algebraic_params;
         self.current_click_type_parameters = previous_type_parameters;
+        self.current_theorem_param_names = previous_theorem_param_names;
         self.current_integer_params = previous_integer_params;
         self.current_integer_lets = previous_integer_lets;
         self.integer_literal_context = previous_integer_literal_context;
@@ -5901,6 +5934,20 @@ impl Parser {
     }
 
     fn parse_proposition_atom(&mut self) -> Result<ClickProposition, ClickError> {
+        if let Some(Token::Ident(name)) = self.peek()
+            && let Some(proposition) = self.fact_names.get(name)
+            && (matches!(
+                self.peek_next(),
+                None | Some(Token::Semicolon | Token::RParen | Token::RBrace | Token::Comma)
+            ) || matches!(
+                self.tokens.get(self.position + 1),
+                Some(Token::Ident(next)) if matches!(next.as_str(), "and" | "or" | "implies" | "by")
+            ))
+        {
+            let proposition = proposition.clone();
+            self.position += 1;
+            return Ok(proposition);
+        }
         if self.peek_ident() == Some("let") {
             let start = self.position;
             let binding = self.parse_contract_let_binding()?;
@@ -6551,9 +6598,11 @@ impl Parser {
     fn parse_by_clause(&mut self) -> Result<SourceProof, ClickError> {
         self.expect_ident_spelling("by")?;
         let let_checkpoint = self.proof_let_restores.len();
+        let fact_checkpoint = self.fact_name_restores.len();
         let previous_proof_let_names = std::mem::take(&mut self.current_proof_let_names);
         let result = self.parse_by_clause_body();
         self.restore_proof_let_bindings(let_checkpoint);
+        self.restore_fact_names(fact_checkpoint);
         self.current_proof_let_names = previous_proof_let_names;
         // A `;` after a closing brace ends nothing; accept it after a block
         // proof as everywhere else, though it is never required.
@@ -6564,6 +6613,23 @@ impl Parser {
             self.skip_redundant_semicolon();
         }
         result
+    }
+
+    fn restore_fact_names(&mut self, checkpoint: usize) {
+        while self.fact_name_restores.len() > checkpoint {
+            let (name, previous) = self
+                .fact_name_restores
+                .pop()
+                .expect("restore above checkpoint");
+            match previous {
+                Some(proposition) => {
+                    self.fact_names.insert(name, proposition);
+                }
+                None => {
+                    self.fact_names.remove(&name);
+                }
+            }
+        }
     }
 
     fn restore_proof_let_bindings(&mut self, checkpoint: usize) {
@@ -7238,15 +7304,57 @@ impl Parser {
     /// recursive proof-parsing path and keeps none of this in its frame.
     #[inline(never)]
     fn parse_have_tactic(&mut self) -> Result<ProofTactic, ClickError> {
-        // A `have` fact has no name: a later step cites it by restating
-        // its proposition. `name:` is never the start of a proposition,
-        // so refuse a label with the spelling to write instead.
-        if let (Some(Token::Ident(label)), Some(Token::Colon)) = (self.peek(), self.peek_next()) {
+        // `have name: P` names the fact for the rest of the block: a later
+        // step may cite it as `name` where it would restate `P`. `name:` is
+        // never the start of a proposition.
+        let name = if let (Some(Token::Ident(name)), Some(Token::Colon)) =
+            (self.peek(), self.peek_next())
+        {
+            let name = name.clone();
+            self.refuse_fact_name_in_scope(&name)?;
+            self.position += 2;
+            Some(name)
+        } else {
+            None
+        };
+        let have = self.parse_have_after_name()?;
+        if let (Some(name), ProofTactic::Have(have)) = (name, &have) {
+            let previous = self
+                .fact_names
+                .insert(name.clone(), have.proposition.clone());
+            self.fact_name_restores.push((name, previous));
+        }
+        Ok(have)
+    }
+
+    /// A fact name is read only where a proposition stands, but a value
+    /// spelled the same would read as a proposition there too (a `bool`), so
+    /// a name that already binds anything visible is refused.
+    fn refuse_fact_name_in_scope(&self, name: &str) -> Result<(), ClickError> {
+        self.refuse_bool_literal_binder(name)?;
+        let bound = self.fact_names.contains_key(name)
+            || self.current_proof_let_names.contains(name)
+            || self.current_contract_bindings.contains(name)
+            || self.current_integer_params.contains(name)
+            || self.current_theorem_param_names.contains(name)
+            || self.current_integer_lets.contains(name)
+            || self.current_resource_bindings.contains_key(name)
+            || self.current_arm_binding_types.contains_key(name)
+            || self.current_c_parameter_types.contains_key(name)
+            || self
+                .current_c_object_names
+                .as_ref()
+                .is_some_and(|names| names.contains(name));
+        if bound {
             return Err(self.error(format!(
-                "`have` takes no label: write `have P by {{ ... }};` without `{label}:`; \
-                 cite the fact later by restating `P`, for example `simp() using {{ P; }}`"
+                "`have {name}: ...` names a fact `{name}`, but `{name}` already names something in scope; choose another name"
             )));
         }
+        Ok(())
+    }
+
+    /// `have P ...` after any `name:`.
+    fn parse_have_after_name(&mut self) -> Result<ProofTactic, ClickError> {
         let proposition = self.parse_proposition()?;
         // A `have` states a fact at the current point, so an omitted
         // proof is `simp` here; it never executes C to reach the fact.
@@ -8183,6 +8291,7 @@ impl Parser {
                 self.expect(Token::LBrace)?;
                 scopes.push((
                     self.proof_let_restores.len(),
+                    self.fact_name_restores.len(),
                     std::mem::take(&mut self.current_proof_let_names),
                 ));
                 let mut else_tactics = Vec::new();
@@ -8205,8 +8314,10 @@ impl Parser {
                     else_tactics.push(self.parse_proof_tactic()?);
                 }
                 self.expect(Token::RBrace)?;
-                let (checkpoint, names) = scopes.pop().expect("an else block owns a scope");
+                let (checkpoint, fact_checkpoint, names) =
+                    scopes.pop().expect("an else block owns a scope");
                 self.restore_proof_let_bindings(checkpoint);
+                self.restore_fact_names(fact_checkpoint);
                 self.current_proof_let_names = names;
                 self.skip_redundant_semicolon();
                 nested = Some(ProofTactic::If(ProofIf {
@@ -8219,8 +8330,9 @@ impl Parser {
             Ok(nested.expect("an if spine has a root"))
         })();
         // Error exits restore exactly the same bindings as a recursive block.
-        while let Some((checkpoint, names)) = scopes.pop() {
+        while let Some((checkpoint, fact_checkpoint, names)) = scopes.pop() {
             self.restore_proof_let_bindings(checkpoint);
+            self.restore_fact_names(fact_checkpoint);
             self.current_proof_let_names = names;
         }
         result
@@ -8357,6 +8469,7 @@ impl Parser {
 
     fn parse_tactics_until_rbrace(&mut self) -> Result<Vec<ProofTactic>, ClickError> {
         let let_checkpoint = self.proof_let_restores.len();
+        let fact_checkpoint = self.fact_name_restores.len();
         let previous_proof_let_names = std::mem::take(&mut self.current_proof_let_names);
         let result = (|| {
             let mut tactics = Vec::new();
@@ -8366,6 +8479,7 @@ impl Parser {
             Ok(tactics)
         })();
         self.restore_proof_let_bindings(let_checkpoint);
+        self.restore_fact_names(fact_checkpoint);
         self.current_proof_let_names = previous_proof_let_names;
         result
     }

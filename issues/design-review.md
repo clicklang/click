@@ -9,7 +9,7 @@ independent checker), M2 (no written semantics) and M3 (`memcpy` reading under
 
 Items P1–P4, W4 and W5 waited on the SMT-backed `auto`
 ([design/smt-auto-stage1.md](../design/smt-auto-stage1.md)), which landed;
-P3 is done and the others are ruled below. Also depends on [simplify-step.md](simplify-step.md), which now holds the
+P3 and P4 are done and the others are ruled below. Also depends on [simplify-step.md](simplify-step.md), which now holds the
 critique that "simple" `step()` is not simple (formerly W3).
 
 On 2026-10-12 Click was reviewed the way an expert launch audience would
@@ -75,7 +75,7 @@ lines; `examples/modeled-binary-tree` proves the 12-line `tree_contains` in
 about 100. `examples/arena/arena_cells.click` is 5,537 lines for 279 lines
 of C.
 
-Proposed fix: items P2–P4 and P6, plus a published proof-to-code budget per
+Proposed fix: items P2 and P6, plus a published proof-to-code budget per
 example that the gate reports.
 
 Done when: the examples meet a stated budget, or the budget and the reason
@@ -99,23 +99,6 @@ semantics are written explicitly where a spec means them.
 Done when: decided, and if fixed, the examples shrink accordingly.
 
 Decision: open.
-
-### P4. Facts cannot be named
-
-Today: "`have` takes no label, and a later step cites it by restating `P`"
-(`docs/reference/tactics/index.md`). Long propositions are restated in every
-`using { ... }` (`examples/rust-byte-sum/sum.click`), and `rewrite(` appears
-about 6,900 times across rbtree-erase and arena.
-
-Proposed fix: `have h: P` and `using { h; }`. `auto` and a bare `apply` now
-select their premises themselves, but on 2026-10-15 the examples still cite
-facts by restating them: 3,066 `rewrite(` and 1,042 `using {`, many in
-committed expansions, which a name would also shorten.
-
-Done when: decided; if fixed, documented with an mdtest, and
-`mdtests/have_takes_no_label.md` updated.
-
-Decision: fix (maintainer, 2026-10-15): `have name: P`, cited by name.
 
 ### P5. Copy-paste across case files and sidecars
 

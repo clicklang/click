@@ -966,7 +966,7 @@ impl CheckedPopulationMemberRewrite {
             return Err("population member rewrite requires a declared resource".into());
         };
         let definition = function
-            .composite_resource_definition(name)
+            .proof_composite_resource_definition(name)
             .ok_or("population member rewrite requires a declared resource definition")?;
         checks_population_member_exchange(
             definition,
@@ -2032,13 +2032,13 @@ impl CheckedResourceRewrite {
         // law; only population-reaching bodies take the checks below.
         let reaches_population = match selected.resource() {
             CResource::Composite { name, .. } => function
-                .composite_resource_definition(name)
+                .proof_composite_resource_definition(name)
                 .is_none_or(|definition| definition.reaches_population()),
             _ => true,
         };
         if !matches!(selected.resource(), CResource::Instance(_)) {
             if let CResource::Composite { name, .. } = selected.resource()
-                && let Some(definition) = function.composite_resource_definition(name)
+                && let Some(definition) = function.proof_composite_resource_definition(name)
                 && definition.contains().iter().any(|spec| {
                     matches!(
                         spec.term(),
@@ -2058,7 +2058,7 @@ impl CheckedResourceRewrite {
                 );
             }
             if let CResourceFact::Own(CResource::Composite { name, arguments }, _) = selected
-                && let Some(definition) = function.composite_resource_definition(name)
+                && let Some(definition) = function.proof_composite_resource_definition(name)
                 && !before_state.tracks_authority_member(selected)
                 && before_state.population_body_is_open(name, arguments)
                     == after_state.population_body_is_open(name, arguments)
@@ -2094,7 +2094,7 @@ impl CheckedResourceRewrite {
                     selected,
                     CResourceFact::Own(CResource::Composite { name, .. }, _)
                         if function
-                            .composite_resource_definition(name)
+                            .proof_composite_resource_definition(name)
                             .is_some_and(|definition| !definition.is_authorized())
                 );
             if !ordinary_family {
@@ -2104,7 +2104,7 @@ impl CheckedResourceRewrite {
                     return Err("member body access requires one owned member".into());
                 };
                 let definition = function
-                    .composite_resource_definition(name)
+                    .proof_composite_resource_definition(name)
                     .ok_or("member body access needs its registered definition")?;
                 if quantity.as_const() != Some(1)
                     || !definition.resource_parameters.is_empty()
@@ -2387,7 +2387,7 @@ impl CheckedResourceRewrite {
         let assumptions = before_facts.assumptions();
         if let CResource::Instance(instance) = selected.resource() {
             let definition = function
-                .composite_resource_definition(instance.name())
+                .proof_composite_resource_definition(instance.name())
                 .ok_or_else(|| {
                     "instance definition is not registered on the function".to_string()
                 })?;
@@ -2411,7 +2411,7 @@ impl CheckedResourceRewrite {
                 // authority, which the ledger equality below checks.
                 let ordinary_child = |child: &crate::kernel::CResourceChildSpec| {
                     function
-                        .composite_resource_definition(&child.resource)
+                        .proof_composite_resource_definition(&child.resource)
                         .is_some_and(|child| !child.reaches_population())
                 };
                 if !definition.children.iter().all(ordinary_child)
@@ -2567,7 +2567,7 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             return Err("resource rewrite evidence requires a composite resource".to_string());
         };
         let definition = function
-            .composite_resource_definition(name)
+            .proof_composite_resource_definition(name)
             .cloned()
             .ok_or_else(|| {
                 "the rewritten composite definition is not registered on the function".to_string()
@@ -3315,7 +3315,7 @@ impl CheckedResourceObservation {
         // other observation is an ordinary resource observation.
         let counted = match observed.resource() {
             crate::kernel::CResource::Composite { name, .. } => function
-                .composite_resource_definition(name)
+                .proof_composite_resource_definition(name)
                 .is_none_or(|definition| definition.is_authorized()),
             crate::kernel::CResource::Token { name, .. } => !function
                 .contract_interface()
@@ -3337,7 +3337,7 @@ impl CheckedResourceObservation {
                 return Err("count observation requires an owned declared member");
             };
             function
-                .composite_resource_definition(name)
+                .proof_composite_resource_definition(name)
                 .ok_or("the observed definition is not registered on the function")?;
             let bound = crate::kernel::api::checked_owned_resource_count_lower_bound(
                 before_state,
@@ -10830,7 +10830,7 @@ impl ExecutionProofCore {
                 .into());
         };
         let definition = function
-            .composite_resource_definition(instance.name())
+            .proof_composite_resource_definition(instance.name())
             .ok_or_else(|| "instance definition is not registered on the function".to_string())?;
         let mut trace = self
             .return_resource_rewrites
@@ -11019,7 +11019,7 @@ impl ExecutionProofCore {
         // An ordinary macro refold may exist only in the visible outcome;
         // unfolding it again does not change the retained C path's body.
         if matches!(selected.resource(), CResource::Composite { name, .. }
-            if function.composite_resource_definition(name)
+            if function.proof_composite_resource_definition(name)
                 .is_some_and(|definition| !definition.reaches_population()))
             && presented_before_state
                 .resources()
@@ -11120,7 +11120,7 @@ impl ExecutionProofCore {
         Arc::make_mut(&mut retained_after_state.population_effects).creation =
             before_state.population_effects.creation.clone();
         if let CResource::Composite { name, .. } = selected.resource()
-            && let Some(definition) = function.composite_resource_definition(name)
+            && let Some(definition) = function.proof_composite_resource_definition(name)
             && definition.contains().iter().any(|spec| {
                 matches!(
                     spec.term(),
@@ -15376,7 +15376,9 @@ mod population_authority_rewrite_tests {
             .with_composite_resource_definitions(vec![
                 CCompositeResourceDefinition::new("reference", vec![], None, false, vec![], vec![]),
             ]);
-        let definition = function.composite_resource_definition("reference").unwrap();
+        let definition = function
+            .proof_composite_resource_definition("reference")
+            .unwrap();
         let (one, birth) = established
             .checked_population_member_exchange(&member, true, definition, facts.assumptions())
             .unwrap();
@@ -15816,7 +15818,9 @@ mod population_authority_rewrite_tests {
             CStatement::Return(CExpression::Value(CValue::Void)),
         )
         .with_composite_resource_definitions(vec![definition]);
-        let definition = function.composite_resource_definition("reference").unwrap();
+        let definition = function
+            .proof_composite_resource_definition("reference")
+            .unwrap();
         let facts = ProofFacts::default();
         let (established, _) = before
             .with_resource_context(ResourceContext::new().unchecked_with_fact(memory.clone()))

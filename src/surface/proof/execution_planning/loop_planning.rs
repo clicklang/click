@@ -1582,20 +1582,9 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 break_exits.push(exit);
             }
         } else {
-            let mut join_facts = checked.facts().to_vec();
-            join_facts.extend(
-                checked_execution
-                    .core
-                    .effect_facts
-                    .iter()
-                    .map(|fact| fact.proposition().clone()),
-            );
-            join_facts.extend(crate::kernel::certified_store_equations(
-                &checked_execution.core.effect_facts,
-            ));
             // The body must return to the head it started from, which carries
             // the loop's own resource context when the loop declares one.
-            let join_assumptions = assumptions_from_propositions(&join_facts);
+            let join_assumptions = checked.back_edge_assumptions(&checked_execution);
             let rebound = crate::kernel::c_loop_state_with_loop_binders_rebound(
                 preservation.state(),
                 &checked_execution.core.state,
