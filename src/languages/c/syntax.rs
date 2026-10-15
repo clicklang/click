@@ -1699,6 +1699,7 @@ fn typed_store_at<'a>(
                 offset = offset.checked_add(*bytes)?;
                 pointer = inner;
             }
+            C0Expression::Subobject { pointer: inner, .. } => pointer = inner,
             // Only the element store `base + index` of a scalar array, whose
             // index scales by the stored element type.
             C0Expression::Add(inner, index) if matches!(inner.as_ref(), C0Expression::Variable(name) if name == base) =>
@@ -7054,6 +7055,22 @@ fn align_up(offset: u32, alignment: u32) -> Option<u32> {
     offset
         .checked_add(alignment - 1)
         .map(|value| value & !(alignment - 1))
+}
+
+/// The address of `field` within the struct at `base`. The member is its own
+/// subobject (`design/pointer-subobject-extents.md`): arithmetic from its
+/// address stays inside it, and an access through it may not reach a sibling
+/// at an adjacent address. A union member is not narrowed; union members
+/// overlap by design.
+fn member_pointer(base: C0Expression, field: &C0StructField) -> C0Expression {
+    let member = offset_field_pointer(base, field.offset_bytes);
+    if field.union_name.is_some() || field.byte_width == 0 {
+        return member;
+    }
+    C0Expression::Subobject {
+        pointer: Box::new(member),
+        width: field.byte_width,
+    }
 }
 
 fn offset_field_pointer(base: C0Expression, offset_bytes: u32) -> C0Expression {
@@ -18599,6 +18616,16 @@ impl Parser {
                     },
                 ))
             }
+            C0Expression::Subobject { pointer, width } => {
+                let (prefix, pointer) = self.lower_expression_calls(*pointer)?;
+                Ok((
+                    prefix,
+                    C0Expression::Subobject {
+                        pointer: Box::new(pointer),
+                        width,
+                    },
+                ))
+            }
             C0Expression::Not(expression) => {
                 let (prefix, expression) = self.lower_expression_calls(*expression)?;
                 Ok((prefix, C0Expression::Not(Box::new(expression))))
@@ -21225,20 +21252,8 @@ impl Parser {
                     "long double member value operations need an extended-precision model",
                 ));
             }
-            // The member is its own subobject: arithmetic from its address
-            // stays inside it, and accesses through it may not reach a
-            // sibling at an adjacent address. A union member is not
-            // narrowed; its members overlap by design.
-            let member = offset_field_pointer(base.clone(), field.offset_bytes);
-            let member = match (&field.union_name, field.byte_width) {
-                (None, width) if width > 0 => C0Expression::Subobject {
-                    pointer: Box::new(member),
-                    width,
-                },
-                _ => member,
-            };
             return Ok((
-                member,
+                member_pointer(base.clone(), field),
                 field.c_type,
                 field.struct_name.clone(),
                 field.union_name.clone(),
@@ -21360,7 +21375,7 @@ impl Parser {
             ));
         }
         Ok((
-            offset_field_pointer(element_pointer, field.offset_bytes),
+            member_pointer(element_pointer, field),
             field.c_type,
             field.struct_name.clone(),
             field.union_name.clone(),
