@@ -624,3 +624,10 @@ entry-module audit under conditional imported interfaces, not proof of every
 imported helper. Selected proof-unit checking additionally reaches the known
 integer-to-pointer origin refusal in an imported rotation helper. No full green
 gate or native-feature activation is claimed.
+
+Byte-sum's two exhausted smart searches are now explicit applications of the
+existing integer-conversion lemmas and arithmetic over relevant premises.
+Original Rust and contracts are unchanged. Its result proof passes fresh,
+expanded, rewritten and retained checking on both the archive and this
+upstream-based branch. The last complete archive audit remains **48/52**;
+byte-sum is individually restored pending the next complete audit.
