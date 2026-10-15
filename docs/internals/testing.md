@@ -683,7 +683,10 @@ statement at different positions (each `drop_box(p#)`, each call) must cost
 the same, so a step whose work moves the same way by more than a small band
 at each of its last positions depends on how many statements ran before it.
 A warm-up, such as the first call or the first store into a block, jumps once
-and then holds, which this does not flag. Shapes whose every step sees the
+and then holds, which this does not flag. The proof's `unfold` and `fold`
+tactics are held to the same rule, each tactic name one role in proof order.
+Uncharged costs do not show in work; the script's mean step time is the check
+for those. Shapes whose every step sees the
 same growing state (unrelated facts, aliases, owned objects) compare one
 step across two sizes instead. Known growth is asserted as still present
 (`known_drift_` tests naming their issue or bug), so a fix fails the test that

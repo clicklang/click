@@ -974,6 +974,22 @@ cost work in the length of the path at every store (`issues/scaling.md`).
 regression and `store_separation_reads_the_store_owners_and_not_earlier_compositions`
 (`src/kernel/tests/memory_reasoning_tests.rs`) the attack set.
 
+Where no writer stated owners, as in the loads an `unfold` or a call
+resolves, the rule and the same-block separation search
+(`PureFactContext::composition_separated_members`) read only the
+compositions listed under the two objects' member bases and blocks
+(`CompositionMemberIndex`, `src/kernel/primitives/composition_member_index.rs`).
+A composition is listed only under the owned members it holds beyond an
+earlier admitted one, its predecessor: the last snapshot of its storage
+origin, or else the last admitted composition or the first when their member
+indexes share structure; the first composition admitted is unlisted and read
+by every question. Admission costs what changed, and the module comment
+proves that a pair held by any stated composition reaches one through the
+listings under the pair's keys.
+`store_separation_without_an_owner_reads_only_listed_compositions`
+(`src/scaling_tests/kernel/tests/memory_reasoning_tests.rs`) is the
+regression.
+
 A store through a `Symbolic` pointer asks only the cells a pointer value can
 reach. Every block admits a `Symbolic` address, so its `AliasCandidates`
 narrow nothing, but no pointer value designates the slot of a local whose

@@ -71,12 +71,16 @@ instead of from what the step changed.
    `owned_composition_store_separated_evidence` read it alone. That removed
    25 of the 29 units per earlier object a `heap_objects` store cost (cause 1
    was the rest), and no
-   mdtest, example or unit test depended on the older compositions. About
+   mdtest, example or unit test depended on the older compositions. Without
+   a store owner, ownership separation and the same-block separation search
+   now read only the compositions listed under the two objects' members
+   (`CompositionMemberIndex`), each listed by what it holds beyond an
+   earlier admitted composition; that held `heap_objects`' `unfold` tactics,
+   which grew about 27 units per earlier object, flat. The set itself is a
+   persistent set, so stating a composition no longer copies it. About
    twenty other `resource_compositions.iter()` sites, in load resolution and
-   condition reasoning, still scan the whole set. Indexing the set does not
-   help on its own: each step rebuilds its assumptions in a fresh context and
-   re-admits the snapshots with no lineage to diff against (tried on branch
-   `claude/blissful-cori-zfd8s9`, commit `3513b5d2`).
+   condition reasoning, still scan the whole set; each needs the same
+   argument for which listed compositions can answer it.
 3. **A call rebuilds what the caller keeps.** `call_kept_ownership` expanded
    every kept composite at every call to list the memory the caller keeps.
    Fixed for composites whose definition is argument-direct, such as
@@ -87,6 +91,33 @@ instead of from what the step changed.
    (was 695,291). Still per call: residual instances and composites whose
    bodies read memory, a condition or a witness are opened at every call, so
    a function holding many of those still pays for each.
+4. **Uncharged per-step work in evidence checking.** A statement theorem
+   lists every fact of the context it executed under as a premise, so
+   `proof_evidence_unretained_premise` checks about one premise per path
+   fact at every step, and a premise missing from the contexts builds a set
+   of the whole retained history (a known uncharged build in
+   `docs/internals/verification-efficiency.md`). Each lookup compares memory
+   snapshots, and `CMemory`'s order walks the entries two snapshots share,
+   so a comparison is linear too. Callgrind on `heap_objects` at N = 64
+   attributes about a quarter of all instructions to each. Neither is
+   charged, so step work stays flat while step time grows: `make_box`
+   costs 1,586 units at every position but 12 to 45 ms. Planned: a theorem
+   that names its context instead of listing it, and memory snapshots held
+   interned and ordered by content hash.
+5. **Fixed: satisfying a composite checked every held one of its shape.**
+   `ResourceContext::satisfies_fact` tried entailment against every held
+   `boxed(..)` when the required pointer was spelled differently, so each
+   `heap_objects` fold cost 3 units per live object. It now reads the held
+   composites whose pointer is related to the required one
+   (`direct_match_candidates_for`), and folds are flat.
+6. **A load through an unresolved pointer keeps every cell it may alias.**
+   `canonical_memory_for_pointer_load` is assumption-free, and a `Symbolic`
+   block's alias candidates narrow nothing, so the canonical memory of a
+   load through one heap object keeps every earlier object's cell and every
+   local's slot: each `heap_objects` unfold still grows 3 units per earlier
+   object. The slots are unreachable by any pointer value, as cause 1 used
+   for stores; the other objects' cells need ownership, which
+   canonicalization does not consult.
 
 Related scaling bugs stay in `bugs/` until fixed:
 [sequential-loop-clause-grows-with-earlier-loops.md](../bugs/sequential-loop-clause-grows-with-earlier-loops.md).
@@ -102,7 +133,9 @@ operation beside unrelated state built in advance, and such tests pass while
 End-to-end, `src/scaling_tests/surface/tests/step_shape_scaling_tests.rs`
 runs the `scripts/step-scaling-hunt.py` shapes in the gate: a step repeated at
 several positions must not drift with the statements before it, and a call
-must not grow with unrelated facts, aliases or owned objects.
+must not grow with unrelated facts, aliases or owned objects; `unfold` and
+`fold` tactics are held to the same no-drift rule as steps. Step work does not
+capture the uncharged costs of cause 4; the hunt script's mean step time does.
 `heap_object_stores_and_releases_cost_the_same_at_every_position` holds
 `heap_objects` flat; `known_drift_sequential_loop_clauses` records the loop
 bug's drift and fails when it stops.
@@ -111,8 +144,10 @@ bug's drift and fails when it stops.
 
 - Each remaining cause above is fixed in its representation, with a
   deterministic regression at four or more sizes: the composition scans
-  outside stores (cause 2), and calls beside held instances or composites
-  whose bodies read memory, a condition or a witness (cause 3).
+  outside stores and separation (cause 2), calls beside held instances or
+  composites whose bodies read memory, a condition or a witness (cause 3),
+  and evidence checking's premise walk and memory comparisons (cause 4),
+  charged once linear work is gone.
 - `step-scaling-hunt.py` shows every simple step of every shape constant in
   N, up to logarithmic factors and work proportional to the step's own
   effect (as the final `return` ending N locals in `heap_objects` is).
