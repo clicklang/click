@@ -1893,12 +1893,21 @@ pub struct CallKeptRanges {
     residual: Option<ResourceContext>,
     identity: std::sync::Arc<KeptRangeSet>,
     premises: Vec<(ConditionTerm, bool)>,
+    /// The definitions, sorted by name, of the residual's composite families
+    /// whose bodies are argument-direct. Their composites are not opened at
+    /// the call: the ranges a question about one address needs are opened
+    /// from the residual's composites whose arguments can spell it
+    /// ([`Self::range_holding`]), and the identity names the composites.
+    direct: Option<std::sync::Arc<Vec<CCompositeResourceDefinition>>>,
 }
 
 #[derive(Debug)]
 struct KeptRangeSet {
     id: u64,
     ranges: SnapshotMap<CMemoryRange, ()>,
+    /// The residual's owned composites, with multiplicity, when some of
+    /// their ranges are answered per address rather than listed in `ranges`.
+    composites: SnapshotMap<CResourceFact, usize>,
 }
 
 impl PartialEq for CallKeptRanges {
@@ -1908,15 +1917,20 @@ impl PartialEq for CallKeptRanges {
 }
 impl Eq for CallKeptRanges {}
 
-fn intern_kept_range_set(ranges: SnapshotMap<CMemoryRange, ()>) -> std::sync::Arc<KeptRangeSet> {
+fn intern_kept_range_set(
+    ranges: SnapshotMap<CMemoryRange, ()>,
+    composites: SnapshotMap<CResourceFact, usize>,
+) -> std::sync::Arc<KeptRangeSet> {
     let mut hash = std::collections::hash_map::DefaultHasher::new();
     std::hash::Hash::hash(&ranges, &mut hash);
+    std::hash::Hash::hash(&composites, &mut hash);
     let hash = std::hash::Hasher::finish(&hash);
-    intern_kept_range_set_with_hash(ranges, hash)
+    intern_kept_range_set_with_hash(ranges, composites, hash)
 }
 
 fn intern_kept_range_set_with_hash(
     ranges: SnapshotMap<CMemoryRange, ()>,
+    composites: SnapshotMap<CResourceFact, usize>,
     hash: u64,
 ) -> std::sync::Arc<KeptRangeSet> {
     type Buckets = std::collections::HashMap<u64, Vec<std::sync::Weak<KeptRangeSet>>>;
@@ -1929,13 +1943,24 @@ fn intern_kept_range_set_with_hash(
     let bucket = sets.entry(hash).or_default();
     bucket.retain(|candidate| candidate.strong_count() != 0);
     for candidate in bucket.iter().filter_map(std::sync::Weak::upgrade) {
-        if candidate.ranges.ptr_eq(&ranges) || candidate.ranges.diff(&ranges).next().is_none() {
+        let same = |left: bool, diff: &mut dyn Iterator<Item = ()>| left || diff.next().is_none();
+        if same(
+            candidate.ranges.ptr_eq(&ranges),
+            &mut candidate.ranges.diff(&ranges).map(|_| ()),
+        ) && same(
+            candidate.composites.ptr_eq(&composites),
+            &mut candidate.composites.diff(&composites).map(|_| ()),
+        ) {
             return candidate;
         }
     }
     let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     assert!(id != u64::MAX, "kept range identity space exhausted");
-    let result = std::sync::Arc::new(KeptRangeSet { id, ranges });
+    let result = std::sync::Arc::new(KeptRangeSet {
+        id,
+        ranges,
+        composites,
+    });
     bucket.push(std::sync::Arc::downgrade(&result));
     result
 }
@@ -1944,13 +1969,18 @@ impl CallKeptRanges {
     pub(in crate::kernel) fn new(
         ranges: ResourceContext,
         premises: Vec<(ConditionTerm, bool)>,
+        direct: Option<std::sync::Arc<Vec<CCompositeResourceDefinition>>>,
     ) -> Self {
-        let identity = intern_kept_range_set(ranges.flat_owned_memory_ranges().clone());
+        let identity = intern_kept_range_set(
+            ranges.flat_owned_memory_ranges().clone(),
+            SnapshotMap::new(),
+        );
         Self {
             ranges,
             residual: None,
             identity,
             premises,
+            direct,
         }
     }
 
@@ -1962,23 +1992,47 @@ impl CallKeptRanges {
                 ranges.insert(range.clone(), ());
             }
         }
+        let composites = if self.direct.is_some() {
+            residual.owned_composite_facts().clone()
+        } else {
+            SnapshotMap::new()
+        };
         Self {
             ranges: self.ranges.clone(),
             residual: Some(residual.clone()),
-            identity: intern_kept_range_set(ranges),
+            identity: intern_kept_range_set(ranges, composites),
             premises: self.premises.clone(),
+            direct: self.direct.clone(),
         }
     }
 
-    /// Recorded caller-owned ranges, for snapshot diagnostics.
-    pub(crate) fn diagnostic_ranges(&self) -> ResourceContext {
-        ResourceContext::new().unchecked_with_facts(
-            self.identity
-                .ranges
-                .keys()
-                .cloned()
-                .map(CResourceFact::own_memory),
+    /// The ranges of `fact`, one of the residual's composites, when its
+    /// family is argument-direct.
+    fn direct_ranges(&self, fact: &CResourceFact) -> Vec<CMemoryRange> {
+        let (Some(direct), CResource::Composite { name, .. }) = (&self.direct, fact.resource())
+        else {
+            return Vec::new();
+        };
+        let Ok(index) = direct.binary_search_by(|definition| definition.name().cmp(name)) else {
+            return Vec::new();
+        };
+        crate::kernel::functions::argument_direct_composite_ranges(
+            fact,
+            std::slice::from_ref(&direct[index]),
         )
+    }
+
+    /// Recorded caller-owned ranges, for snapshot diagnostics: the listed
+    /// ranges and those of every argument-direct composite.
+    pub(crate) fn diagnostic_ranges(&self) -> ResourceContext {
+        let mut ranges = self.identity.ranges.clone();
+        for fact in self.identity.composites.keys() {
+            for range in self.direct_ranges(fact) {
+                ranges.insert(range, ());
+            }
+        }
+        ResourceContext::new()
+            .unchecked_with_facts(ranges.keys().cloned().map(CResourceFact::own_memory))
     }
 
     /// Recorded placement premises, for snapshot diagnostics.
@@ -1987,7 +2041,7 @@ impl CallKeptRanges {
     }
 
     fn is_empty(&self) -> bool {
-        self.identity.ranges.is_empty()
+        self.identity.ranges.is_empty() && self.identity.composites.is_empty()
     }
 
     /// `assumptions` with the premises assumed, charged one unit each.
@@ -2032,29 +2086,83 @@ impl CallKeptRanges {
             .is_some()
     }
 
+    /// Whether `range` is kept: listed, or a range of an argument-direct
+    /// composite whose arguments spell its base.
     pub(in crate::kernel) fn contains_range(&self, range: &CMemoryRange) -> bool {
-        self.identity.ranges.contains_key(range)
+        if self.identity.ranges.contains_key(range) {
+            return true;
+        }
+        let Some(residual) = self.direct.as_ref().and(self.residual.as_ref()) else {
+            return false;
+        };
+        crate::kernel::assumptions::additive_base_spellings(range.base())
+            .iter()
+            .flat_map(|base| residual.owned_composites_with_pointer_argument(base))
+            .any(|fact| self.direct_ranges(fact).contains(range))
     }
 
     /// The kept range holding the access. `placement` is the premises already
     /// assumed into `assumptions`, when the caller has built it once.
-    pub(in crate::kernel) fn range_holding<'a>(
-        &'a self,
+    ///
+    /// The listed ranges are asked first. Then the argument-direct
+    /// composites that can hold the access are opened: those with a pointer
+    /// argument equal to an additive base spelling of `pointer` or an exact
+    /// alias of one, and failing those, the ones with an argument in the
+    /// access's block, as the listed ranges' own block fallback reads them
+    /// ([`PureFactContext::kept_range_holding_access`]). Only those are
+    /// opened, never the residual's other composites.
+    pub(in crate::kernel) fn range_holding(
+        &self,
         assumptions: &PureFactContext,
         placement: Option<&PureFactContext>,
         pointer: &Pointer,
         bytes: u32,
-    ) -> Option<&'a CMemoryRange> {
-        let query = |ranges: &'a ResourceContext| match placement {
-            Some(placement) => placement.kept_range_holding_access(ranges, || None, pointer, bytes),
-            None => assumptions.kept_range_holding_access(
-                ranges,
-                || self.placement(assumptions),
-                pointer,
-                bytes,
-            ),
+    ) -> Option<CMemoryRange> {
+        let query = |ranges: &ResourceContext| {
+            match placement {
+                Some(placement) => {
+                    placement.kept_range_holding_access(ranges, || None, pointer, bytes)
+                }
+                None => assumptions.kept_range_holding_access(
+                    ranges,
+                    || self.placement(assumptions),
+                    pointer,
+                    bytes,
+                ),
+            }
+            .cloned()
         };
-        query(&self.ranges).or_else(|| self.residual.as_ref().and_then(query))
+        query(&self.ranges)
+            .or_else(|| self.residual.as_ref().and_then(query))
+            .or_else(|| {
+                let residual = self.direct.as_ref().and(self.residual.as_ref())?;
+                let spellings = crate::kernel::assumptions::additive_base_spellings(pointer);
+                let mut bases = spellings.clone();
+                for spelling in &spellings {
+                    bases.extend(assumptions.exact_pointer_aliases(spelling).cloned());
+                }
+                let opened = |facts: &mut dyn Iterator<Item = &CResourceFact>| {
+                    let mut seen = BTreeSet::new();
+                    let mut ranges = Vec::new();
+                    for fact in facts {
+                        if seen.insert(fact.clone()) {
+                            ranges.extend(self.direct_ranges(fact));
+                        }
+                    }
+                    ResourceContext::new_with_equalities(assumptions)
+                        .unchecked_with_facts(ranges.into_iter().map(CResourceFact::own_memory))
+                };
+                query(&opened(&mut bases.iter().flat_map(|base| {
+                    residual.owned_composites_with_pointer_argument(base)
+                })))
+                .or_else(|| {
+                    let mut blocks = BTreeSet::from([&pointer.block]);
+                    blocks.extend(bases.iter().map(|base| &base.block));
+                    query(&opened(&mut blocks.into_iter().flat_map(|block| {
+                        residual.owned_composites_with_argument_block(block)
+                    })))
+                })
+            })
     }
 
     fn identity(&self) -> String {
@@ -2120,8 +2228,11 @@ impl CallKeptOwnership {
     ) -> Option<CMemoryRange> {
         self.opened
             .range_holding(assumptions, self.placement.as_ref(), pointer, bytes)
-            .or_else(|| assumptions.owned_member_holding_access(&self.residual, pointer, bytes))
-            .cloned()
+            .or_else(|| {
+                assumptions
+                    .owned_member_holding_access(&self.residual, pointer, bytes)
+                    .cloned()
+            })
     }
 }
 
@@ -9259,14 +9370,16 @@ mod kept_range_identity_tests {
 
     #[test]
     fn kept_range_hash_collisions_use_exact_sets_across_threads() {
-        let first = intern_kept_range_set_with_hash(ranges(7), 0);
-        let same = intern_kept_range_set_with_hash(ranges(7), 0);
-        let different = intern_kept_range_set_with_hash(ranges(8), 0);
+        let first = intern_kept_range_set_with_hash(ranges(7), SnapshotMap::new(), 0);
+        let same = intern_kept_range_set_with_hash(ranges(7), SnapshotMap::new(), 0);
+        let different = intern_kept_range_set_with_hash(ranges(8), SnapshotMap::new(), 0);
         assert_eq!(first.id, same.id);
         assert_ne!(first.id, different.id);
-        let across = std::thread::spawn(|| intern_kept_range_set_with_hash(ranges(7), 0))
-            .join()
-            .unwrap();
+        let across = std::thread::spawn(|| {
+            intern_kept_range_set_with_hash(ranges(7), SnapshotMap::new(), 0)
+        })
+        .join()
+        .unwrap();
         assert_eq!(first.id, across.id);
     }
 

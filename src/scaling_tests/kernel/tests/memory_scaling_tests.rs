@@ -1103,7 +1103,7 @@ fn kept_call_havoc_work(residual: ResourceContext) -> (usize, usize) {
     let assumptions = PureFactContext::new();
     let kept = CallKeptOwnership::new(
         residual,
-        CallKeptRanges::new(ResourceContext::new(), Vec::new()),
+        CallKeptRanges::new(ResourceContext::new(), Vec::new(), None),
         &assumptions,
     );
     let memory = CMemory::new().store(
@@ -1251,7 +1251,7 @@ fn a_call_rechecks_cached_members_after_ownership_withdrawal_or_width_change() {
     {
         let kept = CallKeptOwnership::new(
             residual,
-            CallKeptRanges::new(ResourceContext::new(), vec![]),
+            CallKeptRanges::new(ResourceContext::new(), vec![], None),
             &assumptions,
         );
         let after = before.clone().with_call_memory_havoc(
@@ -1320,6 +1320,7 @@ fn a_call_kept_instance_range_is_placed_in_work_linear_in_its_body() {
         let kept = CallKeptRanges::new(
             ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(range)),
             premises,
+            None,
         );
         let assumptions = PureFactContext::new();
         let cell = data(Bitvector32Term::Variable(Variable(START_LOAD)));
@@ -1488,6 +1489,7 @@ fn a_kept_range_base_equality_is_proved_once_per_fact_set() {
             ResourceContext::new()
                 .unchecked_with_facts([CResourceFact::own_memory(external_range(KEPT, 0, 4))]),
             Vec::new(),
+            None,
         );
         let access = external_field(ACCESS, 8);
         assert!(

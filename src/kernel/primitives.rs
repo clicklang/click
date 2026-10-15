@@ -7296,6 +7296,16 @@ pub(super) struct ResourceContextIndex {
     /// the other instances of the context
     /// (`functions::store_opened_instance_composition`).
     pub(super) owned_instances_by_pointer_argument: PersistentMap<Pointer, ResourceEntryIds>,
+    /// Owned folded composites keyed by each C pointer argument they name,
+    /// and by the block of each. A call's kept memory answers a question
+    /// about one address from the composites whose arguments can spell it,
+    /// never the context's other composites
+    /// (`memory_state::CallKeptRanges::range_holding`).
+    pub(super) owned_composites_by_pointer_argument: PersistentMap<Pointer, ResourceEntryIds>,
+    pub(super) owned_composites_by_argument_block: PersistentMap<PointerBlock, ResourceEntryIds>,
+    /// The owned folded composites with their multiplicity, content-hashed,
+    /// so a kept set's identity can name them in constant work.
+    pub(super) owned_composite_facts: SnapshotMap<CResourceFact, usize>,
     pub(super) exact: PersistentMap<CResourceFact, ResourceEntryIds>,
     pub(super) by_resource: PersistentMap<CResource, ResourceEntryIds>,
     /// Constant owned units of quantity-bearing families. A quantity query

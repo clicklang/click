@@ -1492,7 +1492,23 @@ permitted stores or a transition that drops the fact:
   composites expanded, and its own facts, which become the premises that
   place a cell spelled through the instance's cells (`region->start`) in a
   range spelled through its fields. A residual folded composite is
-  expanded. Only exactly held bytes count: a residual *view* keeps nothing
+  expanded, except one whose definition is argument-direct
+  (`CCompositeResourceDefinition::has_argument_direct_body`: unconditional,
+  unmatched, witness-free and non-recursive, every clause an unguarded owned
+  segment spelled from its parameters without a load). Such a body's ranges
+  are a function of the composite fact alone, so the call opens none of
+  them: `CallKeptRanges` carries those families' definitions and names the
+  residual's composites in its identity (the index's content-hashed
+  `owned_composite_facts`), and a question about one address opens only the
+  composites with a pointer argument equal to an additive base spelling of
+  it or an exact alias of one, failing those the ones with an argument in its
+  block (the composite argument indexes), as the listed ranges' own lookup
+  reads them. The checker's exact-range test re-derives a range the same way,
+  and diagnostics open every such composite on request. A call therefore
+  costs the same beside any number of held argument-direct composites
+  (`a_call_keeps_argument_direct_composites_in_work_independent_of_their_number`,
+  `a_call_keeps_an_argument_direct_composites_memory_without_opening_it`).
+  Only exactly held bytes count: a residual *view* keeps nothing
   (the callee may hold its owner), an iterated clause in an opened body is
   skipped rather than counted at its span, a nested instance is not opened
   again, and an instance that cannot be opened (a matched body, decided or

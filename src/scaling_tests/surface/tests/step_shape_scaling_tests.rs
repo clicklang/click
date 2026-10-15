@@ -724,24 +724,15 @@ fn a_branch_arm_step_ignores_earlier_branches() {
     );
 }
 
-/// Known growth, recorded so that it is measured on every change and a fix
-/// is noticed: when one of these stops drifting, delete its assertion here
-/// and the cause from `issues/scaling.md` or the bug it names.
 #[test]
-fn known_drift_heap_object_stores_and_releases() {
-    let drifting = drifting_roles("heap_objects", &run(heap_objects, 4));
-    let roles = drifting
-        .iter()
-        .map(|(role, _)| role.as_str())
-        .collect::<Vec<_>>();
-    assert_eq!(
-        roles,
-        ["drop_box(p#);"],
-        "heap_objects drift changed; if a step stopped drifting, it is fixed: update this \
-         test and issues/scaling.md ({drifting:?})"
-    );
+fn heap_object_stores_and_releases_cost_the_same_at_every_position() {
+    assert_no_drift("heap_objects", heap_objects, 4);
 }
 
+/// Known growth, recorded so that it is measured on every change and a fix
+/// is noticed: when one of these stops drifting, make it an ordinary
+/// no-drift test here and delete the cause from `issues/scaling.md` or the
+/// bug it names.
 /// `bugs/sequential-loop-clause-grows-with-earlier-loops.md`.
 #[test]
 fn known_drift_sequential_loop_clauses() {

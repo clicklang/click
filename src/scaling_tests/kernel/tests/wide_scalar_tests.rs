@@ -110,7 +110,7 @@ fn selected_wide_read_value_keeps_alias_authority_and_scales_with_unrelated_cell
             0,
             2,
         ))),
-        CallKeptRanges::new(ResourceContext::new(), Vec::new()),
+        CallKeptRanges::new(ResourceContext::new(), Vec::new(), None),
         &selected,
     );
     let matches = crate::kernel::memory_provenance::wide_read_has_recorded_value;
@@ -185,7 +185,7 @@ fn selected_wide_read_value_bounds_unselected_call_history() {
     let kept = CallKeptOwnership::new(
         ResourceContext::new()
             .unchecked_with_fact(CResourceFact::own_memory(memory_range(owner, 0, 2))),
-        CallKeptRanges::new(ResourceContext::new(), Vec::new()),
+        CallKeptRanges::new(ResourceContext::new(), Vec::new(), None),
         &selected,
     );
     let bits = Bitvector32Term::UInt64Constant(7);
@@ -259,7 +259,7 @@ fn selected_wide_read_congruence_preserves_history_width_and_scales() {
                 ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
                     memory_range(owned_pointer.clone(), 0, 2),
                 )),
-                CallKeptRanges::new(ResourceContext::new(), Vec::new()),
+                CallKeptRanges::new(ResourceContext::new(), Vec::new(), None),
                 &selected,
             );
         let after = memory.clone().with_call_memory_havoc(
