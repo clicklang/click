@@ -245,7 +245,6 @@ theorem rb_minimum_list(tree: RbTree, successor: struct rb_node*, color: Color, 
                         apply(rb_minimum_nonempty_left(node, parent, ncolor, left, right));
                         assumption();
                     }
-                    have rb_minimum(left) == RbMinimum::Found(successor, color, child) by auto;
                     apply(ih(left, successor, color, child));
                     apply(rb_min_list_nonempty_left(node, parent, ncolor, left, right));
                     rewrite(rb_min_list(RbTree::Node(node, parent, ncolor, left, right))
@@ -324,11 +323,6 @@ theorem rb_min_context_cut_leaf(tree: RbTree, up: Context, successor: struct rb_
                     normalize();
                 } else {
                     apply(rb_minimum_nonempty_left(node, parent, color, left, right));
-                    have rb_minimum(left) == RbMinimum::Found(successor, min_color, RbTree::Empty) by {
-                        rewrite(rb_minimum(left) == rb_minimum(RbTree::Node(node, parent, color, left,
-                            right)));
-                        assumption();
-                    }
                     apply(ih(left, Context::Left(node, parent, color, right, up), successor, min_color));
                     apply(rb_remove_min_nonempty_left(node, parent, color, left, right));
                     rewrite(rb_remove_min(RbTree::Node(node, parent, color, left, right))
@@ -378,17 +372,11 @@ theorem rb_min_context_child(tree: RbTree, up: Context, successor: struct rb_nod
                         normalize();
                     }
                     have rb_color(RbTree::Node(node, parent, color, left, right)) == min_color by auto;
-                    have ctx_rb(up, frame_black_height(min_color, Nat::Zero), min_color) == 1 by auto;
                     rewrite(left == RbTree::Empty);
                     unfold(rb_min_context(RbTree::Node(node, parent, color, RbTree::Empty, right), up));
                     assumption();
                 } else {
                     apply(rb_minimum_nonempty_left(node, parent, color, left, right));
-                    have rb_minimum(left) == RbMinimum::Found(successor, min_color, child) by {
-                        rewrite(rb_minimum(left) == rb_minimum(RbTree::Node(node, parent, color, left,
-                            right)));
-                        assumption();
-                    }
                     apply(is_rb_node_left(node, parent, color, left, right));
                     apply(is_rb_node_right(node, parent, color, left, right));
                     apply(is_rb_node_black_heights(node, parent, color, left, right));
@@ -445,10 +433,6 @@ theorem rb_min_context_red_exit(tree: RbTree, up: Context, successor: struct rb_
     ensures ctx_rb(rb_min_context(tree, up), Nat::Zero, Color::Black) == 1 by {
         apply(rb_min_context_leaf(tree, up, successor, Color::Red));
         unfold(frame_black_height(Color::Red, Nat::Zero));
-        have ctx_rb(rb_min_context(tree, up), Nat::Zero, Color::Red) == 1 by {
-            rewrite(Nat::Zero == frame_black_height(Color::Red, Nat::Zero));
-            assumption();
-        }
         apply(ctx_rb_black_focus(rb_min_context(tree, up), Nat::Zero, Color::Red));
         assumption();
     }
@@ -773,10 +757,6 @@ theorem rb_min_context_cut_child(tree: RbTree, up: Context, successor: struct rb
                     rewrite(right == child); normalize();
                 } else {
                     apply(rb_minimum_nonempty_left(node, parent, color, left, right));
-                    have rb_minimum(left) == RbMinimum::Found(successor, min_color, child) by {
-                        rewrite(rb_minimum(left) == rb_minimum(RbTree::Node(node, parent, color, left, right)));
-                        assumption();
-                    }
                     apply(ih(left, Context::Left(node, parent, color, right, up), successor, min_color, child));
                     apply(rb_remove_min_nonempty_left(node, parent, color, left, right));
                     apply(rb_min_context_nonempty_left(node, parent, color, left, right, up));

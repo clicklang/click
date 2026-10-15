@@ -201,12 +201,6 @@ int32 owned_split_buffer_pipeline(
     ));
     fold(owned_split_buffer(owner));
     step();
-    have c(result) == data[1] by {
-        simp() using {
-            at(statement(7).entry, c(result)) == at(statement(7).entry, *(owner->data + 1));
-            owner->data == data;
-        }
-    }
     apply(int32_equality_transitive(
         c(result),
         data[1],

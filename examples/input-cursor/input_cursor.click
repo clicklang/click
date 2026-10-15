@@ -202,12 +202,6 @@ int32 input_cursor_shared_pipeline(
             1 <= length;
         }
     }
-    have right->pos < right->len by {
-        simp() using {
-            right->pos == 0;
-            0 < right->len;
-        }
-    }
     apply(incremented_zero_is_one(
         at(statement(5).entry, left->pos),
         left->pos
