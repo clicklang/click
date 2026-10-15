@@ -4364,6 +4364,91 @@ fn call_requirement_checking_is_linear_in_the_requirement_count() {
     assert_near_linear_scaling("call requirement count", &samples);
 }
 
+/// A call's separation requirements cost the same work beside 2, 4, 8 and
+/// 16 unrelated owned objects. Every object a pointer parameter reaches
+/// shares one block, so the composition-law route used to ask every owned
+/// member of that block whether it held each side. The null-guarded shape
+/// of `examples/rbtree-augmented`'s `sized_rotate`, `p == 0 or
+/// separate(memory(p), memory(p->f))` with `p == 0` known, also asked its
+/// right disjunct, a separation nothing can establish, which every route
+/// then refused only after visiting the whole frame. Measured on
+/// 2026-10-15 before the fix, release build: 1,037, 1,857, 3,497 and 6,777
+/// units of requirement checking for the separated call, and 9,454,
+/// 15,914, 28,834 and 54,674 for the guarded requirements beyond the cost
+/// of the bare guard; after it, 46 and 171 at every size.
+///
+/// The bare guard `a->left == 0` is measured on its own and subtracted: its
+/// first lookup keys the caller's stated facts, one per owned field, into
+/// the context's deferred stated index, which each fact pays once
+/// (`docs/internals/verification-efficiency.md`, "Representation
+/// requirements"). A separation the caller cannot show is still refused.
+#[test]
+#[ignore = "nightly: 13.9s in the parallel gate"]
+fn call_separation_requirements_ignore_unrelated_owned_objects() {
+    const SPAN: &str = "operation `verified call requirement checking`";
+    let separated = "requires separate(memory(a->left), memory(b->size));";
+    let guard = "requires a->left == 0;";
+    let guarded = "requires a->left == 0 or separate(memory(a->left), memory(a->left->size));\n    \
+                   requires separate(memory(a->left), memory(b->size));";
+    let unproved = "requires separate(memory(a->left), memory(b->left));";
+    let mut separated_work = Vec::new();
+    let mut guarded_work = Vec::new();
+    for size in [2, 4, 8, 16] {
+        let parameters = (0..size)
+            .map(|i| format!(", struct node* q{i}"))
+            .collect::<String>();
+        let owners = (0..size)
+            .map(|i| format!("    owns q{i}->left;\n    owns q{i}->size;\n"))
+            .collect::<String>();
+        let c_source = format!(
+            "struct node {{ struct node* left; struct node* right; int32 size; }};\n\
+             void callee(struct node* a, struct node* b);\n\
+             void caller(struct node* a, struct node* b{parameters}) {{ callee(a, b); }}\n"
+        );
+        let checking = |requirement: &str, caller_requirement: &str| {
+            let click_source = format!(
+                "verifying \"owners.c\";\n\
+                 extern void callee(struct node* a, struct node* b) {{\n    \
+                 views a->left;\n    owns b->size;\n    {requirement}\n}}\n\
+                 void caller(struct node* a, struct node* b{parameters}) {{\n    \
+                 owns a->left;\n    owns b->size;\n    {caller_requirement}\n{owners}\
+                 }} by {{\n    step();\n    step();\n}}\n"
+            );
+            let (verified, sample) = scaling_sample(size, || {
+                verify_c0_sources(&click_source, &[("owners.c", &c_source)])
+            });
+            (verified, sample.named_work.get(SPAN).copied().unwrap_or(0))
+        };
+        let run = |requirement: &str, caller_requirement: &str| {
+            let (verified, work) = checking(requirement, caller_requirement);
+            verified.unwrap_or_else(|error| {
+                panic!(
+                    "`{requirement}` beside {size} owned objects: {}",
+                    error.message()
+                )
+            });
+            assert!(work > 0, "`{requirement}` was never checked");
+            work
+        };
+        separated_work.push(run(separated, ""));
+        guarded_work.push(run(guarded, guard) - run(guard, guard));
+        // `b->left` is neither owned nor separated from `a->left` by
+        // anything the caller knows: the requirement stays unproved.
+        assert!(
+            checking(unproved, "").0.is_err(),
+            "an unestablished separation passed beside {size} owned objects"
+        );
+    }
+    assert!(
+        separated_work.iter().all(|work| *work == separated_work[0]),
+        "separation requirement checking grows with unrelated owned objects: {separated_work:?}"
+    );
+    assert!(
+        guarded_work.iter().all(|work| *work == guarded_work[0]),
+        "null-guarded requirement checking grows with unrelated owned objects: {guarded_work:?}"
+    );
+}
+
 /// `execute()` runs an early-return fan-out on the checked `Proof` in work
 /// near linear in its length.
 ///
@@ -7956,7 +8041,13 @@ resource callbacks0(cb: const struct callbacks*) {
 
 /// Guarded preparation visits one body; the complete rewrite also pays the
 /// existing linear validation cost for surrounding owners.
+///
+/// Nightly: each of the four verifications costs over half a second in a
+/// debug build at any size, and the proof's `execute` grows faster than
+/// the owners (3,561, 6,045, 13,413 and 37,749 units at 4 to 32 owners in a
+/// release build on 2026-10-15), so the largest size dominates.
 #[test]
+#[ignore = "nightly: 7.2s in the parallel gate"]
 fn guarded_unfold_cell_preparation_scales_linearly_with_surrounding_owners() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/c_guarded_resource_disjoint_store.md");

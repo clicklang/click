@@ -4,9 +4,15 @@
 
 use super::*;
 
+/// The selection charges the same work beside 2, 4, 8 and 16 unrelated
+/// framed ranges as beside 1,024 (1,118 units at 16 to 1,024 on
+/// 2026-10-15), so an ambient scan shows as growth at these sizes; the
+/// larger sizes cost seconds of setup in a debug build, nearly all of it in
+/// `synchronize_memory_equalities` over the unrelated ranges.
 #[test]
 fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
-    for size in [16u32, 64, 256, 1024] {
+    let mut samples = Vec::new();
+    for size in [2u32, 4, 8, 16] {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Pointer {
             block: PointerBlock::ExternalArgument,
@@ -84,6 +90,7 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
         });
         assert_eq!(found, Some(held.clone()), "size={size}, work={work}");
         assert!(work < 2000, "size={size}, work={work}");
+        samples.push(work);
         assert_eq!(
             crate::kernel::memory_provenance::checked_pointer_read_endpoint(&current, &context),
             Some(source.clone()),
@@ -123,6 +130,10 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
                 .is_none()
         );
     }
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "the checked read's selection read unrelated framed ranges: {samples:?}"
+    );
 }
 
 #[test]
