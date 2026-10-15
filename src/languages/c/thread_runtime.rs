@@ -83,6 +83,25 @@ pub const ATOMIC_INIT_NAME: &str = "atomic_init";
 pub const ATOMIC_STORE_NAME: &str = "atomic_store_explicit";
 pub const ATOMIC_LOAD_NAME: &str = "atomic_load_explicit";
 
+/// The C11 atomic operations of the one-shot publication subset.
+pub const PUBLICATION_OPERATIONS: [&str; 3] =
+    [ATOMIC_INIT_NAME, ATOMIC_STORE_NAME, ATOMIC_LOAD_NAME];
+
+/// The pthread functions the modeled-pthread runtime specifies. Their
+/// bodies are not C sources; the trusted specification stands in for them.
+pub const MODELED_PTHREAD_FUNCTIONS: [&str; 6] = [
+    "pthread_create",
+    "pthread_join",
+    MUTEX_INIT_CONTRACT.function_name,
+    MUTEX_LOCK_CONTRACT.function_name,
+    MUTEX_UNLOCK_CONTRACT.function_name,
+    MUTEX_DESTROY_CONTRACT.function_name,
+];
+
+pub fn is_modeled_pthread_function(name: &str) -> bool {
+    MODELED_PTHREAD_FUNCTIONS.contains(&name)
+}
+
 pub fn is_publication_operation(name: &str) -> bool {
     matches!(
         name,

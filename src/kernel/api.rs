@@ -4133,6 +4133,7 @@ pub(crate) fn proposition_variables(proposition: &Proposition) -> BTreeSet<Varia
     variables
 }
 
+#[cfg(test)]
 pub fn c_max_body() -> CStatement {
     c_if(
         c_less_than(c_variable("a"), c_variable("b")),
@@ -4141,6 +4142,7 @@ pub fn c_max_body() -> CStatement {
     )
 }
 
+#[cfg(test)]
 pub fn c_max_function() -> CFunction {
     c_function(
         CType::Int32,
@@ -4153,10 +4155,12 @@ pub fn c_max_function() -> CFunction {
     )
 }
 
+#[cfg(test)]
 pub fn c_max_state(a: CValue, b: CValue) -> CState {
     CState::new().with_local("a", a).with_local("b", b)
 }
 
+#[cfg(test)]
 pub fn c_max_lt_condition(a: Bitvector32Term, b: Bitvector32Term) -> ConditionTerm {
     ConditionTerm::signed_less_than(a, b)
 }
@@ -6782,6 +6786,7 @@ pub fn prove_c_function_satisfies_specification_with_environment(
     )))
 }
 
+#[cfg(test)]
 pub fn prove_c_max_lt_returns_right(a: Variable, b: Variable) -> Option<Theorem> {
     let a_bits = Bitvector32Term::Variable(a);
     let b_bits = Bitvector32Term::Variable(b);
@@ -6817,6 +6822,7 @@ pub fn prove_c_max_lt_returns_right(a: Variable, b: Variable) -> Option<Theorem>
     )))
 }
 
+#[cfg(test)]
 pub fn prove_c_max_not_lt_returns_left(a: Variable, b: Variable) -> Option<Theorem> {
     let a_bits = Bitvector32Term::Variable(a);
     let b_bits = Bitvector32Term::Variable(b);

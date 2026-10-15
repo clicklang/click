@@ -4258,6 +4258,7 @@ impl<'a> CExecutionContext<'a> {
     }
 
     /// Runs callee bodies and verifies loops.
+    #[cfg(test)]
     pub(crate) fn execute_bodies(environment: &'a CExecutionEnvironment) -> Self {
         Self::new(environment, CExecutionSemantics::EXECUTE_BODIES)
     }

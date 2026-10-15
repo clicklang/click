@@ -3,6 +3,7 @@ use crate::kernel::CStatementStoreSource;
 use crate::kernel::loans::empty_checked_loan_evidence_sequence;
 mod scalar_arrays;
 
+#[cfg(test)]
 pub(in crate::kernel) fn execute_c_statement(
     state: &CState,
     statement: &CStatement,

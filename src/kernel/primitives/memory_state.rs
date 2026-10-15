@@ -8836,7 +8836,7 @@ mod union_store_tests {
 }
 
 #[cfg(test)]
-mod hunt_investigation_join_tests {
+mod interface_join_tombstone_tests {
     use super::*;
 
     /// A join retains a tombstone if any incoming arm freed the allocation,
@@ -8844,7 +8844,7 @@ mod hunt_investigation_join_tests {
     /// dereference through the alias must be rejected until the paths are
     /// distinguished.
     #[test]
-    fn hunt_investigation_interface_join_erases_one_arm_deallocation() {
+    fn interface_join_keeps_one_arm_deallocation() {
         let base = Pointer {
             block: PointerBlock::Heap(923_001),
             offset: PointerOffsetTerm::Constant(0),

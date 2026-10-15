@@ -1434,7 +1434,7 @@ pub(in crate::surface) struct FieldPlace {
 /// elements a read names by index. A union is not one place and is left out.
 pub(in crate::surface) fn scalar_field_places(
     layout: &syntax::C0StructLayout,
-    layouts: &BTreeMap<String, syntax::C0StructLayout>,
+    layouts: &impl syntax::StructLayouts,
 ) -> Vec<FieldPlace> {
     // Each nested struct is entered once per field that holds it, so the
     // places are as many as the scalar members the layout has. A struct
@@ -1442,7 +1442,7 @@ pub(in crate::surface) fn scalar_field_places(
     // layout map and never for a real one.
     fn collect(
         layout: &syntax::C0StructLayout,
-        layouts: &BTreeMap<String, syntax::C0StructLayout>,
+        layouts: &impl syntax::StructLayouts,
         prefix: &str,
         base: u32,
         depth: usize,
@@ -1479,7 +1479,7 @@ pub(in crate::surface) fn scalar_field_places(
             // scalar place like any other pointer field.
             match field.struct_name() {
                 Some(nested) if !field.c_type().is_pointer() => {
-                    if let Some(nested) = layouts.get(nested)
+                    if let Some(nested) = layouts.struct_layout(nested)
                         && depth < 8
                     {
                         collect(
@@ -1516,7 +1516,7 @@ pub(in crate::surface) fn scalar_field_places(
 /// `p->next->second`, can name. Each struct is laid out once.
 pub(in crate::surface) fn pointee_field_places<'a>(
     places: impl IntoIterator<Item = &'a Vec<FieldPlace>>,
-    layouts: &BTreeMap<String, syntax::C0StructLayout>,
+    layouts: &impl syntax::StructLayouts,
 ) -> BTreeMap<String, Vec<FieldPlace>> {
     let mut reached = BTreeMap::new();
     let mut pending = places
@@ -1528,7 +1528,7 @@ pub(in crate::surface) fn pointee_field_places<'a>(
         if reached.contains_key(&name) {
             continue;
         }
-        let Some(layout) = layouts.get(&name) else {
+        let Some(layout) = layouts.struct_layout(&name) else {
             continue;
         };
         let fields = scalar_field_places(layout, layouts);
