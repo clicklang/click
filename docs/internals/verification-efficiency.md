@@ -742,10 +742,13 @@ reads every fact as before. So the answers are unchanged
 walks), and a refusal beside 64 to 512 other bounded indices costs a flat
 27 units against 932 to 7,204 for the full scan
 (`memory_resolution_order_walk_ignores_shared_bounds_of_other_indices`).
-A line of 4 to 64 such stores costs 990 to 18,570 units of store work,
-where it cost 2,294 to 408,974
+A line of 4 to 64 such stores cost 990 to 18,570 units of store work,
+where it had cost 2,294 to 408,974
 (`stores_to_bounded_unordered_indices_are_near_linear` in
-`src/scaling_tests/surface/tests/scaling_tests.rs`).
+`src/scaling_tests/surface/tests/scaling_tests.rs`). The difference
+graph's bounded propagation now adds a fixed cost per store once more than
+its `EDGE_LIMIT` (32) indices share the bound, so the test checks
+near-linear growth at 4 to 32 stores and at 64 to 256 separately.
 
 A term's constant after equality normalization is a lookup in
 `ConstantClasses` (`src/kernel/assumptions/constant_classes.rs`), which the
