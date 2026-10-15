@@ -652,6 +652,11 @@ impl Adapter<'_> {
                     .zip(fields.iter())
                     .map(|(local, field)| {
                         let local = &body.locals.locals[*local];
+                        // A capture is read when the closure is made, which
+                        // only a scalar's value makes exact.
+                        if !matches!(local.ty.kind(), a::TyKind::Scalar(_)) {
+                            return Err(unsupported("closure capture of a non-scalar"));
+                        }
                         Ok(Capture {
                             name: local.name.clone().ok_or_else(|| {
                                 unsupported("closure capture of an unnamed local")

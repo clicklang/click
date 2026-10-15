@@ -4295,6 +4295,8 @@ mod parity;
 mod array_lengths;
 #[path = "rust_import/array_values.rs"]
 mod array_values;
+#[path = "rust_import/capturing_closures.rs"]
+mod capturing_closures;
 #[path = "rust_import/closures.rs"]
 mod closures;
 #[path = "rust_import/extern_functions.rs"]
