@@ -3254,6 +3254,27 @@ pub(crate) fn c_mutex_use_resource(state: &CState, mutex: &Pointer) -> CResource
     crate::kernel::mutexes::use_resource(state, mutex)
 }
 
+/// Binds a contract's value parameters in an entry state, as a call binds
+/// them beside its arguments.
+pub(crate) fn bind_contract_value_parameters(
+    entry: &mut CState,
+    parameters: &[CParameter],
+    values: &[CValue],
+) {
+    for (parameter, value) in parameters.iter().zip(values) {
+        entry.locals.set_typed_qualified_with_all_qualifiers(
+            parameter.name().to_string(),
+            value.clone(),
+            parameter.c_type(),
+            CMemory::value_parameter_pointer(parameter.name()),
+            false,
+            false,
+            false,
+            false,
+        );
+    }
+}
+
 pub fn c_function_entry_state(
     caller_state: &CState,
     function: &CFunction,

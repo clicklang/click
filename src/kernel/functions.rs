@@ -7730,8 +7730,38 @@ fn prepare_verified_function_call<'a>(
         )));
     };
     // A named contract's value parameters take the values its fact fixed,
-    // as the call parameters take the call's arguments.
-    if application.value_arguments.len() != contract_interface.value_parameters().len() {
+    // as the call parameters take the call's arguments. A function's own
+    // contract value parameters, a binder's `s.len`, take the values the
+    // proof's call map names or the one held instance each one's clause
+    // selects. The choice is not trusted: the requirements are then checked
+    // at those values.
+    let selected_value_arguments;
+    let application_value_arguments = if application.value_arguments.is_empty()
+        && !contract_interface.value_parameters().is_empty()
+    {
+        selected_value_arguments = match call_value_arguments(
+            application.name,
+            contract_interface,
+            caller_state,
+            &entry_state,
+            environment,
+            &path_assumptions,
+            budget,
+        )? {
+            Ok(values) => values,
+            Err(message) => {
+                return Ok(Err(CFunctionPath::new(
+                    CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message)),
+                    arguments_path.facts,
+                    argument_obligations,
+                )));
+            }
+        };
+        selected_value_arguments.as_slice()
+    } else {
+        application.value_arguments
+    };
+    if application_value_arguments.len() != contract_interface.value_parameters().len() {
         return Ok(Err(CFunctionPath::new(
             CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
                 "contract `{}` needs values for its value parameters",
@@ -7744,7 +7774,7 @@ fn prepare_verified_function_call<'a>(
     for (parameter, value) in contract_interface
         .value_parameters()
         .iter()
-        .zip(application.value_arguments)
+        .zip(application_value_arguments)
     {
         entry_state.locals.set_typed_qualified_with_all_qualifiers(
             parameter.name().to_string(),
@@ -9036,6 +9066,183 @@ fn loadability_obligation_shape(proposition: &Proposition) -> bool {
         }
         _ => false,
     }
+}
+
+/// The values of a function contract's value parameters at one call.
+///
+/// Each parameter takes its argument from the one instance that agrees with
+/// every other argument of the clause the parameter appears in:
+/// `views cstr_at(s, str.len)` takes `n` from `cstr_at(src, n)` when `s` is
+/// `src`. The instances are the resource terms the proof's call map names
+/// when one of them agrees, and otherwise the instances the caller holds,
+/// owned or viewed. No instance, or two that differ at the parameter, is a
+/// refusal naming the parameter; the proof can then name the instance. The
+/// held lookup is the indexed candidate query by the clause's family and
+/// first pointer, so it reads only the caller's instances of that resource.
+/// A named term grants nothing: the call still requires the clause at the
+/// chosen value.
+fn call_value_arguments(
+    function: &str,
+    interface: &CFunctionContractInterface,
+    caller_state: &CState,
+    entry_state: &CState,
+    environment: &CExecutionEnvironment,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Result<Vec<CValue>, String>> {
+    let parameters = interface.value_parameters();
+    let selected = environment
+        .selected_call_value_arguments
+        .as_ref()
+        .filter(|selected| selected.0 == function)
+        .map(|selected| selected.1.as_slice())
+        .unwrap_or(&[]);
+    // The clauses are evaluated with each parameter at a placeholder: the
+    // probe only selects candidates, and a parameter position is never
+    // compared.
+    let mut probe_state = entry_state.clone();
+    let placeholders = parameters
+        .iter()
+        .map(|parameter| symbolic_call_result(parameter.c_type(), Variable(0)))
+        .collect::<Vec<_>>();
+    super::api::bind_contract_value_parameters(&mut probe_state, parameters, &placeholders);
+    let mut values = Vec::with_capacity(parameters.len());
+    for parameter in parameters {
+        crate::instrumentation::record_deterministic_work(1);
+        let is_parameter = |argument: &CExpression| {
+            matches!(argument, CExpression::Variable(name)
+                if parameters.iter().any(|parameter| parameter.name() == name))
+        };
+        let clause = interface.resource_requires().iter().find_map(|spec| {
+            match spec.term() {
+            CResourceTerm::Composite {
+                name,
+                arguments,
+                argument_snapshots,
+                parameter_types,
+            } => arguments
+                .iter()
+                .position(|argument| {
+                    matches!(argument, CExpression::Variable(name) if name == parameter.name())
+                })
+                .map(|position| {
+                    (spec, name, arguments, argument_snapshots, parameter_types, position)
+                }),
+            _ => None,
+        }
+        });
+        let Some((spec, name, arguments, argument_snapshots, parameter_types, position)) = clause
+        else {
+            return Ok(Err(format!(
+                "call to `{function}` needs a value for `{}`, which no resource clause selects",
+                parameter.name()
+            )));
+        };
+        let probe = match evaluate_function_declared_resource_spec(
+            &probe_state,
+            &probe_state,
+            spec.access(),
+            ResourceFamily::Composite,
+            name,
+            arguments,
+            argument_snapshots,
+            parameter_types,
+            spec.source_arguments(),
+            &BTreeMap::new(),
+            assumptions,
+            budget,
+        )? {
+            Ok(fact) => fact,
+            Err(_) => {
+                return Ok(Err(format!(
+                    "call to `{function}` could not evaluate the `{name}` clause that selects `{}`",
+                    parameter.name()
+                )));
+            }
+        };
+        let CResource::Composite {
+            arguments: probe_arguments,
+            ..
+        } = probe.resource()
+        else {
+            continue;
+        };
+        let agrees = |left: &AlgebraicValue, right: &AlgebraicValue| match (
+            left.as_c_value(),
+            right.as_c_value(),
+        ) {
+            (Some(CValue::Pointer(left)), Some(CValue::Pointer(right))) => {
+                left.pointer() == right.pointer()
+            }
+            _ => left == right,
+        };
+        let matching_values = |candidates: &mut dyn Iterator<Item = &CResourceFact>| {
+            let mut found: Vec<CValue> = Vec::new();
+            for candidate in candidates {
+                crate::instrumentation::record_deterministic_work(1);
+                let CResource::Composite {
+                    name: held,
+                    arguments: held_arguments,
+                } = candidate.resource()
+                else {
+                    continue;
+                };
+                if held != name
+                    || held_arguments.len() != probe_arguments.len()
+                    || !arguments
+                        .iter()
+                        .zip(probe_arguments.iter().zip(held_arguments.iter()))
+                        .all(|(argument, (probe, held))| {
+                            is_parameter(argument) || agrees(probe, held)
+                        })
+                {
+                    continue;
+                }
+                let Some(value) = held_arguments[position].as_c_value() else {
+                    continue;
+                };
+                if !found.contains(value) {
+                    found.push(value.clone());
+                }
+            }
+            found
+        };
+        let mut found = matching_values(&mut selected.iter());
+        let named = selected.iter().any(|term| {
+            matches!(term.resource(), CResource::Composite { name: term_name, .. } if term_name == name)
+        });
+        if found.is_empty() && named {
+            return Ok(Err(format!(
+                "call to `{function}`: the call map's `{name}` term does not agree with the arguments of the clause that selects `{}`",
+                parameter.name()
+            )));
+        }
+        if found.is_empty() {
+            found = matching_values(
+                &mut caller_state
+                    .resources()
+                    .direct_match_candidates_for(&probe, assumptions)
+                    .into_iter(),
+            );
+        }
+        match found.as_slice() {
+            [value] => values.push(value.clone()),
+            [] => {
+                return Ok(Err(format!(
+                    "call to `{function}` needs a held `{name}` instance to give `{}` its value; the caller holds none that matches its other arguments",
+                    parameter.name()
+                )));
+            }
+            _ => {
+                return Ok(Err(format!(
+                    "call to `{function}` cannot choose `{}`: the caller holds {} `{name}` instances that match; name one in the call map",
+                    parameter.name(),
+                    found.len()
+                )));
+            }
+        }
+    }
+    Ok(Ok(values))
 }
 
 fn resource_call_failure(message: &str) -> CFunctionPath {
@@ -16563,6 +16770,18 @@ pub(in crate::kernel) fn bind_c_function_arguments(
                 parameter.pointee_is_constant(),
             );
         }
+    }
+    // A contract's value parameters, such as a binder's `s.len`, follow the
+    // C arguments when a proof is entered: at fresh values, as the C
+    // parameters are, so the proof holds for every value.
+    let value_parameters = function.contract_interface().value_parameters();
+    let c_count = function.parameters().len();
+    if !value_parameters.is_empty() && values.len() == c_count + value_parameters.len() {
+        super::api::bind_contract_value_parameters(
+            &mut callee_state,
+            value_parameters,
+            &values[c_count..],
+        );
     }
     construction_return::bind(
         caller_state,

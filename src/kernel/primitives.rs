@@ -4112,6 +4112,11 @@ pub struct CExecutionEnvironment {
     /// the step, and one caller instance per instance binder the callee
     /// declares. Binding is a lookup per entry; nothing is searched for.
     pub(crate) selected_call_binders: Option<std::sync::Arc<CCallBinderTransport>>,
+    /// A proof-local choice of the instances that give one ordinary C call's
+    /// contract value parameters their values: the callee, and the resource
+    /// terms the proof's call map names. A parameter whose clause no named
+    /// term matches is taken from the one held instance its clause selects.
+    pub(crate) selected_call_value_arguments: Option<std::sync::Arc<(String, Vec<CResourceFact>)>>,
     pub(super) functions: std::sync::Arc<BTreeMap<String, CFunction>>,
     pub(super) function_contracts: std::sync::Arc<BTreeMap<String, CFunctionContract>>,
     pub(super) external_function_rules: std::sync::Arc<BTreeMap<String, CExternalFunctionRule>>,
@@ -4160,6 +4165,10 @@ impl std::fmt::Debug for CExecutionEnvironment {
                 &self.selected_call_resource_arguments,
             )
             .field("selected_call_binders", &self.selected_call_binders)
+            .field(
+                "selected_call_value_arguments",
+                &self.selected_call_value_arguments,
+            )
             .field("functions", &self.functions)
             .field("function_contracts", &self.function_contracts)
             .field("external_function_rules", &self.external_function_rules)
@@ -4186,6 +4195,7 @@ impl PartialEq for CExecutionEnvironment {
         self.selected_call_contract == other.selected_call_contract
             && self.selected_call_resource_arguments == other.selected_call_resource_arguments
             && self.selected_call_binders == other.selected_call_binders
+            && self.selected_call_value_arguments == other.selected_call_value_arguments
             && self.functions == other.functions
             && self.function_contracts == other.function_contracts
             && self.external_function_rules == other.external_function_rules
