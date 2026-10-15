@@ -1618,5 +1618,14 @@ The first left rotation repairs the parent/focus sizes; model uniqueness
 identifies that returned subtree before the outer right rotation. The second
 callback repairs the final root and demoted grandparent sizes. The result owns
 the exact black-root/two-red-leaf shape with recursively valid subtree counts.
-The Linux C is unchanged. Mirrored double rotation, color flips, arbitrary
-ancestor contexts, and writable erase integration remain unfinished.
+The Linux C is unchanged. Color flips, arbitrary ancestor contexts, and
+writable erase integration remain unfinished.
+
+
+`rbtree_size_insert_mirrored_double_rotation.click` checks the mirrored
+right-left root case and both wrappers. It repairs the inner right rotation
+before the outer left rotation, returning a black focus root with the
+grandparent on the left and the original parent on the right. Both double
+rotation directions now check two writable callbacks in sequence. Together
+with the single rotations, all four three-node root rotation shapes are
+covered with recursively valid cached sizes.
