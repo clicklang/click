@@ -63,21 +63,25 @@ instead of from what the step changed.
    (a pointer an extern returned) admits every block. Each candidate is then
    asked the ownership question and the distinctness ladder. In
    `heap_objects` the candidates are mostly the earlier locals' own stack
-   slots: 2,080 checks at N = 64, which is 64·65/2. Locals whose address is
-   never taken are already proven distinct from every pointer value
-   (`never_address_taken_local_versus_pointer_value`), but the store still
-   visits them. A store should frame out everything outside its footprint
-   without asking each cell.
+   slots, about 4 units each, all kept: the store's remaining drift, 4 units
+   per earlier object at N = 64 (stores cost 103, 139, 143, ... 195). Locals
+   whose address is never taken are already proven distinct from every
+   pointer value (`never_address_taken_local_versus_pointer_value`), but the
+   store still visits them. A store should frame out everything outside its
+   footprint without asking each cell.
 2. **Composition evidence is a list that only grows.** Every step states
    about four snapshots of the whole resource context as
-   `Proposition::CResourceComposition` facts, and separation queries scan the
-   whole set (`PureFactContext::owned_store_footprint`,
-   `owned_composition_store_separated_evidence`, and about twenty other
-   `resource_compositions.iter()` sites). Indexing the set by block does not
-   help on its own: each step rebuilds its assumptions in a fresh context
-   and re-admits the snapshots with no lineage to diff against, so an index
-   pays the whole frame either at admission or at every query (tried on
-   branch `claude/blissful-cori-zfd8s9`, commit `3513b5d2`).
+   `Proposition::CResourceComposition` facts. Stores no longer read them:
+   the write path states the writer's current composition as the store owner
+   (`PureFactContext::with_store_owner`), and `owned_store_footprint` and
+   `owned_composition_store_separated_evidence` read it alone. That removed
+   25 of the 29 units per earlier object a `heap_objects` store cost, and no
+   mdtest, example or unit test depended on the older compositions. About
+   twenty other `resource_compositions.iter()` sites, in load resolution and
+   condition reasoning, still scan the whole set. Indexing the set does not
+   help on its own: each step rebuilds its assumptions in a fresh context and
+   re-admits the snapshots with no lineage to diff against (tried on branch
+   `claude/blissful-cori-zfd8s9`, commit `3513b5d2`).
 3. **A call rebuilds what the caller keeps.** `call_kept_ownership` expands
    every kept composite at every call (`expand_composites_for_frame`) to
    list the memory the caller keeps, and `CallKeptRanges::with_residual`

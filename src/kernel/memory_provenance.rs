@@ -2338,77 +2338,70 @@ pub(in crate::kernel) fn owned_composition_store_separated_evidence(
         "general pointer distinctness",
         "composition-owned store separation",
         || {
-            assumptions
-                .resource_compositions
-                .iter()
-                .find_map(|resources| {
-                    crate::instrumentation::record_deterministic_work(1);
-                    let member = |pointer: &Pointer| {
-                        // A reconstructed resource may use a proof pointer for
-                        // the same object that C names through a parameter.
-                        // Probe only syntactic base prefixes and their exact
-                        // aliases; every hit still needs checked membership.
-                        let mut base = pointer.clone();
-                        loop {
-                            let found = std::iter::once(&base)
-                                .chain(assumptions.exact_pointer_aliases(&base))
-                                .find_map(|candidate| {
-                                    resources.owned_memory_members_with_base(candidate).find(
-                                        |(_, range)| {
-                                            PointerInRangeEvidence::for_pointer(
-                                                pointer,
-                                                range,
-                                                assumptions,
-                                            )
-                                            .is_some()
-                                        },
-                                    )
-                                });
-                            if found.is_some() {
-                                return found;
-                            }
-                            base.offset = match &base.offset {
-                                PointerOffsetTerm::Add(left, _) => (**left).clone(),
-                                PointerOffsetTerm::Constant(value) if *value != 0 => {
-                                    PointerOffsetTerm::Constant(0)
-                                }
-                                _ => break,
-                            };
+            assumptions.store_compositions().find_map(|resources| {
+                crate::instrumentation::record_deterministic_work(1);
+                let member = |pointer: &Pointer| {
+                    // A reconstructed resource may use a proof pointer for
+                    // the same object that C names through a parameter.
+                    // Probe only syntactic base prefixes and their exact
+                    // aliases; every hit still needs checked membership.
+                    let mut base = pointer.clone();
+                    loop {
+                        let found = std::iter::once(&base)
+                            .chain(assumptions.exact_pointer_aliases(&base))
+                            .find_map(|candidate| {
+                                resources.owned_memory_members_with_base(candidate).find(
+                                    |(_, range)| {
+                                        PointerInRangeEvidence::for_pointer(
+                                            pointer,
+                                            range,
+                                            assumptions,
+                                        )
+                                        .is_some()
+                                    },
+                                )
+                            });
+                        if found.is_some() {
+                            return found;
                         }
-                        resources.owned_memory_member_containing_pointer(pointer)
-                    };
-                    let (write_entry, left) = member(write)?;
-                    let (load_entry, right) = member(pointer)?;
-                    if write_entry == load_entry {
-                        return None;
+                        base.offset = match &base.offset {
+                            PointerOffsetTerm::Add(left, _) => (**left).clone(),
+                            PointerOffsetTerm::Constant(value) if *value != 0 => {
+                                PointerOffsetTerm::Constant(0)
+                            }
+                            _ => break,
+                        };
                     }
-                    let (left, right) = (left.clone(), right.clone());
-                    let write_membership =
-                        AccessInRangeEvidence::for_access(write, write_bytes, &left, assumptions)?;
-                    let load_membership = AccessInRangeEvidence::for_access(
-                        pointer,
-                        load_bytes,
-                        &right,
-                        assumptions,
-                    )?;
-                    if assumptions.memory_ranges_overlap_after_base_equality(&left, &right) {
-                        return None;
-                    }
-                    crate::kernel::record_implicit_reasoning_provenance(
-                        assumptions,
-                        &Proposition::CResourceComposition(resources.clone()),
-                    );
-                    Some(MemoryDagHopJustification::StoreSeparatedRanges {
-                        authority: StoreSeparatedRangesAuthority::ResourceComposition(
-                            resources.clone(),
-                        ),
-                        left,
-                        right,
-                        orientation: StoreSeparatedRangeOrientation::WriteLeftLoadRight,
-                        write_membership,
-                        load_membership,
-                    })
+                    resources.owned_memory_member_containing_pointer(pointer)
+                };
+                let (write_entry, left) = member(write)?;
+                let (load_entry, right) = member(pointer)?;
+                if write_entry == load_entry {
+                    return None;
+                }
+                let (left, right) = (left.clone(), right.clone());
+                let write_membership =
+                    AccessInRangeEvidence::for_access(write, write_bytes, &left, assumptions)?;
+                let load_membership =
+                    AccessInRangeEvidence::for_access(pointer, load_bytes, &right, assumptions)?;
+                if assumptions.memory_ranges_overlap_after_base_equality(&left, &right) {
+                    return None;
+                }
+                crate::kernel::record_implicit_reasoning_provenance(
+                    assumptions,
+                    &Proposition::CResourceComposition(resources.clone()),
+                );
+                Some(MemoryDagHopJustification::StoreSeparatedRanges {
+                    authority: StoreSeparatedRangesAuthority::ResourceComposition(
+                        resources.clone(),
+                    ),
+                    left,
+                    right,
+                    orientation: StoreSeparatedRangeOrientation::WriteLeftLoadRight,
+                    write_membership,
+                    load_membership,
                 })
+            })
         },
     )
 }

@@ -2549,6 +2549,9 @@ impl PureFactContext {
         for resources in self.resource_compositions.iter() {
             fingerprint ^= Self::fingerprint(3, resources);
         }
+        if let Some(owners) = &self.store_owners {
+            fingerprint ^= Self::fingerprint(5, owners);
+        }
         fingerprint ^= self.reasoning_policy.fingerprint();
         self.content_fingerprint = fingerprint;
     }
@@ -4244,6 +4247,7 @@ impl PureFactContext {
         self.algebraic_variable_constructors = crate::persistent::PersistentMap::default();
         self.algebraic_variable_variant_evidence = crate::persistent::PersistentMap::default();
         self.resource_compositions = std::sync::Arc::new(BTreeSet::new());
+        self.store_owners = None;
         self.composition_object_resources = Default::default();
         self.memory_read_defined_facts = crate::persistent::PersistentMap::default();
         self.memory_loadable_facts = std::sync::Arc::new(BTreeMap::new());
@@ -5103,6 +5107,54 @@ impl PureFactContext {
 
     pub(crate) fn memo_fingerprint(&self) -> u64 {
         self.content_fingerprint
+    }
+
+    /// This context with `owner`, the writer's current observable
+    /// composition or `None` when it has none to state, as the ownership its
+    /// stores are separated by. A store writes only memory its writer owns
+    /// now, so a cached cell in a different member of that ownership keeps
+    /// its value; compositions stated earlier on the path are not consulted,
+    /// which keeps a store's work independent of the path's length.
+    pub(in crate::kernel) fn with_store_owner(self, owner: Option<ResourceContext>) -> Self {
+        self.with_store_owners(owner.into_iter().collect())
+    }
+
+    /// This context with `opened`, a composition the store opened from what
+    /// its writer holds now, stated and added to the store's owners. Without
+    /// owners (a context no writer stated them in) it is only stated.
+    pub(in crate::kernel) fn with_additional_store_owner(self, opened: ResourceContext) -> Self {
+        match &self.store_owners {
+            Some(owners) => {
+                let mut owners = owners.as_ref().clone();
+                owners.push(opened);
+                self.with_store_owners(owners)
+            }
+            None => self.assume_proposition(Proposition::CResourceComposition(opened)),
+        }
+    }
+
+    fn with_store_owners(mut self, owners: Vec<ResourceContext>) -> Self {
+        for owner in &owners {
+            self = self.assume_proposition(Proposition::CResourceComposition(owner.clone()));
+        }
+        if let Some(previous) = &self.store_owners {
+            self.content_fingerprint ^= Self::fingerprint(5, previous);
+        }
+        let owners = std::sync::Arc::new(owners);
+        self.content_fingerprint ^= Self::fingerprint(5, &owners);
+        self.store_owners = Some(owners);
+        self
+    }
+
+    /// The compositions store separation reads: the store owners alone when
+    /// the writer stated them, every stated composition otherwise.
+    pub(in crate::kernel) fn store_compositions(
+        &self,
+    ) -> Box<dyn Iterator<Item = &ResourceContext> + '_> {
+        match &self.store_owners {
+            Some(owners) => Box::new(owners.iter()),
+            None => Box::new(self.resource_compositions.iter()),
+        }
     }
 
     /// A context holding only this context's resource compositions: what
