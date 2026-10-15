@@ -262,8 +262,14 @@ needed to finish a claim already made:
     The unchanged native reborrow witness verifies with real lease operations,
     including proof expansion/recheck and authority/value negatives. New source
     tests reject missing births, stale/foreign handles and transplanted plans.
+    Same-typed scalar reference copies/moves between private locals now retain
+    that identity; the final store can use a checked alias, including after
+    replacement of the original child local. Recovery expires all copies.
+    Source tests cover delayed alias uses and missing actual alias custody;
+    a native local-move fixture verifies the helper and caller with checked
+    expansion, and alias-chain preparation has deterministic scaling coverage.
 
-  Wider source coverage remains open: copies and nested local references, read
+  Wider source coverage remains open: nested local references, read
   endings, multiple blocks/loops, aggregates, shared aliases and call/havoc
   transport need checked protocols. Observations remain read-only; only the
   activated source subset executes local leases. A reproduced false acceptance

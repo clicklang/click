@@ -867,15 +867,21 @@ that each modeled access is justified by the supplied resources.
 
 For one direct mutable scalar reborrow from a reference parameter in a single
 MIR block ending at return, locked lowering also issues checked local leases.
-The final child access must be a direct store, with only scalar assignments
-between birth and ending. The kernel withholds the selected whole scalar owner
-while the child is active, checks child accesses against its fresh identity,
+The final child access must be a direct store. Between birth and ending,
+scalar assignments and same-typed scalar reference copies into private locals
+are supported. A local copy or move carries the same lease identity; the final
+store may use any alias followed by the checked source flow. Replacing the
+original child local does not end the lease held by another alias. The kernel
+withholds the selected whole scalar owner while the child is active, checks
+child accesses against its fresh identity,
 and recovers the original owner exactly once after the checked final store.
 Child writes remain current; expired child copies cannot use the returned
-owner. This applies to `i32`, `u8`, `u16` and `u32` with an exact direct owned
-footprint. Reference copies, nested local reborrows, read endings, calls within
-the active interval and wider control flow retain their existing lowering and
-have no local lease coverage yet. Source observation labels grant no authority.
+owner, and recovery expires every copy of that identity. This applies to `i32`,
+`u8`, `u16` and `u32` with an exact direct owned footprint. Nested local
+reborrows, read endings, calls within the active interval and wider control flow
+retain their existing lowering and have no local lease coverage yet. Reference
+transport through addressable slots or aggregates remains excluded while a
+lease is active. Source observation labels grant no authority.
 
 The trusted boundary includes the pinned compiler, exporter, semantic artifact,
 and its translator. The lock detects stale or changed inputs; it is not an

@@ -4428,3 +4428,34 @@ fn loops_gate_fixture_tools_recheck_certificates() {
 
 #[path = "rust_import/gate_fixtures.rs"]
 mod gate_fixtures;
+
+#[test]
+#[ignore = "nightly: scalar local-alias leases with checked proof expansion"]
+fn rust_scalar_lease_aliases_preserve_updates_and_parent_reuse() {
+    let source = include_str!("../design/charon-trial/gate-fixtures/scalar-aliases/borrow.rs");
+    let p = gate_fixtures::project("scalar-aliases", source);
+    let proof = "verifying \"borrow.rs\";\nfn alias_update(parent: &mut i32) { owns *parent; ensures *parent == 8; } by { execute(); simp(); }\nfn alias_caller(value: &mut i32) { owns *value; ensures *value == 8; } by { execute(); simp(); }\n";
+    fs::write(p.root.join("borrow.click"), proof).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(proof, &prepared).unwrap();
+    for invalid in [
+        proof.replacen("ensures *parent == 8;", "ensures *parent == 7;", 1),
+        proof.replacen("owns *parent;", "views *parent;", 1),
+        proof.replacen("owns *value;", "views *value;", 1),
+    ] {
+        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+    }
+    assert_cli(
+        &p,
+        &["expand", "--claim", "alias_update.contract", "--in-place"],
+    );
+    assert_cli(
+        &p,
+        &["expand", "--claim", "alias_caller.contract", "--in-place"],
+    );
+    assert_cli(&p, &["verify"]);
+    assert_eq!(
+        fs::read_to_string(p.root.join("borrow.rs")).unwrap(),
+        source
+    );
+}
