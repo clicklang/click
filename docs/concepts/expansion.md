@@ -20,6 +20,15 @@ parsing, and round-trip validation must agree on the resulting proof. An expansi
 failure, a rewrite that doesn't verify, or disagreement with profile or audit
 is a tooling defect to investigate.
 
+Library references in the output must resolve in the rewritten file. Expansion
+preserves explicit full paths and uses short module paths only when their
+modules are in scope. A theorem application with no declared prerequisites
+and value arguments is already a simple operation and is not an automation
+site for audit or profile. Produced application certificates retain their
+explicit `using` block, including an empty block: an empty list alone does not
+mean that the theorem declares no prerequisites. Computed arguments retain their definedness obligations
+and may still need premise search.
+
 Expansion removes planning and search from that site, which improves
 reproducibility, makes the chosen operations reviewable, and should recover
 approximately all performance available from checking those choices directly.

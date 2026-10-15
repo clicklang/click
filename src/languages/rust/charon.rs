@@ -176,6 +176,17 @@ pub(super) fn extract_crate(
             }
         }
     }
+    // Single-file imports also need portable metadata: rustc names this input
+    // by its absolute checkout path. Only this crate's file is rewritten;
+    // external library locations retain their compiler identity.
+    if crate_config.is_none() {
+        let name = source.file_name().ok_or("Rust source needs a filename")?;
+        for file in &mut data.translated.files {
+            if file.crate_name == data.translated.crate_name {
+                file.name = a::FileName::Local(name.into());
+            }
+        }
+    }
     serde_json::to_vec(&ExtractionArtifact {
         extractor_revision: profile::get().extractor_revision.clone(),
         compiler_commit: profile::get().compiler_commit.clone(),

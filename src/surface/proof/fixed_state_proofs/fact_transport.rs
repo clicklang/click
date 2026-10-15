@@ -279,17 +279,14 @@ fn check_fixed_state_fact_transport_using_facts_inner(
         if !available.listed_premise_available(&premise, &[], false)
             && !holds_without_facts_under_binders(&premise)
         {
-            let available = available.to_vec();
             return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `transport using` requires an exact premise: {}",
-                describe_missing_pure_fact(
-                    &premise,
-                    &available,
-                    fixed_state.state.resources().facts(),
-                    parameter_binding,
-                    effect_facts,
-                )
-            )));
+                "`{claim_label}` tactic {tactic_index}: `transport using` requires an exact premise"
+            ))
+            .with_spelled_requirement(
+                premise,
+                surface_premise.clone(),
+                "`transport using` premise".into(),
+            ));
         }
         // Citing a stated range cites both of its halves; see
         // `cite_range_extent_guards`.

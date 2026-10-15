@@ -167,6 +167,21 @@ format for each admitted fact. The trace uses readable expressions only when
 they preserve checked identities; its typed memory operands include their read
 width, snapshot, and address, with shared labels and a construction legend.
 
+A failed `normalize() using { ... }` that checks a recorded 64-bit read prints
+`read-resolution check:` with the exact checked equality, selected producer
+snapshot, and the memory walk's stopping snapshot and reason. If it recovered a
+complete word, the report prints that word's comparison with the requested value
+and whether the current equality context established it. Otherwise it reports
+that no complete word was recovered and that comparison was not attempted.
+These are retained results of the check itself; formatting does not rerun the
+resolver or guess which premise would make the proof succeed.
+
+A rejected cited premise of `transport(source, target) using { ... }` prints
+`required transport premise:` with that exact lowered proposition under the
+same labels as the goal and retained checked prefix. This also applies to
+fixed-state checks and loop-body execution; it does not replace the premise
+with an abbreviated dump of available facts and resources.
+
 A checked function-pointer load step prints the local it produces, the exact
 value label, and `at(snapshot, load_function_pointer(address))`. The address and
 value share labels with subsequent facts and goals; the legend distinguishes

@@ -3305,6 +3305,82 @@ fn rejected_transport_prints_checked_reads_and_retains_prefix() {
     }
 }
 
+#[test]
+fn failed_normalize_using_retains_actual_wide_read_resolution() {
+    let c = "void f(uint64 *p) { int32 y = 0; return; }";
+    let source = r#"verifying "f.c";
+        void f(uint64 *p) { owns p[0]; ensures true; } by {
+            step();
+            have p[0] == 7u64 by { normalize() using {}; };
+            execute(); assumption();
+        }
+    "#;
+    with_proof_trace("f", || {
+        let error = verify_c0_sources(source, &[("f.c", c)])
+            .expect_err("an unknown initial word need not be seven");
+        let message = error.message();
+        for expected in [
+            "read-resolution check:",
+            "read<Bits64>",
+            "producer source: snapshot#",
+            "walk stop: snapshot#",
+            "oldest recorded snapshot reached",
+            "recovered value: none",
+            "checked read equality:",
+            "equality check: not attempted",
+        ] {
+            assert!(message.contains(expected), "missing {expected}: {message}");
+        }
+        let trace = error
+            .trace_context_report()
+            .expect("the failed written check retains its diagnostic state");
+        assert!(trace.contains("steps through: declare y"), "{trace}");
+        assert!(trace.contains("read-resolution check:"), "{trace}");
+        assert!(trace.contains("equality check: not attempted"), "{trace}");
+    });
+}
+
+#[test]
+fn rejected_loop_transport_premise_uses_shared_exact_diagnostic() {
+    let c = "void f(int32 *p, int32 *q) { while (1) { p[0] = 9; break; } return; }";
+    let source = r#"verifying "f.c";
+        void f(int32 *p, int32 *q) {
+            owns p[0]; requires p[0] == 7; ensures true;
+        } by {
+            loop {
+                invariant true;
+                initialize by { normalize(); }
+                preserve by {
+                    mark before_write; step();
+                    transport(at(before_write, p[0] == 7), p[0] == 7) using {
+                        separate(memory(p[0]), memory(q[0]));
+                    };
+                }
+            }
+            execute(); assumption();
+        }
+    "#;
+    with_proof_trace("f", || {
+        let error =
+            verify_c0_sources(source, &[("f.c", c)]).expect_err("the arbitrary q may alias p");
+        let message = error.message();
+        assert!(message.contains("required transport premise:"), "{message}");
+        assert!(!message.contains("available resource facts"), "{message}");
+        let trace = error
+            .trace_context_report()
+            .expect("a rejected premise retains its checked prefix");
+        assert!(trace.contains("required transport premise:"), "{trace}");
+        assert!(trace.contains("steps through: p[0] = 9"), "{trace}");
+        assert!(trace.contains("p"), "{trace}");
+        assert!(trace.contains("q"), "{trace}");
+        let premise = trace
+            .lines()
+            .find(|line| line.contains("required transport premise:"))
+            .unwrap();
+        assert!(!premise.contains("…"), "{premise}");
+    });
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/surface/tests/diagnostic_tests.rs");

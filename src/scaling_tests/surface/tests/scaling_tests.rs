@@ -5907,6 +5907,30 @@ fn loop_exit_join_scaling_on_this_thread() {
     assert_near_linear_scaling("loop exits joined", &samples);
 }
 
+/// Each selected arm follows an earlier checked `have`, rather than a
+/// speculative traversal of the complete deferred script before checking it.
+#[test]
+fn post_execution_ifs_with_earlier_haves_have_near_linear_work() {
+    let c_source = "int32 pick(int32 a, int32 b) { if (a > b) { return a; } return b; }";
+    let mut samples = Vec::new();
+    for size in [4, 8, 16, 32] {
+        let mut source = String::from(
+            "verifying \"pick.c\"; int32 pick(int32 a, int32 b) { requires a > b or a == b; ensures result >= a; } by { execute();",
+        );
+        for _ in 0..size {
+            source.push_str(
+                "have old(a) >= old(b); if old(a) >= old(b) { have result >= a; } else {}",
+            );
+        }
+        source.push('}');
+        let (verified, sample) =
+            scaling_sample(size, || verify_c0_sources(&source, &[("pick.c", c_source)]));
+        verified.unwrap_or_else(|error| panic!("{size} post-execution ifs: {}", error.message()));
+        samples.push(sample);
+    }
+    assert_near_linear_scaling("post-execution ifs after checked haves", &samples);
+}
+
 /// A function proof with `count` proof-level `if`s in a row between two C
 /// statements. Each `if` only reasons: both arms prove the same fact.
 fn sequential_reasoning_ifs_project(count: usize) -> (String, String) {

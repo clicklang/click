@@ -2400,3 +2400,69 @@ fn c_buffer_resource_modular_output_expands_and_rechecks() {
     )
     .unwrap();
 }
+
+/// Keep both reported library-path failures on the real expansion/audit path.
+#[test]
+#[ignore = "nightly: CLI expansion and audit of library-name regressions"]
+fn expanded_library_names_resolve_and_audit() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for (fixture, claim) in [
+        (
+            "memcmp_const_unsigned_char_arguments.md",
+            "compare4.contract",
+        ),
+        (
+            "qualified_library_names.md",
+            "append_nil_by_paths.ensures_0",
+        ),
+    ] {
+        let path = root.join("mdtests").join(fixture);
+        let expanded = Command::new(env!("CARGO_BIN_EXE_click"))
+            .args(["expand", "--claim", claim])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(
+            expanded.status.success(),
+            "{fixture}: {}",
+            String::from_utf8_lossy(&expanded.stderr)
+        );
+        let source = String::from_utf8(expanded.stdout).unwrap();
+        assert!(
+            source
+                .split("using {")
+                .skip(1)
+                .all(|rest| !rest.trim_start().starts_with('}')),
+            "{source}"
+        );
+        let rewritten = std::env::temp_dir().join(format!(
+            "click-expanded-library-{}-{fixture}",
+            std::process::id()
+        ));
+        fs::write(&rewritten, &source).unwrap();
+        let verified = Command::new(env!("CARGO_BIN_EXE_click"))
+            .arg("verify")
+            .arg(&rewritten)
+            .output()
+            .unwrap();
+        fs::remove_file(&rewritten).unwrap();
+        assert!(
+            verified.status.success(),
+            "{fixture}: {}",
+            String::from_utf8_lossy(&verified.stderr)
+        );
+        // Premise-free applications are already simple, so audit the entire
+        // fixture: they need no rewrite while any remaining automation does.
+        let audited = Command::new(env!("CARGO_BIN_EXE_click"))
+            .arg("audit")
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(
+            audited.status.success(),
+            "{fixture}: {}\n{}",
+            String::from_utf8_lossy(&audited.stdout),
+            String::from_utf8_lossy(&audited.stderr)
+        );
+    }
+}

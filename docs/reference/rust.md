@@ -122,6 +122,21 @@ compatibility alias. Historical single-file crate/output labels inside serialize
 artifacts remain stable, so
 this naming cleanup requires no artifact rewrite or forced lock refresh.
 
+Rust lock schema 9 records `frontend`: the Click release version, pinned Charon
+version/revision, rustc commit and a SHA-256 identity of the complete extraction
+and semantic profile. The import identity binds that contribution to the unit,
+source closure and artifact. Local executable bytes, runtime paths and host
+installation directories are absent. Source-built overrides use the same pins
+and runtime handshakes, so equal inputs and extraction output give the same lock
+as the packaged release. Extraction still detects executable changes during a
+run. Single-file artifact source paths are normalized to their source filename;
+crate paths remain relative to the unit root.
+
+The shared project-lock envelope is unchanged. Legacy Rust schema-8 locks remain
+readable offline with their original identities and checks. `click import lock`
+explicitly refreshes them into schema 9; a Click release or semantic-profile
+change also requires refresh. Normal verification never rewrites a lock.
+
 ## Locked crates and qualified declarations
 
 A unit with a `crate` object gives an explicit crate root and compiler

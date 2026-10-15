@@ -11940,6 +11940,37 @@ fn outcome_predicate_unfold_provenance_survives_nested_have_expansion() {
 }
 
 #[test]
+fn post_execution_if_expansion_retains_earlier_have_facts() {
+    for filename in [
+        "post_execution_if_uses_earlier_have.md",
+        "post_execution_if_uses_nested_have_and_continuation.md",
+    ] {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests")
+            .join(filename);
+        let markdown = std::fs::read_to_string(&path).unwrap();
+        let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+        let source = fixture.click_source.as_deref().unwrap();
+        let sources = fixture
+            .c_sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        verify_c0_sources(source, &sources).unwrap();
+        for needle in ["have old(a) >= old(b);", "have result == a;"] {
+            let offset = source.find(needle).unwrap();
+            let position = expansion::position_at_offset(source, offset);
+            let expanded =
+                expand_c0_tactic_source_at(source, &sources, position.line, position.column)
+                    .unwrap_or_else(|error| panic!("{filename}, {needle}: {error:?}"));
+            assert_ne!(expanded, source, "{filename}, {needle} was not expanded");
+            verify_c0_sources(&expanded, &sources)
+                .unwrap_or_else(|error| panic!("{filename}, {needle}: {error:?}"));
+        }
+    }
+}
+
+#[test]
 fn successive_post_execution_ifs_stay_on_one_proof() {
     let c_source = r#"
         int32 two_decisions(int32 x, int32 y) {

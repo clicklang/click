@@ -18,8 +18,8 @@ pub(super) fn project(name: &str, source: &str) -> Project {
     p
 }
 
-// Charon retains the compiler input's absolute path. Relocation changes that
-// one metadata value; no function, type, span position, or compiler option is
+// Historical artifacts retain the compiler input's absolute path. Normalize
+// that one metadata value; no function, type, span position, or compiler option is
 // removed from the comparison.
 fn relocated_artifact(bytes: &[u8], source_suffix: &std::path::Path) -> serde_json::Value {
     let mut artifact: serde_json::Value = serde_json::from_slice(bytes).unwrap();
@@ -62,10 +62,8 @@ fn frozen_gate_fixtures_match_live_charon_extraction() {
             .join(name)
             .join("borrow.rs");
         let expected = relocated_artifact(&artifact, &frozen_suffix);
-        let actual = relocated_artifact(
-            &fs::read(p.artifact("borrow.rs")).unwrap(),
-            &p.root.join("borrow.rs"),
-        );
+        let actual: serde_json::Value =
+            serde_json::from_slice(&fs::read(p.artifact("borrow.rs")).unwrap()).unwrap();
         assert!(
             actual == expected,
             "{name}: native artifact changed after source-path relocation"
