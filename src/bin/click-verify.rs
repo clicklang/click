@@ -2067,15 +2067,15 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
         let (_, trace) = report
             .split_once("proof trace (checked tactics and branch facts):")
             .unwrap_or_else(|| panic!("missing proof trace: {report}"));
-        for line in [48, 49, 59] {
+        for line in [51, 52, 62] {
             assert!(trace.contains(&format!("tactic@{line}: step\n")), "{trace}");
         }
-        assert!(!trace.contains("tactic@57:"), "{trace}");
+        assert!(!trace.contains("tactic@60:"), "{trace}");
     }
 
     #[test]
     fn loop_frontier_trace_to_selects_checked_tactics() {
-        for target in [48, 57, 59] {
+        for target in [51, 60, 62] {
             let report = loop_frontier_trace_report(Some(target));
             let (_, trace) = report
                 .split_once("proof trace (checked tactics and branch facts):")
@@ -2084,24 +2084,24 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
                 trace.contains(&format!("tactic@{target}: step\n")),
                 "{trace}"
             );
-            if target == 48 {
-                assert!(!trace.contains("tactic@49:"), "{trace}");
-            } else if target == 57 {
-                assert!(!trace.contains("tactic@59:"), "{trace}");
+            if target == 51 {
+                assert!(!trace.contains("tactic@52:"), "{trace}");
+            } else if target == 60 {
+                assert!(!trace.contains("tactic@62:"), "{trace}");
             } else {
-                assert!(!trace.contains("tactic@57:"), "{trace}");
+                assert!(!trace.contains("tactic@60:"), "{trace}");
             }
         }
     }
 
     #[test]
     fn loop_frontier_trace_to_an_unreached_tactic_explains_the_missing_step() {
-        let report = loop_frontier_trace_report(Some(63));
+        let report = loop_frontier_trace_report(Some(66));
         assert!(
             report.contains("target tactic has no recorded checked step on a retained path"),
             "{report}"
         );
-        assert!(!report.contains("tactic@63: step\n"), "{report}");
+        assert!(!report.contains("tactic@66: step\n"), "{report}");
     }
 
     #[test]
@@ -2122,7 +2122,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
             &loaded.click_source,
             line_offset,
             &TraceTo {
-                line: 59,
+                line: 62,
                 column: None,
             },
         )
@@ -2147,7 +2147,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
                 Some(&target),
             )
         });
-        assert!(report.contains("tactic@59: step\n"), "{report}");
+        assert!(report.contains("tactic@62: step\n"), "{report}");
         assert!(
             !report.contains("target tactic has no recorded checked step"),
             "{report}"
