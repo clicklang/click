@@ -151,10 +151,12 @@ control flow.
   branch, in its facts, the current goal, and later goals.
 - `unfold(resource);`: consume one owned composite resource fact and expose its
   immediate body facts.
-- `fold(resource);`: require every declared pure body fact exactly (or by
-  context-free normalization), consume one immediate composite body, and
-  rebuild the owned composite resource fact. Establish derived facts with
-  `have` before folding.
+- `fold(resource);`: require every declared pure body fact exactly, by
+  context-free normalization, or by the kernel's condition decision (the one a
+  step's fast path makes), consume one immediate composite body, and rebuild
+  the owned composite resource fact. A body fact these miss is a requirement:
+  prove it in `fold(resource) by { ... }` or
+  `fold(resource) { requires P by ...; }`, or leave it to the implicit `auto`.
 - `apply(theorem_name(args...));`: instantiate one verified pure theorem from
   the standard library or current file. Every requirement must be an exact
   current fact or normalize to true without context; the step does not search

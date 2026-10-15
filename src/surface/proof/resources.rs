@@ -2944,6 +2944,27 @@ pub(super) fn declared_resource_witness_values(
         .collect())
 }
 
+/// Whether the kernel's condition decision settles `required`: a condition,
+/// a negated condition, or a conjunction of them.
+fn decided_by_kernel_condition_decision(
+    assumptions: &PureFactContext,
+    required: &Proposition,
+) -> bool {
+    match required {
+        Proposition::And(left, right) => {
+            decided_by_kernel_condition_decision(assumptions, left)
+                && decided_by_kernel_condition_decision(assumptions, right)
+        }
+        Proposition::ConditionIs(condition, value) => assumptions.decide(condition) == Some(*value),
+        Proposition::Not(body) => matches!(
+            body.as_ref(),
+            Proposition::ConditionIs(condition, value)
+                if assumptions.decide(condition) == Some(!*value)
+        ),
+        _ => false,
+    }
+}
+
 fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     resource_environment: &ResourceEnvironment,
     resource: &ResourceClause,
@@ -4016,8 +4037,12 @@ fn fold_composite_resources_on_outcome_with_facts(
             // work proportional to the fact being checked, so an exactly
             // available body fact never rides on the open-ended kernel search
             // below, which can consume a large share of the fold's budget.
-            let exactly_available =
-                pure_facts.exact_available_across_effects(&required, execution_pure_facts);
+            // The kernel's condition decision settles a condition body fact
+            // as it settles a step's: the difference graph, then the
+            // decision's checked rules (a tagged pointer word's low bits, say).
+            let exactly_available = pure_facts
+                .exact_available_across_effects(&required, execution_pure_facts)
+                || decided_by_kernel_condition_decision(&body_assumptions, &required);
             // A body fact the exact checks miss is a requirement of this
             // `fold`, spelled as the definition's fact over the arguments as
             // written; the fold never searches the proof context for it

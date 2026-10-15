@@ -320,11 +320,11 @@ carried by `transport` from the cell's reflexive equality at a recorded point
 - A body fact over a witness the proof cannot name, such as the `next` an
   `unfold` exposed in `examples/marked-linked-list`'s `list_mark`, has no
   source spelling, so it keeps the counted search too
-  (`fold unspellable body fact`). Naming unfolded witnesses removes it.
+  (`fold unspellable body fact`). Step 5f removes it.
 - `mdtests/resource_witness_fold_infers_origin.md` and
   `examples/marked-linked-list`'s `list_prepend` state the low-bit lemma the
   search used to find, which `auto` proves alone but not inside the body
-  fact.
+  fact. Step 5f removes these too.
 
 **5c, outcome `if` and the step's atomic derivation (landed).** Every
 outcome `if` condition the census counted was `not (v == c)` with `v` decided
@@ -352,7 +352,7 @@ a step makes, not a search, so it is no longer counted. The rule: a simple
 tactic may consult the context through the kernel's indexed, bounded
 decisions, never through a `PropositionSearch`.
 
-**5e, naming unfolded witnesses (in progress).** `let { witness: name } =
+**5e, naming unfolded witnesses (landed).** `let { witness: name } =
 unfold(resource)` on a declared resource binds a `let ... where` witness to a
 proof name, and a `fold` spells a body fact over that witness with the name,
 so the body fact gets a requirement spelling instead of the counted search.
@@ -361,6 +361,19 @@ counted search for now: with `next` named, its body fact needs
 `(w | 1) == n + 1` from `w == n + (w & 1)` and `aligned(n, 8)`, which `auto`
 does not prove. A `by` body containing `both` now rechecks when checked step by step as a
 certificate (`mdtests/fold_by_with_both_rechecks_after_execute.md`).
+
+**5f, `fold` consults the kernel's condition decision (landed).** The search
+proved `list_mark`'s `(w | 1) == n + 1` soundly, and not by search: its
+proving route was the kernel's condition decision, which settles the low bit
+of a tagged pointer word from checked `PointerWord` evidence (the unfold fact
+`w == n + (w & 1)` and the alignment facts). `fold` now offers each body fact
+that is a condition, or a conjunction or negation of conditions, to that
+decision before recording a requirement, as a step's fast path does. So
+`list_mark` folds with no requirement and no search, and `list_prepend` and
+`mdtests/resource_witness_fold_infers_origin.md` no longer state the low-bit
+`have`. No unspellable body fact remains in the corpus. Fold mdtests whose
+body fact the decision now settles state a disjunction instead, so they still
+exercise a requirement.
 
 ## Acceptance criteria
 

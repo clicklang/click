@@ -2,10 +2,8 @@
 
 After storing a tail's address into the word, folding the resource binds the
 witness to that tail without any explicit witness syntax: the `where` fact
-names the word, and the word's recorded origin is the witness. `fold` checks
-its body fact without searching the proof context, and the implicit `auto`
-that proves the fact does not find the low-bit lemma on its own, so the proof
-states it first.
+names the word, and the word's recorded origin is the witness. The kernel's
+condition decision settles the body fact's low bits from the alignment fact.
 
 ```c filename=resource_witness_fold_infers_origin.c
 struct node {
@@ -33,7 +31,6 @@ void link(struct node* node, struct node* tail) {
     produces packed(node);
 } by {
     execute();
-    have ((uint64)tail & 1) == 0 by auto;
     fold(packed(node));
     simp();
 }
