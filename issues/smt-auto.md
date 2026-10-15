@@ -246,9 +246,13 @@ requirement `auto` does not prove (3); or by a loop or induction closer (3).
    of the restatement; it also reads a fact recorded at an earlier point
    (`at(function.entry, ..)`) in its unanchored form. 20 such hand proofs in
    the rbtree examples, 186 lines, are now `by auto;`.
-6. **A cheaper route to a restated fact.** Try a short rewrite chain before
-   the solver bridges, so the remaining `apply` premises can be deleted
-   without slowing their files.
+6. **A cheaper route to a restated fact.** Done. Before its solvers,
+   `auto` tries a goal that restates an available fact through one
+   connected equality: one `rewrite` and `assumption`, where the solvers
+   reached it through `Integer` bridges at many times the cost and in a
+   proof of a dozen lines. 229 more `have`s that restated an `apply` premise
+   are deleted, 621 lines, all 77 candidates in `rbtree_model.click`
+   among them, each file within 10% of its verification time.
 
 Each step is judged by deleting `have`s from the examples and checking that
 the proofs still verify.

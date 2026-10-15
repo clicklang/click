@@ -37,13 +37,6 @@ int32 compute_size(struct sized_node* node, int32 exit) {
             unfold(left);
             unfold(right);
             unfold(parent);
-            have old(left.value) <= 2147483646 by {
-                arithmetic() using {
-                    0 <= old(right.value);
-                    old(right.value) <= 2147483646;
-                    old(left.value) <= 2147483646 - old(right.value);
-                }
-            }
             apply(size_sum_defined(old(left.value), old(right.value)));
             execute();
             fold(left);
@@ -62,13 +55,6 @@ int32 compute_size(struct sized_node* node, int32 exit) {
             unfold(left);
             unfold(right);
             unfold(parent);
-            have old(left.value) <= 2147483646 by {
-                arithmetic() using {
-                    0 <= old(right.value);
-                    old(right.value) <= 2147483646;
-                    old(left.value) <= 2147483646 - old(right.value);
-                }
-            }
             apply(size_sum_defined(old(left.value), old(right.value)));
             execute();
             fold(left);
@@ -89,13 +75,6 @@ int32 compute_size(struct sized_node* node, int32 exit) {
             unfold(left);
             unfold(right);
             unfold(parent);
-            have old(left.value) <= 2147483646 by {
-                arithmetic() using {
-                    0 <= old(right.value);
-                    old(right.value) <= 2147483646;
-                    old(left.value) <= 2147483646 - old(right.value);
-                }
-            }
             apply(size_sum_defined(old(left.value), old(right.value)));
             execute();
             fold(left);
@@ -114,13 +93,6 @@ int32 compute_size(struct sized_node* node, int32 exit) {
             unfold(left);
             unfold(right);
             unfold(parent);
-            have old(left.value) <= 2147483646 by {
-                arithmetic() using {
-                    0 <= old(right.value);
-                    old(right.value) <= 2147483646;
-                    old(left.value) <= 2147483646 - old(right.value);
-                }
-            }
             apply(size_sum_defined(old(left.value), old(right.value)));
             execute();
             fold(left);

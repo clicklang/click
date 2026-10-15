@@ -233,7 +233,6 @@ theorem erase_spine_links_from_tree(spine: EraseSpine, tree: RbTree, anchor: str
                     unfold(erase_context(EraseSpine::Left(identity, parent, color, sibling, up)));
                     unfold(plug(Context::Left(identity, parent, color, sibling, erase_context(up)), tree)); normalize();
                 }
-                have rb_parent_consistent(plug(erase_context(up), RbTree::Node(identity, parent, color, tree, sibling)), anchor) == 1 by auto;
                 apply(ih(up, RbTree::Node(identity, parent, color, tree, sibling), anchor));
                 apply(erase_spine_focus_parent_consistent(up, RbTree::Node(identity, parent, color, tree, sibling), anchor));
                 apply(erase_parent_consistent_parent_is(RbTree::Node(identity, parent, color, tree, sibling), erase_spine_parent(up, anchor)));
