@@ -2950,6 +2950,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
 mod construction;
 mod match_cases;
 pub(in crate::surface::proof) use match_cases::ExecutionMatchPlan;
+pub(in crate::surface::proof) use match_cases::PureMatchPlan;
 mod execution_entry;
 mod execution_joins;
 mod execution_statements;

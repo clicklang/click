@@ -237,3 +237,10 @@ three-node root case through the same three entry points, using
 grandparent on the left and the inserted node on the right, with recursively
 valid cached sizes. Both single-rotation directions are covered; double
 rotations, color flips and arbitrary ancestor contexts remain.
+
+`rbtree_size_model_unique.click` proves that recursively valid cached counts
+and an equal structural shape determine the entire `SizedTree` model. Its
+structural induction matches the second model without adding another induction
+hypothesis, and applies the original hypotheses to the two children. This
+provides an exact model equality when a writable rotation callback returns a
+repaired model whose shape is known. Double-rotation integration remains next.
