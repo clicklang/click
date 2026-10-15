@@ -3753,7 +3753,7 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                         );
                         let required = Proposition::ConditionIs(nonnegative, true);
                         if super::check_nat_integer_law(
-                            "click::nat::nat_integer_nonnegative",
+                            "click::nat::to_integer_nonnegative",
                             &required,
                         )
                         .is_none()

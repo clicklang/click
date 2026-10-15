@@ -900,7 +900,7 @@ once by structural `induct`. Then let `arithmetic` close the comparison before
 `close_invariants()`.
 
 A `Nat`-valued function of the model ranks by its Integer image `to_integer`,
-whose nonnegativity is the checked law `nat_integer_nonnegative`. Such a
+whose nonnegativity is the checked law `nat::to_integer_nonnegative`. Such a
 measure owes only the decrease
 (`mdtests/loop_measure_reads_a_nat_model_function.md`).
 

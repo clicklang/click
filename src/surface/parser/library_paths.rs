@@ -104,7 +104,7 @@ fn top_level_declaration_names(tokens: &[Token]) -> BTreeSet<String> {
 /// The Click library modules whose functions and predicates, not only
 /// theorems, have qualified verifier identities. A module joins when its
 /// names drop their prefixes and its uses move to paths.
-const QUALIFIED_MODULES: &[&str] = &["library/list.click"];
+const QUALIFIED_MODULES: &[&str] = &["library/nat.click", "library/list.click"];
 
 /// The qualified identity a bare theorem citation names: a library theorem
 /// of a module that still accepts bare citations. A theorem of a qualified

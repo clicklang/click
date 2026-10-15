@@ -412,33 +412,33 @@ theorem integer_subtract_bridge(left: int32, right: int32) {
 }
 
 theorem builtin_nat_integer_laws(n: Nat) {
-    ensures to_integer(Nat::Zero) == 0 by apply(nat_integer_zero());
-    ensures to_integer(Nat::Succ(n)) == to_integer(n) + 1 by apply(nat_integer_succ(n));
-    ensures to_integer(n) >= 0 by apply(nat_integer_nonnegative(n));
-    ensures to_nat(to_integer(n)) == n by apply(nat_integer_round_trip(n));
-    ensures to_nat(0) == Nat::Zero by apply(integer_to_nat_zero());
+    ensures to_integer(Nat::Zero) == 0 by apply(nat::to_integer_zero());
+    ensures to_integer(Nat::Succ(n)) == to_integer(n) + 1 by apply(nat::to_integer_succ(n));
+    ensures to_integer(n) >= 0 by apply(nat::to_integer_nonnegative(n));
+    ensures to_nat(to_integer(n)) == n by apply(nat::to_nat_to_integer(n));
+    ensures to_nat(0) == Nat::Zero by apply(nat::to_nat_zero());
 }
 
 theorem builtin_integer_nat_laws(z: Integer) {
     requires z >= 0;
-    ensures to_integer(to_nat(z)) == z by apply(integer_nat_round_trip(z));
+    ensures to_integer(to_nat(z)) == z by apply(nat::to_integer_to_nat(z));
 }
 
 theorem nat_laws(a: Nat, b: Nat, c: Nat) {
-    ensures to_integer(nat_add(a, b)) == to_integer(a) + to_integer(b) by apply(nat_integer_add(a, b));
-    ensures nat_add(Nat::Zero, a) == a by apply(nat_add_left_identity(a));
-    ensures nat_add(a, Nat::Zero) == a by apply(nat_add_right_identity(a));
-    ensures nat_add(Nat::Succ(a), b) == Nat::Succ(nat_add(a, b)) by apply(nat_add_succ_left(a, b));
-    ensures nat_add(a, Nat::Succ(b)) == Nat::Succ(nat_add(a, b)) by apply(nat_add_succ_right(a, b));
-    ensures nat_add(nat_add(a, b), c) == nat_add(a, nat_add(b, c)) by apply(nat_add_associative(a, b, c));
-    ensures nat_add(a, b) == nat_add(b, a) by apply(nat_add_commutative(a, b));
+    ensures to_integer(nat::add(a, b)) == to_integer(a) + to_integer(b) by apply(nat::to_integer_add(a, b));
+    ensures nat::add(Nat::Zero, a) == a by apply(nat::add_left_identity(a));
+    ensures nat::add(a, Nat::Zero) == a by apply(nat::add_right_identity(a));
+    ensures nat::add(Nat::Succ(a), b) == Nat::Succ(nat::add(a, b)) by apply(nat::add_succ_left(a, b));
+    ensures nat::add(a, Nat::Succ(b)) == Nat::Succ(nat::add(a, b)) by apply(nat::add_succ_right(a, b));
+    ensures nat::add(nat::add(a, b), c) == nat::add(a, nat::add(b, c)) by apply(nat::add_associative(a, b, c));
+    ensures nat::add(a, b) == nat::add(b, a) by apply(nat::add_commutative(a, b));
 }
 
 theorem one_plus_one() {
-    ensures nat_add(Nat::Succ(Nat::Zero), Nat::Succ(Nat::Zero))
+    ensures nat::add(Nat::Succ(Nat::Zero), Nat::Succ(Nat::Zero))
         == Nat::Succ(Nat::Succ(Nat::Zero)) by {
-        unfold(nat_add(Nat::Succ(Nat::Zero), Nat::Succ(Nat::Zero)));
-        unfold(nat_add(Nat::Zero, Nat::Succ(Nat::Zero)));
+        unfold(nat::add(Nat::Succ(Nat::Zero), Nat::Succ(Nat::Zero)));
+        unfold(nat::add(Nat::Zero, Nat::Succ(Nat::Zero)));
         simp();
     }
 }
@@ -450,13 +450,13 @@ theorem length_laws<T>(head: T, xs: List<T>, ys: List<T>) {
     ensures list::length(List<T>::Cons(head, xs)) == Nat::Succ(list::length(xs)) by {
         apply(list::length_cons(head, xs));
     }
-    ensures list::length(list::append(xs, ys)) == nat_add(list::length(xs), list::length(ys)) by {
+    ensures list::length(list::append(xs, ys)) == nat::add(list::length(xs), list::length(ys)) by {
         apply(list::length_append(xs, ys));
     }
 }
 
 theorem nested_length(xs: List<List<int32>>, ys: List<List<int32>>) {
-    ensures list::length(list::append(xs, ys)) == nat_add(list::length(xs), list::length(ys)) by {
+    ensures list::length(list::append(xs, ys)) == nat::add(list::length(xs), list::length(ys)) by {
         apply(list::length_append(xs, ys));
     }
 }

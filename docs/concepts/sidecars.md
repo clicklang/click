@@ -179,8 +179,8 @@ theorem append_nil_by_bare_names(xs: List<int32>) {
 }
 ```
 
-Without a path or a selective import, a `click::list` function, predicate or
-theorem is not in scope by its bare name, even though the module is implicit
+Without a path or a selective import, a function, predicate or theorem of
+`click::nat` or `click::list` is not in scope by its bare name, even though the module is implicit
 (`mdtests/a_bare_library_name_needs_a_path_or_selective_import.md`,
 `mdtests/a_bare_list_theorem_citation_needs_a_path_or_selective_import.md`).
 A file may therefore declare its own `append`
@@ -188,11 +188,12 @@ A file may therefore declare its own `append`
 imported name that a file also declares, or that two selective imports
 bring, is refused, as Rust refuses a clashing `use`
 (`mdtests/a_selective_import_cannot_clash_with_a_file_declaration.md`).
-Types and constructors such as `List` and `List::Cons` keep their bare names.
-When `click expand` writes out a `click::list` theorem, it spells it by its
-bare name when a selective import brings it, and otherwise as
-`list::name`. Other modules still carry name prefixes, such as `nat_add`,
-and their bare names keep working until each is renamed; see
+Types and constructors such as `Nat`, `List` and `List::Cons` keep their
+bare names, as does the primitive conversion `to_nat`. When `click expand`
+writes out a theorem of these modules, it spells it by its bare name when a
+selective import brings it, and otherwise as `nat::name` or `list::name`.
+Other modules still carry name prefixes, such as `cstr_len`, and their bare
+names keep working until each is renamed; see
 [`issues/standard-library.md`](https://github.com/clicklang/click/blob/master/issues/standard-library.md).
 
 ## Contracts are per function
