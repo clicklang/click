@@ -2945,8 +2945,10 @@ impl<'a> Proof<'a> {
         match (positive_holds, negative_holds) {
             (true, false) => Ok(true),
             (false, true) => Ok(false),
-            (false, false) => Err(self
-                .step_error("focused outcome does not decide the post-execution `if` condition")),
+            (false, false) => Err(self.step_error(format!(
+                "focused outcome does not decide the post-execution `if` condition: `{}`",
+                crate::surface::diagnostics::describe_click_proposition(condition)
+            ))),
             (true, true) => Err(self.step_error(
                 "focused outcome proves both sides of the post-execution `if` condition",
             )),

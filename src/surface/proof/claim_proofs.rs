@@ -34,68 +34,76 @@ pub(in crate::surface) struct ClaimProofResult {
     pub(in crate::surface) theorems: Vec<VerifiedCTheorem>,
 }
 
-/// `call_depth` counts the `outcomes` arms already entered on this route; a
-/// nested `outcomes` reads the call edge at that depth.
-fn select_checked_post_execution_tactics<'a>(
-    proof: &Proof<'_>,
-    tactics: impl IntoIterator<Item = &'a DeferredPostExecutionTactic>,
-    call_depth: usize,
-    selected: &mut Vec<&'a DeferredPostExecutionTactic>,
+/// Visit one leaf at a time so each control node sees the checked facts left
+/// by all preceding leaves. `call_depth` follows nested `outcomes` arms only;
+/// sibling controls in the continuation keep their enclosing depth.
+fn next_checked_post_execution_tactic<'a>(
+    proof: Option<&Proof<'_>>,
+    pending: &mut Vec<(&'a DeferredPostExecutionTactic, usize)>,
     choices: &mut Vec<SurfacePathChoice>,
-) -> Result<(), ClickError> {
-    for deferred in tactics {
-        match &deferred.tactic {
+    tactic_offset: usize,
+    path_index: usize,
+) -> Result<Option<&'a DeferredPostExecutionTactic>, ClickError> {
+    while let Some((deferred, call_depth)) = pending.pop() {
+        let (selector, value, arm, child_depth) = match &deferred.tactic {
             PostExecutionTactic::If {
                 condition,
                 execution_route,
                 then_tactics,
                 else_tactics,
             } => {
-                let scoped = deferred
-                    .lexical_bindings
-                    .as_ref()
-                    .map(|bindings| proof.with_surface_local_scope(bindings));
+                let proof = proof.ok_or_else(|| {
+                    ClickError::new("post-execution `if` has no focused outcome Proof")
+                })?;
+                let mut scoped = proof.clone().at_source_tactic(deferred.source_index);
+                if let Some(bindings) = &deferred.lexical_bindings {
+                    scoped = scoped.with_surface_local_scope(bindings);
+                }
                 let value = scoped
-                    .as_ref()
-                    .unwrap_or(proof)
-                    .checked_outcome_if_value(condition, *execution_route)?;
-                choices.push(SurfacePathChoice {
-                    occurrence: deferred.source_index,
-                    selector: SurfacePathSelector::Proposition(condition.clone()),
+                    .checked_outcome_if_value(condition, *execution_route)
+                    .map_err(|error| {
+                        error.with_context(format!("post-execution path {path_index}"))
+                    })?;
+                (
+                    SurfacePathSelector::Proposition(condition.clone()),
                     value,
-                    tactic_offset: selected.len(),
-                });
-                let arm = if value { then_tactics } else { else_tactics };
-                select_checked_post_execution_tactics(proof, arm, call_depth, selected, choices)?;
+                    if value { then_tactics } else { else_tactics },
+                    call_depth,
+                )
             }
             PostExecutionTactic::CallOutcomes {
                 returned_tactics,
                 threw_tactics,
             } => {
-                let returned = proof.checked_call_returned(call_depth)?;
-                choices.push(SurfacePathChoice {
-                    occurrence: deferred.source_index,
-                    selector: SurfacePathSelector::CallOutcome,
-                    value: returned,
-                    tactic_offset: selected.len(),
-                });
-                let arm = if returned {
-                    returned_tactics
-                } else {
-                    threw_tactics
-                };
-                select_checked_post_execution_tactics(
-                    proof,
-                    arm,
+                let proof = proof.ok_or_else(|| {
+                    ClickError::new("post-execution `outcomes` has no focused outcome Proof")
+                })?;
+                let returned = proof
+                    .clone()
+                    .at_source_tactic(deferred.source_index)
+                    .checked_call_returned(call_depth)?;
+                (
+                    SurfacePathSelector::CallOutcome,
+                    returned,
+                    if returned {
+                        returned_tactics
+                    } else {
+                        threw_tactics
+                    },
                     call_depth + 1,
-                    selected,
-                    choices,
-                )?;
+                )
             }
-            _ => selected.push(deferred),
-        }
+            _ => return Ok(Some(deferred)),
+        };
+        choices.push(SurfacePathChoice {
+            occurrence: deferred.source_index,
+            selector,
+            value,
+            tactic_offset,
+        });
+        pending.extend(arm.iter().rev().map(|tactic| (tactic, child_depth)));
     }
-    Ok(())
+    Ok(None)
 }
 
 /// Serialize deferred proof cases at their checked operation offsets. Their
@@ -2118,34 +2126,18 @@ pub(super) fn finish_ordered_proof<'a>(
                         tactic: PostExecutionTactic::AutoClose,
                         surface_recorded: false,
                     };
-                    let mut selected_post_execution_tactics = Vec::new();
-                    let mut selected_post_choices = Vec::new();
-                    if let Some(branch_proof) = outcome_proof.as_ref() {
-                        select_checked_post_execution_tactics(
-                            branch_proof,
-                            post_execution_tactics.iter(),
-                            0,
-                            &mut selected_post_execution_tactics,
-                            &mut selected_post_choices,
-                        )?;
-                    } else {
-                        if post_execution_tactics.iter().any(|deferred| {
-                            matches!(deferred.tactic, PostExecutionTactic::If { .. })
-                        }) {
-                            return Err(ClickError::new(format!(
-                                "`{proof_label}` path {path_index}: post-execution `if` has no focused outcome Proof"
-                            )));
-                        }
-                        selected_post_execution_tactics.extend(post_execution_tactics.iter());
-                    }
                     // Only an ordered drain that has no closing `simp` and no
                     // further resource operation of its own needs the
-                    // transition up front: an expanded proof closes its
+                    // transition up front. A control node defers the transition
+                    // to the reached closer, since earlier tactics can decide
+                    // which arm will run. An expanded proof closes its
                     // resource ensures with `assumption()` and never re-folds.
-                    if !selected_post_execution_tactics.iter().any(|deferred| {
+                    if !post_execution_tactics.iter().any(|deferred| {
                         matches!(
                             deferred.tactic,
-                            PostExecutionTactic::Simp
+                            PostExecutionTactic::If { .. }
+                                | PostExecutionTactic::CallOutcomes { .. }
+                                | PostExecutionTactic::Simp
                                 | PostExecutionTactic::AutoClose
                                 | PostExecutionTactic::SimpUsing(_)
                                 | PostExecutionTactic::Fold(_)
@@ -2185,19 +2177,19 @@ pub(super) fn finish_ordered_proof<'a>(
                     // nothing when the script's own tactics closed every
                     // claim. Its checked steps join the path's closers, so an
                     // expanded proof writes them out.
+                    let mut pending_post_execution_tactics = Vec::new();
                     if require_explicit_closers {
-                        selected_post_execution_tactics.push(&implicit_auto_closer);
+                        pending_post_execution_tactics.push((&implicit_auto_closer, 0));
                     }
-                    let mut selected_post_choices = selected_post_choices.into_iter().peekable();
-                    // An expansion replaces one source occurrence. Outcomes
-                    // that never reach it must not contribute empty sibling
-                    // certificates or reintroduce their enclosing C guard.
-                    let visits_selected_capture = path_capture.is_some_and(|capture| {
-                        selected_post_execution_tactics.iter().any(|tactic| {
-                            tactic.tactic_index == capture.tactic_index
-                                && tactic.source_index == capture.source_index
-                        })
-                    });
+                    pending_post_execution_tactics.extend(
+                        post_execution_tactics
+                            .iter()
+                            .rev()
+                            .map(|tactic| (tactic, 0)),
+                    );
+                    // A capture belongs only to paths that actually reach its
+                    // source occurrence, including through newly decided arms.
+                    let mut visits_selected_capture = false;
                     let mut surface_post_choices = Vec::new();
                     let mut batch_previous_capture = None;
                     // Consecutive assumption closers only discharge claims;
@@ -2210,9 +2202,20 @@ pub(super) fn finish_ordered_proof<'a>(
                     // introduced the fact it could not justify. Each entry
                     // shares the persistent fact store.
                     let mut post_return_facts = Vec::new();
-                    for (post_execution_index, deferred) in
-                        selected_post_execution_tactics.into_iter().enumerate()
-                    {
+                    let mut post_execution_count = 0;
+                    while let Some(deferred) = next_checked_post_execution_tactic(
+                        outcome_proof.as_ref(),
+                        &mut pending_post_execution_tactics,
+                        &mut surface_post_choices,
+                        path_surface_post_tactics.len(),
+                        path_index,
+                    )? {
+                        let post_execution_index = post_execution_count;
+                        post_execution_count += 1;
+                        visits_selected_capture |= path_capture.is_some_and(|capture| {
+                            deferred.tactic_index == capture.tactic_index
+                                && deferred.source_index == capture.source_index
+                        });
                         if let Some(previous) = batch_previous_capture.take() {
                             batch_capture_paths.entry(previous).or_default().push((
                                 path_index,
@@ -2231,14 +2234,6 @@ pub(super) fn finish_ordered_proof<'a>(
                         if let Some(bindings) = &deferred.lexical_bindings {
                             outcome_proof =
                                 outcome_proof.map(|proof| proof.with_surface_local_scope(bindings));
-                        }
-                        while selected_post_choices
-                            .peek()
-                            .is_some_and(|choice| choice.tactic_offset == post_execution_index)
-                        {
-                            let mut choice = selected_post_choices.next().unwrap();
-                            choice.tactic_offset = path_surface_post_tactics.len();
-                            surface_post_choices.push(choice);
                         }
                         if !matches!(deferred.tactic, PostExecutionTactic::Assumption) {
                             assumption_transition_attempted = false;
@@ -5075,10 +5070,6 @@ pub(super) fn finish_ordered_proof<'a>(
                             );
                         }
                         surface_grouped_closers_by_path.push(path_grouped_surface_closers);
-                        for mut choice in selected_post_choices {
-                            choice.tactic_offset = path_surface_post_tactics.len();
-                            surface_post_choices.push(choice);
-                        }
                         surface_post_choices_by_path.push(surface_post_choices);
                         if loop_outcome_selector.is_some() {
                             loop_outcome_choices.push(loop_outcome_choice);
