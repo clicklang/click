@@ -12945,10 +12945,10 @@ fn outcome_simp_instantiates_an_unfolded_byte_predicate_on_the_checked_proof() {
 
         int32 byte_prefix(uint8 p[], int32 n) {
             requires viewable(p[0..3]);
-            requires bytes_all_not_equal(p, 0, 3, 'y');
+            requires bytes::all_not_equal(p, 0, 3, 'y');
             ensures p[1] != 'y' by {
                 execute();
-                unfold(bytes_all_not_equal);
+                unfold(bytes::all_not_equal);
                 simp();
             }
         }

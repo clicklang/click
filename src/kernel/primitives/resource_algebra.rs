@@ -6203,38 +6203,13 @@ impl ResourceContext {
             for entry in entries {
                 self.remove_entry_only(entry);
             }
-            self.storage = std::sync::Arc::new(ResourceContextStorage {
-                facts: self.storage.facts.clone(),
-                next_entry_id: self.storage.next_entry_id,
-                occurrence_by_entry: self.storage.occurrence_by_entry.clone(),
-                entry_by_occurrence: self.storage.entry_by_occurrence.clone(),
-                index: self.storage.index.clone(),
-                supported_by: self.storage.supported_by.clone(),
-                support_occurrence_by_projection: self
-                    .storage
-                    .support_occurrence_by_projection
-                    .clone(),
-                projections_by_support: self.storage.projections_by_support.clone(),
-                projections_by_support_occurrence: self
-                    .storage
-                    .projections_by_support_occurrence
-                    .clone(),
-                support_metadata_by_projection: self.storage.support_metadata_by_projection.clone(),
-                projections_by_memory_block: self.storage.projections_by_memory_block.clone(),
-                projections_by_memory_interval: self.storage.projections_by_memory_interval.clone(),
-                projections_by_memory_interval_subtree: self
-                    .storage
-                    .projections_by_memory_interval_subtree
-                    .clone(),
-                unknown_memory_support: self.storage.unknown_memory_support.clone(),
-                symbolic_memory_support: self.storage.symbolic_memory_support.clone(),
-                expansions_by_support_occurrence: PersistentMap::default(),
-                expansions_by_support_entry: PersistentMap::default(),
-                origin: self.storage.origin.clone(),
-                history: self.storage.history.clone(),
-                observable_projection_source: None,
-                materialized: std::sync::OnceLock::new(),
-            });
+            // Each removal above advanced the observable projection; clearing
+            // the expansion caches advances it too, so a normalization that
+            // restores the same supported pairs below keeps the warm view
+            // instead of leaving every later observation to recompute it.
+            let previous = self.storage.clone();
+            self.clear_cached_support_expansions();
+            self.advance_observable_expansions_cleared(&previous);
             return self
                 .normalized_with_byte_endpoints(assumptions, byte_endpoints)
                 .restore_supported_projection_pairs(supported)
@@ -6398,6 +6373,41 @@ impl ResourceContext {
                 (*support_occurrence, expansion.as_ref().clone())
             })
             .collect()
+    }
+
+    /// Replace the storage root with one holding no cached support
+    /// expansions, leaving every fact, entry, occurrence and support index in
+    /// place. The caller advances the observable projection.
+    fn clear_cached_support_expansions(&mut self) {
+        self.storage = std::sync::Arc::new(ResourceContextStorage {
+            facts: self.storage.facts.clone(),
+            next_entry_id: self.storage.next_entry_id,
+            occurrence_by_entry: self.storage.occurrence_by_entry.clone(),
+            entry_by_occurrence: self.storage.entry_by_occurrence.clone(),
+            index: self.storage.index.clone(),
+            supported_by: self.storage.supported_by.clone(),
+            support_occurrence_by_projection: self.storage.support_occurrence_by_projection.clone(),
+            projections_by_support: self.storage.projections_by_support.clone(),
+            projections_by_support_occurrence: self
+                .storage
+                .projections_by_support_occurrence
+                .clone(),
+            support_metadata_by_projection: self.storage.support_metadata_by_projection.clone(),
+            projections_by_memory_block: self.storage.projections_by_memory_block.clone(),
+            projections_by_memory_interval: self.storage.projections_by_memory_interval.clone(),
+            projections_by_memory_interval_subtree: self
+                .storage
+                .projections_by_memory_interval_subtree
+                .clone(),
+            unknown_memory_support: self.storage.unknown_memory_support.clone(),
+            symbolic_memory_support: self.storage.symbolic_memory_support.clone(),
+            expansions_by_support_occurrence: PersistentMap::default(),
+            expansions_by_support_entry: PersistentMap::default(),
+            origin: self.storage.origin.clone(),
+            history: self.storage.history.clone(),
+            observable_projection_source: None,
+            materialized: std::sync::OnceLock::new(),
+        });
     }
 
     fn restore_cached_support_expansions(

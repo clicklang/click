@@ -441,7 +441,19 @@ impl TermClasses {
             C::PointerOffsetEqual(a, b) => (OffsetEq, self.intern(a), self.intern(b)),
             _ => return None,
         };
-        Some(self.intern_node(Node::Condition(kind, left, right)))
+        let node = self.intern_node(Node::Condition(kind, left, right));
+        if let C::PointerEqual(a, b) = condition
+            && a.block == b.block
+        {
+            // These are two views of the same predicate, not a new premise.
+            // Retaining both avoids reconstructing a cancelled base from an
+            // arbitrary representative after later pointer aliases merge.
+            let a = self.intern(&a.offset);
+            let b = self.intern(&b.offset);
+            let offsets = self.intern_node(Node::Condition(OffsetEq, a, b));
+            self.close(vec![(node, offsets)]);
+        }
+        Some(node)
     }
 
     fn condition_kind(condition: &C) -> Option<ConditionKind> {
@@ -479,6 +491,10 @@ impl TermClasses {
                     && self
                         .condition_kinds
                         .contains(&(ConditionKind::PointerEq, value)))
+                || (kind == ConditionKind::PointerEq
+                    && self
+                        .condition_kinds
+                        .contains(&(ConditionKind::OffsetEq, value)))
         })
     }
 

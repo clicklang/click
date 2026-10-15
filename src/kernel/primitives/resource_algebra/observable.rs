@@ -224,6 +224,31 @@ impl ResourceContext {
         });
     }
 
+    /// Mirror a producer that dropped every cached support expansion while
+    /// keeping all facts, entries and support links (normalization does this
+    /// before restoring its supported pairs). Expansion caches are part of a
+    /// composition's identity, so the view drops its own; nothing else
+    /// changes. This is exactly what recomputing would give: the uncached
+    /// projection removes the private-local entries from a source that now
+    /// holds no expansions, and removing an entry never adds one, so it has
+    /// the same facts and support links as the old view and no expansions.
+    /// The work is constant: the view's maps are replaced, not walked.
+    pub(super) fn advance_observable_expansions_cleared(
+        &mut self,
+        previous: &std::sync::Arc<ResourceContextStorage>,
+    ) {
+        self.advance_observable_projection(previous, false, |_, composition| {
+            if !composition
+                .storage
+                .expansions_by_support_occurrence
+                .is_empty()
+                || !composition.storage.expansions_by_support_entry.is_empty()
+            {
+                composition.clear_cached_support_expansions();
+            }
+        });
+    }
+
     pub(super) fn advance_observable_expansion(
         &mut self,
         previous: &std::sync::Arc<ResourceContextStorage>,
@@ -328,7 +353,10 @@ mod tests {
             .clone()
             .without_cached_supported_expansion_for_occurrence(occurrence);
         check(&reset);
-        let consumed = expanded.without_exact_representation(&addressed).unwrap();
+        let consumed = expanded
+            .clone()
+            .without_exact_representation(&addressed)
+            .unwrap();
         check(&consumed);
         assert!(
             !consumed
@@ -338,6 +366,36 @@ mod tests {
         );
         let normalized = private_branch.normalized(&PureFactContext::new());
         check(&normalized);
+        // Normalizing a context with supported views and cached expansions
+        // drops and restores both. Each step advances the filtered view, so
+        // the result is warm and equal to recomputing it.
+        let filtered = expanded.unchecked_with_fact(hidden.clone());
+        check(&filtered);
+        let normalized = filtered.normalized(&PureFactContext::new());
+        assert!(
+            normalized
+                .observable_projection
+                .lock()
+                .unwrap()
+                .as_ref()
+                .is_some_and(
+                    |view| view.source.as_ptr() == std::sync::Arc::as_ptr(&normalized.storage)
+                ),
+            "normalization left the observable projection cold"
+        );
+        check(&normalized);
+        assert!(
+            !normalized
+                .observable_composition()
+                .facts()
+                .contains(&hidden)
+        );
+        assert!(
+            normalized
+                .observable_composition()
+                .facts()
+                .contains(&addressed_view)
+        );
     }
 
     #[test]

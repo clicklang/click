@@ -360,6 +360,10 @@ pub struct CppFunction {
     pub return_type: CppType,
     pub parameters: Vec<CppPlace>,
     pub declared_noexcept: bool,
+    /// A lambda's call operator's leading parameters that are its by-copy
+    /// captures; zero for any other function.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub closure_captures: usize,
     pub span: CppSpan,
     pub body: Vec<CppStatement>,
     /// Present for a function declared in a system header under the
@@ -367,6 +371,10 @@ pub struct CppFunction {
     /// Click supplies the contract the call is checked against.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub axiom: Option<CppAxiom>,
+}
+
+fn is_zero(count: &usize) -> bool {
+    *count == 0
 }
 
 /// The standard interface an axiomatic function is keyed on.
@@ -597,6 +605,15 @@ pub enum CppExpression {
     /// function, of function-pointer type.
     FunctionAddress {
         function: CppFunctionReference,
+        value_type: CppType,
+        span: CppSpan,
+    },
+    /// A lambda passed for a `std::function`, made from the values it
+    /// captures by copy: a callable value whose contract is the lambda's own,
+    /// fixed to those values. Only a call argument.
+    ClosureInstance {
+        function: CppFunctionReference,
+        captures: Vec<CppExpression>,
         value_type: CppType,
         span: CppSpan,
     },
@@ -3577,6 +3594,7 @@ impl CppExpression {
             | Self::EnumCast { value_type, .. }
             | Self::BytePointerCast { value_type, .. }
             | Self::FunctionAddress { value_type, .. }
+            | Self::ClosureInstance { value_type, .. }
             | Self::Binary { value_type, .. } => value_type,
         }
     }
@@ -3592,6 +3610,9 @@ impl CppExpression {
             | Self::CompilerConstant { .. }
             | Self::FunctionAddress { .. }
             | Self::ConstantReference { .. } => false,
+            Self::ClosureInstance { captures, .. } => captures
+                .iter()
+                .any(|capture| capture.references_place(declaration_id)),
             Self::Load { place, .. } | Self::AddressOf { place, .. } => {
                 place.declaration_id == declaration_id
             }
@@ -3639,6 +3660,31 @@ impl CppExpression {
                     return Err("C++ function address is missing its function's identity".into());
                 }
                 require_function_pointer(value_type, "function address")
+            }
+            // A closure creation names the lambda's call operator, resolved
+            // with the reachable call graph, and the scalar values it
+            // captures.
+            Self::ClosureInstance {
+                function,
+                captures,
+                value_type,
+                span,
+            } => {
+                span.validate(logical_source)?;
+                function.span.validate(logical_source)?;
+                if function.declaration_id.is_empty()
+                    || function.name.is_empty()
+                    || function.through_pointer
+                    || captures.is_empty()
+                {
+                    return Err("C++ closure creation is missing its lambda or captures".into());
+                }
+                require_function_pointer(value_type, "closure creation")?;
+                for capture in captures {
+                    require_integral_scalar(capture.value_type(), "closure capture")?;
+                    capture.validate(places, records, logical_source)?;
+                }
+                Ok(())
             }
             Self::LogicalNot {
                 value,
@@ -5086,7 +5132,9 @@ fn validate_argument_types(
             }
             (
                 CppCallArgument::Value {
-                    value: value @ CppExpression::FunctionAddress { .. },
+                    value:
+                        value @ (CppExpression::FunctionAddress { .. }
+                        | CppExpression::ClosureInstance { .. }),
                 },
                 CppType::FunctionPointer { .. },
             ) => same_function_pointer_type(value.value_type(), parameter_type),
@@ -5609,6 +5657,16 @@ impl CppExpression {
     ) -> Result<(), String> {
         match self {
             Self::FunctionAddress { .. } => Ok(()),
+            Self::ClosureInstance { captures, .. } => {
+                for capture in captures {
+                    capture.validate_constant_references(
+                        logical_source,
+                        constants,
+                        referenced_constants,
+                    )?;
+                }
+                Ok(())
+            }
             Self::ObserverCall { arguments, .. } => {
                 for argument in arguments {
                     argument.validate_constant_references(
@@ -6037,7 +6095,7 @@ fn same_function_pointer_type(left: &CppType, right: &CppType) -> bool {
 fn function_addresses(arguments: &[CppCallArgument]) -> impl Iterator<Item = &CppExpression> {
     arguments.iter().filter_map(|argument| match argument {
         CppCallArgument::Value {
-            value: value @ CppExpression::FunctionAddress { .. },
+            value: value @ (CppExpression::FunctionAddress { .. } | CppExpression::ClosureInstance { .. }),
         } => Some(value),
         _ => None,
     })
@@ -6053,13 +6111,22 @@ fn validate_function_address(
     visiting: &mut Vec<String>,
     visited: &mut BTreeMap<String, (usize, bool)>,
 ) -> Result<(), String> {
-    let CppExpression::FunctionAddress {
-        function: reference,
-        value_type,
-        ..
-    } = address
-    else {
-        unreachable!("collected function addresses")
+    // A closure creation names a lambda whose leading parameters are its
+    // captures, of the captured values' types; its callable type is the
+    // lambda's other parameters and result.
+    let (reference, value_type, captures) = match address {
+        CppExpression::FunctionAddress {
+            function,
+            value_type,
+            ..
+        } => (function, value_type, &[][..]),
+        CppExpression::ClosureInstance {
+            function,
+            captures,
+            value_type,
+            ..
+        } => (function, value_type, captures.as_slice()),
+        _ => unreachable!("collected function addresses"),
     };
     let target = functions.get(&reference.declaration_id).ok_or_else(|| {
         format!(
@@ -6085,10 +6152,24 @@ fn validate_function_address(
             target.name
         ));
     }
+    if target.closure_captures != captures.len()
+        || target.parameters.len() < captures.len()
+        || target
+            .parameters
+            .iter()
+            .zip(captures)
+            .any(|(parameter, capture)| {
+                !same_scalar_type(&parameter.value_type, capture.value_type())
+            })
+    {
+        return Err(format!(
+            "C++ closure creation does not capture `{}`'s captures",
+            target.name
+        ));
+    }
     let signature = CppType::FunctionPointer {
         return_type: Box::new(target.return_type.clone()),
-        parameters: target
-            .parameters
+        parameters: target.parameters[captures.len()..]
             .iter()
             .map(|parameter| parameter.value_type.clone())
             .collect(),
@@ -6345,6 +6426,7 @@ mod tests {
             return_type: signed_integer(32, false),
             parameters: vec![],
             declared_noexcept: true,
+            closure_captures: 0,
             span: span.clone(),
             body: vec![CppStatement::If {
                 condition: CppCondition::Expression(CppExpression::IntegralCast {
@@ -6509,6 +6591,7 @@ mod tests {
                 span: cleanup_span(),
             }],
             declared_noexcept: true,
+            closure_captures: 0,
             span: cleanup_span(),
             body: vec![CppStatement::Return {
                 value: CppExpression::IntegerLiteral {
@@ -6819,6 +6902,7 @@ mod tests {
             return_type: signed_integer(32, false),
             parameters,
             declared_noexcept: true,
+            closure_captures: 0,
             span: cleanup_span(),
             body,
         };
@@ -6893,6 +6977,7 @@ mod tests {
             return_type: signed_integer(32, false),
             parameters,
             declared_noexcept: true,
+            closure_captures: 0,
             span: cleanup_span(),
             body,
         };
@@ -7001,6 +7086,7 @@ mod tests {
             return_type: signed_integer(32, false),
             parameters: vec![],
             declared_noexcept: true,
+            closure_captures: 0,
             span: cleanup_span(),
             body,
         };
@@ -7150,6 +7236,7 @@ mod tests {
             return_type: CppType::Void,
             parameters: vec![receiver.clone()],
             declared_noexcept: true,
+            closure_captures: 0,
             span: cleanup_span(),
             body: vec![store],
         };
@@ -7278,6 +7365,7 @@ mod tests {
             return_type: signed_integer(64, false),
             parameters: vec![],
             declared_noexcept: true,
+            closure_captures: 0,
             span: cleanup_span(),
             body: vec![CppStatement::Return {
                 value: CppExpression::IntegerLiteral {
@@ -7660,6 +7748,7 @@ mod tests {
             return_type: signed_integer(32, false),
             parameters: vec![place("parameter")],
             declared_noexcept: false,
+            closure_captures: 0,
             span: cleanup_span(),
             body: vec![
                 scope("first"),

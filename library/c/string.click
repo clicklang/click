@@ -9,15 +9,15 @@ extern uint8* memcpy(uint8 destination[], const uint8 source[], uint64 bytes) {
     owns destination[0..bytes];
     requires separate(memory(destination[0..bytes]), memory(source[0..bytes]));
     ensures result == destination;
-    ensures bytes_equal(destination, 0u64, old(source), 0u64, bytes);
+    ensures bytes::equal(destination, 0u64, old(source), 0u64, bytes);
 }
 
 extern int32 memcmp(const uint8 left[], const uint8 right[], uint64 bytes) {
     requires viewable(left[0..bytes]);
     requires viewable(right[0..bytes]);
     requires forall (k: uint64) { k < bytes implies defined(left[k]) and defined(right[k]) };
-    ensures result == 0 implies bytes_equal(left, 0u64, right, 0u64, bytes);
-    ensures result != 0 implies not bytes_equal(left, 0u64, right, 0u64, bytes);
+    ensures result == 0 implies bytes::equal(left, 0u64, right, 0u64, bytes);
+    ensures result != 0 implies not bytes::equal(left, 0u64, right, 0u64, bytes);
 }
 
 extern uint8* memset(uint8 destination[], int32 value, uint64 bytes) {

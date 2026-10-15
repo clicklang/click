@@ -180,9 +180,16 @@ theorem append_nil_by_bare_names(xs: List<int32>) {
 ```
 
 Without a path or a selective import, a function, predicate or theorem of
-`click::nat` or `click::list` is not in scope by its bare name, even though the module is implicit
+`click::nat`, `click::list` or `click::bytes` is not in scope by its bare
+name, even when the module is implicit
 (`mdtests/a_bare_library_name_needs_a_path_or_selective_import.md`,
 `mdtests/a_bare_list_theorem_citation_needs_a_path_or_selective_import.md`).
+`import click::bytes;` puts the module in scope, so a sidecar writes
+`bytes::equal`
+(`mdtests/a_bytes_import_puts_the_module_not_its_names_in_scope.md`). A C
+string call brings the `bytes` contracts but not the module name, so a
+sidecar without the import writes the full path, `click::bytes::all_equal`
+(`mdtests/a_string_function_call_brings_the_c_string_contracts.md`).
 A file may therefore declare its own `append`
 (`mdtests/a_file_may_declare_a_library_function_name.md`). A selectively
 imported name that a file also declares, or that two selective imports

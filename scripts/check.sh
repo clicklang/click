@@ -52,7 +52,8 @@ fixture_filter='binary(mdtests) | (binary(examples) & test(=example_projects))'
 unit_targets=(
     --lib --bin click --test documentation --test condition_transport_api
     --test compiler_import --test cpp_import --test rust_import
-    --test bitcoin_core_money_range --test libcxx_span --test examples
+    --test bitcoin_core_money_range --test libcxx_span --test libcxx_functional
+    --test examples
 )
 unit_filter='not (binary(examples) & test(=example_projects))'
 
@@ -249,8 +250,8 @@ if reason="$(scripts/build-cpp-exporter.sh --check 2>&1)"; then
     CLICK_CPP_EXPORTER="$(scripts/build-cpp-exporter.sh)"
 else
     frontend_missing "C++" "$reason" \
-        "tests/cpp_import.rs, tests/bitcoin_core_money_range.rs, tests/libcxx_span.rs, C++ mdtests and examples"
-    drop_test_targets cpp_import bitcoin_core_money_range libcxx_span
+        "tests/cpp_import.rs, tests/bitcoin_core_money_range.rs, tests/libcxx_span.rs, tests/libcxx_functional.rs, C++ mdtests and examples"
+    drop_test_targets cpp_import bitcoin_core_money_range libcxx_span libcxx_functional
     # The `click` command tests that run a C++ mdtest through the exporter.
     unit_filter+=' & not (binary_id(clicklang::bin/click) & (
         test(=audit::tests::cpp_mdtest_audit_inventories_imported_semantics)

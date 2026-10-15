@@ -354,6 +354,9 @@ fn function_interface(
     if source.axiom.is_none() {
         interface = interface.with_prelowered_kernel_function(lowered.clone());
     }
+    // A lambda's leading parameters are its captures, which a sidecar head
+    // does not write; its contract reads them by name.
+    interface = interface.with_closure_captures(source.closure_captures);
     if let CppType::Record { name, .. } = &source.return_type {
         let layout = layouts
             .get(name)

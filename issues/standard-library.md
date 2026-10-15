@@ -212,7 +212,13 @@ Each step is a separate PR that leaves every example verifying:
      laws are named for the composition they state: `nat::to_integer_zero`,
      `nat::to_integer_add`, `nat::to_nat_to_integer` and so on. `Nat` and
      the primitive `to_nat` stay bare.
-   - Next: the remaining renames, one module per PR (`bytes`, `cstr`,
+   - Done: the `bytes` rename: `byte_count` is `bytes::count`, and
+     `bytes_equal` and its siblings are `bytes::equal` and so on. A sidecar
+     whose C string call brings the module without an import writes the
+     full `click::bytes::` path. Inventory IDs of renamed modules carry the
+     module, `library.function.bytes::count`, since `count` repeats in
+     `permutation`.
+   - Next: the remaining renames, one module per PR (`cstr`,
      `permutation`), each joining `QUALIFIED_MODULES` in
      `src/surface/parser/library_paths.rs`; `machine_integer` and
      `integer` wait on the Integer-default arithmetic decision.

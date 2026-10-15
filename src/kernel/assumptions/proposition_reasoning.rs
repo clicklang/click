@@ -4038,9 +4038,8 @@ impl PureFactContext {
     /// ("the owner field this element aliases equals the stored value") is
     /// unprovable by anything except that vacuity.
     ///
-    /// A `PointerOffsetEqual` guard is only ever emitted between two pointers
-    /// in one block (`pointer_equality_condition` drops to offsets exactly
-    /// then), but the condition itself no longer names that block. Recovering
+    /// A same-block pointer guard has an equivalent offset view. An explicit
+    /// `PointerOffsetEqual` guard does not name that block. Recovering
     /// it from separation facts is sound rather than a guess: a separation
     /// between two ranges constrains offsets only when the ranges share a base
     /// block, so requiring that and re-attaching the shared block to both
@@ -4050,11 +4049,9 @@ impl PureFactContext {
         let guards = self
             .condition_facts
             .iter()
-            .filter_map(|(condition, value)| match (condition, value) {
-                (ConditionTerm::PointerOffsetEqual(left, right), true) if left != right => {
-                    Some((left.as_ref(), right.as_ref()))
-                }
-                _ => None,
+            .filter_map(|(condition, value)| {
+                let (left, right) = condition.pointer_offset_sides()?;
+                (*value && left != right).then_some((left, right))
             })
             .collect::<Vec<_>>();
         if guards.is_empty() {

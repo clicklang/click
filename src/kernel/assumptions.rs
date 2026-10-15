@@ -3012,7 +3012,8 @@ impl PureFactContext {
         let derived;
         let (left, right) = match condition {
             ConditionTerm::Bitvector32Equal(left, right) => (left.as_ref(), right.as_ref()),
-            ConditionTerm::PointerOffsetEqual(left, right) => {
+            condition if condition.pointer_offset_sides().is_some() => {
+                let (left, right) = condition.pointer_offset_sides().expect("offset view");
                 let Some(pair) = int32_element_index_from_offset(left)
                     .zip(int32_element_index_from_offset(right))
                 else {
@@ -4062,7 +4063,8 @@ impl PureFactContext {
                     ConditionTerm::Bitvector32Equal(left, right) => {
                         Some((left.as_ref().clone(), right.as_ref().clone()))
                     }
-                    ConditionTerm::PointerOffsetEqual(left, right) => {
+                    condition if condition.pointer_offset_sides().is_some() => {
+                        let (left, right) = condition.pointer_offset_sides().expect("offset view");
                         int32_element_index_from_offset(left)
                             .zip(int32_element_index_from_offset(right))
                     }
@@ -5398,14 +5400,9 @@ impl PureFactContext {
                 }
             }
         }
-        if let ConditionTerm::PointerEqual(left, right) = &condition
-            && left.block == right.block
-        {
-            self = self.assume_condition_uncharged(
-                ConditionTerm::pointer_offset_equal(left.offset.clone(), right.offset.clone()),
-                value,
-            );
-        }
+        // The graph derives a same-block comparison's offset view. Do not
+        // publish it as an independent premise: it must disappear when the
+        // original pointer comparison is withdrawn.
         // An unsigned upper bound below the sign bit, `x <u c` with
         // `c <= 2^31`, is spelled as the biased signed order
         // `(x ^ 2^31) < (c ^ 2^31)`. It holds exactly when the signed pair

@@ -1617,10 +1617,10 @@ fn expanded_uint8_facts_print_as_parseable_typed_literals() {
 verifying "contains.c";
 int32 contains(uint8 p[], int32 n) {
     requires viewable(p[0..n]);
-    requires bytes_contains(p, 0, n, 'x');
-    ensures bytes_contains(p, 0, n, 'x') by {
+    requires bytes::contains(p, 0, n, 'x');
+    ensures bytes::contains(p, 0, n, 'x') by {
         execute();
-        unfold(bytes_contains);
+        unfold(bytes::contains);
         obtain (found: int32) {
             0 <= found and found < n and p[found] == 'x'
         };
@@ -1654,7 +1654,7 @@ int32 contains(uint8 p[], int32 n) {
     };
     assert_eq!(
         crate::surface::printing::source_click_proposition(claim),
-        "bytes_contains(p, 0, n, 120u8)"
+        "click::bytes::contains(p, 0, n, 120u8)"
     );
 }
 

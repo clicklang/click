@@ -5281,7 +5281,7 @@ struct CFunctionContractApplication<'a> {
 /// mapping and the alignment test are exact. A cell the copy would split, a
 /// symbolic range, or a misaligned destination is left alone: the destination
 /// keeps its post-havoc state, so the transfer can only add observations the
-/// copy's `bytes_equal` guarantee already justified. An untyped source has no
+/// copy's `click::bytes::equal` guarantee already justified. An untyped source has no
 /// cells, so a raw byte copy still establishes nothing typed.
 pub(in crate::kernel) fn transfer_representation_copy_cells(
     entry_memory: &CMemory,
@@ -5840,7 +5840,7 @@ fn execute_verified_function_applications_with_suspension(
         };
         // A recognized byte-copy declaration transfers initialized typed
         // cells across the copy. It runs after the external contract's havoc,
-        // so the copies' `bytes_equal` guarantee is what makes the transferred
+        // so the copies' `click::bytes::equal` guarantee is what makes the transferred
         // values the checked ones, and it is the only thing that turns the
         // destination's freshly owned bytes into typed observations.
         let memory = if let Some(effect) = application.representation_copy {
@@ -14314,6 +14314,7 @@ fn statement_writes_aggregate_parameter(
             }
         }
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -16089,6 +16090,7 @@ fn collect_c_memory_read_expressions(statement: &CStatement, reads: &mut Vec<CEx
 
     match statement {
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
@@ -22259,9 +22261,8 @@ fn pointer_spelling_rank(pointer: &Pointer) -> (bool, &Pointer) {
 /// Soundness rests on the equality being exact and on it being a genuine
 /// cross-block one. `exact_pointer_aliases` reads the index of assumed
 /// `PointerEqual` facts: never a derived, heuristic, or disjunctive
-/// conclusion, and never a `!=`. An equality between two offsets of one block
-/// is not a `PointerEqual` at all -- `ConditionTerm::pointer_equal` folds it
-/// to a `PointerOffsetEqual` -- so an entry can only ever exchange two
+/// conclusion, and never a `!=`. Same-block entries are explicitly excluded
+/// by `arm_pointer_program_spelling`; an entry can only exchange two
 /// spellings of one address, at the offset the fact states and no other. Which
 /// equal spelling is chosen changes nothing logically, since they are all the
 /// same address; `pointer_spelling_rank` fixes it so that the choice is
@@ -22321,6 +22322,7 @@ pub(in crate::kernel) fn arm_pointer_program_spelling(
     crate::instrumentation::record_deterministic_work(1);
     assumptions
         .exact_pointer_aliases(pointer)
+        .filter(|alias| alias.block != pointer.block)
         .filter(|alias| pointer_spelling_rank(alias) < pointer_spelling_rank(pointer))
         .min_by_key(|alias| pointer_spelling_rank(alias))
         .cloned()

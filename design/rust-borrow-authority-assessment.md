@@ -10,10 +10,10 @@ an architecture requirement, with the following production boundary.
 | Required case | Current evidence | What remains |
 | --- | --- | --- |
 | Updated child contents return to the parent | Native Rust reborrow, field-guard cleanup and modular owned calls verify through the production engine. | Synchronous borrowed-memory calls now carry an explicit child receipt; local reference lifetimes remain separate. |
-| Parent reuse after the child's last use | `rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop` checks the unchanged `set_seven` witness body, then a real caller. Both contracts expand and reverify. | Extend checked retirement beyond the first final-store scalar source subset. |
+| Parent reuse after the child's last use | `rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop` checks the unchanged `set_seven` witness body, then a real caller. Both contracts expand and reverify. | Extend explicit checked retirement beyond straight-line scalar borrow forests. |
 | Disjoint fields remain usable | `rust_owned_disjoint_mutable_fields_verify` checks actual simultaneous field references and updated values; the production call planner partitions exclusive requirements. | Production call receipts now combine nested dependencies with the existing footprint partition; local borrow dependencies remain open. |
 | Stale child access and duplicate recovery fail | Production exclusive-call tests reject stale receipts, duplicate returns and missing discharge; native sidecar negatives reject absent write authority. | The first scalar source subset now rejects expired local handles; wider source coverage remains open. |
-| Wrong child identity or holder cannot recover | Production exclusive-call receipt tests reject wrong holders, other call identities, altered supports and a fabricated terminal rollback. | Source scalar endings now check live identity and source plan; wider source endings remain open. |
+| Wrong child identity or holder cannot recover | Production exclusive-call receipt tests reject wrong holders, other call identities, altered supports and a fabricated terminal rollback. | Source endings check live invocation handles and child dependencies; wider source coverage remains open. |
 
 The new native regression deliberately leaves the child reference's storage
 alive when the parent is reused. It proves `4 -> 7 -> 8` behavior for the
@@ -253,79 +253,69 @@ regression.
 
 ## Source-bound scalar lease execution
 
-Locked Rust lowering now activates this adapter for one direct mutable scalar
-reborrow from a reference parameter in a single MIR block ending at Return.
-The final child access must be a direct store or a direct scalar read assigned
-to a local. The active interval admits
-scalar assignments and same-typed scalar reference copies or moves between
-private locals. The ending operation may use a checked alias even after the original
-child local is replaced. Addressable reference storage, calls, aggregates and
-wider control flow still need source integration. The source frontier checker
-covers the complete selected function and rechecks the frontier immediately after the
-final operation. Both the birth and ending must map uniquely to operations in the
-same immutable lowered function body.
+Locked lowering now supports exclusive scalar borrow forests in a single MIR
+block ending at Return. Roots reborrow reference parameters; nested children
+reborrow an existing local lease. Scalar assignments, direct reference copies
+and storage events are followed. Unsupported reference escapes, opaque effects,
+aggregates, calls and wider control flow retain their previous lowering and do
+not acquire local lease coverage.
 
-These are semantic plans, separate from comparison-neutral observation labels.
-A plan binds the locked import, function, borrow/end points and exact lowered
-assignment/store/read operands. Plans participate in statement equality, hashing
-and ordering through a bounded source key and assignment role; runtime operand validation examines
-only the selected operation. Moving a plan onto changed operands is refused.
-Copying an observation label cannot issue a birth or recover an owner.
+A source alias names one borrow node. A reborrow adds a dependency edge; copies
+keep the same node, and replacement definitions change only the assigned alias.
+The checker records direct uses while traversing the selected function once.
+A reverse birth-order pass propagates each subtree's last use to its ancestors.
+Every computed ending follows all uses of the node and its descendants, including
+copies and scalar expressions. Independent regressions compare the resulting
+frontiers with the existing single-borrow checker. StorageDead alone grants
+no recovery; an unused borrow can end immediately after its checked birth.
 
-Successful assignment issues a fresh reference identity from actual parent and
-child pointer values and reserves the selected live owned scalar. The ledger
-retains the source key. An ending consumes the lease carried by the actual
-successful store's lvalue, checks its source key against the live ledger record,
-and returns the original owned occurrence without restoring old memory.
-Distinct executions at the same source point receive distinct identities;
-expired, foreign-invocation or differently locked handles cannot recover.
-Copies retain the same live lease identity and all expire on recovery. The
-source frontier follows copies and replacement definitions, so a later alias
-use prevents an earlier ending even when the original child is no longer used.
-A store ending consumes the actual alias lvalue's custody; a still-live original
-child cannot substitute for an untagged alias. A read ending binds the exact
-direct load from a private reference local, whose pre-assignment value is the
-operand evaluated by the normal load producer. Both that checked read and the
-scalar destination assignment must succeed before its live identity is consumed.
-No earlier read fact or source observation supplies ending authority, including
-on cache hits. Birth and read-ending roles compare distinctly, so transplanting
-a birth tag onto the read cannot perform recovery. No static-label history search
-or guessed dynamic invocation is used.
+Each actual successful borrow assignment reserves the selected owned scalar or
+borrows an existing lease. Its semantic birth plan binds exact lowered operands
+and checked source membership. Observation labels cannot issue a birth. Nested
+leases share one original reservation, rather than multiplying memory authority.
+The source key belongs to the individual lease node, not the shared backing.
 
-Whole-byte footprints are checked independently of range spelling: four owned
-bytes can back one i32, including a declared automatic scalar. Larger ranges,
-fragments and cached projections are excluded. Disjoint owners remain live.
-The unchanged native `set_seven` witness now contains an actual lease birth and
-ending; its helper/caller/nested proof, expansions and authority/value negatives
-continue to pass. Kernel execution tests cover original-occurrence recovery,
-parent denial, expired handles, wrong source plans and altered operations.
-A pinned native local-move fixture checks alias-based helper/caller verification,
-proof expansion/recheck and authority/value negatives. A separate native direct-read
-fixture verifies the old value returned by a child read and subsequent parent
-mutation through helper/caller expansion and authority/value negatives. Preparation has
-deterministic 16/64/256/1024 selected-function, alias-chain and read-ending
-preparation scaling checks.
+Lowering emits an explicit `CStatement::EndScalarReference` after the complete
+source statement at each checked frontier. Several endings at one frontier are
+emitted innermost first. Normal statement sequencing prevents an ending from
+running after a failed load, assignment or store. Reads and stores now carry
+only read-only observations; recovery is an explicit semantic operation.
 
-The compiled Rust semantic profile versions this source coverage; the resource
-semantics version covers kernel lease execution. Current matching checked-in
-Rust locks are rebound to the new profile; their source, compiler and artifact
-hashes are unchanged.
+An ending's opaque source identity selects a fresh live reference through the
+indexed `(holder, source plan)` map in the current invocation. The kernel still
+checks the exact holder, active identity, backing occurrence, type and child
+dependencies. A parent cannot recover while its child is live. A successful
+ending consumes its index entry exactly once. Parent custody returns first;
+closing the outermost root restores the original owned occurrence. Current
+memory is preserved throughout, and stale copies remain expired. Endings do
+not depend on an original child variable or guessed observation history.
+
+Source labels are shared in one immutable family; its precomputed fixed-width
+identity and frontier positions form the hot semantic key. Preparation and
+execution inspect selected statements and indexed state deltas. Deterministic
+16/64/256/1024 regressions cover ordinary source length, alias chains, read
+endings and nested depth. A selected-end regression also bounds execution work
+across growing live-handle indexes. No per-borrow whole-function scan is used.
+
+The unchanged native `set_seven`, alias-move and read-ending witnesses activate
+explicit end operations. A new native fixture covers shared and separate
+nested frontiers, parent reuse, and a modular caller. Kernel tests cover ordered
+recovery, missing/foreign/duplicate handles, alias replacement, unsupported
+parent access and failed operations. Native proofs include expansion/recheck
+and false-value/authority negatives.
+
+The Rust semantic profile versions this source coverage and the resource
+semantics version covers the new kernel operation. Matching existing locks are
+rebound without changing source, compiler or artifact hashes.
 
 ## Remaining local-reference work
 
-Lease coverage must expand beyond this source subset: nested local source
-reborrows, more general read expressions, multiple blocks and loops, shared aliases, aggregate
-fields, call transfer and memory havoc need their own checked
-source/runtime protocols. The read-only frontier and observation APIs cover
-more cases than source lease activation. Functions outside the activated subset
-retain their existing lowering and do not acquire local lease coverage.
-
-A source certificate or observation alone remains insufficient for recovery.
-The kernel requires an actual live reference identity, matching source plan,
-checked memory operation and exact ending frontier. Neither `StorageDead` nor
-a submitted alias list grants recovery. Pinned rustc establishes source borrow
-legality and does not replace submitted-sidecar authority checks. The source
-program and sidecars require no additional lifetime annotation.
+Shared borrow graphs, aggregate fields and reference storage, call transfer,
+memory havoc, multiple blocks and loops still need checked source/runtime
+protocols. Functions outside the activated subset retain their existing
+lowering. Pinned rustc establishes source borrow legality and does not replace
+submitted-sidecar authority checks. Neither observations nor a submitted alias
+list grants a recovery right.
 
 ## Reproduce the assessment
 
@@ -338,6 +328,7 @@ cargo test --lib exclusive_call_
 cargo test --lib local_reference_
 cargo test --lib scalar_reference_
 cargo test --lib source_scalar_lease
+cargo test --test rust_import rust_nested_scalar_borrows_end_explicitly_at_shared_and_separate_frontiers -- --ignored
 cargo test --test rust_import rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop -- --ignored
 cargo test --test rust_import rust_owned_field_parent_can_write_after_explicit_child_drop -- --ignored
 cargo test --test rust_import rust_owned_disjoint_mutable_fields_verify -- --ignored

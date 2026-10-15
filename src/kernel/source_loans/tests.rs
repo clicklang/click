@@ -8,18 +8,22 @@ fn reference_type() -> Type {
         pointee: Box::new(Type::I32),
     }
 }
+
 fn local(name: &str) -> E {
     E::Local { name: name.into() }
 }
+
 fn deref(name: &str) -> E {
     E::Deref {
         reference: Box::new(local(name)),
         value_type: Type::I32,
     }
 }
+
 fn assign(target: E, value: E) -> M {
     M::Assign { target, value }
 }
+
 fn place(name: &str, value_type: Type) -> r::Place {
     r::Place {
         name: name.into(),
@@ -27,6 +31,7 @@ fn place(name: &str, value_type: Type) -> r::Place {
         span: r::Span { line: 1, column: 1 },
     }
 }
+
 fn export() -> r::RustExport {
     r::RustExport {
         schema: r::SCHEMA,
@@ -66,11 +71,13 @@ fn export() -> r::RustExport {
         }],
     }
 }
+
 fn body(export: &r::RustExport, identity: &str) -> CStatement {
     let (functions, _) =
         crate::languages::rust::lowering::lower_with_identity(export, Some(identity)).unwrap();
     functions[0].to_kernel_function().body().clone()
 }
+
 fn leaves(body: &CStatement) -> Vec<CStatement> {
     let mut leaves = vec![];
     let mut pending = vec![body];
@@ -85,6 +92,7 @@ fn leaves(body: &CStatement) -> Vec<CStatement> {
     }
     leaves
 }
+
 fn initial() -> (CState, ResourceOccurrenceId) {
     let pointer = Pointer {
         block: "source-scalar".into(),
@@ -113,6 +121,7 @@ fn initial() -> (CState, ResourceOccurrenceId) {
         support,
     )
 }
+
 fn execute(state: &CState, statement: &CStatement) -> CStatementOutcome {
     let environment = CExecutionEnvironment::default();
     let mut paths = execute_c_statement_paths(
@@ -126,12 +135,14 @@ fn execute(state: &CState, statement: &CStatement) -> CStatementOutcome {
     assert_eq!(paths.len(), 1);
     paths.pop().unwrap().outcome
 }
+
 fn normal(outcome: CStatementOutcome) -> CState {
     match outcome {
         CStatementOutcome::Normal(state) => *state,
         other => panic!("expected normal: {other:?}"),
     }
 }
+
 fn read(state: &CState, expression: CExpression) -> CExpressionOutcome {
     let mut paths = evaluate_c_expression_paths(
         state,
@@ -143,198 +154,418 @@ fn read(state: &CState, expression: CExpression) -> CExpressionOutcome {
     assert_eq!(paths.len(), 1);
     paths.pop().unwrap().outcome
 }
-fn active(initial: &CState, body: &CStatement) -> (CState, CStatement, CStatement) {
+
+fn alias_export(count: usize) -> r::RustExport {
+    let mut source = export();
+    let mir = source.functions[0].mir.as_mut().unwrap();
+    let mut statements = vec![mir.blocks[0].statements[0].clone()];
+    let mut previous = "child".to_string();
+    for index in 0..count {
+        let next = format!("alias_{index}");
+        mir.locals.push(place(&next, reference_type()));
+        statements.push(assign(local(&next), local(&previous)));
+        previous = next;
+    }
+    statements.push(assign(deref(&previous), E::Integer { value: 7 }));
+    statements.push(assign(deref("parent"), E::Integer { value: 8 }));
+    mir.blocks[0].statements = statements;
+    source
+}
+
+fn alias_body(export: &r::RustExport) -> (CStatement, AliasLocalScope) {
+    let scope = AliasLocalScope(capture_block_registries());
+    let (functions, _) =
+        crate::languages::rust::lowering::lower_with_identity(export, Some("locked-source"))
+            .unwrap();
+    let summary = crate::languages::c::address_taken::summarize_address_taken(functions.iter());
+    set_never_address_taken_locals(summary.never_taken());
+    (functions[0].to_kernel_function().body().clone(), scope)
+}
+
+fn read_export(aliases: usize) -> r::RustExport {
+    let mut source = alias_export(aliases);
+    let mir = source.functions[0].mir.as_mut().unwrap();
+    let reference = if aliases == 0 {
+        "child".into()
+    } else {
+        format!("alias_{}", aliases - 1)
+    };
+    let last = mir.blocks[0].statements.len() - 2;
+    mir.blocks[0].statements[last] = assign(local("x"), deref(&reference));
+    source
+}
+
+struct AliasLocalScope(BlockRegistriesState);
+impl Drop for AliasLocalScope {
+    fn drop(&mut self) {
+        restore_block_registries(&self.0);
+    }
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/kernel/source_loans/tests.rs");
+}
+
+fn boundary(initial: &CState, program: &CStatement) -> (CState, CStatement) {
     let mut state = initial.clone();
-    let mut birth = None;
-    for statement in leaves(body) {
-        if matches!(&statement, CStatement::TypedStore { source, .. } if source.lease_plan().is_some())
-        {
-            return (state, birth.expect("source birth"), statement);
+    for statement in leaves(program) {
+        if matches!(statement, CStatement::EndScalarReference(_)) {
+            return (state, statement);
         }
         state = normal(execute(&state, &statement));
-        if matches!(&statement, CStatement::Assign { source, .. } if source.lease_plan().is_some())
-        {
-            birth = Some(statement);
-        }
     }
-    panic!("source ending missing");
+    panic!("explicit borrow end missing");
+}
+fn ends(program: &CStatement) -> Vec<CStatement> {
+    leaves(program)
+        .into_iter()
+        .filter(|s| matches!(s, CStatement::EndScalarReference(_)))
+        .collect()
+}
+fn nested_export(depth: usize) -> r::RustExport {
+    assert!(depth > 0);
+    let mut source = export();
+    let mir = source.functions[0].mir.as_mut().unwrap();
+    let mut statements = vec![mir.blocks[0].statements[0].clone()];
+    let mut previous = "child".to_string();
+    for index in 1..depth {
+        let next = format!("nested_{index}");
+        mir.locals.push(place(&next, reference_type()));
+        statements.push(assign(
+            local(&next),
+            E::Borrow {
+                place: Box::new(deref(&previous)),
+                value_type: reference_type(),
+            },
+        ));
+        previous = next;
+    }
+    statements.push(assign(deref(&previous), E::Integer { value: 7 }));
+    statements.push(assign(deref("parent"), E::Integer { value: 8 }));
+    mir.blocks[0].statements = statements;
+    source
 }
 
 #[test]
-fn source_scalar_lease_executes_locked_birth_store_end_and_parent_reuse() {
-    let program = body(&export(), "locked-source");
+fn source_scalar_lease_explicit_ends_preserve_store_read_and_alias_behavior() {
+    for (source, expected) in [
+        (export(), 7),
+        (alias_export(3), 7),
+        (read_export(0), 4),
+        (read_export(2), 4),
+    ] {
+        let (program, _scope) = alias_body(&source);
+        assert_eq!(ends(&program).len(), 1);
+        let (initial, support) = initial();
+        let (active, end) = boundary(&initial, &program);
+        assert!(active.has_local_scalar_references());
+        assert!(
+            active
+                .resources()
+                .owned_fact_for_occurrence(support)
+                .is_none()
+        );
+        assert!(matches!(
+            read(&active, c_load(c_variable("parent"))),
+            CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource { .. })
+        ));
+        assert!(matches!(
+            execute(&active, &c_store(c_variable("parent"), c_int32_literal(9))),
+            CStatementOutcome::RuntimeError(_)
+        ));
+        for _ in 0..2 {
+            assert_eq!(
+                read(&active, c_load(c_variable("child"))),
+                CExpressionOutcome::Value(int32(expected))
+            );
+        }
+        let recovered = normal(execute(&active, &end));
+        assert!(!recovered.has_local_scalar_references());
+        assert!(
+            recovered
+                .resources()
+                .owned_fact_for_occurrence(support)
+                .is_some()
+        );
+        assert_eq!(
+            read(&recovered, c_load(c_variable("parent"))),
+            CExpressionOutcome::Value(int32(expected))
+        );
+        for slot in &source.functions[0].mir.as_ref().unwrap().locals {
+            if matches!(slot.value_type, Type::Reference { .. }) {
+                assert!(matches!(
+                    read(&recovered, c_load(c_variable(&slot.name))),
+                    CExpressionOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+                ));
+                assert!(matches!(
+                    execute(
+                        &recovered,
+                        &c_store(c_variable(&slot.name), c_int32_literal(9))
+                    ),
+                    CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+                ));
+            }
+        }
+        assert!(matches!(
+            execute(&recovered, &end),
+            CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+        ));
+        assert!(recovered.loan_ledger().unwrap().invariant_holds());
+        let CStatementOutcome::Return { state, .. } = execute(&initial, &program) else {
+            panic!("source return");
+        };
+        assert_eq!(
+            read(&state, c_load(c_variable("parent"))),
+            CExpressionOutcome::Value(int32(8))
+        );
+    }
+}
+
+#[test]
+fn source_scalar_lease_explicit_nested_shared_frontiers_end_innermost_first() {
+    for depth in [2, 3, 8] {
+        let (program, _scope) = alias_body(&nested_export(depth));
+        let endings = ends(&program);
+        assert_eq!(endings.len(), depth);
+        let (initial, support) = initial();
+        let (mut state, _) = boundary(&initial, &program);
+        assert!(matches!(
+            execute(&state, endings.last().unwrap()),
+            CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+        ));
+        for (index, end) in endings.iter().enumerate() {
+            state = normal(execute(&state, end));
+            assert!(state.loan_ledger().unwrap().invariant_holds());
+            assert_eq!(
+                state
+                    .resources()
+                    .owned_fact_for_occurrence(support)
+                    .is_some(),
+                index + 1 == depth
+            );
+        }
+        assert_eq!(
+            read(&state, c_load(c_variable("parent"))),
+            CExpressionOutcome::Value(int32(7))
+        );
+        assert!(!state.has_local_scalar_references());
+        let CStatementOutcome::Return { state, .. } = execute(&initial, &program) else {
+            panic!("nested return");
+        };
+        assert_eq!(
+            read(&state, c_load(c_variable("parent"))),
+            CExpressionOutcome::Value(int32(8))
+        );
+    }
+}
+
+#[test]
+fn source_scalar_lease_explicit_end_uses_live_handle_after_alias_replacement() {
+    let mut source = alias_export(1);
+    source.functions[0]
+        .parameters
+        .push(place("other", reference_type()));
+    source.functions[0].mir.as_mut().unwrap().blocks[0]
+        .statements
+        .insert(2, assign(local("child"), local("other")));
+    let (program, _scope) = alias_body(&source);
     let (initial, support) = initial();
-    let CStatementOutcome::Return { state, .. } = execute(&initial, &program) else {
-        panic!("source function return");
+    let other = Pointer {
+        block: "other-scalar".into(),
+        offset: PointerOffsetTerm::Constant(0),
     };
+    let resources = initial
+        .resources()
+        .clone()
+        .unchecked_with_fact(CResourceFact::own_memory(
+            CMemoryRange::new_with_element_width(other.clone(), 0.into(), 1.into(), 4),
+        ));
+    let memory = initial
+        .memory
+        .clone()
+        .with_block(other.block.clone(), 4)
+        .store(other.clone(), int32(2));
+    let initial = initial
+        .with_resource_context(resources)
+        .with_memory(memory)
+        .with_local("other", CValue::typed_pointer(other, CType::Int32Pointer));
+    let (state, end) = boundary(&initial, &program);
     assert_eq!(
-        read(&state, c_load(c_variable("parent"))),
-        CExpressionOutcome::Value(int32(8))
+        read(&state, c_load(c_variable("child"))),
+        CExpressionOutcome::Value(int32(2))
     );
+    let state = normal(execute(&state, &end));
     assert!(
         state
             .resources()
             .owned_fact_for_occurrence(support)
             .is_some()
     );
-    assert!(!state.has_local_scalar_references());
-    assert!(matches!(
+    assert_eq!(
+        read(&state, c_load(c_variable("parent"))),
+        CExpressionOutcome::Value(int32(7))
+    );
+    assert_eq!(
         read(&state, c_load(c_variable("child"))),
+        CExpressionOutcome::Value(int32(2))
+    );
+    assert!(matches!(
+        read(&state, c_load(c_variable("alias_0"))),
         CExpressionOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
     ));
 }
 
 #[test]
-fn source_scalar_lease_suspends_raw_parent_and_recovers_exact_owned_occurrence() {
-    let program = body(&export(), "locked-source");
-    let (initial, support) = initial();
-    let (state, _, ending) = active(&initial, &program);
-    assert!(
-        state
-            .resources()
-            .owned_fact_for_occurrence(support)
-            .is_none()
-    );
+fn source_scalar_lease_explicit_end_refuses_missing_foreign_and_duplicate_handles() {
+    let (program, _scope) = alias_body(&export());
+    let (initial, _) = initial();
+    let (state, end) = boundary(&initial, &program);
     assert!(matches!(
-        read(&state, c_load(c_variable("parent"))),
-        CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource { .. })
+        execute(&initial, &end),
+        CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
     ));
+    let other = body(&export(), "different-locked-import");
+    assert_ne!(end, ends(&other)[0]);
     assert!(matches!(
-        execute(&state, &c_store(c_variable("parent"), c_int32_literal(9))),
+        execute(&state, &ends(&other)[0]),
+        CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+    ));
+    let holder = state.loan_ledger().unwrap().fresh_participant().unwrap();
+    let wrong = state.clone().with_loan_participant(Some(holder));
+    assert!(matches!(
+        execute(&wrong, &end),
+        CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+    ));
+    let recovered = normal(execute(&state, &end));
+    assert!(matches!(
+        execute(&recovered, &end),
+        CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+    ));
+}
+
+#[test]
+fn source_scalar_lease_explicit_operations_are_semantic_and_observations_are_inert() {
+    let (program, _scope) = alias_body(&export());
+    let (initial, _) = initial();
+    let statements = leaves(&program);
+    let mut without_ends = c_skip();
+    let mut without_birth = c_skip();
+    for statement in statements {
+        if !matches!(statement, CStatement::EndScalarReference(_)) {
+            without_ends = c_seq(without_ends, statement.clone());
+        }
+        let mut bare = statement;
+        if let CStatement::Assign { source, .. } = &mut bare
+            && let Some(observer) = source.as_ref()
+        {
+            *source = CStatementAssignSource::new(observer.clone());
+        }
+        without_birth = c_seq(without_birth, bare);
+    }
+    assert_ne!(program, without_ends);
+    assert_ne!(program, without_birth);
+    assert!(matches!(
+        execute(&initial, &without_ends),
         CStatementOutcome::RuntimeError(_)
     ));
-    assert_eq!(
-        read(&state, c_load(c_variable("child"))),
-        CExpressionOutcome::Value(int32(4))
-    );
-    let recovered = normal(execute(&state, &ending));
-    assert_eq!(
-        read(&recovered, c_load(c_variable("parent"))),
-        CExpressionOutcome::Value(int32(7))
-    );
-    assert!(
-        recovered
-            .resources()
-            .owned_fact_for_occurrence(support)
-            .is_some()
-    );
     assert!(matches!(
-        execute(&recovered, &ending),
+        execute(&initial, &without_birth),
         CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
     ));
-}
-
-#[test]
-fn source_scalar_lease_tags_are_semantic_and_observation_labels_cannot_end_loans() {
-    let program = body(&export(), "locked-source");
-    let (initial, _) = initial();
-    let (state, birth, ending) = active(&initial, &program);
-    let mut unbound = birth.clone();
-    let CStatement::Assign { source, .. } = &mut unbound else {
-        panic!();
-    };
-    *source = CStatementAssignSource::new(source.as_ref().unwrap().clone());
-    assert_ne!(birth, unbound);
-    let mut unbound = ending.clone();
-    let CStatement::TypedStore { source, .. } = &mut unbound else {
-        panic!();
-    };
-    *source = CStatementStoreSource::new(source.as_ref().unwrap().clone());
-    assert_ne!(ending, unbound);
-    let not_recovered = normal(execute(&state, &unbound));
-    assert!(not_recovered.has_local_scalar_references());
-    assert!(matches!(
-        execute(&not_recovered, &c_return(c_void_value())),
-        CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
-    ));
-}
-
-#[test]
-fn source_scalar_lease_rejects_transplanted_operands_and_other_locked_plans() {
-    let program = body(&export(), "locked-source");
-    let (initial, _) = initial();
-    let (state, birth, ending) = active(&initial, &program);
-    let mut changed = ending;
-    let CStatement::TypedStore { value, .. } = &mut changed else {
-        panic!();
-    };
-    *value = c_int32_literal(99);
-    assert!(matches!(
-        execute(&state, &changed),
-        CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
-    ));
-    assert_eq!(
-        read(&state, c_load(c_variable("child"))),
-        CExpressionOutcome::Value(int32(4))
-    );
-    let mut changed = birth;
-    let CStatement::Assign { expression, .. } = &mut changed else {
-        panic!();
+    let birth = leaves(&program)
+        .into_iter()
+        .find(|s| matches!(s,CStatement::Assign{source,..} if source.lease_plan().is_some()))
+        .unwrap();
+    let mut altered = birth;
+    let CStatement::Assign { expression, .. } = &mut altered else {
+        panic!()
     };
     *expression = c_variable("parent");
     assert!(matches!(
-        execute(&state, &changed),
-        CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
-    ));
-    let other = body(&export(), "other-lock");
-    let (_, _, other_ending) = active(&initial, &other);
-    assert!(matches!(
-        execute(&state, &other_ending),
+        execute(&initial, &altered),
         CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
     ));
 }
 
 #[test]
-fn source_scalar_lease_requires_actual_birth_and_current_invocation_custody() {
-    let program = body(&export(), "locked-source");
+fn source_scalar_lease_explicit_end_is_not_executed_after_failed_read_assignment() {
+    let (program, _scope) = alias_body(&read_export(1));
     let (initial, _) = initial();
-    let (first, _, ending) = active(&initial, &program);
-    let (mut second, _, _) = active(&initial, &program);
-    let first_child = first.locals.get("child").unwrap().clone();
-    assert_ne!(first_child, *second.locals.get("child").unwrap());
-    eval::sync_stack_local(&mut second, "child", &first_child);
-    second.locals.set("child", first_child);
+    let mut state = initial;
+    let statements = leaves(&program);
+    let point = statements
+        .iter()
+        .position(|s| matches!(s,CStatement::Assign{name,..} if name=="x"))
+        .unwrap();
+    for statement in &statements[..point] {
+        state = normal(execute(&state, statement));
+    }
+    state.locals.set_typed_with_all_qualifiers(
+        "x",
+        int32(0),
+        CType::Int32,
+        false,
+        false,
+        true,
+        false,
+    );
+    eval::sync_stack_local(&mut state, "x", &int32(0));
+    let tail = statements[point..].iter().cloned().fold(c_skip(), c_seq);
     assert!(matches!(
-        execute(&second, &ending),
-        CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+        execute(&state, &tail),
+        CStatementOutcome::RuntimeError(_) | CStatementOutcome::UndefinedBehavior(_)
     ));
-    let parent = initial.locals.get("parent").unwrap().clone();
-    let without_birth = initial.with_local("child", parent);
+    assert!(state.has_local_scalar_references());
+}
+
+#[test]
+fn source_scalar_lease_explicit_ending_follows_late_alias_use() {
+    let mut source = alias_export(1);
+    source.functions[0].mir.as_mut().unwrap().blocks[0]
+        .statements
+        .push(assign(deref("alias_0"), E::Integer { value: 9 }));
+    let (program, _scope) = alias_body(&source);
+    let (initial, _) = initial();
     assert!(matches!(
-        execute(&without_birth, &ending),
-        CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+        execute(&initial, &program),
+        CStatementOutcome::RuntimeError(CRuntimeError::MissingResource { .. })
     ));
 }
 
 #[test]
-fn source_scalar_lease_declared_local_parent_is_suspended_and_updated() {
+fn source_scalar_lease_explicit_declared_local_and_current_child_writes_survive_recovery() {
     let mut initial = normal(execute(&CState::new(), &c_declare("number", CType::Int32)));
     initial = normal(execute(&initial, &c_assign("number", c_int32_literal(4))));
     let pointer = initial.locals.slot("number").unwrap().clone();
-    initial = initial.with_local(
+    let initial = initial.with_local(
         "parent",
         CValue::typed_pointer(pointer, CType::Int32Pointer),
     );
-    let program = body(&export(), "locked-source");
-    let (state, _, ending) = active(&initial, &program);
+    let mut source = read_export(1);
+    source.functions[0].mir.as_mut().unwrap().blocks[0]
+        .statements
+        .insert(2, assign(deref("child"), E::Integer { value: 7 }));
+    let (program, _scope) = alias_body(&source);
+    let (state, end) = boundary(&initial, &program);
     assert!(matches!(
         read(&state, c_variable("number")),
         CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource { .. })
     ));
-    assert!(matches!(
-        execute(&state, &c_assign("number", c_int32_literal(9))),
-        CStatementOutcome::RuntimeError(CRuntimeError::MissingResource { .. })
-    ));
-    let recovered = normal(execute(&state, &ending));
+    let recovered = normal(execute(&state, &end));
     assert_eq!(
         read(&recovered, c_variable("number")),
+        CExpressionOutcome::Value(int32(7))
+    );
+    assert_eq!(
+        read(&recovered, c_variable("x")),
         CExpressionOutcome::Value(int32(7))
     );
 }
 
 #[test]
-fn source_scalar_lease_unsigned_source_widths_preserve_updated_contents() {
-    for (kind, value_type, pointer_type, initial_value, final_value) in [
+fn source_scalar_lease_explicit_unsigned_widths_preserve_current_values() {
+    for (kind, value_type, pointer_type, start, finish) in [
         (
             "u8",
             CType::UInt8,
@@ -357,434 +588,81 @@ fn source_scalar_lease_unsigned_source_widths_preserve_updated_contents() {
             CValue::UInt32(8.into()),
         ),
     ] {
-        let source = serde_json::to_string(&export())
-            .unwrap()
-            .replace("\"i32\"", &format!("\"{kind}\""));
-        let export = serde_json::from_str(&source).unwrap();
-        let program = body(&export, "locked-source");
-        let pointer = Pointer {
-            block: "unsigned-source-scalar".into(),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let fact = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
-            pointer.clone(),
-            0.into(),
-            value_type.byte_width().into(),
-            1,
-        ));
-        let resources = ResourceContext::new().unchecked_with_fact(fact.clone());
-        let support = resources.unique_owned_occurrence_for_fact(&fact).unwrap().0;
-        let initial = CState::new()
-            .with_resource_context(resources)
-            .with_memory(
-                CMemory::new()
-                    .with_block(pointer.block.clone(), value_type.byte_width())
-                    .store(pointer.clone(), initial_value),
-            )
-            .with_local("parent", CValue::typed_pointer(pointer, pointer_type));
-        let CStatementOutcome::Return { state, .. } = execute(&initial, &program) else {
-            panic!("unsigned source return");
-        };
-        assert_eq!(
-            read(&state, c_load(c_variable("parent"))),
-            CExpressionOutcome::Value(final_value)
-        );
-        assert!(
-            state
-                .resources()
-                .owned_fact_for_occurrence(support)
-                .is_some()
-        );
-        assert!(matches!(
-            read(&state, c_load(c_variable("child"))),
-            CExpressionOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
-        ));
-    }
-}
-
-fn alias_export(count: usize) -> r::RustExport {
-    let mut source = export();
-    let mir = source.functions[0].mir.as_mut().unwrap();
-    let mut statements = vec![mir.blocks[0].statements[0].clone()];
-    let mut previous = "child".to_string();
-    for index in 0..count {
-        let next = format!("alias_{index}");
-        mir.locals.push(place(&next, reference_type()));
-        statements.push(assign(local(&next), local(&previous)));
-        previous = next;
-    }
-    statements.push(assign(deref(&previous), E::Integer { value: 7 }));
-    statements.push(assign(deref("parent"), E::Integer { value: 8 }));
-    mir.blocks[0].statements = statements;
-    source
-}
-
-// Match the production session's analysis of which pointer locals are private.
-// Restore thread-local registries even when an assertion panics.
-struct AliasLocalScope(BlockRegistriesState);
-impl Drop for AliasLocalScope {
-    fn drop(&mut self) {
-        restore_block_registries(&self.0);
-    }
-}
-fn alias_body(export: &r::RustExport) -> (CStatement, AliasLocalScope) {
-    let scope = AliasLocalScope(capture_block_registries());
-    let (functions, _) =
-        crate::languages::rust::lowering::lower_with_identity(export, Some("locked-source"))
-            .unwrap();
-    let summary = crate::languages::c::address_taken::summarize_address_taken(functions.iter());
-    set_never_address_taken_locals(summary.never_taken());
-    (functions[0].to_kernel_function().body().clone(), scope)
-}
-
-#[test]
-fn source_scalar_lease_alias_chain_shares_custody_and_expires_together() {
-    let (program, _scope) = alias_body(&alias_export(3));
-    let (initial, support) = initial();
-    let (state, _, ending) = active(&initial, &program);
-    let child = state.locals.get("child").unwrap();
-    for name in ["alias_0", "alias_1", "alias_2"] {
-        assert_eq!(state.locals.get(name), Some(child));
-        assert_eq!(
-            read(&state, c_load(c_variable(name))),
-            CExpressionOutcome::Value(int32(4))
-        );
-    }
-    assert!(
-        state
-            .resources()
-            .owned_fact_for_occurrence(support)
-            .is_none()
-    );
-    assert!(matches!(
-        read(&state, c_load(c_variable("parent"))),
-        CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource { .. })
-    ));
-    let raw_parent = initial.locals.get("parent").unwrap().clone();
-    let mut untagged_alias = state.clone();
-    eval::sync_stack_local(&mut untagged_alias, "alias_2", &raw_parent);
-    untagged_alias.locals.set("alias_2", raw_parent);
-    // A still-live original child cannot substitute for missing custody on
-    // the actual alias lvalue selected by the ending store.
-    assert!(matches!(
-        execute(&untagged_alias, &ending),
-        CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
-    ));
-    let recovered = normal(execute(&state, &ending));
-    assert_eq!(
-        read(&recovered, c_load(c_variable("parent"))),
-        CExpressionOutcome::Value(int32(7))
-    );
-    assert!(
-        recovered
-            .resources()
-            .owned_fact_for_occurrence(support)
-            .is_some()
-    );
-    for name in ["child", "alias_0", "alias_1", "alias_2"] {
-        assert!(matches!(
-            read(&recovered, c_load(c_variable(name))),
-            CExpressionOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
-        ));
-        assert!(matches!(
-            execute(&recovered, &c_store(c_variable(name), c_int32_literal(9))),
-            CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
-        ));
-    }
-    assert!(matches!(
-        execute(&recovered, &ending),
-        CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
-    ));
-    let CStatementOutcome::Return { state, .. } = execute(&initial, &program) else {
-        panic!("alias source function return");
-    };
-    assert_eq!(
-        read(&state, c_load(c_variable("parent"))),
-        CExpressionOutcome::Value(int32(8))
-    );
-}
-
-#[test]
-fn source_scalar_lease_alias_survives_replacing_original_child() {
-    let mut source = alias_export(1);
-    source.functions[0]
-        .parameters
-        .push(place("other", reference_type()));
-    source.functions[0].mir.as_mut().unwrap().blocks[0]
-        .statements
-        .insert(2, assign(local("child"), local("other")));
-    let (program, _scope) = alias_body(&source);
-    let (initial, _) = initial();
-    let other = Pointer {
-        block: "other-scalar".into(),
-        offset: PointerOffsetTerm::Constant(0),
-    };
-    let memory = initial
-        .memory
-        .clone()
-        .with_block(other.block.clone(), 4)
-        .store(other.clone(), int32(2));
-    let fact = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
-        other.clone(),
-        0.into(),
-        1.into(),
-        4,
-    ));
-    let resources = initial.resources().clone().unchecked_with_fact(fact);
-    let initial = initial
-        .with_memory(memory)
-        .with_resource_context(resources)
-        .with_local("other", CValue::typed_pointer(other, CType::Int32Pointer));
-    let (state, _, ending) = active(&initial, &program);
-    assert_ne!(state.locals.get("child"), state.locals.get("alias_0"));
-    assert_eq!(
-        read(&state, c_load(c_variable("child"))),
-        CExpressionOutcome::Value(int32(2))
-    );
-    assert!(matches!(
-        read(&state, c_load(c_variable("parent"))),
-        CExpressionOutcome::RuntimeError(_)
-    ));
-    let recovered = normal(execute(&state, &ending));
-    assert_eq!(
-        read(&recovered, c_load(c_variable("parent"))),
-        CExpressionOutcome::Value(int32(7))
-    );
-    assert_eq!(
-        read(&recovered, c_load(c_variable("child"))),
-        CExpressionOutcome::Value(int32(2))
-    );
-    assert!(matches!(
-        read(&recovered, c_load(c_variable("alias_0"))),
-        CExpressionOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
-    ));
-}
-
-#[test]
-fn source_scalar_lease_alias_later_use_prevents_early_parent_recovery() {
-    let mut source = alias_export(1);
-    let statements = &mut source.functions[0].mir.as_mut().unwrap().blocks[0].statements;
-    statements.push(assign(deref("alias_0"), E::Integer { value: 9 }));
-    let (program, _scope) = alias_body(&source);
-    // The supplied MIR is deliberately illegal Rust: parent access occurs
-    // before the alias's actual last store. The source plan must keep it leased.
-    let (initial, _) = initial();
-    let endings: Vec<_> = leaves(&program)
-        .into_iter()
-        .filter_map(|statement| match statement {
-            CStatement::TypedStore { value, source, .. } if source.lease_plan().is_some() => {
-                Some(value)
-            }
-            _ => None,
-        })
-        .collect();
-    assert_eq!(endings, [c_int32_literal(9)]);
-    assert!(matches!(
-        execute(&initial, &program),
-        CStatementOutcome::RuntimeError(CRuntimeError::MissingResource { .. })
-    ));
-}
-
-fn read_export(aliases: usize) -> r::RustExport {
-    let mut source = alias_export(aliases);
-    let mir = source.functions[0].mir.as_mut().unwrap();
-    let reference = if aliases == 0 {
-        "child".into()
-    } else {
-        format!("alias_{}", aliases - 1)
-    };
-    let last = mir.blocks[0].statements.len() - 2;
-    mir.blocks[0].statements[last] = assign(local("x"), deref(&reference));
-    source
-}
-fn before_read(initial: &CState, body: &CStatement) -> (CState, CStatement) {
-    let mut state = initial.clone();
-    for statement in leaves(body) {
-        if matches!(&statement, CStatement::Assign { name, .. } if name == "x") {
-            return (state, statement);
-        }
-        state = normal(execute(&state, &statement));
-    }
-    panic!("read assignment missing");
-}
-
-#[test]
-fn source_scalar_lease_read_ending_recovers_after_checked_cached_alias_read() {
-    for aliases in [0, 2] {
-        let (program, _scope) = alias_body(&read_export(aliases));
-        let (initial, support) = initial();
-        let (state, ending) = before_read(&initial, &program);
-        assert!(state.has_local_scalar_references());
-        assert!(
-            state
-                .resources()
-                .owned_fact_for_occurrence(support)
-                .is_none()
-        );
-        assert!(matches!(
-            read(&state, c_load(c_variable("parent"))),
-            CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource { .. })
-        ));
-        let reference = if aliases == 0 {
-            "child".into()
-        } else {
-            format!("alias_{}", aliases - 1)
-        };
-        for _ in 0..2 {
+        for source in [alias_export(1), read_export(1)] {
+            let json = serde_json::to_string(&source)
+                .unwrap()
+                .replace("\"i32\"", &format!("\"{kind}\""));
+            let source = serde_json::from_str(&json).unwrap();
+            let (program, _scope) = alias_body(&source);
+            let pointer = Pointer {
+                block: "unsigned-scalar".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let fact = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                pointer.clone(),
+                0.into(),
+                value_type.byte_width().into(),
+                1,
+            ));
+            let resources = ResourceContext::new().unchecked_with_fact(fact.clone());
+            let support = resources.unique_owned_occurrence_for_fact(&fact).unwrap().0;
+            let initial = CState::new()
+                .with_memory(
+                    CMemory::new()
+                        .with_block(pointer.block.clone(), value_type.byte_width())
+                        .store(pointer.clone(), start.clone()),
+                )
+                .with_resource_context(resources)
+                .with_local("parent", CValue::typed_pointer(pointer, pointer_type));
+            let CStatementOutcome::Return { state, .. } = execute(&initial, &program) else {
+                panic!("unsigned return")
+            };
             assert_eq!(
-                read(&state, c_load(c_variable(&reference))),
-                CExpressionOutcome::Value(int32(4))
+                read(&state, c_load(c_variable("parent"))),
+                CExpressionOutcome::Value(finish.clone())
             );
-        }
-        let recovered = normal(execute(&state, &ending));
-        assert!(!recovered.has_local_scalar_references());
-        assert_eq!(
-            read(&recovered, c_variable("x")),
-            CExpressionOutcome::Value(int32(4))
-        );
-        assert_eq!(
-            read(&recovered, c_load(c_variable("parent"))),
-            CExpressionOutcome::Value(int32(4))
-        );
-        assert!(
-            recovered
-                .resources()
-                .owned_fact_for_occurrence(support)
-                .is_some()
-        );
-        for name in
-            std::iter::once("child".to_string()).chain((0..aliases).map(|i| format!("alias_{i}")))
-        {
+            assert!(
+                state
+                    .resources()
+                    .owned_fact_for_occurrence(support)
+                    .is_some()
+            );
             assert!(matches!(
-                read(&recovered, c_load(c_variable(name))),
+                read(&state, c_load(c_variable("alias_0"))),
                 CExpressionOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
             ));
         }
-        assert!(matches!(
-            execute(&recovered, &ending),
-            CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
-        ));
+    }
+}
+
+#[test]
+fn source_scalar_lease_explicit_end_handles_scalar_expressions_and_unused_children() {
+    let mut expression = read_export(1);
+    expression.functions[0].mir.as_mut().unwrap().blocks[0].statements[2] = assign(
+        local("x"),
+        E::Binary {
+            operator: "add".into(),
+            left_type: Type::I32,
+            right_type: Type::I32,
+            left: Box::new(deref("alias_0")),
+            right: Box::new(E::Integer { value: 1 }),
+        },
+    );
+    let mut unused = alias_export(1);
+    unused.functions[0].mir.as_mut().unwrap().blocks[0]
+        .statements
+        .remove(2);
+    for source in [expression, unused] {
+        let (program, _scope) = alias_body(&source);
+        let (initial, _) = initial();
+        assert_eq!(ends(&program).len(), 1);
         let CStatementOutcome::Return { state, .. } = execute(&initial, &program) else {
-            panic!("read-ending function return");
+            panic!("source return")
         };
         assert_eq!(
             read(&state, c_load(c_variable("parent"))),
             CExpressionOutcome::Value(int32(8))
         );
-        assert_eq!(
-            read(&state, c_variable("x")),
-            CExpressionOutcome::Value(int32(4))
-        );
+        assert!(!state.has_local_scalar_references());
     }
-}
-
-#[test]
-fn source_scalar_lease_read_ending_requires_exact_operation_and_actual_custody() {
-    let (program, _scope) = alias_body(&read_export(1));
-    let (initial, _) = initial();
-    let (state, ending) = before_read(&initial, &program);
-    assert!(state.has_local_scalar_references());
-    let mut altered = ending.clone();
-    let CStatement::Assign { expression, .. } = &mut altered else {
-        panic!();
-    };
-    *expression = c_int32_literal(4);
-    assert!(matches!(
-        execute(&state, &altered),
-        CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
-    ));
-    let CValue::Pointer(parent) = initial.locals.get("parent").unwrap() else {
-        panic!();
-    };
-    let mut missing = initial
-        .clone()
-        .with_local("alias_0", CValue::Pointer(parent.clone()));
-    // Keep an ordinary owner: the load itself can succeed, but no birth or
-    // executed lease can be substituted with a matching source observation.
-    missing = normal(execute(&missing, &c_declare("x", CType::Int32)));
-    assert!(matches!(
-        execute(&missing, &ending),
-        CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
-    ));
-}
-
-#[test]
-fn source_scalar_lease_read_ending_preserves_preceding_child_store() {
-    let mut source = read_export(1);
-    source.functions[0].mir.as_mut().unwrap().blocks[0]
-        .statements
-        .insert(2, assign(deref("child"), E::Integer { value: 7 }));
-    let (program, _scope) = alias_body(&source);
-    let (initial, _) = initial();
-    let (state, ending) = before_read(&initial, &program);
-    let recovered = normal(execute(&state, &ending));
-    assert_eq!(
-        read(&recovered, c_variable("x")),
-        CExpressionOutcome::Value(int32(7))
-    );
-    assert_eq!(
-        read(&recovered, c_load(c_variable("parent"))),
-        CExpressionOutcome::Value(int32(7))
-    );
-}
-
-#[test]
-fn source_scalar_lease_read_ending_role_and_success_are_semantic() {
-    let (program, _scope) = alias_body(&read_export(1));
-    let (initial, _) = initial();
-    let (state, ending) = before_read(&initial, &program);
-    let birth_source = leaves(&program)
-        .into_iter()
-        .find_map(|s| match s {
-            CStatement::Assign { source, .. }
-                if source.lease_plan().is_some() && !source.is_lease_read_end() =>
-            {
-                Some(source)
-            }
-            _ => None,
-        })
-        .unwrap();
-    let mut wrong_role = ending.clone();
-    let CStatement::Assign { source, .. } = &mut wrong_role else {
-        panic!();
-    };
-    *source = birth_source;
-    assert_ne!(ending, wrong_role);
-    assert!(matches!(
-        execute(&state, &wrong_role),
-        CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
-    ));
-    let mut observation_only = ending.clone();
-    let CStatement::Assign { source, .. } = &mut observation_only else {
-        panic!();
-    };
-    *source = CStatementAssignSource::default();
-    assert_ne!(ending, observation_only);
-    let still_active = normal(execute(&state, &observation_only));
-    assert!(still_active.has_local_scalar_references());
-    assert!(matches!(
-        execute(&still_active, &c_return(c_void_value())),
-        CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
-    ));
-    let mut constant_destination = state.clone();
-    constant_destination.locals.set_typed_with_all_qualifiers(
-        "x",
-        int32(0),
-        CType::Int32,
-        false,
-        false,
-        true,
-        false,
-    );
-    eval::sync_stack_local(&mut constant_destination, "x", &int32(0));
-    assert!(matches!(
-        execute(&constant_destination, &ending),
-        CStatementOutcome::RuntimeError(_) | CStatementOutcome::UndefinedBehavior(_)
-    ));
-    assert!(constant_destination.has_local_scalar_references());
-}
-
-#[cfg(test)]
-mod scaling_tests {
-    include!("../../scaling_tests/kernel/source_loans/tests.rs");
 }

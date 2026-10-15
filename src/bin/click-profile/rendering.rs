@@ -1073,25 +1073,33 @@ pub(super) fn render_expansion_command(
     } else {
         expanded_artifact_path(&key.source_path)
     };
-    let location = format!(
-        "{}:{}:{}",
-        key.source_path.display(),
-        position.line,
-        position.column
-    );
+    // The implicit `auto` runs at a bare simple tactic, which is not a
+    // selectable site; expanding its claim writes the proof as a `by`.
+    let target = if key.tactic_name == click::instrumentation::IMPLICIT_AUTO_TACTIC {
+        format!(
+            "--claim {} {}",
+            shell_quote(&key.claim),
+            shell_quote(&key.source_path.display().to_string())
+        )
+    } else {
+        shell_quote(&format!(
+            "{}:{}:{}",
+            key.source_path.display(),
+            position.line,
+            position.column
+        ))
+    };
     if key.prepared_import {
         writeln!(
             output,
-            "              expand: click expand --in-place {}",
-            shell_quote(&location)
+            "              expand: click expand --in-place {target}"
         )
         .expect("writing a String cannot fail");
     } else {
         writeln!(
             output,
-            "              expand: click expand --output {} {}",
+            "              expand: click expand --output {} {target}",
             shell_quote(&artifact.display().to_string()),
-            shell_quote(&location),
         )
         .expect("writing a String cannot fail");
     }

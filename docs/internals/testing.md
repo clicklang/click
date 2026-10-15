@@ -281,7 +281,7 @@ Clang 19.1.7 for the exporter, and the Rust import tests need Charon's pinned
 `scripts/build-charon.sh --check` reports its toolchain missing,
 `scripts/check.sh` skips the suites that need it and runs the rest. Without
 the C++ toolchain it leaves out `tests/cpp_import.rs`,
-`tests/bitcoin_core_money_range.rs`, `tests/libcxx_span.rs`, the four `click` command tests that run a
+`tests/bitcoin_core_money_range.rs`, `tests/libcxx_span.rs`, `tests/libcxx_functional.rs`, the four `click` command tests that run a
 C++ mdtest (named in its filterset), and, through `CLICK_SKIP_CPP_FRONTEND`,
 the C++ mdtests and examples. Without Charon it leaves out
 `tests/rust_import.rs`. The gate names each skipped suite when it starts and
@@ -731,7 +731,9 @@ check reads only indexed candidates (identities held twice or with invalid
 access, blocks owning two or more ranges, and aliased bases, driven from the
 smaller of the bases and the equalities). A companion test finds each
 violation kind beside many unrelated resources from either side of the alias
-walk.
+walk. A call that only `views` a heap range, with the observable projection
+of its caller's resources after it, must likewise cost the same work beside
+2, 4, 8, and 16 unrelated live allocations.
 
 End to end, `roundtrip_extra_copy_stays_nearly_flat_beside_unrelated_allocations`
 in `src/scaling_tests/surface/tests/scaling_tests.rs` verifies the frozen byte-representation

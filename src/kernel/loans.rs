@@ -882,6 +882,8 @@ struct LoanLedgerData {
     local_references: PersistentMap<LocalReferenceId, LocalReferenceRecord>,
     local_reference_roots: PersistentMap<ResourceOccurrenceId, LocalReferenceId>,
     local_reference_holders: PersistentMap<LoanParticipantId, u64>,
+    source_local_references:
+        PersistentMap<(LoanParticipantId, crate::kernel::ScalarReferencePlanKey), LocalReferenceId>,
     next_scope: u64,
     next_loan: u64,
     next_share: u64,
@@ -4302,6 +4304,7 @@ impl LoanLedger {
                     local_references: PersistentMap::default(),
                     local_reference_roots: PersistentMap::default(),
                     local_reference_holders: PersistentMap::default(),
+                    source_local_references: PersistentMap::default(),
                     next_scope: 0,
                     next_loan: 0,
                     next_share: 0,
@@ -4337,6 +4340,7 @@ impl LoanLedger {
             || !data.local_references.is_empty()
             || !data.local_reference_roots.is_empty()
             || !data.local_reference_holders.is_empty()
+            || !data.source_local_references.is_empty()
         {
             return false;
         }
@@ -6842,7 +6846,7 @@ impl LoanLedger {
     }
 
     #[cfg(test)]
-    fn invariant_holds(&self) -> bool {
+    pub(in crate::kernel) fn invariant_holds(&self) -> bool {
         if !self.exclusive_calls_invariant() || !self.local_references_invariant() {
             return false;
         }

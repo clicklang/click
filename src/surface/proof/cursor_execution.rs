@@ -3906,6 +3906,7 @@ fn describe_call_bindings(statement: &CStatement, environment: &CExecutionEnviro
 pub(super) fn describe_statement_head(statement: &CStatement) -> String {
     match statement {
         CStatement::Seq(first, _) => describe_statement_head(first),
+        CStatement::EndScalarReference(_) => "borrow end".to_string(),
         CStatement::Skip => "skip".to_string(),
         CStatement::Break => "break".to_string(),
         CStatement::Continue => "continue".to_string(),

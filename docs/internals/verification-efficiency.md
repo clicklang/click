@@ -136,10 +136,15 @@ observable root. Queries use maintained ownership counts rather than enumerate
 retained owners. The cache checks both the source storage identity and the
 addressability registry revision; a classification change or a whole-input
 rewrite rebuilds the projection. Returned compositions use current loan
-bindings, and cached storage never supplies a proof decision. Four-size
-regressions cover unchanged queries, private insertion/removal sequences,
-addressable deltas, and retained owners, with compatibility checks for supports,
-expansions, loans, forks, and registry changes.
+bindings, and cached storage never supplies a proof decision. Normalization
+drops and restores supported views and cached expansions; clearing the
+expansions is a producer too, so the view after a lending call's recovery
+stays warm. Four-size regressions cover unchanged queries, private
+insertion/removal sequences, addressable deltas, and retained owners, with
+compatibility checks for supports, expansions, loans, forks, and registry
+changes. `a_view_lending_call_and_its_observation_ignore_unrelated_allocations`
+measures a call that `views` a heap range, then its caller's observation, at
+479 units beside 2, 4, 8 and 16 unrelated live allocations.
 
 Fixed-state propositions select their referenced local bindings before
 elaboration. Recorded snapshots look up those names individually instead of

@@ -334,3 +334,76 @@ fn pointer_disequality_projection_follows_offset_class_merges() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/equality_graph/fact_congruence_tests.rs");
 }
+
+#[test]
+fn pointer_comparison_preserves_base_evidence_through_aliases_and_scopes() {
+    for alias_first in [false, true] {
+        for query_first in [false, true] {
+            let left = coordinate_pointer(PointerBlock::ExternalArgument, 77001);
+            let right = coordinate_pointer(PointerBlock::ExternalArgument, 77002);
+            let alias_pointer = Pointer::symbolic(Variable(77003));
+            let source = Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(left.clone(), right.clone()),
+                false,
+            );
+            assert!(matches!(
+                &source,
+                Proposition::ConditionIs(ConditionTerm::PointerEqual(..), false)
+            ));
+            let alias = Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(right.clone(), alias_pointer.clone()),
+                true,
+            );
+            let goal = Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(left.clone(), alias_pointer.clone()),
+                false,
+            );
+            let parent = PureFactContext::new().assume_proposition(if alias_first {
+                alias.clone()
+            } else {
+                source.clone()
+            });
+            if query_first {
+                assert!(!parent.contains_known(&goal));
+            }
+            let child = parent.clone().assume_proposition(if alias_first {
+                source.clone()
+            } else {
+                alias.clone()
+            });
+            assert!(child.contains_known(&goal));
+            assert!(child.contains_known(&Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(alias_pointer, left.clone()),
+                false
+            )));
+            assert!(child.contains_known(&Proposition::ConditionIs(
+                ConditionTerm::pointer_offset_equal(left.offset.clone(), right.offset.clone()),
+                false
+            )));
+            assert!(!parent.contains_known(&goal));
+            assert!(!child.without_exact_fact(&source).contains_known(&goal));
+            assert!(!child.without_exact_fact(&source).contains_known(&source));
+            assert!(
+                !child
+                    .without_exact_fact(&source)
+                    .contains_known(&Proposition::ConditionIs(
+                        ConditionTerm::pointer_offset_equal(
+                            left.offset.clone(),
+                            right.offset.clone()
+                        ),
+                        false,
+                    ))
+            );
+            assert!(!child.without_exact_fact(&alias).contains_known(&goal));
+            assert!(
+                !PureFactContext::new()
+                    .assume_proposition(alias)
+                    .contains_known(&goal)
+            );
+            assert!(!child.contains_known(&Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(left, coordinate_pointer("other".into(), 77002)),
+                false
+            )));
+        }
+    }
+}

@@ -43,6 +43,7 @@ pub(in crate::surface::proof) fn kernel_loop_by_index<'a>(
             .iter()
             .find_map(|case| kernel_loop_by_index(&case.body, target, next_loop_index)),
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }

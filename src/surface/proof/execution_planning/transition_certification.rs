@@ -637,6 +637,7 @@ pub(in crate::surface::proof) fn statement_contains_call(statement: &CStatement)
         }
         CStatement::ForStep { step, .. } => statement_contains_call(step),
         CStatement::Skip
+        | CStatement::EndScalarReference(_)
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }

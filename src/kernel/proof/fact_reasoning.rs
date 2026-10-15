@@ -294,8 +294,8 @@ pub(crate) fn normalize_using_conditions(
             return Ok(());
         }
     }
-    if let Some((ConditionTerm::PointerOffsetEqual(left, right), true)) =
-        crate::kernel::spec::proposition_as_single_condition(goal)
+    if let Some((condition, true)) = crate::kernel::spec::proposition_as_single_condition(goal)
+        && let Some((left, right)) = condition.pointer_offset_sides()
     {
         let mut selected = PureFactContext::new();
         for (condition, value) in &conditions {
@@ -303,9 +303,9 @@ pub(crate) fn normalize_using_conditions(
             selected = selected.assume_condition(condition.clone(), *value);
         }
         if crate::kernel::memory_provenance::pointer_offset_read_has_recorded_value(
-            &left, &right, &selected,
+            left, right, &selected,
         ) || crate::kernel::reasoning::memory_resolution::pointer_offsets_proven_equal_for_memory_resolution(
-            &left, &right, &selected,
+            left, right, &selected,
         ) {
             return Ok(());
         }
@@ -1925,12 +1925,11 @@ impl LoadVariableBridgeSide for PointerOffsetTerm {
     }
 
     fn equality_sides(proposition: &Proposition) -> Option<(Self, Self)> {
-        let Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(left, right), true) =
-            proposition
-        else {
+        let Proposition::ConditionIs(condition, true) = proposition else {
             return None;
         };
-        Some((left.as_ref().clone(), right.as_ref().clone()))
+        let (left, right) = condition.pointer_offset_sides()?;
+        Some((left.clone(), right.clone()))
     }
 
     fn equality(left: Self, right: Self) -> Proposition {
@@ -2144,7 +2143,7 @@ pub(crate) fn premise_bridged_by_load_variable_chain(
     facts: &[Proposition],
 ) -> bool {
     match premise {
-        Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(_, _), true) => {
+        Proposition::ConditionIs(condition, true) if condition.pointer_offset_sides().is_some() => {
             bridged_by_load_variable_edges::<PointerOffsetTerm>(premise, facts)
         }
         Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(_, _), true) => {
@@ -2170,7 +2169,7 @@ pub(crate) fn premise_bridged_by_load_variable_chain_with_origins(
         return true;
     }
     match premise {
-        Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(_, _), true) => {
+        Proposition::ConditionIs(condition, true) if condition.pointer_offset_sides().is_some() => {
             bridged_with_origins::<PointerOffsetTerm>(premise, facts, assumptions)
         }
         Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(_, _), true) => {
