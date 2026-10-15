@@ -3042,6 +3042,61 @@ fn declared_resource_quantities_are_part_of_context_equality() {
     ));
 }
 
+/// Definitional equality equates a folded composite with its opened pieces
+/// only where the composite's body facts hold over those pieces. A loop back
+/// edge used this comparison to return a folded `owns zero_cell(p)` from a
+/// body that had stored 9 into the cell and never refolded it.
+#[test]
+fn definitional_equality_reassembles_a_composite_only_where_its_facts_hold() {
+    let pointer = Pointer {
+        block: "reassembled-cell".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let definition = CCompositeResourceDefinition::new(
+        "zero_cell",
+        vec![c_parameter("p", CType::Int32Pointer)],
+        None,
+        false,
+        vec![CResourceSpec::owned_memory(CMemorySegment::new(
+            c_variable("p"),
+            c_int32_literal(0),
+            c_int32_literal(1),
+        ))],
+        vec![SpecProposition::Comparison {
+            left: SpecExpression::CExpression(c_index(c_variable("p"), c_int32_literal(0))),
+            operator: CComparisonOperator::Equal,
+            right: SpecExpression::Value(int32(0)),
+        }],
+    );
+    let folded = ResourceContext::new().unchecked_with_fact(CResourceFact::own_composite(
+        "zero_cell".into(),
+        vec![CValue::typed_pointer(pointer.clone(), CType::Int32Pointer)],
+    ));
+    let pieces = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
+        CMemoryRange::new(pointer.clone(), 0.into(), 1.into()),
+    ));
+    let memory = |value: u32| {
+        CMemory::new()
+            .with_block(pointer.block.clone(), 4)
+            .store(pointer.clone(), int32(value))
+    };
+    let equal = |stored: u32| {
+        resource_contexts_definitionally_equal_with_definitions(
+            std::slice::from_ref(&definition),
+            &memory(0),
+            &folded,
+            &memory(stored),
+            &pieces,
+            &PureFactContext::new(),
+        )
+    };
+    assert!(
+        !equal(9),
+        "a cell holding 9 is not a `zero_cell`, so it is not the folded head"
+    );
+    assert!(equal(0), "a cell holding 0 reassembles the folded head");
+}
+
 #[test]
 fn missing_composite_query_ignores_ambient_memory_splits() {
     let base = Pointer {
