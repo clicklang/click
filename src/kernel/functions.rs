@@ -24927,6 +24927,19 @@ pub(super) fn expand_all_composite_resource_facts(
     memory: &CMemory,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
+    expand_all_composite_resource_facts_with_composites(context, definitions, memory, assumptions)
+        .map(|(resources, _)| resources)
+}
+
+/// [`expand_all_composite_resource_facts`], also returning every composite
+/// the expansion opened, nested ones included.
+pub(super) fn expand_all_composite_resource_facts_with_composites(
+    context: &ResourceContext,
+    definitions: &[CCompositeResourceDefinition],
+    memory: &CMemory,
+    assumptions: &PureFactContext,
+) -> Option<(ResourceContext, Vec<CResourceFact>)> {
+    let mut opened = Vec::new();
     let mut cached = context.clone();
     let supports = context
         .composite_facts()
@@ -24945,6 +24958,7 @@ pub(super) fn expand_all_composite_resource_facts(
             continue;
         }
         cached = cached.without_exact_representation_for_occurrence(support_occurrence)?;
+        opened.push(support.clone());
         let missing = expansion
             .into_iter()
             .filter(|fact| {
@@ -24959,8 +24973,10 @@ pub(super) fn expand_all_composite_resource_facts(
             )
             .ok()?;
     }
-    expand_composite_resource_context(&cached, definitions, memory, assumptions)
-        .map(|(resources, _)| resources)
+    let (resources, composites) =
+        expand_composite_resource_context(&cached, definitions, memory, assumptions)?;
+    opened.extend(composites);
+    Some((resources, opened))
 }
 
 /// Authority controls need their live ledger to expose the contained
@@ -26254,6 +26270,17 @@ fn check_mutex_helper_body_return(
     Ok(())
 }
 
+/// Whether `available` supplies `required` by its definition: directly, or,
+/// for a composite, by the pieces its body names.
+///
+/// A composite is more than its pieces: an instance is held only while its
+/// body holds, so holding it asserts every `fact` of its body. A required composite that `available` does not already hold folded
+/// is assembled here from pieces, which is a fold, so each such composite's
+/// body facts must be established at `memory` exactly as a checked `fold`
+/// establishes them. Without this, an exit whose C stores falsified a body
+/// fact published the composite anyway, and every caller then unfolded the
+/// false fact. A composite `available` holds folded was checked when it was
+/// folded, so it needs no second check.
 pub(super) fn resource_context_satisfies_definitional_fact(
     available: &ResourceContext,
     required: &CResourceFact,
@@ -26264,22 +26291,111 @@ pub(super) fn resource_context_satisfies_definitional_fact(
     if available.satisfies_fact(required, assumptions) {
         return true;
     }
-    let Some(available) =
+    let Some(expanded_available) =
         expand_all_composite_resource_facts(available, definitions, memory, assumptions)
     else {
         return false;
     };
     let required_context =
         ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(required.clone());
-    let Some(required) =
-        expand_all_composite_resource_facts(&required_context, definitions, memory, assumptions)
+    let Some((required, assembled)) =
+        expand_composite_resource_context(&required_context, definitions, memory, assumptions)
     else {
         return false;
     };
-    required
+    assembled.iter().all(|composite| {
+        available.satisfies_fact(composite, assumptions)
+            || assembled_composite_body_facts_hold(
+                composite,
+                definitions,
+                memory,
+                &expanded_available,
+                assumptions,
+            )
+    }) && required
         .facts()
         .iter()
-        .all(|fact| available.satisfies_fact(fact, assumptions))
+        .all(|fact| expanded_available.satisfies_fact(fact, assumptions))
+}
+
+/// Whether the body facts of `composite` hold when it is assembled from the
+/// pieces in `resources` at `memory`. Each fact is lowered at `memory` with
+/// the definition's parameters bound, as a checked `fold` lowers it, and must
+/// be established by the kernel's exact routes from `assumptions` and the
+/// observable facts of the pieces themselves (their separation, say). There
+/// is no search: a fact the path has not established refuses the assembly,
+/// and the proof answers with an explicit `fold`. A body whose guard is false
+/// at `memory` asserts nothing; an undecided guard refuses.
+pub(super) fn assembled_composite_body_facts_hold(
+    composite: &CResourceFact,
+    definitions: &[CCompositeResourceDefinition],
+    memory: &CMemory,
+    resources: &ResourceContext,
+    assumptions: &PureFactContext,
+) -> bool {
+    let CResource::Composite { name, arguments } = composite.resource() else {
+        return true;
+    };
+    let Some(definition) = definitions
+        .iter()
+        .find(|definition| definition.name() == name)
+    else {
+        return false;
+    };
+    if definition.facts().is_empty() {
+        return true;
+    }
+    if definition.parameters().len() != arguments.len() {
+        return false;
+    }
+    let mut state = CState::new()
+        .with_memory(memory.clone())
+        .with_resource_context(resources.clone());
+    for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
+        let Some(argument) = argument.as_c_value() else {
+            return false;
+        };
+        if parameter.c_type() != argument.c_type() {
+            return false;
+        }
+        state.locals.set_typed(
+            parameter.name().to_string(),
+            argument.clone(),
+            parameter.c_type(),
+        );
+    }
+    if bind_composite_witnesses(definition, arguments, &mut state, assumptions).is_none() {
+        return false;
+    }
+    let mut budget = ExecutionBudget::beside_live_state();
+    match evaluate_composite_resource_body_condition(definition, &state, assumptions, &mut budget) {
+        Some(true) => {}
+        Some(false) => return true,
+        None => return false,
+    }
+    let Ok(piece_facts) = resources.observable_facts(assumptions) else {
+        return false;
+    };
+    let assumptions = assumptions_with_propositions(assumptions, &piece_facts);
+    definition.facts().iter().all(|fact| {
+        let Ok(paths) = lower_spec_proposition_at_state_with_loop_entry(
+            &state,
+            fact,
+            Some(&state),
+            &assumptions,
+            &mut budget,
+        ) else {
+            return false;
+        };
+        let [path] = paths.as_slice() else {
+            return false;
+        };
+        let established = path.facts.iter().fold(assumptions.clone(), |facts, load| {
+            facts.assume_proposition(load.proposition().clone())
+        });
+        established.settles_exactly(&path.proposition)
+            || resource_body_fact_is_established(&established, &path.proposition)
+    })
 }
 
 /// True when every element of a constant-bounded memory range is concretely
@@ -26378,6 +26494,18 @@ fn consume_resource_fact_definitionally(
                 )
             },
         ) {
+            // Assembling a required composite from pieces is a fold: its body
+            // facts must hold here, as in
+            // `resource_context_satisfies_definitional_fact`.
+            if !assembled_composite_body_facts_hold(
+                required,
+                definitions,
+                memory,
+                available,
+                assumptions,
+            ) {
+                return None;
+            }
             let mut remaining = available.clone();
             for child in expanded_required.facts() {
                 remaining = consume(&remaining, child, definitions, memory, assumptions, seen)?;

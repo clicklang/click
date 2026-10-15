@@ -11282,6 +11282,27 @@ impl ExecutionProofCore {
         })
     }
 
+    /// Whether this path's retained trace, return exchanges included,
+    /// certifies under the function's entry premises. A caller that retains
+    /// an optional exchange uses this to keep it only when the path theorem
+    /// it extends still checks.
+    pub(crate) fn return_path_certifies(&self, function: &CFunction, path_index: usize) -> bool {
+        let Some(candidates) = self.frontier.execution() else {
+            return false;
+        };
+        self.checked_return_path(candidates, function, &self.entry_assumptions(), path_index)
+            .is_ok()
+    }
+
+    /// The premises the proof assumed at the function's entry, or none when
+    /// it recorded no checked entry.
+    pub(crate) fn entry_assumptions(&self) -> PureFactContext {
+        self.function_entry
+            .as_ref()
+            .map(|entry| entry.assumptions().clone())
+            .unwrap_or_default()
+    }
+
     /// Whether this path retains a kernel-checked exchange after its C return.
     pub(crate) fn has_checked_return_resource_rewrite(&self, path_index: usize) -> bool {
         self.return_resource_rewrites.get(&path_index).is_some()

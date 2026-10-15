@@ -1049,6 +1049,16 @@ These steps are bounded by design. A proof that needs facts inside a nested
 composite resource should name the path with repeated `observe(...)` steps
 instead of relying on `auto` to search through every possible nested body.
 
+A function that returns a composite (`produces` it, or keeps it under `owns`)
+may reach its exit holding the body's pieces instead of the folded head.
+Reading the pieces as the composite there is a fold: the kernel accepts it
+only where every body fact holds over those pieces, by the same exact check
+`fold` makes, and otherwise reports the composite missing. A C store that falsifies a body fact
+therefore needs the proof to restore the fact and fold, or the contract to
+return something weaker
+(`mdtests/an_ordinary_exit_does_not_produce_a_composite_whose_body_fact_a_store_falsified.md`,
+`mdtests/an_ordinary_exit_produces_a_composite_whose_body_facts_hold.md`).
+
 ### Borrowing a composite
 
 `views` of a composite covers its checked one-level frontier. Lending one puts
