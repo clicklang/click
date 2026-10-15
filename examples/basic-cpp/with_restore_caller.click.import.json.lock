@@ -1,0 +1,46 @@
+{
+  "schema": 6,
+  "config_sha256": "4799b5ef5c2ab118ae23783fde6941619fd7d62913775ef4e14791d2953497be",
+  "exporter_sha256": "1c8b1c2c8051981fa33dd26d05b2134f7f0ae27d2581b1286d1151056269e42a",
+  "compilation_database_sha256": "5f3bccb6f06d3340a31fc4880b539106b4eb7b0f64b58fb2b694ea27ee81cf19",
+  "source_sha256": "0c332fb5f11166337ff19553521f2726060274a63acdfd217f4818d3f1d48c3f",
+  "logical_source_sha256": "0c332fb5f11166337ff19553521f2726060274a63acdfd217f4818d3f1d48c3f",
+  "dependencies": {},
+  "preprocessor_files": {
+    "/home/user/click-lib/examples/basic-cpp/with_restore_caller.cpp": {
+      "canonical_path": "/home/user/click-lib/examples/basic-cpp/with_restore_caller.cpp",
+      "sha256": "0c332fb5f11166337ff19553521f2726060274a63acdfd217f4818d3f1d48c3f"
+    }
+  },
+  "artifact_sha256": "d04d26bc45a05738a8758f54176c3cc43a36b25ee4929e164aa01ae570796219",
+  "artifact_bytes": 32312,
+  "profile": {
+    "frontend": "clang",
+    "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+    "standard": "c++20",
+    "target": "x86_64-unknown-linux-gnu",
+    "exceptions": false,
+    "rtti": false,
+    "compilation_directory": "/home/user/click-lib/examples/basic-cpp",
+    "compilation_file": "with_restore_caller.cpp",
+    "compilation_command": [
+      "clang++",
+      "-x",
+      "c++",
+      "-std=c++20",
+      "--target=x86_64-unknown-linux-gnu",
+      "-fno-exceptions",
+      "-fno-rtti",
+      "-funsigned-char",
+      "-ffreestanding",
+      "-nostdinc",
+      "-nostdinc++",
+      "-Wno-reorder-ctor",
+      "-c",
+      "with_restore_caller.cpp",
+      "-o",
+      "with_restore_caller.o"
+    ]
+  },
+  "identity": "44d183539869062ea07a3f27985a4ce27945ff5545af646735773fb6a0a4e1ba"
+}
