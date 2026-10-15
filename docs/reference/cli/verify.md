@@ -190,6 +190,11 @@ one value/snapshot legend. Pointer arguments retain their checked types, distinc
 identities, and read snapshots, including unnamed components that have no C
 spelling. The error identifies the rejected argument ordinal without guessing
 which premise was missing.
+Resource facts elsewhere use the proposition printer's source/typed display
+policy. Resource arguments use the same value printer as proposition operands,
+including model values and snapshot-qualified reads. A resource list shares one label table
+and construction legend across its entries. Source place helpers retain field,
+mutex-storage, and iterated-ownership spellings.
 A call refused at stable-view recovery prints each pending checked goal and
 its recorded obligation context. Required call clauses also identify the
 callee and source input clause when lowering retained that identity. These goals

@@ -998,9 +998,8 @@ pub(in crate::surface) fn folded_matched_instance_note(
     else {
         return String::new();
     };
-    let declared = crate::surface::diagnostics::format_declared_resource(
-        instance.name(),
-        instance.arguments(),
+    let declared = crate::surface::proof_diagnostics::render::render_resource_diagnostic(
+        &CResource::Instance(instance.clone()),
         parameter_binding,
     );
     // The premises may have refuted some arms without deciding one. Then the

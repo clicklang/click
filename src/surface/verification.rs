@@ -4581,9 +4581,8 @@ fn describe_unauthorized_entry_premise(
     parameter_binding: ParameterBinding<'_>,
     state: &CState,
 ) -> String {
-    use crate::surface::diagnostics::{
-        describe_click_proposition, describe_pure_fact_spelled, describe_resource_facts,
-    };
+    use crate::surface::diagnostics::{describe_click_proposition, describe_pure_fact_spelled};
+    use crate::surface::proof_diagnostics::render::render_resource_facts_diagnostic;
     let Some(premise) = premise else {
         return String::new();
     };
@@ -4598,7 +4597,7 @@ fn describe_unauthorized_entry_premise(
     let held = if matches!(premise, Proposition::CMemoryLoadable { .. }) {
         format!(
             "; the contract entry holds {}",
-            describe_resource_facts(entry_resources, parameter_binding)
+            render_resource_facts_diagnostic(entry_resources, parameter_binding)
         )
     } else {
         String::new()

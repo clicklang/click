@@ -3,6 +3,9 @@ use crate::kernel::ExecutionFactSource;
 use crate::kernel::ResourceInstance;
 use crate::surface::planning::proposition_search::proves_by_tactic_search;
 use crate::surface::proof::execution_planning::refuse_or_record_open_obligation;
+use crate::surface::proof_diagnostics::render::{
+    render_resource_fact_diagnostic, render_resource_facts_diagnostic,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ResourceBodyAccess {
@@ -2591,7 +2594,7 @@ fn append_composite_resource_declared_facts<F: ResourcePureFacts>(
                 definition.name(),
                 describe_click_proposition(&fact),
                 describe_pure_facts(&propositions.materialize()),
-                describe_resource_facts(contained_resources.facts(), parameter_binding)
+                render_resource_facts_diagnostic(contained_resources.facts(), parameter_binding)
             )
         })?;
         for fact in facts {
@@ -2632,7 +2635,7 @@ fn describe_resource_context_validity_error(
         ResourceContextValidityError::DuplicateOwnedResourceFact(resource) => {
             format!(
                 "duplicate resource fact `{}`",
-                describe_resource_fact(&resource, parameter_binding)
+                render_resource_fact_diagnostic(&resource, parameter_binding)
             )
         }
         ResourceContextValidityError::OverlappingOwnedMemoryResources { left, right } => {
@@ -4268,7 +4271,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                             return Err(ClickError::new(format!(
                                 "`{claim_label}` path {path_index}: `fold({})` body views memory this context owns: `{}` is backed by an owner that can still write it, so the folded facts would not be stable; own it in the body or borrow it through a call",
                                 describe_resource_clause(resource),
-                                describe_resource_fact(&lowered, parameter_binding)
+                                render_resource_fact_diagnostic(&lowered, parameter_binding)
                             )));
                         }
                         body_has_unbound_view = true;

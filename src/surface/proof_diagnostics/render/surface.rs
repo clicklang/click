@@ -169,6 +169,14 @@ pub(super) fn source(proposition: &Proposition, labels: &mut SnapshotLabels) -> 
     )
 }
 
+pub(super) fn source_resource_fact(fact: &CResourceFact, labels: &mut SnapshotLabels) -> String {
+    bounded(printer(labels, Mode::Source).resource_fact(fact))
+}
+
+pub(super) fn source_resource(resource: &CResource, labels: &mut SnapshotLabels) -> String {
+    bounded(printer(labels, Mode::Source).resource(resource))
+}
+
 /// The total source spelling of one C value.
 pub(super) fn source_value(value: &crate::kernel::CValue, labels: &mut SnapshotLabels) -> String {
     bounded(
@@ -448,17 +456,8 @@ impl Printer<'_> {
             Proposition::CResourceComposition(context) => {
                 const LIMIT: usize = 8;
                 let (count, entries) = context.diagnostic_facts(LIMIT);
-                let tables = self.labels.naming.clone();
-                let (parameters, arguments) = tables
-                    .as_deref()
-                    .map_or((&[][..], &[][..]), |(p, a)| (p.as_slice(), a.as_slice()));
                 let mut held = entries
-                    .map(|fact| {
-                        crate::surface::diagnostics::describe_resource_fact(
-                            fact,
-                            ParameterBinding::new(parameters, arguments),
-                        )
-                    })
+                    .map(|fact| self.resource_fact(fact))
                     .collect::<Vec<_>>();
                 if count > LIMIT {
                     held.push(format!("… {} more", count - LIMIT));
@@ -1684,18 +1683,118 @@ impl Printer<'_> {
             .filter(|width| *width > 0)
     }
 
+    fn resource_fact(&mut self, fact: &CResourceFact) -> String {
+        if !self.source_mode() {
+            return super::render_resource_fact_labeled(fact, self.labels);
+        }
+        let text = self.resource(fact.resource());
+        match fact {
+            CResourceFact::View(_) => format!("views {text}"),
+            CResourceFact::Own(_, quantity) if quantity.as_const() == Some(1) => {
+                format!("owns {text}")
+            }
+            CResourceFact::Own(_, quantity) => {
+                let quantity = self
+                    .bitvector(quantity, None, 0)
+                    .map_or_else(|| "…".into(), |v| v.text);
+                format!("owns {text} (quantity {quantity})")
+            }
+        }
+    }
+
+    fn resource_arguments(&mut self, name: &str, arguments: &[AlgebraicValue]) -> String {
+        let mut spelled = Vec::new();
+        for (index, argument) in arguments.iter().enumerate() {
+            if self.remaining == 0 {
+                spelled.push(format!(
+                    "… {} more arguments omitted",
+                    arguments.len() - index
+                ));
+                break;
+            }
+            spelled.push(
+                match argument {
+                    AlgebraicValue::C(value) => self.cvalue(value, 0),
+                    AlgebraicValue::Integer(value) => self.integer(value, 0),
+                    AlgebraicValue::Algebraic(value) => self.algebraic(value, 0),
+                }
+                .map_or_else(|| "…".into(), |v| v.text),
+            );
+        }
+        format!("{name}({})", spelled.join(", "))
+    }
+
     fn resource(&mut self, resource: &CResource) -> String {
+        if !self.source_mode() {
+            let text = super::render_resource_fact_labeled(
+                &CResourceFact::View(resource.clone()),
+                self.labels,
+            );
+            return text.strip_prefix("views ").unwrap_or(&text).to_owned();
+        }
         let tables = self.labels.naming.clone();
         let (parameters, arguments) = tables
             .as_deref()
             .map_or((&[][..], &[][..]), |(p, a)| (p.as_slice(), a.as_slice()));
-        let text = crate::surface::diagnostics::describe_resource_fact(
-            &CResourceFact::View(resource.clone()),
-            ParameterBinding::new(parameters, arguments),
-        );
-        text.strip_prefix("views ")
-            .map(str::to_owned)
-            .unwrap_or(text)
+        let binding = ParameterBinding::new(parameters, arguments);
+        match resource {
+            CResource::Memory(range) => {
+                crate::surface::diagnostics::describe_memory_range(range, binding)
+            }
+            CResource::Instance(instance) => {
+                self.resource_arguments(instance.name(), instance.arguments())
+            }
+            CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
+                self.resource_arguments(name, arguments)
+            }
+            CResource::MutexGuard(identity) => format!(
+                "mutex_guard({})",
+                crate::surface::diagnostics::describe_mutex_pointer(identity.mutex(), binding)
+            ),
+            CResource::MutexLive(identity) => format!(
+                "mutex_live({})",
+                crate::surface::diagnostics::describe_mutex_pointer(identity.mutex(), binding)
+            ),
+            CResource::MutexUse(identity) => {
+                let mutex =
+                    crate::surface::diagnostics::describe_mutex_pointer(identity.mutex(), binding);
+                match identity.protected_type() {
+                    Some(ty) => {
+                        let protected = self.resource_arguments(ty.family(), ty.arguments());
+                        format!("mutex_use({mutex}, {protected})")
+                    }
+                    None => format!("mutex_use({mutex})"),
+                }
+            }
+            CResource::Publication(right) => {
+                let flag =
+                    crate::surface::diagnostics::describe_mutex_pointer(right.flag(), binding);
+                let payload =
+                    self.resource_arguments(right.payload().family(), right.payload().arguments());
+                let mut text = format!("{}({flag}, {payload})", right.side().keyword());
+                if right.observed().is_some() {
+                    text.push_str(
+                        ", read by an acquire load whose value no C branch has tested yet",
+                    );
+                }
+                text
+            }
+            CResource::PopulationAuthority(description) => {
+                let mut text =
+                    self.resource_arguments(description.family(), description.arguments());
+                if let Some(arity) = description.population_arity() {
+                    text.pop();
+                    for _ in 1..arity {
+                        text.push_str(", _");
+                    }
+                    text.push(')');
+                }
+                format!("authority({text})")
+            }
+            CResource::Iterated(iterated) => {
+                crate::surface::diagnostics::describe_iterated_memory(iterated, binding)
+            }
+        }
     }
 
     fn cvalue(&mut self, value: &crate::kernel::CValue, depth: usize) -> Option<Spelled> {
@@ -2363,6 +2462,103 @@ mod tests {
                 &mut labels
             ),
             Some("i == 0".into())
+        );
+    }
+}
+
+#[cfg(test)]
+mod resource_tests {
+    use super::*;
+    use crate::kernel::{
+        AlgebraicType, CPointerValue, CState, CType, CValue, LoadKind, PointerBlock, SharedCMemory,
+    };
+
+    #[test]
+    fn resource_arguments_keep_the_same_read_snapshots_as_proposition_operands() {
+        let pointer = Pointer {
+            block: PointerBlock::Concrete("global:cells".into()),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let before = CState::new()
+            .with_local(
+                "cells",
+                CValue::Pointer(CPointerValue::new(pointer.clone(), CType::Int32Pointer)),
+            )
+            .with_memory(CMemory::new().with_block("global:cells", 4));
+        let after = before
+            .clone()
+            .with_memory(CMemory::new().with_block("global:cells", 8));
+        let resource = |memory: &CMemory| {
+            CResourceFact::view_composite(
+                "sampled".into(),
+                vec![CValue::Int32(Bitvector32Term::MemoryLoad(
+                    SharedCMemory::from(memory.clone()),
+                    Box::new(pointer.clone()),
+                    LoadKind::Bits32,
+                ))],
+            )
+        };
+        let mut labels = SnapshotLabels::with_state(ParameterBinding::default(), &after);
+        labels.source_state(&before, "pre".into());
+        assert_eq!(
+            source_resource_fact(&resource(before.memory()), &mut labels),
+            "views sampled(at(pre, cells[0]))"
+        );
+        assert_eq!(
+            source_resource_fact(&resource(after.memory()), &mut labels),
+            "views sampled(cells[0])"
+        );
+        let separate = Proposition::CResourceSeparate {
+            left: Box::new(resource(before.memory()).resource().clone()),
+            right: Box::new(resource(after.memory()).resource().clone()),
+        };
+        assert_eq!(
+            source(&separate, &mut labels),
+            "separate(sampled(at(pre, cells[0])), sampled(cells[0]))"
+        );
+        let list = super::super::render_resource_facts_diagnostic(
+            &[resource(before.memory()), resource(after.memory())],
+            ParameterBinding::default(),
+        );
+        assert!(
+            list.contains("at(<state A>,") && list.contains("at(<state B>,"),
+            "{list}"
+        );
+        assert_eq!(list.matches("\n  where").count(), 1, "{list}");
+    }
+
+    #[test]
+    fn resource_model_arguments_remain_distinct_and_quantities_survive() {
+        let resource = |id| CResource::Token {
+            name: "tree".into(),
+            arguments: vec![AlgebraicValue::Algebraic(AlgebraicTerm {
+                algebraic_type: AlgebraicType::parameter("Tree".into()),
+                node: AlgebraicTermNode::Variable(Variable(id)),
+            })]
+            .into(),
+        };
+        let mut labels = SnapshotLabels::default();
+        labels.source_name(Variable(987551), "left_model".into());
+        labels.source_name(Variable(987552), "right_model".into());
+        let left = CResourceFact::own_quantity(resource(987551), Bitvector32Term::Constant(2));
+        let right = CResourceFact::View(resource(987552));
+        assert_eq!(
+            source_resource_fact(&left, &mut labels),
+            "owns tree(left_model) (quantity 2)"
+        );
+        assert_eq!(
+            source_resource_fact(&right, &mut labels),
+            "views tree(right_model)"
+        );
+        assert_eq!(
+            source(
+                &Proposition::CResourceSeparate {
+                    left: Box::new(left.resource().clone()),
+                    right: Box::new(right.resource().clone())
+                },
+                &mut labels
+            ),
+            "separate(tree(left_model), tree(right_model))"
         );
     }
 }
