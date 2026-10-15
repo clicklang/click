@@ -4053,13 +4053,13 @@ fn fold_composite_resources_on_outcome_with_facts(
             // implicit `auto`, which proves it and folds again.
             let open = !exactly_available
                 && !matches!(normalize_proposition(&required), SimpProposition::True);
-            // A fact read in the projected authority state is not a
-            // proposition at the frontier, and a witness the proof cannot
-            // name has no source expression, so neither has a requirement
-            // spelling yet; each keeps the counted search.
-            let projected = authority_closing_fact_state.is_some();
+            // A witness the proof cannot name has no source expression, so
+            // its body fact has no requirement spelling and the fold refuses
+            // it. A fact read in the projected authority state is spelled as
+            // any other: its `have` at the frontier is what the closing fold
+            // reads.
             let spelling_resource = source_resource.unwrap_or(resource);
-            let spelled = if open && !projected {
+            let spelled = if open {
                 (|| -> Result<Option<ClickProposition>, ClickError> {
                     // The arguments as written, and each witness as it was
                     // inferred or given.
@@ -4106,22 +4106,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             } else {
                 None
             };
-            if open
-                && !(spelled.is_none()
-                    && proves_by_tactic_search(
-                        &body_assumptions,
-                        &required,
-                        if projected {
-                            "fold projected body fact"
-                        } else {
-                            "fold unspellable body fact"
-                        },
-                    ))
-            {
-                // `proves` returns false when the active budget runs out
-                // mid-derivation. Reporting that truncation as a missing fact
-                // is misleading, so surface the budget state itself first.
-                check_verification_deadline()?;
+            if open {
                 let available_pure_facts = pure_facts.materialize();
                 let resources = match &outcome {
                     CFunctionOutcome::Return { state, .. } => state.resources().facts(),

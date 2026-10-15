@@ -449,6 +449,9 @@ fn collect_applied_theorems(tactics: &[ProofTactic], names: &mut BTreeSet<String
             }
             ProofTactic::Open(proof_open) => {
                 collect_applied_theorems(&proof_open.tactics, names);
+                if let Some(close_proof) = &proof_open.close_proof {
+                    collect_applied_theorems(close_proof, names);
+                }
             }
             ProofTactic::If(proof_if) => {
                 collect_applied_theorems(&proof_if.then_tactics, names);

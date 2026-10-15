@@ -827,6 +827,9 @@ enum InternalProofNode {
         index: usize,
         source_index: usize,
         resource: ResourceClause,
+        /// `open(r) { ... } by { ... }`: the proof of the body fact the
+        /// closing fold leaves open.
+        close_proof: Option<Vec<ProofTactic>>,
         body: Box<InternalProofNode>,
         continuation: Box<InternalProofNode>,
     },
@@ -1167,6 +1170,7 @@ fn build_internal_proof_at(
             index,
             source_index,
             resource: proof_open.resource.clone(),
+            close_proof: proof_open.close_proof.clone(),
             body: Box::new(build_internal_proof_at(
                 &proof_open.tactics,
                 index + 1,

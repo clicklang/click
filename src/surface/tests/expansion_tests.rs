@@ -17937,6 +17937,50 @@ void make(int32 x, int32 y) {
     );
 }
 
+#[test]
+fn a_bare_open_expands_its_close_proof_and_needs_it() {
+    let c_source = "void set(int32* p, int32* q, int32 x) { p[0] = x; q[0] = 1; }\n";
+    let click_source = r#"
+verifying "set.c";
+resource cell(p: int32*) { owns p[0..1]; fact p[0] > 0 or p[0] < -1; }
+void set(int32* p, int32* q, int32 x) {
+    requires x > 0;
+    owns cell(p);
+    owns q[0..1];
+} by {
+    open(cell(p)) { step(); }
+    execute();
+    simp();
+}
+"#;
+    let c_sources = [("set.c", c_source)];
+    let expanded = expand_c0_claim_source(click_source, &c_sources, "set", CProofClaim::Grouped)
+        .expect("the bare open should expand");
+    let start = expanded.find("open(cell(p)) {").expect("the expanded open");
+    let by = start + expanded[start..].find("} by {").unwrap_or_else(|| {
+        panic!(
+            "the implicit `auto`'s proof of the close should print as the open's `by`: {expanded}"
+        )
+    });
+    crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &c_sources))
+        .expect("the expansion should reverify cold");
+    let by_end = by
+        + expanded[by..]
+            .find("\n    }\n")
+            .expect("the open's `by` closes");
+    let mut without_proof = expanded.clone();
+    without_proof.replace_range(by..by_end + "\n    }".len(), "}");
+    let error = crate::surface::proof::without_implicit_auto(|| {
+        verify_c0_sources(&without_proof, &c_sources)
+    })
+    .expect_err("with the implicit `auto` off, the close refuses its unproved body fact");
+    assert!(
+        error.message().contains("fold(cell(p))"),
+        "the refusal should name the closing fold: {}",
+        error.message()
+    );
+}
+
 /// `expanded` with its first step's obligation proofs removed:
 /// `step() by { ... }` or `step() { requires ... }` becomes `step();`.
 fn without_first_step_obligation_proofs(expanded: &str) -> String {

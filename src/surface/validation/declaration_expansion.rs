@@ -1989,6 +1989,14 @@ fn expand_declared_resource_tactic_with_nested_proofs(
                 .into_iter()
                 .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
                 .collect::<Result<Vec<_>, _>>()?,
+            close_proof: open
+                .close_proof
+                .map(|body| {
+                    body.into_iter()
+                        .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .transpose()?,
         })),
         ProofTactic::If(proof_if) => Ok(ProofTactic::If(ProofIf {
             condition: expand_declared_resource_proposition(
