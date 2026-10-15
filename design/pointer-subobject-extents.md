@@ -163,6 +163,15 @@ Known limits, each refused or unchanged rather than accepted unsoundly:
 - Contracts observe member addresses without narrowing, and spec pointer
   equality is still address equality until Phase B.
 
+### Status after step 3
+
+A memory clause's range must lie inside the extent of the pointer that names
+it, wherever the clause is evaluated: a call's requirements and results, a
+composite body when it is expanded, folded or unfolded, and loop effect
+clauses. The kernel checks it where a clause's base value becomes a range
+(`segment_extent_refusal`); fold lowering refuses constant ranges by name
+first. A pointer without an extent is unaffected.
+
 ## Phase B: designation across address equality (modular defect)
 
 A callee sees opaque pointers. It must not dereference `q` on the strength of a

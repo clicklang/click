@@ -2675,7 +2675,31 @@ fn lower_resource_segment_with_values(
             "could not lower `{resource_name}` resource: segment base did not evaluate to a pointer"
         )));
     };
-    let base = base.into_pointer();
+    let base_value = base;
+    let base = base_value.pointer().clone();
+    // A clause through a member pointer may not claim past the member
+    // (`design/pointer-subobject-extents.md`, D1). Constant bounds are
+    // refused here by name; the kernel decides the rest when it checks
+    // the step.
+    let refuse_past_extent = |range: CMemoryRange| {
+        let (start, end) = match range.wide_bounds() {
+            Some(bounds) => bounds,
+            None => (range.start(), range.end()),
+        };
+        if start.as_const().is_none() || end.as_const().is_none() {
+            return Ok(range);
+        }
+        match crate::kernel::memory_range_extent_refusal(
+            &base_value,
+            &range,
+            &crate::kernel::PureFactContext::new(),
+        ) {
+            Some(message) => Err(ClickError::new(format!(
+                "could not lower `{resource_name}` resource: {message}"
+            ))),
+            None => Ok(range),
+        }
+    };
     // A bound keeps its own integer type in the contract: a range with a
     // 64-bit bound is wide, and one with two `int32` bounds is not
     // (`design/typed-indices.md`, stage 2).
@@ -2700,7 +2724,7 @@ fn lower_resource_segment_with_values(
     };
     // The same rule as the kernel's resource and proposition lowering.
     if let Some((start, end)) = crate::kernel::wide_range_bounds(&start_value, &end_value) {
-        return Ok(CMemoryRange::new_wide(base, start, end, element_width));
+        return refuse_past_extent(CMemoryRange::new_wide(base, start, end, element_width));
     }
     let start = bound(start_value, "start")?;
     let end = bound(end_value, "end")?;
@@ -2711,7 +2735,7 @@ fn lower_resource_segment_with_values(
             "`{resource_name}` segment has an end before its start: {start}..{end}"
         )));
     }
-    Ok(CMemoryRange::new_with_element_width(
+    refuse_past_extent(CMemoryRange::new_with_element_width(
         base,
         start,
         end,
