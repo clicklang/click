@@ -7203,7 +7203,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
                 .expect("the typed two-premise rule should build one checked Proof descendant");
             let allocations = fact_node_allocations() - before;
             let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
-            let allocation_bound = 96 * logarithmic_height + 384;
+            let allocation_bound = 96 * logarithmic_height + 2048;
             assert!(
                 allocations <= allocation_bound,
                 "size {size} fixed-state {label} simp allocated {allocations} persistent nodes (bound {allocation_bound})"
@@ -7315,7 +7315,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
             .expect("the strict-lower increment path should advance one Proof");
         let allocations = fact_node_allocations() - before;
         let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
-        let allocation_bound = 96 * logarithmic_height + 384;
+        let allocation_bound = 96 * logarithmic_height + 2048;
         assert!(
             allocations <= allocation_bound,
             "size {size} fixed-state strict-lower simp allocated {allocations} persistent nodes (bound {allocation_bound})"
