@@ -7,10 +7,10 @@ standard library.
 import click::cstr;
 
 theorem user_reuses_cstr_len_has_prefix(bytes: uint8[], len: uint64) {
-    requires cstr_len(bytes, len);
+    requires cstr::len(bytes, len);
 
-    ensures cstr_prefix(bytes, len) by {
-        apply(cstr_len_has_prefix(bytes, len));
+    ensures cstr::prefix(bytes, len) by {
+        apply(cstr::len_has_prefix(bytes, len));
         simp();
     }
 }

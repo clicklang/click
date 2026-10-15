@@ -17,6 +17,7 @@ pub(crate) mod standard_library;
 mod validity;
 
 pub use import::{PreparedCppImport, load_import, refresh_import};
+pub(crate) use import::{UnitConfig, UnitSource, load_unit, prepare_unit};
 pub use lowering::{LoweredCppFunction, lower_import};
 pub use schema::{
     CppBase, CppBaseReference, CppBinaryOperator, CppByteTemplateArgument, CppCallArgument,

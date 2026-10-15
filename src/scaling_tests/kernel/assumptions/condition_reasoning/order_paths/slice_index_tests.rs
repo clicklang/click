@@ -36,20 +36,31 @@ fn wide_order_chain_work_follows_the_chain_and_not_unrelated_facts() {
         beside.push(work);
     }
     assert!(beside.iter().all(|work| *work == beside[0]), "{beside:?}");
-    // A growing chain costs work linear in its length.
-    let mut along = Vec::new();
-    for size in [8u64, 16, 32, 64] {
-        let mut facts = PureFactContext::new();
-        for i in 0..size {
-            facts = facts.assume_condition(lt(v(i), v(i + 1)), true);
+    // A growing chain costs work linear in its length. The difference
+    // graph answers a chain of at most `EDGE_LIMIT` edges; a longer one is
+    // left to the order walk, which costs more per edge. Each regime is
+    // checked on its own sizes, so the step between them is not read as
+    // growth.
+    let limit = crate::kernel::difference_graph::EDGE_LIMIT as u64;
+    for sizes in [
+        [limit / 4, limit / 2, limit].as_slice(),
+        &[2 * limit, 4 * limit, 8 * limit, 16 * limit],
+    ] {
+        let mut along = Vec::new();
+        for &size in sizes {
+            let mut facts = PureFactContext::new();
+            for i in 0..size {
+                facts = facts.assume_condition(lt(v(i), v(i + 1)), true);
+            }
+            let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.decide(&lt(v(0), v(size)))
+            });
+            assert_eq!(answer, Some(true));
+            along.push((size, work));
         }
-        let (answer, work) =
-            crate::instrumentation::measure_deterministic_work(|| facts.decide(&lt(v(0), v(size))));
-        assert_eq!(answer, Some(true));
-        along.push(work);
-    }
-    for pair in along.windows(2) {
-        assert!(pair[1] <= 3 * pair[0], "{along:?}");
+        for pair in along.windows(2) {
+            assert!(pair[1].1 <= 3 * pair[0].1, "{along:?}");
+        }
     }
 }
 

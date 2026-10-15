@@ -37,7 +37,7 @@ trusted axioms. The `extern` contracts are assumptions, listed in
 A module is named by a `click::` path that mirrors its file:
 `import click::cstr;` is `cstr.click` and `import click::c::string;` is
 `c/string.click`. A declaration's qualified name adds its own name:
-`click::cstr::cstr_len`, or `cstr::cstr_len` once the module is in scope
+`click::cstr::len`, or `cstr::len` once the module is in scope
 (`src/surface/parser/library_paths.rs`). The remaining design steps are recorded in
 [`issues/standard-library.md`](../issues/standard-library.md).
 

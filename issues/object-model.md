@@ -453,3 +453,32 @@ are verified upstream. The latest archive audit after the selected read-frame
 repair remains 42/52 with no new failures. Continue the
 [selected resource-delta extraction](../design/object-model-recovery-audit.md#selected-complete-read-bridge-for-resource-deltas)
 and the separate full-pointer evidence gap at the vector allocation fold.
+
+
+The checked-spelling extraction landed in PR #1081; both pushed commits
+`346b87a69` and `76b262027` are verified upstream. Its final correction keeps
+normalized lookup spellings separate from authored certificate forms. All 52
+normal upstream example projects and 46 normal fixed-state controls pass, as
+does library Clippy with warnings denied. The original recovery vector remains
+incomplete: its explicit prefix proof still exhausts the unchanged control
+budget inside preliminary cross-snapshot availability lookup.
+
+The cursor reduction exposes a separate C pointer-field initialization gap.
+An opaque full pointer value must retain its identity through a checked copy
+without acquiring native type, lifetime, initialization, or access authority.
+Use the existing unresolved-value representation; do not infer a native record
+from C layout or replace full-value equality with address equality. Continue
+with independently checked field-copy effects and their modular output
+transfer. No new archive audit has run; retain 42/52 and the same ten failures.
+
+
+Recovery checkpoint `d06045be7` retains canonical opaque C pointer inputs
+without importing caller cells or object authority. All five independent-entry
+controls pass, including multiple unrelated-state sizes and forged-identity
+rejections. The broader pointer selection has 472 passes, three failures and
+17 ignored controls; a baseline run on `2cab205db` has the same three failures
+(471 passes). Keep untyped-pointer error classification, pointer-field
+address-equality rejection, and modular record-pointer identity return on the
+activation checklist. The existing scalar-subobject bug records the archive's
+still-accepted pointer-field countermodel. No complete cursor proof or new full
+archive audit is claimed.

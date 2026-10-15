@@ -3249,6 +3249,62 @@ fn failed_final_assumption_preserves_its_checked_trace_context() {
     });
 }
 
+#[test]
+fn rejected_transport_prints_checked_reads_and_retains_prefix() {
+    let stores = (1..10).map(|i| format!("p[{i}] = 9; ")).collect::<String>();
+    let c = format!("void f(int32 *p) {{ {stores} p[0] = 9; return; }}");
+    let steps = "step(); ".repeat(9);
+    for transport in [
+        "transport(at(stored, p[0] == 7), p[0] == 7) using { at(stored, p[0] == 7); };",
+        "transport(at(stored, p[0] == 7), p[0] == 7);",
+    ] {
+        let source = format!(
+            r#"verifying "f.c";
+            void f(int32 *p) {{ owns p[0..10]; requires p[0] == 7; ensures true; }} by {{
+                {steps} mark stored; step();
+                {transport}
+                execute(); assumption();
+            }}
+        "#
+        );
+        with_proof_trace("f", || {
+            let error = verify_c0_sources(&source, &[("f.c", c.as_str())])
+                .expect_err("a write invalidates the transported value");
+            let message = error.message();
+            if transport.contains("using") {
+                assert!(message.contains("found no frame evidence"), "{message}");
+                assert!(message.contains("at this frontier (10):"), "{message}");
+            } else {
+                assert!(
+                    message.contains("could not make fact transport premises explicit"),
+                    "{message}"
+                );
+            }
+            assert!(message.contains("checked source (holds):"), "{message}");
+            assert!(message.contains("checked target (wanted):"), "{message}");
+            assert!(message.contains("read<Bits32>"), "{message}");
+            assert!(message.contains("snapshot#"), "{message}");
+            assert!(
+                message.contains("checked target (wanted): false"),
+                "{message}"
+            );
+            assert!(
+                !message.contains("additional effect facts omitted"),
+                "{message}"
+            );
+            let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
+                .expect("the rejected written transport retains its checked prefix");
+            assert!(
+                trace.contains("checked prefix; certification failed"),
+                "{trace}"
+            );
+            assert!(trace.contains("steps through: p[1] = 9"), "{trace}");
+            assert!(trace.contains("steps through: p[0] = 9"), "{trace}");
+            assert!(!trace.contains("transport using"), "{trace}");
+        });
+    }
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/surface/tests/diagnostic_tests.rs");

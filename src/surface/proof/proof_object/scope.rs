@@ -253,6 +253,12 @@ impl<'a> ProofScope<'a> {
         Ok(next)
     }
 
+    /// Retain only the checked body when a written operation is rejected.
+    pub(in crate::surface::proof) fn record_certification_failure_trace(&self) {
+        self.body
+            .record_certification_failure_trace(self.body.claim_label(), 0);
+    }
+
     /// Applies one checked step inside the nested body. Failed
     /// candidates leave the enclosing scope value unchanged.
     pub(in crate::surface::proof) fn apply_step(
@@ -642,6 +648,11 @@ impl<'a> ProofScope<'a> {
     pub(in crate::surface::proof) fn try_auto_fact_closure(
         &self,
     ) -> Result<Option<Self>, ClickError> {
+        if let Some(body) = self.body.try_single_rewrite_closure()? {
+            let mut next = self.clone();
+            next.body = body;
+            return Ok(Some(next));
+        }
         if let Some(closed) = self.try_solver_closure()? {
             return Ok(Some(closed));
         }

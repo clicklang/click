@@ -56,7 +56,7 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 59;
+pub(crate) const EXPORT_SCHEMA: u32 = 60;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -75,7 +75,8 @@ pub struct CppExport {
     pub preprocessor_files: Vec<CppPreprocessorFile>,
     pub constants: Vec<CppConstant>,
     pub records: Vec<CppRecord>,
-    pub function: CppFunction,
+    /// The selected functions, in selection order.
+    pub functions: Vec<CppFunction>,
     pub reachable_functions: Vec<CppFunction>,
 }
 
@@ -1137,7 +1138,7 @@ impl CppExport {
     pub(crate) fn validate(
         &self,
         logical_source: &str,
-        function: &str,
+        selected: &[String],
         expected_exceptions: bool,
         expected_exception_behavior: CppExceptionBehavior,
         expected_rtti: bool,
@@ -1239,41 +1240,51 @@ impl CppExport {
             previous_dependency = Some(dependency);
             declaration_sources.insert(dependency.clone());
         }
-        let expected_name = match &self.function.function_kind {
-            CppFunctionKind::Method { record_name, .. }
-            | CppFunctionKind::StaticMethod { record_name, .. } => {
-                let prefix = format!("{record_name}::");
-                let member = function.strip_prefix(&prefix).ok_or_else(|| {
-                    "selected C++ method requires a qualified Class::method selector".to_string()
-                })?;
-                format!(
-                    "{record_name}_{}",
-                    if member == "operator+=" {
-                        "operator_add_assign"
-                    } else if member == "operator-=" {
-                        "operator_subtract_assign"
-                    } else if member == "operator[]" {
-                        "operator_index"
-                    } else {
-                        member
-                    }
-                )
-            }
-            _ => function.replace("::", "_"),
-        };
-        if self.function.name != expected_name {
+        if self.functions.len() != selected.len() {
             return Err(format!(
-                "C++ export resolved `{}` instead of selected function `{function}`",
-                self.function.name
+                "C++ export has {} selected functions for {} selected names",
+                self.functions.len(),
+                selected.len()
             ));
         }
-        if !matches!(
-            self.function.function_kind,
-            CppFunctionKind::Free
-                | CppFunctionKind::StaticMethod { .. }
-                | CppFunctionKind::Method { .. }
-        ) {
-            return Err("the selected C++ declaration must be a free function".into());
+        for (exported, function) in self.functions.iter().zip(selected) {
+            let expected_name = match &exported.function_kind {
+                CppFunctionKind::Method { record_name, .. }
+                | CppFunctionKind::StaticMethod { record_name, .. } => {
+                    let prefix = format!("{record_name}::");
+                    let member = function.strip_prefix(&prefix).ok_or_else(|| {
+                        "selected C++ method requires a qualified Class::method selector"
+                            .to_string()
+                    })?;
+                    format!(
+                        "{record_name}_{}",
+                        if member == "operator+=" {
+                            "operator_add_assign"
+                        } else if member == "operator-=" {
+                            "operator_subtract_assign"
+                        } else if member == "operator[]" {
+                            "operator_index"
+                        } else {
+                            member
+                        }
+                    )
+                }
+                _ => function.replace("::", "_"),
+            };
+            if exported.name != expected_name {
+                return Err(format!(
+                    "C++ export resolved `{}` instead of selected function `{function}`",
+                    exported.name
+                ));
+            }
+            if !matches!(
+                exported.function_kind,
+                CppFunctionKind::Free
+                    | CppFunctionKind::StaticMethod { .. }
+                    | CppFunctionKind::Method { .. }
+            ) {
+                return Err("the selected C++ declaration must be a free function".into());
+            }
         }
 
         if (self.profile.rtti
@@ -1297,13 +1308,15 @@ impl CppExport {
             dependencies: constant_dependencies,
         } = validate_constant_inventory(&self.constants, logical_source, &declaration_sources)?;
 
-        if self.function.axiom.is_some() {
-            return Err("the selected C++ function cannot be a standard-library axiom".into());
+        for function in &self.functions {
+            if function.axiom.is_some() {
+                return Err("the selected C++ function cannot be a standard-library axiom".into());
+            }
+            function.span.validate(logical_source)?;
         }
-        self.function.span.validate(logical_source)?;
         let mut functions = BTreeMap::new();
         let mut referenced_constants = BTreeSet::new();
-        for source in std::iter::once(&self.function).chain(&self.reachable_functions) {
+        for source in self.functions.iter().chain(&self.reachable_functions) {
             if source.axiom.is_some() {
                 source.validate_axiom(&records)?;
                 if functions
@@ -1395,13 +1408,15 @@ impl CppExport {
 
         let mut visiting = Vec::new();
         let mut visited = BTreeMap::new();
-        validate_reachable_calls(
-            &self.function.declaration_id,
-            &functions,
-            &records,
-            &mut visiting,
-            &mut visited,
-        )?;
+        for function in &self.functions {
+            validate_reachable_calls(
+                &function.declaration_id,
+                &functions,
+                &records,
+                &mut visiting,
+                &mut visited,
+            )?;
+        }
         validate_reachable_records(&functions, &records)?;
         super::construction::validate_returns(&functions, &records)?;
         if visited.len() != functions.len() {
@@ -4953,8 +4968,11 @@ fn collect_expression_calls<'a>(value: &'a CppExpression, calls: &mut Vec<Collec
 
 pub(super) fn observer_callees(import: &super::PreparedCppImport) -> BTreeSet<String> {
     let mut result = BTreeSet::new();
-    for function in
-        std::iter::once(&import.export().function).chain(&import.export().reachable_functions)
+    for function in import
+        .export()
+        .functions
+        .iter()
+        .chain(&import.export().reachable_functions)
     {
         let mut calls = Vec::new();
         collect_calls(&function.body, &mut calls);

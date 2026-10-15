@@ -33,7 +33,7 @@ theorem label_source_prefix_viewable(bytes: uint8[], length: uint64, taken: uint
 }
 
 uint64 label_measure(const char* src) {
-    requires cstr_readable(src);
+    requires click::cstr::readable(src);
     ensures result < 32;
 } by {
     execute();
@@ -41,14 +41,14 @@ uint64 label_measure(const char* src) {
 }
 
 uint64 label_copy(char* dst, const char* src) {
-    requires cstr_readable(src);
+    requires click::cstr::readable(src);
     owns dst[0u64..32u64];
     requires separate(memory(dst[0u64..32u64]), memory(src[0u64..32u64]));
     ensures result < 32;
     ensures dst[result] == '\0';
 } by {
     step();
-    unfold(cstr_readable);
+    unfold(click::cstr::readable);
     have exists (len: uint64) {
         len < 18446744073709551615u64 and
         viewable(((uint8*)src)[0..len + 1u64]) and

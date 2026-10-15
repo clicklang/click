@@ -5875,10 +5875,9 @@ fn check_trait_method_implementations(
         {
             return Err(ClickError::new(format!(
                 "`{}` does not refine the trait method interface `{interface}`: its contract \
-                 must accept every call the interface allows and guarantee what the interface \
-                 promises; the check reads each clause exactly or decides a bare comparison, so \
-                 state the interface's guarantees in the implementation's contract, where its \
-                 proof establishes them",
+                 must accept every call the interface allows; it inherits the interface's \
+                 guarantees, and its `requires` must follow from the interface's, each clause \
+                 read exactly or decided as a bare comparison",
                 function.name()
             ))
             .at_declaration(function.name()));
@@ -7312,6 +7311,7 @@ pub(in crate::surface) fn describe_parameter_type(
         Some(name) if matches!(c_type, C0Type::UInt8Array(_)) => format!("struct {name}"),
         Some(name) if reference => format!("struct {name}&"),
         Some(name) => format!("struct {name}*"),
+        None if matches!(c_type, C0Type::FunctionPointer(_)) => describe_c0_type(c_type),
         None => match c_type.pointee_type().filter(|_| reference) {
             Some(referent) => format!("{}&", referent.ranked_diagnostic_name()),
             None => c_type.ranked_diagnostic_name(),

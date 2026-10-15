@@ -2032,10 +2032,10 @@ fn expanded_post_execution_apply_retains_its_facts_for_the_closer() {
 verifying "inspect.c";
 int32 inspect(uint8 p[], uint64 len) {
     requires viewable(p[0..len + 1u64]);
-    requires cstr_len(p, len);
+    requires cstr::len(p, len);
     ensures p[len] == '\0' by {
         execute();
-        apply(cstr_len_has_terminator(p, len));
+        apply(cstr::len_has_terminator(p, len));
         simp();
     }
 }"#;
@@ -2049,7 +2049,7 @@ int32 inspect(uint8 p[], uint64 len) {
     )
     .expect("post-execution apply should expand");
 
-    assert!(expanded.contains("apply(cstr_len_has_terminator(p, len)) using"));
+    assert!(expanded.contains("apply(cstr::len_has_terminator(p, len)) using"));
     verify_c0_sources(&expanded, &[("inspect.c", c_source)])
         .expect("explicit apply conclusions should remain available to the trailing simp");
 }

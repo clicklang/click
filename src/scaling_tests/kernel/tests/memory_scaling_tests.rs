@@ -1717,6 +1717,10 @@ fn unsigned_order_walk_ignores_unsigned_bounds_of_other_indices() {
             (Bitvector32Term::Constant(4 ^ 0x8000_0000), true),
         ];
         // File the fact set once; the filing is not what is measured.
+        // `decide` answers from the difference graph before it reaches the
+        // order walk, so it does not file the walk's edges
+        // (`OrderWalkIndex`). A walk between two unrelated terms files them
+        // without recording anything about the measured targets.
         assert_eq!(
             facts.decide(&ConditionTerm::signed_less_equal(
                 Bitvector32Term::Constant(0),
@@ -1724,6 +1728,7 @@ fn unsigned_order_walk_ignores_unsigned_bounds_of_other_indices() {
             )),
             Some(true)
         );
+        assert!(!facts.has_order_path_for_memory_resolution(&variable(2), &variable(3), false));
         let walk = || {
             questions.iter().all(|(target, strict)| {
                 facts.has_order_path_for_memory_resolution(&flipped, target, *strict)

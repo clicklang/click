@@ -5154,3 +5154,51 @@ fn a_rust_sidecar_writes_click_types_in_rust() {
 mod scaling_tests {
     include!("../../scaling_tests/surface/tests/surface_syntax.rs");
 }
+
+/// A crate trait method's implementation inherits its interface: the
+/// interface's `ensures`, labeled as the interface's, and its `requires`
+/// when the implementation writes none, whichever block comes first.
+#[test]
+fn a_rust_trait_implementation_inherits_its_interface() {
+    let interface = "trait shapes::Shape { fn area(&self, scale: i32) -> i32 { \
+        requires 0 <= scale and scale <= 1000; ensures scale < result; } }";
+    let implementation = "impl shapes::Shape for shapes::Circle { \
+        fn area(&self, scale: i32) -> i32 { ensures result == scale + scale + 1; } \
+        by { execute(); simp(); } }";
+    for source in [
+        format!("verifying \"shapes.rs\"; {interface} {implementation}"),
+        format!("verifying \"shapes.rs\"; {implementation} {interface}"),
+    ] {
+        let file = parser::parse(&source).expect("the trait and implementation parse");
+        let interface = file
+            .function_blocks()
+            .iter()
+            .find(|block| block.is_external())
+            .unwrap();
+        let circle = file
+            .function_blocks()
+            .iter()
+            .find(|block| !block.is_external())
+            .unwrap();
+        assert_eq!(circle.requires(), interface.requires());
+        assert_eq!(circle.ensures().len(), 2);
+        assert_eq!(
+            circle.ensures()[1].ensure(),
+            interface.ensures()[0].ensure()
+        );
+        assert_eq!(
+            crate::languages::rust::names::display_rust_names(&circle.ensure_claim_label(1)),
+            "<shapes::Circle as shapes::Shape>::area.interface_ensures_0"
+        );
+    }
+    let renamed = implementation.replace("scale", "s");
+    let error = parser::parse(&format!("verifying \"shapes.rs\"; {interface} {renamed}"))
+        .expect_err("an implementation renaming its parameters cannot inherit");
+    assert!(
+        error
+            .message()
+            .contains("names its parameters as the trait's interface does"),
+        "{}",
+        error.message()
+    );
+}

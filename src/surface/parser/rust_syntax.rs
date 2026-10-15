@@ -286,8 +286,21 @@ impl Parser {
                 result = Err(self.error("an `impl` block holds `fn` contracts"));
                 break;
             }
+            // The method's own name, which names its interface in the trait.
+            let method = match self.tokens.get(self.position + 1) {
+                Some(Token::Ident(method)) => Some(method.clone()),
+                _ => None,
+            };
             match self.parse_function_block(false) {
-                Ok(block) => function_blocks.push(block),
+                Ok(block) => {
+                    if let (Some(trait_name), Some(method)) = (&self.rust_impl_trait, method) {
+                        let mut interface = trait_name.clone();
+                        crate::languages::rust::names::push_path_segment(&mut interface, &method);
+                        self.rust_trait_implementations
+                            .push((block.signature().name().to_string(), interface));
+                    }
+                    function_blocks.push(block)
+                }
                 Err(error) => {
                     result = Err(error);
                     break;

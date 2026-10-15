@@ -1,24 +1,24 @@
 // C strings, measured as C measures them: a length is a `size_t`. A string
 // of length `len` occupies `len + 1` bytes, so `len` is below `SIZE_MAX`,
 // which also keeps `len + 1` exact.
-predicate cstr_prefix(bytes: uint8[], len: uint64) {
+predicate prefix(bytes: uint8[], len: uint64) {
     forall (k: uint64) { k < len implies bytes[k] != '\0' }
 }
 
-predicate cstr_len(bytes: uint8[], len: uint64) {
+predicate len(bytes: uint8[], len: uint64) {
     len < 18446744073709551615u64 and
         viewable(bytes[0..len + 1u64]) and
-        cstr_prefix(bytes, len) and
+        cstr::prefix(bytes, len) and
         bytes[len] == '\0'
 }
 
 predicate cstr(bytes: uint8[]) {
     exists (len: uint64) {
-        cstr_len(bytes, len)
+        cstr::len(bytes, len)
     }
 }
 
-predicate cstr_readable_len(bytes: uint8[], len: uint64) {
+predicate readable_len(bytes: uint8[], len: uint64) {
     len < 18446744073709551615u64 and
         viewable(bytes[0..len + 1u64]) and
         forall (k: uint64) { k < len implies bytes[k] != '\0' } and
@@ -26,7 +26,7 @@ predicate cstr_readable_len(bytes: uint8[], len: uint64) {
         forall (k: uint64) { k < len + 1u64 implies defined(bytes[k]) }
 }
 
-theorem cstr_readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
+theorem readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
     requires forall (k: uint64) { k < left implies bytes[k] != '\0' };
     requires bytes[left] == '\0';
     requires forall (k: uint64) { k < right implies bytes[k] != '\0' };
@@ -75,7 +75,7 @@ theorem cstr_readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
     }
 }
 
-predicate cstr_readable(bytes: uint8[]) {
+predicate readable(bytes: uint8[]) {
     exists (len: uint64) {
         len < 18446744073709551615u64 and
             viewable(bytes[0..len + 1u64]) and
@@ -95,33 +95,33 @@ resource cstr_at(p: const uint8*, len: uint64) {
     fact forall (k: uint64) { 0u64 <= k and k < len + 1u64 implies defined(p[k]) };
 }
 
-predicate cstr_bounded(bytes: uint8[], max: uint64) {
+predicate bounded(bytes: uint8[], max: uint64) {
     exists (k: uint64) { k < max and bytes[k] == '\0' }
 }
 
-theorem cstr_len_is_viewable(bytes: uint8[], len: uint64) {
-    requires cstr_len(bytes, len);
+theorem len_is_viewable(bytes: uint8[], len: uint64) {
+    requires cstr::len(bytes, len);
 
     ensures viewable(bytes[0..len + 1u64]) by {
-        unfold(cstr_len);
+        unfold(cstr::len);
         simp();
     }
 }
 
-theorem cstr_len_has_prefix(bytes: uint8[], len: uint64) {
-    requires cstr_len(bytes, len);
+theorem len_has_prefix(bytes: uint8[], len: uint64) {
+    requires cstr::len(bytes, len);
 
-    ensures cstr_prefix(bytes, len) by {
-        unfold(cstr_len);
+    ensures cstr::prefix(bytes, len) by {
+        unfold(cstr::len);
         simp();
     }
 }
 
-theorem cstr_len_has_terminator(bytes: uint8[], len: uint64) {
-    requires cstr_len(bytes, len);
+theorem len_has_terminator(bytes: uint8[], len: uint64) {
+    requires cstr::len(bytes, len);
 
     ensures bytes[len] == '\0' by {
-        unfold(cstr_len);
+        unfold(cstr::len);
         simp();
     }
 }

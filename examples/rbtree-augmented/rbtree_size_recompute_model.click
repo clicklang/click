@@ -103,10 +103,6 @@ theorem compute_size_restores_subtree_size()
                                 unfold(right);
                                 unfold(sized_value(SizedTree::Empty));
                                 let r = fold(optional_size(node->rb.rb_right), { value: 0 });
-                                have 0 <= l.value by { simp(); }
-                                have 0 <= r.value by { simp(); }
-                                have r.value <= 2147483646 by { simp(); }
-                                have l.value <= 2147483646 - r.value by { simp(); }
                                 apply(size_sum_defined(l.value, r.value));
                                 apply(size_sum_as_integer(l.value, r.value));
                                 mark before_compute;
@@ -185,17 +181,7 @@ theorem compute_size_restores_subtree_size()
                                 let { metadata: rm, left: rleft, right: rright } = unfold(right);
                                 unfold(rm);
                                 unfold(sized_value(SizedTree::Node(rid, rp, rc, rv, rl, rr)));
-                                have sized_value(right_model) == rv by {
-                                    have right_model == SizedTree::Node(rid, rp, rc, rv, rl, rr) by { simp(); }
-                                    rewrite(right_model == SizedTree::Node(rid, rp, rc, rv, rl, rr));
-                                    unfold(sized_value(SizedTree::Node(rid, rp, rc, rv, rl, rr)));
-                                    normalize();
-                                }
                                 let r = fold(optional_size(node->rb.rb_right), { value: rv });
-                                have 0 <= l.value by { simp(); }
-                                have 0 <= r.value by { simp(); }
-                                have r.value <= 2147483646 by { simp(); }
-                                have l.value <= 2147483646 - r.value by { simp(); }
                                 apply(size_sum_defined(l.value, r.value));
                                 apply(size_sum_as_integer(l.value, r.value));
                                 child_size_separation(node, node->rb.rb_right, { metadata: r });
@@ -296,11 +282,6 @@ theorem compute_size_restores_subtree_size()
                                     rewrite(sized_value(right_model) == r.value);
                                     normalize();
                                 }
-                                have l.value <= 2147483646 - r.value by {
-                                    rewrite(l.value == sized_value(left_model));
-                                    rewrite(2147483646 - r.value == 2147483646 - sized_value(right_model));
-                                    assumption();
-                                }
                                 apply(size_sum_defined(l.value, r.value));
                                 apply(size_sum_as_integer(l.value, r.value));
                                 child_size_separation(node, node->rb.rb_left, { metadata: l });
@@ -381,10 +362,6 @@ theorem compute_size_restores_subtree_size()
                                     normalize();
                                 }
                                 let r = fold(optional_size(node->rb.rb_right), { value: rv });
-                                have 0 <= l.value by { simp(); }
-                                have 0 <= r.value by { simp(); }
-                                have r.value <= 2147483646 by { simp(); }
-                                have l.value <= 2147483646 - r.value by { simp(); }
                                 apply(size_sum_defined(l.value, r.value));
                                 apply(size_sum_as_integer(l.value, r.value));
                                 child_size_separation(node, node->rb.rb_left, { metadata: l });

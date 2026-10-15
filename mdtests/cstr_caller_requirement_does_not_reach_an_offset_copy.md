@@ -1,6 +1,6 @@
 # A caller's C-string requirement does not reach a copy that points elsewhere
 
-`p = bytes + 1` is not the pointer the caller's `cstr_readable(bytes)` names,
+`p = bytes + 1` is not the pointer the caller's `cstr::readable(bytes)` names,
 so `strlen(p)`'s precondition is still missing.
 
 ```c filename=cstr_offset_copy.c
@@ -15,7 +15,7 @@ uint64 offset(uint8 bytes[]) {
 verifying "cstr_offset_copy.c";
 
 uint64 offset(uint8 bytes[]) {
-    requires cstr_readable(bytes);
+    requires click::cstr::readable(bytes);
     ensures result == result;
 } by {
     execute();

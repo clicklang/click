@@ -4657,3 +4657,6 @@ fn charon_project_crate_unit_serves_every_sidecar_of_the_crate() {
     }
     let _ = fs::remove_dir_all(&root);
 }
+
+#[path = "rust_import/frontend.rs"]
+mod installed_frontend;
