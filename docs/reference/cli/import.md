@@ -13,8 +13,9 @@ usage: click import lock [<project-dir> | <sidecar.click>]
 
 With no path, or a directory or `click.project.json`, the command prepares the
 units of the nearest project file at or above that directory (see
-[Project units](#project-units)). With a sidecar, it refreshes the sidecar's own
-import config when one exists, and otherwise its project's units.
+[Project units](#project-units)). With a sidecar, it prepares the sidecar's
+project. A sidecar's own `<sidecar>.import.json`, the configuration of earlier
+releases, is refused with a diagnostic naming its replacement.
 
 ## Interface boundary
 
@@ -84,12 +85,14 @@ requires no layout or file names in it, and never writes into it.
   it. Source keys are relative paths inside the root, without `..`.
 - `compiler` is required, relative to the project directory or absolute. Plain
   C that Click preprocesses itself needs no unit.
-- `environment` holds the allowlisted variables of a per-sidecar config's
-  `environment.allow`. `option_profile` and per-source `projection` are as in a
-  per-sidecar config.
+- `environment` holds the only variables the compiler runs with; every other
+  variable is cleared. `option_profile` names an
+  [option profile](#option-profile-linux-68-x86_64-kbuild) that admits more
+  than the preprocessor flags, and a source's `projection` selects the
+  [dependency-closure projection](#dependency-closure-projection).
 - Unit `args` precede each source's own `args`; together they are validated
-  exactly as a per-sidecar config's `args`. The target is the project's
-  `target`, or the default target.
+  as [Validation and supported profile](#validation-and-supported-profile)
+  describes. The target is the project's `target`, or the default target.
 
 A Rust unit is one crate or one single-file program; it takes no `compiler`,
 `environment`, `option_profile` or `args`, and `sources` lists exactly one
@@ -123,8 +126,8 @@ its own at lock time; the standard is C++20 and the target
 `option_profile`. Each source is a logical source, a `.cpp` file or a header,
 and lists the `functions` its sidecars verify; it may also give the
 `translation_unit` that includes a header (by default the source itself), its
-own `args`, `dependencies`, `library_assertions` and `exception_behavior`, as a
-per-sidecar config does:
+own `args`, `dependencies`, `library_assertions` and `exception_behavior`
+(described [below](#preliminary-c-semantic-artifact)):
 
 ```json
 "basic": {
@@ -151,8 +154,9 @@ A sidecar selects a unit source with an ordinary `verifying` path, relative to
 the sidecar, that resolves to a file the unit lists; for example a sidecar in
 `proofs/checks/` above writes `verifying "../../vendor/label-1.0/src/label_fit.c";`.
 Either every `verifying` source of a sidecar is a unit source or none is. A
-sidecar with its own `<sidecar>.import.json` whose sources a unit also lists is
-refused.
+sidecar's own `<sidecar>.import.json`, the configuration of earlier releases,
+is refused with a diagnostic naming its replacement: declare its sources as a
+unit, remove the config and its lock, and run `click import lock`.
 
 `click import lock` prepares every unit into `click.project.lock.json` beside
 the project file, with one entry per unit, and writes the artifacts to
@@ -163,58 +167,15 @@ Loading rechecks the unit's sources and every header the compiler opened under
 the project directory or the unit root, so the lock still loads after the whole
 checkout moves, and a changed input is refused with the file named.
 
-## Configure and lock an import
+## The prepared snapshot
 
-For `main.click`, create `main.click.import.json`. The configuration lists the
-logical C sources named by the sidecar's `verifying` declarations, their compiler
-inputs, and the output artifacts. For example:
-
-```json
-{
-  "schema": 1,
-  "target": "x86_64-linux-kernel",
-  "compiler": "/usr/bin/gcc",
-  "working_directory": ".",
-  "environment": {
-    "allow": {
-      "PATH": "/usr/bin:/bin",
-      "LC_ALL": "C",
-      "SOURCE_DATE_EPOCH": "0"
-    }
-  },
-  "sources": [
-    {
-      "logical_source": "main.c",
-      "path": "main.c",
-      "args": ["-DVARIANT=1", "-isystem", "configured"],
-      "artifact": "main.i"
-    }
-  ]
-}
-```
-
-The working directory is relative to the configuration file. Source and include
-paths are interpreted in that working directory; artifact paths are relative
-to the configuration file. Logical source paths identify translation units and
-must match the sidecar, independently of the original header filenames used by
-diagnostics.
-
-Run `click import lock main.click` to create or explicitly refresh the configured
-artifacts and `main.click.import.lock.json`. Then run `click verify main.click`.
-The configuration's presence selects compiler mode for verification and its
-associated proof tools. An invalid configuration or missing lock is an error;
-it does not fall back to source-bundle mode.
-
-Verification loads the recorded C artifact without executing or locating the
-configured compiler. The artifact and version-3 lock can move to another host
-with the same config bytes, C source, and project-local included headers. Loading
+Verification loads a unit's recorded artifacts without executing or locating
+its compiler or front end. The artifacts and lock move with the project: loading
 checks their hashes, the artifact bytes and size, the target, the recorded
-toolchain/invocation identity, and the source projection identity. System
+toolchain and invocation identity, and the source projection identity. System
 headers used during preparation are identified in the lock but need not be
-installed on the verification host. A version-1 C lock must be refreshed. A
-version-2 lock, written before compiler imports searched Click's system
-headers, still loads under its recorded identity: its preparation opened none
-of them. Refreshing it writes version 3.
+installed on the verification host. A C unit's sources and project-local
+headers are rechecked in the unit root, so a changed one is refused by name.
 
 This verifies the **prepared snapshot**. A change to the C source or an opened
 project-local header is rejected during loading. A change to external headers,
@@ -253,14 +214,13 @@ int increment(int& value) noexcept {
 }
 ```
 
-Its baseline import configuration explicitly sets `"language": "c++"`, the
-standard to `c++20`, target to `x86_64-unknown-linux-gnu`, exceptions and RTTI to false,
-and paths for the pinned exporter, compilation database, working directory,
-`.cpp` translation unit, logical source, selected function, and semantic
-artifact. These booleans may also be true for a supported normal-only
-reachable graph; the observed Clang profile must match the configuration.
+A C++ unit's baseline profile is C++20 for `x86_64-unknown-linux-gnu` with
+exceptions and RTTI off; each source names its logical source, its `.cpp`
+translation unit when that differs, and the functions to export. `exceptions`
+and `rtti` may also be true for a supported normal-only reachable graph; the
+observed Clang profile must match the unit.
 `click import lock` executes the repository-owned Clang 19.1.7
-LibTooling exporter with that entry and records the database bytes, exact parsed
+LibTooling exporter with the command Click synthesizes and records the database bytes, exact parsed
 command and directory, source, explicitly declared reachable-declaration
 dependencies, every file Clang lexes while preprocessing the translation unit,
 exporter, semantic profile, artifact, and configuration identities. Reachable
@@ -270,35 +230,13 @@ declarations are not lowered. For each opened file the lock records its
 accessed path, resolved target, and content hash. Refresh repeats the export
 across a bounded inventory snapshot; offline loading rejects changed contents
 or symlink targets without running Clang.
-The configured working directory is also the dependency root: it may contain
-the project source tree and a Linux sysroot while the selected CMake
-compilation command runs in a separate build directory. Dependencies retain
-paths relative to that root, not to the build directory. The Bitcoin Core
-`MoneyRange` integration in `integrations/bitcoin-core-money-range/` uses this
-arrangement on macOS.
+The unit root is also the dependency root: it may contain the project source
+tree and a Linux sysroot. Dependencies retain paths relative to that root. The
+Bitcoin Core integration in `integrations/bitcoin-core-money-range/` uses this
+arrangement, with the real CMake command's arguments as the unit's `args`.
 
-```json
-{
-  "schema": 6,
-  "language": "c++",
-  "standard": "c++20",
-  "target": "x86_64-unknown-linux-gnu",
-  "exceptions": false,
-  "rtti": false,
-  "exporter": "target/cpp-exporter/click-cpp-exporter",
-  "compilation_database": "compile_commands.json",
-  "working_directory": ".",
-  "source": "increment.cpp",
-  "logical_source": "increment.cpp",
-  "dependencies": [],
-  "function": "increment",
-  "artifact": "increment.cpp.click-cpp.json"
-}
-```
-
-The database must resolve the configured translation unit to exactly one
-command using the pinned Clang driver and the configured C++20, target,
-exception, and RTTI profile. Missing or ambiguous entries and mismatched driver
+The synthesized command uses the pinned Clang driver and the unit's C++20,
+target, exception, and RTTI profile. Missing or ambiguous entries and mismatched driver
 or semantic profiles fail refresh locally. When `logical_source` names a
 header, the importer resolves and hashes that file separately from the `.cpp`
 translation unit. Offline loading rejects a missing or modified selected
@@ -307,7 +245,7 @@ inventoried even when they lie outside the configured dependency root.
 Response files, PCH, modules, VFS overlays, and arbitrary Clang pass-through
 options are rejected because their hidden inputs are not inventoried.
 
-For a compilation command with exceptions enabled, the config instead sets
+For a compilation command with exceptions enabled, the unit instead sets
 `"exceptions": true`; the observed Clang profile must agree. The semantic
 artifact records `exception_behavior: "normal_only"` independently from each
 function's `declared_noexcept` value. This is not exception handling support:
@@ -319,7 +257,7 @@ check its normal behavior without inventing an exceptional proof outcome.
 An RTTI-enabled profile also permits those borrowed records; this does not add
 `typeid` or `dynamic_cast` semantics.
 
-The separate `"exception_behavior": "scalar_int32"` config requires
+A source's separate `"exception_behavior": "scalar_int32"` requires
 `"exceptions": true`. Its locked artifact may contain a source `throw` of a
 typed `int` payload in an object-free function; the importer lowers that node
 to Click's checked exceptional statement outcome. A Click `throws int32`
@@ -1600,10 +1538,9 @@ toolchain and header changes require a new explicit refresh to produce a proof
 about that new environment. A supplied digest alone does not authenticate who
 prepared a native-platform artifact.
 
-Compiler-backed C imports accept two explicit targets. The config target must
-match the sidecar's target, from its `target` directive or `click.project.json`;
-without either the sidecar selects the default `x86_64-linux-userspace`, so a
-kernel-target config needs one of them. Prepared imports retain their target through verification and expansion.
+Compiler-backed C imports accept two explicit targets. A C unit is prepared for
+the project's `target`, which a sidecar's `target` directive must match;
+without one the project uses the default `x86_64-linux-userspace`. Prepared imports retain their target through verification and expansion.
 
 | Target | Fixed compiler profile |
 | --- | --- |
@@ -1676,11 +1613,10 @@ an include or `__has_include` finds. Loading refuses a lock when either no
 longer matches the running Click, so a change to Click's headers requires a
 refresh.
 
-Existing configurations that pin a C library's include directories with
-`-isystem`, as `design/charon-trial/zlib/` does with GCC 14's and glibc's,
-keep them: those directories precede Click's, so every header they supply is
-read from them, a locked input like any other. Refreshing those configs
-reproduces their committed artifacts byte for byte.
+A unit that names a C library's include directories with `-isystem` puts them
+before Click's, so every header they supply is read from them, a locked input
+like any other, and the proof then assumes that library's declarations. None of
+the repository's fixtures does; `design/charon-trial/zlib/` uses Click's headers.
 
 Configured forced includes and ordered `-D` and `-U` options select additional
 preprocessing inputs. Other compiler options are rejected unless a named option
@@ -1712,11 +1648,11 @@ engine used for ordinary verification, profiling, audit, and expansion.
 
 ### Option profile `linux-6.8-x86_64-kbuild`
 
-A configuration may set `"option_profile"` to a named option profile. The
+A C unit may set `"option_profile"` to a named option profile. The
 profile admits further options beside the preprocessing options above, and
 only for its target. The lock records the profile name beside each source's
 complete argument vector, and loading refuses a lock whose profile differs
-from the configuration's.
+from the unit's.
 
 The one profile, `linux-6.8-x86_64-kbuild`, is the option set of the recorded
 Linux v6.8.12 `x86_64_defconfig` Kbuild compilation of `lib/rbtree.c` with
@@ -2060,7 +1996,7 @@ with a diagnostic. Ordinary verification never rewrites a lock or artifact.
 
 
 C++ imports may explicitly assume a narrow external library assertion contract
-with the optional `library_assertions` config field. For example (replace the
+with the optional `library_assertions` field of a unit source. For example (replace the
 hash with the SHA-256 of the actual header bytes):
 
 ```json
@@ -2078,8 +2014,8 @@ the inventory is limited to 64. Header hashes are checked during refresh and
 offline loading. The resolved callee declaration, and its definition when
 present, must belong to that header. Definitions in the selected logical
 source still require ordinary verified contracts, including recursive calls.
-Config, artifact, compiler command, and input closure are part of the import identity. A changed pin requires an
-explicit config edit and lock refresh.
+The unit description, artifact, compiler command, and input closure are part of the import identity. A changed pin requires an
+explicit edit of the project file and a lock refresh.
 
 This is an **assumed library contract**, not verification of its implementation.
 It states that, when its Boolean argument is true, the call returns normally with defined behavior

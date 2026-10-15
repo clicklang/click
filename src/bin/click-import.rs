@@ -1,16 +1,15 @@
 use std::path::{Path, PathBuf};
 
-use click::languages::refresh_compiler_import;
 use click::project::{FILE_NAME, Project};
 
-const USAGE: &str = "usage: click import lock [<project-dir> | <sidecar.click>]\n\nPrepares the units of the nearest `click.project.json` into its lock, or refreshes a sidecar's own import config and its input lock.";
+const USAGE: &str = "usage: click import lock [<project-dir> | <sidecar.click>]\n\nPrepares the units of the nearest `click.project.json` into its lock; a sidecar names its project.";
 
 /// What `click import lock` prepares.
 #[derive(Debug, PartialEq, Eq)]
 enum LockTarget {
     /// The project found from this directory.
     Project(PathBuf),
-    /// A sidecar: its own import config if it has one, else its project.
+    /// A sidecar: its project.
     Sidecar(PathBuf),
 }
 
@@ -25,11 +24,14 @@ pub(crate) fn entry_with(arguments: impl IntoIterator<Item = String>) -> Result<
         LockTarget::Sidecar(sidecar) => {
             let config = import_config_path(&sidecar);
             if config.exists() {
-                return refresh_compiler_import(&config);
+                return Err(click::cli::per_sidecar_config_refusal(&config));
             }
             match Project::find(click::cli::containing_directory(&sidecar))? {
                 Some(project) if project.has_units() => project.lock(),
-                _ => refresh_compiler_import(&config),
+                _ => Err(format!(
+                    "`{}` is not in a project with units; declare its sources as a unit of a `{FILE_NAME}` at the project root",
+                    sidecar.display()
+                )),
             }
         }
     }

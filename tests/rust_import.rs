@@ -24,7 +24,20 @@ impl Project {
         fs::write(root.join("borrow.click"), SIDECAR).unwrap();
         Self { root }
     }
+    /// A single-file Rust project: `borrow.rs` as the one source of unit
+    /// `borrow`.
     fn new(source: &str) -> Self {
+        let p = Self::isolated(source);
+        fs::write(
+            p.project_file(),
+            r#"{"units": {"borrow": {"language": "rust", "sources": {"borrow.rs": {}}}}}"#,
+        )
+        .unwrap();
+        p
+    }
+    /// A sidecar with its own legacy import config, which the library-level
+    /// loaders still read.
+    fn legacy(source: &str) -> Self {
         let p = Self::isolated(source);
         let root = &p.root;
         let exporter =
@@ -34,6 +47,45 @@ impl Project {
     }
     fn config(&self) -> PathBuf {
         self.root.join("borrow.click.import.json")
+    }
+    /// Replaces the legacy import config with the equivalent project unit:
+    /// the config's source, and its crate description when it has one.
+    fn adopt_config(&self) {
+        let config: serde_json::Value =
+            serde_json::from_slice(&fs::read(self.config()).unwrap()).unwrap();
+        let source = config["source"].as_str().unwrap();
+        let mut unit = serde_json::json!({"language": "rust", "sources": {source: {}}});
+        let mut name = "borrow".to_string();
+        if let Some(crate_config) = config.get("crate") {
+            name = crate_config["name"].as_str().unwrap().to_string();
+            unit["crate"] = serde_json::json!({
+                "name": crate_config["name"],
+                "edition": crate_config["edition"],
+                "features": crate_config["features"],
+                "roots": crate_config["roots"],
+                "files": crate_config["files"],
+            });
+        }
+        fs::write(
+            self.project_file(),
+            serde_json::to_vec_pretty(&serde_json::json!({"units": {name: unit}})).unwrap(),
+        )
+        .unwrap();
+        fs::remove_file(self.config()).unwrap();
+        let _ = fs::remove_file(self.root.join("borrow.click.import.json.lock"));
+    }
+    /// The project file as JSON, and its one unit's name.
+    fn project_json(&self) -> (serde_json::Value, String) {
+        let project: serde_json::Value =
+            serde_json::from_slice(&fs::read(self.project_file()).unwrap()).unwrap();
+        let name = project["units"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .next()
+            .unwrap()
+            .clone();
+        (project, name)
     }
     /// A copy of a committed fixture directory: its project file, project
     /// lock and prepared artifacts, sources and sidecars.
@@ -60,7 +112,43 @@ impl Project {
         if !self.project_file().exists() {
             return load_import(&self.config());
         }
-        prepared_sidecar(&self.root.join("borrow.click"))
+        let sidecar = self.root.join("borrow.click");
+        let source = fs::read_to_string(&sidecar).unwrap();
+        if source
+            .lines()
+            .filter_map(|line| line.strip_prefix("verifying \""))
+            .filter_map(|rest| rest.split('"').next())
+            .any(|path| self.lists(path))
+        {
+            return prepared_sidecar(&sidecar);
+        }
+        // A sidecar that names no unit source selects the project's one unit.
+        let (project, unit) = self.project_json();
+        let source = project["units"][&unit]["sources"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .next()
+            .unwrap()
+            .clone();
+        let path = fs::canonicalize(self.root.join(&source)).ok();
+        match click::project::Project::load(&self.project_file())?
+            .prepared_sources(&[(source, path)])?
+        {
+            Some(click::project::UnitSelection::Program(
+                click::languages::PreparedProgram::Rust(import),
+            )) => Ok(import),
+            _ => Err("expected a prepared Rust unit".into()),
+        }
+    }
+    /// Whether a unit of the project lists `source`.
+    fn lists(&self, source: &str) -> bool {
+        let (project, _) = self.project_json();
+        project["units"]
+            .as_object()
+            .unwrap()
+            .values()
+            .any(|unit| unit["sources"].get(source).is_some())
     }
     fn refresh(&self) -> Result<(), String> {
         if !self.project_file().exists() {
@@ -2851,7 +2939,7 @@ fn rust_arrays_coerce_to_byte_slices_with_lengths_and_authority() {
     ] {
         assert!(C0VerificationSession::new_program_prepared(&incorrect, &prepared).is_err());
     }
-    let overflow = Project::new(
+    let overflow = Project::legacy(
         &include_str!("../examples/rust-array-slices/arrays.rs")
             .replace("[3u8, 5, 9]", "[255u8, 5, 9]"),
     );
@@ -3366,7 +3454,7 @@ fn rust_slice_for_sum_verifies_and_expands() {
     let sidecar =
         include_str!("../examples/rust-iterators/sum.click").replace("sum.rs", "borrow.rs");
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
-    let copied_iter = Project::new(
+    let copied_iter = Project::legacy(
         &include_str!("../examples/rust-iterators/sum.rs")
             .replace("in bytes {", "in bytes.iter() {"),
     );

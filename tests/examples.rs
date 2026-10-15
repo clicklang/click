@@ -11,7 +11,6 @@ use click::cli::{
     read_click_project_at_root, read_verifying_sources, source_refs,
 };
 use click::instrumentation::{self, ArtifactReuseRejection, HiddenPrerequisiteRoute};
-use click::languages::refresh_compiler_import;
 use click::surface::{
     c0_tactic_source_position, project_tactic_source_position, verify_c0_prepared_project,
     verify_c0_project, verify_c0_sources, verify_c0_sources_at, verify_program_prepared_project,
@@ -1194,30 +1193,6 @@ fn run_example_project(project: &Path) -> Result<(), String> {
     for click_path in click_paths {
         let click_source = fs::read_to_string(&click_path)
             .map_err(|error| format!("failed to read `{}`: {error}", click_path.display()))?;
-        let name = click_path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .ok_or_else(|| format!("invalid example sidecar `{}`", click_path.display()))?;
-        let config = click_path.with_file_name(format!("{name}.import.json"));
-        // Native Rust artifacts are checked offline here. The required
-        // charon-live gate freshly extracts every canonical Rust source and
-        // checks its contract; ordinary archive consumers need no Charon toolchain.
-        let native_rust = if config.exists() {
-            let metadata: serde_json::Value =
-                serde_json::from_slice(&fs::read(&config).map_err(|error| error.to_string())?)
-                    .map_err(|error| error.to_string())?;
-            metadata["language"] == "rust"
-        } else {
-            false
-        };
-        if config.exists() && !native_rust {
-            refresh_compiler_import(&config).map_err(|error| {
-                format!(
-                    "sidecar `{}` import refresh failed: {error}",
-                    click_path.display()
-                )
-            })?;
-        }
         let click_project = read_click_project_at_root(
             &click_path,
             &click_source,

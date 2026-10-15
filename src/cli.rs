@@ -866,31 +866,7 @@ fn read_c_inputs_for_target(
     let config = sidecar.with_file_name(format!("{name}.import.json"));
     let unit_selection = project_unit_selection(sidecar, click_source)?;
     match fs::symlink_metadata(&config) {
-        Ok(_) => {
-            if let Some((project, _)) = &unit_selection {
-                return Err(format!(
-                    "`{}` and a unit of `{}` both prepare this sidecar's sources; keep one",
-                    config.display(),
-                    project.root().join(crate::project::FILE_NAME).display()
-                ));
-            }
-            // Preserve the path spelling for the adapter's validation.
-            // An existing but unreadable or dangling config cannot select
-            // the legacy source-bundle route.
-            let config = if config.is_absolute() {
-                config
-            } else {
-                std::env::current_dir()
-                    .map_err(|error| format!("failed to resolve import config directory: {error}"))?
-                    .join(config)
-            };
-            return crate::languages::load_compiler_import(&config).map(|imports| match imports {
-                crate::languages::PreparedCompilerImport::C(imports) => CInput::Prepared(imports),
-                crate::languages::PreparedCompilerImport::Program(program) => {
-                    CInput::PreparedProgram(program)
-                }
-            });
-        }
+        Ok(_) => return Err(per_sidecar_config_refusal(&config)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => {
             return Err(format!("failed to inspect `{}`: {error}", config.display()));
@@ -912,6 +888,16 @@ fn read_c_inputs_for_target(
         click_source,
         target,
     )?))
+}
+
+/// The refusal of a per-sidecar `<sidecar>.import.json`, naming its
+/// replacement.
+pub fn per_sidecar_config_refusal(config: &Path) -> String {
+    format!(
+        "`{}` is a per-sidecar import config, which Click no longer reads; declare its sources as a unit of a `{}` at the project root, remove the config and its lock, and run `click import lock` (see docs/reference/cli/import.md#project-units)",
+        config.display(),
+        crate::project::FILE_NAME
+    )
 }
 
 /// The project whose units list a sidecar's `verifying` sources, found as the
@@ -1905,65 +1891,30 @@ pub fn prepare_mdtest_inputs(mdtest: &MdTest) -> Result<CInput, String> {
     })?;
     fs::write(directory.join(&cpp.filename), &cpp.source)
         .map_err(|error| format!("failed to materialize C++ mdtest source: {error}"))?;
-    let exceptions = cpp.profile == "scalar_int32";
-    let arguments = vec![
-        "clang++",
-        "-x",
-        "c++",
-        "-std=c++20",
-        "--target=x86_64-unknown-linux-gnu",
-        if exceptions {
-            "-fexceptions"
-        } else {
-            "-fno-exceptions"
-        },
-        "-fno-rtti",
-        "-funsigned-char",
-        "-ffreestanding",
-        "-nostdinc",
-        "-nostdinc++",
-        "-c",
-        &cpp.filename,
-        "-o",
-        "fixture.o",
-    ];
-    let database = serde_json::json!([{
-        "directory": directory,
-        "file": cpp.filename,
-        "arguments": arguments,
-        "output": "fixture.o"
-    }]);
-    fs::write(
-        directory.join("compile_commands.json"),
-        serde_json::to_vec_pretty(&database).map_err(|error| error.to_string())?,
-    )
-    .map_err(|error| format!("failed to materialize C++ compilation database: {error}"))?;
-    let config = serde_json::json!({
-        "schema": 6,
+    let project = serde_json::json!({"units": {"fixture": {
         "language": "c++",
-        "standard": "c++20",
-        "target": "x86_64-unknown-linux-gnu",
-        "exceptions": exceptions,
-        "exception_behavior": cpp.profile,
-        "rtti": false,
-        "exporter": exporter,
-        "compilation_database": "compile_commands.json",
-        "working_directory": ".",
-        "source": cpp.filename,
-        "logical_source": cpp.filename,
-        "dependencies": [],
-        "function": cpp.function,
-        "artifact": "fixture.click-cpp.json"
-    });
-    let config_path = directory.join("fixture.click.import.json");
+        "exceptions": cpp.profile == "scalar_int32",
+        "args": ["-funsigned-char", "-ffreestanding", "-nostdinc", "-nostdinc++"],
+        "sources": {&cpp.filename: {
+            "functions": [&cpp.function],
+            "exception_behavior": &cpp.profile,
+        }},
+    }}});
+    let project_file = directory.join(crate::project::FILE_NAME);
     fs::write(
-        &config_path,
-        serde_json::to_vec_pretty(&config).map_err(|error| error.to_string())?,
+        &project_file,
+        serde_json::to_vec_pretty(&project).map_err(|error| error.to_string())?,
     )
-    .map_err(|error| format!("failed to materialize C++ import config: {error}"))?;
-    crate::languages::cpp::refresh_import(&config_path)?;
-    let import = crate::languages::cpp::load_import(&config_path)?;
-    Ok(CInput::PreparedProgram(PreparedProgram::Cpp(import)))
+    .map_err(|error| format!("failed to materialize C++ mdtest project: {error}"))?;
+    let project = crate::project::Project::load(&project_file)?;
+    project.lock_with_cpp_exporter(Some(&exporter))?;
+    let source = fs::canonicalize(directory.join(&cpp.filename)).ok();
+    match project.prepared_sources(&[(cpp.filename.clone(), source)])? {
+        Some(crate::project::UnitSelection::Program(program)) => {
+            Ok(CInput::PreparedProgram(program))
+        }
+        _ => Err("the C++ mdtest project does not prepare its source".into()),
+    }
 }
 
 enum BlockKind {
@@ -2169,6 +2120,27 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A sidecar's own `<sidecar>.import.json` is refused, with the project
+    /// unit that replaces it named, even when its sources would also load
+    /// without it.
+    #[test]
+    fn a_per_sidecar_import_config_is_refused_with_its_replacement() {
+        let directory = tempfile::tempdir().unwrap();
+        let sidecar = directory.path().join("main.click");
+        let source = "verifying \"main.c\";\nint32 one() { ensures result == 1; } by { execute(); simp(); }\n";
+        fs::write(
+            directory.path().join("main.c"),
+            "int one(void) { return 1; }\n",
+        )
+        .unwrap();
+        fs::write(&sidecar, source).unwrap();
+        fs::write(directory.path().join("main.click.import.json"), "{}").unwrap();
+        let error = read_c_inputs(&sidecar, source).err().unwrap();
+        assert!(error.contains("main.click.import.json"), "{error}");
+        assert!(error.contains("per-sidecar import config"), "{error}");
+        assert!(error.contains(crate::project::FILE_NAME), "{error}");
+    }
 
     /// A bare file name has an empty `Path::parent`; it selects the current
     /// directory exactly as `./name` does. The command-line regression that

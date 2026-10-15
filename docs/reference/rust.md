@@ -48,8 +48,7 @@ coverage are optional future work.
 Rust project units use this frontend automatically. `CLICK_CHARON` is a
 contributor override: a bundle directory selects that bundle, while an
 executable selects the existing source-build path and its rustup-managed pinned
-toolchain. Legacy per-sidecar configs may still name an `exporter`; omitting it
-selects the same resolution. The project schema and lock format are described
+toolchain. The project schema and lock format are described
 in [`click import`](cli/import.md#project-units) and
 [project configuration](../concepts/own-project.md).
 
