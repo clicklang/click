@@ -47,7 +47,7 @@ reproduced. To move a file off `unsound`, the reproduction must stop
 verifying. Narrowing the documented claim does not count. Re-check the label
 whenever the file's reproduction or scope changes.
 
-## P1: before launch (9)
+## P1: before launch (11)
 
 The launch strategy is to complete P1, deliver the minimum viable rbtree
 (MVR), and launch publicly with rbtree as the key demo. MVR is the smallest
@@ -127,6 +127,11 @@ Specification and proof:
 - [Difference logic: the fast path for arithmetic requirements and conditions](difference-logic.md)
 - [Launch design review: open critiques, each to be fixed or ruled wontfix](design-review.md) (depends on simplify-step.md)
 - [Finish place-based resource clauses](resource-place-syntax.md)
+
+Architecture:
+
+- [One source-tactic interpreter for every proof context](one-tactic-interpreter.md)
+- [One kernel statement executor for both execution judgments](one-statement-executor.md)
 
 ## P2: after launch (14)
 
