@@ -537,17 +537,22 @@ Each value still comes from its own recorded snapshot. Changed or withdrawn
 evidence and a resolved one-byte read do not use this two-load rule.
 
 Registered four-byte scalar loads also participate as int32 applications. Their
-signature contains the registered defining snapshot's arena identity, the exact
-storage block, and the offset class. Equal offsets therefore give equal reads
-in that snapshot, including when the offset equality arrives later. Load
-registration follows nested index dependencies iteratively; merge propagation
-uses the same parent-use index as addition and scaling. Neither step scans
-unrelated snapshots or enumerates address spellings.
+signature contains the registered defining snapshot's read identity and the
+complete address class, as pointer and uint64 reads do. A checked address
+equality therefore gives equal reads at that snapshot, even when its block
+relation has no affine spelling. Late address merges propagate through the
+same parent-use index as addition and scaling.
+
+Selected int32 operands prepare their pointer dependencies before registering
+the scalar read. A shifted raw pointer read imports only the exact definition
+retained by its typed producer; matching arithmetic without that metadata is
+not a pointer read. These operations inspect the selected expression and new
+parent uses, without scanning unrelated definitions or address spellings.
 
 The defining snapshot can already be an assumption-free canonical projection.
 The graph uses that registered definition, never the mutable live origin. It
-does not equate distinct defining snapshots or storage blocks, search for frame
-evidence, resolve stores, or grant read permission. Unregistered, unknown-width,
+does not infer a new address relationship or equate distinct defining snapshots,
+search for frame evidence, resolve stores, or grant read permission. Unregistered, unknown-width,
 and other-width loads remain opaque. Existing canonicalization can independently
 retain a value across a justified memory change; this slice adds no new rule
 for doing so. Global load naming remains independent of contextual equality.
