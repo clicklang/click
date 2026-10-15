@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "identity": "click-charon-trial-v1",
+  "identity": "click-rust-v1",
   "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
   "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
   "toolchain": "nightly-2026-09-17",

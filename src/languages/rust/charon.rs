@@ -28,7 +28,7 @@ use std::time::Duration;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-struct TrialArtifact {
+struct ExtractionArtifact {
     extractor_revision: String,
     compiler_commit: String,
     profile: String,
@@ -95,14 +95,15 @@ pub(super) fn extract_crate(
             format!("--emit=dep-info={}", dep.display()),
         ];
         rustc_args.extend(flags.iter().cloned());
-        runtime.run_rustc(&rustc_args, root, limits)?;
+        runtime.run_rustc(&rustc_args, root, limits).map_err(|error| {
+            format!("Rust crate input check failed; the compiler sees only configured files. Check `crate.files` for missing module/include inputs.\n{}", error.replace(&format!("{}/", root.display()), ""))
+        })?;
         let observed =
             super::crate_inputs::dep_files(&std::fs::read(&dep).map_err(|e| e.to_string())?, root)?;
-        let expected = c.files.iter().cloned().collect();
-        if observed != expected {
-            return Err("Rust compiler source closure differs from configured crate files".into());
-        }
+        super::crate_inputs::check_closure(&c.files, &observed)?;
     }
+    // Historical metadata labels remain stable so naming cleanup does not
+    // rewrite frozen artifacts. They are not the frontend's product identity.
     let artifact = temp.path().join("trial.ullbc");
     let mut args: Vec<String> = [
         "rustc",
@@ -148,7 +149,7 @@ pub(super) fn extract_crate(
     run_compiler(executable, &args, temp.path(), environment, limits)?;
     let metadata = std::fs::metadata(&artifact).map_err(|e| e.to_string())?;
     if !metadata.is_file() || metadata.len() > 4 << 20 {
-        return Err("Charon trial artifact exceeds its file bound".into());
+        return Err("Rust frontend artifact exceeds its file bound".into());
     }
     let bytes = std::fs::read(artifact).map_err(|e| e.to_string())?;
     let mut data: charon_lib::export::CrateData =
@@ -175,7 +176,7 @@ pub(super) fn extract_crate(
             }
         }
     }
-    serde_json::to_vec(&TrialArtifact {
+    serde_json::to_vec(&ExtractionArtifact {
         extractor_revision: profile::get().extractor_revision.clone(),
         compiler_commit: profile::get().compiler_commit.clone(),
         profile: profile::get().extraction.clone(),
@@ -188,7 +189,7 @@ pub(super) fn extract_crate(
 }
 
 fn unsupported(what: &str) -> String {
-    format!("Charon trial does not support {what}")
+    format!("Rust frontend does not support {what}")
 }
 fn span(s: a::Span) -> out::Span {
     out::Span {
@@ -1543,7 +1544,7 @@ pub(super) fn decode_crate(
     crate_config: Option<&super::crate_inputs::CrateConfig>,
     sources: Option<&super::crate_inputs::SourceFiles>,
 ) -> Result<out::RustExport, String> {
-    let artifact: TrialArtifact =
+    let artifact: ExtractionArtifact =
         serde_json::from_slice(bytes).map_err(|e| format!("Charon artifact: {e}"))?;
     if artifact.extractor_revision != profile::get().extractor_revision
         || artifact.compiler_commit != profile::get().compiler_commit
@@ -1577,7 +1578,7 @@ pub(super) fn decode_crate(
     // The driver clears rustc_args after consuming them; the refresh-owned
     // envelope records those flags along with the checked compiler identity.
     if opts != &expected {
-        return Err("Charon artifact differs from the trial extraction profile".into());
+        return Err("Rust artifact differs from the pinned extraction profile".into());
     }
     if let Some(c) = crate_config {
         if krate.crate_name != c.name {
@@ -1635,7 +1636,7 @@ pub(super) fn decode_crate(
             .collect();
         if files.len() != 1 || files[0].contents.as_deref().map(str::as_bytes) != Some(source_bytes)
         {
-            return Err("Charon trial requires exactly one locked source file".into());
+            return Err("Rust single-file import requires exactly one locked source file".into());
         }
     }
     let mut adapter = Adapter {
@@ -2495,7 +2496,8 @@ mod tests {
     #[test]
     fn charon_assignment_operators_reject_forged_identity_signatures_and_calls() {
         for mutation in 0..15 {
-            let mut artifact: TrialArtifact = serde_json::from_slice(OPERATOR_ARTIFACT).unwrap();
+            let mut artifact: ExtractionArtifact =
+                serde_json::from_slice(OPERATOR_ARTIFACT).unwrap();
             let krate = &mut artifact.data.translated;
             if mutation < 12 {
                 let f = krate.fun_decls.iter_mut().find(|f| matches!(f.item_meta.name.name.last(), Some(a::PathElem::Ident(n, _)) if n == "mul_assign")).unwrap();
@@ -2624,7 +2626,8 @@ mod tests {
     #[ignore = "nightly: 0.7s in the parallel gate"]
     fn charon_shared_iteration_rejects_forged_declarations_signatures_and_paths() {
         for mutation in 0..8 {
-            let mut artifact: TrialArtifact = serde_json::from_slice(ITERATION_ARTIFACT).unwrap();
+            let mut artifact: ExtractionArtifact =
+                serde_json::from_slice(ITERATION_ARTIFACT).unwrap();
             let callee =
                 artifact
                     .data
@@ -2888,7 +2891,7 @@ mod tests {
     fn charon_checksum_operators_reject_wrapping_and_unchecked_modes() {
         for name in ["quotient", "reduce", "wide_left", "wide_right"] {
             for mode in [a::OverflowMode::Wrap, a::OverflowMode::UB] {
-                let mut artifact: TrialArtifact =
+                let mut artifact: ExtractionArtifact =
                     serde_json::from_slice(ARITHMETIC_ARTIFACT).unwrap();
                 let function = artifact.data.translated.fun_decls.iter_mut().find(|f| matches!(f.item_meta.name.name.last(), Some(a::PathElem::Ident(n, _)) if n == name)).unwrap();
                 let a::Body::Unstructured(body) = &mut function.body else {
@@ -2929,7 +2932,7 @@ mod tests {
 
     #[test]
     fn charon_checksum_unsigned_operator_types_must_match() {
-        let mut artifact: TrialArtifact = serde_json::from_slice(ARITHMETIC_ARTIFACT).unwrap();
+        let mut artifact: ExtractionArtifact = serde_json::from_slice(ARITHMETIC_ARTIFACT).unwrap();
         let function = artifact.data.translated.fun_decls.iter_mut().find(|f| matches!(f.item_meta.name.name.last(), Some(a::PathElem::Ident(n, _)) if n == "quotient")).unwrap();
         let a::Body::Unstructured(body) = &mut function.body else {
             panic!()
@@ -3031,7 +3034,7 @@ mod tests {
 
     #[test]
     fn charon_generated_local_names_do_not_collide_with_source_names() {
-        let mut artifact: TrialArtifact = serde_json::from_slice(NESTED_ARTIFACT).unwrap();
+        let mut artifact: ExtractionArtifact = serde_json::from_slice(NESTED_ARTIFACT).unwrap();
         let body = artifact.data.translated.fun_decls.iter_mut().find_map(|function| {
             if !matches!(function.item_meta.name.name.last(), Some(a::PathElem::Ident(name, _)) if name == "nested") { return None; }
             let a::Body::Unstructured(body) = &mut function.body else { return None; };
@@ -3067,7 +3070,7 @@ mod tests {
     #[test]
     fn charon_array_unsize_rejects_mismatched_metadata_and_reference_types() {
         for mutation in 0..4 {
-            let mut artifact: TrialArtifact = serde_json::from_slice(NESTED_ARTIFACT).unwrap();
+            let mut artifact: ExtractionArtifact = serde_json::from_slice(NESTED_ARTIFACT).unwrap();
             let mut changed = false;
             'functions: for function in artifact.data.translated.fun_decls.iter_mut() {
                 let a::Body::Unstructured(body) = &mut function.body else {
@@ -3170,7 +3173,7 @@ mod tests {
     #[ignore = "nightly: 0.5s in the parallel gate"]
     fn charon_chunk_models_check_resolved_identity_and_signature() {
         for mutation in 0..7 {
-            let mut artifact: TrialArtifact = serde_json::from_slice(CHUNK_ARTIFACT).unwrap();
+            let mut artifact: ExtractionArtifact = serde_json::from_slice(CHUNK_ARTIFACT).unwrap();
             let callee =
                 artifact
                     .data
@@ -3287,7 +3290,7 @@ mod tests {
 
     #[test]
     fn charon_chunk_option_projection_checks_variant_and_field() {
-        let mut artifact: TrialArtifact = serde_json::from_slice(CHUNK_ARTIFACT).unwrap();
+        let mut artifact: ExtractionArtifact = serde_json::from_slice(CHUNK_ARTIFACT).unwrap();
         let mut changed = false;
         for function in artifact.data.translated.fun_decls.iter_mut() {
             let a::Body::Unstructured(body) = &mut function.body else {
@@ -3374,7 +3377,7 @@ mod tests {
     #[test]
     fn charon_slice_length_checks_declaration_identity_and_types() {
         for mutation in 0..4 {
-            let mut artifact: TrialArtifact = serde_json::from_slice(SLICE_ARTIFACT).unwrap();
+            let mut artifact: ExtractionArtifact = serde_json::from_slice(SLICE_ARTIFACT).unwrap();
             let callee = artifact
                 .data
                 .translated
@@ -3402,7 +3405,7 @@ mod tests {
 
     #[test]
     fn charon_slice_reborrow_rejects_unrelated_metadata() {
-        let mut artifact: TrialArtifact = serde_json::from_slice(SLICE_ARTIFACT).unwrap();
+        let mut artifact: ExtractionArtifact = serde_json::from_slice(SLICE_ARTIFACT).unwrap();
         let mut changed = false;
         for function in artifact.data.translated.fun_decls.iter_mut() {
             let a::Body::Unstructured(body) = &mut function.body else {
@@ -3448,7 +3451,7 @@ mod tests {
     #[test]
     fn charon_unsigned_from_checks_resolved_identity_and_signature() {
         for mutation in 0..4 {
-            let mut artifact: TrialArtifact = serde_json::from_slice(ARRAY_ARTIFACT).unwrap();
+            let mut artifact: ExtractionArtifact = serde_json::from_slice(ARRAY_ARTIFACT).unwrap();
             let tr = artifact
                 .data
                 .translated
@@ -3496,7 +3499,7 @@ mod tests {
         )
         .unwrap();
         for mutation in 0..6 {
-            let mut artifact: TrialArtifact = serde_json::from_slice(ARTIFACT).unwrap();
+            let mut artifact: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
             let trait_id = artifact
                 .data
                 .translated
@@ -3580,7 +3583,7 @@ mod tests {
         assert_eq!(next_states.len(), 2);
         assert!(next_states.iter().all(|name| *name == "chunks"));
         for mutation in 0..6 {
-            let mut artifact: TrialArtifact = serde_json::from_slice(ARTIFACT).unwrap();
+            let mut artifact: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
             let wrapper = artifact.data.translated.fun_decls.iter_mut().find(|f| {
                 f.item_meta.name.name.last().is_some_and(|p| matches!(p, a::PathElem::Ident(name, _) if name == "next"))
                     && matches!(f.signature.inputs.as_slice(), [input] if matches!(input.kind(), a::TyKind::Ref(_, p, _) if matches!(p.kind(), a::TyKind::Ref(..))))
@@ -3613,7 +3616,7 @@ mod tests {
                 "mutation {mutation}"
             );
         }
-        let mut artifact: TrialArtifact = serde_json::from_slice(ARTIFACT).unwrap();
+        let mut artifact: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
         let function = artifact
             .data
             .translated
@@ -3753,7 +3756,7 @@ mod tests {
 
     #[test]
     fn charon_trial_rejects_partial_or_incompatible_extraction() {
-        let mutations: [fn(&mut TrialArtifact); 5] = [
+        let mutations: [fn(&mut ExtractionArtifact); 5] = [
             |a| a.data.has_errors = true,
             |a| a.compiler_commit = "untrusted-compiler".into(),
             |a| a.flags[3] = "-Coverflow-checks=off".into(),
@@ -3761,7 +3764,7 @@ mod tests {
             |a| a.data.translated.options.mir = Some(charon_lib::options::MirLevel::Elaborated),
         ];
         for mutation in mutations {
-            let mut artifact: TrialArtifact = serde_json::from_slice(ARTIFACT).unwrap();
+            let mut artifact: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
             mutation(&mut artifact);
             assert!(decode(&serde_json::to_vec(&artifact).unwrap(), "trial.rs", SOURCE).is_err());
         }

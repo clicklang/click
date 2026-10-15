@@ -144,11 +144,29 @@ fn import_identity(
     artifact: &str,
     driver: &str,
 ) -> String {
+    import_identity_for(
+        &super::profile::get().identity,
+        config,
+        source,
+        exporter,
+        artifact,
+        driver,
+    )
+}
+
+fn import_identity_for(
+    profile_identity: &str,
+    config: &str,
+    source: &str,
+    exporter: &str,
+    artifact: &str,
+    driver: &str,
+) -> String {
     let profile = super::profile::get();
     digest(
         format!(
             "{}\n{config}\n{source}\n{exporter}\n{artifact}\n{driver}\n{}",
-            profile.identity,
+            profile_identity,
             profile.semantic_identity()
         )
         .as_bytes(),
@@ -459,14 +477,22 @@ fn load_locked(
         || lock.source != source_digest(c, &source_files)
         || lock.artifact != digest(&artifact)
         || lock.charon_driver.is_none()
-        || lock.identity
-            != import_identity(
-                &lock.config,
-                &lock.source,
-                &lock.exporter,
-                &lock.artifact,
-                lock.charon_driver.as_deref().unwrap_or_default(),
-            )
+        || ![
+            super::profile::get().identity.as_str(),
+            super::profile::LEGACY_IDENTITY,
+        ]
+        .iter()
+        .any(|prefix| {
+            lock.identity
+                == import_identity_for(
+                    prefix,
+                    &lock.config,
+                    &lock.source,
+                    &lock.exporter,
+                    &lock.artifact,
+                    lock.charon_driver.as_deref().unwrap_or_default(),
+                )
+        })
     {
         return Err("Rust import lock differs from its inputs; refresh it".into());
     }
@@ -603,6 +629,56 @@ pub(crate) fn load_unit(
 mod unit_tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn rust_profile_product_name_preserves_legacy_locks_without_weakening_identity() {
+        assert_eq!(super::super::profile::get().identity, "click-rust-v1");
+        let root = tempfile::tempdir().unwrap();
+        let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/basic-rust");
+        for name in ["borrow.rs", "click.project.json"] {
+            fs::copy(example.join(name), root.path().join(name)).unwrap();
+        }
+        let artifact = ".click/borrow/borrow.rs.ullbc";
+        fs::create_dir_all(root.path().join(".click/borrow")).unwrap();
+        fs::copy(example.join(artifact), root.path().join(artifact)).unwrap();
+        let project =
+            crate::project::Project::load(&root.path().join("click.project.json")).unwrap();
+        let unit = project.rust_unit("borrow").unwrap();
+        let saved: serde_json::Value =
+            serde_json::from_slice(&fs::read(example.join("click.project.lock.json")).unwrap())
+                .unwrap();
+        let mut lock: Lock =
+            serde_json::from_value(saved["units"]["borrow"]["lock"].clone()).unwrap();
+        let old = lock.identity.clone();
+        assert_eq!(
+            load_unit(&unit, &serde_json::to_value(&lock).unwrap())
+                .unwrap()
+                .identity(),
+            old
+        );
+        lock.identity = import_identity(
+            &lock.config,
+            &lock.source,
+            &lock.exporter,
+            &lock.artifact,
+            lock.charon_driver.as_deref().unwrap(),
+        );
+        assert_ne!(lock.identity, old);
+        assert_eq!(
+            load_unit(&unit, &serde_json::to_value(&lock).unwrap())
+                .unwrap()
+                .identity(),
+            lock.identity
+        );
+        // The alias changes only the profile name: the input binding remains exact.
+        lock.identity = old;
+        lock.exporter = digest(b"different exporter");
+        assert!(
+            load_unit(&unit, &serde_json::to_value(&lock).unwrap())
+                .unwrap_err()
+                .contains("lock differs")
+        );
+    }
 
     /// A project unit for an external crate, locked by hand from the
     /// committed adler2 artifact: the sidecar names the crate root by its own

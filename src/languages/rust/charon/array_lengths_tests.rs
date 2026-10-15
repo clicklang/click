@@ -8,7 +8,7 @@ const SOURCE: &[u8] = include_bytes!("../../../../design/charon-trial/array-leng
 #[test]
 fn charon_scalar_slice_length_checks_declaration_and_instantiated_element() {
     for mutation in 0..5 {
-        let mut artifact: TrialArtifact = serde_json::from_slice(ARTIFACT).unwrap();
+        let mut artifact: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
         if mutation < 4 {
             let callee = artifact
                 .data
