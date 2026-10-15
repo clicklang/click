@@ -468,7 +468,7 @@ fn load_locked(
         })
     {
         return Err(format!(
-            "Rust crate file `{}` differs from its import lock; run `click import lock`",
+            "Rust source `{}` differs from its import lock; run `click import lock`",
             root.join(name).display()
         ));
     }
@@ -520,23 +520,50 @@ pub(crate) struct UnitConfig {
     pub root: PathBuf,
     /// The crate root, relative to the unit root.
     pub source: String,
-    pub crate_config: super::crate_inputs::CrateConfig,
+    /// The crate description; without one, `source` is a single-file
+    /// program.
+    pub crate_config: Option<super::crate_inputs::CrateConfig>,
     /// The artifact's absolute path.
     pub artifact: PathBuf,
     pub lock_path: PathBuf,
 }
 
 impl UnitConfig {
-    fn config(&self) -> Result<(Config, PathBuf), String> {
+    /// The import configuration, the directory its files are relative to,
+    /// and the crate root's path.
+    fn config(&self) -> Result<(Config, PathBuf, PathBuf), String> {
         if !self.source.ends_with(".rs") {
             return Err("a Rust unit source must be a `.rs` crate root".into());
         }
-        self.crate_config.validate(&self.source)?;
-        let root = fs::canonicalize(&self.root)
+        let unit_root = fs::canonicalize(&self.root)
             .map_err(|error| format!("resolve the root of unit `{}`: {error}", self.unit_name))?;
-        for name in &self.crate_config.files {
-            super::crate_inputs::file(&root, name)?;
+        let Some(crate_config) = &self.crate_config else {
+            // A single-file program is read from its own directory.
+            let relative = Path::new(&self.source);
+            let root = unit_root.join(relative.parent().unwrap_or(Path::new("")));
+            let name = relative
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or("a Rust unit source must name a file")?
+                .to_string();
+            let source = local_file(&root, &name)?;
+            let config = Config {
+                schema: 3,
+                language: "rust".into(),
+                target: TARGET.into(),
+                source: name,
+                exporter: String::new(),
+                artifact: String::new(),
+                backend: None,
+                crate_config: None,
+            };
+            return Ok((config, root, source));
+        };
+        crate_config.validate(&self.source)?;
+        for name in &crate_config.files {
+            super::crate_inputs::file(&unit_root, name)?;
         }
+        let source = super::crate_inputs::file(&unit_root, &self.source)?;
         let config = Config {
             schema: 4,
             language: "rust".into(),
@@ -545,9 +572,9 @@ impl UnitConfig {
             exporter: String::new(),
             artifact: String::new(),
             backend: None,
-            crate_config: Some(self.crate_config.clone()),
+            crate_config: Some(crate_config.clone()),
         };
-        Ok((config, root))
+        Ok((config, unit_root, source))
     }
 }
 
@@ -556,8 +583,7 @@ impl UnitConfig {
 pub(crate) fn prepare_unit(
     unit: &UnitConfig,
 ) -> Result<(serde_json::Value, Vec<(PathBuf, Vec<u8>)>), String> {
-    let (config, root) = unit.config()?;
-    let source = super::crate_inputs::file(&root, &unit.source)?;
+    let (config, root, source) = unit.config()?;
     let runtime = super::runtime::resolve(None)?;
     let exporter = &runtime.executable;
     if exporter == &source || exporter == &unit.artifact || exporter == &unit.lock_path {
@@ -588,7 +614,7 @@ pub(crate) fn load_unit(
     unit: &UnitConfig,
     lock: &serde_json::Value,
 ) -> Result<PreparedRustImport, String> {
-    let (config, root) = unit.config()?;
+    let (config, root, _) = unit.config()?;
     let lock = Lock::deserialize(lock).map_err(|e| format!("parse Rust import lock: {e}"))?;
     if lock.config != unit.unit_digest {
         return Err(format!(
@@ -609,19 +635,27 @@ mod unit_tests {
         assert_eq!(super::super::profile::get().identity, "click-rust-v1");
         let root = tempfile::tempdir().unwrap();
         let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/basic-rust");
-        for name in [
-            "borrow.rs",
-            "borrow.ullbc",
-            "borrow.click.import.json",
-            "borrow.click.import.json.lock",
-        ] {
+        for name in ["borrow.rs", "click.project.json"] {
             fs::copy(example.join(name), root.path().join(name)).unwrap();
         }
-        let config = root.path().join("borrow.click.import.json");
-        let path = lock_path(&config).unwrap();
-        let mut lock: Lock = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let artifact = ".click/borrow/borrow.rs.ullbc";
+        fs::create_dir_all(root.path().join(".click/borrow")).unwrap();
+        fs::copy(example.join(artifact), root.path().join(artifact)).unwrap();
+        let project =
+            crate::project::Project::load(&root.path().join("click.project.json")).unwrap();
+        let unit = project.rust_unit("borrow").unwrap();
+        let saved: serde_json::Value =
+            serde_json::from_slice(&fs::read(example.join("click.project.lock.json")).unwrap())
+                .unwrap();
+        let mut lock: Lock =
+            serde_json::from_value(saved["units"]["borrow"]["lock"].clone()).unwrap();
         let old = lock.identity.clone();
-        assert_eq!(load_import(&config).unwrap().identity(), old);
+        assert_eq!(
+            load_unit(&unit, &serde_json::to_value(&lock).unwrap())
+                .unwrap()
+                .identity(),
+            old
+        );
         lock.identity = import_identity(
             &lock.config,
             &lock.source,
@@ -630,13 +664,20 @@ mod unit_tests {
             lock.charon_driver.as_deref().unwrap(),
         );
         assert_ne!(lock.identity, old);
-        fs::write(&path, serde_json::to_vec(&lock).unwrap()).unwrap();
-        assert_eq!(load_import(&config).unwrap().identity(), lock.identity);
+        assert_eq!(
+            load_unit(&unit, &serde_json::to_value(&lock).unwrap())
+                .unwrap()
+                .identity(),
+            lock.identity
+        );
         // The alias changes only the profile name: the input binding remains exact.
         lock.identity = old;
         lock.exporter = digest(b"different exporter");
-        fs::write(&path, serde_json::to_vec(&lock).unwrap()).unwrap();
-        assert!(load_import(&config).unwrap_err().contains("lock differs"));
+        assert!(
+            load_unit(&unit, &serde_json::to_value(&lock).unwrap())
+                .unwrap_err()
+                .contains("lock differs")
+        );
     }
 
     /// A project unit for an external crate, locked by hand from the
@@ -660,7 +701,7 @@ mod unit_tests {
         for file in ["src/lib.rs", "src/algo.rs"] {
             fs::copy(trial.join(file), crate_root.join(file)).unwrap();
         }
-        let artifact = fs::read(trial.join("restoration.ullbc")).unwrap();
+        let artifact = fs::read(trial.join(".click/adler2/src/lib.rs.ullbc")).unwrap();
         fs::write(proofs.join(".click/adler2/src/lib.rs.ullbc"), &artifact).unwrap();
         let proof = fs::read_to_string(trial.join("restoration.click"))
             .unwrap()
@@ -677,7 +718,7 @@ mod unit_tests {
                 "language": "rust",
                 "root": "../vendor/adler2-2.0.1",
                 "crate": {"name": "adler2", "edition": "2021", "features": ["std"],
-                    "roots": ["adler2::Adler32::from_checksum"],
+                    "roots": ["adler2::adler32_slice", "adler2::Adler32::from_checksum"],
                     "files": ["src/lib.rs", "src/algo.rs"]},
                 "sources": {"src/lib.rs": {}}
             }}})
@@ -686,7 +727,7 @@ mod unit_tests {
         .unwrap();
         let project = crate::project::Project::load(&project_file).unwrap();
         let unit = project.rust_unit("adler2").unwrap();
-        let (config, unit_root) = unit.config().unwrap();
+        let (config, unit_root, _) = unit.config().unwrap();
         let files = sources(&config, &unit_root).unwrap();
         let source = source_digest(&config, &files);
         let (exporter, driver, artifact_hash) =

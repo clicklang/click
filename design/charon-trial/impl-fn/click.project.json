@@ -1,0 +1,24 @@
+{
+  "units": {
+    "impl_fn": {
+      "language": "rust",
+      "sources": {
+        "closure.rs": {}
+      },
+      "crate": {
+        "name": "impl_fn",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "impl_fn::caller",
+          "impl_fn::plain",
+          "impl_fn::named",
+          "impl_fn::twice"
+        ],
+        "files": [
+          "closure.rs"
+        ]
+      }
+    }
+  }
+}

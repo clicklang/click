@@ -1,0 +1,23 @@
+{
+  "units": {
+    "capturing_closures": {
+      "language": "rust",
+      "sources": {
+        "closure.rs": {}
+      },
+      "crate": {
+        "name": "capturing_closures",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "capturing_closures::caller",
+          "capturing_closures::moved",
+          "capturing_closures::plain"
+        ],
+        "files": [
+          "closure.rs"
+        ]
+      }
+    }
+  }
+}

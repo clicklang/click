@@ -334,8 +334,9 @@ impl BodyAdapter<'_, '_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    const ARTIFACT: &[u8] =
-        include_bytes!("../../../../design/charon-trial/trait-methods/shapes.ullbc");
+    const ARTIFACT: &[u8] = include_bytes!(
+        "../../../../design/charon-trial/trait-methods/.click/trait_methods/shapes.rs.ullbc"
+    );
     const SOURCE: &[u8] = include_bytes!("../../../../design/charon-trial/trait-methods/shapes.rs");
     const INTERFACE: &str = "__rust_q_I13_trait_methods_I5_Shape_I4_area";
 

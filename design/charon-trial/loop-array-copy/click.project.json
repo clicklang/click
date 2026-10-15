@@ -1,0 +1,21 @@
+{
+  "units": {
+    "quad": {
+      "language": "rust",
+      "sources": {
+        "quad.rs": {}
+      },
+      "crate": {
+        "name": "quad",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "quad::walk"
+        ],
+        "files": [
+          "quad.rs"
+        ]
+      }
+    }
+  }
+}

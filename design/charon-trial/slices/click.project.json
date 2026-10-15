@@ -1,0 +1,10 @@
+{
+  "units": {
+    "slices": {
+      "language": "rust",
+      "sources": {
+        "slices.rs": {}
+      }
+    }
+  }
+}

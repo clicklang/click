@@ -3,37 +3,15 @@ use super::*;
 const COPY_AFTER_CALL: &str = include_str!("../../design/charon-trial/copy-after-call/copy.click");
 
 fn copy_after_call_project() -> Project {
-    let p = Project::new("");
-    for (name, bytes) in [
-        (
-            "copy.rs",
-            include_bytes!("../../design/charon-trial/copy-after-call/copy.rs").as_slice(),
-        ),
-        ("borrow.click", COPY_AFTER_CALL.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!("../../design/charon-trial/copy-after-call/copy.click.import.json")
-                .as_slice(),
-        ),
-        (
-            "copy.ullbc",
-            include_bytes!("../../design/charon-trial/copy-after-call/copy.ullbc").as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!("../../design/charon-trial/copy-after-call/copy.click.import.json.lock")
-                .as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/copy-after-call");
+    fs::write(p.root.join("borrow.click"), COPY_AFTER_CALL).unwrap();
     p
 }
 
 #[test]
 fn charon_array_copy_after_checked_call_preserves_an_independent_snapshot() {
     let p = copy_after_call_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(COPY_AFTER_CALL, &prepared).unwrap();
     for (before, after) in [
         ("ensures result == 5u32;", "ensures result == 1u32;"),
@@ -70,35 +48,8 @@ const COPY_SOURCE_AFTER_CALL: &str =
     include_str!("../../design/charon-trial/copy-source-after-call/copy.click");
 
 fn copy_source_after_call_project() -> Project {
-    let p = Project::new("");
-    for (name, bytes) in [
-        (
-            "copy.rs",
-            include_bytes!("../../design/charon-trial/copy-source-after-call/copy.rs").as_slice(),
-        ),
-        ("borrow.click", COPY_SOURCE_AFTER_CALL.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!(
-                "../../design/charon-trial/copy-source-after-call/copy.click.import.json"
-            )
-            .as_slice(),
-        ),
-        (
-            "copy.ullbc",
-            include_bytes!("../../design/charon-trial/copy-source-after-call/copy.ullbc")
-                .as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!(
-                "../../design/charon-trial/copy-source-after-call/copy.click.import.json.lock"
-            )
-            .as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/copy-source-after-call");
+    fs::write(p.root.join("borrow.click"), COPY_SOURCE_AFTER_CALL).unwrap();
     p
 }
 
@@ -106,7 +57,7 @@ fn copy_source_after_call_project() -> Project {
 #[ignore = "nightly: 2s in the parallel gate"]
 fn charon_array_copy_preserves_symbolic_source_across_by_value_call() {
     let p = copy_source_after_call_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(COPY_SOURCE_AFTER_CALL, &prepared).unwrap();
     for (before, after) in [
         (
@@ -148,27 +99,8 @@ fn charon_array_copy_symbolic_source_tools_recheck_expanded_certificates() {
 const SOURCE: &str = include_str!("../../design/charon-trial/array-values/bounds.rs");
 const SIDECAR: &str = include_str!("../../design/charon-trial/array-values/bounds.click");
 fn project() -> Project {
-    let p = Project::new("");
-    for (name, bytes) in [
-        ("bounds.rs", SOURCE.as_bytes()),
-        ("borrow.click", SIDECAR.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!("../../design/charon-trial/array-values/bounds.click.import.json")
-                .as_slice(),
-        ),
-        (
-            "bounds.ullbc",
-            include_bytes!("../../design/charon-trial/array-values/bounds.ullbc").as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!("../../design/charon-trial/array-values/bounds.click.import.json.lock")
-                .as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/array-values");
+    fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
     p
 }
 
@@ -176,7 +108,7 @@ fn project() -> Project {
 #[ignore = "nightly: 2.3s in the parallel gate"]
 fn charon_array_reference_assignments_check_values_and_independent_snapshots() {
     let p = project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(SIDECAR, &prepared).unwrap();
     for (before, after) in [
         ("ensures result == 5u32;", "ensures result == 3u32;"),
@@ -223,27 +155,8 @@ fn charon_array_values_unchanged_fixture_verifies_external_snapshots() {
         sidecar,
         include_str!("../../examples/rust-array-values/arrays.click")
     );
-    for (name, bytes) in [
-        ("arrays.rs", source.as_bytes()),
-        ("borrow.click", sidecar.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!("../../design/charon-trial/array-values/arrays.click.import.json")
-                .as_slice(),
-        ),
-        (
-            "arrays.ullbc",
-            include_bytes!("../../design/charon-trial/array-values/arrays.ullbc").as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!("../../design/charon-trial/array-values/arrays.click.import.json.lock")
-                .as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
-    let prepared = load_import(&p.config()).unwrap();
+    fs::write(p.root.join("borrow.click"), sidecar.as_bytes()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     for (before, after) in [
         ("ensures result == words[0];", "ensures result == words[1];"),
@@ -280,15 +193,8 @@ fn charon_array_values_unchanged_fixture_verifies_external_snapshots() {
 #[ignore = "requires the pinned live Charon/compiler; scripts/check.sh --charon-live"]
 fn charon_array_reference_assignments_live_refresh_and_borrow_rejections() {
     let p = project();
-    let mut config: serde_json::Value =
-        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
-    config["exporter"] = serde_json::json!(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
-    );
-    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-    refresh_import(&p.config()).unwrap();
-    C0VerificationSession::new_program_prepared(SIDECAR, load_import(&p.config()).unwrap())
-        .unwrap();
+    p.refresh().unwrap();
+    C0VerificationSession::new_program_prepared(SIDECAR, p.prepared().unwrap()).unwrap();
     for (source, diagnostic) in [
         ("pub fn bad(x: &[u32;2]) { *x = [1,2]; }", "E0594"),
         (
@@ -304,46 +210,23 @@ fn charon_array_reference_assignments_live_refresh_and_borrow_rejections() {
             "reference/aggregate returns",
         ),
     ] {
-        fs::remove_file(p.root.join("bounds.ullbc")).unwrap();
+        fs::remove_file(p.artifact("bounds.rs")).unwrap();
         fs::write(p.root.join("bounds.rs"), source).unwrap();
-        let error = refresh_import(&p.config()).unwrap_err();
+        let error = p.refresh().unwrap_err();
         assert!(error.contains(diagnostic), "{error}");
-        assert!(!p.root.join("bounds.ullbc").exists());
+        assert!(!p.artifact("bounds.rs").exists());
         fs::write(p.root.join("bounds.rs"), SOURCE).unwrap();
-        refresh_import(&p.config()).unwrap();
+        p.refresh().unwrap();
     }
 }
 
 fn external_project() -> Project {
-    let p = Project::new("");
-    for (name, bytes) in [
-        (
-            "external.rs",
-            include_bytes!("../../design/charon-trial/array-values/external.rs").as_slice(),
-        ),
-        (
-            "borrow.click",
-            include_bytes!("../../design/charon-trial/array-values/external.click").as_slice(),
-        ),
-        (
-            "borrow.click.import.json",
-            include_bytes!("../../design/charon-trial/array-values/external.click.import.json")
-                .as_slice(),
-        ),
-        (
-            "external.ullbc",
-            include_bytes!("../../design/charon-trial/array-values/external.ullbc").as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!(
-                "../../design/charon-trial/array-values/external.click.import.json.lock"
-            )
-            .as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/array-values");
+    fs::write(
+        p.root.join("borrow.click"),
+        include_bytes!("../../design/charon-trial/array-values/external.click").as_slice(),
+    )
+    .unwrap();
     p
 }
 
@@ -352,7 +235,7 @@ fn external_project() -> Project {
 fn charon_external_array_copies_and_fills_verify_and_reject_false_bytes() {
     let p = external_project();
     let sidecar = fs::read_to_string(p.root.join("borrow.click")).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     for (before, after) in [
         ("old(source[0])", "old(source[1])"),
@@ -381,16 +264,10 @@ fn charon_external_array_copies_and_fills_verify_and_reject_false_bytes() {
 #[ignore = "requires the pinned live Charon/compiler; scripts/check.sh --charon-live"]
 fn charon_external_array_copies_live_refresh() {
     let p = external_project();
-    let mut config: serde_json::Value =
-        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
-    config["exporter"] = serde_json::json!(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
-    );
-    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-    refresh_import(&p.config()).unwrap();
+    p.refresh().unwrap();
     C0VerificationSession::new_program_prepared(
         &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
-        load_import(&p.config()).unwrap(),
+        p.prepared().unwrap(),
     )
     .unwrap();
 }
@@ -408,8 +285,8 @@ fn charon_whole_array_copy_live_refresh_checks_full_authority() {
         "artifact": "borrow.ullbc",
     });
     fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     for (before, after) in [
         ("views source[0..2];", "views source[0..1];"),

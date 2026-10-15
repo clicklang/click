@@ -1,0 +1,10 @@
+{
+  "units": {
+    "guard": {
+      "language": "rust",
+      "sources": {
+        "guard.rs": {}
+      }
+    }
+  }
+}

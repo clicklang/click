@@ -131,13 +131,10 @@ Audit of the current path, from a user's point of view:
    `charon-driver` beside the configured exporter (`refresh_import` in
    `src/languages/rust/import.rs`). Neither requirement is documented to
    users, beyond "run `scripts/build-charon.sh`".
-3. **There is no single way to locate Charon.** Configs name the exporter
-   by a path into the repository's build output: `../../target/charon/debug/charon`
-   in `examples/basic-rust/borrow.click.import.json`, and
-   `../../../target/charon/debug/charon` in the schema-4 example in the
-   [Rust reference](../docs/reference/rust.md). Tests and design notes use
-   `CLICK_CHARON` (`tests/rust_import.rs`, `design/charon-trial/README.md`),
-   which the `click` binary never reads.
+3. **There is no single way to locate Charon.** Legacy per-sidecar configs
+   may name the exporter by a path into the repository's build output; the
+   committed fixtures no longer do, since they are project units, which
+   resolve Charon through `CLICK_CHARON` or the installed bundle.
 4. **Pinning is good, but the identity is per machine.**
    `src/languages/rust/charon-profile.json` is compiled in. It pins the
    extractor revision and version, the rustc commit, the toolchain, the

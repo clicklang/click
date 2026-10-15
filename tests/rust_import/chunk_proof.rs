@@ -1,24 +1,8 @@
 use super::*;
 
 fn project() -> Project {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/chunk-proof");
-    let p = Project::new("");
-    for (destination, original) in [
-        ("chunks.rs", "chunks.rs"),
-        ("chunks.ullbc", "chunks.ullbc"),
-        ("borrow.click", "chunks.click"),
-        ("borrow.click.import.json", "chunks.click.import.json"),
-        (
-            "borrow.click.import.json.lock",
-            "chunks.click.import.json.lock",
-        ),
-    ] {
-        fs::write(
-            p.root.join(destination),
-            fs::read(root.join(original)).unwrap(),
-        )
-        .unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/chunk-proof");
+    fs::copy(p.root.join("chunks.click"), p.root.join("borrow.click")).unwrap();
     p
 }
 #[test]
@@ -33,7 +17,7 @@ fn charon_chunk_proof_preserves_source_and_checks_obligations() {
         include_str!("../../examples/rust-chunks-exact/chunks.click")
     );
     let p = project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     let proof = fs::read_to_string(p.root.join("borrow.click")).unwrap();
     C0VerificationSession::new_program_prepared(&proof, &prepared).unwrap();
     for invalid in [
