@@ -133,6 +133,8 @@ pub(in crate::surface) struct FunctionLocals {
 /// that are memory-backed.
 #[derive(Clone, Default)]
 pub(in crate::surface) struct ProgramLayouts {
+    /// A C definition's execution name, indexed by translation unit and source spelling.
+    pub(in crate::surface) qualified_functions: BTreeMap<(String, String), String>,
     pub(in crate::surface) c_object_names: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
     /// The other members of each function's recursive C component, for the
     /// functions in a component of two or more. An expression `decreases`
@@ -627,6 +629,7 @@ struct Parser {
     /// before any library theorem of that name. Empty in a library module.
     local_theorems: BTreeSet<String>,
     source_aliases: BTreeMap<String, String>,
+    qualified_functions: BTreeMap<(String, String), String>,
     qualified_objects: Option<BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>>,
     /// Set while a `tactic` declaration's signature is parsed: the name
     /// follows directly, the parameters use Click's `name: type` spelling,
@@ -1080,6 +1083,7 @@ impl Parser {
             .implied_library_modules
             .extend(layouts.library_modules);
         parser.qualified_objects = Some(layouts.qualified_objects);
+        parser.qualified_functions = layouts.qualified_functions;
         parser.local_struct_pointers_by_function = layouts.local_struct_pointers;
         parser.closure_captures = layouts.closure_captures;
         parser.plain_char = layouts.plain_char;
@@ -1161,6 +1165,7 @@ impl Parser {
             rust_object_traits,
             cpp_object_methods,
             source_aliases: BTreeMap::new(),
+            qualified_functions: BTreeMap::new(),
             qualified_objects: None,
             pending_tactic_signature: false,
             tactic_names: BTreeSet::new(),
@@ -1518,17 +1523,32 @@ impl Parser {
             theorem_definitions.push(self.parse_theorem_definition()?);
         }
         self.position = end;
+        let mut c_function_names = self
+            .local_struct_pointers_by_function
+            .iter()
+            .filter_map(|(source, info)| {
+                info.execution_name
+                    .as_ref()
+                    .map(|target| (source.clone(), target.clone()))
+            })
+            .collect::<BTreeMap<_, _>>();
+        for block in &function_blocks {
+            let signature = block.signature();
+            if let Some(source) = &signature.c_source {
+                let (_, name) = signature
+                    .name()
+                    .rsplit_once("::")
+                    .expect("qualified C head");
+                if let Some(target) = self
+                    .qualified_functions
+                    .get(&(source.clone(), name.to_string()))
+                {
+                    c_function_names.insert(signature.name().to_string(), target.clone());
+                }
+            }
+        }
         let file = ClickFile {
-            c_function_names: std::sync::Arc::new(
-                self.local_struct_pointers_by_function
-                    .iter()
-                    .filter_map(|(source, info)| {
-                        info.execution_name
-                            .as_ref()
-                            .map(|target| (source.clone(), target.clone()))
-                    })
-                    .collect(),
-            ),
+            c_function_names: std::sync::Arc::new(c_function_names),
             imports,
             library_imports,
             verifying_sources,
@@ -3257,6 +3277,17 @@ impl Parser {
             self.exact_long_rank = previous;
             signature?
         };
+        let table_name = signature
+            .c_source
+            .as_ref()
+            .and_then(|path| {
+                let (_, name) = signature.name().rsplit_once("::")?;
+                self.qualified_functions
+                    .get(&(path.clone(), name.to_string()))
+            })
+            .map(String::as_str)
+            .unwrap_or_else(|| signature.name())
+            .to_string();
         if let Some(struct_name) = return_struct_name {
             struct_params.insert("result".to_string(), struct_name);
         }
@@ -3266,7 +3297,7 @@ impl Parser {
         // its own reading.
         for name in self
             .local_struct_pointers_by_function
-            .get(signature.name())
+            .get(&table_name)
             .into_iter()
             .flat_map(|locals| &locals.references)
         {
@@ -3308,7 +3339,7 @@ impl Parser {
         // proof just as a parameter is. The signature wins a shared spelling.
         for (name, struct_name) in self
             .local_struct_pointers_by_function
-            .get(signature.name())
+            .get(&table_name)
             .into_iter()
             .flat_map(|locals| &locals.struct_pointers)
         {
@@ -3329,9 +3360,7 @@ impl Parser {
         );
         let previous_c_object_names = std::mem::replace(
             &mut self.current_c_object_names,
-            self.c_object_names_by_function
-                .get(signature.name())
-                .cloned(),
+            self.c_object_names_by_function.get(&table_name).cloned(),
         );
         let previous_c_parameter_types = std::mem::replace(
             &mut self.current_c_parameter_types,
@@ -3345,7 +3374,7 @@ impl Parser {
             std::mem::take(&mut self.current_parameter_struct_casts);
         let aggregate_objects = self
             .aggregate_objects_by_function
-            .get(signature.name())
+            .get(&table_name)
             .cloned()
             .unwrap_or_default();
         let previous_aggregate_objects =
@@ -3354,7 +3383,7 @@ impl Parser {
         // function, for indexing shapes and element widths alike.
         let global_array_shapes = self
             .global_array_shapes_by_function
-            .get(signature.name())
+            .get(&table_name)
             .cloned()
             .unwrap_or_default()
             .into_iter()
@@ -3363,9 +3392,8 @@ impl Parser {
         let previous_global_array_shapes =
             std::mem::replace(&mut self.current_global_array_shapes, global_array_shapes);
         let mut visible_struct_array_params = struct_array_params;
-        if let Some(aggregate_array_objects) = self
-            .aggregate_array_objects_by_function
-            .get(signature.name())
+        if let Some(aggregate_array_objects) =
+            self.aggregate_array_objects_by_function.get(&table_name)
         {
             visible_struct_array_params.extend(
                 aggregate_array_objects
@@ -3817,7 +3845,7 @@ impl Parser {
         }
         let c_object_names = self
             .c_object_names_by_function
-            .get(signature.name())
+            .get(&table_name)
             .cloned()
             .unwrap_or_else(|| {
                 std::sync::Arc::new(
@@ -3915,7 +3943,7 @@ impl Parser {
         // signature wins a shared spelling.
         for (name, struct_name) in self
             .local_struct_pointers_by_function
-            .get(signature.name())
+            .get(&table_name)
             .into_iter()
             .flat_map(|locals| &locals.struct_pointers)
         {
@@ -3935,7 +3963,7 @@ impl Parser {
             super::pointee_field_places(parameter_field_places.values(), &self.struct_layouts);
         let recursion_peers = self
             .recursion_peers_by_function
-            .get(signature.name())
+            .get(&table_name)
             .cloned()
             .unwrap_or_default();
         // A named contract's value parameters follow its C parameters, so its
@@ -3947,7 +3975,7 @@ impl Parser {
                 .extend(self.contract_value_parameters.iter().cloned());
         }
         // A closure's captures lead its signature, as they lead its function.
-        if !external && let Some(captures) = self.closure_captures.get(signature.name()) {
+        if !external && let Some(captures) = self.closure_captures.get(&table_name) {
             let mut parameters = captures.clone();
             parameters.append(&mut signature.parameters);
             signature.parameters = parameters;
@@ -4050,6 +4078,7 @@ impl Parser {
             }
             return Ok(ParsedFunctionSignature {
                 signature: FunctionSignature {
+                    c_source: None,
                     return_type: C0Type::Void,
                     return_pointee_constant: false,
                     return_reference: false,
@@ -4103,6 +4132,7 @@ impl Parser {
         } else {
             parsed_return_type.c_type
         };
+        let mut c_source = None;
         let (name, receiver) = if self.verifies_cpp() {
             let declarator = self.parse_cpp_declarator(is_static)?;
             if declarator.returnless != returnless {
@@ -4114,7 +4144,20 @@ impl Parser {
             }
             (declarator.name, declarator.receiver)
         } else {
-            (self.expect_ident("function name")?, None)
+            let alias = self.expect_ident("function name")?;
+            let name =
+                if self.peek() == Some(&Token::ColonColon) {
+                    self.position += 1;
+                    let name = self.expect_ident("C function name")?;
+                    c_source =
+                        Some(self.source_aliases.get(&alias).cloned().ok_or_else(|| {
+                            self.error(format!("unknown C source alias `{alias}`"))
+                        })?);
+                    format!("{alias}::{name}")
+                } else {
+                    alias
+                };
+            (name, None)
         };
         self.expect(Token::LParen)?;
         let mut parsed_parameters = self.parse_parameters()?;
@@ -4192,6 +4235,7 @@ impl Parser {
 
         let parsed = ParsedFunctionSignature {
             signature: FunctionSignature {
+                c_source,
                 return_type,
                 return_pointee_constant: parsed_return_type.pointee_constant,
                 return_reference: parsed_return_type.reference,
@@ -5105,16 +5149,21 @@ impl Parser {
     /// The closing parenthesis comes from the precomputed nesting table, so
     /// the decision costs one lookup rather than a scan.
     fn call_binder_transport_follows(&self) -> bool {
-        if !matches!(self.peek(), Some(Token::Ident(_))) || self.peek_next() != Some(&Token::LParen)
-        {
+        if !matches!(self.peek(), Some(Token::Ident(_))) {
             return false;
         }
-        let Some(close) = self
-            .matching_parentheses
-            .get(self.position + 1)
-            .cloned()
-            .flatten()
-        else {
+        let open = if self.peek_next() == Some(&Token::ColonColon) {
+            if !matches!(self.tokens.get(self.position + 2), Some(Token::Ident(_))) {
+                return false;
+            }
+            self.position + 3
+        } else {
+            self.position + 1
+        };
+        if self.tokens.get(open) != Some(&Token::LParen) {
+            return false;
+        }
+        let Some(close) = self.matching_parentheses.get(open).cloned().flatten() else {
             return false;
         };
         self.tokens.get(close + 1) == Some(&Token::Comma)
@@ -5128,11 +5177,16 @@ impl Parser {
         output: Option<CallOutputPattern>,
         tactic: bool,
     ) -> Result<CallBinderTransport, ClickError> {
-        let callee = self.expect_ident(if tactic {
+        let mut callee = self.expect_ident(if tactic {
             "tactic name"
         } else {
             "call step callee"
         })?;
+        if !tactic && self.peek() == Some(&Token::ColonColon) {
+            self.position += 1;
+            callee.push_str("::");
+            callee.push_str(&self.expect_ident("C function name")?);
+        }
         // The binder map is the last argument in both forms, as a fold's
         // field map is: a call step writes `step(callee(...), { ... })` and a
         // tactic application writes `name(..., { ... })`, where the map is

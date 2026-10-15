@@ -4135,13 +4135,14 @@ impl CCallBinderTransport {
     /// sidecar names a header-provided `static inline` helper by its source
     /// spelling, while the call carries the helper's translation-unit-local
     /// execution name `name#inline:unit`, so that suffix is not part of the
-    /// comparison. The call at the frontier is one call to one body either
-    /// way; this only decides whether the step named it.
+    /// comparison for a bare name. A file-qualified contract instead supplies
+    /// the exact execution name; it must match that translation unit. The call
+    /// at the frontier is one call to one body either way.
     pub(crate) fn names_call_to(&self, function_name: &str) -> bool {
         let source_spelling = function_name
             .split_once("#inline:")
             .map_or(function_name, |(source, _)| source);
-        source_spelling == self.function.as_ref()
+        function_name == self.function.as_ref() || source_spelling == self.function.as_ref()
     }
 }
 

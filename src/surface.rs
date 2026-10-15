@@ -1429,6 +1429,8 @@ pub struct FunctionSignature {
     return_pointee_constant: bool,
     return_reference: bool,
     name: String,
+    /// Translation unit selected by a file-qualified C contract head.
+    c_source: Option<String>,
     parameters: Vec<FunctionParameter>,
     /// The payload type of the function's declared exceptional outcome.
     /// This surface slice currently accepts only `throws int32`.
@@ -8119,6 +8121,20 @@ impl FunctionBlock {
 }
 
 impl FunctionSignature {
+    fn matches_c_definition(&self, source_path: &str, function: &syntax::C0Function) -> bool {
+        let name = if let Some(source) = &self.c_source {
+            if source != source_path {
+                return false;
+            }
+            self.name
+                .rsplit_once("::")
+                .map_or(self.name.as_str(), |(_, name)| name)
+        } else {
+            &self.name
+        };
+        name == function.source_name()
+    }
+
     pub fn new(
         return_type: C0Type,
         name: impl Into<String>,
@@ -8129,6 +8145,7 @@ impl FunctionSignature {
             return_pointee_constant: false,
             return_reference: false,
             name: name.into(),
+            c_source: None,
             parameters,
             exceptional_type: None,
             diverges: false,

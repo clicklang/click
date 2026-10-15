@@ -818,6 +818,10 @@ pub(super) fn c_layouts(
                 .filter_map(syntax::library_contract_module),
         );
         for function in unit.functions {
+            tables.qualified_functions.insert(
+                (source_path.clone(), function.source_name().to_string()),
+                function.name().to_string(),
+            );
             calls
                 .entry(function.source_name().to_string())
                 .or_default()
@@ -1237,10 +1241,13 @@ pub(super) fn record_function_tables(
             _ => {}
         }
     }
-    tables.c_object_names.insert(
-        function.source_name().to_string(),
-        std::sync::Arc::new(names),
-    );
+    let names = std::sync::Arc::new(names);
+    tables
+        .c_object_names
+        .insert(function.source_name().to_string(), names.clone());
+    tables
+        .c_object_names
+        .insert(function.name().to_string(), names);
     let mut function_aggregate_objects = BTreeMap::new();
     for aggregate in function.global_aggregates().values() {
         function_aggregate_objects.insert(
@@ -1321,6 +1328,11 @@ pub(super) fn record_function_tables(
         struct_pointers: function.local_struct_pointers().clone(),
         references: function.local_references().clone(),
     };
+    if function.name() != function.source_name() {
+        tables
+            .local_struct_pointers
+            .insert(function.name().to_string(), locals.clone());
+    }
     match tables
         .local_struct_pointers
         .entry(function.source_name().to_string())

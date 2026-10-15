@@ -376,6 +376,12 @@ fn merge_modules(
                 )));
             }
         }
+        std::sync::Arc::make_mut(&mut merged.c_function_names).extend(
+            local
+                .c_function_names
+                .iter()
+                .map(|(name, target)| (name.clone(), target.clone())),
+        );
         // One project selects exactly one C implementation target: its
         // sources are preprocessed once, and its proofs carry one target in
         // their artifact identity. A module may restate the project's target

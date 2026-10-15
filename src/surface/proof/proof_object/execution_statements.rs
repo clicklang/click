@@ -1254,8 +1254,16 @@ impl<'a> Proof<'a> {
             } else {
                 transport.arguments().len()
             };
+            let execution_callee = if transport.is_named_contract() {
+                callee
+            } else {
+                context
+                    .spec_definitions
+                    .predicates
+                    .function_execution_name(callee)
+            };
             selected_environment = environment.with_selected_call_binders_and_types(
-                callee,
+                execution_callee,
                 arity,
                 bindings,
                 type_arguments,
