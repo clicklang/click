@@ -648,3 +648,14 @@ compilation affected timing. CI's byte-sum mirror checks caught the stale
 migrated `sum-proof.click`; it now matches the explicit canonical proof. Both
 failing Rust parity checks pass locally. The original frozen sidecar and its
 hash are unchanged.
+
+[PR #1144](https://github.com/clicklang/click/pull/1144) merged; all four pushed
+commits are verified on upstream. The next bounded proof repair completes
+Rust chunks-exact with existing native-to-Integer conversion lemmas and explicit
+cursor/last-byte formation and read bounds. Original Rust and contracts are
+unchanged, and the migrated sidecar remains synchronized with its canonical
+copy. Fresh, expanded, rewritten and retained checks pass on the archive and
+upstream-based `95fe8cbd1`. The active migration inventory control and the
+specifically selected source/obligation control pass; the other two ignored
+chunk tool controls were not run. The last complete archive audit remains
+**49/52** pending a rerun; arena and owned-vector are the other failures.
