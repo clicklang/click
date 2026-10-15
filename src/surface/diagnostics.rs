@@ -1903,6 +1903,23 @@ fn describe_layout_place_range(
         {
             return Some(member(field_name));
         }
+        // A single scalar array element keeps its field/index spelling even
+        // when the range base has folded the index into a byte offset.
+        if !field.c_type().is_pointer()
+            && field.struct_name().is_none()
+            && field.array_shape().is_none_or(|shape| shape.len() == 1)
+            && let Some(width) = scalar_element_width(field.c_type()).map(|width| width as u64)
+            && low >= field_low
+            && high <= field_low + u64::from(field.byte_width())
+            && high - low == width
+            && (low - field_low).is_multiple_of(width)
+        {
+            return Some(format!(
+                "{}[{}]",
+                member(field_name),
+                (low - field_low) / width
+            ));
+        }
     }
     // Leaf slots preserve dotted names for a partial embedded aggregate.
     let mut leaves = layout.leaf_field_offsets().collect::<Vec<_>>();
