@@ -90,6 +90,7 @@ examples. Broader language, synchronization, and graph coverage remain P2.
 
 Program import and execution:
 
+- [Project configuration: one root file for units, targets, toolchains and locks](project-config.md)
 - [A well-designed C++ front end](cpp-support.md)
 - [A well-designed Rust front end](rust-support.md)
 
