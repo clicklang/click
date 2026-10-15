@@ -1650,7 +1650,7 @@ resource uncalled(flag: int32*) {
 ```
 
 A Click library module may declare resources too, such as `click::cstr`'s
-borrowed C string `cstr_at(p, len)`. A file sees a library resource exactly
+C string `cstr_at(p, len)`. A file sees a library resource exactly
 when it sees that module's predicates and functions: the module is implicit,
 imported, or brought by the C program's library calls. Declaring a resource
 with the name of a visible library resource is a duplicate definition. A

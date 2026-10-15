@@ -6856,8 +6856,9 @@ impl ResourceNormalizationIndex {
             }
             CResource::Memory(range) => {
                 // A window at a 64-bit index from its root, a piece a call
-                // handed back, also meets its wide neighbours there.
-                if let Some((base, start, end)) = wide_normalization_form(range) {
+                // handed back, also meets its wide neighbours there, and so
+                // does a constant piece at the root itself.
+                if let Some((base, start, end)) = native_wide_normalization_key(range) {
                     keys.push(ResourceNormalizationKey::MemoryNativeStart(
                         base.clone(),
                         range.element_width(),
@@ -6998,7 +6999,7 @@ impl ResourceNormalizationIndex {
                 }
             }
             CResource::Memory(range) => {
-                if let Some((base, start, end)) = wide_normalization_form(range) {
+                if let Some((base, start, end)) = native_wide_normalization_key(range) {
                     keys.push(ResourceNormalizationKey::MemoryNativeEnd(
                         base.clone(),
                         range.element_width(),
@@ -9443,6 +9444,29 @@ fn exact_shifted_endpoint(
         endpoint.clone(),
     )) == Some(false))
     .then(|| Bitvector32Term::add(delta.clone(), endpoint.clone()))
+}
+
+/// The wide lookup key of an `Int32` range: its [`wide_normalization_form`],
+/// or, for a range at its own root with nonnegative constant bounds, those
+/// bounds as unsigned 64-bit values. A constant piece a composite body
+/// splits off the front of a wide owned range, `p[0..1]` beside
+/// `p[1..n + 1]`, then meets its wide neighbour. Like the form itself, this
+/// only proposes a pair; [`merge_memory_ranges`] checks the merge.
+fn native_wide_normalization_key(
+    range: &CMemoryRange,
+) -> Option<(Pointer, Bitvector32Term, Bitvector32Term)> {
+    if let Some(form) = wide_normalization_form(range) {
+        return Some(form);
+    }
+    let constant = |bound: &Bitvector32Term| {
+        let value = bound.as_const()?;
+        (value as i32 >= 0).then(|| Bitvector32Term::UInt64Constant(u64::from(value)))
+    };
+    Some((
+        range.base().clone(),
+        constant(range.start())?,
+        constant(range.end())?,
+    ))
 }
 
 /// The owned ranges left to the holder once `required` is taken out of
