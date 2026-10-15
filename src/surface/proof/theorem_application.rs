@@ -1129,6 +1129,7 @@ fn pointer_element_width_for_c_expression(
             .or_else(|| pointer_element_width_for_c_expression(right, known)),
         CExpression::Subtract(left, _)
         | CExpression::PointerOffsetBytes { pointer: left, .. }
+        | CExpression::Subobject { pointer: left, .. }
         | CExpression::Cast {
             expression: left, ..
         } => pointer_element_width_for_c_expression(left, known),

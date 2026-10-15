@@ -411,7 +411,7 @@ and the caller's proof shows it meets the contract the callee requires of
 the pointer. The importer keeps the closure's `Fn::call` body, rewritten as
 a function of the closure's parameters, and reads Charon's cast of the
 generated `ClosureAsFn` function as the closure's address. A closure called
-directly and `impl Fn` parameters are refused
+directly is refused
 ([`design/charon-trial/closures`](https://github.com/clicklang/click/blob/master/design/charon-trial/closures/closure.click)).
 
 A `&dyn Fn(i32) -> i32` parameter of scalar parameters and result is a
@@ -432,6 +432,21 @@ exact, and a `move` capture is copied. A closure that captures nothing is
 its function's address. Captures by mutable reference, `FnMut` and
 `FnOnce` callees, and non-scalar captures are refused
 ([`design/charon-trial/capturing-closures`](https://github.com/clicklang/click/blob/master/design/charon-trial/capturing-closures/closure.click)).
+
+An `impl Fn(i32) -> i32` parameter, or one of a type parameter bound by
+`Fn`, `fn apply<F: Fn(i32) -> i32>(f: F, x: i32)`, is a callable value as
+`&dyn Fn` is, and the head writes it as the source does; a head has no
+`where` clause, so a bound the source writes there goes in the head's
+parameter list. A closure passed
+for it is checked as one passed for `&dyn Fn`, and a crate function item,
+`apply(inc, x)`, is its function's address. The importer reads the
+parameter's type from its `Fn` bound and the output type constraint, a
+call `TraitClause::call` through it as a call through the value, and the
+closure state or `FnDef` constant the caller passes as the value; one
+verified body covers every instantiation. A type parameter with any other
+bound, `impl FnMut` and `impl FnOnce`, generic function items, and
+non-scalar parameters or results are refused
+([`design/charon-trial/impl-fn`](https://github.com/clicklang/click/blob/master/design/charon-trial/impl-fn/closure.click)).
 
 ### `extern` block functions
 

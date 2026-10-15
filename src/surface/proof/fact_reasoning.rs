@@ -491,6 +491,10 @@ fn collect_c_expression_variables(expression: &CExpression, names: &mut Vec<Stri
                 pointer: expression,
                 ..
             }
+            | CExpression::Subobject {
+                pointer: expression,
+                ..
+            }
             | CExpression::Not(expression)
             | CExpression::BitwiseNot(expression)
             | CExpression::Load(expression)

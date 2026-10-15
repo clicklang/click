@@ -163,6 +163,19 @@ pub(super) fn expression(value: &CExpression, locals: &Domains) -> CPointerResul
             E::Load(pointer) | E::TypedLoad { pointer, .. } => expression(pointer, locals),
             _ => CPointerResultDomain::Unknown,
         },
+        E::Subobject { pointer, width } => {
+            let parent = expression(pointer, locals);
+            if parent == CPointerResultDomain::Unknown {
+                return CPointerResultDomain::Unknown;
+            }
+            CPointerResultDomain::Selected {
+                domain: CPointerDomain {
+                    bytes: *width,
+                    position: IntegerTerm::constant_i64(0).into(),
+                },
+                argument: argument(&parent),
+            }
+        }
         E::PointerOffsetBytes {
             pointer,
             bytes,

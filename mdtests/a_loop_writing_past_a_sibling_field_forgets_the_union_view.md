@@ -7,6 +7,12 @@ typed union view is one of them: it used to survive, the load after the loop
 read the copied 3, and the false `ensures result == 3` verified, although
 `loop_writes_past_tag` returns 9.
 
+`p` points to the scalar member `tag`, an array of one element, so `p + 2`
+leaves it (C11 6.5.6p8): the store itself is undefined, and it is refused
+before the loop can reach the union. The union-view regression keeps its
+coverage through the whole struct's address in
+`a_loop_writing_through_the_struct_forgets_the_union_view.md`.
+
 ```c filename=a_loop_writing_past_a_sibling_field_forgets_the_union_view.c
 union payload {
     int32 number;
@@ -63,5 +69,5 @@ int32 loop_writes_past_tag() {
 ```
 
 ```expect
-fail: left side evaluated to at(<state A>, *(int32 *)((char *)&source + 8)), right side evaluated to 3
+fail: pointer arithmetic left the pointed-to object
 ```

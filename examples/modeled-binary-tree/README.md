@@ -259,12 +259,12 @@ cite.
 - `heap_rotate_left` and `heap_rotate_right` are the model transformations, and
   `heap_rotate_left_preserves_inorder` and `heap_rotate_right_preserves_inorder`
   prove that each preserves `heap_inorder`, through a per-node helper and the
-  standard library's `list_append_associative`.
+  standard library's `list::append_associative`.
 - `heap_member` is the recursive `bool` membership test, searching the
   node, then the left subtree, then the right one, in the order the C search
   uses. `heap_member_is_inorder_membership` proves
-  `heap_member(tree, target) == list_contains(heap_inorder(tree), target)` by
-  structural induction from `list_contains_append` and `list_contains_cons`, so
+  `heap_member(tree, target) == list::contains(heap_inorder(tree), target)` by
+  structural induction from `list::contains_append` and `list::contains_cons`, so
   membership in the model is exactly membership in the sequence the rotations
   preserve. The C search only learns that a recursive call returned nonzero;
   since a `bool` is exactly `false` or `true`, that `heap_member(l.model,

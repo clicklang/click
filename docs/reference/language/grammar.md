@@ -299,7 +299,7 @@ constructor is refused with the written form to use, as in
 `mdtests/constructor_type_arguments_that_nothing_fixes_are_refused.md`,
 `mdtests/a_proof_constructor_whose_type_nothing_fixes_is_refused.md` and
 `mdtests/a_generic_call_on_constructors_nothing_types_is_refused.md`. In
-`unfold(list_append(List<int32>::Nil, List<int32>::Nil))` both arguments must
+`unfold(list::append(List<int32>::Nil, List<int32>::Nil))` both arguments must
 be written: neither the call nor its arguments fix `T`. The written form is
 accepted everywhere.
 
@@ -310,8 +310,8 @@ function singleton(x: int32) -> List<int32> {
 }
 
 theorem append_nothing(xs: List<int32>) {
-    ensures list_append(List::Nil, xs) == xs by {
-        unfold(list_append(List::Nil, xs));
+    ensures list::append(List::Nil, xs) == xs by {
+        unfold(list::append(List::Nil, xs));
         normalize();
     }
 }

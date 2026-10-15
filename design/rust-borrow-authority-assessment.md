@@ -203,21 +203,65 @@ without the selected borrow receipt suffice.
 
 These receipts are execution evidence, not recovery rights. They do not yet
 carry a local-reference lease or establish a dynamic invocation identity, and
-ordinary memory producers still use their existing authority checks. Private
-provenance tags remain comparison-neutral; recovery must additionally establish
+these receipts cannot activate the private scalar-memory lease adapter below.
+Private provenance tags remain comparison-neutral; recovery must additionally establish
 the selected operation's membership in the locked source plan. Private
 receipt deltas retain each producer occurrence without scanning ambient facts;
 the existing 16/64/256/1024 regression now also checks borrow receipts.
+
+## Private scalar-memory lease adapter
+
+The kernel now connects local-reference custody to ordinary scalar memory
+execution through a private `CState` adapter. Birth selects a direct owned
+occurrence for one external scalar, checks existing mutex/shared-loan write
+restrictions, and removes that owner and its derived memory views from the
+ordinary resource context. A private reservation in the ledger retains the exact original occurrence.
+A fresh child lease identity travels in the pointer value and through
+lvalue evaluation; copying the pointer does not copy its authority into the
+public resource frame.
+
+Each child load/store validates the ledger, holder, live child identity, exact
+pointer/type and reserved occurrence. It temporarily supplies the selected
+owner to the existing memory producer, which still performs its ordinary
+checks. A successful store withholds that temporary owner again before
+publishing its successor. Recovery retires the child exactly once; nested
+recovery restores parent custody, and outer recovery returns the scalar owner.
+Only authority changes: the memory after the child's writes remains current.
+Expired copies keep their lease and fail even after ordinary ownership returns.
+
+Lease identity participates in pointer value equality/hash/ordering using a
+fresh id; language pointer comparison still compares addresses. Local copies,
+identity-preserving pointer casts, pointer displacement and `&*child` retain
+custody. Displaced or differently typed dereferences fail the exact access
+check. Pointer-to-integer escape and storing a leased pointer outside a private
+local are refused. Pointer qualifiers, bounds and lease identities share optional metadata so
+ordinary unqualified pointers allocate nothing and the pure-fact representation
+size limit stays unchanged.
+
+While a lease is active, untagged memory loads require an ordinary owner;
+view-only and symbolic-contract-load bypasses cannot read the reserved scalar.
+Disjoint owned neighbors remain usable. Calls, aggregate operations, allocation
+changes, loop summarization and explicit lifetime retirement are refused until
+they have a custody protocol; returning with an outstanding lease is refused.
+A maintained holder/root index avoids ledger scans. Kernel execution regressions
+cover parent denial, child writes, nested recovery, copied stale aliases, wrong
+holders/branches/types/addresses, cast/address preservation and bypass refusal.
+Selected adapter operations have a deterministic 16/64/256/1024-owner scaling
+regression.
+
+This adapter is kernel-private. Ordinary Rust execution does not yet issue its
+birth/end operations. Source receipt tags cannot construct a lease or recover
+its reservation.
 
 ## Remaining local-reference work
 
 A checked kernel lifecycle does not by itself enforce local references in
 ordinary Rust execution. The verifier still must issue births from actual
-source execution, preserve reference identity through copies and accesses,
-validate the exact ending frontier and invocation, and connect checked
-borrow-end frontiers to kernel recovery. Runtime enforcement must also cover
-pointer casts, untagged aliases, call transfer and memory havoc. An access observation is not
-evidence that every supported ending frontier has executed. The new restricted
+source execution, validate the exact ending frontier and invocation, and
+connect checked borrow-end frontiers to the private memory adapter. Runtime
+integration must also cover call transfer, reference storage and memory havoc;
+the initial adapter refuses these operations while a scalar lease is active. An
+access observation is not evidence that every supported ending frontier has executed. The new restricted
 boundary binding supplies a completed borrow/store pair, while the ending certificate
 alone is insufficient: recovery must also match the source identity, reference
 access, borrowed footprint and exact program frontier. Neither last-use guesses nor `StorageDead`

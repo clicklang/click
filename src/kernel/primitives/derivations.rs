@@ -1749,6 +1749,7 @@ fn c_expression_steps_for_mode(expression: &CExpression, lvalue: bool) -> usize 
                 pending.push((target, true))
             }
             CExpression::PointerOffsetBytes { pointer, .. }
+            | CExpression::Subobject { pointer, .. }
             | CExpression::Not(pointer)
             | CExpression::BitwiseNot(pointer) => pending.push((pointer, false)),
             crate::kernel::binary_c_operation!(left, right) => {

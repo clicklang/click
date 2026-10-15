@@ -322,7 +322,7 @@ theorem rb_erase_immediate_successor_child(erased: struct rb_node*, successor: s
     }
 
     ensures rb_inorder(rb_immediate_successor_child(successor, parent, color, left, child))
-        == list_append(rb_inorder(left), rb_inorder(RbTree::Node(successor, erased, sc, RbTree::Empty, child))) by {
+        == list::append(rb_inorder(left), rb_inorder(RbTree::Node(successor, erased, sc, RbTree::Empty, child))) by {
         apply(rb_reparent_preserves_inorder(left, successor));
         apply(rb_reparent_preserves_inorder(rb_recolor(child, Color::Black), successor));
         apply(rb_recolor_preserves_inorder(child, Color::Black));
@@ -650,7 +650,7 @@ theorem rb_erase_nonempty_successor_splice(erased: struct rb_node*, successor: s
     }
 
     ensures rb_inorder(rb_successor_child_splice(successor, parent, color, left, right))
-        == list_append(rb_inorder(left), rb_inorder(right)) by {
+        == list::append(rb_inorder(left), rb_inorder(right)) by {
         apply(rb_minimum_list(right, successor, min_color, child));
         apply(rb_erase_two_child_splice(erased, successor, parent, color, left, right));
         apply(rb_remove_min_blackened_preserves_inorder(right));
@@ -717,7 +717,7 @@ theorem rb_erase_no_fixup_successor_splice(erased: struct rb_node*, successor: s
 
     ensures is_rb_root(plug(up, rb_successor_child_splice(successor, parent, color, left, right))) == 1
         and rb_inorder(rb_successor_child_splice(successor, parent, color, left, right))
-            == list_append(rb_inorder(left), rb_inorder(right))
+            == list::append(rb_inorder(left), rb_inorder(right))
         and ctx_consistent(up, rb_successor_child_splice(successor, parent, color, left, right), root_parent) == 1 by {
         if child == RbTree::Empty {
             have min_color == Color::Red by {

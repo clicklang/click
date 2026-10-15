@@ -250,9 +250,15 @@ needed to finish a claim already made:
     on one path, check the source and actual pointer, and refuse ambiguous
     repeated observations. These receipts do not yet carry local-loan leases
     or authorize recovery.
+  - a private scalar-memory lease adapter that withholds the selected owner,
+    checks custody in ordinary loads/stores, preserves child writes through
+    recovery and rejects copied stale children after ownership returns. Kernel
+    execution negatives and indexed adapter scaling checks cover this layer;
+    Rust source execution does not yet activate it. Calls, reference storage,
+    aggregates and loop summarization remain refused while a lease is active.
 
-  Those executed observations must still bind the local-reference lifecycle,
-  live memory permission and the actual ending frontier/invocation. Recovery
+  Those executed observations must still bind the local-reference lifecycle
+  and private memory adapter to the actual ending frontier/invocation. Recovery
   at checked frontiers remains open. A reproduced false acceptance here
   would be `unsound`, and so P1, under the [issue rules](README.md).
 - **Stable proof observations.** Provide source-facing slice, array and

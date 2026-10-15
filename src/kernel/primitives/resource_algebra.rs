@@ -4808,6 +4808,25 @@ impl ResourceContext {
         self
     }
 
+    /// Withhold one direct owned occurrence, retaining its identity in a private
+    /// scalar-reference reservation. Derived views of that occurrence expire.
+    pub(in crate::kernel) fn reserve_local_scalar_owner(
+        self,
+        occurrence: ResourceOccurrenceId,
+    ) -> Option<(Self, ReservedLocalScalarOwner)> {
+        let entry = *self.storage.entry_by_occurrence.get(&occurrence)?;
+        if self.storage.supported_by.contains_key(&entry)
+            || self.loan_dependency(occurrence).is_some()
+        {
+            return None;
+        }
+        let fact = self.owned_fact_for_occurrence(occurrence)?.clone();
+        let residual = self
+            .without_memory_views_supported_by_occurrence(occurrence)
+            .without_exact_representation_for_occurrence(occurrence)?;
+        Some((residual, ReservedLocalScalarOwner { fact, occurrence }))
+    }
+
     pub(crate) fn without_exact_representation_for_occurrence(
         mut self,
         occurrence: ResourceOccurrenceId,
@@ -10679,4 +10698,27 @@ fn call_input_domain_queries_ignore_unrelated_suppliers() {
         costs.push(work);
     }
     assert!(costs.iter().all(|cost| *cost <= costs[0] + 64), "{costs:?}");
+}
+
+impl ReservedLocalScalarOwner {
+    pub(in crate::kernel) fn matches(
+        &self,
+        occurrence: ResourceOccurrenceId,
+        fact: &CResourceFact,
+    ) -> bool {
+        self.occurrence == occurrence && self.fact == *fact
+    }
+
+    /// Materialize only the selected owner for an ordinary memory producer.
+    pub(in crate::kernel) fn resources(&self, assumptions: &PureFactContext) -> ResourceContext {
+        let mut resources = ResourceContext::new_with_equalities(assumptions);
+        resources.insert_fact_with_support_occurrence_and_metadata_at(
+            self.fact.clone(),
+            None,
+            None,
+            None,
+            Some(self.occurrence),
+        );
+        resources
+    }
 }

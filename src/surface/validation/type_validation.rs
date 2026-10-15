@@ -3018,7 +3018,8 @@ fn validate_pointer_cast_operands(
         | CExpression::BitwiseNot(inner)
         | CExpression::Load(inner)
         | CExpression::TypedLoad { pointer: inner, .. }
-        | CExpression::PointerOffsetBytes { pointer: inner, .. } => {
+        | CExpression::PointerOffsetBytes { pointer: inner, .. }
+        | CExpression::Subobject { pointer: inner, .. } => {
             validate_pointer_cast_operands(inner, variables, context)
         }
         CExpression::Conditional {
@@ -3146,9 +3147,8 @@ fn infer_c_expression_type(
         CExpression::AddressOf(_)
         | CExpression::CheckedObjectAddress(_)
         | CExpression::FunctionAddress(_) => None,
-        CExpression::PointerOffsetBytes { pointer, .. } => {
-            infer_c_expression_type(pointer, variables)
-        }
+        CExpression::PointerOffsetBytes { pointer, .. }
+        | CExpression::Subobject { pointer, .. } => infer_c_expression_type(pointer, variables),
         CExpression::LessThan(_, _)
         | CExpression::LessEqual(_, _)
         | CExpression::GreaterThan(_, _)

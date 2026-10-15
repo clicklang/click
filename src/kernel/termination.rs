@@ -108,6 +108,11 @@ fn substitute_c_expression_variables(
             pointer: unary(pointer),
             bytes: *bytes,
         },
+        // Termination compares measure arguments structurally, as the
+        // pointers they pass: a member's subobject narrowing does not change
+        // which child a call passes, and the contract's child spelling has
+        // none.
+        Subobject { pointer, .. } => *unary(pointer),
         LessThan(left, right) => {
             let (left, right) = binary(left, right);
             LessThan(left, right)
@@ -422,6 +427,8 @@ fn check_structural_recursive_call(
             )
         })
         .collect::<BTreeMap<_, _>>();
+    // A child is named by the pointer it passes; a member's subobject
+    // narrowing does not change which child that is.
     let call_measure_arguments = callee
         .arguments
         .iter()
@@ -1104,7 +1111,9 @@ fn expression_takes_address_of(expression: &CExpression, name: &str) -> bool {
         AddressOf(body) | CheckedObjectAddress(body) => {
             matches!(body.as_ref(), Variable(target) if target == name) || inner(body)
         }
-        PointerOffsetBytes { pointer, .. } | TypedLoad { pointer, .. } => inner(pointer),
+        PointerOffsetBytes { pointer, .. }
+        | Subobject { pointer, .. }
+        | TypedLoad { pointer, .. } => inner(pointer),
         Not(body) | BitwiseNot(body) | Load(body) => inner(body),
         LessThan(left, right)
         | LessEqual(left, right)
@@ -1140,6 +1149,10 @@ fn collect_c_expression_variables(expression: &CExpression, names: &mut BTreeSet
         | AddressOf(expression)
         | CheckedObjectAddress(expression)
         | PointerOffsetBytes {
+            pointer: expression,
+            ..
+        }
+        | Subobject {
             pointer: expression,
             ..
         }
@@ -1991,6 +2004,7 @@ fn termination_measure_key(measure: &CExpression) -> String {
         PointerOffsetBytes { pointer, bytes, .. } => {
             format!("{} + {bytes} bytes", termination_measure_key(pointer))
         }
+        Subobject { pointer, .. } => termination_measure_key(pointer),
         Index(base, index) => format!(
             "{}[{}]",
             termination_measure_key(base),
@@ -2057,6 +2071,7 @@ fn termination_measure_display(measure: &CExpression) -> String {
         PointerOffsetBytes { pointer, bytes, .. } => {
             format!("{} + {bytes} bytes", termination_measure_display(pointer))
         }
+        Subobject { pointer, .. } => termination_measure_display(pointer),
         Index(base, index) => format!(
             "{}[{}]",
             termination_measure_display(base),
@@ -2721,7 +2736,8 @@ fn c_ranking_measure_term_unfolded(
         | FunctionAddress(_)
         | AddressOf(_)
         | CheckedObjectAddress(_)
-        | PointerOffsetBytes { .. } => Err(
+        | PointerOffsetBytes { .. }
+        | Subobject { .. } => Err(
             "termination measures may only use scalar int32 or unsigned integer expressions".into(),
         ),
         Load(_) | TypedLoad { .. } | Index(_, _) => {
@@ -3919,6 +3935,10 @@ fn expression_function_addresses(expression: &CExpression, taken: &mut BTreeSet<
         | AddressOf(expression)
         | CheckedObjectAddress(expression)
         | PointerOffsetBytes {
+            pointer: expression,
+            ..
+        }
+        | Subobject {
             pointer: expression,
             ..
         }

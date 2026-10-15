@@ -1163,6 +1163,12 @@ pub(in crate::kernel) fn cast_c_value_to_type(
         }
     }
     if let CValue::Pointer(pointer) = &value {
+        if pointer.local_reference().is_some() {
+            return Err(CRuntimeError::LoanRefusal(Box::new(
+                crate::kernel::loans::LoanRefusal::UnsupportedResource
+                    .diagnostic(crate::kernel::LoanRefusalOperation::MemoryAccess),
+            )));
+        }
         // Pointer-to-integer conversion under LP64: the integer is the
         // pointer's address term, which keeps the exact source pointer. Null
         // is the integer zero; function addresses are not modeled.
@@ -1463,6 +1469,31 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
                 }
             }
             paths
+        }
+        CExpression::Subobject { pointer, width } => {
+            evaluate_c_expression_paths(state, pointer, assumptions, budget)?
+                .into_iter()
+                .flat_map(|path| match path.outcome {
+                    CExpressionOutcome::Value(CValue::Pointer(pointer)) => subobject_paths(
+                        state,
+                        pointer,
+                        *width,
+                        path.facts,
+                        path.obligations,
+                        assumptions,
+                    ),
+                    CExpressionOutcome::Value(_) => vec![CExpressionPath {
+                        outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                        facts: path.facts,
+                        obligations: path.obligations,
+                    }],
+                    outcome => vec![CExpressionPath {
+                        outcome,
+                        facts: path.facts,
+                        obligations: path.obligations,
+                    }],
+                })
+                .collect()
         }
         CExpression::PointerOffsetBytes {
             pointer,
@@ -2127,7 +2158,9 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
                                 pointer.pointee_volatile(),
                             )
                             .with_pointer_domain(&pointer)
-                            .with_constant(pointer.pointee_constant()),
+                            .with_constant(pointer.pointee_constant())
+                            .with_local_reference(pointer.local_reference().copied())
+                            .with_extent_of(&pointer),
                         ),
                         facts: pointer_path.facts,
                         obligations: pointer_path.obligations,
@@ -2172,7 +2205,9 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
                             )
                             .with_pointer_domain(&pointer)
                             .with_constant(pointer.pointee_constant())
-                            .with_pointee_constant(*pointee_constant),
+                            .with_local_reference(pointer.local_reference().copied())
+                            .with_pointee_constant(*pointee_constant)
+                            .with_extent_of(&pointer),
                         ),
                         facts: pointer_path.facts,
                         obligations: pointer_path.obligations,
@@ -2215,7 +2250,9 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
                                 pointer.pointee_volatile(),
                             )
                             .with_pointer_domain(&pointer)
-                            .with_constant(pointer.pointee_constant()),
+                            .with_constant(pointer.pointee_constant())
+                            .with_local_reference(pointer.local_reference().copied())
+                            .with_extent_of(&pointer),
                         ),
                         facts: pointer_path.facts,
                         obligations: pointer_path.obligations,
@@ -2309,13 +2346,82 @@ pub(in crate::kernel) fn read_c_lvalue_paths(
             obligations,
         }]);
     }
+    let mut access_state = None;
+    if let CLValueOutcome::LValue(lvalue) = &outcome {
+        if let Some(reference) = &lvalue.local_reference {
+            let effective_assumptions =
+                assumptions_with_path_context(assumptions, &facts, &obligations);
+            let result = lvalue
+                .pointer(state)
+                .ok_or(crate::kernel::loans::LoanRefusal::InvalidEvidence)
+                .and_then(|pointer| {
+                    state.local_scalar_access_resources(
+                        reference,
+                        &pointer,
+                        lvalue.value_type,
+                        &effective_assumptions,
+                    )
+                });
+            match result {
+                Ok((resources, _)) => {
+                    access_state = Some(state.clone().with_resource_context(resources))
+                }
+                Err(error) => {
+                    return Ok(vec![CExpressionPath {
+                        outcome: CExpressionOutcome::RuntimeError(CRuntimeError::LoanRefusal(
+                            Box::new(
+                                error.diagnostic(crate::kernel::LoanRefusalOperation::MemoryAccess),
+                            ),
+                        )),
+                        facts,
+                        obligations,
+                    }]);
+                }
+            }
+        } else if state.has_local_scalar_references() {
+            let effective_assumptions =
+                assumptions_with_path_context(assumptions, &facts, &obligations);
+            let pointer = match &lvalue.storage {
+                CLValueStorage::Memory { pointer } => Some(pointer),
+                CLValueStorage::Local { name } => state
+                    .locals
+                    .slot(name)
+                    .filter(|pointer| state.memory.requires_explicit_scalar_ownership(pointer)),
+            };
+            if let Some(pointer) = pointer
+                && state
+                    .resources()
+                    .memory_write_range(
+                        pointer,
+                        lvalue.value_type.byte_width(),
+                        &effective_assumptions,
+                    )
+                    .is_none()
+            {
+                return Ok(vec![CExpressionPath {
+                    outcome: CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource {
+                        resource: Box::new(CResourceFact::own_memory(
+                            CMemoryRange::new_with_element_width(
+                                pointer.clone(),
+                                0u32.into(),
+                                1u32.into(),
+                                lvalue.value_type.byte_width(),
+                            ),
+                        )),
+                    }),
+                    facts,
+                    obligations,
+                }]);
+            }
+        }
+    }
     let input_domain_valid = specification_read_active()
         || match &outcome {
             CLValueOutcome::LValue(lvalue) if lvalue.pointer_domain.is_none() => {
                 match (&lvalue.storage, &lvalue.pointer_origin) {
                     (CLValueStorage::Memory { pointer }, Some(origin)) => {
                         pointer_input_domain_allows(
-                            state,
+                            access_state.as_ref().unwrap_or(state),
                             pointer,
                             origin,
                             lvalue.value_type.byte_width(),
@@ -2329,7 +2435,7 @@ pub(in crate::kernel) fn read_c_lvalue_paths(
             _ => true,
         };
     let mut paths = read_c_lvalue_paths_without_ranges(
-        state,
+        access_state.as_ref().unwrap_or(state),
         outcome,
         facts,
         obligations,
@@ -2474,6 +2580,20 @@ fn read_c_lvalue_paths_without_ranges(
                         obligations,
                     }]);
                 }
+                if let Some(refusal) = subobject_access_refusal(
+                    pointer,
+                    lvalue.extent(),
+                    lvalue.value_type.byte_width(),
+                    &facts,
+                    &obligations,
+                    assumptions,
+                ) {
+                    return Ok(vec![CExpressionPath {
+                        outcome: CExpressionOutcome::UndefinedBehavior(refusal),
+                        facts,
+                        obligations,
+                    }]);
+                }
                 let effective_assumptions =
                     assumptions_with_path_context(assumptions, &facts, &obligations);
                 let is_external = is_external_memory_pointer(pointer)
@@ -2608,16 +2728,23 @@ pub(in crate::kernel) fn address_of_lvalue_paths(
                     match pointer_type {
                         Some(pointer_type) => {
                             let facts = lvalue_path.facts;
+                            let mut address = CPointerValue::new(pointer, pointer_type)
+                                .with_pointee_volatile(lvalue.is_volatile())
+                                .with_pointee_constant(lvalue.is_constant())
+                                .with_extent(lvalue.extent().cloned());
+                            if let Some(reference) = &lvalue.local_reference {
+                                address = address.with_local_reference(*reference);
+                            }
+                            let value = CValue::Pointer(address);
                             CExpressionPath {
                                 outcome: CExpressionOutcome::Value(
-                                    CValue::typed_pointer_with_pointee_volatile(
-                                        pointer,
-                                        pointer_type,
-                                        lvalue.is_volatile(),
-                                    )
-                                    .with_pointer_pointee_constant(lvalue.is_constant())
-                                    .with_pointer_domain(lvalue.pointer_domain.as_deref().cloned())
-                                    .with_pointer_origin(lvalue.pointer_origin.as_deref().cloned()),
+                                    value
+                                        .with_pointer_domain(
+                                            lvalue.pointer_domain.as_deref().cloned(),
+                                        )
+                                        .with_pointer_origin(
+                                            lvalue.pointer_origin.as_deref().cloned(),
+                                        ),
                                 ),
                                 facts,
                                 obligations: lvalue_path.obligations,
@@ -2696,9 +2823,8 @@ pub(in crate::kernel) fn c_expression_pointee_type(
         CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target) => {
             c_expression_lvalue_type(state, target)
         }
-        CExpression::PointerOffsetBytes { pointer, .. } => {
-            c_expression_pointee_type(state, pointer)
-        }
+        CExpression::PointerOffsetBytes { pointer, .. }
+        | CExpression::Subobject { pointer, .. } => c_expression_pointee_type(state, pointer),
         CExpression::TypedLoad { value_type, .. } => match value_type {
             CType::Int32Array(_) => Some(CType::Int32),
             CType::UInt8Array(_) => Some(CType::UInt8),

@@ -3324,14 +3324,6 @@ impl CValue {
         Self::Pointer(CPointerValue::new(pointer, c_type))
     }
 
-    pub(crate) fn typed_pointer_with_pointee_volatile(
-        pointer: Pointer,
-        c_type: CType,
-        pointee_volatile: bool,
-    ) -> Self {
-        Self::Pointer(CPointerValue::new(pointer, c_type).with_pointee_volatile(pointee_volatile))
-    }
-
     pub(crate) fn typed_pointer_with_pointee_constant(
         pointer: Pointer,
         c_type: CType,
@@ -3439,12 +3431,14 @@ impl CLValue {
         Self {
             pointer_origin: None,
             pointer_domain: None,
+            local_reference: None,
             storage: CLValueStorage::Local { name: name.into() },
             value_type,
             volatile,
             pointee_volatile,
             constant: false,
             pointee_constant: false,
+            extent: None,
         }
     }
 
@@ -3465,18 +3459,28 @@ impl CLValue {
         Self {
             pointer_origin: None,
             pointer_domain: None,
+            local_reference: None,
             storage: CLValueStorage::Memory { pointer },
             value_type,
             volatile,
             pointee_volatile,
             constant: false,
             pointee_constant: false,
+            extent: None,
         }
     }
 
     pub(in crate::kernel) fn with_pointer_domain(mut self, pointer: &CPointerValue) -> Self {
-        self.pointer_domain = pointer.domain.clone();
+        self.pointer_domain = pointer.qualifiers.as_ref().and_then(|q| q.domain.clone());
         self.pointer_origin = Some(Arc::new(pointer.origin().clone()));
+        self
+    }
+
+    pub(in crate::kernel) fn with_local_reference(
+        mut self,
+        reference: Option<super::super::loans::LocalScalarReference>,
+    ) -> Self {
+        self.local_reference = reference;
         self
     }
 
@@ -3488,6 +3492,16 @@ impl CLValue {
     pub(in crate::kernel) fn with_pointee_constant(mut self, pointee_constant: bool) -> Self {
         self.pointee_constant = pointee_constant;
         self
+    }
+
+    /// The lvalue reached through `pointer`, which keeps its extent.
+    pub(in crate::kernel) fn with_extent_of(mut self, pointer: &CPointerValue) -> Self {
+        self.extent = pointer.extent().cloned().map(std::sync::Arc::new);
+        self
+    }
+
+    pub(in crate::kernel) fn extent(&self) -> Option<&SubobjectExtent> {
+        self.extent.as_deref()
     }
 
     pub fn value_type(&self) -> CType {

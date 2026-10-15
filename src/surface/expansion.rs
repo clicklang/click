@@ -2187,8 +2187,11 @@ fn splice_source(
 }
 
 /// `replacement` with each library theorem a tactic cited by its qualified
-/// identity written as the file writes it: by its bare name, unless `source`
-/// declares a theorem of that name, which the bare name would mean instead.
+/// identity written as the file writes it. A module whose names need a path
+/// is cited by the bare name when the file imports it selectively, and
+/// otherwise by `m::name`. Any other library theorem is cited by its bare
+/// name, unless `source` declares a theorem of that name, which the bare name
+/// would mean instead.
 fn library_citation_spelling(source: &str, replacement: &str) -> String {
     let mut spelled = String::with_capacity(replacement.len());
     let mut rest = replacement;
@@ -2211,7 +2214,13 @@ fn library_citation_spelling(source: &str, replacement: &str) -> String {
                 })
         });
         spelled.push_str(&rest[..start]);
-        if !shadowed && crate::surface::parser::library_theorem_identity(bare) == path {
+        if let Some(short) = crate::surface::parser::qualified_module_spelling(path) {
+            if selectively_imports(source, path) {
+                spelled.push_str(bare);
+            } else {
+                spelled.push_str(&short);
+            }
+        } else if !shadowed && crate::surface::parser::library_theorem_identity(bare) == path {
             spelled.push_str(bare);
         } else {
             spelled.push_str(path);
@@ -2220,6 +2229,27 @@ fn library_citation_spelling(source: &str, replacement: &str) -> String {
     }
     spelled.push_str(rest);
     spelled
+}
+
+/// Whether `source` brings the library declaration `path` into scope by its
+/// bare name with a selective import, `import click::m::{name, ...};`.
+fn selectively_imports(source: &str, path: &str) -> bool {
+    let Some((module, name)) = path.rsplit_once("::") else {
+        return false;
+    };
+    source.split(';').any(|statement| {
+        statement
+            .trim_start()
+            .strip_prefix("import ")
+            .and_then(|import| import.trim().strip_prefix(module))
+            .and_then(|rest| rest.trim_start().strip_prefix("::"))
+            .and_then(|rest| rest.trim_start().strip_prefix('{'))
+            .is_some_and(|names| {
+                names
+                    .split([',', '}'])
+                    .any(|selected| selected.trim() == name)
+            })
+    })
 }
 
 /// `source` with an `import click::...;` line for each Click library module
@@ -2235,6 +2265,7 @@ fn with_cited_library_imports(source: String, replacement: &str) -> String {
         .filter_map(|(start, prefix)| {
             let path = &source[start + prefix.len()..];
             let path = &path[..path.find(';')?];
+            let path = path.split_once("::{").map_or(path, |(module, _)| module);
             Some(format!("library/{}.click", path.trim().replace("::", "/")))
         })
         .collect::<Vec<_>>();
@@ -2469,6 +2500,27 @@ fn cpp_declarator_name_ending_at(tokens: &[SourceToken], end: usize) -> String {
         (None, Some(record)) if record == last => format!("{record}_constructor"),
         _ => segments.join("_") + &suffix,
     }
+}
+
+/// The `>` closing the generic list opened at `open`. The scanner reads
+/// `->` as `-` and `>`, which closes nothing.
+fn rust_generic_list_end(tokens: &[SourceToken], open: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for at in open..tokens.len() {
+        match tokens[at].text.as_str() {
+            "<" => depth += 1,
+            ">" if at > 0 && tokens[at - 1].text == "-" => {}
+            ">" => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(at);
+                }
+            }
+            "{" | ";" => return None,
+            _ => {}
+        }
+    }
+    None
 }
 
 fn rust_path_ending_at(tokens: &[SourceToken], end: usize) -> Vec<&str> {
@@ -4368,6 +4420,24 @@ fn declaration_source_index(
             }
             "theorem" | "tactic" => {
                 candidate = tokens.get(index + 1).map(|token| token.text.clone());
+            }
+            // A Rust head's generic parameters, `fn apply<F: Fn(i32) ->
+            // i32>(`, follow the name; the function is the path before them.
+            "<" if candidate.is_none() && !cpp && index > 0 => {
+                let path = rust_path_ending_at(tokens, index - 1);
+                let path_start = index - 1 - 3 * (path.len() - 1);
+                if path_start
+                    .checked_sub(1)
+                    .is_some_and(|before| tokens[before].text == "fn")
+                    && let Some(close) = rust_generic_list_end(tokens, index)
+                {
+                    candidate = Some(match &impl_block {
+                        Some(_) => crate::languages::rust::names::method_path_name(&path),
+                        None => crate::languages::rust::names::path_name(&path),
+                    });
+                    index = close + 1;
+                    continue;
+                }
             }
             "(" => {
                 if candidate.is_none() {

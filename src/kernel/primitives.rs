@@ -979,11 +979,17 @@ pub(crate) struct LoadedPointerView {
 pub struct CPointerValue {
     pointer: Pointer,
     c_type: CType,
-    pointee_volatile: bool,
-    pointee_constant: bool,
+    qualifiers: Option<Arc<CPointerQualifiers>>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct CPointerQualifiers {
+    volatile: bool,
+    constant: bool,
+    extent: Option<SubobjectExtent>,
+    local_reference: Option<super::loans::LocalScalarReference>,
     domain: Option<Arc<CPointerDomain>>,
     origin: Option<Arc<Pointer>>,
-    extent: Option<Arc<SubobjectExtent>>,
 }
 
 /// The subobject a pointer was formed from, narrower than its complete
@@ -1048,13 +1054,9 @@ impl CPointerValue {
             "C pointer values require a pointer type"
         );
         Self {
-            origin: None,
             pointer,
             c_type,
-            pointee_volatile: false,
-            pointee_constant: false,
-            extent: None,
-            domain: None,
+            qualifiers: None,
         }
     }
 
@@ -1071,53 +1073,72 @@ impl CPointerValue {
     }
 
     pub(crate) fn pointee_volatile(&self) -> bool {
-        self.pointee_volatile
+        self.qualifiers.as_ref().is_some_and(|q| q.volatile)
     }
 
     pub(crate) fn pointee_constant(&self) -> bool {
-        self.pointee_constant
+        self.qualifiers.as_ref().is_some_and(|q| q.constant)
     }
 
     pub(crate) fn with_type(self, c_type: CType) -> Self {
         Self {
             pointer: self.pointer,
             c_type,
-            pointee_volatile: self.pointee_volatile,
-            pointee_constant: self.pointee_constant,
-            extent: self.extent,
-            domain: self.domain,
-            origin: self.origin,
+            qualifiers: self.qualifiers,
         }
     }
 
     pub(crate) fn with_pointee_volatile(mut self, pointee_volatile: bool) -> Self {
-        self.pointee_volatile = pointee_volatile;
+        if self.pointee_volatile() != pointee_volatile {
+            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).volatile =
+                pointee_volatile;
+        }
         self
     }
 
     pub(crate) fn with_pointee_constant(mut self, pointee_constant: bool) -> Self {
-        self.pointee_constant = pointee_constant;
+        if self.pointee_constant() != pointee_constant {
+            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).constant =
+                pointee_constant;
+        }
+        self
+    }
+
+    pub(in crate::kernel) fn local_reference(&self) -> Option<&super::loans::LocalScalarReference> {
+        self.qualifiers.as_ref()?.local_reference.as_ref()
+    }
+
+    pub(in crate::kernel) fn with_local_reference(
+        mut self,
+        reference: super::loans::LocalScalarReference,
+    ) -> Self {
+        Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).local_reference =
+            Some(reference);
         self
     }
 
     pub(crate) fn origin(&self) -> &Pointer {
-        self.origin.as_deref().unwrap_or(&self.pointer)
+        self.retained_origin().unwrap_or(&self.pointer)
     }
     pub(crate) fn with_retained_origin(mut self, origin: Option<Pointer>) -> Self {
-        self.origin = origin.map(Arc::new);
+        if origin.is_some() || self.retained_origin().is_some() {
+            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).origin =
+                origin.map(Arc::new);
+        }
         self
     }
     pub(crate) fn retained_origin(&self) -> Option<&Pointer> {
-        self.origin.as_deref()
+        self.qualifiers.as_ref()?.origin.as_deref()
     }
     pub(crate) fn same_complete_origin(&self, other: &Self) -> bool {
         self.pointer == other.pointer
             && self.origins_match(other)
-            && self.domain == other.domain
-            && self.extent == other.extent
+            && self.domain() == other.domain()
+            && self.extent() == other.extent()
+            && self.local_reference().map(|r| r.id()) == other.local_reference().map(|r| r.id())
     }
     pub(crate) fn seal_origin(self) -> Self {
-        if self.origin.is_none() {
+        if self.retained_origin().is_none() {
             let origin = self.pointer.clone();
             self.with_origin(origin)
         } else {
@@ -1128,32 +1149,28 @@ impl CPointerValue {
         (!self.c_type.is_object_pointer() && !other.c_type.is_object_pointer())
             || self.origin() == other.origin()
     }
-    pub(crate) fn with_origin(mut self, origin: Pointer) -> Self {
-        self.origin = Some(Arc::new(origin));
-        self
+    pub(crate) fn with_origin(self, origin: Pointer) -> Self {
+        self.with_retained_origin(Some(origin))
     }
     pub(crate) fn domain(&self) -> Option<&CPointerDomain> {
-        self.domain.as_deref()
+        self.qualifiers.as_ref()?.domain.as_deref()
     }
-
     pub(crate) fn with_domain(mut self, domain: Option<CPointerDomain>) -> Self {
-        self.domain = domain.map(Arc::new);
-        self
-    }
-
-    pub(crate) fn map_domain(
-        mut self,
-        map: impl FnOnce(&CPointerDomain) -> CPointerDomain,
-    ) -> Self {
-        if let Some(domain) = &self.domain {
-            self.domain = Some(Arc::new(map(domain)));
+        if domain.is_some() || self.domain().is_some() {
+            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).domain =
+                domain.map(Arc::new);
         }
         self
     }
-
+    pub(crate) fn map_domain(self, map: impl FnOnce(&CPointerDomain) -> CPointerDomain) -> Self {
+        let domain = self.domain().map(map);
+        self.with_domain(domain)
+    }
     pub(crate) fn replace_pointer(&mut self, pointer: Pointer) {
-        if self.origin.is_none() && pointer != self.pointer {
-            self.origin = Some(Arc::new(self.pointer.clone()));
+        if self.retained_origin().is_none() && pointer != self.pointer {
+            let origin = Arc::new(self.pointer.clone());
+            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).origin =
+                Some(origin);
         }
         self.pointer = pointer;
     }
@@ -1166,14 +1183,11 @@ impl CPointerValue {
     }
 
     pub(crate) fn extent(&self) -> Option<&SubobjectExtent> {
-        self.extent.as_deref()
+        self.qualifiers.as_ref()?.extent.as_ref()
     }
 
     pub(crate) fn with_extent(mut self, extent: Option<SubobjectExtent>) -> Self {
-        // Authenticate the absolute carrier through the same displacement
-        // bounds as source-selected objects. Clearing presentation metadata
-        // never clears an already selected domain.
-        if self.domain.is_none()
+        if self.domain().is_none()
             && let Some(extent) = &extent
         {
             let bounds = u32::try_from(extent.width).ok().zip(
@@ -1182,12 +1196,14 @@ impl CPointerValue {
                     .and_then(|offset| offset.as_const()),
             );
             let (bytes, position) = bounds.unwrap_or((0, -1));
-            self.domain = Some(Arc::new(CPointerDomain {
+            self = self.with_domain(Some(CPointerDomain {
                 bytes,
                 position: IntegerTerm::constant_i64(position).into(),
             }));
         }
-        self.extent = extent.map(Arc::new);
+        if extent.is_some() || self.extent().is_some() {
+            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).extent = extent;
+        }
         self
     }
 
@@ -1197,9 +1213,11 @@ impl CPointerValue {
     pub(crate) fn map_pointers(&self, mut map: impl FnMut(&Pointer) -> Pointer) -> Self {
         let mut result = self.clone();
         result.pointer = map(&self.pointer);
-        result.origin = self.origin.as_deref().map(|origin| Arc::new(map(origin)));
-        if let Some(extent) = &self.extent {
-            result.extent = Some(Arc::new(SubobjectExtent {
+        if let Some(origin) = self.retained_origin() {
+            result = result.with_origin(map(origin));
+        }
+        if let Some(extent) = self.extent() {
+            result = result.with_extent(Some(SubobjectExtent {
                 start: map(&extent.start),
                 width: extent.width,
             }));
@@ -1211,11 +1229,10 @@ impl CPointerValue {
     pub(crate) fn pointers(&self) -> impl Iterator<Item = &Pointer> {
         std::iter::once(&self.pointer)
             .chain(
-                self.origin
-                    .as_deref()
+                self.retained_origin()
                     .filter(|origin| *origin != &self.pointer),
             )
-            .chain(self.extent.as_deref().map(|extent| &extent.start))
+            .chain(self.extent().map(|extent| &extent.start))
     }
 
     pub(crate) fn is_null(&self) -> bool {
@@ -1226,24 +1243,31 @@ impl CPointerValue {
 
 impl CPointerValue {
     /// Everything that is the value's identity: the address, the type it is
-    /// viewed through, and whether the pointee is volatile.
+    /// viewed through, whether the pointee is volatile, and the subobject it
+    /// designates, plus its opaque local-reference custody. A lease key is a
+    /// fresh scalar id, never a structural resource or ledger key.
+    /// Two values at one address with different extents are
+    /// different values: address equality does not make a one-past pointer
+    /// designate the object that follows it.
     fn identity(
         &self,
     ) -> (
         &Pointer,
         &CType,
         bool,
-        &Option<Arc<CPointerDomain>>,
+        Option<&CPointerDomain>,
         &Pointer,
         Option<&SubobjectExtent>,
+        Option<super::loans::LocalReferenceId>,
     ) {
         (
             &self.pointer,
             &self.c_type,
-            self.pointee_volatile,
-            &self.domain,
+            self.pointee_volatile(),
+            self.domain(),
             self.origin(),
-            self.extent.as_deref(),
+            self.extent(),
+            self.local_reference().map(|r| r.id()),
         )
     }
 }
@@ -1907,12 +1931,16 @@ impl CExceptionalSignature {
 pub struct CLValue {
     pub(super) pointer_origin: Option<Arc<Pointer>>,
     pub(super) pointer_domain: Option<Arc<CPointerDomain>>,
+    pub(super) local_reference: Option<super::loans::LocalScalarReference>,
     pub(super) storage: CLValueStorage,
     pub(super) value_type: CType,
     pub(super) volatile: bool,
     pub(super) pointee_volatile: bool,
     pub(super) constant: bool,
     pub(super) pointee_constant: bool,
+    /// The subobject extent of the pointer this memory lvalue was reached
+    /// through. The access is checked against it, and `&lvalue` keeps it.
+    pub(super) extent: Option<Arc<SubobjectExtent>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -1990,6 +2018,14 @@ pub enum CExpression {
         bytes: u32,
         /// Select an object domain after the byte offset; no access authority.
         object_bytes: Option<u32>,
+    },
+    /// The pointer narrowed to the `width`-byte subobject that starts at its
+    /// address: a member access selects the member's own extent
+    /// (`design/pointer-subobject-extents.md`). It performs no load, grants
+    /// no access authority and does not move the address.
+    Subobject {
+        pointer: Box<CExpression>,
+        width: u32,
     },
     LessThan(Box<CExpression>, Box<CExpression>),
     LessEqual(Box<CExpression>, Box<CExpression>),
@@ -4923,6 +4959,10 @@ pub enum CUndefinedBehavior {
     /// not model object placement. A refusal names the comparison through
     /// `crate::kernel::locate_undefined_behavior`.
     OnePastEndComparison,
+    /// A read or write through a pointer outside the subobject it
+    /// designates (C11 6.5.6p8, C++ [expr.add]): `*(&pair.first + 1)` is
+    /// one past `first`, not `second`, though both name the same address.
+    SubobjectAccess,
 }
 
 impl CUndefinedBehavior {
@@ -4934,6 +4974,9 @@ impl CUndefinedBehavior {
                     .to_string()
             }
             Self::PointerArithmetic => "pointer arithmetic left the pointed-to object".to_string(),
+            Self::SubobjectAccess => {
+                "access outside the subobject the pointer designates".to_string()
+            }
             Self::DivisionByZero => "division by zero".to_string(),
             Self::InvalidShift => "invalid shift".to_string(),
             Self::InvalidMemory => "invalid memory access".to_string(),
@@ -7116,6 +7159,15 @@ impl ResourceOccurrenceId {
             Self { arena, ordinal }
         })
     }
+}
+
+/// Exact ownership withheld by a scalar-reference birth. Only the resource
+/// partition constructor can create this reservation; pointer values carry
+/// its reference id, never this payload or a resource context.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::kernel) struct ReservedLocalScalarOwner {
+    fact: CResourceFact,
+    occurrence: ResourceOccurrenceId,
 }
 
 /// An immutable resource composition snapshot.

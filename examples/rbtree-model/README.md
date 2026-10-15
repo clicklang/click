@@ -57,7 +57,7 @@ node, right order, exactly as `heap_inorder` does in
 [`examples/modeled-binary-tree`](../modeled-binary-tree/README.md).
 `rb_member` is the recursive `bool` membership test on the model, and
 `rb_member_is_inorder_membership` proves it equals
-`list_contains(rb_inorder(tree), target)`. `rb_left`, `rb_right`, and
+`list::contains(rb_inorder(tree), target)`. `rb_left`, `rb_right`, and
 `rb_color` are the accessors a C contract needs to state that a child is
 nonempty or a node is red.
 
@@ -256,7 +256,7 @@ directly: a proof that needs it carries the hypothesis
 its descent.
 
 - `rb_min_list_splits_inorder`: `rb_inorder(tree)` is
-  `list_append(rb_min_list(tree), rb_inorder(rb_remove_min(tree)))` for every
+  `list::append(rb_min_list(tree), rb_inorder(rb_remove_min(tree)))` for every
   tree, proved by structural induction through the per-node
   `rb_min_list_splits_node`.
 - `rb_remove_min_drops_head` and `rb_remove_min_is_inorder_tail`: with the
@@ -269,7 +269,7 @@ its descent.
   sequence, which is `A ++ B` with one of the two empty.
 - `rb_erase_two_child_splice`: splicing the in-order successor into the erased
   node's position, with the erased node's parent and both children re-parented
-  onto the successor, yields `list_append(rb_inorder(left), rb_inorder(right))`,
+  onto the successor, yields `list::append(rb_inorder(left), rb_inorder(right))`,
   which is the entry sequence `A ++ [erased] ++ B` with exactly the erased
   identity dropped at its position.
 
@@ -713,8 +713,8 @@ step's hypotheses.
 
 The example adds `list_tail` locally rather than to `library/list.click`; it
 is used only here. Everything else comes from the Click library: `List`, `Nat`,
-`list_append`, `list_contains`, `list_append_associative`,
-`list_contains_append`, and `list_contains_cons`.
+`list::append`, `list::contains`, `list::append_associative`,
+`list::contains_append`, and `list::contains_cons`.
 
 `rb_min_parent` selects the link owner encountered by minimum descent.
 `rb_min_context_cut_child` reconstructs the exact `rb_remove_min` result by

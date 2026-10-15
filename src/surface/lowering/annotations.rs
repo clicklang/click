@@ -4898,9 +4898,11 @@ impl AnnotationLowerer<'_> {
         let selected = match lowered {
             CExpression::TypedLoad { pointer, .. } => match pointer.as_ref() {
                 CExpression::PointerOffsetBytes { object_bytes, .. } => *object_bytes,
+                CExpression::Subobject { width, .. } => Some(*width),
                 _ => None,
             },
             CExpression::PointerOffsetBytes { object_bytes, .. } => *object_bytes,
+            CExpression::Subobject { width, .. } => Some(*width),
             _ => None,
         };
         let pointer = if let Some(bytes) = selected {
@@ -5003,6 +5005,12 @@ impl AnnotationLowerer<'_> {
                         }
                         Ok(SpecExpression::Cast(Box::new(value), *target_type))
                     }
+                    CExpression::Subobject { width, .. } => Ok(SpecExpression::PointerOffset {
+                        object_bytes: Some(*width),
+                        pointer: Box::new(value),
+                        elements: Box::new(SpecExpression::Value(int32(0))),
+                        byte_width: 1,
+                    }),
                     CExpression::PointerOffsetBytes {
                         bytes,
                         object_bytes,
@@ -6683,6 +6691,12 @@ impl AnnotationLowerer<'_> {
                 },
                 environment,
             ),
+            CExpression::Subobject { pointer, width } => Ok(SpecExpression::PointerOffset {
+                object_bytes: Some(*width),
+                pointer: Box::new(self.lower_c_fragment_to_spec(pointer, environment)?),
+                elements: Box::new(SpecExpression::Value(int32(0))),
+                byte_width: 1,
+            }),
             CExpression::PointerOffsetBytes {
                 pointer,
                 bytes,
@@ -7255,7 +7269,8 @@ impl AnnotationLowerer<'_> {
                 CType::UInt8Array(_) => Some(CType::UInt8),
                 value_type => value_type.pointee_type(),
             },
-            CExpression::PointerOffsetBytes { pointer, .. } => {
+            CExpression::PointerOffsetBytes { pointer, .. }
+            | CExpression::Subobject { pointer, .. } => {
                 self.c_expression_array_element_type(pointer, environment)
             }
             CExpression::Add(left, right) => self
@@ -7326,7 +7341,8 @@ impl AnnotationLowerer<'_> {
                 CType::UInt8Array(_) => Some(1),
                 value_type => value_type.pointee_type().map(CType::byte_width),
             },
-            CExpression::PointerOffsetBytes { pointer, .. } => {
+            CExpression::PointerOffsetBytes { pointer, .. }
+            | CExpression::Subobject { pointer, .. } => {
                 self.c_expression_array_element_width(pointer, environment)
             }
             CExpression::Add(left, right) => self
@@ -7381,7 +7397,8 @@ impl AnnotationLowerer<'_> {
 fn aggregate_projection_root(expression: &CExpression) -> Option<&str> {
     match expression {
         CExpression::Variable(name) => Some(name),
-        CExpression::PointerOffsetBytes { pointer, .. } => aggregate_projection_root(pointer),
+        CExpression::PointerOffsetBytes { pointer, .. }
+        | CExpression::Subobject { pointer, .. } => aggregate_projection_root(pointer),
         CExpression::Add(pointer, _) | CExpression::Subtract(pointer, _) => {
             aggregate_projection_root(pointer)
         }

@@ -399,7 +399,8 @@ fn collect_spec_c_expression_carriers(expression: &CExpression, variables: &mut 
         | CExpression::BitwiseNot(expression) => {
             collect_spec_c_expression_carriers(expression, variables)
         }
-        CExpression::PointerOffsetBytes { pointer, .. } => {
+        CExpression::PointerOffsetBytes { pointer, .. }
+        | CExpression::Subobject { pointer, .. } => {
             collect_spec_c_expression_carriers(pointer, variables)
         }
         CExpression::Conditional {
@@ -1627,6 +1628,10 @@ impl<'a> TermRewrite<'a> {
                 object_bytes: *object_bytes,
                 pointer: Box::new(self.rewrite_c_expression(pointer)?),
                 bytes: *bytes,
+            },
+            CExpression::Subobject { pointer, width } => CExpression::Subobject {
+                pointer: Box::new(self.rewrite_c_expression(pointer)?),
+                width: *width,
             },
             CExpression::LessThan(left, right) => CExpression::LessThan(
                 Box::new(self.rewrite_c_expression(left)?),

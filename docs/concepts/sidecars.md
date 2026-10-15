@@ -154,8 +154,8 @@ segment:
 <!-- verified-example: mdtests/qualified_library_names.md -->
 ```click
 theorem append_nil_by_paths(xs: List<int32>) {
-    ensures list::list_append(List<int32>::Nil, xs) == xs by {
-        apply(click::list::list_append_left_identity(xs));
+    ensures list::append(List<int32>::Nil, xs) == xs by {
+        apply(click::list::append_left_identity(xs));
     }
 }
 ```
@@ -164,9 +164,35 @@ A short path to a module the file does not import is refused, and the
 message names the import or the full path to write
 (`mdtests/a_module_path_needs_its_module_in_scope.md`). A full path whose
 last segment is not a declaration of its module is refused too
-(`mdtests/a_full_path_must_name_a_module_declaration.md`). Library names
-still carry their module prefixes, and bare names keep working; the planned
-rename to `list::append` and selective imports are tracked in
+(`mdtests/a_full_path_must_name_a_module_declaration.md`).
+
+A selective import brings bare names into scope:
+
+<!-- verified-example: mdtests/a_selective_import_brings_bare_library_names.md -->
+```click
+import click::list::{append, length};
+
+theorem append_nil_by_bare_names(xs: List<int32>) {
+    ensures append(List<int32>::Nil, xs) == xs by {
+        apply(list::append_left_identity(xs));
+    }
+}
+```
+
+Without a path or a selective import, a `click::list` function, predicate or
+theorem is not in scope by its bare name, even though the module is implicit
+(`mdtests/a_bare_library_name_needs_a_path_or_selective_import.md`,
+`mdtests/a_bare_list_theorem_citation_needs_a_path_or_selective_import.md`).
+A file may therefore declare its own `append`
+(`mdtests/a_file_may_declare_a_library_function_name.md`). A selectively
+imported name that a file also declares, or that two selective imports
+bring, is refused, as Rust refuses a clashing `use`
+(`mdtests/a_selective_import_cannot_clash_with_a_file_declaration.md`).
+Types and constructors such as `List` and `List::Cons` keep their bare names.
+When `click expand` writes out a `click::list` theorem, it spells it by its
+bare name when a selective import brings it, and otherwise as
+`list::name`. Other modules still carry name prefixes, such as `nat_add`,
+and their bare names keep working until each is renamed; see
 [`issues/standard-library.md`](https://github.com/clicklang/click/blob/master/issues/standard-library.md).
 
 ## Contracts are per function

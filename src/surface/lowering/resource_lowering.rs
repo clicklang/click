@@ -619,6 +619,7 @@ fn reject_aggregate_parameter_storage_resource(
         match expression {
             CExpression::Variable(name) => Some(name),
             CExpression::PointerOffsetBytes { pointer, .. }
+            | CExpression::Subobject { pointer, .. }
             | CExpression::AddressOf(pointer)
             | CExpression::CheckedObjectAddress(pointer) => root(pointer),
             CExpression::Add(pointer, _) | CExpression::Subtract(pointer, _) => root(pointer),
@@ -3190,7 +3191,8 @@ pub(in crate::surface) fn contract_segment_element_width_with_pointer_types(
                 local_element(left, types).or_else(|| local_element(right, types))
             }
             CExpression::Subtract(left, _) => local_element(left, types),
-            CExpression::PointerOffsetBytes { pointer, .. } => local_element(pointer, types),
+            CExpression::PointerOffsetBytes { pointer, .. }
+            | CExpression::Subobject { pointer, .. } => local_element(pointer, types),
             _ => None,
         }
     }

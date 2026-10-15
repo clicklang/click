@@ -483,49 +483,49 @@ spec enum List<T> {
 
 **Verified use:** [`mdtests/stdlib_list.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list.md).
 
-### `list_append`
+### `list::append`
 
 ```click
-function list_append<T>(xs: List<T>, ys: List<T>) -> List<T>
+function append<T>(xs: List<T>, ys: List<T>) -> List<T>
     decreases xs
 {
     match xs {
         List::Nil => ys,
-        List::Cons(head, tail) => List<T>::Cons(head, list_append(tail, ys)),
+        List::Cons(head, tail) => List<T>::Cons(head, list::append(tail, ys)),
     }
 }
 ```
 
 **Verified use:** [`mdtests/stdlib_list.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list.md).
 
-### `list_contains`
+### `list::contains`
 
 ```click
-function list_contains<T>(xs: List<T>, value: T) -> bool
+function contains<T>(xs: List<T>, value: T) -> bool
     decreases xs
 {
     match xs {
         List::Nil => false,
         List::Cons(head, tail) =>
-            if head == value { true } else { list_contains(tail, value) },
+            if head == value { true } else { list::contains(tail, value) },
     }
 }
 ```
 
 Returns `true` for membership and `false` otherwise, using element
-equality. A call written alone is a claim: `ensures list_contains(xs, v);`
-means `list_contains(xs, v) == true`.
+equality. A call written alone is a claim: `ensures list::contains(xs, v);`
+means `list::contains(xs, v) == true`.
 Its checked laws support C scalar, pointer, and algebraic-valued elements,
 including nested lists. Comparisons of unknown algebraic values stay symbolic.
 
 **Verified use:** [`mdtests/stdlib_list.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list.md).
 
-### `list_append_left_identity`
+### `list::append_left_identity`
 
 ```click
-theorem list_append_left_identity<T>(xs: List<T>) {
-    ensures list_append(List<T>::Nil, xs) == xs by {
-        unfold(list_append(List<T>::Nil, xs));
+theorem append_left_identity<T>(xs: List<T>) {
+    ensures list::append(List<T>::Nil, xs) == xs by {
+        unfold(list::append(List<T>::Nil, xs));
         normalize();
     }
 }
@@ -533,20 +533,20 @@ theorem list_append_left_identity<T>(xs: List<T>) {
 
 **Verified use:** [`mdtests/stdlib_list.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list.md).
 
-### `list_append_right_identity`
+### `list::append_right_identity`
 
 ```click
-theorem list_append_right_identity<T>(xs: List<T>) {
-    ensures list_append(xs, List<T>::Nil) == xs by {
+theorem append_right_identity<T>(xs: List<T>) {
+    ensures list::append(xs, List<T>::Nil) == xs by {
         induct(xs) as ih {
             List::Nil => {
-                unfold(list_append(List<T>::Nil, List<T>::Nil));
+                unfold(list::append(List<T>::Nil, List<T>::Nil));
                 normalize();
             }
             List::Cons(head, tail) => {
                 apply(ih(tail));
-                unfold(list_append(List<T>::Cons(head, tail), List<T>::Nil));
-                rewrite(list_append(tail, List<T>::Nil) == tail);
+                unfold(list::append(List<T>::Cons(head, tail), List<T>::Nil));
+                rewrite(list::append(tail, List<T>::Nil) == tail);
                 normalize();
             }
         }
@@ -556,13 +556,13 @@ theorem list_append_right_identity<T>(xs: List<T>) {
 
 **Verified use:** [`mdtests/stdlib_list.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list.md).
 
-### `list_append_cons`
+### `list::append_cons`
 
 ```click
-theorem list_append_cons<T>(head: T, tail: List<T>, ys: List<T>) {
-    ensures list_append(List<T>::Cons(head, tail), ys)
-        == List<T>::Cons(head, list_append(tail, ys)) by {
-        unfold(list_append(List<T>::Cons(head, tail), ys));
+theorem append_cons<T>(head: T, tail: List<T>, ys: List<T>) {
+    ensures list::append(List<T>::Cons(head, tail), ys)
+        == List<T>::Cons(head, list::append(tail, ys)) by {
+        unfold(list::append(List<T>::Cons(head, tail), ys));
         normalize();
     }
 }
@@ -570,31 +570,31 @@ theorem list_append_cons<T>(head: T, tail: List<T>, ys: List<T>) {
 
 **Verified use:** [`mdtests/stdlib_list.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list.md).
 
-### `list_append_associative`
+### `list::append_associative`
 
 ```click
-theorem list_append_associative<T>(xs: List<T>, ys: List<T>, zs: List<T>) {
-    ensures list_append(list_append(xs, ys), zs)
-        == list_append(xs, list_append(ys, zs)) by {
+theorem append_associative<T>(xs: List<T>, ys: List<T>, zs: List<T>) {
+    ensures list::append(list::append(xs, ys), zs)
+        == list::append(xs, list::append(ys, zs)) by {
         induct(xs) as ih {
             List::Nil => {
-                unfold(list_append(List<T>::Nil, ys));
-                unfold(list_append(List<T>::Nil, list_append(ys, zs)));
+                unfold(list::append(List<T>::Nil, ys));
+                unfold(list::append(List<T>::Nil, list::append(ys, zs)));
                 simp();
             }
             List::Cons(head, tail) => {
                 apply(ih(tail));
-                apply(list_append_cons(head, tail, ys));
-                rewrite(list_append(List<T>::Cons(head, tail), ys)
-                    == List<T>::Cons(head, list_append(tail, ys)));
-                apply(list_append_cons(head, list_append(tail, ys), zs));
-                rewrite(list_append(List<T>::Cons(head, list_append(tail, ys)), zs)
-                    == List<T>::Cons(head, list_append(list_append(tail, ys), zs)));
-                apply(list_append_cons(head, tail, list_append(ys, zs)));
-                rewrite(list_append(List<T>::Cons(head, tail), list_append(ys, zs))
-                    == List<T>::Cons(head, list_append(tail, list_append(ys, zs))));
-                rewrite(list_append(list_append(tail, ys), zs)
-                    == list_append(tail, list_append(ys, zs)));
+                apply(list::append_cons(head, tail, ys));
+                rewrite(list::append(List<T>::Cons(head, tail), ys)
+                    == List<T>::Cons(head, list::append(tail, ys)));
+                apply(list::append_cons(head, list::append(tail, ys), zs));
+                rewrite(list::append(List<T>::Cons(head, list::append(tail, ys)), zs)
+                    == List<T>::Cons(head, list::append(list::append(tail, ys), zs)));
+                apply(list::append_cons(head, tail, list::append(ys, zs)));
+                rewrite(list::append(List<T>::Cons(head, tail), list::append(ys, zs))
+                    == List<T>::Cons(head, list::append(tail, list::append(ys, zs))));
+                rewrite(list::append(list::append(tail, ys), zs)
+                    == list::append(tail, list::append(ys, zs)));
                 simp();
             }
         }
@@ -604,12 +604,12 @@ theorem list_append_associative<T>(xs: List<T>, ys: List<T>, zs: List<T>) {
 
 **Verified use:** [`mdtests/stdlib_list.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list.md).
 
-### `list_contains_nil`
+### `list::contains_nil`
 
 ```click
-theorem list_contains_nil<T>(value: T) {
-    ensures list_contains(List<T>::Nil, value) == false by {
-        unfold(list_contains(List<T>::Nil, value));
+theorem contains_nil<T>(value: T) {
+    ensures list::contains(List<T>::Nil, value) == false by {
+        unfold(list::contains(List<T>::Nil, value));
         normalize();
     }
 }
@@ -617,13 +617,13 @@ theorem list_contains_nil<T>(value: T) {
 
 **Verified use:** [`mdtests/stdlib_list.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list.md).
 
-### `list_contains_cons`
+### `list::contains_cons`
 
 ```click
-theorem list_contains_cons<T>(head: T, tail: List<T>, value: T) {
-    ensures list_contains(List<T>::Cons(head, tail), value)
-        == if head == value { true } else { list_contains(tail, value) } by {
-        unfold(list_contains(List<T>::Cons(head, tail), value));
+theorem contains_cons<T>(head: T, tail: List<T>, value: T) {
+    ensures list::contains(List<T>::Cons(head, tail), value)
+        == if head == value { true } else { list::contains(tail, value) } by {
+        unfold(list::contains(List<T>::Cons(head, tail), value));
         normalize();
     }
 }
@@ -631,40 +631,40 @@ theorem list_contains_cons<T>(head: T, tail: List<T>, value: T) {
 
 **Verified use:** [`mdtests/stdlib_list.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list.md).
 
-### `list_contains_append`
+### `list::contains_append`
 
 ```click
-theorem list_contains_append<T>(xs: List<T>, ys: List<T>, value: T) {
-    ensures list_contains(list_append(xs, ys), value)
-        == if list_contains(xs, value) { true } else { list_contains(ys, value) } by {
+theorem contains_append<T>(xs: List<T>, ys: List<T>, value: T) {
+    ensures list::contains(list::append(xs, ys), value)
+        == if list::contains(xs, value) { true } else { list::contains(ys, value) } by {
         induct(xs) as ih {
             List::Nil => {
-                unfold(list_append(List<T>::Nil, ys));
-                unfold(list_contains(List<T>::Nil, value));
+                unfold(list::append(List<T>::Nil, ys));
+                unfold(list::contains(List<T>::Nil, value));
                 simp();
             }
             List::Cons(head, tail) => {
                 apply(ih(tail));
-                apply(list_append_cons(head, tail, ys));
-                rewrite(list_append(List<T>::Cons(head, tail), ys)
-                    == List<T>::Cons(head, list_append(tail, ys)));
+                apply(list::append_cons(head, tail, ys));
+                rewrite(list::append(List<T>::Cons(head, tail), ys)
+                    == List<T>::Cons(head, list::append(tail, ys)));
                 if head == value {
-                    apply(list_contains_cons(head, list_append(tail, ys), value));
-                    rewrite(list_contains(List<T>::Cons(head, list_append(tail, ys)), value)
-                        == if head == value { true } else { list_contains(list_append(tail, ys), value) });
-                    apply(list_contains_cons(head, tail, value));
-                    rewrite(list_contains(List<T>::Cons(head, tail), value)
-                        == if head == value { true } else { list_contains(tail, value) });
+                    apply(list::contains_cons(head, list::append(tail, ys), value));
+                    rewrite(list::contains(List<T>::Cons(head, list::append(tail, ys)), value)
+                        == if head == value { true } else { list::contains(list::append(tail, ys), value) });
+                    apply(list::contains_cons(head, tail, value));
+                    rewrite(list::contains(List<T>::Cons(head, tail), value)
+                        == if head == value { true } else { list::contains(tail, value) });
                     normalize() using { head == value; }
                 } else {
-                    apply(list_contains_cons(head, list_append(tail, ys), value));
-                    rewrite(list_contains(List<T>::Cons(head, list_append(tail, ys)), value)
-                        == if head == value { true } else { list_contains(list_append(tail, ys), value) });
-                    apply(list_contains_cons(head, tail, value));
-                    rewrite(list_contains(List<T>::Cons(head, tail), value)
-                        == if head == value { true } else { list_contains(tail, value) });
-                    rewrite(list_contains(list_append(tail, ys), value)
-                        == if list_contains(tail, value) { true } else { list_contains(ys, value) });
+                    apply(list::contains_cons(head, list::append(tail, ys), value));
+                    rewrite(list::contains(List<T>::Cons(head, list::append(tail, ys)), value)
+                        == if head == value { true } else { list::contains(list::append(tail, ys), value) });
+                    apply(list::contains_cons(head, tail, value));
+                    rewrite(list::contains(List<T>::Cons(head, tail), value)
+                        == if head == value { true } else { list::contains(tail, value) });
+                    rewrite(list::contains(list::append(tail, ys), value)
+                        == if list::contains(tail, value) { true } else { list::contains(ys, value) });
                     normalize() using { not(head == value); }
                 }
             }
@@ -680,32 +680,32 @@ conditional reduction in each constructor case.
 
 ### Natural-valued lengths
 
-`list_length` returns `Nat`, so a length cannot be negative or overflow.
+`list::length` returns `Nat`, so a length cannot be negative or overflow.
 These laws hold for arbitrary element types, including nested lists.
 
-### `list_length`
+### `list::length`
 
 ```click
-function list_length<T>(xs: List<T>) -> Nat
+function length<T>(xs: List<T>) -> Nat
     decreases xs
 {
     match xs {
         List::Nil => Nat::Zero,
-        List::Cons(head, tail) => Nat::Succ(list_length(tail)),
+        List::Cons(head, tail) => Nat::Succ(list::length(tail)),
     }
 }
 ```
 
 **Verified use:** [`mdtests/stdlib_list_length.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list_length.md).
 
-### `list_length_nil`
+### `list::length_nil`
 
 ```click
-theorem list_length_nil<T>(xs: List<T>) {
+theorem length_nil<T>(xs: List<T>) {
     requires xs == List<T>::Nil;
-    ensures list_length(xs) == Nat::Zero by {
+    ensures list::length(xs) == Nat::Zero by {
         rewrite(xs == List<T>::Nil);
-        unfold(list_length(List<T>::Nil));
+        unfold(list::length(List<T>::Nil));
         normalize();
     }
 }
@@ -713,12 +713,12 @@ theorem list_length_nil<T>(xs: List<T>) {
 
 **Verified use:** [`mdtests/stdlib_list_length.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list_length.md).
 
-### `list_length_cons`
+### `list::length_cons`
 
 ```click
-theorem list_length_cons<T>(head: T, tail: List<T>) {
-    ensures list_length(List<T>::Cons(head, tail)) == Nat::Succ(list_length(tail)) by {
-        unfold(list_length(List<T>::Cons(head, tail)));
+theorem length_cons<T>(head: T, tail: List<T>) {
+    ensures list::length(List<T>::Cons(head, tail)) == Nat::Succ(list::length(tail)) by {
+        unfold(list::length(List<T>::Cons(head, tail)));
         normalize();
     }
 }
@@ -726,32 +726,32 @@ theorem list_length_cons<T>(head: T, tail: List<T>) {
 
 **Verified use:** [`mdtests/stdlib_list_length.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list_length.md).
 
-### `list_length_append`
+### `list::length_append`
 
 ```click
-theorem list_length_append<T>(xs: List<T>, ys: List<T>) {
-    ensures list_length(list_append(xs, ys)) == nat_add(list_length(xs), list_length(ys)) by {
+theorem length_append<T>(xs: List<T>, ys: List<T>) {
+    ensures list::length(list::append(xs, ys)) == nat_add(list::length(xs), list::length(ys)) by {
         induct(xs) as ih {
             List::Nil => {
-                unfold(list_append(List<T>::Nil, ys));
-                unfold(list_length(List<T>::Nil));
-                unfold(nat_add(Nat::Zero, list_length(ys)));
+                unfold(list::append(List<T>::Nil, ys));
+                unfold(list::length(List<T>::Nil));
+                unfold(nat_add(Nat::Zero, list::length(ys)));
                 simp();
             }
             List::Cons(head, tail) => {
                 apply(ih(tail));
-                apply(list_append_cons(head, tail, ys));
-                rewrite(list_append(List<T>::Cons(head, tail), ys)
-                    == List<T>::Cons(head, list_append(tail, ys)));
-                apply(list_length_cons(head, list_append(tail, ys)));
-                rewrite(list_length(List<T>::Cons(head, list_append(tail, ys)))
-                    == Nat::Succ(list_length(list_append(tail, ys))));
-                apply(list_length_cons(head, tail));
-                rewrite(list_length(List<T>::Cons(head, tail)) == Nat::Succ(list_length(tail)));
-                apply(nat_add_succ_left(list_length(tail), list_length(ys)));
-                rewrite(nat_add(Nat::Succ(list_length(tail)), list_length(ys))
-                    == Nat::Succ(nat_add(list_length(tail), list_length(ys))));
-                rewrite(list_length(list_append(tail, ys)) == nat_add(list_length(tail), list_length(ys)));
+                apply(list::append_cons(head, tail, ys));
+                rewrite(list::append(List<T>::Cons(head, tail), ys)
+                    == List<T>::Cons(head, list::append(tail, ys)));
+                apply(list::length_cons(head, list::append(tail, ys)));
+                rewrite(list::length(List<T>::Cons(head, list::append(tail, ys)))
+                    == Nat::Succ(list::length(list::append(tail, ys))));
+                apply(list::length_cons(head, tail));
+                rewrite(list::length(List<T>::Cons(head, tail)) == Nat::Succ(list::length(tail)));
+                apply(nat_add_succ_left(list::length(tail), list::length(ys)));
+                rewrite(nat_add(Nat::Succ(list::length(tail)), list::length(ys))
+                    == Nat::Succ(nat_add(list::length(tail), list::length(ys))));
+                rewrite(list::length(list::append(tail, ys)) == nat_add(list::length(tail), list::length(ys)));
                 normalize();
             }
         }

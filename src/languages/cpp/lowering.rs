@@ -1543,15 +1543,21 @@ impl LoweringContext<'_> {
                 place, value_type, ..
             } if !place.projections.is_empty() => {
                 // Address formation checks storage, not a read of the field value.
+                // The member is its own subobject (C++ [basic.compound]): the
+                // pointer may not reach a sibling member at an adjacent address.
                 let CppType::Pointer { pointee } = value_type else {
                     unreachable!("validated field address")
                 };
+                let member_type = Scalar::pointer_element(pointee, true)
+                    .unwrap()
+                    .kind
+                    .kernel_type();
                 Ok(c_checked_object_address(c_typed_load(
-                    self.lower_place(place)?,
-                    Scalar::pointer_element(pointee, true)
-                        .unwrap()
-                        .kind
-                        .kernel_type(),
+                    CExpression::Subobject {
+                        pointer: Box::new(self.lower_place(place)?),
+                        width: member_type.byte_width(),
+                    },
+                    member_type,
                 )))
             }
             CppExpression::AddressOf {

@@ -2740,6 +2740,15 @@ fn c_loop_state_components_match_at_back_edge_inner(
     if top_state.loan_ledger != next_state.loan_ledger {
         changed.push("stable-view loan authority");
     }
+    // The head keeps a pointer local's subobject only if every back edge
+    // returns the local to that same subobject.
+    if top_state.locals().object_values().any(|(name, value)| {
+        c_value_subobject_extent(value).is_some()
+            && next_state.locals().get(name).map(c_value_subobject_extent)
+                != Some(c_value_subobject_extent(value))
+    }) {
+        changed.push("pointer subobject extents");
+    }
     if top_state.loan_participant != next_state.loan_participant {
         changed.push("stable-view loan participant");
     }
@@ -5091,6 +5100,17 @@ fn abstract_loop_exit_locals(
             fresh_loop_local_value(c_type, variables, budget).map_err(exhausted_identities)?
         else {
             return Err(format!("local `{name}` has no abstract value of its type"));
+        };
+        // Exits that agree on the subobject a pointer designates keep it.
+        let fresh = match held
+            .iter()
+            .map(c_value_subobject_extent)
+            .collect::<Vec<_>>()
+        {
+            extents if extents[1..].iter().all(|extent| *extent == extents[0]) => {
+                with_retained_extent(fresh, held.first())
+            }
+            _ => fresh,
         };
         for (restatement, held) in restatements.iter_mut().zip(held) {
             restatement.pin(&fresh, &held);
@@ -9804,6 +9824,10 @@ pub(super) fn havoc_loop_modified_locals(
         let Some(value) = fresh_loop_local_value(c_type, variables, budget)? else {
             continue;
         };
+        // A pointer local keeps the subobject it designates across the
+        // abstract iteration; the back edge checks that the body returns
+        // it to the same one (`c_loop_state_components_match_at_back_edge`).
+        let value = with_retained_extent(value, state.locals.get(&name));
         sync_stack_local(&mut state, &name, &value);
         state.locals.set_typed(name, value, c_type);
     }
@@ -10391,7 +10415,8 @@ pub(super) fn collect_address_taken_in_expression(
         | CExpression::FloatClassification { expression, .. } => {
             collect_address_taken_in_expression(expression, names)
         }
-        CExpression::PointerOffsetBytes { pointer, .. } => {
+        CExpression::PointerOffsetBytes { pointer, .. }
+        | CExpression::Subobject { pointer, .. } => {
             collect_address_taken_in_expression(pointer, names)
         }
         CExpression::Not(inner) | CExpression::Load(inner) => {
@@ -10430,7 +10455,8 @@ pub(super) fn collect_variable_names(expression: &CExpression, names: &mut BTree
         | CExpression::FloatClassification { expression, .. } => {
             collect_variable_names(expression, names)
         }
-        CExpression::PointerOffsetBytes { pointer, .. } => collect_variable_names(pointer, names),
+        CExpression::PointerOffsetBytes { pointer, .. }
+        | CExpression::Subobject { pointer, .. } => collect_variable_names(pointer, names),
         CExpression::AddressOf(inner)
         | CExpression::CheckedObjectAddress(inner)
         | CExpression::Not(inner)
@@ -10560,5 +10586,22 @@ mod resource_argument_diagnostic_tests {
             *required,
             CResourceFact::View(CResource::Memory(_))
         ));
+    }
+}
+
+fn c_value_subobject_extent(value: &CValue) -> Option<&SubobjectExtent> {
+    match value {
+        CValue::Pointer(pointer) => pointer.extent(),
+        _ => None,
+    }
+}
+
+/// `fresh` with the subobject extent of the pointer value it abstracts.
+fn with_retained_extent(fresh: CValue, previous: Option<&CValue>) -> CValue {
+    match (fresh, previous.and_then(c_value_subobject_extent)) {
+        (CValue::Pointer(pointer), Some(extent)) => {
+            CValue::Pointer(pointer.with_extent(Some(extent.clone())))
+        }
+        (fresh, _) => fresh,
     }
 }

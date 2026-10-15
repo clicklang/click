@@ -140,6 +140,29 @@ direct, pointer local, formation, modular helper, and pointer-field store/reload
 within one function (the extent travels with the stored `CValue`). It does not
 close the two address-equality rows.
 
+### Status after step 2
+
+Delivered:
+- `CExpression::Subobject { pointer, width }`, emitted by the C frontend for
+  struct members and by C++ member-address lowering. Union members are not
+  narrowed.
+- Memory lvalues carry the extent, so `&*q` and `&q[i]` keep it.
+- Formation and access are checked against the extent
+  (`pointer arithmetic left the pointed-to object`,
+  `access outside the subobject the pointer designates`).
+- Loop abstraction keeps a pointer local's extent, and the back edge refuses
+  a body that changes it.
+
+Known limits, each refused or unchanged rather than accepted unsoundly:
+- A loop that moves a pointer between different subobjects is refused at the
+  back edge. Invariants cannot yet state which subobject a pointer
+  designates.
+- Pointers read from cells a call or loop havocs, and pointers loaded at
+  function entry (including a static pointer's initial value), have no
+  extent. That is the modular case Phase B covers.
+- Contracts observe member addresses without narrowing, and spec pointer
+  equality is still address equality until Phase B.
+
 ## Phase B: designation across address equality (modular defect)
 
 A callee sees opaque pointers. It must not dereference `q` on the strength of a

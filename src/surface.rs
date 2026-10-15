@@ -2321,6 +2321,7 @@ pub(crate) fn collect_c_expression_variables(
         CExpression::AddressOf(inner)
         | CExpression::CheckedObjectAddress(inner)
         | CExpression::PointerOffsetBytes { pointer: inner, .. }
+        | CExpression::Subobject { pointer: inner, .. }
         | CExpression::Not(inner)
         | CExpression::BitwiseNot(inner)
         | CExpression::Load(inner)

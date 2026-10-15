@@ -11,6 +11,17 @@ Priority: P1.
 Allocation bounds, matching addresses, initialized typed cells and permission
 to read the sibling do not make the original pointer designate that sibling.
 
+## Progress
+
+Phase A step 2 of the [subobject-extent design](../design/pointer-subobject-extents.md)
+rejects the in-function variants: the original C and C++ reads, the pointer
+local, formation past the one-past end, a stored and reloaded member pointer,
+and a loop walking past a member array. The fixtures are
+`mdtests/a_one_past_scalar_member_pointer_cannot_read_its_sibling.md` and its
+siblings. Still accepted: passing a member pointer to a modular helper
+(step 3), and reaching another object through address equality inside a
+callee or from a pointer loaded at function entry (Phase B).
+
 ## Reproduction
 
 Save this as a Markdown proof and verify it with the ordinary C frontend:
