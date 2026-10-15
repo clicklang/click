@@ -2120,8 +2120,23 @@ impl Parser {
                     .error("a resource without a body must be declared with `abstract resource`"));
             }
             Some(Token::LBrace) if !is_abstract => Some(self.parse_composite_resource_body(&name)?),
+            // An abstract resource may declare fields, and nothing else: its
+            // instances carry them, but it has no body to fold or unfold.
             Some(Token::LBrace) => {
-                return Err(self.error("an `abstract resource` cannot have a body"));
+                let body = self.parse_composite_resource_body(&name)?;
+                if body.fields.is_empty()
+                    || !body.children.is_empty()
+                    || body.matched.is_some()
+                    || body.condition.is_some()
+                    || !body.contains.is_empty()
+                    || !body.facts.is_empty()
+                    || !body.witnesses.is_empty()
+                {
+                    return Err(self.error(
+                        "an `abstract resource` body declares only fields: it has no clauses of its own",
+                    ));
+                }
+                Some(body)
             }
             Some(token) => {
                 return Err(self.error(format!("expected resource body, got {token}")));
@@ -2149,6 +2164,7 @@ impl Parser {
             name,
             parameters: parsed_parameters.parameters,
             resource_parameters,
+            sealed: is_abstract && composite_body.is_some(),
             composite_body,
             field_schema: None,
             authorized: false,

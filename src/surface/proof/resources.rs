@@ -718,6 +718,7 @@ fn unmatched_instance_body(
             composite_body: Some(scope),
             field_schema: definition.field_schema.clone(),
             authorized: definition.authorized,
+            sealed: definition.sealed,
         },
         bindings: instance.fields().to_vec(),
     })

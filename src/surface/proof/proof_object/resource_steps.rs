@@ -386,6 +386,19 @@ impl<'a> Proof<'a> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("instance fold/unfold requires a C execution proof"));
         };
+        if let ResourceClause::Named { resource, .. } = resource
+            && let ResourceClause::Declared { name, .. } = resource.as_ref()
+            && context
+                .resource_environment
+                .get(name)
+                .is_some_and(ResourceDefinition::is_sealed)
+        {
+            let operation = if unfold { "unfold" } else { "fold" };
+            return Err(self.step_error(format!(
+                "`{name}` is an abstract resource: it has no body, so no proof can {operation} \
+                 it; only contracts produce and consume its instances"
+            )));
+        }
         let branch = self
             .focused_branch()
             .ok_or_else(|| self.step_error("instance rewrite requires an open goal"))?;

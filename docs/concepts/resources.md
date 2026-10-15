@@ -340,6 +340,13 @@ are checked against the types declared in the resource definition. They have no
 local `fold` or construction rule: a contract may assume, transfer, return, or
 consume an abstract unit, but verified code cannot establish its first unit.
 
+An abstract resource may also declare fields, `abstract resource obj(p:
+int32*) { field size: int32; }`. Each instance is then named, as a declared
+resource with fields is, and carries its fields, but the family still has no
+body: no proof folds, unfolds, or observes an instance, so its fields are
+exactly what the contracts that produce, pass, and consume it state
+(`mdtests/abstract_resource_fields_pass_through_calls.md`).
+
 Equal declared resources accumulate as an exact quantity. Duplicate clauses
 such as two `consumes open_fd(fd);` entries require two units, and a call cannot
 satisfy that requirement with one unit.

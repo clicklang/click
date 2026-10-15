@@ -3966,6 +3966,10 @@ pub struct CCompositeResourceDefinition {
     pub(super) fact_source_indices: Vec<usize>,
     /// Source spellings are diagnostic metadata. They never justify a fact.
     pub(super) fact_source_spellings: Vec<String>,
+    /// A field-bearing abstract family: its instances carry fields, but its
+    /// body is empty and no proof step folds, unfolds, or observes one. Only
+    /// a trusted contract produces or consumes an instance.
+    pub(super) sealed: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
