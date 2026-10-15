@@ -56,6 +56,10 @@ pub(crate) trait ProofDiagnosticState: Send + Sync {
         None
     }
 
+    fn read_resolutions(&self) -> &[crate::kernel::ReadResolutionDiagnostic] {
+        &[]
+    }
+
     fn kernel_goal(&self) -> Option<&Proposition>;
     fn premises(&self, limit: usize) -> Vec<&Proposition>;
     fn premise_count(&self) -> usize;
@@ -249,6 +253,12 @@ fn render_diagnostic_labeled(
         {
             rendered.push_str("\n  ");
             rendered.push_str(&history);
+        }
+    }
+    if let Some(state) = &diagnostic.state {
+        for resolution in state.read_resolutions() {
+            rendered.push_str("\n  ");
+            rendered.push_str(&render::render_read_resolution(resolution, labels));
         }
     }
     if summary.is_some() {

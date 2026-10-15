@@ -547,6 +547,53 @@ fn alphabetic_label(mut index: usize) -> String {
 
 /// Identify the actual store where an assumption-free history comparison stops.
 /// Use report-wide labels even when no source spelling names the address.
+pub(crate) fn render_read_resolution(
+    resolution: &crate::kernel::ReadResolutionDiagnostic,
+    labels: &mut SnapshotLabels,
+) -> String {
+    let _typed = TypedNotationScope::enter();
+    let query = render_proposition_labeled(
+        &Proposition::ConditionIs(
+            ConditionTerm::Bitvector64Equal(
+                Box::new(resolution.read.clone()),
+                Box::new(resolution.expected.clone()),
+            ),
+            true,
+        ),
+        labels,
+    );
+    let producer = labels.snapshot_name(resolution.producer.memory());
+    let stopped = resolution
+        .stopped_at
+        .as_ref()
+        .map(|memory| labels.snapshot_name(memory.memory()));
+    let mut result = format!(
+        "read-resolution check:\n    checked read equality: {query}\n    producer source: {producer}\n    walk stop: {}{}",
+        stopped.map(|at| format!("{at}: ")).unwrap_or_default(),
+        resolution.reason
+    );
+    if let Some(value) = &resolution.recovered {
+        let equality = render_proposition_labeled(
+            &Proposition::Equal(
+                Term::CValue(value.clone()),
+                Term::CValue(crate::kernel::CValue::UInt64(resolution.expected.clone())),
+            ),
+            labels,
+        );
+        result.push_str(&format!(
+            "\n    recovered word equality: {equality}\n    equality check: {}",
+            if resolution.equal {
+                "proved"
+            } else {
+                "not proved"
+            }
+        ));
+    } else {
+        result.push_str("\n    recovered value: none\n    equality check: not attempted (no complete word recovered)");
+    }
+    result
+}
+
 pub(crate) fn render_memory_history_check(
     history: &super::MemoryHistoryDiagnostic,
     labels: &mut SnapshotLabels,
