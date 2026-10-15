@@ -15,31 +15,14 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
 } by {
     match before.model {
         Context::Top => {
-            have parent == 0 by {
-                have ctx_node_is(Context::Top, parent) == 1 by auto;
-                if parent == 0 { assumption(); } else {
-                    have ctx_node_is(Context::Top, parent) != 1 by {
-                        unfold(ctx_node_is(Context::Top, parent));
-                        normalize() using { not(parent == 0); };
-                    }
-                    contradiction(ctx_node_is(Context::Top, parent) == 1);
-                }
-            }
+            have parent == 0 by auto;
             unfold(before);
             execute();
             let after = fold(ctx_at(new, root), { model: Context::Top });
             simp();
         },
         Context::Left(identity, grandparent, color, sibling_model, outer_model) => {
-            have parent == identity by {
-                have ctx_node_is(Context::Left(identity, grandparent, color, sibling_model, outer_model), parent) == 1 by auto;
-                if parent == identity { assumption(); } else {
-                    have ctx_node_is(Context::Left(identity, grandparent, color, sibling_model, outer_model), parent) != 1 by {
-                        unfold(ctx_node_is(Context::Left(identity, grandparent, color, sibling_model, outer_model), parent)); normalize() using { not(parent == identity); };
-                    }
-                    contradiction(ctx_node_is(Context::Left(identity, grandparent, color, sibling_model, outer_model), parent) == 1);
-                }
-            }
+            have parent == identity by auto;
             let { sibling: sibling, up: outer } = unfold(before);
             execute();
             let after = fold(ctx_at(new, root), {
@@ -48,15 +31,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
             simp();
         },
         Context::Right(identity, grandparent, color, sibling_model, outer_model) => {
-            have parent == identity by {
-                have ctx_node_is(Context::Right(identity, grandparent, color, sibling_model, outer_model), parent) == 1 by auto;
-                if parent == identity { assumption(); } else {
-                    have ctx_node_is(Context::Right(identity, grandparent, color, sibling_model, outer_model), parent) != 1 by {
-                        unfold(ctx_node_is(Context::Right(identity, grandparent, color, sibling_model, outer_model), parent)); normalize() using { not(parent == identity); };
-                    }
-                    contradiction(ctx_node_is(Context::Right(identity, grandparent, color, sibling_model, outer_model), parent) == 1);
-                }
-            }
+            have parent == identity by auto;
             let { sibling: sibling, up: outer } = unfold(before);
             match sibling.model {
                 RbTree::Empty => {

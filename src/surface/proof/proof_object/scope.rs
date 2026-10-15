@@ -666,11 +666,11 @@ impl<'a> ProofScope<'a> {
         if let Some(closed) = self.try_simp_closure()? {
             return Ok(Some(closed));
         }
-        let body = match self.body.try_auto_equality_chain_closure()? {
+        let body = match self.body.try_definition_condition_closure()? {
             Some(body) => body,
-            None => match self.body.try_constructor_join_closure()? {
+            None => match self.body.try_auto_equality_chain_closure()? {
                 Some(body) => body,
-                None => match self.body.try_definition_condition_closure()? {
+                None => match self.body.try_constructor_join_closure()? {
                     Some(body) => body,
                     None => match self.body.try_wide_equality_solver_closure()? {
                         Some(body) => body,
