@@ -589,7 +589,13 @@ fn audit_mul_site(tactic: &str) {
     let cursor = format!("{}:{line}:{column}", p.root.join("borrow.click").display());
     // Each site still expands, rechecks retained/cold proofs, and checks its
     // fixed point. Bound the audit to one site so timings name that site.
-    let result = p.cli(&["audit", "--start-at", &cursor, "--max-sites", "1"]);
+    // These named nightly tests must run the audit when selected with
+    // `--ignored`, without the generic CLI helper's nightly-only shortcut.
+    let result = Command::new(env!("CARGO_BIN_EXE_click"))
+        .args(["audit", "--start-at", &cursor, "--max-sites", "1"])
+        .arg(p.root.join("borrow.click"))
+        .output()
+        .unwrap();
     let stdout = String::from_utf8_lossy(&result.stdout);
     assert!(
         result.status.success(),
