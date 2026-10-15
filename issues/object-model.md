@@ -501,3 +501,22 @@ and seven field controls pass; the broader pointer selection has 477 passes,
 two known failures and 17 ignored controls. Those failures remain the loaded
 field/address-equality rejection and modular declared-record identity return.
 The last full archive example audit is still 42/52.
+
+The next recovery audit on archive checkpoint `07d355f0e` still passes 42/52,
+but with a changed failure set: input-cursor and binary-tree are restored,
+while borrowed-slice and perpetual-service newly fail. The remaining eight
+failures are arena, multifile-registry, owned-vector, rbtree-augmented, refcount,
+ring-buffer, rust-byte-sum and rust-chunks-exact. Do not treat the unchanged
+total as evidence that the latest archived copy-transfer work is compatible.
+
+The service failure has a focused upstream control in
+`mdtests/c_owned_pointer_resource_modular_loop.md`, preserving the original
+step, loop, resource and contracts. It passes on upstream-based `2c484f457`;
+the original service loop also passes fresh, expanded, rewritten and retained
+checking on that tree. The archive learns a C-allocated typed-prefix access
+witness during the call and incorrectly counts it as an allocation-lifetime
+change. Its repair must keep physical allocations and native object promises
+strict while distinguishing C access knowledge. Borrowed-slice separately
+requires write authorization from the call's already checked mutable resource
+projection. These repairs are recovery work, not upstream feature activation;
+repeat the complete archive example audit before reporting a new count.
