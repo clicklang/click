@@ -306,6 +306,10 @@ fn collect_c_expression_reads(expression: &CExpression, bound: &[String], reads:
             pointer: expression,
             ..
         }
+        | Subobject {
+            pointer: expression,
+            ..
+        }
         | Not(expression)
         | BitwiseNot(expression) => collect_c_expression_reads(expression, bound, reads),
         Conditional {

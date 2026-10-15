@@ -167,6 +167,10 @@ fn unconditional_operands<'a>(expression: &'a CExpression, operands: &mut Vec<&'
         | CExpression::PointerOffsetBytes {
             pointer: expression,
             ..
+        }
+        | CExpression::Subobject {
+            pointer: expression,
+            ..
         } => operands.push(expression),
         CExpression::Conditional { condition, .. } => operands.push(condition),
         CExpression::And(left, _) | CExpression::Or(left, _) => operands.push(left),

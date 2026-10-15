@@ -4320,6 +4320,10 @@ pub(in crate::surface) fn c0_statement_calls(
                 pointer: expression,
                 ..
             }
+            | syntax::C0Expression::Subobject {
+                pointer: expression,
+                ..
+            }
             | syntax::C0Expression::CheckedArrayIndex {
                 index: expression, ..
             }

@@ -1399,6 +1399,26 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
             }
             paths
         }
+        CExpression::Subobject { pointer, width } => {
+            evaluate_c_expression_paths(state, pointer, assumptions, budget)?
+                .into_iter()
+                .flat_map(|path| match path.outcome {
+                    CExpressionOutcome::Value(CValue::Pointer(pointer)) => {
+                        subobject_paths(pointer, *width, path.facts, path.obligations, assumptions)
+                    }
+                    CExpressionOutcome::Value(_) => vec![CExpressionPath {
+                        outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                        facts: path.facts,
+                        obligations: path.obligations,
+                    }],
+                    outcome => vec![CExpressionPath {
+                        outcome,
+                        facts: path.facts,
+                        obligations: path.obligations,
+                    }],
+                })
+                .collect()
+        }
         CExpression::PointerOffsetBytes { pointer, bytes } => {
             evaluate_c_expression_paths(state, pointer, assumptions, budget)?
                 .into_iter()
@@ -2016,7 +2036,8 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
                                 value_type,
                                 pointer.pointee_volatile(),
                             )
-                            .with_constant(pointer.pointee_constant()),
+                            .with_constant(pointer.pointee_constant())
+                            .with_extent_of(&pointer),
                         ),
                         facts: pointer_path.facts,
                         obligations: pointer_path.obligations,
@@ -2060,7 +2081,8 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
                                 *volatile || pointer.pointee_volatile(),
                             )
                             .with_constant(pointer.pointee_constant())
-                            .with_pointee_constant(*pointee_constant),
+                            .with_pointee_constant(*pointee_constant)
+                            .with_extent_of(&pointer),
                         ),
                         facts: pointer_path.facts,
                         obligations: pointer_path.obligations,
@@ -2102,7 +2124,8 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
                                 value_type,
                                 pointer.pointee_volatile(),
                             )
-                            .with_constant(pointer.pointee_constant()),
+                            .with_constant(pointer.pointee_constant())
+                            .with_extent_of(&pointer),
                         ),
                         facts: pointer_path.facts,
                         obligations: pointer_path.obligations,
@@ -2320,6 +2343,20 @@ fn read_c_lvalue_paths_without_ranges(
                         obligations,
                     }]);
                 }
+                if let Some(refusal) = subobject_access_refusal(
+                    pointer,
+                    lvalue.extent(),
+                    lvalue.value_type.byte_width(),
+                    &facts,
+                    &obligations,
+                    assumptions,
+                ) {
+                    return Ok(vec![CExpressionPath {
+                        outcome: CExpressionOutcome::UndefinedBehavior(refusal),
+                        facts,
+                        obligations,
+                    }]);
+                }
                 let effective_assumptions =
                     assumptions_with_path_context(assumptions, &facts, &obligations);
                 let is_external = is_external_memory_pointer(pointer)
@@ -2455,14 +2492,12 @@ pub(in crate::kernel) fn address_of_lvalue_paths(
                         Some(pointer_type) => {
                             let facts = lvalue_path.facts;
                             CExpressionPath {
-                                outcome: CExpressionOutcome::Value(
-                                    CValue::typed_pointer_with_pointee_volatile(
-                                        pointer,
-                                        pointer_type,
-                                        lvalue.is_volatile(),
-                                    )
-                                    .with_pointer_pointee_constant(lvalue.is_constant()),
-                                ),
+                                outcome: CExpressionOutcome::Value(CValue::Pointer(
+                                    CPointerValue::new(pointer, pointer_type)
+                                        .with_pointee_volatile(lvalue.is_volatile())
+                                        .with_pointee_constant(lvalue.is_constant())
+                                        .with_extent(lvalue.extent().cloned()),
+                                )),
                                 facts,
                                 obligations: lvalue_path.obligations,
                             }
@@ -2540,9 +2575,8 @@ pub(in crate::kernel) fn c_expression_pointee_type(
         CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target) => {
             c_expression_lvalue_type(state, target)
         }
-        CExpression::PointerOffsetBytes { pointer, .. } => {
-            c_expression_pointee_type(state, pointer)
-        }
+        CExpression::PointerOffsetBytes { pointer, .. }
+        | CExpression::Subobject { pointer, .. } => c_expression_pointee_type(state, pointer),
         CExpression::TypedLoad { value_type, .. } => match value_type {
             CType::Int32Array(_) => Some(CType::Int32),
             CType::UInt8Array(_) => Some(CType::UInt8),

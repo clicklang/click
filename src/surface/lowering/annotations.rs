@@ -6634,6 +6634,10 @@ impl AnnotationLowerer<'_> {
                 },
                 environment,
             ),
+            // A specification observes addresses; it does not designate.
+            CExpression::Subobject { pointer, .. } => {
+                self.lower_c_fragment_to_spec(pointer, environment)
+            }
             CExpression::PointerOffsetBytes { pointer, bytes } => {
                 Ok(SpecExpression::PointerOffset {
                     pointer: Box::new(self.lower_c_fragment_to_spec(pointer, environment)?),
@@ -7196,7 +7200,8 @@ impl AnnotationLowerer<'_> {
                 CType::UInt8Array(_) => Some(CType::UInt8),
                 value_type => value_type.pointee_type(),
             },
-            CExpression::PointerOffsetBytes { pointer, .. } => {
+            CExpression::PointerOffsetBytes { pointer, .. }
+            | CExpression::Subobject { pointer, .. } => {
                 self.c_expression_array_element_type(pointer, environment)
             }
             CExpression::Add(left, right) => self
@@ -7267,7 +7272,8 @@ impl AnnotationLowerer<'_> {
                 CType::UInt8Array(_) => Some(1),
                 value_type => value_type.pointee_type().map(CType::byte_width),
             },
-            CExpression::PointerOffsetBytes { pointer, .. } => {
+            CExpression::PointerOffsetBytes { pointer, .. }
+            | CExpression::Subobject { pointer, .. } => {
                 self.c_expression_array_element_width(pointer, environment)
             }
             CExpression::Add(left, right) => self
@@ -7322,7 +7328,8 @@ impl AnnotationLowerer<'_> {
 fn aggregate_projection_root(expression: &CExpression) -> Option<&str> {
     match expression {
         CExpression::Variable(name) => Some(name),
-        CExpression::PointerOffsetBytes { pointer, .. } => aggregate_projection_root(pointer),
+        CExpression::PointerOffsetBytes { pointer, .. }
+        | CExpression::Subobject { pointer, .. } => aggregate_projection_root(pointer),
         CExpression::Add(pointer, _) | CExpression::Subtract(pointer, _) => {
             aggregate_projection_root(pointer)
         }

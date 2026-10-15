@@ -295,6 +295,10 @@ fn child_expressions<'a>(
             pointer: expression,
             ..
         }
+        | C0Expression::Subobject {
+            pointer: expression,
+            ..
+        }
         | C0Expression::Not(expression)
         | C0Expression::BitwiseNot(expression)
         | C0Expression::Load(expression)

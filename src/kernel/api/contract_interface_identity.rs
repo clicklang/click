@@ -239,6 +239,10 @@ impl Names {
                 pointer: expression,
                 ..
             }
+            | Subobject {
+                pointer: expression,
+                ..
+            }
             | TypedLoad {
                 pointer: expression,
                 ..
