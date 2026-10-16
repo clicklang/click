@@ -130,8 +130,6 @@ fn cover(bytes: &[u8]) -> usize {
                     4u64 <= at(iteration, iter_remaining);
                 }
             }
-            execute_until(back_edge());
-            close_invariants();
         }
     }
     have iter_remaining < 4u64 by {

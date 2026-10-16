@@ -775,7 +775,6 @@ int32 vector_fill(struct vector* owner, int32 value) {
                     i <= owner->len;
                 }
             }
-            close_invariants();
         }
     }
     step();
