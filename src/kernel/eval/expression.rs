@@ -1768,7 +1768,7 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
         if let CExpressionOutcome::Value(value) = &path.outcome {
             crate::kernel::debug_assert_widths(
                 "an evaluated expression",
-                || crate::kernel::value_width_mismatch(value),
+                || crate::kernel::value_mismatch(value),
                 value,
             );
         }

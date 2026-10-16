@@ -3,8 +3,8 @@
 //! operand merge therefore updates precisely the applications depending on it.
 use super::*;
 use crate::kernel::{
-    Bitvector32Term as T, CType, CValue, ConditionTerm as C, PureFunctionArgument as A,
-    SharedPureApplication,
+    Bitvector32Term as T, BitvectorUnaryOp as U, CType, CValue, CarrierWidth as W,
+    ConditionTerm as C, PureFunctionArgument as A, SharedPureApplication,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -16,6 +16,7 @@ pub(super) enum ArgumentTag {
     PointerExtentRead((u32, u32)),
     PointerRootExtent,
     PointerSubobjectExtent(u64),
+    Integer,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -39,23 +40,74 @@ pub(in crate::kernel::equality_graph) enum ConditionKind {
     PointerValueEq,
     OffsetEq,
     AlgebraicEq,
+    IntegerEq,
+    IntegerNe,
+    IntegerLt,
+    IntegerLe,
+    IntegerGt,
+    IntegerGe,
+}
+
+/// Shared classification for registration and the opaque-atom lookup fast path.
+/// An expression with indexed operands must never be queried as an opaque atom.
+pub(in crate::kernel::equality_graph) fn has_machine_operands(term: &T) -> bool {
+    term.as_binary().is_some_and(|(op, _, _)| !op.is_float())
+        || term
+            .as_unary()
+            .is_some_and(|(op, _)| !matches!(op, U::Float32Negate | U::Float64Negate))
+        || matches!(
+            term,
+            T::ClickFunctionApplication { .. } | T::IntegerToMachine { .. } | T::MemoryLoad(..)
+        )
+        || matches!(term, T::Variable(variable) if crate::kernel::is_load_variable(variable))
 }
 
 impl TermClasses {
     /// Walk mixed-width machine applications once. In particular, a nested
     /// pure call does not recursively canonicalize every enclosing subtree.
     pub(super) fn intern_machine(&mut self, term: &T, wide: bool) -> u64 {
-        self.intern_expression(Some((term, wide)), None, None)
+        self.intern_typed_machine(term, if wide { W::Bits64 } else { W::Bits32 })
+    }
+
+    fn intern_typed_machine(&mut self, term: &T, width: W) -> u64 {
+        self.intern_expression(Some((term, width)), None, None, None)
     }
 
     pub(super) fn intern_algebraic(&mut self, term: &crate::kernel::AlgebraicTerm) -> u64 {
-        self.intern_expression(None, Some(term), None)
+        self.intern_expression(None, Some(term), None, None)
+    }
+
+    pub(super) fn intern_integer(&mut self, term: &crate::kernel::IntegerTerm) -> u64 {
+        self.intern_expression(None, None, Some(term), None)
+    }
+
+    pub(in crate::kernel::equality_graph) fn add_integer_equality(
+        &mut self,
+        left: &crate::kernel::IntegerTerm,
+        right: &crate::kernel::IntegerTerm,
+    ) -> bool {
+        let a = self.intern_integer(left);
+        let b = self.intern_integer(right);
+        self.register_pending_loads();
+        self.close(vec![(a, b)])
+    }
+
+    pub(in crate::kernel::equality_graph) fn are_integer_equal(
+        &mut self,
+        left: &crate::kernel::IntegerTerm,
+        right: &crate::kernel::IntegerTerm,
+    ) -> bool {
+        let a = self.intern_integer(left);
+        let b = self.intern_integer(right);
+        self.register_pending_loads();
+        self.root(a) == self.root(b)
     }
 
     fn intern_expression(
         &mut self,
-        machine: Option<(&T, bool)>,
+        machine: Option<(&T, W)>,
         algebraic: Option<&crate::kernel::AlgebraicTerm>,
+        integer: Option<&crate::kernel::IntegerTerm>,
         value: Option<&CValue>,
     ) -> u64 {
         enum Binary {
@@ -65,8 +117,11 @@ impl TermClasses {
         }
         enum Work<'a> {
             Algebraic(&'a crate::kernel::AlgebraicTerm),
+            Integer(&'a crate::kernel::IntegerTerm),
+            RememberInteger(crate::kernel::SharedIntegerTerm),
             Field(&'a crate::kernel::AlgebraicValue),
-            Machine(&'a T, bool),
+            Machine(&'a T, W),
+            OpaqueCount(&'a T),
             Argument(&'a A),
             Value(&'a CValue),
             Wrap(ArgumentTag),
@@ -76,23 +131,28 @@ impl TermClasses {
         }
         let mut pending = if let Some(value) = value {
             vec![Work::Value(value)]
-        } else if let Some((term, wide)) = machine {
-            vec![Work::Machine(term, wide)]
+        } else if let Some((term, width)) = machine {
+            vec![Work::Machine(term, width)]
+        } else if let Some(term) = integer {
+            vec![Work::Integer(term)]
         } else {
             vec![Work::Algebraic(algebraic.expect("expression"))]
         };
+        // Shared Integer children form a DAG: process each selected node once,
+        // including when a source uses the same large child twice.
+        let mut integer_values = std::collections::BTreeMap::new();
         let mut values = Vec::new();
         while let Some(work) = pending.pop() {
             // Preserve existing scalar work accounting; new argument/call
             // nodes are charged once each, like the old wide traversal.
             if !matches!(
                 &work,
-                Work::Machine(_, false) | Work::Binary(Binary::Int32Add | Binary::Int32(_))
+                Work::Machine(_, W::Bits32) | Work::Binary(Binary::Int32Add | Binary::Int32(_))
             ) {
                 crate::instrumentation::record_deterministic_work(1);
             }
             let scalar_source = match &work {
-                Work::Machine(term, false)
+                Work::Machine(term, W::Bits32)
                     if matches!(term, T::If { .. }) || constants::load_key(term).is_some() =>
                 {
                     Some(*term)
@@ -100,6 +160,108 @@ impl TermClasses {
                 _ => None,
             };
             let node = match work {
+                Work::OpaqueCount(term) => {
+                    values.push(self.opaque_argument(&A::Value(CValue::UInt64(term.clone()))));
+                    continue;
+                }
+                Work::RememberInteger(term) => {
+                    integer_values.insert(term, *values.last().expect("Integer value"));
+                    continue;
+                }
+                Work::Integer(term) => {
+                    use crate::kernel::IntegerTerm as I;
+                    let shared = crate::kernel::SharedIntegerTerm::intern(term.clone());
+                    if let Some(value) = integer_values.get(&shared) {
+                        values.push(*value);
+                        continue;
+                    }
+                    pending.push(Work::RememberInteger(shared.clone()));
+                    let binary = match term {
+                        I::Add(a, b) => Some((IntegerOperation::Add, a, b)),
+                        I::Subtract(a, b) => Some((IntegerOperation::Subtract, a, b)),
+                        I::Multiply(a, b) => Some((IntegerOperation::Multiply, a, b)),
+                        I::TruncatingQuotient(a, b) => Some((IntegerOperation::Quotient, a, b)),
+                        I::TruncatingRemainder(a, b) => Some((IntegerOperation::Remainder, a, b)),
+                        _ => None,
+                    };
+                    if let Some((op, a, b)) = binary {
+                        let head = self.intern_node(Node::IntegerOperation(op));
+                        pending.push(Work::Call(head, 2));
+                        pending.push(Work::Integer(b));
+                        pending.push(Work::Integer(a));
+                        continue;
+                    }
+                    match term {
+                        I::Constant(value) => {
+                            use crate::kernel::{MachineIntegerConstant, MachineIntegerType as M};
+                            let literal = self.intern_node(Node::IntegerAtom(shared));
+                            // Literal observations are folded by Integer constructors.
+                            // Install their bounded typed spellings so a late machine
+                            // equality reaches that same canonical Integer literal.
+                            for ty in [
+                                M::Int8,
+                                M::UInt8,
+                                M::Int16,
+                                M::UInt16,
+                                M::Int32,
+                                M::UInt32,
+                                M::Int64,
+                                M::UInt64,
+                                M::Int128,
+                                M::UInt128,
+                            ] {
+                                let Some(bits) =
+                                    MachineIntegerConstant::from_integer(ty.format(), value)
+                                        .and_then(|constant| ty.constant_term(constant))
+                                else {
+                                    continue;
+                                };
+                                let operand =
+                                    self.intern_typed_machine(&bits, W::of_machine_type(ty));
+                                let head = self.intern_node(Node::IntegerOperation(
+                                    IntegerOperation::Observe(ty),
+                                ));
+                                let observed = self.intern_node(Node::Apply(head, operand));
+                                self.close(vec![(literal, observed)]);
+                            }
+                            values.push(literal);
+                            continue;
+                        }
+                        I::Machine(value) => {
+                            let head = self.intern_node(Node::IntegerOperation(
+                                IntegerOperation::Observe(value.ty()),
+                            ));
+                            pending.push(Work::Call(head, 1));
+                            pending
+                                .push(Work::Machine(value.value(), W::of_machine_type(value.ty())));
+                            continue;
+                        }
+                        I::Negate(value) => {
+                            let head =
+                                self.intern_node(Node::IntegerOperation(IntegerOperation::Negate));
+                            pending.push(Work::Call(head, 1));
+                            pending.push(Work::Integer(value));
+                            continue;
+                        }
+                        I::PureFunctionApplication(application) => {
+                            let symbol = SharedPureApplication::intern(
+                                application.name().to_owned(),
+                                vec![],
+                            );
+                            let head = self.intern_node(Node::IntegerFunction(
+                                symbol,
+                                application.arguments().len(),
+                            ));
+                            pending.push(Work::Call(head, application.arguments().len()));
+                            pending
+                                .extend(application.arguments().iter().rev().map(Work::Argument));
+                            continue;
+                        }
+                        // Binder-bearing match/fold terms retain their complete,
+                        // shallow interned identity.
+                        _ => Node::IntegerAtom(shared),
+                    }
+                }
                 Work::Algebraic(term) => {
                     use crate::kernel::AlgebraicTermNode as N;
                     let ty = self.algebraic_type_token(&term.algebraic_type);
@@ -139,15 +301,17 @@ impl TermClasses {
                         V::C(value) => pending.push(Work::Value(value)),
                         V::Algebraic(term) => pending.push(Work::Algebraic(term)),
                         V::Integer(term) => {
-                            values.push(self.opaque_argument(&A::Integer(term.clone().into())));
+                            pending.push(Work::Wrap(ArgumentTag::Integer));
+                            pending.push(Work::Integer(term));
                         }
                     }
                     continue;
                 }
-                Work::Machine(term, wide) => {
+                Work::Machine(term, width) => {
+                    let wide = width == W::Bits64;
                     let binary = if wide {
                         uint64_binary(term).map(|(op, a, b)| (Binary::UInt64(op), a, b))
-                    } else {
+                    } else if width == W::Bits32 {
                         match term {
                             T::Add(a, b) => Some((Binary::Int32Add, a.as_ref(), b.as_ref())),
                             T::UnsignedDivide(a, b) => Some((
@@ -170,8 +334,10 @@ impl TermClasses {
                                 .filter(|(op, _, _)| op.is_bitvector32())
                                 .map(|(op, a, b)| (Binary::Int32(Int32Binary::Other(op)), a, b)),
                         }
+                    } else {
+                        None
                     };
-                    if !wide {
+                    if width == W::Bits32 {
                         let unary = if let T::BitwiseNot(value) = term {
                             Some((Int32Unary::Not, value.as_ref(), false))
                         } else {
@@ -187,7 +353,7 @@ impl TermClasses {
                         };
                         if let Some((op, value, inverse)) = unary {
                             pending.push(Work::Unary(op, inverse));
-                            pending.push(Work::Machine(value, false));
+                            pending.push(Work::Machine(value, W::Bits32));
                             continue;
                         }
                     }
@@ -196,20 +362,90 @@ impl TermClasses {
                             crate::instrumentation::record_deterministic_work(1);
                         }
                         pending.push(Work::Binary(op));
-                        pending.push(Work::Machine(b, wide));
-                        pending.push(Work::Machine(a, wide));
+                        pending.push(Work::Machine(b, width));
+                        pending.push(Work::Machine(a, width));
+                        continue;
+                    }
+                    if let Some((op, a, b)) = term.as_binary()
+                        && !op.is_float()
+                        && width
+                            == if op.is_bitvector32() {
+                                W::Bits32
+                            } else {
+                                W::Bits64
+                            }
+                    {
+                        let head = self.intern_node(Node::MachineBinary(op, width));
+                        pending.push(Work::Call(head, 2));
+                        // Wide shifts admit independently promoted counts. Without
+                        // a source width, retain the complete count identity rather
+                        // than guessing its carrier from the shifted value.
+                        if matches!(
+                            op,
+                            crate::kernel::BitvectorBinaryOp::Int64ShiftLeft
+                                | crate::kernel::BitvectorBinaryOp::Int64ArithmeticShiftRight
+                                | crate::kernel::BitvectorBinaryOp::UInt64ShiftLeft
+                                | crate::kernel::BitvectorBinaryOp::UInt64LogicalShiftRight
+                        ) {
+                            pending.push(Work::OpaqueCount(b));
+                        } else {
+                            pending.push(Work::Machine(b, width));
+                        }
+                        pending.push(Work::Machine(a, width));
+                        continue;
+                    }
+                    if let Some((op, value)) = term.as_unary()
+                        && !matches!(op, U::Float32Negate | U::Float64Negate)
+                        && width
+                            == match op {
+                                U::BitwiseNot | U::UInt32From64 => W::Bits32,
+                                U::MachineIntegerCast { destination, .. } => {
+                                    W::of_machine_type(destination)
+                                }
+                                _ => W::Bits64,
+                            }
+                    {
+                        let source = match op {
+                            U::Int64From32
+                            | U::UInt64From32
+                            | U::Int64FromUInt32
+                            | U::UInt64FromInt32
+                            | U::BitwiseNot => W::Bits32,
+                            U::UInt32From64
+                            | U::UInt64FromInt64
+                            | U::Int64BitwiseNot
+                            | U::UInt64BitwiseNot => W::Bits64,
+                            U::MachineIntegerCast { source, .. } => W::of_machine_type(source),
+                            U::Float32Negate | U::Float64Negate => unreachable!(),
+                        };
+                        let head = self.intern_node(Node::MachineUnary(op, width));
+                        pending.push(Work::Call(head, 1));
+                        pending.push(Work::Machine(value, source));
+                        continue;
+                    }
+                    if let T::IntegerToMachine { value, destination } = term
+                        && width == W::of_machine_type(*destination)
+                    {
+                        let head = self.intern_node(Node::IntegerToMachine(*destination));
+                        pending.push(Work::Call(head, 1));
+                        pending.push(Work::Integer(value));
                         continue;
                     }
                     if let T::ClickFunctionApplication { name, arguments } = term {
                         let symbol = SharedPureApplication::intern(format!("click:{name}"), vec![]);
-                        let head = self.intern_node(Node::Function(symbol, wide, arguments.len()));
+                        let head = self.intern_node(Node::Function(symbol, width, arguments.len()));
                         pending.push(Work::Call(head, arguments.len()));
                         pending.extend(arguments.iter().rev().map(Work::Argument));
                         continue;
                     }
                     // Legacy applications carry no argument sorts. Keep
                     // them opaque instead of guessing a machine width.
-                    if wide {
+                    if width == W::Bits128 {
+                        Node::Machine128(MachineAtom::new(
+                            crate::kernel::MachineIntegerType::UInt128,
+                            term.clone(),
+                        ))
+                    } else if wide {
                         if let Some((memory, pointer)) = uint64_read(term) {
                             let address = self.address(pointer.block, pointer.offset).0;
                             Node::UInt64Read(memory.read_identity(), self.read_address(address))
@@ -245,6 +481,10 @@ impl TermClasses {
                             pending.push(Work::Wrap(ArgumentTag::Algebraic));
                             pending.push(Work::Algebraic(term));
                         }
+                        A::Integer(term) => {
+                            pending.push(Work::Wrap(ArgumentTag::Integer));
+                            pending.push(Work::Integer(term));
+                        }
                         A::ArrayRef {
                             memory,
                             pointer,
@@ -256,26 +496,28 @@ impl TermClasses {
                             )));
                             pending.push(Work::Value(pointer));
                         }
-                        // Binder-bearing terms stay opaque; graph registration
-                        // never substitutes into a match or fold.
-                        _ => {
-                            values.push(self.opaque_argument(argument));
-                            continue;
-                        }
                     }
                     continue;
                 }
                 Work::Value(value) => {
                     let value = value.numeric_value();
                     let scalar = match value {
-                        CValue::Int32(t) => Some((CType::Int32, t, false)),
-                        CValue::UInt32(t) => Some((CType::UInt32, t, false)),
-                        CValue::UInt64(t) => Some((CType::UInt64, t, true)),
+                        CValue::Bool(t) => Some((CType::Bool, t, W::Bits32)),
+                        CValue::Int8(t) => Some((CType::Int8, t, W::Bits32)),
+                        CValue::UInt8(t) => Some((CType::UInt8, t, W::Bits32)),
+                        CValue::Int16(t) => Some((CType::Int16, t, W::Bits32)),
+                        CValue::UInt16(t) => Some((CType::UInt16, t, W::Bits32)),
+                        CValue::Int32(t) => Some((CType::Int32, t, W::Bits32)),
+                        CValue::UInt32(t) => Some((CType::UInt32, t, W::Bits32)),
+                        CValue::Int64(t) => Some((CType::Int64, t, W::Bits64)),
+                        CValue::UInt64(t) => Some((CType::UInt64, t, W::Bits64)),
+                        CValue::Int128(t) => Some((CType::Int128, t, W::Bits128)),
+                        CValue::UInt128(t) => Some((CType::UInt128, t, W::Bits128)),
                         _ => None,
                     };
-                    if let Some((ty, term, wide)) = scalar {
+                    if let Some((ty, term, width)) = scalar {
                         pending.push(Work::Wrap(ArgumentTag::Value(ty)));
-                        pending.push(Work::Machine(term, wide));
+                        pending.push(Work::Machine(term, width));
                         continue;
                     }
                     if let CValue::Pointer(pointer) = value {
@@ -474,8 +716,8 @@ impl TermClasses {
             self.designation_node(b.designation()),
         );
         let extents = (self.extent_node(a), self.extent_node(b));
-        let a = self.intern_expression(None, None, Some(&CValue::Pointer(a.clone())));
-        let b = self.intern_expression(None, None, Some(&CValue::Pointer(b.clone())));
+        let a = self.intern_expression(None, None, None, Some(&CValue::Pointer(a.clone())));
+        let b = self.intern_expression(None, None, None, Some(&CValue::Pointer(b.clone())));
         self.register_pending_loads();
         self.close(vec![roots, extents, (a, b)])
     }
@@ -541,8 +783,8 @@ impl TermClasses {
         a: &crate::kernel::CPointerValue,
         b: &crate::kernel::CPointerValue,
     ) -> bool {
-        let a = self.intern_expression(None, None, Some(&CValue::Pointer(a.clone())));
-        let b = self.intern_expression(None, None, Some(&CValue::Pointer(b.clone())));
+        let a = self.intern_expression(None, None, None, Some(&CValue::Pointer(a.clone())));
+        let b = self.intern_expression(None, None, None, Some(&CValue::Pointer(b.clone())));
         self.register_pending_loads();
         self.root(a) == self.root(b)
     }
@@ -562,7 +804,7 @@ impl TermClasses {
         &mut self,
         value: &crate::kernel::CPointerValue,
     ) -> crate::kernel::CPointerValue {
-        let node = self.intern_expression(None, None, Some(&CValue::Pointer(value.clone())));
+        let node = self.intern_expression(None, None, None, Some(&CValue::Pointer(value.clone())));
         self.register_pending_loads();
         let representative = self
             .pointer_values
@@ -694,6 +936,18 @@ impl TermClasses {
     ) -> Option<u64> {
         use ConditionKind::*;
         let (kind, left, right) = match condition {
+            C::IntegerEqual(a, b) => (IntegerEq, self.intern_integer(a), self.intern_integer(b)),
+            C::IntegerNotEqual(a, b) => (IntegerNe, self.intern_integer(a), self.intern_integer(b)),
+            C::IntegerLessThan(a, b) => (IntegerLt, self.intern_integer(a), self.intern_integer(b)),
+            C::IntegerLessEqual(a, b) => {
+                (IntegerLe, self.intern_integer(a), self.intern_integer(b))
+            }
+            C::IntegerGreaterThan(a, b) => {
+                (IntegerGt, self.intern_integer(a), self.intern_integer(b))
+            }
+            C::IntegerGreaterEqual(a, b) => {
+                (IntegerGe, self.intern_integer(a), self.intern_integer(b))
+            }
             C::AlgebraicEqual(a, b) => {
                 let (a, b) = self.algebraic_nodes(a, b)?;
                 (AlgebraicEq, a, b)
@@ -741,8 +995,8 @@ impl TermClasses {
             }
             C::PointerValueEqual(a, b) => (
                 PointerValueEq,
-                self.intern_expression(None, None, Some(&CValue::Pointer((**a).clone()))),
-                self.intern_expression(None, None, Some(&CValue::Pointer((**b).clone()))),
+                self.intern_expression(None, None, None, Some(&CValue::Pointer((**a).clone()))),
+                self.intern_expression(None, None, None, Some(&CValue::Pointer((**b).clone()))),
             ),
             C::PointerEqual(a, b) => (
                 PointerEq,
@@ -769,6 +1023,12 @@ impl TermClasses {
 
     fn condition_kind(condition: &C) -> Option<ConditionKind> {
         Some(match condition {
+            C::IntegerEqual(..) => ConditionKind::IntegerEq,
+            C::IntegerNotEqual(..) => ConditionKind::IntegerNe,
+            C::IntegerLessThan(..) => ConditionKind::IntegerLt,
+            C::IntegerLessEqual(..) => ConditionKind::IntegerLe,
+            C::IntegerGreaterThan(..) => ConditionKind::IntegerGt,
+            C::IntegerGreaterEqual(..) => ConditionKind::IntegerGe,
             C::AlgebraicEqual(..) => ConditionKind::AlgebraicEq,
             C::Bitvector32Equal(..) => ConditionKind::Int32Eq,
             C::Bitvector32SignedAddOverflows(..) => ConditionKind::Int32AddOverflow,

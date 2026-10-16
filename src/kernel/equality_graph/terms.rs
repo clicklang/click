@@ -2,8 +2,9 @@
 //! int32 addition and registered same-snapshot int32 loads, connected by int32
 //! scaling. Unsigned division/remainder and bitwise XOR have congruence only;
 //! UInt64 arithmetic/bitwise applications, pointer addresses and complete
-//! same-snapshot 64-bit reads share those classes. Other scalar operations
-//! stay opaque; congruence supplies no arithmetic definedness.
+//! same-snapshot 64-bit reads share those classes. Other integer operators
+//! and conversions use typed curried applications; congruence supplies no
+//! arithmetic definedness. Floating-point expressions and binders stay opaque.
 //! Application signatures use operand classes; parent-use indexes propagate late
 //! merges. Equal addresses in one block also equate their byte offsets.
 //! No scalar arithmetic solving, cancellation, or general injectivity runs here.
@@ -15,6 +16,7 @@ use std::sync::Arc;
 
 mod congruence;
 pub(super) mod constants;
+pub(super) use congruence::has_machine_operands;
 
 #[cfg(test)]
 thread_local! {
@@ -80,10 +82,6 @@ pub(super) enum UInt64Binary {
     Xor,
 }
 
-pub(super) fn is_word_cast(term: &crate::kernel::Bitvector32Term) -> bool {
-    constants::word_cast_operand(term).is_some()
-}
-
 pub(super) fn uint64_binary(
     term: &crate::kernel::Bitvector32Term,
 ) -> Option<(
@@ -142,16 +140,41 @@ pub(super) fn uint64_read(
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum IntegerOperation {
+    Observe(crate::kernel::MachineIntegerType),
+    Negate,
+    Add,
+    Subtract,
+    Multiply,
+    Quotient,
+    Remainder,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Node {
     Apply(u64, u64),
     TypeName(bool, String, usize),
     TypeC(crate::kernel::CType),
     TypeInteger,
+    IntegerAtom(crate::kernel::SharedIntegerTerm),
+    MachineUnary(crate::kernel::BitvectorUnaryOp, crate::kernel::CarrierWidth),
+    MachineBinary(
+        crate::kernel::BitvectorBinaryOp,
+        crate::kernel::CarrierWidth,
+    ),
+    IntegerToMachine(crate::kernel::MachineIntegerType),
+    Machine128(MachineAtom),
+    IntegerOperation(IntegerOperation),
+    IntegerFunction(crate::kernel::SharedPureApplication, usize),
     AlgebraicVariable(crate::kernel::SharedPureApplication, Variable),
     AlgebraicConstructor(crate::kernel::SharedPureApplication, String, usize),
     AlgebraicFunction(crate::kernel::SharedPureApplication, String, usize),
-    Function(crate::kernel::SharedPureApplication, bool, usize),
+    Function(
+        crate::kernel::SharedPureApplication,
+        crate::kernel::CarrierWidth,
+        usize,
+    ),
     ArgumentTag(congruence::ArgumentTag),
     OpaqueArgument(crate::kernel::SharedPureApplication),
     Condition(congruence::ConditionKind, u64, u64),
@@ -1376,16 +1399,7 @@ impl TermClasses {
         &self,
         term: &crate::kernel::Bitvector32Term,
     ) -> Option<Option<u64>> {
-        use crate::kernel::Bitvector32Term as T;
-        let application = term
-            .as_binary()
-            .is_some_and(|(op, _, _)| op.is_bitvector32())
-            || constants::word_cast_operand(term).is_some()
-            || matches!(
-                term,
-                T::BitwiseNot(_) | T::ClickFunctionApplication { .. } | T::MemoryLoad(..)
-            )
-            || matches!(term,T::Variable(variable) if crate::kernel::is_load_variable(variable));
+        let application = has_machine_operands(term);
         (!application).then(|| {
             self.nodes
                 .get(&Node::Int32(MachineAtom::int32(term.clone())))
@@ -1480,29 +1494,11 @@ impl TermClasses {
         // order endpoints and unsupported expressions. Loads and addition
         // still need registration because their definitions can join classes.
         let opaque = |term: &Bitvector32Term| {
-            let supported = |term: &Bitvector32Term| match term {
-                term if term
-                    .as_binary()
-                    .is_some_and(|(op, _, _)| op.is_bitvector32()) =>
-                {
-                    true
-                }
-                Bitvector32Term::BitwiseNot(_) => true,
-                term if constants::word_cast_operand(term).is_some() => true,
-                Bitvector32Term::ClickFunctionApplication { .. }
-                | Bitvector32Term::Add(..)
-                | Bitvector32Term::MemoryLoad(..)
-                | Bitvector32Term::UnsignedDivide(..)
-                | Bitvector32Term::UnsignedRemainder(..)
-                | Bitvector32Term::BitwiseXor(..) => true,
-                Bitvector32Term::Variable(variable) => crate::kernel::is_load_variable(variable),
-                _ => false,
-            };
-            if supported(term) {
+            if has_machine_operands(term) {
                 return None;
             }
             let term = term.clone();
-            (!supported(&term)).then(|| Node::Int32(MachineAtom::int32(term)))
+            (!has_machine_operands(&term)).then(|| Node::Int32(MachineAtom::int32(term)))
         };
         let left_atom = opaque(left);
         let right_atom = opaque(right);
@@ -1732,14 +1728,6 @@ impl TermClasses {
                 let literal = self.intern_node(Node::Int32(MachineAtom::int32(T::Constant(value))));
                 pending.push((id, literal));
             }
-        }
-        // These applications retain dependencies for literal folding only.
-        // Preserve the supported congruence theory for nonliteral operands.
-        if matches!(
-            signature,
-            Application::Int32Binary(Int32Binary::Other(_), ..) | Application::Int32Unary(..)
-        ) {
-            return;
         }
         if let Application::UInt64Binary(op, left, right) = signature
             && let (Some(a), Some(b)) = (

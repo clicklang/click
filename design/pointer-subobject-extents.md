@@ -174,6 +174,12 @@ clauses. The kernel checks it where a clause's base value becomes a range
 (`segment_extent_refusal`); fold lowering refuses constant ranges by name
 first. A pointer without an extent is unaffected.
 
+A contract `==` between two pointers that both carry an extent also requires
+the extents to be equal (D2), so a call cannot satisfy `requires q == p` with
+`&pair->first + 1` and `&pair->second`. When either value has none, the
+comparison stays an address equality: that value's designation may be
+unknown, and assuming the equality must not refute a reachable path.
+
 ## Phase B: C `==` states address equality (modular defect)
 
 Approved 2026-10-15. It replaces the earlier "designation is part of the

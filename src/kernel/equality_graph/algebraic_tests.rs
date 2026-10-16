@@ -2,7 +2,7 @@ use super::*;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-fn model_type(name: &str, field: AlgebraicValueType) -> AlgebraicType {
+pub(super) fn model_type(name: &str, field: AlgebraicValueType) -> AlgebraicType {
     let nominal = AlgebraicValueType::Algebraic {
         name: name.into(),
         arguments: vec![],
@@ -26,7 +26,7 @@ fn model_type(name: &str, field: AlgebraicValueType) -> AlgebraicType {
         schemas: Arc::new(AlgebraicSchemas::new(BTreeMap::from([(nominal, variants)]))),
     }
 }
-fn variable(ty: &AlgebraicType, id: u64) -> AlgebraicTerm {
+pub(super) fn variable(ty: &AlgebraicType, id: u64) -> AlgebraicTerm {
     AlgebraicTerm {
         algebraic_type: ty.clone(),
         node: AlgebraicTermNode::Variable(Variable(id)),

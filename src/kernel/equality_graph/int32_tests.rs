@@ -507,7 +507,7 @@ fn reordered_sum_matches_graph_equal_load_addends_in_one_snapshot() {
 }
 
 #[test]
-fn int32_classes_are_typed_and_only_supported_operators_have_congruence() {
+fn int32_classes_are_typed_and_integer_operators_have_congruence() {
     let (a, b) = (var(1), var(2));
     let mut graph = EqualityGraph::default();
     graph.add_int32_equality(&a, &b);
@@ -528,7 +528,8 @@ fn int32_classes_are_typed_and_only_supported_operators_have_congruence() {
     assert!(graph.are_int32_equal(&plus_one(a.clone()), &plus_one(b.clone())));
     let minus_one =
         |value| Bitvector32Term::Subtract(Box::new(value), Box::new(Bitvector32Term::Constant(1)));
-    assert!(!graph.are_int32_equal(&minus_one(a), &minus_one(b)));
+    assert!(graph.are_int32_equal(&minus_one(a.clone()), &minus_one(b.clone())));
+    assert!(!graph.are_int32_equal(&plus_one(a), &minus_one(b)));
     graph.add_offset_equality(
         &PointerOffsetTerm::Variable(Variable(3)),
         &PointerOffsetTerm::Variable(Variable(4)),

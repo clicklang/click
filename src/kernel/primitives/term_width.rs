@@ -9,8 +9,8 @@
 //!
 //! This module infers that implied width and reports where a term disagrees
 //! with itself, with its `CValue` tag, or with the comparison it sits in. It
-//! changes no representation: it states the invariant that a width-carrying
-//! integer term will make structural (`issues/one-integer-term-type.md`).
+//! changes no representation: the rulings in `design/typed-indices.md`
+//! explain why the width stays implied and is checked here instead.
 
 use super::*;
 
@@ -327,6 +327,61 @@ pub(crate) fn value_width_mismatch(value: &CValue) -> Option<WidthMismatch> {
     expect(value_site(value), expected, term).err()
 }
 
+/// A narrow value's constant outside its type's range: `int8` and `int16`
+/// constants ride sign-extended in the 32-bit carrier, `uint8`, `uint16` and
+/// `_Bool` zero-extended, so the carrier word of an in-range constant is one
+/// of those extensions. A symbolic narrow value is kept in range by the path
+/// facts its producer adds.
+pub(crate) fn narrow_constant_out_of_range(value: &CValue) -> Option<NarrowRangeViolation> {
+    let (site, term, low, high) = match value {
+        CValue::Bool(term) => ("CValue::Bool", term, 0, 1),
+        CValue::Int8(term) => ("CValue::Int8", term, i64::from(i8::MIN), i64::from(i8::MAX)),
+        CValue::UInt8(term) => ("CValue::UInt8", term, 0, i64::from(u8::MAX)),
+        CValue::Int16(term) => (
+            "CValue::Int16",
+            term,
+            i64::from(i16::MIN),
+            i64::from(i16::MAX),
+        ),
+        CValue::UInt16(term) => ("CValue::UInt16", term, 0, i64::from(u16::MAX)),
+        _ => return None,
+    };
+    let Bitvector32Term::Constant(bits) = term else {
+        return None;
+    };
+    // Signed tags read the carrier word as signed, unsigned ones as unsigned.
+    let value = if low < 0 {
+        i64::from(*bits as i32)
+    } else {
+        i64::from(*bits)
+    };
+    (value < low || value > high).then_some(NarrowRangeViolation { site, bits: *bits })
+}
+
+/// A narrow constant whose carrier word lies outside its type's range.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct NarrowRangeViolation {
+    pub(crate) site: &'static str,
+    pub(crate) bits: u32,
+}
+
+impl std::fmt::Display for NarrowRangeViolation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}: constant carrier word {:#x} is outside its type's range",
+            self.site, self.bits
+        )
+    }
+}
+
+/// Every refusal for a value: its widths, then a narrow constant's range.
+pub(crate) fn value_mismatch(value: &CValue) -> Option<String> {
+    value_width_mismatch(value)
+        .map(|mismatch| mismatch.to_string())
+        .or_else(|| narrow_constant_out_of_range(value).map(|violation| violation.to_string()))
+}
+
 fn value_site(value: &CValue) -> &'static str {
     match value.numeric_value() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
@@ -409,9 +464,9 @@ pub(crate) fn condition_width_mismatch(condition: &ConditionTerm) -> Option<Widt
 /// value an expression evaluates to, and a value stored to memory. Release
 /// builds skip the check.
 #[track_caller]
-pub(crate) fn debug_assert_widths(
+pub(crate) fn debug_assert_widths<M: std::fmt::Display>(
     hook: &str,
-    mismatch: impl FnOnce() -> Option<WidthMismatch>,
+    mismatch: impl FnOnce() -> Option<M>,
     subject: &dyn std::fmt::Debug,
 ) {
     if cfg!(debug_assertions)
