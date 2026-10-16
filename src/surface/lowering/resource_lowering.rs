@@ -1454,6 +1454,13 @@ pub(in crate::surface) fn resource_context_from_requirements(
     // Later references can select earlier binders without cloning the state
     // for every clause or introducing ownership beyond these requirements.
     let mut lowering_state = state.clone();
+    // Moving the state forward changes only its resources, so every clause
+    // reads the same parameter values and array references.
+    let values =
+        parameter_values(parameter_binding).map_err(|error| ClickError::new(error.message))?;
+    let clause_parameters =
+        ClauseParameters::new(parameter_binding.parameters, &values, state.memory());
+    let base_assumptions = PureFactContext::new();
     for requirement in requires {
         if let Requirement::Resource(resource) = requirement {
             // This lowering path has no proposition assumptions yet. It builds
@@ -1463,11 +1470,17 @@ pub(in crate::surface) fn resource_context_from_requirements(
             // those arguments symbolic here.  The entry context is checked by
             // the kernel section evaluator once all pure requirements and
             // clause supplies are available.
-            context = context.unchecked_with_facts(lower_resource_clause_facts_at_state_for_entry(
-                resource,
-                parameter_binding,
-                &lowering_state,
-            )?);
+            context = context.unchecked_with_facts(
+                lower_resource_clause_facts_with_values_mode_at_entry(
+                    resource,
+                    &clause_parameters,
+                    &lowering_state,
+                    &lowering_state,
+                    None,
+                    true,
+                    &base_assumptions,
+                )?,
+            );
             lowering_state = lowering_state.with_resource_context(context.clone());
         }
     }
@@ -1554,23 +1567,6 @@ pub(in crate::surface) fn lower_resource_clause_facts_at_state(
     )
 }
 
-fn lower_resource_clause_facts_at_state_for_entry(
-    resource: &ResourceClause,
-    parameter_binding: ParameterBinding<'_>,
-    state: &CState,
-) -> Result<Vec<CResourceFact>, ClickError> {
-    let values =
-        parameter_values(parameter_binding).map_err(|error| ClickError::new(error.message))?;
-    lower_resource_clause_facts_with_values_mode(
-        resource,
-        parameter_binding.parameters,
-        &values,
-        state,
-        None,
-        true,
-    )
-}
-
 pub(in crate::surface) fn lower_resource_clause_at_state_with_result(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
@@ -1601,8 +1597,7 @@ pub(in crate::surface) fn lower_resource_clause_at_state_with_assumptions(
     if matches!(resource, ResourceClause::MemoryAggregate { .. }) {
         let mut facts = lower_resource_clause_facts_with_values_mode_at_entry(
             resource,
-            parameter_binding.parameters,
-            &values,
+            &ClauseParameters::new(parameter_binding.parameters, &values, state.memory()),
             state,
             state,
             result,
@@ -1619,8 +1614,7 @@ pub(in crate::surface) fn lower_resource_clause_at_state_with_assumptions(
     }
     lower_resource_clause_with_values_mode_at_entry(
         resource,
-        parameter_binding.parameters,
-        &values,
+        &ClauseParameters::new(parameter_binding.parameters, &values, state.memory()),
         state,
         state,
         result,
@@ -1719,8 +1713,7 @@ pub(in crate::surface) fn lower_resource_clause_at_current_locals_with_entry_and
     if matches!(resource, ResourceClause::MemoryAggregate { .. }) {
         let mut facts = lower_resource_clause_facts_with_values_mode_at_entry(
             resource,
-            parameter_binding.parameters,
-            &values,
+            &ClauseParameters::new(parameter_binding.parameters, &values, state.memory()),
             entry_state,
             state,
             result,
@@ -1737,8 +1730,7 @@ pub(in crate::surface) fn lower_resource_clause_at_current_locals_with_entry_and
     }
     lower_resource_clause_with_values_mode_at_entry(
         resource,
-        parameter_binding.parameters,
-        &values,
+        &ClauseParameters::new(parameter_binding.parameters, &values, state.memory()),
         entry_state,
         state,
         result,
@@ -1759,14 +1751,44 @@ pub(in crate::surface) fn lower_resource_clause_facts_at_state_with_result_and_e
         parameter_values(parameter_binding).map_err(|error| ClickError::new(error.message))?;
     lower_resource_clause_facts_with_values_mode_at_entry(
         resource,
-        parameter_binding.parameters,
-        &values,
+        &ClauseParameters::new(parameter_binding.parameters, &values, state.memory()),
         entry_state,
         state,
         Some(result),
         false,
         base_assumptions,
     )
+}
+
+/// The parameters and argument values every resource clause lowered over one
+/// memory reads, with the array references over that memory built on
+/// first use. The clauses of one entry share it, so lowering each clause does
+/// not rebuild a map over every parameter.
+struct ClauseParameters<'a> {
+    parameters: &'a [syntax::C0Parameter],
+    values: &'a BTreeMap<String, CValue>,
+    memory: &'a CMemory,
+    array_refs: std::cell::OnceCell<ClickArrayRefs>,
+}
+
+impl<'a> ClauseParameters<'a> {
+    fn new(
+        parameters: &'a [syntax::C0Parameter],
+        values: &'a BTreeMap<String, CValue>,
+        memory: &'a CMemory,
+    ) -> Self {
+        Self {
+            parameters,
+            values,
+            memory,
+            array_refs: std::cell::OnceCell::new(),
+        }
+    }
+
+    fn array_refs(&self) -> &ClickArrayRefs {
+        self.array_refs
+            .get_or_init(|| array_refs_for_parameters(self.parameters, self.values, self.memory))
+    }
 }
 
 fn lower_resource_clause_with_values(
@@ -1790,8 +1812,7 @@ fn lower_resource_clause_with_values_mode(
     let base_assumptions = PureFactContext::new();
     lower_resource_clause_with_values_mode_at_entry(
         resource,
-        parameters,
-        values,
+        &ClauseParameters::new(parameters, values, state.memory()),
         state,
         state,
         result,
@@ -1802,14 +1823,14 @@ fn lower_resource_clause_with_values_mode(
 
 fn lower_resource_clause_with_values_mode_at_entry(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
-    values: &BTreeMap<String, CValue>,
+    clause_parameters: &ClauseParameters<'_>,
     entry_state: &CState,
     state: &CState,
     result: Option<&CValue>,
     allow_symbolic_resource_arguments: bool,
     base_assumptions: &PureFactContext,
 ) -> Result<CResourceFact, ClickError> {
+    let (parameters, values) = (clause_parameters.parameters, clause_parameters.values);
     match resource {
         ResourceClause::Conditional { .. } => Err(ClickError::new(
             "conditional resource assertions require loop-contract lowering",
@@ -1817,8 +1838,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
         ResourceClause::Named { binding, resource } => {
             let lowered = lower_resource_clause_with_values_mode_at_entry(
                 resource,
-                parameters,
-                values,
+                clause_parameters,
                 entry_state,
                 state,
                 result,
@@ -1898,13 +1918,13 @@ fn lower_resource_clause_with_values_mode_at_entry(
             } else {
                 base_assumptions.clone()
             };
-            let array_refs = array_refs_for_parameters(parameters, values, state.memory());
+            let array_refs = clause_parameters.array_refs();
             let quantity = evaluate_resource_argument_with_snapshot(
                 &original_quantity,
                 &quantity,
                 quantity_snapshot,
                 &assumptions,
-                ContractEnvironment::new(values, &array_refs),
+                ContractEnvironment::new(values, array_refs),
                 entry_state,
                 state,
                 result,
@@ -1921,8 +1941,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
             };
             let lowered = lower_resource_clause_with_values_mode_at_entry(
                 resource,
-                parameters,
-                values,
+                clause_parameters,
                 entry_state,
                 state,
                 result,
@@ -1940,10 +1959,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
             let range = lower_resource_segment_with_values(
                 "read",
                 segment,
-                ContractEnvironment::new(
-                    values,
-                    &array_refs_for_parameters(parameters, values, state.memory()),
-                ),
+                ContractEnvironment::new(values, clause_parameters.array_refs()),
                 state,
                 result,
                 contract_segment_element_width_for_result_type(
@@ -1961,10 +1977,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
             let range = lower_resource_segment_with_values(
                 "write",
                 segment,
-                ContractEnvironment::new(
-                    values,
-                    &array_refs_for_parameters(parameters, values, state.memory()),
-                ),
+                ContractEnvironment::new(values, clause_parameters.array_refs()),
                 state,
                 result,
                 contract_segment_element_width_for_result_type(
@@ -2004,7 +2017,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
             } else {
                 base_assumptions.clone()
             };
-            let array_refs = array_refs_for_parameters(parameters, values, state.memory());
+            let array_refs = clause_parameters.array_refs();
             let mut resource_values = Vec::new();
             if resource_arguments.len() != parameter_types.len() {
                 return Err(ClickError::new(format!(
@@ -2025,7 +2038,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                     &argument,
                     argument_snapshot,
                     &assumptions,
-                    ContractEnvironment::new(values, &array_refs),
+                    ContractEnvironment::new(values, array_refs),
                     entry_state,
                     state,
                     result,
@@ -2109,8 +2122,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 };
                 let protected_fact = lower_resource_clause_with_values_mode_at_entry(
                     &anchor_clause,
-                    parameters,
-                    values,
+                    clause_parameters,
                     entry_state,
                     state,
                     result,
@@ -2175,8 +2187,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 };
                 let fact = lower_resource_clause_with_values_mode_at_entry(
                     payload,
-                    parameters,
-                    values,
+                    clause_parameters,
                     entry_state,
                     state,
                     result,
@@ -2222,8 +2233,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                     };
                     let fact = lower_resource_clause_with_values_mode_at_entry(
                         protected,
-                        parameters,
-                        values,
+                        clause_parameters,
                         entry_state,
                         state,
                         result,
@@ -2379,8 +2389,7 @@ fn lower_resource_clause_facts_with_values_mode(
     let base_assumptions = PureFactContext::new();
     lower_resource_clause_facts_with_values_mode_at_entry(
         resource,
-        parameters,
-        values,
+        &ClauseParameters::new(parameters, values, state.memory()),
         state,
         state,
         result,
@@ -2391,14 +2400,14 @@ fn lower_resource_clause_facts_with_values_mode(
 
 fn lower_resource_clause_facts_with_values_mode_at_entry(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
-    values: &BTreeMap<String, CValue>,
+    clause_parameters: &ClauseParameters<'_>,
     entry_state: &CState,
     state: &CState,
     result: Option<&CValue>,
     allow_symbolic_resource_arguments: bool,
     base_assumptions: &PureFactContext,
 ) -> Result<Vec<CResourceFact>, ClickError> {
+    let values = clause_parameters.values;
     match resource {
         ResourceClause::MemoryAggregate { access, segments } => segments
             .iter()
@@ -2409,8 +2418,7 @@ fn lower_resource_clause_facts_with_values_mode_at_entry(
                 };
                 lower_resource_clause_with_values_mode_at_entry(
                     &leaf,
-                    parameters,
-                    values,
+                    clause_parameters,
                     entry_state,
                     state,
                     result,
@@ -2434,13 +2442,13 @@ fn lower_resource_clause_facts_with_values_mode_at_entry(
             } else {
                 base_assumptions.clone()
             };
-            let array_refs = array_refs_for_parameters(parameters, values, state.memory());
+            let array_refs = clause_parameters.array_refs();
             let quantity = evaluate_resource_argument_with_snapshot(
                 &original_quantity,
                 &quantity,
                 quantity_snapshot,
                 &assumptions,
-                ContractEnvironment::new(values, &array_refs),
+                ContractEnvironment::new(values, array_refs),
                 entry_state,
                 state,
                 result,
@@ -2457,8 +2465,7 @@ fn lower_resource_clause_facts_with_values_mode_at_entry(
             };
             lower_resource_clause_facts_with_values_mode_at_entry(
                 resource,
-                parameters,
-                values,
+                clause_parameters,
                 entry_state,
                 state,
                 result,
@@ -2478,8 +2485,7 @@ fn lower_resource_clause_facts_with_values_mode_at_entry(
         }
         _ => Ok(vec![lower_resource_clause_with_values_mode_at_entry(
             resource,
-            parameters,
-            values,
+            clause_parameters,
             entry_state,
             state,
             result,
@@ -3598,6 +3604,7 @@ fn requirement_proposition_and_facts_with_assumptions(
 pub(in crate::surface) fn parameter_values(
     parameter_binding: ParameterBinding<'_>,
 ) -> Result<BTreeMap<String, CValue>, ClickError> {
+    crate::instrumentation::record_deterministic_work(parameter_binding.parameters.len());
     parameter_binding
         .parameters
         .iter()
@@ -3619,6 +3626,7 @@ pub(in crate::surface) fn array_refs_for_parameters(
     values: &BTreeMap<String, CValue>,
     memory: &CMemory,
 ) -> ClickArrayRefs {
+    crate::instrumentation::record_deterministic_work(parameters.len());
     parameters
         .iter()
         .filter_map(|parameter| {

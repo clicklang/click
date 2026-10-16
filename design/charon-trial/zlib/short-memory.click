@@ -187,11 +187,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    mark before_sum;
    execute_until(back_edge());
    have to_integer(sum2) == at(before_sum, to_integer(sum2)) + to_integer(adler) by simp();
-   have 0 <= to_integer(sum2) by arithmetic() using {
-    0 <= at(before_sum, to_integer(sum2));
-    1 <= to_integer(adler);
-    to_integer(sum2) == at(before_sum, to_integer(sum2)) + to_integer(adler);
-   };
+   have 0 <= to_integer(sum2) by apply(uint64_to_integer_bounds(sum2));
    have to_integer(sum2) <= 3826 * (to_integer(old(len)) - to_integer(len)) by arithmetic() using {
     at(before_sum, to_integer(sum2)) <= 3826 * (to_integer(old(len)) - at(before_decrement, to_integer(len)));
     to_integer(adler) <= 3826;

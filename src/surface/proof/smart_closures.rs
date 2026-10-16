@@ -4053,8 +4053,57 @@ impl<'a> Proof<'a> {
                     check_verification_deadline()?;
                 }
             }
+            if let Some(proof) = self.try_projected_snapshot_transport(&source, surface_goal)? {
+                return Ok(Some(proof));
+            }
         }
         Ok(None)
+    }
+
+    /// A guarded universal goal whose recorded-point form is held only as
+    /// the conjunct of a larger guarded universal there, such as
+    /// `forall k { k < n implies p[k] == v }` from a call's
+    /// `forall k { k < n implies defined(p[k]) and p[k] == v }`. The larger
+    /// fact is selected by one probe of the indexed conjunct projections
+    /// (`ProofFacts::quantified_conjunct_projection_source`) with the goal
+    /// lowered at that point, so a point holding no such fact costs one
+    /// lowering and one lookup. The proof is one explicit transport from
+    /// the larger fact to the goal, which the checked quantified frame
+    /// decides by conjunction elimination; expansion prints it.
+    fn try_projected_snapshot_transport(
+        &self,
+        source: &ClickProposition,
+        surface_goal: &ClickProposition,
+    ) -> Result<Option<Self>, ClickError> {
+        let Ok(lowered) =
+            self.lower_surface_proposition_direct(source, "smart projected transport source")
+        else {
+            check_verification_deadline()?;
+            return Ok(None);
+        };
+        let Some(full) = self.facts().quantified_conjunct_projection_source(&lowered) else {
+            return Ok(None);
+        };
+        let full = full.clone();
+        let Some(full_surface) = self
+            .resolve_simp_premises(std::slice::from_ref(&full), &[])
+            .and_then(|pairs| pairs.into_iter().next())
+            .map(|(_, surface)| surface)
+        else {
+            return Ok(None);
+        };
+        match self.search_fixed_state_fact_transport(
+            &full_surface,
+            surface_goal,
+            std::iter::once(full_surface.clone()),
+        ) {
+            Ok(proof) if proof.is_complete() => Ok(Some(proof)),
+            Ok(_) => Ok(None),
+            Err(_) => {
+                check_verification_deadline()?;
+                Ok(None)
+            }
+        }
     }
 
     /// A goal that reads one cell at two snapshots, such as

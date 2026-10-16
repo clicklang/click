@@ -4210,7 +4210,55 @@ private:
     // Deleted and other explicitly written declarations retain their checks.
     return destructor != nullptr && !destructor->isImplicit() &&
            !(destructor->isDefaulted() && !destructor->isDeleted() &&
-             destructor->isTrivial());
+             destructor->isTrivial()) &&
+           !no_op_virtual_destructor(destructor->getParent());
+  }
+
+  // A polymorphic class whose destruction does nothing but reset the
+  // vtable pointer, which the compiler does and no proof reads: its
+  // destructor is implicit, defaulted, or has an empty body, and what runs
+  // after it does nothing either. Clang's access checks decide who may
+  // destroy it, so a protected base destructor is one too.
+  static bool no_op_virtual_destructor(const clang::CXXRecordDecl *record) {
+    record = record == nullptr ? nullptr : record->getDefinition();
+    if (record == nullptr || !record->isPolymorphic() ||
+        record->hasTrivialDestructor())
+      return false;
+    if (const clang::CXXDestructorDecl *destructor = record->getDestructor()) {
+      if (destructor->isDeleted())
+        return false;
+      if (!destructor->isImplicit() && !destructor->isDefaulted()) {
+        const auto *definition = llvm::dyn_cast_or_null<clang::CXXDestructorDecl>(
+            destructor->getDefinition());
+        const auto *body = definition == nullptr
+                               ? nullptr
+                               : llvm::dyn_cast_or_null<clang::CompoundStmt>(
+                                     definition->getBody());
+        if (body == nullptr || !body->body_empty())
+          return false;
+      }
+    }
+    return destruction_after_body_is_no_op(record);
+  }
+
+  // What a class's destruction runs after its destructor's body: its
+  // fields' destructors, then its base's. Neither may run code a proof
+  // sees, since base destruction is not executed.
+  static bool destruction_after_body_is_no_op(const clang::CXXRecordDecl *record) {
+    for (const clang::FieldDecl *field : record->fields()) {
+      const auto *field_record = field->getType()->getAsCXXRecordDecl();
+      if (field_record != nullptr && field_record->getDefinition() != nullptr &&
+          !field_record->getDefinition()->hasTrivialDestructor())
+        return false;
+    }
+    for (const clang::CXXBaseSpecifier &base : record->bases()) {
+      const auto *base_record = base.getType()->getAsCXXRecordDecl();
+      if (base_record == nullptr || base_record->getDefinition() == nullptr ||
+          (!base_record->getDefinition()->hasTrivialDestructor() &&
+           !no_op_virtual_destructor(base_record)))
+        return false;
+    }
+    return true;
   }
 
   bool validate_record(const clang::CXXRecordDecl *record) {
@@ -4292,8 +4340,9 @@ private:
   // A polymorphic class: its object starts with the vtable pointer Clang
   // lays out, which no field names and no contract reads. It has at most
   // one public non-virtual base, itself polymorphic, at offset zero; its own
-  // fields follow the whole base, and nothing destroys or copies it, so it
-  // is only ever reached through a reference.
+  // fields follow the whole base. Nothing copies it: it is reached through a
+  // reference or built in a local by its constructor, and its destruction
+  // runs at most its own destructor's body.
   bool validate_polymorphic_record(const clang::CXXRecordDecl *record) {
     if (record->getNumVBases() != 0 || record->getNumBases() > 1) {
       fail(record->getLocation(),
@@ -4301,15 +4350,21 @@ private:
       return false;
     }
     const clang::CXXDestructorDecl *destructor = record->getDestructor();
-    // A written destructor is checked as any is, which names what it lacks.
-    if (needs_destructor_body(destructor) && !validate_destructor(destructor, record))
-      return false;
-    if ((destructor != nullptr && destructor->isVirtual()) ||
-        needs_destructor_body(destructor) || !record->hasTrivialDestructor()) {
-      fail(record->getLocation(),
-           "a polymorphic C++ class has a trivial non-virtual destructor; "
-           "virtual destructors remain unsupported");
-      return false;
+    // A destructor that runs code is the class's own, written here, and
+    // checked as any is; what runs after its body, the fields' and the
+    // base's destruction, does nothing. A local's destructor is called
+    // directly, so whether it is virtual does not change the call.
+    if (!record->hasTrivialDestructor() && !no_op_virtual_destructor(record)) {
+      if (!needs_destructor_body(destructor) ||
+          !destruction_after_body_is_no_op(record)) {
+        fail(record->getLocation(),
+             "a polymorphic C++ class's destructor runs code only in its own "
+             "written body: its fields have trivial destruction and its base's "
+             "destructor is trivial, defaulted, or empty");
+        return false;
+      }
+      if (!validate_destructor(destructor, record))
+        return false;
     }
     const auto &layout = context_.getASTRecordLayout(record);
     if (record->getNumBases() == 1) {
@@ -4393,16 +4448,57 @@ private:
     return true;
   }
 
+  // Whether `statement` reads `this`, directly or through an implicit
+  // member access.
+  static bool reads_this(const clang::Stmt *statement) {
+    if (statement == nullptr) return false;
+    if (llvm::isa<clang::CXXThisExpr>(statement)) return true;
+    for (const clang::Stmt *child : statement->children()) {
+      if (reads_this(child)) return true;
+    }
+    return false;
+  }
+
   bool validate_constructor(const clang::CXXConstructorDecl *constructor,
                             const clang::CXXRecordDecl *record) {
-    if (record->isPolymorphic()) {
-      fail(constructor->getLocation(),
-           "constructing a polymorphic C++ object remains unsupported");
-      return false;
-    }
+    // A polymorphic class's construction also sets its vtable pointer,
+    // which no field names and no proof reads. Its one base may be a
+    // polymorphic class with no fields and no constructor of its own,
+    // whose implicit default construction only sets that pointer. While
+    // either constructs, the object's dynamic type is still changing, so
+    // nothing reads `this`: the members initialize from the parameters and
+    // the body is empty.
+    const clang::CXXRecordDecl *empty_base = nullptr;
     if (record->getNumBases() != 0) {
-      fail(constructor->getLocation(), "C++ constructors with base subobjects remain unsupported");
-      return false;
+      const clang::CXXBaseSpecifier &specifier = *record->bases_begin();
+      const auto *base = specifier.getType()->getAsCXXRecordDecl();
+      if (!record->isPolymorphic() || record->getNumBases() != 1 ||
+          specifier.isVirtual() || base == nullptr || !base->isPolymorphic() ||
+          base->getNumBases() != 0 || !base->field_empty() ||
+          base->hasUserDeclaredConstructor()) {
+        fail(constructor->getLocation(),
+             "C++ constructors with base subobjects remain unsupported, except "
+             "a polymorphic class's polymorphic base with no fields or "
+             "constructors of its own");
+        return false;
+      }
+      empty_base = base->getCanonicalDecl();
+    }
+    if (record->isPolymorphic()) {
+      const auto *body =
+          llvm::dyn_cast_or_null<clang::CompoundStmt>(constructor->getBody());
+      bool reads = body == nullptr || !body->body_empty();
+      for (const clang::CXXCtorInitializer *initializer : constructor->inits()) {
+        reads = reads || (initializer->isMemberInitializer() &&
+                          reads_this(initializer->getInit()));
+      }
+      if (reads) {
+        fail(constructor->getLocation(),
+             "a polymorphic C++ constructor initializes its members without "
+             "reading `this` and has an empty body: the object's dynamic type "
+             "changes while it constructs");
+        return false;
+      }
     }
     const auto *prototype =
         constructor->getType()->getAs<clang::FunctionProtoType>();
@@ -4437,7 +4533,8 @@ private:
            "supported constructors require records without stateless members");
       return false;
     }
-    if (constructor->getNumCtorInitializers() != field_count) {
+    if (constructor->getNumCtorInitializers() !=
+        field_count + (empty_base == nullptr ? 0 : 1)) {
       fail(constructor->getLocation(),
            "the supported constructor must explicitly initialize every field in declaration order");
       return false;
@@ -4445,6 +4542,13 @@ private:
     std::vector<const clang::CXXCtorInitializer *> source_order(field_count,
                                                                 nullptr);
     for (const clang::CXXCtorInitializer *initializer : constructor->inits()) {
+      // The field-less base's implicit default construction.
+      if (empty_base != nullptr && initializer->isBaseInitializer() &&
+          !initializer->isWritten() &&
+          initializer->getBaseClass()->getAsCXXRecordDecl()->getCanonicalDecl() ==
+              empty_base) {
+        continue;
+      }
       const unsigned order = initializer->getSourceOrder();
       if (!initializer->isWritten() || !initializer->isMemberInitializer() ||
           order >= field_count || source_order[order] != nullptr) {
@@ -4476,12 +4580,13 @@ private:
     if (destructor->getParent()->getCanonicalDecl() !=
             record->getCanonicalDecl() ||
         destructor->getAccess() != clang::AS_public ||
-        destructor->isVirtual() || destructor->isDeleted() ||
+        (destructor->isVirtual() && !record->isPolymorphic()) ||
+        destructor->isDeleted() ||
         prototype == nullptr || !prototype->isNothrow() ||
         prototype->getExceptionSpecType() != clang::EST_BasicNoexcept ||
         !destructor->getExceptionSpecSourceRange().isValid()) {
       fail(destructor->getLocation(),
-           "the supported destructor must be public, non-virtual, non-deleted, and explicitly noexcept");
+           "the supported destructor must be public, non-virtual outside a polymorphic class, non-deleted, and explicitly noexcept");
       return false;
     }
     if (!destructor->doesThisDeclarationHaveABody() ||

@@ -247,11 +247,11 @@ int32 parent_read_payload(struct parent* p) {
         ParentLink::Empty => {
             contradiction(link.link == ParentLink::Empty);
         },
-        ParentLink::Linked(kid) => {
+        ParentLink::Linked(linked_child) => {
             unfold(link);
-            have old(p->kid) == kid;
+            have old(p->kid) == linked_child;
             open(child_control(p->kid)) { execute(); }
-            let link = fold(parent(p), { link: ParentLink::Linked(kid) });
+            let link = fold(parent(p), { link: ParentLink::Linked(linked_child) });
             simp();
         },
     }
@@ -273,11 +273,11 @@ void parent_detach(struct parent* p) {
         ParentLink::Empty => {
             contradiction(link.link == ParentLink::Empty);
         },
-        ParentLink::Linked(kid) => {
+        ParentLink::Linked(linked_child) => {
             unfold(link);
-            have old(p->kid) == kid;
+            have old(p->kid) == linked_child;
             step();
-            if kid->refs > 1 {
+            if linked_child->refs > 1 {
                 execute();
                 simp();
             } else {
