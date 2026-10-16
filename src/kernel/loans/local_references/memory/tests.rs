@@ -441,6 +441,7 @@ fn scalar_lease_refuses_pointer_storage_and_duplicate_owner_recovery() {
     let (state, parent, support) = fixture(2);
     let (active, child) = begin(&state, &parent, Some(support));
     let operation = CStatement::TypedStore {
+        access_class: None,
         pointer: CExpression::Value(CValue::typed_pointer(
             pointer(1),
             CType::Int32PointerPointer,
@@ -524,6 +525,7 @@ fn scalar_lease_supported_unsigned_widths_execute_and_recover_current_contents()
         let updated = normal(statement(
             &active,
             CStatement::TypedStore {
+                access_class: None,
                 pointer: CExpression::Value(CValue::Pointer(child.clone())),
                 value: CExpression::Value(replacement.clone()),
                 value_type,

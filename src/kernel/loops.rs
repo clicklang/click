@@ -1163,6 +1163,7 @@ fn modeled_pthread_handle_store(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Option<(CState, Vec<ProofObligation>)>> {
     let statement = CStatement::TypedStore {
+        access_class: None,
         pointer: CExpression::Value(slot.clone()),
         value: CExpression::Value(value),
         value_type: CType::UInt64,
