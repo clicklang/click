@@ -2948,8 +2948,8 @@ fn indexed_loop_exit_load_equality(
             let constant = |term: &Bitvector32Term| {
                 term.as_const().or_else(|| {
                     context
-                        .exact_constant_equalities
-                        .get(term)?
+                        .equality_graph
+                        .exact_literal_sources(term)?
                         .keys()
                         .find_map(|condition| {
                             crate::instrumentation::record_deterministic_work(1);

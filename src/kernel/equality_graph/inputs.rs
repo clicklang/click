@@ -106,6 +106,7 @@ impl EqualityGraph {
             .merge_origin
             .clone();
         Self {
+            admitted: Default::default(),
             state: std::sync::Mutex::new(EqualityGraphState {
                 merge_origin: origin,
                 ..EqualityGraphState::default()

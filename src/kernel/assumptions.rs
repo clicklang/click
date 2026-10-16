@@ -31,15 +31,13 @@ pub(in crate::kernel) use condition_reasoning::narrowed_cast_identity;
 pub(in crate::kernel) use condition_reasoning::{
     order_walk_edge_visits, reset_order_walk_edge_visits, with_order_walk_full_scan,
 };
-mod constant_classes;
-use super::equality_graph::EqualityGraph;
-pub(in crate::kernel) use constant_classes::ConstantClasses;
 mod memory_reasoning;
 pub(in crate::kernel) use memory_reasoning::additive_base_spellings;
 pub(crate) use memory_reasoning::arm_frame_composite_definitions;
 pub(crate) use memory_reasoning::clear_frame_expansion_memo;
 pub(in crate::kernel) use memory_reasoning::parameter_alias_bucket;
 pub(in crate::kernel) use memory_reasoning::parameter_partition_root;
+pub(in crate::kernel) use memory_reasoning::parameter_partition_variable;
 pub(in crate::kernel) use memory_reasoning::read_candidate_byte_width;
 pub(in crate::kernel) use memory_reasoning::signed_byte_sum_is_nonwrapping;
 pub(in crate::kernel) use memory_reasoning::{
@@ -414,7 +412,9 @@ pub(super) fn resources_equal_ignoring_memories(left: &CResource, right: &CResou
 /// joins equal terms by construction rather than by per-query bridging.
 /// The memory snapshot and cell a load term reads, for a raw load or a
 /// registered load variable.
-fn load_snapshot_and_pointer(term: &Bitvector32Term) -> Option<(CMemory, Pointer, LoadKind)> {
+pub(in crate::kernel) fn load_snapshot_and_pointer(
+    term: &Bitvector32Term,
+) -> Option<(CMemory, Pointer, LoadKind)> {
     match term {
         Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
             Some(((**memory).clone(), pointer.as_ref().clone(), *kind))
@@ -433,7 +433,7 @@ fn load_snapshot_and_pointer(term: &Bitvector32Term) -> Option<(CMemory, Pointer
     }
 }
 
-fn equality_graph_term_key(term: &Bitvector32Term) -> Bitvector32Term {
+pub(in crate::kernel) fn equality_graph_term_key(term: &Bitvector32Term) -> Bitvector32Term {
     crate::kernel::eval::canonical_term(term)
 }
 
@@ -906,17 +906,16 @@ fn assumptions_memo_id(assumptions: &PureFactContext) -> u64 {
         // context alive until the next verification boundary. They are
         // excluded from PureFactContext equality and hashing.
         let mut key = assumptions.clone();
+        key.equality_graph = assumptions.equality_graph.identity_only();
         key.atomic_connection_facts = crate::persistent::PersistentMap::default();
         key.atomic_ground_facts = crate::persistent::PersistentSet::default();
         key.atomic_quantified_facts = crate::persistent::PersistentSet::default();
         key.condition_facts_by_variable = crate::persistent::PersistentMap::default();
-        key.direct_bitvector_equalities = crate::persistent::PersistentMap::default();
         key.snapshot_condition_variable_base = crate::persistent::PersistentMap::default();
         key.snapshot_condition_variable_changes = crate::persistent::PersistentMap::default();
         key.snapshot_condition_variables = std::sync::Arc::new(std::sync::OnceLock::new());
         // Lazy query caches may be populated *after* this clone is interned.
         // The identity table must not own their shared OnceLocks either.
-        key.bitvector_equality_facts = std::sync::Arc::new(std::sync::OnceLock::new());
         key.memory_load_condition_facts = std::sync::Arc::new(std::sync::OnceLock::new());
         key.memory_loadable_shape_facts = std::sync::Arc::new(std::sync::OnceLock::new());
         ids.insert(key, id);
@@ -943,21 +942,14 @@ mod planning_index_memo_lifetime_tests {
                 ));
             }
             let cache = std::sync::Arc::downgrade(&context.snapshot_condition_variables);
-            let equality_cache = std::sync::Arc::downgrade(&context.bitvector_equality_facts);
             let id = assumptions_memo_id(&context);
             // The identity key exists before the live context populates a
             // shared cache; dropping only already-built data is insufficient.
-            let _ = context.bitvector_equality_index();
-            assert!(context.bitvector_equality_facts.get().is_some());
             assert_eq!(assumptions_memo_id(&context), id);
             let copy = context.clone();
             assert_eq!(assumptions_memo_id(&copy), id);
             drop(copy);
             drop(context);
-            assert!(
-                equality_cache.upgrade().is_none(),
-                "size {size}: memo identity retained a lazy equality index"
-            );
             assert!(
                 cache.upgrade().is_none(),
                 "size {size}: memo identity retained planning state"
@@ -1417,14 +1409,14 @@ pub(crate) fn proposition_has_free_bitvector_variable(
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum SignedConstantResolution {
+pub(in crate::kernel) enum SignedConstantResolution {
     Unknown,
     Known(i64),
     Ambiguous,
 }
 
 impl SignedConstantResolution {
-    fn merge(self, other: Self) -> Self {
+    pub(in crate::kernel) fn merge(self, other: Self) -> Self {
         match (self, other) {
             (Self::Ambiguous, _) | (_, Self::Ambiguous) => Self::Ambiguous,
             (Self::Unknown, resolution) | (resolution, Self::Unknown) => resolution,
@@ -1433,11 +1425,11 @@ impl SignedConstantResolution {
         }
     }
 
-    fn from_term(term: Bitvector32Term) -> Self {
+    pub(in crate::kernel) fn from_term(term: Bitvector32Term) -> Self {
         signed_bitvector_constant(&term).map_or(Self::Unknown, Self::Known)
     }
 
-    fn map(self, operation: impl FnOnce(i64) -> Bitvector32Term) -> Self {
+    pub(in crate::kernel) fn map(self, operation: impl FnOnce(i64) -> Bitvector32Term) -> Self {
         match self {
             Self::Known(value) => Self::from_term(operation(value)),
             Self::Unknown => Self::Unknown,
@@ -2547,7 +2539,12 @@ impl PureFactContext {
         for fact in self.prop_facts.iter() {
             fingerprint ^= Self::fingerprint(2, fact);
         }
-        for (variable, definitions) in self.typed_pointer_read_definitions.iter() {
+        for (variable, definitions) in self
+            .equality_graph
+            .admitted
+            .typed_pointer_read_definitions
+            .iter()
+        {
             for (key, (value, _)) in definitions.iter() {
                 fingerprint ^= Self::typed_pointer_read_fingerprint(*variable, key, value);
             }
@@ -2778,10 +2775,16 @@ impl PureFactContext {
             if value && alignment.is_power_of_two() {
                 let key = (pointer.clone(), alignment);
                 if insert {
-                    self.pointer_alignment_facts.insert(key, ());
+                    self.equality_graph
+                        .admitted
+                        .pointer_alignment_facts
+                        .insert(key, ());
                     self.equality_graph.register_alignment(pointer, alignment);
                 } else {
-                    self.pointer_alignment_facts.remove(&key);
+                    self.equality_graph
+                        .admitted
+                        .pointer_alignment_facts
+                        .remove(&key);
                     self.rebuild_equality_graph();
                 }
             }
@@ -2798,6 +2801,8 @@ impl PureFactContext {
             (right.as_ref(), left.as_ref()),
         ] {
             let aliases = self
+                .equality_graph
+                .admitted
                 .pointer_block_aliases
                 .get(key)
                 .cloned()
@@ -2808,14 +2813,21 @@ impl PureFactContext {
                 aliases.without_key(alias)
             };
             let filed = !aliases.is_empty();
-            self.pointer_block_aliases = if filed {
-                self.pointer_block_aliases
+            self.equality_graph.admitted.pointer_block_aliases = if filed {
+                self.equality_graph
+                    .admitted
+                    .pointer_block_aliases
                     .with_inserted(key.clone(), aliases)
             } else {
-                self.pointer_block_aliases.without_key(key)
+                self.equality_graph
+                    .admitted
+                    .pointer_block_aliases
+                    .without_key(key)
             };
             let bucket = memory_reasoning::parameter_alias_bucket(key);
             let endpoints = self
+                .equality_graph
+                .admitted
                 .pointer_alias_endpoints_by_object
                 .get(&bucket)
                 .cloned()
@@ -2825,13 +2837,22 @@ impl PureFactContext {
             } else {
                 endpoints.without_value(key)
             };
-            self.pointer_alias_endpoints_by_object = if endpoints.is_empty() {
-                self.pointer_alias_endpoints_by_object.without_key(&bucket)
+            self.equality_graph
+                .admitted
+                .pointer_alias_endpoints_by_object = if endpoints.is_empty() {
+                self.equality_graph
+                    .admitted
+                    .pointer_alias_endpoints_by_object
+                    .without_key(&bucket)
             } else {
-                self.pointer_alias_endpoints_by_object
+                self.equality_graph
+                    .admitted
+                    .pointer_alias_endpoints_by_object
                     .with_inserted(bucket, endpoints)
             };
             let spellings = self
+                .equality_graph
+                .admitted
                 .pointer_block_aliases_by_offset
                 .get(&key.offset)
                 .cloned()
@@ -2841,11 +2862,15 @@ impl PureFactContext {
             } else {
                 spellings.without_value(key)
             };
-            self.pointer_block_aliases_by_offset = if spellings.is_empty() {
-                self.pointer_block_aliases_by_offset
+            self.equality_graph.admitted.pointer_block_aliases_by_offset = if spellings.is_empty() {
+                self.equality_graph
+                    .admitted
+                    .pointer_block_aliases_by_offset
                     .without_key(&key.offset)
             } else {
-                self.pointer_block_aliases_by_offset
+                self.equality_graph
+                    .admitted
+                    .pointer_block_aliases_by_offset
                     .with_inserted(key.offset.clone(), spellings)
             };
         }
@@ -2860,55 +2885,11 @@ impl PureFactContext {
     /// cannot forget one equality, so a withdrawal refiles the equalities
     /// that remain: work in the equalities held, not in unrelated facts.
     fn rebuild_equality_graph(&mut self) {
-        let mut classes = EqualityGraph::default();
-        for (left, aliases) in self.pointer_block_aliases.iter() {
-            for (right, _) in aliases.iter() {
-                if left < right {
-                    classes.add_equality(left, right);
-                }
-            }
-        }
-        for (left, aliases) in self.pointer_offset_aliases.iter() {
-            for right in aliases.iter() {
-                if left < right {
-                    classes.add_offset_equality(left, right);
-                }
-            }
-        }
-        for ((left, right), _) in self.uint64_graph_equalities.iter() {
-            classes.add_uint64_equality(left.value(), right.value());
-        }
-        for ((left, right), _) in self.algebraic_graph_equalities.iter() {
-            let PureFunctionArgument::Algebraic(left) = &left.arguments()[0] else {
-                unreachable!()
-            };
-            let PureFunctionArgument::Algebraic(right) = &right.arguments()[0] else {
-                unreachable!()
-            };
-            classes.add_algebraic_equality(left, right);
-        }
-        for ((left, right), _) in self.int32_graph_equalities.iter() {
-            classes.add_int32_equality(left.value(), right.value());
-        }
-        for (_, definitions) in self.typed_pointer_read_definitions.iter() {
-            for ((_, address), (value, memory)) in definitions.iter() {
-                classes.add_equality(value, &Pointer::loaded_value(memory, address));
-            }
-        }
-        for ((pointer, alignment), _) in self.pointer_alignment_facts.iter() {
-            classes.register_alignment(pointer, *alignment);
-        }
-        for (condition, value) in self.congruence_conditions.iter() {
-            classes.add_condition(condition, *value);
-        }
-        for source in self.execution_fact_projection.values() {
-            classes.adjust_pointer_predicate(source, true);
-        }
-        self.equality_graph = classes;
+        self.equality_graph.rebuild_from_inputs();
     }
 
     fn rebuild_algebraic_graph_equalities(&mut self) {
-        self.algebraic_graph_equalities = Default::default();
+        self.equality_graph.admitted.algebraic_graph_equalities = Default::default();
         self.rebuild_equality_graph();
         let conditions = self.condition_facts.clone();
         for (condition, value) in conditions.iter() {
@@ -2954,17 +2935,28 @@ impl PureFactContext {
             (right_atom, left_atom)
         };
         let count = self
+            .equality_graph
+            .admitted
             .algebraic_graph_equalities
             .get(&edge)
             .copied()
             .unwrap_or(0);
         if insert {
-            self.algebraic_graph_equalities.insert(edge, count + 1);
+            self.equality_graph
+                .admitted
+                .algebraic_graph_equalities
+                .insert(edge, count + 1);
             self.equality_graph.add_algebraic_equality(left, right);
         } else if count > 1 {
-            self.algebraic_graph_equalities.insert(edge, count - 1);
+            self.equality_graph
+                .admitted
+                .algebraic_graph_equalities
+                .insert(edge, count - 1);
         } else {
-            self.algebraic_graph_equalities.remove(&edge);
+            self.equality_graph
+                .admitted
+                .algebraic_graph_equalities
+                .remove(&edge);
             self.rebuild_equality_graph();
         }
     }
@@ -2978,22 +2970,55 @@ impl PureFactContext {
         let (ConditionTerm::Bitvector64Equal(left, right), true) = (condition, value) else {
             return;
         };
-        let edge = (
-            super::equality_graph::MachineAtom::uint64(crate::kernel::canonical_term(left)),
-            super::equality_graph::MachineAtom::uint64(crate::kernel::canonical_term(right)),
-        );
+        let edge = if insert {
+            let edge = (
+                super::equality_graph::MachineAtom::uint64(crate::kernel::canonical_term(left)),
+                super::equality_graph::MachineAtom::uint64(crate::kernel::canonical_term(right)),
+            );
+            self.equality_graph
+                .admitted
+                .uint64_input_edges
+                .insert(condition.clone(), edge.clone());
+            edge
+        } else {
+            let Some(edge) = self
+                .equality_graph
+                .admitted
+                .uint64_input_edges
+                .get(condition)
+                .cloned()
+            else {
+                return;
+            };
+            self.equality_graph
+                .admitted
+                .uint64_input_edges
+                .remove(condition);
+            edge
+        };
         let count = self
+            .equality_graph
+            .admitted
             .uint64_graph_equalities
             .get(&edge)
             .copied()
             .unwrap_or(0);
         if insert {
-            self.uint64_graph_equalities.insert(edge, count + 1);
+            self.equality_graph
+                .admitted
+                .uint64_graph_equalities
+                .insert(edge, count + 1);
             self.equality_graph.add_uint64_equality(left, right);
         } else if count > 1 {
-            self.uint64_graph_equalities.insert(edge, count - 1);
+            self.equality_graph
+                .admitted
+                .uint64_graph_equalities
+                .insert(edge, count - 1);
         } else {
-            self.uint64_graph_equalities.remove(&edge);
+            self.equality_graph
+                .admitted
+                .uint64_graph_equalities
+                .remove(&edge);
             self.rebuild_equality_graph();
         }
     }
@@ -3037,18 +3062,55 @@ impl PureFactContext {
         // raw MemoryLoad payloads. Raw interning can compare whole snapshots
         // across verification arenas. Counts preserve independent spellings
         // that canonicalize to the same edge when one premise is withdrawn.
-        let edge = (
-            super::equality_graph::MachineAtom::int32(crate::kernel::canonical_term(left)),
-            super::equality_graph::MachineAtom::int32(crate::kernel::canonical_term(right)),
-        );
-        let count = self.int32_graph_equalities.get(&edge).copied().unwrap_or(0);
+        let edge = if insert {
+            let edge = (
+                super::equality_graph::MachineAtom::int32(crate::kernel::canonical_term(left)),
+                super::equality_graph::MachineAtom::int32(crate::kernel::canonical_term(right)),
+            );
+            self.equality_graph
+                .admitted
+                .int32_input_edges
+                .insert(condition.clone(), edge.clone());
+            edge
+        } else {
+            let Some(edge) = self
+                .equality_graph
+                .admitted
+                .int32_input_edges
+                .get(condition)
+                .cloned()
+            else {
+                return;
+            };
+            self.equality_graph
+                .admitted
+                .int32_input_edges
+                .remove(condition);
+            edge
+        };
+        let count = self
+            .equality_graph
+            .admitted
+            .int32_graph_equalities
+            .get(&edge)
+            .copied()
+            .unwrap_or(0);
         if insert {
-            self.int32_graph_equalities.insert(edge, count + 1);
+            self.equality_graph
+                .admitted
+                .int32_graph_equalities
+                .insert(edge, count + 1);
             self.equality_graph.add_int32_equality(left, right);
         } else if count > 1 {
-            self.int32_graph_equalities.insert(edge, count - 1);
+            self.equality_graph
+                .admitted
+                .int32_graph_equalities
+                .insert(edge, count - 1);
         } else {
-            self.int32_graph_equalities.remove(&edge);
+            self.equality_graph
+                .admitted
+                .int32_graph_equalities
+                .remove(&edge);
             self.rebuild_equality_graph();
         }
     }
@@ -3119,7 +3181,11 @@ impl PureFactContext {
         value: &Pointer,
     ) -> Option<Pointer> {
         let variable = crate::kernel::eval::typed_pointer_read_variable(value)?;
-        let definitions = self.typed_pointer_read_definitions.get(&variable)?;
+        let definitions = self
+            .equality_graph
+            .admitted
+            .typed_pointer_read_definitions
+            .get(&variable)?;
         if definitions.len() != 1 {
             return None;
         }
@@ -3227,6 +3293,8 @@ impl PureFactContext {
     ) {
         let key = (memory.arena_id(), address.clone());
         let definitions = self
+            .equality_graph
+            .admitted
             .typed_pointer_read_definitions
             .get(&variable)
             .cloned()
@@ -3235,7 +3303,9 @@ impl PureFactContext {
             return;
         }
         let definitions = definitions.with_inserted(key.clone(), (value.clone(), memory.clone()));
-        self.typed_pointer_read_definitions = self
+        self.equality_graph.admitted.typed_pointer_read_definitions = self
+            .equality_graph
+            .admitted
             .typed_pointer_read_definitions
             .with_inserted(variable, definitions);
         self.content_fingerprint ^= Self::typed_pointer_read_fingerprint(variable, &key, value);
@@ -3274,6 +3344,8 @@ impl PureFactContext {
         let (variable, memory, address) = definition;
         let key = (memory.arena_id(), address.clone());
         let definitions = self
+            .equality_graph
+            .admitted
             .typed_pointer_read_definitions
             .get(&variable)
             .cloned()
@@ -3285,10 +3357,15 @@ impl PureFactContext {
         self.content_fingerprint ^=
             Self::typed_pointer_read_fingerprint(variable, &key, pointer_value);
         let definitions = definitions.without_key(&key);
-        self.typed_pointer_read_definitions = if definitions.is_empty() {
-            self.typed_pointer_read_definitions.without_key(&variable)
+        self.equality_graph.admitted.typed_pointer_read_definitions = if definitions.is_empty() {
+            self.equality_graph
+                .admitted
+                .typed_pointer_read_definitions
+                .without_key(&variable)
         } else {
-            self.typed_pointer_read_definitions
+            self.equality_graph
+                .admitted
+                .typed_pointer_read_definitions
                 .with_inserted(variable, definitions)
         };
         self.rebuild_equality_graph();
@@ -3321,6 +3398,8 @@ impl PureFactContext {
             (right.as_ref(), left.as_ref()),
         ] {
             let aliases = self
+                .equality_graph
+                .admitted
                 .pointer_offset_aliases
                 .get(key)
                 .cloned()
@@ -3332,6 +3411,8 @@ impl PureFactContext {
             };
             let root = crate::kernel::primitives::offset_root_atom(alias);
             let rooted = self
+                .equality_graph
+                .admitted
                 .pointer_offset_aliases_by_root
                 .get(&root)
                 .cloned()
@@ -3342,16 +3423,26 @@ impl PureFactContext {
             } else {
                 rooted.without_value(&pair)
             };
-            self.pointer_offset_aliases_by_root = if rooted.is_empty() {
-                self.pointer_offset_aliases_by_root.without_key(&root)
+            self.equality_graph.admitted.pointer_offset_aliases_by_root = if rooted.is_empty() {
+                self.equality_graph
+                    .admitted
+                    .pointer_offset_aliases_by_root
+                    .without_key(&root)
             } else {
-                self.pointer_offset_aliases_by_root
+                self.equality_graph
+                    .admitted
+                    .pointer_offset_aliases_by_root
                     .with_inserted(root, rooted)
             };
-            self.pointer_offset_aliases = if aliases.is_empty() {
-                self.pointer_offset_aliases.without_key(key)
+            self.equality_graph.admitted.pointer_offset_aliases = if aliases.is_empty() {
+                self.equality_graph
+                    .admitted
+                    .pointer_offset_aliases
+                    .without_key(key)
             } else {
-                self.pointer_offset_aliases
+                self.equality_graph
+                    .admitted
+                    .pointer_offset_aliases
                     .with_inserted(key.clone(), aliases)
             };
         }
@@ -3370,41 +3461,24 @@ impl PureFactContext {
         &self,
         root: &Option<PointerOffsetTerm>,
     ) -> Vec<PointerOffsetTerm> {
-        self.pointer_offset_aliases_by_root
-            .get(root)
-            .into_iter()
-            .flat_map(|pairs| pairs.iter())
-            .map(|(aliased, _)| {
-                crate::instrumentation::record_deterministic_work(1);
-                aliased.clone()
-            })
-            .collect()
+        self.equality_graph.offsets_with_an_alias_at_root(root)
     }
 
     /// Whether any exact equality joins two blocks.
     pub(in crate::kernel) fn has_pointer_block_aliases(&self) -> bool {
-        !self.pointer_block_aliases.is_empty()
+        self.equality_graph.has_pointer_block_aliases()
     }
 
     pub(crate) fn exact_pointer_offset_aliases(
         &self,
         pointer: &Pointer,
     ) -> impl Iterator<Item = Pointer> + '_ {
-        let block = pointer.block.clone();
-        self.pointer_offset_aliases
-            .get(&pointer.offset)
-            .into_iter()
-            .flat_map(|aliases| aliases.iter())
-            .map(move |offset| Pointer {
-                block: block.clone(),
-                offset: offset.clone(),
-            })
+        self.equality_graph.exact_pointer_offset_aliases(pointer)
     }
 
     pub(in crate::kernel) fn exact_pointer_offset_alias_count(&self, pointer: &Pointer) -> usize {
-        self.pointer_offset_aliases
-            .get(&pointer.offset)
-            .map_or(0, |aliases| aliases.len())
+        self.equality_graph
+            .exact_pointer_offset_alias_count(pointer)
     }
 
     /// Re-express one selected address using checked graph equality to a
@@ -3475,17 +3549,14 @@ impl PureFactContext {
     /// query walks an equality graph.
     /// The pointers with at least one exact alias, in pointer order.
     pub(crate) fn exactly_aliased_pointers(&self) -> impl ExactSizeIterator<Item = &Pointer> {
-        self.pointer_block_aliases.keys()
+        self.equality_graph.exactly_aliased_pointers()
     }
 
     pub(crate) fn exact_pointer_aliases(
         &self,
         pointer: &Pointer,
     ) -> impl Iterator<Item = &Pointer> {
-        self.pointer_block_aliases
-            .get(pointer)
-            .into_iter()
-            .flat_map(|aliases| aliases.iter().map(|(alias, _)| alias))
+        self.equality_graph.exact_pointer_aliases(pointer)
     }
 
     pub(super) fn rebuild_null_pointer_offsets(&mut self) {
@@ -3616,18 +3687,24 @@ impl PureFactContext {
 
     pub(super) fn rebuild_memory_load_condition_facts(&mut self) {
         self.memory_load_condition_facts = std::sync::Arc::new(std::sync::OnceLock::new());
-        self.bitvector_equality_facts = std::sync::Arc::new(std::sync::OnceLock::new());
-        self.bitvector64_equality_facts = crate::persistent::PersistentMap::default();
-        self.wide_pointer_alias_endpoints_by_object = crate::persistent::PersistentMap::default();
-        self.exact_constant_equalities = crate::persistent::PersistentMap::default();
-        self.direct_bitvector_equalities = crate::persistent::PersistentMap::default();
-        self.constant_classes = ConstantClasses::default();
+        self.equality_graph.admitted.scalar_evidence_inputs = Default::default();
+        self.equality_graph.admitted.scalar_dependency_inputs = Default::default();
+        self.equality_graph.admitted.scalar_dependencies = Default::default();
+        self.equality_graph.admitted.scalar_deferred_inputs = 0;
+        self.equality_graph.admitted.scalar_evidence_keys = Default::default();
+        self.equality_graph.admitted.bitvector64_equality_facts =
+            crate::persistent::PersistentMap::default();
+        self.equality_graph.admitted.wide_load_sources = Default::default();
+        self.equality_graph
+            .admitted
+            .wide_pointer_alias_endpoints_by_object = crate::persistent::PersistentMap::default();
+        self.equality_graph.admitted.exact_constant_equalities =
+            crate::persistent::PersistentMap::default();
         let conditions = self.condition_facts.clone();
         for (condition, value) in conditions.iter() {
+            self.adjust_scalar_evidence_input(condition, *value, true);
             self.adjust_bitvector64_equality(condition, *value, true);
             self.adjust_exact_constant_equality(condition, *value, true);
-            self.adjust_direct_bitvector_equality(condition, *value, true);
-            self.file_constant_class_equality(condition, *value);
         }
     }
 
@@ -3638,7 +3715,16 @@ impl PureFactContext {
     /// are rebuilt with them: a restricted context must not answer an alias
     /// query from an equality it no longer holds.
     fn rebuild_condition_match_indexes(&mut self) {
-        let prior_typed_reads = self.typed_pointer_read_definitions.clone();
+        self.equality_graph.admitted.scalar_evidence_inputs = Default::default();
+        self.equality_graph.admitted.scalar_dependency_inputs = Default::default();
+        self.equality_graph.admitted.scalar_dependencies = Default::default();
+        self.equality_graph.admitted.scalar_deferred_inputs = 0;
+        self.equality_graph.admitted.scalar_evidence_keys = Default::default();
+        let prior_typed_reads = self
+            .equality_graph
+            .admitted
+            .typed_pointer_read_definitions
+            .clone();
         self.condition_facts_by_sides = crate::persistent::PersistentMap::default();
         self.condition_facts_by_variable = crate::persistent::PersistentMap::default();
         self.snapshot_condition_variable_base = crate::persistent::PersistentMap::default();
@@ -3647,20 +3733,34 @@ impl PureFactContext {
         self.open_condition_facts = crate::persistent::PersistentMap::default();
         self.order_condition_facts = crate::persistent::PersistentMap::default();
         self.difference_graph.reset();
-        self.pointer_alignment_facts = crate::persistent::PersistentMap::default();
-        self.pointer_block_aliases = crate::persistent::PersistentMap::default();
-        self.pointer_block_aliases_by_offset = crate::persistent::PersistentMap::default();
-        self.pointer_alias_endpoints_by_object = crate::persistent::PersistentMap::default();
-        self.equality_graph = EqualityGraph::default();
-        self.algebraic_graph_equalities = Default::default();
-        self.congruence_conditions = crate::persistent::PersistentMap::default();
-        self.int32_graph_equalities = crate::persistent::PersistentMap::default();
-        self.uint64_graph_equalities = crate::persistent::PersistentMap::default();
-        self.typed_pointer_read_definitions = crate::persistent::PersistentMap::default();
-        self.pointer_offset_aliases = crate::persistent::PersistentMap::default();
-        self.pointer_offset_aliases_by_root = crate::persistent::PersistentMap::default();
+        self.equality_graph.admitted.pointer_alignment_facts =
+            crate::persistent::PersistentMap::default();
+        self.equality_graph.admitted.pointer_block_aliases =
+            crate::persistent::PersistentMap::default();
+        self.equality_graph.admitted.pointer_block_aliases_by_offset =
+            crate::persistent::PersistentMap::default();
+        self.equality_graph
+            .admitted
+            .pointer_alias_endpoints_by_object = crate::persistent::PersistentMap::default();
+        self.equality_graph.reset_closure();
+        self.equality_graph.admitted.algebraic_graph_equalities = Default::default();
+        self.equality_graph.admitted.congruence_conditions =
+            crate::persistent::PersistentMap::default();
+        self.equality_graph.admitted.int32_graph_equalities =
+            crate::persistent::PersistentMap::default();
+        self.equality_graph.admitted.int32_input_edges = Default::default();
+        self.equality_graph.admitted.uint64_graph_equalities =
+            crate::persistent::PersistentMap::default();
+        self.equality_graph.admitted.uint64_input_edges = Default::default();
+        self.equality_graph.admitted.typed_pointer_read_definitions =
+            crate::persistent::PersistentMap::default();
+        self.equality_graph.admitted.pointer_offset_aliases =
+            crate::persistent::PersistentMap::default();
+        self.equality_graph.admitted.pointer_offset_aliases_by_root =
+            crate::persistent::PersistentMap::default();
         let conditions = self.condition_facts.clone();
         for (condition, value) in conditions.iter() {
+            self.adjust_scalar_evidence_input(condition, *value, true);
             self.adjust_condition_variable_index(condition, *value, true, false);
             self.adjust_condition_side_indexes(condition, *value, true);
             self.adjust_pointer_block_alias(condition, *value, true);
@@ -3672,7 +3772,10 @@ impl PureFactContext {
                 true,
             );
             if self.equality_graph.add_condition(condition, *value) {
-                self.congruence_conditions.insert(condition.clone(), *value);
+                self.equality_graph
+                    .admitted
+                    .congruence_conditions
+                    .insert(condition.clone(), *value);
             }
         }
         // Restore typing support by the selected equations' load variables,
@@ -3879,8 +3982,8 @@ impl PureFactContext {
                 continue;
             };
             let facts = self
-                .exact_constant_equalities
-                .get(term)
+                .equality_graph
+                .exact_literal_sources(term)
                 .cloned()
                 .unwrap_or_default();
             let facts = if insert {
@@ -3888,53 +3991,17 @@ impl PureFactContext {
             } else {
                 facts.without_key(condition)
             };
-            self.exact_constant_equalities = if facts.is_empty() {
-                self.exact_constant_equalities.without_key(term)
+            self.equality_graph.admitted.exact_constant_equalities = if facts.is_empty() {
+                self.equality_graph
+                    .admitted
+                    .exact_constant_equalities
+                    .without_key(term)
             } else {
-                self.exact_constant_equalities
+                self.equality_graph
+                    .admitted
+                    .exact_constant_equalities
                     .with_inserted(term.clone(), facts)
             };
-        }
-    }
-
-    fn adjust_direct_bitvector_equality(
-        &mut self,
-        condition: &ConditionTerm,
-        value: bool,
-        insert: bool,
-    ) {
-        let (ConditionTerm::Bitvector32Equal(left, right), true) = (condition, value) else {
-            return;
-        };
-        for (endpoint, other) in [
-            (left.as_ref(), right.as_ref()),
-            (right.as_ref(), left.as_ref()),
-        ] {
-            crate::instrumentation::record_deterministic_work(1);
-            let entries = self
-                .direct_bitvector_equalities
-                .get(endpoint)
-                .cloned()
-                .unwrap_or_default();
-            let entries = if insert {
-                entries.with_inserted(condition.clone(), other.clone())
-            } else {
-                entries.without_key(condition)
-            };
-            self.direct_bitvector_equalities = if entries.is_empty() {
-                self.direct_bitvector_equalities.without_key(endpoint)
-            } else {
-                self.direct_bitvector_equalities
-                    .with_inserted(endpoint.clone(), entries)
-            };
-        }
-    }
-
-    /// Files one true 32-bit equality in the constant classes. Classes only
-    /// grow; withdrawing a fact rebuilds them (`rebuild_memory_load_condition_facts`).
-    fn file_constant_class_equality(&mut self, condition: &ConditionTerm, value: bool) {
-        if let (ConditionTerm::Bitvector32Equal(left, right), true) = (condition, value) {
-            self.constant_classes.assume_equal(left, right);
         }
     }
 
@@ -3950,11 +4017,38 @@ impl PureFactContext {
         if !value {
             return;
         }
+        for side in [left.as_ref(), right.as_ref()] {
+            if let Some((_, pointer, kind)) = load_snapshot_and_pointer(side) {
+                let key = (pointer, kind);
+                let sources = self
+                    .equality_graph
+                    .admitted
+                    .wide_load_sources
+                    .get(&key)
+                    .cloned()
+                    .unwrap_or_default();
+                let sources = if insert {
+                    sources.with_value(condition.clone())
+                } else {
+                    sources.without_value(condition)
+                };
+                if sources.is_empty() {
+                    self.equality_graph.admitted.wide_load_sources.remove(&key);
+                } else {
+                    self.equality_graph
+                        .admitted
+                        .wide_load_sources
+                        .insert(key, sources);
+                }
+            }
+        }
         for (endpoint, other) in [
             (left.as_ref(), right.as_ref()),
             (right.as_ref(), left.as_ref()),
         ] {
             let neighbors = self
+                .equality_graph
+                .admitted
                 .bitvector64_equality_facts
                 .get(endpoint)
                 .cloned()
@@ -3972,6 +4066,8 @@ impl PureFactContext {
             if let Bitvector32Term::PointerAddress(pointer) = endpoint {
                 let bucket = memory_reasoning::parameter_alias_bucket(pointer);
                 let endpoints = self
+                    .equality_graph
+                    .admitted
                     .wide_pointer_alias_endpoints_by_object
                     .get(&bucket)
                     .cloned()
@@ -3981,18 +4077,29 @@ impl PureFactContext {
                 } else {
                     endpoints.with_value(endpoint.clone())
                 };
-                self.wide_pointer_alias_endpoints_by_object = if endpoints.is_empty() {
-                    self.wide_pointer_alias_endpoints_by_object
+                self.equality_graph
+                    .admitted
+                    .wide_pointer_alias_endpoints_by_object = if endpoints.is_empty() {
+                    self.equality_graph
+                        .admitted
+                        .wide_pointer_alias_endpoints_by_object
                         .without_key(&bucket)
                 } else {
-                    self.wide_pointer_alias_endpoints_by_object
+                    self.equality_graph
+                        .admitted
+                        .wide_pointer_alias_endpoints_by_object
                         .with_inserted(bucket, endpoints)
                 };
             }
-            self.bitvector64_equality_facts = if neighbors.is_empty() {
-                self.bitvector64_equality_facts.without_key(endpoint)
+            self.equality_graph.admitted.bitvector64_equality_facts = if neighbors.is_empty() {
+                self.equality_graph
+                    .admitted
+                    .bitvector64_equality_facts
+                    .without_key(endpoint)
             } else {
-                self.bitvector64_equality_facts
+                self.equality_graph
+                    .admitted
+                    .bitvector64_equality_facts
                     .with_inserted(endpoint.clone(), neighbors)
             };
         }
@@ -4004,10 +4111,7 @@ impl PureFactContext {
         &self,
         term: &Bitvector32Term,
     ) -> impl Iterator<Item = (&Bitvector32Term, &ConditionTerm)> {
-        self.bitvector64_equality_facts
-            .get(term)
-            .into_iter()
-            .flat_map(|neighbors| neighbors.iter())
+        self.equality_graph.exact_uint64_equalities(term)
     }
 
     /// A full-width observer result can name the same unchanged cell at a
@@ -4051,86 +4155,17 @@ impl PureFactContext {
         &self,
         term: &Bitvector32Term,
     ) -> Vec<(Bitvector32Term, ConditionTerm)> {
-        let exact = self
-            .bitvector64_equality_facts
-            .get(term)
-            .map(|neighbors| {
-                neighbors
-                    .iter()
-                    .map(|(equal, fact)| (equal.clone(), fact.clone()))
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        if !exact.is_empty() {
-            return exact;
-        }
-        let Some((query_memory, pointer, kind)) = load_snapshot_and_pointer(term) else {
-            return exact;
-        };
-        let mut transported = Vec::new();
-        for (condition, value) in self.condition_facts.iter() {
-            let (ConditionTerm::Bitvector64Equal(left, right), true) = (condition, value) else {
-                continue;
-            };
-            for (side, other) in [(left, right), (right, left)] {
-                let Some((fact_memory, fact_pointer, fact_kind)) = load_snapshot_and_pointer(side)
-                else {
-                    continue;
-                };
-                if fact_pointer != pointer
-                    || fact_kind != kind
-                    || !memories_match_for_pointer_load(&fact_memory, &query_memory, &pointer)
-                {
-                    continue;
-                }
-                transported.push((other.as_ref().clone(), condition.clone()));
-            }
-        }
-        transported
+        self.equality_graph.recorded_uint64_equals(term)
     }
 
-    fn bitvector_equality_index(
-        &self,
-    ) -> &BTreeMap<Bitvector32Term, BTreeMap<Bitvector32Term, Proposition>> {
-        self.bitvector_equality_facts.get_or_init(|| {
-            let mut index =
-                BTreeMap::<Bitvector32Term, BTreeMap<Bitvector32Term, Proposition>>::new();
-            for (condition, value) in self.condition_facts.iter() {
-                #[cfg(test)]
-                BITVECTOR_EQUALITY_INDEX_FACT_VISITS.with(|visits| visits.set(visits.get() + 1));
-                if !*value {
-                    continue;
-                }
-                let pair = match condition {
-                    ConditionTerm::Bitvector32Equal(left, right) => {
-                        Some((left.as_ref().clone(), right.as_ref().clone()))
-                    }
-                    condition if condition.pointer_offset_sides().is_some() => {
-                        let (left, right) = condition.pointer_offset_sides().expect("offset view");
-                        int32_element_index_from_offset(left)
-                            .zip(int32_element_index_from_offset(right))
-                    }
-                    _ => None,
-                };
-                let Some((left, right)) = pair else {
-                    continue;
-                };
-                let left = equality_graph_term_key(&left);
-                let right = equality_graph_term_key(&right);
-                let premise = Proposition::ConditionIs(condition.clone(), true);
-                index
-                    .entry(left.clone())
-                    .or_default()
-                    .entry(right.clone())
-                    .or_insert_with(|| premise.clone());
-                index
-                    .entry(right)
-                    .or_default()
-                    .entry(left)
-                    .or_insert(premise);
-            }
-            index
-        })
+    fn adjust_scalar_evidence_input(
+        &mut self,
+        condition: &ConditionTerm,
+        value: bool,
+        insert: bool,
+    ) {
+        self.equality_graph
+            .adjust_scalar_evidence_input(condition, value, insert);
     }
 
     /// The members of `term`'s recorded-equality class other than `term`:
@@ -4139,20 +4174,10 @@ impl PureFactContext {
         &self,
         term: &Bitvector32Term,
     ) -> BTreeSet<Bitvector32Term> {
-        let index = self.bitvector_equality_index();
-        let start = equality_graph_term_key(term);
-        let mut seen = BTreeSet::new();
-        let mut stack = vec![start];
-        while let Some(current) = stack.pop() {
-            if !seen.insert(current.clone()) {
-                continue;
-            }
-            if let Some(neighbors) = index.get(&current) {
-                stack.extend(neighbors.keys().cloned());
-            }
-        }
-        seen.remove(term);
-        seen
+        self.equality_graph
+            .scalar_evidence_class(term)
+            .into_iter()
+            .collect()
     }
 
     fn memory_load_condition_index(
@@ -4281,7 +4306,9 @@ impl PureFactContext {
         self.rebuild_atomic_connection_facts();
         self.rebuild_stated_proposition_index();
         self.disjunction_facts = crate::persistent::PersistentSet::default();
-        self.algebraic_constructor_field_equalities = crate::persistent::PersistentMap::default();
+        self.equality_graph
+            .admitted
+            .algebraic_constructor_field_equalities = crate::persistent::PersistentMap::default();
         self.algebraic_constructor_conflicts = crate::persistent::PersistentMap::default();
         self.algebraic_variable_constructors = crate::persistent::PersistentMap::default();
         self.algebraic_variable_variant_evidence = crate::persistent::PersistentMap::default();
@@ -4301,7 +4328,13 @@ impl PureFactContext {
         // No model support can change in a model-free context. Rebuilding
         // the complete scalar graph here would touch unrelated facts before
         // a restriction replaces its condition indexes.
-        if rebuild_graph && !self.algebraic_graph_equalities.is_empty() {
+        if rebuild_graph
+            && !self
+                .equality_graph
+                .admitted
+                .algebraic_graph_equalities
+                .is_empty()
+        {
             self.rebuild_algebraic_graph_equalities();
         }
     }
@@ -4338,6 +4371,11 @@ impl PureFactContext {
         self.rebuild_memory_loadable_facts();
         self.rebuild_memory_separation_facts();
         self.recompute_content_fingerprint();
+        self.equality_graph.clear_pointer_predicates();
+        let propositions = self.prop_facts.clone();
+        for proposition in propositions.iter() {
+            self.adjust_pointer_predicate_fact(proposition, true);
+        }
         self.rebuild_algebraic_graph_equalities();
     }
 
@@ -4461,6 +4499,8 @@ impl PureFactContext {
         for (field_index, field) in fields.into_iter().enumerate() {
             let source = (proposition.clone(), field_index);
             let mut sources = self
+                .equality_graph
+                .admitted
                 .algebraic_constructor_field_equalities
                 .get(&field)
                 .cloned()
@@ -4470,11 +4510,17 @@ impl PureFactContext {
             } else {
                 sources = sources.without_key(&source);
             }
-            self.algebraic_constructor_field_equalities = if sources.is_empty() {
-                self.algebraic_constructor_field_equalities
+            self.equality_graph
+                .admitted
+                .algebraic_constructor_field_equalities = if sources.is_empty() {
+                self.equality_graph
+                    .admitted
+                    .algebraic_constructor_field_equalities
                     .without_key(&field)
             } else {
-                self.algebraic_constructor_field_equalities
+                self.equality_graph
+                    .admitted
+                    .algebraic_constructor_field_equalities
                     .with_inserted(field, sources)
             };
         }
@@ -4694,7 +4740,9 @@ impl PureFactContext {
     fn rebuild_algebraic_constructor_field_equalities(&mut self) {
         self.algebraic_variable_constructors = crate::persistent::PersistentMap::default();
         self.algebraic_variable_variant_evidence = crate::persistent::PersistentMap::default();
-        self.algebraic_constructor_field_equalities = crate::persistent::PersistentMap::default();
+        self.equality_graph
+            .admitted
+            .algebraic_constructor_field_equalities = crate::persistent::PersistentMap::default();
         self.algebraic_constructor_conflicts = crate::persistent::PersistentMap::default();
         let facts = self.prop_facts.iter().cloned().collect::<Vec<_>>();
         for proposition in facts {
@@ -4709,10 +4757,8 @@ impl PureFactContext {
         &self,
         field: &Proposition,
     ) -> impl Iterator<Item = &(Proposition, usize)> {
-        self.algebraic_constructor_field_equalities
-            .get(field)
-            .into_iter()
-            .flat_map(|sources| sources.iter().map(|(source, ())| source))
+        self.equality_graph
+            .algebraic_constructor_field_sources(field)
     }
 
     /// Whether an exact same-constructor equality in this context entails
@@ -5167,8 +5213,15 @@ impl PureFactContext {
                 .stated_proposition_index
                 .shares_storage_with(&other.stated_proposition_index)
             && self
+                .equality_graph
+                .admitted
                 .algebraic_constructor_field_equalities
-                .shares_root_with(&other.algebraic_constructor_field_equalities)
+                .shares_root_with(
+                    &other
+                        .equality_graph
+                        .admitted
+                        .algebraic_constructor_field_equalities,
+                )
             && self
                 .algebraic_constructor_conflicts
                 .shares_root_with(&other.algebraic_constructor_conflicts)
@@ -5651,19 +5704,27 @@ impl PureFactContext {
             ))),
         );
         self.memory_load_condition_facts = std::sync::Arc::new(std::sync::OnceLock::new());
-        self.bitvector_equality_facts = std::sync::Arc::new(std::sync::OnceLock::new());
         if let Some(old) = old {
-            if self.congruence_conditions.contains_key(&condition) {
-                self.congruence_conditions.remove(&condition);
+            if self
+                .equality_graph
+                .admitted
+                .congruence_conditions
+                .contains_key(&condition)
+            {
+                self.equality_graph
+                    .admitted
+                    .congruence_conditions
+                    .remove(&condition);
                 self.rebuild_equality_graph();
             }
             self.adjust_stated_proposition_index(
                 &Proposition::ConditionIs(condition.clone(), old),
                 false,
             );
+            self.adjust_scalar_evidence_input(&condition, old, false);
             self.adjust_bitvector64_equality(&condition, old, false);
             self.adjust_exact_constant_equality(&condition, old, false);
-            self.adjust_direct_bitvector_equality(&condition, old, false);
+
             self.adjust_condition_match_indexes(&condition, old, false);
             self.adjust_algebraic_predicate_fact(&condition, old, false);
             self.adjust_signed_order_bound(&condition, old, false);
@@ -5698,23 +5759,16 @@ impl PureFactContext {
             self.composition_object_resources
                 .advance_memory_equalities(&self);
         }
+        self.adjust_scalar_evidence_input(&condition, value, true);
         self.adjust_bitvector64_equality(&condition, value, true);
         self.adjust_exact_constant_equality(&condition, value, true);
-        self.adjust_direct_bitvector_equality(&condition, value, true);
+
         self.adjust_condition_match_indexes(&condition, value, true);
-        if old == Some(true) && matches!(condition, ConditionTerm::Bitvector32Equal(..)) {
-            // A replaced true equality is withdrawn from classes that only
-            // grow, so they are rebuilt from the facts that remain.
-            self.constant_classes = ConstantClasses::default();
-            let conditions = self.condition_facts.clone();
-            for (condition, value) in conditions.iter() {
-                self.file_constant_class_equality(condition, *value);
-            }
-        } else {
-            self.file_constant_class_equality(&condition, value);
-        }
         if self.equality_graph.add_condition(&condition, value) {
-            self.congruence_conditions.insert(condition.clone(), value);
+            self.equality_graph
+                .admitted
+                .congruence_conditions
+                .insert(condition.clone(), value);
         }
         // A specification `bool` is exactly `0` or `1` by its structure, so
         // its equation with one of them also files the other's: `b != true`
@@ -6196,8 +6250,16 @@ impl PureFactContext {
     fn forget_condition_fact(&mut self, condition: &ConditionTerm, assumed: bool) {
         crate::instrumentation::record_deterministic_work(1);
         self.condition_facts = self.condition_facts.without_key(condition);
-        if self.congruence_conditions.contains_key(condition) {
-            self.congruence_conditions.remove(condition);
+        if self
+            .equality_graph
+            .admitted
+            .congruence_conditions
+            .contains_key(condition)
+        {
+            self.equality_graph
+                .admitted
+                .congruence_conditions
+                .remove(condition);
             self.rebuild_equality_graph();
         }
         self.execution_fact_projection
@@ -6219,7 +6281,10 @@ impl PureFactContext {
             false,
         );
         self.withdraw_typed_pointer_read_definition(condition, assumed);
-        self.rebuild_memory_load_condition_facts();
+        self.adjust_scalar_evidence_input(condition, assumed, false);
+        self.adjust_bitvector64_equality(condition, assumed, false);
+        self.adjust_exact_constant_equality(condition, assumed, false);
+        self.memory_load_condition_facts = std::sync::Arc::new(std::sync::OnceLock::new());
         self.content_fingerprint ^= Self::fingerprint(1, &(condition.clone(), assumed));
     }
 
@@ -6241,10 +6306,14 @@ impl PureFactContext {
             .iter()
             .all(|(condition, value)| self.condition_facts.get(condition) == Some(value))
             && required
+                .equality_graph
+                .admitted
                 .typed_pointer_read_definitions
                 .iter()
                 .all(|(variable, definitions)| {
-                    self.typed_pointer_read_definitions
+                    self.equality_graph
+                        .admitted
+                        .typed_pointer_read_definitions
                         .get(variable)
                         .is_some_and(|held| {
                             definitions
@@ -7245,8 +7314,8 @@ pub(in crate::kernel) fn exact_signed_constant(
     // constant: one keyed lookup instead of a scan of every condition fact.
     crate::instrumentation::record_deterministic_work(1);
     let (_, constant) = assumptions
-        .exact_constant_equalities
-        .get(term)?
+        .equality_graph
+        .exact_literal_sources(term)?
         .iter()
         .next()?;
     #[cfg(test)]
