@@ -84,3 +84,19 @@ void follow(struct node* p, int32 more) {
 ```expect
 pass
 ```
+
+## Additional affected audit regression
+
+The unchanged named nightly regression also fails before its expansion/audit
+checks:
+
+```sh
+cargo nextest run --bin click --profile nightly --run-ignored only \
+  -E 'test(=audit::tests::loop_expansion_preserves_match_pointer_theorem_arguments_and_audits_every_site)'
+```
+
+Its original `rb_root_of.contract` rejects the loop preservation join with
+`parent` carrying `struct rb_node` at the head and no retained object class on
+the back edge. This regression uses `mdtests/rb_ascending_walk_to_root.md` and
+adds pointer-theorem calls in a matched context frame. Include it when checking
+the eventual class-preservation fix; it must verify before expansion can run.

@@ -3315,7 +3315,43 @@ fn check_public_boundary_tools(lengths: &[usize]) {
                 ],
             );
         }
-        assert_cli(&p, &["verify"]);
+        let expanded = fs::read_to_string(p.root.join("borrow.click")).unwrap();
+        // Only the final fragment contains write_slice and adler32_slice.
+        // The full profile checked every preceding callee and lemma already;
+        // require those declarations and proof bodies to remain unchanged.
+        let fragment = "    fn write_slice(";
+        assert!(
+            source.split_once(fragment).unwrap().0 == expanded.split_once(fragment).unwrap().0,
+            "expansion changed an unselected callee or lemma"
+        );
+        for name in claims {
+            let written = if expanded.contains(&format!("fn {name}(")) {
+                name
+            } else {
+                name.rsplit("::").next().unwrap()
+            };
+            let start = expanded.find(&format!("fn {written}(")).unwrap();
+            let body = start + expanded[start..].find("} by {").unwrap() + "} by {".len();
+            let body = body + expanded[body..].len() - expanded[body..].trim_start().len();
+            let line = expanded[..body]
+                .bytes()
+                .filter(|&byte| byte == b'\n')
+                .count()
+                + 1;
+            let column = expanded[..body].rsplit('\n').next().unwrap().len() + 1;
+            let location = format!("{}:{line}:{column}", p.root.join("borrow.click").display());
+            let checked = Command::new(env!("CARGO_BIN_EXE_click"))
+                .args(["verify", &location])
+                .output()
+                .unwrap();
+            assert!(
+                checked.status.success(),
+                "{name}: {}\n{}",
+                String::from_utf8_lossy(&checked.stdout),
+                String::from_utf8_lossy(&checked.stderr)
+            );
+            assert!(String::from_utf8_lossy(&checked.stdout).contains("1 selected proof verified"));
+        }
     }
 }
 

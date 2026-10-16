@@ -1718,12 +1718,19 @@ fn rewrites_of_the_same_text_do_not_combine() {
 /// Verifying a claim's rewrites together runs the claim once, so it costs
 /// about one site's verification rather than one per site.
 #[test]
-#[ignore = "nightly: 73 s, over the gate's per-test budget (2026-10-06)"]
+#[ignore = "nightly: audits combined rewrites of three multi-site claims"]
 fn a_claims_rewrites_are_verified_in_one_run() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mdtests");
-    let sources = audit_targets(&path).unwrap();
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+    // Exercise loop, branch, and 64-bit-index claims without inventorying the
+    // unrelated corpus. These are the same cases the corpus scan selected.
+    let sources = [
+        "a_byte_field_of_a_struct_array_element_in_a_loop_is_bounded_by_its_index.md",
+        "a_condition_reaching_one_value_along_two_paths_splits_into_them.md",
+        "a_frame_holds_across_a_write_at_a_64_bit_index.md",
+    ]
+    .map(|fixture| root.join(fixture));
     let sites = inventory_sites(&sources).unwrap();
-    // The first claim in the corpus with at least three smart sites.
+    // Each selected claim has at least three independently expandable sites.
     let mut by_claim: BTreeMap<(PathBuf, String), Vec<&AuditSite>> = BTreeMap::new();
     for site in &sites {
         by_claim
@@ -1781,7 +1788,10 @@ fn a_claims_rewrites_are_verified_in_one_run() {
             break;
         }
     }
-    assert_eq!(checked, 3, "the corpus has claims with several smart sites");
+    assert_eq!(
+        checked, 3,
+        "the fixtures have claims with several smart sites"
+    );
 }
 
 #[test]
