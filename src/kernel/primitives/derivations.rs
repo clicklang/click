@@ -1520,13 +1520,6 @@ impl ExecutionBudget {
         self.with_c_source_cost(c_statement_source_cost(statement))
     }
 
-    /// Adds the structural work of the independent verification evaluator.
-    /// Ordinary leaf statements cross both its verification dispatcher and
-    /// the shared statement evaluator, so their baseline contains two visits.
-    pub(crate) fn with_c_statement_verification_cost(self, statement: &CStatement) -> Self {
-        self.with_c_source_cost(c_statement_verification_source_cost(statement))
-    }
-
     /// Adds the evaluator work inherent in one selected whole-function
     /// judgment, including evaluation of its caller-side arguments.
     pub(crate) fn with_c_function_cost(
@@ -1535,18 +1528,6 @@ impl ExecutionBudget {
         arguments: &[CExpression],
     ) -> Self {
         let mut cost = c_statement_source_cost(function.body());
-        for argument in arguments {
-            cost.add_expression(c_expression_source_cost(argument).expression_steps);
-        }
-        self.with_c_source_cost(cost)
-    }
-
-    pub(crate) fn with_c_function_verification_cost(
-        self,
-        function: &CFunction,
-        arguments: &[CExpression],
-    ) -> Self {
-        let mut cost = c_statement_verification_source_cost(function.body());
         for argument in arguments {
             cost.add_expression(c_expression_source_cost(argument).expression_steps);
         }
@@ -1871,53 +1852,6 @@ fn c_statement_source_cost(statement: &CStatement) -> CSourceCost {
         }
     }
     cost
-}
-
-fn c_statement_verification_source_cost(statement: &CStatement) -> CSourceCost {
-    let mut cost = c_statement_source_cost(statement);
-    cost.statement_steps = c_statement_verification_source_steps(statement);
-    cost
-}
-
-fn c_statement_verification_source_steps(statement: &CStatement) -> usize {
-    let mut steps = 0usize;
-    let mut pending = vec![statement];
-    while let Some(statement) = pending.pop() {
-        match statement {
-            CStatement::Seq(first, second) => {
-                pending.push(first);
-                pending.push(second);
-            }
-            CStatement::If {
-                then_branch,
-                else_branch,
-                ..
-            } => {
-                steps = steps.saturating_add(1);
-                pending.push(then_branch);
-                pending.push(else_branch);
-            }
-            CStatement::While {
-                invariant_checks,
-                effect_checks,
-                body,
-                ..
-            } if !invariant_checks.is_empty() || !effect_checks.is_empty() => {
-                steps = steps.saturating_add(1);
-                pending.push(body);
-            }
-            CStatement::Switch { cases, .. } => {
-                steps = steps.saturating_add(1);
-                for case in cases {
-                    pending.push(&case.body);
-                }
-            }
-            // The verification dispatcher charges once, then delegates an
-            // ordinary leaf to the shared evaluator, which charges again.
-            _ => steps = steps.saturating_add(2),
-        }
-    }
-    steps
 }
 
 pub(in crate::kernel) type ExecutionResult<T> = Result<T, ExecutionLimit>;

@@ -4478,8 +4478,7 @@ pub fn prove_symbolic_c_statement_verification_paths_with_environment_and_loop_r
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
 ) -> (SymbolicCExecution, Option<CVerifiedLoopRule>) {
-    let mut budget =
-        ExecutionBudget::for_new_execution().with_c_statement_verification_cost(&statement);
+    let mut budget = ExecutionBudget::for_new_execution().with_c_statement_cost(&statement);
     prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule_using_budget(
         state,
         statement,
@@ -4588,8 +4587,7 @@ pub(crate) fn prove_symbolic_c_loop_exit_with_proven_phases(
     break_exits: Vec<CLoopBreakExit>,
     return_exits: Vec<CLoopReturnExit>,
 ) -> (SymbolicCExecution, Option<CVerifiedLoopRule>) {
-    let mut budget =
-        ExecutionBudget::for_new_execution().with_c_statement_verification_cost(&statement);
+    let mut budget = ExecutionBudget::for_new_execution().with_c_statement_cost(&statement);
     prove_symbolic_c_loop_exit_with_proven_phases_using_budget(
         state,
         statement,
@@ -4982,8 +4980,7 @@ pub fn prove_symbolic_c_function_verification_paths_with_environment(
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
 ) -> SymbolicCExecution {
-    let budget = ExecutionBudget::for_new_execution()
-        .with_c_function_verification_cost(&function, &arguments);
+    let budget = ExecutionBudget::for_new_execution().with_c_function_cost(&function, &arguments);
     prove_symbolic_c_function_verification_paths_with_environment_and_budget(
         state,
         function,
@@ -5046,8 +5043,7 @@ pub fn prove_checked_c_function_execution_with_environment(
                 assumptions.clone(),
                 environment.clone(),
                 execution_semantics,
-                ExecutionBudget::for_new_execution()
-                    .with_c_function_verification_cost(&function, &arguments),
+                ExecutionBudget::for_new_execution().with_c_function_cost(&function, &arguments),
                 true,
                 defer_conditional_resource_effect,
             )
