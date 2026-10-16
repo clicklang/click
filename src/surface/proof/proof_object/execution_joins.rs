@@ -698,65 +698,6 @@ impl<'a> Proof<'a> {
         })
     }
 
-    pub(super) fn common_resources_after_interface_consumption(
-        &self,
-        parent_execution: &ExecutionProofState,
-        arms: &[CheckedExecutionJoinArm<'_>; 2],
-        assertions: &[ProofAssertion],
-    ) -> Result<ResourceContext, ClickError> {
-        let ProofContext::Execution(context) = self.context.as_ref() else {
-            return Err(self.step_error("resource interface requires an execution proof"));
-        };
-        let mut then_residual = arms[0].execution.core.state.resources().clone();
-        let mut else_residual = arms[1].execution.core.state.resources().clone();
-        for assertion in assertions {
-            let ProofAssertion::Resource(resource) = assertion else {
-                continue;
-            };
-            let then_expected = lower_interface_resource_clause(
-                resource,
-                context.parameter_binding(),
-                &arms[0].execution.core.state,
-                arms[0].facts.assumptions(),
-            )?;
-            if !then_expected.is_own() {
-                continue;
-            }
-            let else_expected = lower_interface_resource_clause(
-                resource,
-                context.parameter_binding(),
-                &arms[1].execution.core.state,
-                arms[1].facts.assumptions(),
-            )?;
-            then_residual = then_residual
-                .without_fact_incrementally(&then_expected, arms[0].facts.assumptions())
-                .ok_or_else(|| {
-                    self.step_error(
-                        "then arm could not consume its established `branch ensuring` ownership representation",
-                    )
-                })?;
-            else_residual = else_residual
-                .without_fact_incrementally(&else_expected, arms[1].facts.assumptions())
-                .ok_or_else(|| {
-                    self.step_error(
-                        "else arm could not consume its established `branch ensuring` ownership representation",
-                    )
-                })?;
-        }
-        // The ancestor is the state the retained evidence reached, which is
-        // the one the kernel's check of the join intersects against.
-        ResourceContext::common_exact_descendant(
-            &then_residual,
-            &else_residual,
-            parent_execution.core.reached_state().resources(),
-        )
-        .ok_or_else(|| {
-            self.step_error(
-                "checked `branch ensuring` resource snapshots do not descend from the branch root",
-            )
-        })
-    }
-
     /// The merge law for a checked two-arm interface join: each arm is
     /// independently abstracted through the explicit `branch ensuring`
     /// interface before any result is selected, the join is accepted only
@@ -970,7 +911,7 @@ impl<'a> Proof<'a> {
             .map_err(|error| add_proof_branch_path(error, &execution.presentation.branch_path))?;
             Ok((execution, facts))
         };
-        let (mut then_abstract, then_interface_facts) = abstract_arm(&arms[0])?;
+        let (then_abstract, then_interface_facts) = abstract_arm(&arms[0])?;
         let (else_abstract, else_interface_facts) = abstract_arm(&arms[1])?;
 
         let then_interface_vec = then_interface_facts.to_vec();
@@ -1008,21 +949,9 @@ impl<'a> Proof<'a> {
             )));
         }
 
-        // Consume owned exports from both concrete arms before intersecting
-        // their exact residuals. Re-adding the normalized interface below
-        // therefore neither duplicates a common representation nor loses the
-        // portion of ownership selected by the interface.
-        let common_resources = self.common_resources_after_interface_consumption(
-            parent_execution,
-            &arms,
-            &assertions,
-        )?;
-
         // The facts the joined proof holds: the interface's, and what both
-        // arms established anyway. They are settled before the resources
-        // are composed, because the kernel's check of the join normalizes
-        // the successor's resources under these facts, and the same
-        // resources normalized under fewer facts can be written differently.
+        // arms established anyway. The kernel constructs the resource
+        // successor under exactly these facts.
         let mut facts = parent_facts.clone();
         let mut added_facts = Vec::new();
         let else_introduced: std::collections::BTreeSet<&Proposition> =
@@ -1042,35 +971,9 @@ impl<'a> Proof<'a> {
             }
         }
 
-        // Owned interface facts were consumed above and must be restored once.
-        // Duplicable views are added only when the residual common context
-        // does not already establish them.
-        let mut resources = common_resources;
-        let additions = then_abstract
-            .core
-            .state
-            .resources()
-            .facts()
-            .iter()
-            .filter(|fact| fact.is_own() || !resources.satisfies_fact(fact, facts.assumptions()))
-            .cloned()
-            .collect::<Vec<_>>();
-        resources = resources
-            .try_compose_into_valid_context_delaying_normalization(
-                additions.iter().cloned(),
-                facts.assumptions(),
-            )
-            .map_err(|error| {
-                self.step_error(format!(
-                    "invalid automatic common `branch ensuring` resource interface: {error}"
-                ))
-            })?
-            .normalized_around_facts(&additions, facts.assumptions());
-        let state = (*then_abstract.core.state)
-            .clone()
-            .with_resource_context(resources);
-        then_abstract.core.state = state.into();
-
+        // The kernel constructs the resource exchange from the concrete
+        // arms. Supply only the arm abstraction here; constructing its
+        // resource successor here would duplicate the same exchange.
         let abstract_state = (*then_abstract.core.state).clone();
         let mut execution = parent_execution.clone();
         execution.core.has_empty_execution_branch_leaf |=
@@ -1085,19 +988,6 @@ impl<'a> Proof<'a> {
         execution.core.state = abstract_state.clone().into();
         execution.core.loan_evidence = joined_loan_evidence;
         execution.presentation.recorded_snapshots = common_snapshots;
-        execution
-            .presentation
-            .recorded_snapshots
-            .insert(target, abstract_state.clone());
-        if !rejoins_cases {
-            execution.presentation.recorded_snapshots.insert(
-                ProgramPointRef {
-                    region: CodeRegionRef::Statement(statement_index),
-                    kind: ProgramPointKind::Exit,
-                },
-                abstract_state.clone(),
-            );
-        }
         execution.core.frontier.execution_start_state = Some(execution_start_state);
         match join_continuation {
             _ if rejoins_cases => {
@@ -1142,26 +1032,6 @@ impl<'a> Proof<'a> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             unreachable!("execution branch retained a non-execution context")
         };
-        if !rejoins_cases {
-            record_statement_program_snapshot_state(
-                &mut execution.presentation.recorded_snapshots,
-                context.function_block,
-                statement_index,
-                ProgramPointKind::Exit,
-                abstract_state,
-            );
-        }
-        record_current_statement_entry(
-            &execution.core.frontier,
-            &mut execution.presentation.recorded_snapshots,
-            &execution.core.state,
-            context.function_block,
-            context.function,
-            context.arguments,
-            context.claim_label,
-            context.tactic_index,
-            "branch ensuring",
-        )?;
 
         for fact in retained_facts {
             for surface in then_abstract.surface_propositions.surfaces(fact) {
@@ -1283,6 +1153,41 @@ impl<'a> Proof<'a> {
             ))
         })?;
         append_execution_effect_facts(&mut execution.core.effect_facts, &joined_effect);
+
+        let abstract_state = (*execution.core.state).clone();
+        execution
+            .presentation
+            .recorded_snapshots
+            .insert(target, abstract_state.clone());
+        if !rejoins_cases {
+            execution.presentation.recorded_snapshots.insert(
+                ProgramPointRef {
+                    region: CodeRegionRef::Statement(statement_index),
+                    kind: ProgramPointKind::Exit,
+                },
+                abstract_state.clone(),
+            );
+        }
+        if !rejoins_cases {
+            record_statement_program_snapshot_state(
+                &mut execution.presentation.recorded_snapshots,
+                context.function_block,
+                statement_index,
+                ProgramPointKind::Exit,
+                abstract_state,
+            );
+        }
+        record_current_statement_entry(
+            &execution.core.frontier,
+            &mut execution.presentation.recorded_snapshots,
+            &execution.core.state,
+            context.function_block,
+            context.function,
+            context.arguments,
+            context.claim_label,
+            context.tactic_index,
+            "branch ensuring",
+        )?;
 
         #[cfg(test)]
         CHECKED_EXECUTION_INTERFACE_JOINS.with(|count| count.set(count.get() + 1));

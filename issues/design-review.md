@@ -66,14 +66,19 @@ checks.
 
 ### P1. Proofs are far larger than the code
 
-Today: `examples/rbtree-erase` is 39,047 lines of `.click` for 322 lines of
-C (about 120x, six times the 20x target in
-`docs/internals/verification-efficiency.md`);
-`rbtree_erase_color_flips_red_all.click` alone is 518 KB with lines over
-1,300 characters. `examples/rust-byte-sum` proves a 9-line loop in about 184
-lines; `examples/modeled-binary-tree` proves the 12-line `tree_contains` in
-about 100. `examples/arena/arena_cells.click` is 5,537 lines for 279 lines
-of C.
+Today (2026-10-16, `scripts/proof-ratio.py`, comments and blank lines
+excluded): six of 53 examples are over the 20-lines-per-line-of-C target in
+`docs/internals/verification-efficiency.md`.
+
+- `rbtree-augmented`: 40x by lines, 93x by tokens.
+- `rbtree-erase`: 36x by lines, 119x by tokens.
+- `rbtree-insert`: 35x by lines, 71x by tokens.
+- Both Rust iterator sums: 33x by lines.
+- `arena`: 21x by lines.
+
+Token ratios run two to four times the line ratios because proof lines are
+long: `rbtree_erase_color_flips_red_all.click` is 518 KB with lines over
+1,300 characters.
 
 Proposed fix: item P2 and the landed P6 (loop facts carry across steps
 and the back edge closes implicitly), plus a published proof-to-code budget
@@ -85,6 +90,11 @@ for exceeding it are published.
 Decision: fix (maintainer, 2026-10-15). The gate reports each example's
 proof-to-code ratio against the 20x budget, report-only at first; P2 is the
 main remaining lever for meeting it.
+
+Progress: the report is in. `scripts/check.sh` ends by listing the examples
+over the target, with token ratios beside line ratios. What remains is
+bringing those examples under the target, or publishing the reason each one
+exceeds it.
 
 ### P2. Spec arithmetic is machine arithmetic
 

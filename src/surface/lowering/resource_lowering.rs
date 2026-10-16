@@ -1183,6 +1183,31 @@ pub(in crate::surface) fn requirement_propositions_with_sources_and_assumptions(
     spec_definitions: SpecDefinitions<'_>,
     initial_assumptions: &PureFactContext,
 ) -> Result<Vec<LoweredRequirementFact>, ClickError> {
+    requirement_propositions_sharing_lowering_state(
+        requires,
+        parameter_binding,
+        state,
+        spec_definitions,
+        initial_assumptions,
+        &RequirementLoweringState::default(),
+    )
+}
+
+/// The state proposition requirements are lowered at
+/// (`requirement_lowering_state`), built on first use. Every requirement
+/// lowered at one entry state with one parameter binding lowers at the same
+/// state, so a caller lowering them one list at a time shares one.
+#[derive(Default)]
+pub(in crate::surface) struct RequirementLoweringState(std::cell::OnceCell<Result<CState, String>>);
+
+pub(in crate::surface) fn requirement_propositions_sharing_lowering_state(
+    requires: &[Requirement],
+    parameter_binding: ParameterBinding<'_>,
+    state: &CState,
+    spec_definitions: SpecDefinitions<'_>,
+    initial_assumptions: &PureFactContext,
+    lowering_state: &RequirementLoweringState,
+) -> Result<Vec<LoweredRequirementFact>, ClickError> {
     // A proposition requirement may contain a memory read whose range is
     // justified by another requirement, such as `1 <= n` before
     // `a[0] == 7` under `views a[0..n]`. Lower requirements independently
@@ -1198,7 +1223,6 @@ pub(in crate::surface) fn requirement_propositions_with_sources_and_assumptions(
         .collect::<Vec<Option<ClickError>>>();
     let mut pending = (0..requires.len()).collect::<Vec<_>>();
     let mut assumptions = initial_assumptions.clone();
-    let mut lowering_state = None;
 
     // Requirements may be written in either order, so use one retry pass
     // after the first pass has published the facts it could lower. A bounded
@@ -1221,7 +1245,8 @@ pub(in crate::surface) fn requirement_propositions_with_sources_and_assumptions(
                 )
                 .map(Some),
                 Requirement::Proposition(proposition) => lowering_state
-                    .get_or_insert_with(|| {
+                    .0
+                    .get_or_init(|| {
                         requirement_lowering_state(parameter_binding, state)
                             .map_err(|error| error.message().to_string())
                     })

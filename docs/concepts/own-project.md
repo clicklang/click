@@ -264,6 +264,7 @@ proof error:
 
 tactic@7:
   simp();
+goal: false
 
 To get a trace:
   click verify --trace-proof label_fit label.click
@@ -303,6 +304,9 @@ proof error:
 
 tactic@8:
   simp();
+goal: 31u64 <= length
+available premises at the failed check (showing up to 8 relevant facts from 2 recorded premises):
+  length >= 32u64
 
 To get a trace:
   click verify --trace-proof label_fit label.click

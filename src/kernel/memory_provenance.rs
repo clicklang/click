@@ -6827,7 +6827,7 @@ mod opaque_pointer_frame_tests {
         let stored = CPointerValue::new(target.clone(), CType::Int32Pointer).with_extent(Some(
             SubobjectExtent {
                 start: target,
-                width: 4,
+                width: 4u32.into(),
             },
         ));
         let memory = intern_c_memory(

@@ -1762,13 +1762,13 @@ impl CLocalEnvironment {
     fn insert_binding(&mut self, name: String, binding: CLocalBinding) {
         let slot = binding.slot().clone();
         let old_slot = self.bindings.get(&name).map(CLocalBinding::slot).cloned();
-        std::sync::Arc::make_mut(&mut self.bindings).insert(name.clone(), binding);
+        self.bindings.insert(name.clone(), binding);
         if let Some(old_slot) = old_slot
             && old_slot != slot
         {
-            std::sync::Arc::make_mut(&mut self.slots).remove(&old_slot);
+            self.slots.remove(&old_slot);
         }
-        std::sync::Arc::make_mut(&mut self.slots).insert(slot, name);
+        self.slots.insert(slot, name);
     }
 
     /// Puts back a binding read from another environment with
@@ -1813,10 +1813,11 @@ impl CLocalEnvironment {
     /// designated it, so a later declaration of that name is a declaration
     /// rather than a re-entry of one this frame still holds.
     pub(in crate::kernel) fn remove(&mut self, name: &str) {
-        let Some(binding) = std::sync::Arc::make_mut(&mut self.bindings).remove(name) else {
+        let Some(binding) = self.bindings.get(name).cloned() else {
             return;
         };
-        std::sync::Arc::make_mut(&mut self.slots).remove(binding.slot());
+        self.bindings.remove(&name.to_string());
+        self.slots.remove(binding.slot());
     }
 }
 
@@ -6688,6 +6689,12 @@ impl CState {
         ) -> bool {
             std::sync::Arc::ptr_eq(left, right) || (left.is_empty() && right.is_empty())
         }
+        fn same_or_empty_persistent_map<K: Ord, V>(
+            left: &crate::persistent::PersistentMap<K, V>,
+            right: &crate::persistent::PersistentMap<K, V>,
+        ) -> bool {
+            left.shares_root_with(right) || (left.is_empty() && right.is_empty())
+        }
         let same_or_empty_resources = |left: &ResourceContext, right: &ResourceContext| {
             (std::sync::Arc::ptr_eq(&left.storage, &right.storage)
                 && std::sync::Arc::ptr_eq(&left.loan_dependencies, &right.loan_dependencies))
@@ -6706,8 +6713,8 @@ impl CState {
                 .predicate_count_permissions
                 .is_some()
             && same_bindings
-            && same_or_empty_map(&self.locals.bindings, &other.locals.bindings)
-            && same_or_empty_map(&self.locals.slots, &other.locals.slots)
+            && same_or_empty_persistent_map(&self.locals.bindings, &other.locals.bindings)
+            && same_or_empty_persistent_map(&self.locals.slots, &other.locals.slots)
             && same_or_empty_resources(&self.instance_field_scope, &other.instance_field_scope)
             && same_or_empty_resources(&self.resources, &other.resources)
             && self.loan_ledger == other.loan_ledger

@@ -1,3 +1,7 @@
+// Proof-result auto traits traverse the same Arc-linked alpha-key/load cycle
+// documented in src/lib.rs. This crate needs the library's compiler setting.
+#![recursion_limit = "256"]
+
 use click::surface::ProgramInputs;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -118,16 +122,22 @@ fn canonical_charon_examples_verify_locked_inputs() {
             .unwrap();
     let mut checked = 0;
     for entry in inventory {
-        let config = root.join(entry["config"].as_str().unwrap());
+        let sidecar = root.join(entry["sidecar"].as_str().unwrap());
+        let directory = sidecar.parent().unwrap();
+        let config = directory.join("click.project.json");
         let metadata: serde_json::Value =
             serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
-        assert_eq!(metadata["language"], "rust");
-        assert_eq!(metadata["schema"], 3);
-        assert!(
-            metadata.get("backend").is_none(),
-            "canonical Rust examples use the native default"
-        );
-        run_example_in_thread(config.parent().unwrap()).unwrap_or_else(|error| panic!("{error}"));
+        let units = metadata["units"].as_object().unwrap();
+        assert!(!units.is_empty());
+        for unit in units.values() {
+            assert_eq!(unit["language"], "rust");
+            assert!(
+                unit.get("backend").is_none(),
+                "canonical Rust examples use the native default"
+            );
+        }
+        assert!(directory.join("click.project.lock.json").is_file());
+        run_example_in_thread(directory).unwrap_or_else(|error| panic!("{error}"));
         checked += 1;
     }
     assert_eq!(checked, 16);
@@ -974,7 +984,7 @@ fn rbtree_erase_red_leaf_requires_no_fixup() {
     general_erase_refuses_mutation(
         "\t\t\trebalance = __rb_is_black(pc) ? parent : NULL;\n",
         "\t\t\trebalance = parent;\n",
-        "could not establish `result == 0`",
+        "required body fact: erased_parent == 0",
     );
 }
 
@@ -1007,7 +1017,7 @@ fn rbtree_erase_right_child_requires_no_fixup() {
     general_erase_refuses_mutation(
         "\t\t\tchild->__rb_parent_color = pc;\n\t\t\trebalance = NULL;",
         "\t\t\tchild->__rb_parent_color = pc;\n\t\t\trebalance = parent;",
-        "could not establish `result == 0`",
+        "required body fact: erased_parent == 0",
     );
 }
 
@@ -1018,7 +1028,7 @@ fn rbtree_erase_left_child_requires_no_fixup() {
     general_erase_refuses_mutation(
         "\t\t__rb_change_child(node, tmp, parent, root);\n\t\trebalance = NULL;",
         "\t\t__rb_change_child(node, tmp, parent, root);\n\t\trebalance = parent;",
-        "could not establish `result == 0`",
+        "required body fact: erased_parent == 0",
     );
 }
 
@@ -1040,7 +1050,7 @@ fn rbtree_erase_red_successor_requires_no_fixup() {
     general_erase_refuses_mutation(
         "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
         "\t\t\trebalance = parent;\n",
-        "could not establish `result == 0`",
+        "required body fact: result == 0",
     );
 }
 
@@ -1051,7 +1061,7 @@ fn rbtree_erase_child_successor_requires_no_fixup() {
     general_erase_refuses_mutation(
         "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n\t\t\trebalance = NULL;",
         "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n\t\t\trebalance = parent;",
-        "could not establish `result == 0`",
+        "required body fact: result == 0",
     );
 }
 
@@ -2218,7 +2228,7 @@ fn rbtree_augmented_wrappers_reject_missing_or_wrong_calls() {
             "rb_insert_augmented.c",
             "\t__rb_insert(node, root, augment_rotate);",
             "",
-            "requires a call to `__rb_insert` at the current frontier",
+            "requires a call to `__rb_insert#inline:rb_insert_augmented.c` at the current frontier",
         ),
         (
             "rbtree_insert_augmented.click",
@@ -2232,7 +2242,7 @@ fn rbtree_augmented_wrappers_reject_missing_or_wrong_calls() {
             "rb_erase_augmented.c",
             "\t____rb_erase_color(parent, root, augment_rotate);",
             "",
-            "requires a call to `____rb_erase_color` at the current frontier",
+            "requires a call to `____rb_erase_color#inline:rb_erase_augmented.c` at the current frontier",
         ),
         (
             "rbtree_erase_leaf.click",
@@ -2724,6 +2734,60 @@ fn borrowed_composite_fact_after_write_expands_and_rechecks() {
             let borrowed_write = original.replace("q[0] = 1;", "p[0] = 0;");
             assert_ne!(borrowed_write, *original);
             assert!(verify_c0_sources(source, &[("probe.c", &borrowed_write)]).is_err());
+        },
+    )
+    .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: population predicate audit and rejection controls"]
+fn produced_population_predicate_expands_and_retains_its_return_state() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/produced_population_count_in_ensured_predicate.md");
+    let output = Command::new(env!("CARGO_BIN_EXE_click"))
+        .arg("audit")
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    limits::spawn(
+        "population predicate rejection controls",
+        "click-population-predicate-negative".into(),
+        move || {
+            let fixture = click::cli::read_mdtest(&path).unwrap();
+            let source = fixture.click_source.unwrap();
+            let sources = fixture.c_sources;
+            for (before, after) in [
+                (
+                    "produces amount of slot(owner);",
+                    "produces 1 of slot(owner);",
+                ),
+                ("requires count(slot(owner)) == 0;", ""),
+                ("owns authority(slot(owner));", ""),
+            ] {
+                let invalid = source.replace(before, after);
+                assert_ne!(invalid, source);
+                assert!(
+                    verify_c0_sources(&invalid, &source_refs(&sources)).is_err(),
+                    "accepted {before} -> {after}"
+                );
+            }
+            let wrong_capacity = sources
+                .iter()
+                .map(|(name, body)| {
+                    (
+                        name.clone(),
+                        body.replace("owner->capacity = amount;", "owner->capacity = 0;"),
+                    )
+                })
+                .collect::<Vec<_>>();
+            assert_ne!(wrong_capacity, sources);
+            assert!(verify_c0_sources(&source, &source_refs(&wrong_capacity)).is_err());
         },
     )
     .unwrap();

@@ -2789,6 +2789,10 @@ pub enum C0Statement {
         /// automatic array before the elements it writes; absent for an
         /// object declared without one, which stays uninitialized.
         zero_fill: Option<C0ZeroFill>,
+        /// The object's strict-aliasing class when the parser knows more
+        /// than `c_type` says: an `int *` versus a struct pointer, or a byte
+        /// array versus an array of structs (`design/effective-types.md`).
+        declared_class: Option<crate::kernel::effective_type::CAccessClass>,
         /// Where the source statement was written; see [`C0Site`].
         site: C0Site,
     },
@@ -2856,9 +2860,10 @@ pub enum C0Statement {
         pointer: C0Expression,
         value: C0Expression,
         value_type: Option<C0Type>,
-        /// The access class of a member store, which names its struct;
-        /// other stores take theirs from `value_type`.
-        member_class: Option<crate::kernel::effective_type::CAccessClass>,
+        /// The access class of the stored lvalue when `value_type` does not
+        /// give it: a member store names its struct, and an `int *` store
+        /// is told from a struct pointer's.
+        lvalue_class: Option<crate::kernel::effective_type::CAccessClass>,
         pointee_constant: bool,
         /// Where the source statement was written; see [`C0Site`].
         site: C0Site,
@@ -2965,6 +2970,14 @@ fn struct_byte_stride(index: C0Expression, width: u32) -> C0Expression {
         }),
         Box::new(C0Expression::Int64Literal(i64::from(width))),
     )
+}
+
+/// A loaded type with the access class its kernel type cannot give
+/// (`design/effective-types.md`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct C0ClassedType {
+    pub c_type: C0Type,
+    pub class: crate::kernel::effective_type::CAccessClass,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3105,7 +3118,7 @@ pub enum C0Expression {
     BitwiseNot(Box<C0Expression>),
     /// `*pointer`, with the lvalue's type when the kernel type of the loaded
     /// value cannot give its access class (`design/effective-types.md`).
-    Load(Box<C0Expression>, Option<C0Type>),
+    Load(Box<C0Expression>, Option<C0ClassedType>),
     /// One observable sequential read of the source lvalue. `struct_name`
     /// carries nominal pointer provenance through the lowering boundary.
     SequentialRead {
@@ -3166,7 +3179,7 @@ pub enum C0Expression {
     },
     /// `base[index]`, with the element type when the kernel type of the
     /// loaded value cannot give its access class (`design/effective-types.md`).
-    Index(Box<C0Expression>, Box<C0Expression>, Option<C0Type>),
+    Index(Box<C0Expression>, Box<C0Expression>, Option<C0ClassedType>),
     /// An array index whose declared subobject bound must be established
     /// before the enclosing flattened offset is used.
     CheckedArrayIndex {
@@ -3782,10 +3795,10 @@ impl C0Function {
             }
             C0Expression::Subobject { pointer, width } => {
                 let mut address = self.static_address_expression(pointer)?;
-                address.extent = Some(crate::kernel::SubobjectExtent {
-                    start: address.pointer.clone(),
-                    width: u64::from(*width),
-                });
+                address.extent = Some(crate::kernel::SubobjectExtent::constant(
+                    address.pointer.clone(),
+                    *width,
+                ));
                 Some(address)
             }
             C0Expression::Add(pointer, offset) => {
@@ -4793,7 +4806,12 @@ impl C0Parameter {
             .map(|_| crate::kernel::CType::UInt8Pointer)
             .unwrap_or_else(|| self.c_type.to_kernel_type());
         let pointee_class = (self.struct_name.is_none() && self.array_element_width.is_none())
-            .then(|| self.c_type.pointee_type()?.access_class())
+            .then(|| {
+                let pointee = self.c_type.pointee_type()?;
+                pointee
+                    .access_class()
+                    .or_else(|| int_pointer_class(pointee))
+            })
             .flatten()
             .or_else(|| self.pointee_struct_class.clone());
         crate::kernel::c_parameter(self.name.clone(), c_type)
@@ -5280,6 +5298,7 @@ impl C0Statement {
                 pointee_constant,
                 zero_fill,
                 initializer,
+                declared_class: parsed_class,
                 ..
             } => {
                 let mut statement = crate::kernel::c_declare_with_zero_fill(
@@ -5298,7 +5317,7 @@ impl C0Statement {
                 } = &mut statement
                 {
                     *value = initializer.as_ref().map(C0Expression::to_kernel_expression);
-                    *declared_class = c_type.declared_class();
+                    *declared_class = parsed_class.clone().or_else(|| c_type.declared_class());
                 }
                 statement
             }
@@ -5369,7 +5388,7 @@ impl C0Statement {
                 pointer,
                 value,
                 value_type,
-                member_class,
+                lvalue_class,
                 pointee_constant,
                 ..
             } => match value_type {
@@ -5377,7 +5396,7 @@ impl C0Statement {
                     pointer.to_kernel_expression(),
                     value.to_kernel_expression(),
                     value_type.to_kernel_type(),
-                    member_class.clone().or_else(|| value_type.access_class()),
+                    lvalue_class.clone().or_else(|| value_type.access_class()),
                     *pointee_constant,
                     false,
                 ),
@@ -5661,8 +5680,8 @@ impl C0Expression {
             Self::Load(pointer, None) => crate::kernel::c_load(pointer.lower_expression()),
             Self::Load(pointer, Some(loaded_type)) => crate::kernel::c_classed_load(
                 pointer.lower_expression(),
-                loaded_type.to_kernel_type(),
-                loaded_type.access_class(),
+                loaded_type.c_type.to_kernel_type(),
+                Some(loaded_type.class.clone()),
             ),
             Self::SequentialRead {
                 target,
@@ -5719,8 +5738,8 @@ impl C0Expression {
             // with the class the kernel type cannot give.
             Self::Index(base, index, Some(element_type)) => crate::kernel::c_classed_load(
                 crate::kernel::c_add(base.lower_expression(), index.lower_expression()),
-                element_type.to_kernel_type(),
-                element_type.access_class(),
+                element_type.c_type.to_kernel_type(),
+                Some(element_type.class.clone()),
             ),
             Self::CheckedArrayIndex { index, .. } => index.lower_expression(),
         }
@@ -7493,8 +7512,26 @@ fn add_member_class(
             }
             None => contents.member(None),
         },
-        _ => contents.member(c_type.access_class()),
+        _ => contents.member(c_type.access_class().or_else(|| int_pointer_class(c_type))),
     }
+}
+
+/// The class of an `int *` or `int **` of type `c_type`, which the frontend
+/// spells as it spells struct pointers; callers know there is no struct.
+fn int_pointer_class(c_type: C0Type) -> Option<crate::kernel::effective_type::CAccessClass> {
+    use crate::kernel::effective_type::{CAccessClass, CPointeeBase, CScalarClass};
+    let depth = match c_type {
+        C0Type::Int32Pointer => 1,
+        C0Type::Int32PointerPointer => 2,
+        _ => return None,
+    };
+    Some(CAccessClass::Pointer {
+        base: CPointeeBase::Integer {
+            class: CScalarClass::Int,
+            signed: true,
+        },
+        depth,
+    })
 }
 
 /// The class of a struct pointer of type `c_type`, a pointer or an array
@@ -12477,6 +12514,7 @@ impl Parser {
                 pointee_constant: false,
                 initializer: None,
                 zero_fill: None,
+                declared_class: None,
                 site: C0Site::NONE,
             };
             let statement = if self.peek() == Some(&Token::Equal) {
@@ -12712,6 +12750,8 @@ impl Parser {
                 pointee_constant,
                 initializer: None,
                 zero_fill: None,
+                declared_class: self
+                    .local_declared_class(c_type, parsed_type.struct_name.as_deref()),
                 site: C0Site::NONE,
             };
             let statement = if self.peek() == Some(&Token::Equal) {
@@ -12758,6 +12798,7 @@ impl Parser {
                             constant,
                             pointee_constant,
                             zero_fill: None,
+                            declared_class,
                             ..
                         } => C0Statement::Declare {
                             c_type,
@@ -12768,6 +12809,7 @@ impl Parser {
                             pointee_constant,
                             initializer: None,
                             zero_fill,
+                            declared_class,
                             site: C0Site::NONE,
                         },
                         _ => unreachable!("an array declaration is a plain declaration"),
@@ -13297,7 +13339,7 @@ impl Parser {
                         access_class: None,
                     },
                     value_type: Some(element_type),
-                    member_class: None,
+                    lvalue_class: None,
                     pointee_constant: field.pointee_constant,
                     site: C0Site::NONE,
                 });
@@ -13388,6 +13430,7 @@ impl Parser {
                     pointee_constant,
                     initializer: None,
                     zero_fill: None,
+                    declared_class: None,
                     site: C0Site::NONE,
                 }),
                 Box::new(C0Statement::Assign {
@@ -13689,8 +13732,8 @@ impl Parser {
                     Ok(C0Statement::Store {
                         pointer: *pointer,
                         value,
-                        value_type: loaded_type,
-                        member_class: None,
+                        value_type: loaded_type.as_ref().map(|loaded| loaded.c_type),
+                        lvalue_class: loaded_type.map(|loaded| loaded.class),
                         pointee_constant: false,
                         site: C0Site::NONE,
                     })
@@ -13733,7 +13776,7 @@ impl Parser {
                         pointer: *pointer,
                         value,
                         value_type: Some(field_type),
-                        member_class: access_class,
+                        lvalue_class: access_class,
                         pointee_constant,
                         site: C0Site::NONE,
                     })
@@ -13750,8 +13793,8 @@ impl Parser {
                 C0Expression::Index(base, index, element_type) => Ok(C0Statement::Store {
                     pointer: C0Expression::Add(base, index),
                     value,
-                    value_type: element_type,
-                    member_class: None,
+                    value_type: element_type.as_ref().map(|element| element.c_type),
+                    lvalue_class: element_type.map(|element| element.class),
                     pointee_constant: false,
                     site: C0Site::NONE,
                 }),
@@ -14964,6 +15007,7 @@ impl Parser {
                 constant,
                 pointee_constant,
                 zero_fill,
+                declared_class,
                 site,
             } => {
                 let (prefix, expression) = self.lower_expression_calls(expression)?;
@@ -14978,6 +15022,7 @@ impl Parser {
                         constant,
                         pointee_constant,
                         zero_fill,
+                        declared_class,
                         site,
                     },
                 ))
@@ -15086,6 +15131,7 @@ impl Parser {
                     pointee_constant: false,
                     initializer: None,
                     zero_fill: None,
+                    declared_class: None,
                     site: site.clone(),
                 });
                 prefix.push(C0Statement::Assign {
@@ -15136,7 +15182,7 @@ impl Parser {
                 pointer,
                 value,
                 value_type,
-                member_class,
+                lvalue_class,
                 pointee_constant,
                 site,
             } => {
@@ -15147,7 +15193,7 @@ impl Parser {
                         pointer,
                         value,
                         value_type,
-                        member_class,
+                        lvalue_class,
                         pointee_constant,
                         site,
                     },
@@ -15539,6 +15585,7 @@ impl Parser {
                 pointee_constant: self.variable_pointee_constants.contains(name),
                 initializer: None,
                 zero_fill: None,
+                declared_class: None,
                 site: C0Site::NONE,
             });
             prefix.push(C0Statement::Assign {
@@ -15634,6 +15681,7 @@ impl Parser {
                             pointee_constant,
                             initializer: None,
                             zero_fill: None,
+                            declared_class: None,
                             site: C0Site::NONE,
                         },
                         C0Statement::Assign {
@@ -15678,6 +15726,7 @@ impl Parser {
                     pointee_constant,
                     initializer: None,
                     zero_fill: None,
+                    declared_class: None,
                     site: C0Site::NONE,
                 });
                 // Conversion happens once when the typed temporary receives
@@ -15889,6 +15938,7 @@ impl Parser {
                     pointee_constant: false,
                     initializer: None,
                     zero_fill: None,
+                    declared_class: None,
                     site: C0Site::NONE,
                 });
                 prefix.push(C0Statement::If {
@@ -15931,6 +15981,7 @@ impl Parser {
                     pointee_constant,
                     initializer: None,
                     zero_fill: None,
+                    declared_class: None,
                     site: C0Site::NONE,
                 }];
                 prefix.push(body);
@@ -16045,6 +16096,7 @@ impl Parser {
                     pointee_constant,
                     initializer: None,
                     zero_fill: None,
+                    declared_class: None,
                     site: C0Site::NONE,
                 });
                 prefix.push(C0Statement::Assign {
@@ -16228,6 +16280,7 @@ impl Parser {
             pointee_constant: false,
             initializer: None,
             zero_fill: None,
+            declared_class: None,
             site: C0Site::NONE,
         });
         prefix.push(C0Statement::Assign {
@@ -16335,6 +16388,7 @@ impl Parser {
             pointee_constant: false,
             initializer: None,
             zero_fill: None,
+            declared_class: None,
             site: C0Site::NONE,
         });
         prefix.push(C0Statement::If {
@@ -18556,15 +18610,37 @@ impl Parser {
         C0Expression::Index(Box::new(base), Box::new(index), element_type)
     }
 
-    /// The type `*pointer` loads, when the kernel type of the loaded value
-    /// cannot give its access class: a `long` or `long long`, or a pointer
-    /// whose pointee the kernel type erases.
-    fn classed_pointee_type(&self, pointer: &C0Expression) -> Option<C0Type> {
+    /// The type `*pointer` loads, with its access class, when the kernel
+    /// type of the loaded value cannot give the class: a `long` or
+    /// `long long`, a pointer whose pointee the kernel type erases, or an
+    /// `int *` that `pointer` is known not to hold as a struct pointer.
+    fn classed_pointee_type(&self, pointer: &C0Expression) -> Option<C0ClassedType> {
         let pointee = self.source_expression_type(pointer)?.pointee_type()?;
-        let class = pointee.access_class()?;
+        let class = pointee.access_class().or_else(|| {
+            self.points_to_no_struct(pointer)
+                .then(|| int_pointer_class(pointee))
+                .flatten()
+        })?;
         (crate::kernel::effective_type::CAccessClass::of_kernel_type(pointee.to_kernel_type())
-            != Some(class))
-        .then_some(pointee)
+            .as_ref()
+            != Some(&class))
+        .then_some(C0ClassedType {
+            c_type: pointee,
+            class,
+        })
+    }
+
+    /// Whether what `pointer` points to is known not to involve a struct:
+    /// a variable or member declared without one. Other expressions are not
+    /// known, and their loads stay unclassed.
+    fn points_to_no_struct(&self, pointer: &C0Expression) -> bool {
+        match pointer {
+            C0Expression::Variable(name) => !self.variable_structs.contains_key(name),
+            C0Expression::Field {
+                field_struct_name, ..
+            } => field_struct_name.is_none(),
+            _ => false,
+        }
     }
 
     /// The strict-aliasing class of struct `name`
@@ -18572,6 +18648,32 @@ impl Parser {
     /// and unions contain at any depth.
     fn struct_class(&self, name: &str) -> crate::kernel::effective_type::CStructClass {
         struct_class_in(name, &self.structs, &self.unions)
+    }
+
+    /// The class a local of type `c_type` records, when the struct it may
+    /// name says more than the type: a struct pointer or an array of
+    /// structs, or, when it names none, an `int *`, `int **` or byte array,
+    /// whose types the frontend shares with struct pointers and arrays.
+    fn local_declared_class(
+        &self,
+        c_type: C0Type,
+        struct_name: Option<&str>,
+    ) -> Option<crate::kernel::effective_type::CAccessClass> {
+        use crate::kernel::effective_type::{CAccessClass, CPointeeBase, CScalarClass};
+        match struct_name {
+            Some(name) if matches!(c_type, C0Type::UInt8Array(_)) => {
+                Some(CAccessClass::Struct(self.struct_class(name)))
+            }
+            Some(name) => {
+                struct_pointer_class(c_type, CPointeeBase::Struct(self.struct_class(name)))
+            }
+            None => match c_type {
+                C0Type::Int8Array(_) | C0Type::UInt8Array(_) => {
+                    Some(CAccessClass::Scalar(CScalarClass::Char))
+                }
+                _ => int_pointer_class(c_type),
+            },
+        }
     }
 
     /// The access class of a member access to `field` through struct
@@ -18588,7 +18690,10 @@ impl Parser {
                 crate::kernel::effective_type::CPointeeBase::Struct(self.struct_class(name)),
             ),
             Some(_) => return None,
-            None => field.c_type.access_class(),
+            None => field
+                .c_type
+                .access_class()
+                .or_else(|| int_pointer_class(field.c_type)),
         };
         Some(crate::kernel::effective_type::CAccessClass::member(
             self.struct_class(container),

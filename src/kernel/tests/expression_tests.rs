@@ -3723,7 +3723,7 @@ fn unsigned_narrowing_distributes_constant_subtraction_modulo_the_low_word() {
 
 /// A pointer at `pair + offset` whose subobject extent is `[pair + start,
 /// pair + start + width)`, as `&pair.first` would carry.
-fn subobject_pointer(offset: i64, start: i64, width: u64) -> CPointerValue {
+fn subobject_pointer(offset: i64, start: i64, width: u32) -> CPointerValue {
     CPointerValue::new(
         Pointer {
             block: "pair".into(),
@@ -3736,7 +3736,7 @@ fn subobject_pointer(offset: i64, start: i64, width: u64) -> CPointerValue {
             block: "pair".into(),
             offset: PointerOffsetTerm::Constant(start),
         },
-        width,
+        width: Bitvector32Term::Constant(width),
     }))
 }
 
@@ -3803,7 +3803,7 @@ fn substitution_maps_the_extent_start_with_the_address() {
     let value = CValue::Pointer(
         CPointerValue::new(address(4), CType::Int32Pointer).with_extent(Some(SubobjectExtent {
             start: address(0),
-            width: 4,
+            width: Bitvector32Term::Constant(4),
         })),
     );
     let replacement = Bitvector32Term::Variable(Variable(98_102));
@@ -3819,7 +3819,7 @@ fn substitution_maps_the_extent_start_with_the_address() {
         substituted.extent(),
         Some(&SubobjectExtent {
             start: expected(0),
-            width: 4,
+            width: Bitvector32Term::Constant(4),
         })
     );
 }
@@ -3835,7 +3835,7 @@ fn implicit_byte_pointer_coercion_retains_the_selected_extent() {
     let pointer = CPointerValue::new(address.clone(), CType::Int8Pointer).with_extent(Some(
         SubobjectExtent {
             start: address,
-            width: 4,
+            width: 4u32.into(),
         },
     ));
     let (value, _) = c_evaluate_spec_expression_at_state(
@@ -3933,7 +3933,7 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
     assert!(!context.pointer_designations_match(
         &first.clone().with_extent(Some(SubobjectExtent {
             start: stored.pointer().clone(),
-            width: 2,
+            width: 2u32.into(),
         })),
         &stored,
     ));

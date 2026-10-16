@@ -160,7 +160,7 @@ fn copied_pointer_frames_ignore_unrelated_separations() {
         let buffer = Pointer::symbolic(Variable(9_909_001));
         let target = Pointer::symbolic(Variable(9_909_002));
         let stored = CPointerValue::new(target.clone(), CType::Int32Pointer)
-            .with_extent(Some(SubobjectExtent { start: target, width: 4 }));
+            .with_extent(Some(SubobjectExtent { start: target, width: 4u32.into() }));
         let memory = intern_c_memory(CMemory::new()
             .store(field.clone(), CValue::Pointer(stored.clone()))
             .store(buffer.clone().offset_by_bytes(4), CValue::Int32(7u32.into())));

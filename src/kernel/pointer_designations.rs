@@ -296,7 +296,7 @@ mod tests {
         ));
         let selected = byte_view.with_extent(Some(SubobjectExtent {
             start: input.pointer().clone(),
-            width: 4,
+            width: 4u32.into(),
         }));
         let selected_resources =
             ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
@@ -334,7 +334,7 @@ mod tests {
         let parent = value(824_001);
         let member = parent.clone().with_extent(Some(SubobjectExtent {
             start: parent.pointer().clone(),
-            width: 4,
+            width: 4u32.into(),
         }));
         let snapshot = crate::kernel::intern_c_memory(CMemory::new());
         let cell = Pointer::symbolic(Variable(824_002));

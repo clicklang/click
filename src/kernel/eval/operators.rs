@@ -4997,7 +4997,6 @@ fn subobject_extent_guards(
     bytes: u32,
 ) -> Option<Vec<PointerFormationGuard>> {
     let offset = pointer_byte_offset_from_base(pointer, &extent.start)?;
-    let width = u32::try_from(extent.width).ok()?;
     Some(vec![
         PointerFormationGuard {
             condition: ConditionTerm::signed_less_equal(
@@ -5009,7 +5008,7 @@ fn subobject_extent_guards(
         PointerFormationGuard {
             condition: ConditionTerm::signed_less_equal(
                 Bitvector32Term::add(offset, Bitvector32Term::Constant(bytes)),
-                Bitvector32Term::Constant(width),
+                extent.width.clone(),
             ),
             value: true,
         },
@@ -5034,15 +5033,12 @@ fn subobject_extent_proven(
     {
         return true;
     }
-    let Ok(width) = u32::try_from(extent.width) else {
-        return false;
-    };
     assumptions_with_path_context(assumptions, facts, obligations).pointer_access_in_range(
         pointer,
         bytes,
         &extent.start,
         &Bitvector32Term::Constant(0),
-        &Bitvector32Term::Constant(width),
+        &extent.width,
         1,
     )
 }
@@ -5142,10 +5138,7 @@ pub(in crate::kernel) fn subobject_paths(
         }];
     }
     let start = pointer.pointer().clone();
-    let narrowed = pointer.with_extent(Some(SubobjectExtent {
-        start,
-        width: u64::from(width),
-    }));
+    let narrowed = pointer.with_extent(Some(SubobjectExtent::constant(start, width)));
     vec![CExpressionPath {
         outcome: CExpressionOutcome::Value(CValue::Pointer(narrowed)),
         facts,

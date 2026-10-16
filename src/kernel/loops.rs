@@ -2119,11 +2119,15 @@ fn c_loop_state_components_match_at_back_edge_inner(
     }
     // Likewise the class of the object a pointer local designates
     // (`design/effective-types.md`).
-    if top_state.locals().object_values().any(|(name, value)| {
-        c_value_object_class(value).is_some()
-            && next_state.locals().get(name).map(c_value_object_class)
-                != Some(c_value_object_class(value))
-    }) {
+    let object_class_mismatch = top_state
+        .locals()
+        .object_values()
+        .find_map(|(name, value)| {
+            let head = c_value_object_class(value)?;
+            let back_edge = next_state.locals().get(name).map(c_value_object_class);
+            (back_edge != Some(Some(head.clone()))).then(|| (name.to_owned(), head, back_edge))
+        });
+    if object_class_mismatch.is_some() {
         changed.push("pointer object classes");
     }
     if top_state.loan_participant != next_state.loan_participant {
@@ -2169,10 +2173,21 @@ fn c_loop_state_components_match_at_back_edge_inner(
     if changed.is_empty() {
         Ok(())
     } else {
-        Err(format!(
+        let mut message = format!(
             "loop state join changes {}; the body path does not reach the loop-head state",
             changed.join(", ")
-        ))
+        );
+        if let Some((name, head, back_edge)) = object_class_mismatch {
+            let back_edge = match back_edge {
+                Some(Some(class)) => class.to_string(),
+                Some(None) => "unknown (no retained object class)".into(),
+                None => "local is not bound".into(),
+            };
+            message.push_str(&format!(
+                "\npointer local `{name}`: loop-head object class: {head}; back-edge object class: {back_edge}"
+            ));
+        }
+        Err(message)
     }
 }
 
@@ -9037,17 +9052,21 @@ fn range_extent_refusal(
 ) -> Option<String> {
     let extent = base.extent()?;
     let refusal = || {
-        Some(format!(
-            "the clause's range of {}-byte elements reaches outside the {}-byte subobject its pointer designates",
-            element_width, extent.width
-        ))
+        Some(match extent.constant_width() {
+            Some(width) => format!(
+                "the clause's range of {element_width}-byte elements reaches outside the {width}-byte subobject its pointer designates"
+            ),
+            None => format!(
+                "the clause's range of {element_width}-byte elements reaches outside the subobject its pointer designates"
+            ),
+        })
     };
     let Some(offset) =
         crate::kernel::reasoning::pointer_byte_offset_from_base(base.pointer(), &extent.start)
     else {
         return refusal();
     };
-    let Ok(width) = i64::try_from(extent.width) else {
+    let Some(width) = extent.constant_width().map(i64::from) else {
         return refusal();
     };
     let element_width = i64::from(element_width);

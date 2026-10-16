@@ -196,7 +196,7 @@ fn numeric_pointer_rewrites_preserve_origin_and_selected_extent() {
     let original = CPointerValue::new(source.clone(), CType::Int32Pointer).with_extent(Some(
         SubobjectExtent {
             start: source.clone(),
-            width: 4,
+            width: 4u32.into(),
         },
     ));
     for mut rewrite in [
@@ -209,7 +209,7 @@ fn numeric_pointer_rewrites_preserve_origin_and_selected_extent() {
         assert_eq!(result.pointer(), &target);
         assert_eq!(result.designation(), original.designation());
         assert_eq!(result.opaque_extent(), original.opaque_extent());
-        assert_eq!(result.extent().unwrap().width, 4);
+        assert_eq!(result.extent().unwrap().width, 4u32.into());
         assert_eq!(result.extent().unwrap().start, target);
         assert_ne!(
             result,
@@ -267,7 +267,7 @@ fn memory_relationship_rewrite_transports_only_a_complete_pointer_carrier() {
     let target = CPointerValue::new(target_base.clone(), CType::Int32Pointer).with_extent(Some(
         SubobjectExtent {
             start: target_base,
-            width: 4,
+            width: 4u32.into(),
         },
     ));
     let relationship = |value: &CPointerValue| Proposition::CResourceContains {

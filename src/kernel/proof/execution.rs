@@ -684,8 +684,11 @@ fn checks_population_authority_exchange(
         &before.instance_field_scope.loan_dependencies,
         &after.instance_field_scope.loan_dependencies,
     ) || !same_bindings
-        || !Arc::ptr_eq(&before.locals.bindings, &after.locals.bindings)
-        || !Arc::ptr_eq(&before.locals.slots, &after.locals.slots)
+        || !before
+            .locals
+            .bindings
+            .shares_root_with(&after.locals.bindings)
+        || !before.locals.slots.shares_root_with(&after.locals.slots)
         || before.memory.diagnostic_identity() != after.memory.diagnostic_identity()
         || before.loan_ledger != after.loan_ledger
         || before.loan_participant != after.loan_participant
@@ -897,8 +900,11 @@ fn checks_population_member_exchange(
         &before.instance_field_scope.loan_dependencies,
         &after.instance_field_scope.loan_dependencies,
     ) || !same_bindings
-        || !Arc::ptr_eq(&before.locals.bindings, &after.locals.bindings)
-        || !Arc::ptr_eq(&before.locals.slots, &after.locals.slots)
+        || !before
+            .locals
+            .bindings
+            .shares_root_with(&after.locals.bindings)
+        || !before.locals.slots.shares_root_with(&after.locals.slots)
         || before.memory.diagnostic_identity() != after.memory.diagnostic_identity()
         || before.loan_ledger != after.loan_ledger
         || before.loan_participant != after.loan_participant
@@ -1774,8 +1780,14 @@ impl CheckedResourceRewrite {
             .same_storage_roots(after_state.memory())
             || before_state.population_access != after_state.population_access
             || !same_bindings
-            || !Arc::ptr_eq(&before_state.locals.bindings, &after_state.locals.bindings)
-            || !Arc::ptr_eq(&before_state.locals.slots, &after_state.locals.slots)
+            || !before_state
+                .locals
+                .bindings
+                .shares_root_with(&after_state.locals.bindings)
+            || !before_state
+                .locals
+                .slots
+                .shares_root_with(&after_state.locals.slots)
             || !Arc::ptr_eq(
                 &before_state.instance_field_scope.storage,
                 &after_state.instance_field_scope.storage,
@@ -2259,8 +2271,14 @@ impl CheckedResourceRewrite {
                     _ => false,
                 };
                 if !same_bindings
-                    || !Arc::ptr_eq(&before_state.locals.bindings, &after_state.locals.bindings)
-                    || !Arc::ptr_eq(&before_state.locals.slots, &after_state.locals.slots)
+                    || !before_state
+                        .locals
+                        .bindings
+                        .shares_root_with(&after_state.locals.bindings)
+                    || !before_state
+                        .locals
+                        .slots
+                        .shares_root_with(&after_state.locals.slots)
                     || !Arc::ptr_eq(
                         &before_state.instance_field_scope.storage,
                         &after_state.instance_field_scope.storage,
@@ -3517,7 +3535,7 @@ impl CheckedProofCaseJoin {
     /// abstraction and every interface fact are checked exactly as for a
     /// `branch ensuring`; only where the arms came from differs.
     #[allow(clippy::too_many_arguments)]
-    fn check_interface(
+    fn construct_interface(
         parent: &ExecutionProofCore,
         root_facts: &ProofFacts,
         arms: [(&ExecutionProofCore, &ProofFacts); 2],
@@ -3555,11 +3573,12 @@ impl CheckedProofCaseJoin {
             return Err("an interface arm effect delta is not exact");
         }
         let CheckedInterfaceAbstraction {
+            state: constructed_state,
             next_kernel_variable,
             arm_interface_resources,
             introduced,
             interface_lowerings,
-        } = check_interface_abstraction(
+        } = construct_interface_abstraction(
             root_facts,
             &start_state,
             parent,
@@ -3572,6 +3591,7 @@ impl CheckedProofCaseJoin {
             successor_facts,
             old_reference,
         )?;
+        let joined_state = &constructed_state;
         let conditional_heap_frees = conditional_heap_frees(arm_effect_facts);
         if !conditional_heap_frees.is_empty()
             && !interface_resources_guard_heap_frees(
@@ -3763,12 +3783,6 @@ fn interface_join_resources(
                 .ok_or("an interface resource does not lower in a concrete arm")?;
             arm_interface_resources[index].push(fact);
         }
-        let fact = evaluate_interface_resource_spec(spec, joined_state, successor_facts)
-            .ok_or("an interface resource does not lower at the abstract successor")?;
-        if let Some(proposition) = interface_resource_intrinsic_fact(spec, &fact, joined_state) {
-            successor_interface_resource_facts.push(proposition);
-        }
-        successor_interface_resources.push(fact);
     }
     let mut arm_residuals = Vec::with_capacity(2);
     for (index, (arm, facts)) in arms.iter().zip(arm_facts).enumerate() {
@@ -3811,6 +3825,23 @@ fn interface_join_resources(
         parent.reached_state().resources(),
     )
     .ok_or("the interface arm resources do not descend from the branch root")?;
+    // Successor expressions can read through the retained common frame,
+    // while named interface models are supplied by the arm abstraction.
+    // This is a lowering scope only; final ownership is constructed below
+    // from the clauses that both concrete arms supplied.
+    let lowering_state = joined_state.clone().with_resource_context(
+        common_resources
+            .unpublished_contract_view()
+            .unchecked_with_facts(joined_state.resources().iter().cloned()),
+    );
+    for spec in interface_resource_specs {
+        let fact = evaluate_interface_resource_spec(spec, &lowering_state, successor_facts)
+            .ok_or("an interface resource does not lower at the abstract successor")?;
+        if let Some(proposition) = interface_resource_intrinsic_fact(spec, &fact, &lowering_state) {
+            successor_interface_resource_facts.push(proposition);
+        }
+        successor_interface_resources.push(fact);
+    }
     // A view already established by the common residual needs no second
     // occurrence. Match the builder's non-consuming view route so unrelated
     // allocation owners do not change resource ordering at this interface.
@@ -3842,6 +3873,7 @@ fn interface_join_resources(
 /// fact. The split the arms came from, a C `if` or a logical partition,
 /// plays no part here.
 struct CheckedInterfaceAbstraction {
+    state: CState,
     next_kernel_variable: u64,
     arm_interface_resources: [Vec<CResourceFact>; 2],
     introduced: Vec<Proposition>,
@@ -3849,7 +3881,7 @@ struct CheckedInterfaceAbstraction {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn check_interface_abstraction(
+fn construct_interface_abstraction(
     root_facts: &ProofFacts,
     split_state: &CState,
     parent: &ExecutionProofCore,
@@ -3934,17 +3966,13 @@ fn check_interface_abstraction(
         joined_state,
         successor_facts,
     )?;
-    if &expected_resources != joined_state.resources() {
-        return Err("the interface successor resource context is not exact");
-    }
-    if successor_interface_resources.iter().any(|fact| {
-        !joined_state
-            .resources()
-            .satisfies_fact(fact, successor_facts.assumptions())
-    }) {
-        return Err("an interface resource is absent from the abstract successor");
-    }
-
+    // Construct ownership once from the concrete arms and selected
+    // interface. The supplied state describes abstract memory and locals;
+    // its resource context cannot grant authority to the successor.
+    let constructed_state = joined_state
+        .clone()
+        .with_resource_context(expected_resources);
+    let joined_state = &constructed_state;
     // `old(...)` in an interface fact names one fixed earlier state. Any
     // state serves, so long as every lowering of the fact below reads the
     // same one; the proof side says which, because inside a loop body it is
@@ -4063,6 +4091,7 @@ fn check_interface_abstraction(
         next_kernel_variable = next;
     }
     Ok(CheckedInterfaceAbstraction {
+        state: constructed_state,
         next_kernel_variable,
         arm_interface_resources,
         introduced,
@@ -4236,7 +4265,7 @@ impl CheckedExecutionBranch {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn check_interface(
+    fn construct_interface(
         split: CheckedBranchSplit,
         root_facts: &ProofFacts,
         arm_theorems: [&Theorem; 2],
@@ -4278,11 +4307,12 @@ impl CheckedExecutionBranch {
         }
 
         let CheckedInterfaceAbstraction {
+            state: constructed_state,
             next_kernel_variable,
             arm_interface_resources,
             introduced,
             interface_lowerings,
-        } = check_interface_abstraction(
+        } = construct_interface_abstraction(
             root_facts,
             &split.state,
             parent,
@@ -4295,6 +4325,7 @@ impl CheckedExecutionBranch {
             successor_facts,
             old_reference,
         )?;
+        let joined_state = &constructed_state;
         let parent_trace = &parent.execution_evidence[0];
         let full_source = prepend_checked_evidence_statement(
             split.branch_statement.clone(),
@@ -8945,7 +8976,7 @@ impl ExecutionProofCore {
         successor_facts: &ProofFacts,
         old_reference: Option<&CState>,
     ) -> Result<crate::kernel::ExecutionFacts, &'static str> {
-        let join = CheckedProofCaseJoin::check_interface(
+        let join = CheckedProofCaseJoin::construct_interface(
             parent,
             root_facts,
             arms,
@@ -8964,12 +8995,14 @@ impl ExecutionProofCore {
             .as_ref()
             .expect("an interface join retains its interface");
         let effect_facts = interface.effect_facts.clone();
+        let joined_state = join.joined_state.clone();
         self.advance_kernel_variable_mark(interface.next_kernel_variable)?;
         let mut trace = parent.execution_evidence[0].clone();
         trace.push(CheckedExecutionEvent::ProofCaseJoin(join));
         self.execution_evidence = vec![trace].into();
         self.checked_call_events = parent.checked_call_events.clone();
-        self.evidence_state = Some(joined_state.clone());
+        self.state = joined_state.clone().into();
+        self.evidence_state = Some(joined_state);
         // An arm that ran no C has recorded no source of its own yet; what
         // remains for it is what its frontier says.
         self.evidence_source = arms[0].0.current_source_shared(function);
@@ -10320,7 +10353,7 @@ impl ExecutionProofCore {
             [trace] => trace,
             _ => return Err("the interface parent does not have one execution trace"),
         };
-        let branch = CheckedExecutionBranch::check_interface(
+        let branch = CheckedExecutionBranch::construct_interface(
             split,
             root_facts,
             arm_theorems,
@@ -10354,6 +10387,7 @@ impl ExecutionProofCore {
         trace.push(CheckedExecutionEvent::Branch(branch));
         self.execution_evidence = vec![trace].into();
         self.checked_call_events = parent.checked_call_events.clone();
+        self.state = joined_state.clone().into();
         self.evidence_state = Some(joined_state);
         self.evidence_source = source;
         self.evidence_completed = false;

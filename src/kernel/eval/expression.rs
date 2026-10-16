@@ -3377,7 +3377,7 @@ mod pointer_integer_tests {
         let root = CPointerValue::new(Pointer::symbolic(Variable(991_001)), CType::Int32Pointer);
         let member = root.clone().with_extent(Some(SubobjectExtent {
             start: root.pointer().clone(),
-            width: 4,
+            width: 4u32.into(),
         }));
         let context = PureFactContext::new();
         for ty in [CType::Int64, CType::UInt64] {
@@ -3408,7 +3408,7 @@ mod pointer_integer_tests {
         let root = CPointerValue::new(Pointer::symbolic(Variable(991_002)), CType::Int32Pointer);
         let member = root.clone().with_extent(Some(SubobjectExtent {
             start: root.pointer().clone(),
-            width: 4,
+            width: 4u32.into(),
         }));
         let context = PureFactContext::new();
         let root_word = cast(CValue::Pointer(root.clone()), CType::UInt64, &context).unwrap();
@@ -3581,7 +3581,7 @@ mod packed_word_contract_tests {
         let target = CPointerValue::new(Pointer::symbolic(Variable(997_004)), CType::Int32Pointer)
             .with_extent(Some(SubobjectExtent {
                 start: Pointer::symbolic(Variable(997_004)),
-                width: 4,
+                width: 4u32.into(),
             }));
         let numeric = empty.assume_condition(
             ConditionTerm::pointer_equal(reconstructed.pointer().clone(), target.pointer().clone()),

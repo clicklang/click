@@ -5201,7 +5201,7 @@ mod tests {
         let stored = CPointerValue::new(target.clone(), CType::Int32Pointer)
             .with_extent(Some(SubobjectExtent {
                 start: target,
-                width: 4,
+                width: 4u32.into(),
             }))
             .with_object_class(Some(class.clone()));
         let context = PureFactContext::new();
@@ -5257,7 +5257,7 @@ mod tests {
         let pointer = CPointerValue::new(target.clone(), CType::Int32Pointer).with_extent(Some(
             SubobjectExtent {
                 start: target.clone(),
-                width: 4,
+                width: 4u32.into(),
             },
         ));
         let context = PureFactContext::new();
@@ -5331,7 +5331,7 @@ mod tests {
         let stored = CPointerValue::new(address.clone(), CType::Int32Pointer).with_extent(Some(
             SubobjectExtent {
                 start: address,
-                width: 4,
+                width: 4u32.into(),
             },
         ));
         let memory = CMemory::new()
@@ -5861,7 +5861,7 @@ mod tests {
         let bounded = CPointerValue::new(base.clone(), CType::Int32Pointer).with_extent(Some(
             SubobjectExtent {
                 start: base,
-                width: 4,
+                width: 4u32.into(),
             },
         ));
         let context = PureFactContext::new().assume_condition(
@@ -5874,7 +5874,7 @@ mod tests {
                 .extent()
                 .unwrap()
                 .width,
-            4
+            Bitvector32Term::Constant(4)
         );
         let unchanged = before.clone().with_block("unrelated-pointer-cache", 4);
         assert_eq!(
@@ -5883,7 +5883,7 @@ mod tests {
                 .extent()
                 .unwrap()
                 .width,
-            4
+            Bitvector32Term::Constant(4)
         );
         let observed = before
             .clone()
@@ -5898,7 +5898,7 @@ mod tests {
                 .extent()
                 .unwrap()
                 .width,
-            4
+            Bitvector32Term::Constant(4)
         );
         let overwritten = observed.store(
             address.clone().offset_by_bytes(4),

@@ -108,7 +108,7 @@ pub(crate) struct SnapshotBlindPointerValueKey {
     address: SnapshotBlindPointerKey,
     designation: SnapshotBlindPointerKey,
     opaque_extent: Option<SnapshotBlindPointerKey>,
-    extent: Option<(SnapshotBlindPointerKey, u64)>,
+    extent: Option<(SnapshotBlindPointerKey, SnapshotBlindBitvectorKey)>,
     extent_known: bool,
 }
 
@@ -120,10 +120,9 @@ impl SnapshotBlindPointerValueKey {
                 .opaque_extent
                 .as_ref()
                 .is_some_and(SnapshotBlindPointerKey::forgets_a_snapshot)
-            || self
-                .extent
-                .as_ref()
-                .is_some_and(|(start, _)| start.forgets_a_snapshot())
+            || self.extent.as_ref().is_some_and(|(start, width)| {
+                start.forgets_a_snapshot() || width.forgets_a_snapshot()
+            })
     }
 }
 
@@ -137,9 +136,12 @@ fn snapshot_blind_pointer_value_key(pointer: &CPointerValue) -> SnapshotBlindPoi
         } else {
             pointer.opaque_extent().map(snapshot_blind_pointer_key)
         },
-        extent: pointer
-            .extent()
-            .map(|extent| (snapshot_blind_pointer_key(&extent.start), extent.width)),
+        extent: pointer.extent().map(|extent| {
+            (
+                snapshot_blind_pointer_key(&extent.start),
+                snapshot_blind_bitvector_key(&extent.width),
+            )
+        }),
         extent_known: pointer.extent_is_known(),
     }
 }
@@ -845,7 +847,7 @@ enum AlphaCValueKey {
         extent_known: bool,
         opaque_extent: Option<AlphaPointerKey>,
         /// The subobject extent's start key and byte width.
-        extent: Option<(AlphaPointerKey, u64)>,
+        extent: Option<(AlphaPointerKey, AlphaBitvectorKey)>,
     },
 }
 
@@ -1845,7 +1847,11 @@ fn alpha_c_value_key_with_bindings<const ALLOW_LOADS: bool>(
                         bindings,
                         next_binder,
                     )?,
-                    extent.width,
+                    alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
+                        &extent.width,
+                        bindings,
+                        next_binder,
+                    )?,
                 )),
                 None => None,
             },

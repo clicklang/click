@@ -2607,24 +2607,16 @@ impl<'a> Proof<'a> {
         self.try_indexed_signed_arithmetic(surfaces, anchor.as_ref())
     }
 
-    /// Selects the bounds reachable from the goal's variables: each goal
-    /// variable's bounds, then the bounds on the variables those bounds
-    /// name (`i < n` leads to `n`'s bounds), breadth-first in variable order,
-    /// visiting at most [`MAX_BOUND_VARIABLES`] variables. Each visited
-    /// variable costs one O(log n) bucket lookup and one indexed membership
-    /// test per bound it lists; a leaf conjunct of a fact is itself an
-    /// indexed fact, so a bound written inside a conjunction needs no
-    /// `extract`. The certificate is planned over the kernel facts before any
-    /// of them is spelled, so a goal the bounds do not decide is declined
-    /// without surface work.
-    fn try_indexed_signed_arithmetic(
+    /// The facts the indexed signed arithmetic route plans over: the bounds
+    /// reachable from the goal's variables, and with `with_equalities` the
+    /// equalities naming them too, followed to their own variables. Each
+    /// visited variable costs its indexed bound entries and, with
+    /// equalities, one indexed lookup of the facts that mention it.
+    fn indexed_arithmetic_premises(
         &self,
-        surfaces: &SurfacePropositionMap,
-        anchor: Option<&ProgramPointRef>,
-    ) -> Option<Self> {
-        let goal = self.goal()?;
-        let surface_goal = self.surface_goal()?;
-        let is_pure = matches!(self.context.as_ref(), ProofContext::Pure(_));
+        goal: &Proposition,
+        with_equalities: bool,
+    ) -> Vec<Proposition> {
         let mut available = BTreeSet::new();
         let mut visited = BTreeSet::new();
         // Count lowering can leave a read expression where the bounds index
@@ -2674,8 +2666,64 @@ impl<'a> Proof<'a> {
                     );
                 }
             }
+            // An equality names the variable through another: a call's
+            // `o.size == old(o.size) + 1` relates the goal's field to the
+            // entry value its bounds name.
+            if !with_equalities {
+                continue;
+            }
+            let equalities = self
+                .facts()
+                .assumptions()
+                .condition_facts_mentioning_variable(variable)
+                .into_iter()
+                .flatten()
+                .filter(|(condition, value)| {
+                    *value && matches!(condition, ConditionTerm::Bitvector32Equal(..))
+                })
+                .map(|(condition, _)| Proposition::ConditionIs(condition.clone(), true))
+                .collect::<Vec<_>>();
+            for fact in equalities {
+                if !self.facts().contains(&fact) {
+                    continue;
+                }
+                pending.extend(
+                    crate::kernel::proposition_variables(&crate::kernel::canonical_condition_fact(
+                        &fact,
+                    ))
+                    .into_iter()
+                    .filter(|next| !visited.contains(next)),
+                );
+                available.insert(fact);
+            }
         }
-        let available = available.into_iter().collect::<Vec<_>>();
+        available.into_iter().collect()
+    }
+
+    /// Selects the bounds reachable from the goal's variables: each goal
+    /// variable's bounds, then the bounds on the variables those bounds
+    /// name (`i < n` leads to `n`'s bounds), breadth-first in variable order,
+    /// visiting at most [`MAX_BOUND_VARIABLES`] variables. Each visited
+    /// variable costs one O(log n) bucket lookup and one indexed membership
+    /// test per bound it lists; a leaf conjunct of a fact is itself an
+    /// indexed fact, so a bound written inside a conjunction needs no
+    /// `extract`. The certificate is planned over the kernel facts before any
+    /// of them is spelled, so a goal the bounds do not decide is declined
+    /// without surface work.
+    fn try_indexed_signed_arithmetic(
+        &self,
+        surfaces: &SurfacePropositionMap,
+        anchor: Option<&ProgramPointRef>,
+    ) -> Option<Self> {
+        let goal = self.goal()?;
+        let surface_goal = self.surface_goal()?;
+        let is_pure = matches!(self.context.as_ref(), ProofContext::Pure(_));
+        // The bounds alone first, as every certificate this route found
+        // before equalities joined it; equalities only where they miss.
+        let mut available = self.indexed_arithmetic_premises(goal, false);
+        if plan_signed_arithmetic_certificate(goal, &available).is_none() {
+            available = self.indexed_arithmetic_premises(goal, true);
+        }
         plan_signed_arithmetic_certificate(goal, &available)?;
         let mut pairs = Vec::new();
         for fact in available {

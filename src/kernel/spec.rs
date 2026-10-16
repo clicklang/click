@@ -6322,7 +6322,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 };
                 path.value = CValue::Pointer(value.clone().with_extent(Some(SubobjectExtent {
                     start: value.pointer().clone(),
-                    width: u64::from(*width),
+                    width: (*width).into(),
                 })));
                 Some(path)
             })

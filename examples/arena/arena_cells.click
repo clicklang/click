@@ -2462,7 +2462,16 @@ void arena_write(struct region* region, int32 index, int32 value) {
         intro();
         extract(0 <= k);
         extract(k < at(w, region->arena->capacity));
-        simp();
+        transport(
+            at(w, region->arena->occupied[k]) == at(w, region->arena->occupied[k]),
+            at(w, region->arena->occupied[k]) == region->arena->occupied[k]
+        ) using {
+            0 <= k;
+            k < at(w, region->arena->capacity);
+            separate(memory(region->arena->occupied[0..region->arena->capacity]),
+                memory(region->arena->data[0..region->arena->capacity]));
+        }
+        assumption();
     }
     let r = fold(arena_region(region), { start: s, end: e });
     let st = fold(arena_state(region->arena), { live: n, capacity: c });
@@ -2678,7 +2687,7 @@ int32 arena_pipeline(
                     0 <= k;
                     k < arena->capacity;
                 }
-                simp();
+                assumption();
             }
             have k < at(a1, arena->capacity) by {
                 simp();
@@ -2691,7 +2700,7 @@ int32 arena_pipeline(
                     0 <= k;
                     k < at(a1, arena->capacity);
                 }
-                simp();
+                assumption();
             }
             simp();
         }
@@ -2745,7 +2754,7 @@ int32 arena_pipeline(
                 0 <= k;
                 k < at(a1, arena->capacity);
             }
-            simp();
+            assumption();
         }
         cases {
             k < at(z1, first->start) => {
@@ -2761,7 +2770,7 @@ int32 arena_pipeline(
                         0 <= k;
                         k < first->start;
                     }
-                    simp();
+                    assumption();
                 }
                 simp();
             }
@@ -2778,7 +2787,7 @@ int32 arena_pipeline(
                         first->end <= k;
                         k < arena->capacity;
                     }
-                    simp();
+                    assumption();
                 }
                 simp();
             }
@@ -2818,7 +2827,7 @@ int32 arena_pipeline(
                     0 <= k;
                     k < arena->capacity;
                 }
-                simp();
+                assumption();
             }
             have k < at(a2, arena->capacity) by {
                 simp();
@@ -2833,7 +2842,7 @@ int32 arena_pipeline(
                     k < at(a2, arena->capacity);
                     k < at(z1, first->start) or at(z1, first->end) <= k;
                 }
-                simp();
+                assumption();
             }
             simp();
         }
@@ -2895,7 +2904,7 @@ int32 arena_pipeline(
                         0 <= k;
                         k < first->start;
                     }
-                    simp();
+                    assumption();
                 }
                 have at(f1, first->arena->occupied[k]) == at(f1, arena->occupied[k]) by {
                     simp();
@@ -2919,7 +2928,7 @@ int32 arena_pipeline(
                         k < at(f1, arena->capacity);
                         k < at(z1, first->start) or at(z1, first->end) <= k;
                     }
-                    simp();
+                    assumption();
                 }
                 simp();
             }
@@ -2952,7 +2961,7 @@ int32 arena_pipeline(
                         first->end <= k;
                         k < first->arena->capacity;
                     }
-                    simp();
+                    assumption();
                 }
                 have at(f1, first->arena->occupied[k]) == at(f1, arena->occupied[k]) by {
                     simp();
@@ -2976,7 +2985,7 @@ int32 arena_pipeline(
                         k < at(f1, arena->capacity);
                         k < at(z1, first->start) or at(z1, first->end) <= k;
                     }
-                    simp();
+                    assumption();
                 }
                 simp();
             }
@@ -3065,7 +3074,7 @@ int32 arena_pipeline(
                 k < at(a2, arena->capacity);
                 k < at(z1, first->start) or at(z1, first->end) <= k;
             }
-            simp();
+            assumption();
         }
         cases {
             k < at(z2, second->start) => {
@@ -3081,7 +3090,7 @@ int32 arena_pipeline(
                         0 <= k;
                         k < second->start;
                     }
-                    simp();
+                    assumption();
                 }
                 simp();
             }
@@ -3098,7 +3107,7 @@ int32 arena_pipeline(
                         second->end <= k;
                         k < arena->capacity;
                     }
-                    simp();
+                    assumption();
                 }
                 simp();
             }
@@ -3134,7 +3143,7 @@ int32 arena_pipeline(
         simp();
     }
     have r1.start == at(z1, first->start) by {
-        simp();
+        normalize() using { r1.start == at(w1, r1.start); at(w1, r1.start) == at(z1, first->start); }
     }
     have r1.end == at(w1, r1.end) by {
         simp();
@@ -3143,7 +3152,7 @@ int32 arena_pipeline(
         simp();
     }
     have r1.end == at(z1, first->end) by {
-        simp();
+        normalize() using { r1.end == at(w1, r1.end); at(w1, r1.end) == at(z1, first->end); }
     }
     have s0.live == at(w1, s0.live) by {
         simp();
@@ -3152,7 +3161,7 @@ int32 arena_pipeline(
         simp();
     }
     have s0.live == 2 by {
-        simp();
+        normalize() using { s0.live == at(w1, s0.live); at(w1, s0.live) == 2; }
     }
     have r2.start == at(w1, r2.start) by {
         simp();
@@ -3161,7 +3170,7 @@ int32 arena_pipeline(
         simp();
     }
     have r2.start == at(z2, second->start) by {
-        simp();
+        normalize() using { r2.start == at(w1, r2.start); at(w1, r2.start) == at(z2, second->start); }
     }
     have r2.end == at(w1, r2.end) by {
         simp();
@@ -3170,7 +3179,7 @@ int32 arena_pipeline(
         simp();
     }
     have r2.end == at(z2, second->end) by {
-        simp();
+        normalize() using { r2.end == at(w1, r2.end); at(w1, r2.end) == at(z2, second->end); }
     }
     have first->arena == arena by {
         simp();
@@ -3210,7 +3219,7 @@ int32 arena_pipeline(
                 0 <= k;
                 k < first->arena->capacity;
             }
-            simp();
+            assumption();
         }
         have at(w1, first->arena->occupied[k]) == at(w1, arena->occupied[k]) by {
             simp();
@@ -3231,7 +3240,7 @@ int32 arena_pipeline(
                 k < at(z1, first->start) or at(z1, first->end) <= k;
                 k < at(z2, second->start) or at(z2, second->end) <= k;
             }
-            simp();
+            assumption();
         }
         simp();
     }
@@ -3273,7 +3282,7 @@ int32 arena_pipeline(
         simp();
     }
     have r1.start == at(z1, first->start) by {
-        simp();
+        normalize() using { r1.start == at(w2, r1.start); at(w2, r1.start) == at(z1, first->start); }
     }
     have r1.end == at(w2, r1.end) by {
         simp();
@@ -3282,7 +3291,7 @@ int32 arena_pipeline(
         simp();
     }
     have r1.end == at(z1, first->end) by {
-        simp();
+        normalize() using { r1.end == at(w2, r1.end); at(w2, r1.end) == at(z1, first->end); }
     }
     have s0.live == at(w2, s0.live) by {
         simp();
@@ -3298,7 +3307,7 @@ int32 arena_pipeline(
         simp();
     }
     have r2.start == at(z2, second->start) by {
-        simp();
+        normalize() using { r2.start == at(w2, r2.start); at(w2, r2.start) == at(z2, second->start); }
     }
     have r2.end == at(w2, r2.end) by {
         simp();
@@ -3307,7 +3316,7 @@ int32 arena_pipeline(
         simp();
     }
     have r2.end == at(z2, second->end) by {
-        simp();
+        normalize() using { r2.end == at(w2, r2.end); at(w2, r2.end) == at(z2, second->end); }
     }
     have second->arena == arena by {
         simp();
@@ -3357,7 +3366,7 @@ int32 arena_pipeline(
                 0 <= k;
                 k < second->arena->capacity;
             }
-            simp();
+            assumption();
         }
         have at(w2, second->arena->occupied[k]) == at(w2, arena->occupied[k]) by {
             simp();
@@ -3381,7 +3390,7 @@ int32 arena_pipeline(
                 k < at(z1, first->start) or at(z1, first->end) <= k;
                 k < at(z2, second->start) or at(z2, second->end) <= k;
             }
-            simp();
+            assumption();
         }
         simp() using {
             second->arena->occupied[k] == at(w2, second->arena->occupied[k]);
@@ -3440,7 +3449,7 @@ int32 arena_pipeline(
         simp();
     }
     have r1.start == at(z1, first->start) by {
-        simp();
+        normalize() using { r1.start == at(m3, r1.start); at(m3, r1.start) == at(z1, first->start); }
     }
     have r1.end == at(m3, r1.end) by {
         simp();
@@ -3449,7 +3458,7 @@ int32 arena_pipeline(
         simp();
     }
     have r1.end == at(z1, first->end) by {
-        simp();
+        normalize() using { r1.end == at(m3, r1.end); at(m3, r1.end) == at(z1, first->end); }
     }
     have s0.live == at(m3, s0.live) by {
         simp();
@@ -3458,7 +3467,7 @@ int32 arena_pipeline(
         simp();
     }
     have s0.live == 2 by {
-        simp();
+        normalize() using { s0.live == at(m3, s0.live); at(m3, s0.live) == 2; }
     }
     have r2.start == at(m3, r2.start) by {
         simp();
@@ -3467,7 +3476,7 @@ int32 arena_pipeline(
         simp();
     }
     have r2.start == at(z2, second->start) by {
-        simp();
+        normalize() using { r2.start == at(m3, r2.start); at(m3, r2.start) == at(z2, second->start); }
     }
     have r2.end == at(m3, r2.end) by {
         simp();
@@ -3476,7 +3485,7 @@ int32 arena_pipeline(
         simp();
     }
     have r2.end == at(z2, second->end) by {
-        simp();
+        normalize() using { r2.end == at(m3, r2.end); at(m3, r2.end) == at(z2, second->end); }
     }
     have first_value == 11 by {
         simp();
@@ -3612,7 +3621,7 @@ int32 arena_pipeline(
         simp();
     }
     have r1.start == at(z1, first->start) by {
-        simp();
+        normalize() using { r1.start == at(m4, r1.start); at(m4, r1.start) == at(z1, first->start); }
     }
     have r1.end == at(m4, r1.end) by {
         simp();
@@ -3621,7 +3630,7 @@ int32 arena_pipeline(
         simp();
     }
     have r1.end == at(z1, first->end) by {
-        simp();
+        normalize() using { r1.end == at(m4, r1.end); at(m4, r1.end) == at(z1, first->end); }
     }
     have s0.live == at(m4, s0.live) by {
         simp();
@@ -3630,7 +3639,7 @@ int32 arena_pipeline(
         simp();
     }
     have s0.live == 2 by {
-        simp();
+        normalize() using { s0.live == at(m4, s0.live); at(m4, s0.live) == 2; }
     }
     have r2.start == at(m4, r2.start) by {
         simp();
@@ -3639,7 +3648,7 @@ int32 arena_pipeline(
         simp();
     }
     have r2.start == at(z2, second->start) by {
-        simp();
+        normalize() using { r2.start == at(m4, r2.start); at(m4, r2.start) == at(z2, second->start); }
     }
     have r2.end == at(m4, r2.end) by {
         simp();
@@ -3648,7 +3657,7 @@ int32 arena_pipeline(
         simp();
     }
     have r2.end == at(z2, second->end) by {
-        simp();
+        normalize() using { r2.end == at(m4, r2.end); at(m4, r2.end) == at(z2, second->end); }
     }
     have second_value == 22 by {
         simp();
@@ -3790,7 +3799,7 @@ int32 arena_pipeline(
         simp();
     }
     have r1.start == at(z1, first->start) by {
-        simp();
+        normalize() using { r1.start == at(f2, r1.start); at(f2, r1.start) == at(z1, first->start); }
     }
     have r1.end == at(f2, r1.end) by {
         simp();
@@ -3799,7 +3808,7 @@ int32 arena_pipeline(
         simp();
     }
     have r1.end == at(z1, first->end) by {
-        simp();
+        normalize() using { r1.end == at(f2, r1.end); at(f2, r1.end) == at(z1, first->end); }
     }
     have second->arena == arena by {
         simp() using {
@@ -3833,7 +3842,7 @@ int32 arena_pipeline(
         simp();
     }
     have second->start == at(z2, second->start) by {
-        simp();
+        normalize() using { second->start == at(f2, r2.start); at(f2, r2.start) == at(z2, second->start); }
     }
     have second->end == at(f2, r2.end) by {
         simp();
@@ -3842,7 +3851,7 @@ int32 arena_pipeline(
         simp();
     }
     have second->end == at(z2, second->end) by {
-        simp();
+        normalize() using { second->end == at(f2, r2.end); at(f2, r2.end) == at(z2, second->end); }
     }
     have forall (k: int32) {
         0 <= k and
@@ -4076,7 +4085,7 @@ int32 arena_pipeline(
         simp();
     }
     have first->start == at(z1, first->start) by {
-        simp();
+        normalize() using { first->start == at(f3, r1.start); at(f3, r1.start) == at(z1, first->start); }
     }
     have first->end == at(f3, r1.end) by {
         simp();
@@ -4085,7 +4094,7 @@ int32 arena_pipeline(
         simp();
     }
     have first->end == at(z1, first->end) by {
-        simp();
+        normalize() using { first->end == at(f3, r1.end); at(f3, r1.end) == at(z1, first->end); }
     }
     have forall (k: int32) {
         0 <= k and
@@ -4331,7 +4340,11 @@ int32 arena_pipeline(
         simp();
     }
     have combined->start < 536870911 by {
-        simp();
+        arithmetic() using {
+            combined->start < combined->end;
+            combined->end <= arena->capacity;
+            arena->capacity <= 536870911;
+        }
     }
 
     have g3.live == 1 by {
