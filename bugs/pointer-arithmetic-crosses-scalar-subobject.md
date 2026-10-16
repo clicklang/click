@@ -27,7 +27,8 @@ address equality, which carries no permission, and refuses that read
 (`mdtests/address_equality_does_not_grant_access_to_a_one_past_pointer.md`).
 Still accepted: a pointer whose formation the verifier never saw, such as a
 static pointer initialized to a scalar member and stepped past in a function
-that loads it at entry. It has the root extent.
+that loads it at entry. It has the root extent. See *Pointers of unseen
+formation* below for complete programs that verify on master `44eacfde1`.
 
 A contract pointer equality compared addresses only, so a caller could
 satisfy a callee's `requires q == p` with `&pair->first + 1` and
@@ -151,3 +152,74 @@ A separate `int32** slot` spelling with `return *(*slot + 1);` stops earlier at
 `pointer operation has no known pointee type`. That unrelated refusal is not
 credited as pointer-domain rejection and must not be used to claim storage
 transport is sound.
+
+
+## Pointers of unseen formation
+
+A pointer a function receives or loads, rather than forms, carries no
+extent, and a pointer without an extent is not checked against one. Its
+callers can form it from a member, so the callee steps or reads past the
+member unchecked, with permission it holds through another pointer at the
+same address. Both complete programs below verify on master `44eacfde1`
+(`2 selected proofs verified`), each with an undefined read in `probe`. The
+same code inside one function is refused
+(`access outside the subobject the pointer designates`).
+
+A pointer field the caller set to a member:
+
+```c filename=link.c
+struct Pair { int32 first; int32 second; };
+struct Holder { int32* link; };
+int32 probe(struct Holder* h, struct Pair* p) { return *(h->link + 1); }
+int32 caller(struct Holder* h, struct Pair* p) {
+    h->link = &p->first;
+    return probe(h, p);
+}
+```
+
+```click
+verifying "link.c";
+int32 probe(struct Holder* h, struct Pair* p) {
+    views h->link;
+    views p->first;
+    views p->second;
+    requires h->link == &p->first;
+    ensures result == p->second;
+} by { execute(); simp(); }
+int32 caller(struct Holder* h, struct Pair* p) {
+    owns h->link;
+    views p->first;
+    views p->second;
+    ensures result == p->second;
+} by { execute(); simp(); }
+```
+
+A parameter the caller formed one past a member:
+
+```c filename=param.c
+struct Pair { int32 first; int32 second; };
+int32 probe(int32* q, struct Pair* p) { return *q; }
+int32 caller(struct Pair* p) { return probe(&p->first + 1, p); }
+```
+
+```click
+verifying "param.c";
+int32 probe(int32* q, struct Pair* p) {
+    views p->first;
+    views p->second;
+    requires q == &p->first + 1;
+    ensures result == p->second;
+} by { execute(); simp(); }
+int32 caller(struct Pair* p) {
+    views p->first;
+    views p->second;
+    ensures result == p->second;
+} by { execute(); simp(); }
+```
+
+In each callee the contract states the pointer's designation exactly, but
+its value has no extent, so the equality is an address equality and the
+read is authorized by `p->second`'s view at the same address. The proposed
+repair is Phase C of the
+[subobject-extent design](../design/pointer-subobject-extents.md#phase-c-pointers-of-unseen-formation-proposed).
+

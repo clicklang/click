@@ -298,6 +298,16 @@ build fails always fails the gate.
 ordinary four-core machine. The script prints its elapsed time and warns past
 the budget.
 
+Before moving a slow regression out of the gate, try reducing its fixture.
+Identify the behavior and threshold its assertions protect, retain the original
+source pattern, and remove input beyond what exercises that threshold. Check
+that the reduced test still fails when the original defect is restored, then
+compare before/after timings on the same build and machine. Keep integration
+controls and multi-size scaling coverage: a smaller fixture must preserve the
+claim the test makes. For example, a trace-truncation regression needs just over
+the old fact cap, while a storage-budget regression needs enough initialized
+objects to exhaust the same budget in the same phase.
+
 The budget is kept by what the gate leaves out, not by a faster machine:
 
 - A test that takes half a second or more while the gate runs tests in

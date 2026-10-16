@@ -3,6 +3,7 @@
 //! `import click::list::{append};`, resolved to the library declaration
 //! before parsing.
 
+use super::parser::{Token, tokenizer};
 use super::*;
 
 /// The top-level declaration names of each Click library module, read from
@@ -13,7 +14,7 @@ fn library_declaration_names() -> &'static BTreeMap<&'static str, BTreeSet<Strin
         std::sync::OnceLock::new();
     NAMES.get_or_init(|| {
         let mut names = BTreeMap::new();
-        for (identity, source) in super::super::CLICK_LIBRARY_MODULES {
+        for (identity, source) in super::CLICK_LIBRARY_MODULES {
             let Ok((tokens, _)) = tokenizer::tokenize(source, None) else {
                 continue;
             };
@@ -31,7 +32,7 @@ pub(in crate::surface) fn library_theorem_identities() -> &'static BTreeMap<Stri
     static THEOREMS: std::sync::OnceLock<BTreeMap<String, String>> = std::sync::OnceLock::new();
     THEOREMS.get_or_init(|| {
         let mut theorems = BTreeMap::new();
-        for (identity, source) in super::super::CLICK_LIBRARY_MODULES {
+        for (identity, source) in super::CLICK_LIBRARY_MODULES {
             let Ok((tokens, _)) = tokenizer::tokenize(source, None) else {
                 continue;
             };
@@ -156,7 +157,7 @@ fn library_functions_and_predicates() -> &'static BTreeMap<&'static str, BTreeSe
         std::sync::OnceLock::new();
     NAMES.get_or_init(|| {
         let mut names = BTreeMap::new();
-        for (identity, source) in super::super::CLICK_LIBRARY_MODULES {
+        for (identity, source) in super::CLICK_LIBRARY_MODULES {
             let Ok((tokens, _)) = tokenizer::tokenize(source, None) else {
                 continue;
             };
@@ -193,7 +194,7 @@ pub(super) fn module_declares(identity: &str, name: &str) -> bool {
 
 /// The identity of the Click library module whose source is `file`.
 fn module_identity_of_file(file: &str) -> Option<&'static str> {
-    super::super::CLICK_LIBRARY_MODULES
+    super::CLICK_LIBRARY_MODULES
         .iter()
         .map(|(module, _)| *module)
         .find(|module| *module == file)
@@ -202,7 +203,7 @@ fn module_identity_of_file(file: &str) -> Option<&'static str> {
 /// The `library/` identity of a module path such as `["c", "string"]`.
 fn module_identity(segments: &[&str]) -> Option<&'static str> {
     let identity = format!("library/{}.click", segments.join("/"));
-    super::super::CLICK_LIBRARY_MODULES
+    super::CLICK_LIBRARY_MODULES
         .iter()
         .map(|(module, _)| *module)
         .find(|module| *module == identity)
@@ -217,95 +218,47 @@ fn module_identity(segments: &[&str]) -> Option<&'static str> {
 /// not a declaration of that module is left alone, so constructor paths such
 /// as `Nat::Zero` parse as before. Inside library module `file`, the module
 /// is in scope by its own short name, and a path to it brings nothing.
+pub(super) struct ResolvedLibraryTokens {
+    pub(super) tokens: Vec<Token>,
+    pub(super) positions: Vec<SourcePosition>,
+    pub(super) path_modules: BTreeSet<&'static str>,
+    pub(super) symbols: FileSymbols,
+}
+
 pub(super) fn resolve_library_paths(
     tokens: Vec<Token>,
     positions: Vec<SourcePosition>,
     file: Option<&str>,
-) -> Result<(Vec<Token>, Vec<SourcePosition>, BTreeSet<&'static str>), ClickError> {
+) -> Result<ResolvedLibraryTokens, ClickError> {
     if !tokens.contains(&Token::ColonColon) {
-        return Ok((tokens, positions, BTreeSet::new()));
+        let scope = FileSymbols::from_tokens(&tokens, &positions, file)?;
+        return Ok(ResolvedLibraryTokens {
+            tokens,
+            positions,
+            path_modules: BTreeSet::new(),
+            symbols: scope,
+        });
     }
     let names = library_declaration_names();
-    // Modules in scope by their last path segment: the implicit modules and
-    // the file's own `import click::...;` lines.
-    let mut in_scope = BTreeMap::<String, &'static str>::new();
-    let own = file.and_then(module_identity_of_file);
-    for identity in crate::surface::validation::implicit_library_modules().chain(own) {
-        in_scope.insert(short_module_name(identity).to_string(), identity);
-    }
-    // Names a selective import brings, and the token ranges of the import
-    // statements, which are left as written.
-    let mut selected = BTreeMap::<String, String>::new();
-    let mut import_spans = Vec::new();
-    let local = top_level_declaration_names(&tokens);
-    for (index, token) in tokens.iter().enumerate() {
-        if *token != Token::Ident("import".to_string())
-            || tokens.get(index + 1) != Some(&Token::Ident("click".to_string()))
-        {
-            continue;
-        }
-        let mut segments = Vec::new();
-        let mut cursor = index + 2;
-        while tokens.get(cursor) == Some(&Token::ColonColon) {
-            let Some(Token::Ident(segment)) = tokens.get(cursor + 1) else {
-                break;
-            };
-            segments.push(segment.as_str());
-            cursor += 2;
-        }
-        let Some(identity) = module_identity(&segments) else {
-            continue;
-        };
-        in_scope.insert(short_module_name(identity).to_string(), identity);
-        if tokens.get(cursor) == Some(&Token::ColonColon)
-            && tokens.get(cursor + 1) == Some(&Token::LBrace)
-        {
-            cursor += 2;
-            while let Some(Token::Ident(name)) = tokens.get(cursor) {
-                if local.contains(name) {
-                    return Err(path_error(
-                        &positions,
-                        cursor,
-                        format!(
-                            "`{name}` is imported from `{}` and also declared in this file; drop the import, rename the declaration, or write the library's by its path",
-                            crate::surface::library_module_path(identity)
-                        ),
-                    ));
-                }
-                let resolved = resolved_name(identity, name);
-                if let Some(previous) = selected.insert(name.clone(), resolved.clone())
-                    && previous != resolved
-                {
-                    return Err(path_error(
-                        &positions,
-                        cursor,
-                        format!("`{name}` is imported twice, as `{previous}` and `{resolved}`"),
-                    ));
-                }
-                cursor += 1;
-                if tokens.get(cursor) == Some(&Token::Comma) {
-                    cursor += 1;
-                }
-            }
-        }
-        let end = tokens[index..]
-            .iter()
-            .position(|token| *token == Token::Semicolon)
-            .map_or(tokens.len(), |offset| index + offset);
-        import_spans.push(index..end);
-    }
-
+    let scope = FileSymbols::from_tokens(&tokens, &positions, file)?;
+    let FileSymbols {
+        in_scope,
+        selected,
+        import_spans,
+        own,
+        ..
+    } = &scope;
     let mut resolved_tokens = Vec::with_capacity(tokens.len());
     let mut resolved_positions = Vec::with_capacity(positions.len());
     let mut path_modules = BTreeSet::new();
     let mut index = 0;
     while index < tokens.len() {
-        if let Some(span) = import_spans.iter().find(|span| span.start == index) {
-            for skipped in span.clone() {
+        if let Some(&end) = import_spans.get(&index) {
+            for skipped in index..end {
                 resolved_tokens.push(tokens[skipped].clone());
                 resolved_positions.push(positions[skipped].clone());
             }
-            index = span.end;
+            index = end;
             continue;
         }
         if let Token::Ident(name) = &tokens[index]
@@ -318,10 +271,10 @@ pub(super) fn resolve_library_paths(
             continue;
         }
         if let Some((name, consumed, module)) =
-            library_path_at(&tokens, index, names, &in_scope, &positions)?
+            library_path_at(&tokens, index, names, in_scope, &positions)?
         {
             if let Some(module) = module
-                && Some(module) != own
+                && Some(module) != *own
             {
                 path_modules.insert(module);
             }
@@ -334,7 +287,12 @@ pub(super) fn resolve_library_paths(
         resolved_positions.push(positions[index].clone());
         index += 1;
     }
-    Ok((resolved_tokens, resolved_positions, path_modules))
+    Ok(ResolvedLibraryTokens {
+        tokens: resolved_tokens,
+        positions: resolved_positions,
+        path_modules,
+        symbols: scope,
+    })
 }
 
 /// Whether the identifier at `index` names a declaration rather than a
@@ -418,7 +376,7 @@ fn library_path_at(
         return Ok(None);
     }
     // A module the file has not imported: say which import or path names it.
-    let unimported = super::super::CLICK_LIBRARY_MODULES
+    let unimported = super::CLICK_LIBRARY_MODULES
         .iter()
         .map(|(identity, _)| *identity)
         .find(|identity| {
@@ -456,4 +414,184 @@ fn path_error(positions: &[SourcePosition], index: usize, message: String) -> Cl
         None => ClickError::new(message),
     }
     .with_kind(ClickErrorKind::Syntax)
+}
+
+/// File-level declaration and import bindings shared by lowering and source
+/// spelling. Canonical library identities never depend on printed text.
+#[derive(Clone, Debug, Default)]
+pub(super) struct FileSymbols {
+    in_scope: BTreeMap<String, &'static str>,
+    selected: BTreeMap<String, String>,
+    import_spans: BTreeMap<usize, usize>,
+    own: Option<&'static str>,
+    local_theorems: BTreeSet<String>,
+    explicit_paths: BTreeSet<String>,
+}
+
+impl FileSymbols {
+    fn from_tokens(
+        tokens: &[Token],
+        positions: &[SourcePosition],
+        file: Option<&str>,
+    ) -> Result<Self, ClickError> {
+        // Modules in scope by their last path segment: the implicit modules and
+        // the file's own `import click::...;` lines.
+        let mut in_scope = BTreeMap::<String, &'static str>::new();
+        let own = file.and_then(module_identity_of_file);
+        for identity in crate::surface::validation::implicit_library_modules().chain(own) {
+            in_scope.insert(short_module_name(identity).to_string(), identity);
+        }
+        // Names a selective import brings, and the token ranges of the import
+        // statements, which are left as written.
+        let mut selected = BTreeMap::<String, String>::new();
+        let mut import_spans = BTreeMap::new();
+        let local = top_level_declaration_names(tokens);
+        for (index, token) in tokens.iter().enumerate() {
+            if *token != Token::Ident("import".to_string())
+                || tokens.get(index + 1) != Some(&Token::Ident("click".to_string()))
+            {
+                continue;
+            }
+            let mut segments = Vec::new();
+            let mut cursor = index + 2;
+            while tokens.get(cursor) == Some(&Token::ColonColon) {
+                let Some(Token::Ident(segment)) = tokens.get(cursor + 1) else {
+                    break;
+                };
+                segments.push(segment.as_str());
+                cursor += 2;
+            }
+            let Some(identity) = module_identity(&segments) else {
+                continue;
+            };
+            in_scope.insert(short_module_name(identity).to_string(), identity);
+            if tokens.get(cursor) == Some(&Token::ColonColon)
+                && tokens.get(cursor + 1) == Some(&Token::LBrace)
+            {
+                cursor += 2;
+                while let Some(Token::Ident(name)) = tokens.get(cursor) {
+                    if local.contains(name) {
+                        return Err(path_error(
+                            positions,
+                            cursor,
+                            format!(
+                                "`{name}` is imported from `{}` and also declared in this file; drop the import, rename the declaration, or write the library's by its path",
+                                crate::surface::library_module_path(identity)
+                            ),
+                        ));
+                    }
+                    let resolved = resolved_name(identity, name);
+                    if let Some(previous) = selected.insert(name.clone(), resolved.clone())
+                        && previous != resolved
+                    {
+                        return Err(path_error(
+                            positions,
+                            cursor,
+                            format!("`{name}` is imported twice, as `{previous}` and `{resolved}`"),
+                        ));
+                    }
+                    cursor += 1;
+                    if tokens.get(cursor) == Some(&Token::Comma) {
+                        cursor += 1;
+                    }
+                }
+            }
+            let end = tokens[index..]
+                .iter()
+                .position(|token| *token == Token::Semicolon)
+                .map_or(tokens.len(), |offset| index + offset);
+            import_spans.insert(index, end);
+        }
+
+        let mut explicit_paths = BTreeSet::new();
+        for start in 0..tokens.len() {
+            if tokens[start] != Token::Ident("click".to_string()) {
+                continue;
+            }
+            let mut path = String::from("click");
+            let mut cursor = start + 1;
+            while tokens.get(cursor) == Some(&Token::ColonColon) {
+                let Some(Token::Ident(segment)) = tokens.get(cursor + 1) else {
+                    break;
+                };
+                path.push_str("::");
+                path.push_str(segment);
+                cursor += 2;
+            }
+            explicit_paths.insert(path);
+        }
+        Ok(Self {
+            in_scope,
+            selected,
+            import_spans,
+            own,
+            local_theorems: if file.is_some_and(|file| file.starts_with("library/")) {
+                BTreeSet::new()
+            } else {
+                top_level_theorem_names(tokens)
+            },
+            explicit_paths,
+        })
+    }
+
+    pub(super) fn theorem_identity(&self, name: String) -> String {
+        if self.local_theorems.contains(&name) {
+            name
+        } else {
+            bare_theorem_citation(&name).cloned().unwrap_or(name)
+        }
+    }
+
+    pub(super) fn for_source(source: &str) -> Result<Self, ClickError> {
+        let (tokens, positions) = tokenizer::tokenize(source, None)?;
+        Self::from_tokens(&tokens, &positions, None)
+    }
+
+    pub(super) fn visible_modules(&self) -> Vec<String> {
+        self.in_scope
+            .values()
+            .map(|identity| identity.to_string())
+            .collect()
+    }
+
+    /// Choose a spelling with exactly the canonical identity the parser sees.
+    pub(super) fn spelling<'a>(&self, path: &'a str) -> std::borrow::Cow<'a, str> {
+        crate::instrumentation::record_deterministic_work(1);
+        let bare = path.rsplit("::").next().unwrap_or(path);
+        if self.explicit_paths.contains(path) {
+            return path.into();
+        }
+        if self
+            .selected
+            .get(bare)
+            .is_some_and(|selected| selected == path)
+        {
+            return bare.into();
+        }
+        if let Some(short) = qualified_module_spelling(path) {
+            let module = path.rsplit_once("::").expect("qualified path").0;
+            if self
+                .in_scope
+                .get(module.rsplit("::").next().unwrap_or(module))
+                .is_some_and(|identity| crate::surface::library_module_path(identity) == module)
+            {
+                return short.into();
+            }
+        } else if !self.local_theorems.contains(bare)
+            && bare_theorem_citation(bare).is_some_and(|identity| identity == path)
+        {
+            return bare.into();
+        }
+        path.into()
+    }
+}
+
+/// The qualified identity of the Click library theorem `name`: `name`
+/// itself when it is already qualified or names no library theorem. Built-in
+/// tactics name library theorems through this.
+pub(in crate::surface) fn library_theorem_identity(name: &str) -> String {
+    library_theorem_identities()
+        .get(name)
+        .cloned()
+        .unwrap_or_else(|| name.to_string())
 }

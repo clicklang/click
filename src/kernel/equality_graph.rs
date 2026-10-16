@@ -74,6 +74,8 @@ mod integer_tests;
 #[cfg(test)]
 mod ordinary_expression_tests;
 #[cfg(test)]
+mod pointer_call_tests;
+#[cfg(test)]
 mod scaled_int32_tests;
 #[cfg(test)]
 mod storage_tests;
@@ -1492,13 +1494,12 @@ impl EqualityGraph {
         self.register_expression_operands(state, [left, right], [], []);
     }
 
-    fn register_expression_operands<'a>(
-        &self,
-        state: &mut EqualityGraphState,
+    fn expression_pointer_operands<'a>(
         machine: impl IntoIterator<Item = &'a Bitvector32Term>,
         algebraic: impl IntoIterator<Item = &'a AlgebraicTerm>,
         integer: impl IntoIterator<Item = &'a crate::kernel::IntegerTerm>,
-    ) {
+        pointer_calls: impl IntoIterator<Item = &'a SharedPureApplication>,
+    ) -> Vec<Pointer> {
         enum Work<'a> {
             Machine(&'a Bitvector32Term),
             Algebraic(&'a AlgebraicTerm),
@@ -1509,6 +1510,9 @@ impl EqualityGraph {
         let mut pending: Vec<_> = machine.into_iter().map(Work::Machine).collect();
         pending.extend(algebraic.into_iter().map(Work::Algebraic));
         pending.extend(integer.into_iter().map(Work::Integer));
+        for call in pointer_calls {
+            pending.extend(call.arguments().iter().map(Work::Argument));
+        }
         let mut integer_seen = std::collections::BTreeSet::new();
         let mut pointers = Vec::new();
         while let Some(work) = pending.pop() {
@@ -1605,6 +1609,17 @@ impl EqualityGraph {
                 }
             }
         }
+        pointers
+    }
+
+    fn register_expression_operands<'a>(
+        &self,
+        state: &mut EqualityGraphState,
+        machine: impl IntoIterator<Item = &'a Bitvector32Term>,
+        algebraic: impl IntoIterator<Item = &'a AlgebraicTerm>,
+        integer: impl IntoIterator<Item = &'a crate::kernel::IntegerTerm>,
+    ) {
+        let pointers = Self::expression_pointer_operands(machine, algebraic, integer, []);
         if pointers.is_empty() {
             return;
         }
@@ -2065,16 +2080,34 @@ impl EqualityGraphState {
     /// Register the explicit roots and their load-address dependencies once,
     /// with an iterative traversal rather than a semantic nesting limit.
     fn register_blocks(&mut self, roots: impl IntoIterator<Item = PointerBlock>) {
-        let is_load = |block: &PointerBlock| match block {
-            PointerBlock::LoadedPointer(_) => true,
+        let is_application = |block: &PointerBlock| match block {
+            PointerBlock::LoadedPointer(_) | PointerBlock::PureFunctionApplication(_) => true,
             PointerBlock::Symbolic(variable) => crate::kernel::is_load_variable(variable),
             _ => false,
         };
-        let mut pending: Vec<_> = roots.into_iter().filter(is_load).collect();
+        let mut pending: Vec<_> = roots.into_iter().filter(is_application).collect();
         let mut equalities = Vec::new();
+        let mut calls_seen = std::collections::BTreeSet::new();
         while let Some(block) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
             if self.loads.contains_key(&block) || self.typed_reads.contains(&block) {
+                continue;
+            }
+            if let PointerBlock::PureFunctionApplication(application) = &block {
+                if !calls_seen.insert(application.clone()) {
+                    continue;
+                }
+                for pointer in EqualityGraph::expression_pointer_operands([], [], [], [application])
+                {
+                    self.register_pointer_address(&pointer);
+                    if is_application(&pointer.block) {
+                        pending.push(pointer.block);
+                    }
+                }
+                self.register_pointer_address(&Pointer {
+                    block,
+                    offset: PointerOffsetTerm::Constant(0),
+                });
                 continue;
             }
             let definition = match &block {
@@ -2113,7 +2146,7 @@ impl EqualityGraphState {
                     value_term,
                     block.clone(),
                 );
-                if is_load(&address.block) {
+                if is_application(&address.block) {
                     pending.push(address.block);
                 }
                 continue;
@@ -2137,7 +2170,7 @@ impl EqualityGraphState {
             self.weights
                 .insert(representative.clone(), self.weight(&representative) + 1);
             self.reindex_load(&block, &mut equalities);
-            if is_load(&address.block) {
+            if is_application(&address.block) {
                 pending.push(address.block);
             }
         }
@@ -2279,23 +2312,20 @@ impl EqualityGraphState {
     fn close(&mut self, mut equalities: Vec<(Pointer, Pointer)>) -> bool {
         let mut changed = false;
         loop {
-            equalities.extend(
-                self.terms
-                    .take_read_merges()
-                    .into_iter()
-                    .map(|(left, right)| {
-                        (
-                            Pointer {
-                                block: left,
-                                offset: PointerOffsetTerm::Constant(0),
-                            },
-                            Pointer {
-                                block: right,
-                                offset: PointerOffsetTerm::Constant(0),
-                            },
-                        )
-                    }),
-            );
+            equalities.extend(self.terms.take_pointer_value_merges().into_iter().map(
+                |(left, right)| {
+                    (
+                        Pointer {
+                            block: left,
+                            offset: PointerOffsetTerm::Constant(0),
+                        },
+                        Pointer {
+                            block: right,
+                            offset: PointerOffsetTerm::Constant(0),
+                        },
+                    )
+                },
+            ));
             let Some((left, right)) = equalities.pop() else {
                 break;
             };

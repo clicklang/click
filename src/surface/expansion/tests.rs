@@ -640,7 +640,7 @@ theorem client(xs: List<int32>, ys: List<int32>, zs: List<int32>) {
 fn expansion_spells_qualified_module_citations_by_their_in_scope_path() {
     let source = "theorem client() {}\n";
     assert_eq!(
-        library_citation_spelling(
+        printing::spell_source_names(
             source,
             "apply(click::list::append_cons(x, xs, ys)); \
              apply(click::machine_integer::int32_positive_is_nonnegative(x));"
@@ -649,12 +649,12 @@ fn expansion_spells_qualified_module_citations_by_their_in_scope_path() {
     );
     let shadowing = "theorem append_cons() {}\n";
     assert_eq!(
-        library_citation_spelling(shadowing, "apply(click::list::append_cons(x, xs, ys));"),
+        printing::spell_source_names(shadowing, "apply(click::list::append_cons(x, xs, ys));"),
         "apply(list::append_cons(x, xs, ys));"
     );
     let selective = "import click::list::{append, append_cons};\n";
     assert_eq!(
-        library_citation_spelling(selective, "apply(click::list::append_cons(x, xs, ys));"),
+        printing::spell_source_names(selective, "apply(click::list::append_cons(x, xs, ys));"),
         "apply(append_cons(x, xs, ys));"
     );
 }
@@ -663,32 +663,32 @@ fn expansion_spells_qualified_module_citations_by_their_in_scope_path() {
 fn expansion_keeps_explicit_library_paths_and_unimported_predicates() {
     let source = "theorem client() { ensures click::bytes::equal(p, 0, q, 0, 1) by simp; }";
     assert_eq!(
-        library_citation_spelling(source, "have click::bytes::equal(p, 0, q, 0, 1);"),
+        printing::spell_source_names(source, "have click::bytes::equal(p, 0, q, 0, 1);"),
         "have click::bytes::equal(p, 0, q, 0, 1);"
     );
     assert_eq!(
-        library_citation_spelling(
+        printing::spell_source_names(
             "theorem client() {}",
             "have click::bytes::equal(p, 0, q, 0, 1);"
         ),
         "have click::bytes::equal(p, 0, q, 0, 1);"
     );
     assert_eq!(
-        library_citation_spelling(
+        printing::spell_source_names(
             "/* import click::bytes; */ theorem client() {}",
             "have click::bytes::equal(p, 0, q, 0, 1);"
         ),
         "have click::bytes::equal(p, 0, q, 0, 1);"
     );
     assert_eq!(
-        library_citation_spelling(
+        printing::spell_source_names(
             "import click::bytes;",
             "have click::bytes::equal(p, 0, q, 0, 1);"
         ),
         "have bytes::equal(p, 0, q, 0, 1);"
     );
     assert_eq!(
-        library_citation_spelling(
+        printing::spell_source_names(
             "apply(click::list::append_left_identity(xs));",
             "apply(click::list::append_left_identity(xs));"
         ),
@@ -699,7 +699,7 @@ fn expansion_keeps_explicit_library_paths_and_unimported_predicates() {
 #[test]
 fn block_tactic_optional_semicolon_belongs_to_the_tactic() {
     let source = "by { step(); simp(); }";
-    let tokens = scan_source_tokens(source).expect("source should tokenize");
+    let tokens = proof_source_tokens(source).expect("source should tokenize");
     let by = tokens
         .iter()
         .position(|token| token.text == "by")
@@ -771,7 +771,7 @@ fn expand_top_level_tactic_for_test(
     claim: CProofClaim,
     tactic_index: usize,
 ) -> Result<String, ClickError> {
-    let tokens = scan_source_tokens(click_source)?;
+    let tokens = proof_source_tokens(click_source)?;
     let function = find_function(&tokens, function_name)?;
     let proof = match claim {
         CProofClaim::Grouped => find_grouped_proof_span(&tokens, &function)?,
@@ -1234,7 +1234,7 @@ int32 nested_nonnegative(int32 x, int32 flag) {
 #[test]
 fn locates_a_block_tactic_as_one_source_statement() {
     let source = "by { have x == x by simp; simp(); }";
-    let tokens = scan_source_tokens(source).expect("source should scan");
+    let tokens = proof_source_tokens(source).expect("source should scan");
     let proof = proof_span(&tokens, 0).expect("proof should have a span");
 
     let first = find_tactic_span(&tokens, &proof, 0).expect("first tactic should exist");
@@ -2135,7 +2135,7 @@ fn int64_arithmetic_expands_to_its_integer_bridge_steps() {
 #[test]
 fn a_generic_rust_head_is_located_by_its_path() {
     let source = "verifying \"lib.rs\";\nfn lib::apply<F: Fn(i32) -> i32>(f: F, x: i32) -> i32 {\n    ensures 0 == 0;\n} by { execute(); simp(); }\nfn lib::keep<'a>(x: &'a i32) -> i32 {\n    ensures 1 == 1;\n} by { execute(); simp(); }\n";
-    let tokens = scan_source_tokens(source).unwrap();
+    let tokens = proof_source_tokens(source).unwrap();
     let apply = find_function(&tokens, "__rust_q_I3_lib_I5_apply").expect("the generic head");
     let keep = find_function(&tokens, "__rust_q_I3_lib_I4_keep").expect("the lifetime head");
     assert!(apply.body_open < apply.body_close && apply.body_close < keep.body_open);
@@ -2149,7 +2149,7 @@ fn a_generic_rust_head_is_located_by_its_path() {
 #[test]
 fn an_inherent_method_in_another_module_is_located_by_its_type() {
     let source = "verifying \"lib.rs\";\nimpl adler2::Adler32 {\n    fn compute(&mut self, seed: u32) {\n        ensures 0 == 0;\n    } by { execute(); simp(); }\n}\n";
-    let tokens = scan_source_tokens(source).unwrap();
+    let tokens = proof_source_tokens(source).unwrap();
     let beside = "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I7_compute";
     let elsewhere = "__rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute";
     let body = find_function(&tokens, beside).expect("the source spelling is indexed");
@@ -3260,7 +3260,7 @@ theorem evaluation() executes FeeFrac::EvaluateFeeDown(const struct FeeFrac* thi
     ensures Fast(&FeeFrac::EvaluateFeeDown) by { execute(); simp(); }
 }
 "#;
-    let tokens = scan_source_tokens(source).unwrap();
+    let tokens = proof_source_tokens(source).unwrap();
     let name = crate::languages::cpp::names::path_name(&["FeeFrac", "EvaluateFeeDown"]);
     let function = find_function(&tokens, &name).unwrap();
     assert_eq!(tokens[function.body_close + 1].text, "by");
@@ -3324,7 +3324,7 @@ fn premise_free_applications_are_simple_but_required_premises_stay_smart() {
 #[test]
 fn qualified_c_contract_source_locations_preserve_file_aliases() {
     let source = "verifying \"first.c\" as first;\nverifying \"second.c\" as second;\nint32 first::helper() { ensures result == 1; } by { execute(); simp(); }\nint32 second::helper() { ensures result == 2; } by { execute(); simp(); }\n";
-    let tokens = scan_source_tokens(source).unwrap();
+    let tokens = proof_source_tokens(source).unwrap();
     let declarations = declaration_source_index(&tokens).unwrap();
     for (name, line) in [("first::helper", 3), ("second::helper", 4)] {
         let found = find_function(&tokens, name).unwrap();
@@ -3340,11 +3340,124 @@ fn qualified_c_contract_source_locations_preserve_file_aliases() {
 #[test]
 fn a_rust_verifying_alias_does_not_change_path_identity() {
     let source = "verifying \"first.rs\" as first; fn first::helper() -> i32 { ensures result == 1; } by { execute(); simp(); }";
-    let tokens = scan_source_tokens(source).unwrap();
+    let tokens = proof_source_tokens(source).unwrap();
     let declarations = declaration_source_index(&tokens).unwrap();
     assert!(
         declarations.contains_key(&crate::languages::rust::names::path_name(&[
             "first", "helper"
         ]))
     );
+}
+
+#[test]
+fn source_tools_share_parser_tokens_and_byte_spans() {
+    let source = "/* λ # } */ import click::list::{append}; caller::{closure#12}; Box::(lambda#3); 37u64 -> value => next;";
+    let tokens = parser::source_tokens(source).unwrap();
+    assert_eq!(
+        tokens
+            .iter()
+            .map(|token| token.text.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "import",
+            "click",
+            "::",
+            "list",
+            "::",
+            "{",
+            "append",
+            "}",
+            ";",
+            "caller",
+            "::",
+            "{closure#12}",
+            ";",
+            "Box",
+            "::",
+            "(lambda#3)",
+            ";",
+            "37u64",
+            "->",
+            "value",
+            "=>",
+            "next",
+            ";"
+        ]
+    );
+    for token in tokens {
+        assert_eq!(&source[token.span], token.text);
+    }
+    let invalid = "# a comment the parser refuses\ntheorem t() {}";
+    assert!(parser::parse(invalid).is_err());
+    assert!(ProofSourceIndex::new(invalid).is_err());
+    assert!(verifying_source_paths(invalid).is_err());
+}
+
+#[test]
+fn source_spelling_uses_tokens_for_shadowing_imports_and_literals() {
+    let name = "click::machine_integer::int32_positive_is_nonnegative";
+    let replacement = format!("apply({name}(x));");
+    for source in [
+        "/* banner */ theorem int32_positive_is_nonnegative(x: int32) {}",
+        "theorem other() {} theorem int32_positive_is_nonnegative(x: int32) {}",
+        "theorem\n int32_positive_is_nonnegative(x: int32) {}",
+    ] {
+        assert_eq!(
+            printing::spell_source_names(source, &replacement),
+            replacement
+        );
+    }
+    let context = "/* ; # } */ import /* ; */ click::list::{append_cons};";
+    let text = "apply(click::list::append_cons(x, xs, ys)); // click::list::append_cons\nverifying \"click::list::append_cons\";";
+    assert_eq!(
+        printing::spell_source_names(context, text),
+        "apply(append_cons(x, xs, ys)); // click::list::append_cons\nverifying \"click::list::append_cons\";"
+    );
+    let context = "// theorem int32_positive_is_nonnegative\ntheorem client() {}";
+    assert_eq!(
+        printing::spell_source_names(context, &replacement),
+        "apply(int32_positive_is_nonnegative(x));"
+    );
+}
+
+#[test]
+fn commented_selective_and_qualified_names_expand_and_recheck() {
+    let source = r#"
+/* # ; theorem fake() {} */
+import /* ; */ click::list::{append, append_left_identity};
+theorem client(xs: List<int32>) {
+    ensures append(List<int32>::Nil, xs) == xs by {
+        apply(click::list::append_left_identity(xs));
+    }
+}
+"#;
+    verify_c0_sources(source, &[]).unwrap();
+    let expanded = expand_c0_claim_source_by_label(source, &[], "client.ensures_0").unwrap();
+    verify_c0_sources(&expanded, &[]).unwrap();
+    assert!(expanded.contains("/* # ; theorem fake() {} */"));
+    assert!(
+        verify_c0_sources(&expanded.replace("== xs by", "== List<int32>::Nil by"), &[]).is_err()
+    );
+}
+
+#[test]
+fn resource_and_theorem_name_namespaces_roundtrip_with_commented_imports() {
+    let markdown = include_str!("../../../mdtests/source_name_spelling_uses_parser_bindings.md");
+    let source = markdown
+        .split("```click\n")
+        .nth(1)
+        .unwrap()
+        .split("```")
+        .next()
+        .unwrap();
+    let sources = [("keep.c", "void keep(int32* p) { }")];
+    verify_c0_sources(source, &sources).unwrap();
+    for label in [
+        "client.ensures_0",
+        "keep.contract",
+        "int32_positive_is_nonnegative.ensures_0",
+    ] {
+        let expanded = expand_c0_claim_source_by_label(source, &sources, label).unwrap();
+        verify_c0_sources(&expanded, &sources).unwrap();
+    }
 }
