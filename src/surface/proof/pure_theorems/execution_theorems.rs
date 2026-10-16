@@ -169,7 +169,7 @@ pub(super) fn verify_execution_theorem(
             }
             let source_values = requirement
                 .proposition()
-                .map(|proposition| lower(proposition))
+                .map(&lower)
                 .transpose()?
                 .as_ref()
                 .and_then(super::contract_fact_values)
