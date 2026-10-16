@@ -505,8 +505,13 @@ In `src/kernel/`:
   whose term has another width, or a comparison whose operands are not the
   width it names. The one exception is a load equation (a store fact or a
   load variable's defining fact), written with the 32-bit equality at any
-  width, whose sides need only agree with each other. Making the width part of
-  the term is the open issue `issues/one-integer-term-type.md`.
+  width, whose sides need only agree with each other. A variable records no
+  width either, so each fact context remembers the width its facts use each
+  variable at, and debug builds also refuse a condition that uses one at
+  another width. The scope is the context, not the run: variable numbers are
+  assigned per function, and two facts only combine within one context.
+  Making the width part of the term is the open issue
+  `issues/one-integer-term-type.md`.
 - `PointerOffsetTerm`: pointer-offset expressions.
 - `ConditionTerm`: proof-level truth-valued conditions such as signed and
   unsigned order, equality, overflow, pointer-offset equality, and typed

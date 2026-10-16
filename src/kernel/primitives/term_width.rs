@@ -88,11 +88,64 @@ impl std::fmt::Display for WidthMismatch {
 
 type WidthResult = Result<Option<CarrierWidth>, WidthMismatch>;
 
+thread_local! {
+    /// While `condition_variable_widths` runs, the width each variable meets
+    /// at a typed position. Empty otherwise.
+    static COLLECTED: std::cell::RefCell<Option<Vec<(Variable, CarrierWidth)>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Records that `variable` sits where a `width` carrier is expected.
+fn note_variable(variable: Variable, width: CarrierWidth) -> Result<(), WidthMismatch> {
+    COLLECTED.with(|collected| {
+        if let Some(collected) = collected.borrow_mut().as_mut() {
+            collected.push((variable, width));
+        }
+    });
+    Ok(())
+}
+
+/// The width each variable of a condition is used at, or the first place
+/// the condition's widths disagree. A variable used at two widths within the
+/// one condition is such a place.
+pub(crate) fn condition_variable_widths(
+    condition: &ConditionTerm,
+) -> Result<Vec<(Variable, CarrierWidth)>, WidthMismatch> {
+    let previous = COLLECTED.with(|collected| collected.replace(Some(Vec::new())));
+    let mismatch = condition_width_mismatch(condition);
+    let mut widths = COLLECTED
+        .with(|collected| collected.replace(previous))
+        .unwrap_or_default();
+    if let Some(mismatch) = mismatch {
+        return Err(mismatch);
+    }
+    widths.sort_unstable();
+    widths.dedup();
+    for pair in widths.windows(2) {
+        if pair[0].0 == pair[1].0 {
+            return Err(variable_conflict(pair[0].1, pair[1].1));
+        }
+    }
+    Ok(widths)
+}
+
+/// A variable used at `found` where it was used at `first` before.
+pub(crate) fn variable_conflict(first: CarrierWidth, found: CarrierWidth) -> WidthMismatch {
+    WidthMismatch {
+        site: "a variable used at another width than before",
+        expected: first,
+        found,
+    }
+}
+
 fn expect(
     site: &'static str,
     expected: CarrierWidth,
     term: &Bitvector32Term,
 ) -> Result<(), WidthMismatch> {
+    if let Bitvector32Term::Variable(variable) = term {
+        return note_variable(*variable, expected);
+    }
     match term_width(term)? {
         Some(found) if found != expected => Err(WidthMismatch {
             site,
@@ -160,7 +213,12 @@ pub(crate) fn term_width(term: &Bitvector32Term) -> WidthResult {
             else_term,
         } => {
             condition_width_mismatch(condition).map_or(Ok(()), Err)?;
-            unify("If arms", term_width(then_term)?, term_width(else_term)?)
+            let width = unify("If arms", term_width(then_term)?, term_width(else_term)?)?;
+            if let Some(width) = width {
+                expect("If arms", width, then_term)?;
+                expect("If arms", width, else_term)?;
+            }
+            Ok(width)
         }
         T::RangeFold {
             start,

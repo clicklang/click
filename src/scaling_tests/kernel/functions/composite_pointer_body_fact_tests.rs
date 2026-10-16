@@ -54,14 +54,6 @@ fn fold_copied_wide_word_preserves_scope_width_and_scales() {
         &PureFactContext::new().assume_proposition(alias),
         &packed(&copied),
     ));
-    let narrow = parent.clone().assume_proposition(Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(copied.clone()), Box::new(word.clone())),
-        true,
-    ));
-    assert!(!resource_body_fact_is_established(
-        &narrow,
-        &packed(&copied)
-    ));
     let mut previous = None;
     for count in [16_u64, 64, 256, 1024] {
         let mut padded = context.clone();
@@ -84,6 +76,47 @@ fn fold_copied_wide_word_preserves_scope_width_and_scales() {
         }
         previous = Some(work);
     }
+}
+
+/// A 32-bit equality between two 64-bit words is not the 64-bit alias the
+/// fold needs. Debug builds refuse the mixed-width context outright; a
+/// release build must still not establish the fact through it.
+#[test]
+#[cfg_attr(
+    debug_assertions,
+    should_panic(expected = "a variable used at another width")
+)]
+fn a_narrow_equality_between_wide_words_is_not_an_alias() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let word = Bitvector32Term::Variable(Variable(730_000));
+    let copied = Bitvector32Term::Variable(Variable(730_001));
+    let address = Bitvector32Term::PointerAddress(Box::new(Pointer::symbolic(Variable(730_003))));
+    let packed = |word: &Bitvector32Term| {
+        Proposition::ConditionIs(
+            ConditionTerm::Bitvector64Equal(
+                Box::new(word.clone()),
+                Box::new(Bitvector32Term::UInt64Add(
+                    Box::new(address.clone()),
+                    Box::new(Bitvector32Term::UInt64BitwiseAnd(
+                        Box::new(word.clone()),
+                        Box::new(Bitvector32Term::UInt64Constant(1)),
+                    )),
+                )),
+            ),
+            true,
+        )
+    };
+    let narrow = PureFactContext::new()
+        .defer_non_exact_condition_reasoning()
+        .assume_proposition(packed(&word))
+        .assume_proposition(Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(Box::new(copied.clone()), Box::new(word.clone())),
+            true,
+        ));
+    assert!(!resource_body_fact_is_established(
+        &narrow,
+        &packed(&copied)
+    ));
 }
 
 #[test]

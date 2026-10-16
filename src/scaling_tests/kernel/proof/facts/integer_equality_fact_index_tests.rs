@@ -37,12 +37,38 @@ fn wide_equality_decision_uses_only_its_indexed_component() {
         work.push(measured);
     }
     assert!(work.windows(2).all(|pair| pair[0] == pair[1]), "{work:?}");
+}
+
+/// A 32-bit equality does not decide a 64-bit one. Debug builds refuse the
+/// mixed-width context outright; a release build must still not prove the
+/// wide equality through it.
+#[test]
+#[cfg_attr(
+    debug_assertions,
+    should_panic(expected = "a variable used at another width")
+)]
+fn a_narrow_equality_does_not_decide_a_wide_one() {
+    let left = Bitvector32Term::Variable(Variable(211_000));
+    let middle = Bitvector32Term::Variable(Variable(211_001));
+    let required = Proposition::ConditionIs(
+        ConditionTerm::Bitvector64Equal(
+            Box::new(left.clone()),
+            Box::new(Bitvector32Term::UInt64Constant(7)),
+        ),
+        true,
+    );
     let narrow = ProofFacts::from_ordered(&[
         Proposition::ConditionIs(
             ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(middle.clone())),
             true,
         ),
-        equality(middle, Bitvector32Term::UInt64Constant(7)),
+        Proposition::ConditionIs(
+            ConditionTerm::Bitvector64Equal(
+                Box::new(middle),
+                Box::new(Bitvector32Term::UInt64Constant(7)),
+            ),
+            true,
+        ),
     ]);
     assert!(!narrow.assumptions().proves_atomic_without_search(&required));
 }
