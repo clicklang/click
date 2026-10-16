@@ -4026,6 +4026,7 @@ mod tests {
                 pointee_constant: false,
                 initializer: None,
                 zero_fill: None,
+                declared_class: None,
             },
             CStatement::DeclareAggregate {
                 name: "holder".into(),

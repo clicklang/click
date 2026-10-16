@@ -1079,6 +1079,12 @@ struct CPointerQualifiers {
     volatile: bool,
     constant: bool,
     extent: Option<SubobjectExtent>,
+    /// The class of the object the pointer was formed to designate, from the
+    /// declaration that produced it (`design/effective-types.md`). It is not
+    /// part of the value's identity, and it survives casts, `void *`,
+    /// arithmetic and copies, so an access through any later spelling is
+    /// checked against it.
+    object_class: Option<crate::kernel::effective_type::CAccessClass>,
     local_reference: Option<super::loans::LocalScalarReference>,
 }
 
@@ -1185,6 +1191,24 @@ impl CPointerValue {
 
     pub(crate) fn extent(&self) -> Option<&SubobjectExtent> {
         self.qualifiers.as_ref()?.extent.as_ref()
+    }
+
+    pub(crate) fn object_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
+        self.qualifiers.as_ref()?.object_class
+    }
+
+    /// Records the class of the object the pointer designates. A pointer
+    /// that already carries one keeps it: the first declaration that formed
+    /// the pointer names the object, and a later typed spelling does not.
+    pub(crate) fn with_object_class(
+        mut self,
+        object_class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        if object_class.is_some() && self.object_class().is_none() {
+            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).object_class =
+                object_class;
+        }
+        self
     }
 
     pub(crate) fn with_extent(mut self, extent: Option<SubobjectExtent>) -> Self {
@@ -1866,6 +1890,12 @@ pub struct CLValue {
     /// The subobject extent of the pointer this memory lvalue was reached
     /// through. The access is checked against it, and `&lvalue` keeps it.
     pub(super) extent: Option<Arc<SubobjectExtent>>,
+    /// The class of the lvalue's type, which the access uses, when the
+    /// frontend supplied one.
+    pub(super) access_class: Option<crate::kernel::effective_type::CAccessClass>,
+    /// The class of the object the pointer this lvalue was reached through
+    /// designates.
+    pub(super) object_class: Option<crate::kernel::effective_type::CAccessClass>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -1979,6 +2009,9 @@ pub enum CExpression {
         volatile: bool,
         /// Qualification of a loaded pointer's pointee, not of this cell.
         pointee_constant: bool,
+        /// The class of the lvalue's C type, which the access uses, when the
+        /// frontend supplied one (`design/effective-types.md`).
+        access_class: Option<crate::kernel::effective_type::CAccessClass>,
         /// Source provenance is presentation metadata only. Its comparison
         /// traits intentionally ignore the value.
         source: CExpressionLoadSource,
@@ -3129,6 +3162,9 @@ pub enum CStatement {
         /// elements follow as ordinary stores. Absent, the object is
         /// uninitialized.
         zero_fill: Option<CZeroFill>,
+        /// The class of the object, or of its elements, when the kernel type
+        /// cannot give it (`design/effective-types.md`).
+        declared_class: Option<crate::kernel::effective_type::CAccessClass>,
     },
     /// Declare an address-backed scalar-only aggregate. Aggregate values are
     /// not runtime `CValue`s; their local binding exposes the block base so
@@ -3373,6 +3409,9 @@ pub struct CParameter {
     pub(super) pointee_volatile: bool,
     pub(super) constant: bool,
     pub(super) pointee_constant: bool,
+    /// The class of the object a pointer parameter's declaration says it
+    /// designates, when the frontend supplied one.
+    pub(super) pointee_class: Option<crate::kernel::effective_type::CAccessClass>,
 }
 
 /// A linked file-scope scalar. Globals use one stable memory block across all
@@ -4897,6 +4936,14 @@ pub enum CUndefinedBehavior {
     /// designates (C11 6.5.6p8, C++ [expr.add]): `*(&pair.first + 1)` is
     /// one past `first`, not `second`, though both name the same address.
     SubobjectAccess,
+    /// A read or write through an lvalue whose type may not access the
+    /// object (C11 6.5p7): a `long` read through a `long long *`, or an
+    /// `int **` cell read as `long *`. GCC at `-O2` assumes it never happens
+    /// (`design/effective-types.md`).
+    IncompatibleAccess {
+        access: crate::kernel::effective_type::CAccessClass,
+        object: crate::kernel::effective_type::CAccessClass,
+    },
 }
 
 impl CUndefinedBehavior {
@@ -4921,6 +4968,13 @@ impl CUndefinedBehavior {
             Self::OnePastEndComparison => "comparison of a one-past-the-end pointer with the start \
                  of another object: whether the two objects are adjacent is unspecified"
                 .to_string(),
+            Self::IncompatibleAccess { access, object } => format!(
+                "an object of type `{}` accessed through an lvalue of type `{}`: an object may \
+                 be accessed only through its own type, up to signedness and qualifiers, or a \
+                 character type (C11 6.5p7), and GCC at -O2 assumes nothing else happens",
+                object.spelling(),
+                access.spelling()
+            ),
         }
     }
 }
@@ -6127,6 +6181,10 @@ pub struct CBlock {
     /// its representation has been initialized. Untyped blocks and arrays
     /// carry no scalar declaration.
     pub(super) declared_scalar_type: Option<CType>,
+    /// The declared class of every element of the block's object, for a
+    /// declared scalar or an array of one scalar type. An access through any
+    /// pointer is checked against it (`design/effective-types.md`).
+    pub(super) declared_class: Option<crate::kernel::effective_type::CAccessClass>,
 }
 
 /// An interned, immutable memory snapshot for embedding inside terms.

@@ -141,6 +141,23 @@ allowed cases:
    `-fno-delete-null-pointer-checks`, and the promise attributes are refused
    in every project.
 
+## Status
+
+- **Step 1 (scalar and pointer classes):** done.
+  - Accesses carry their class. Loads and stores whose kernel type erases it
+    (`long`, `long long`, exact pointer types) get it from the C frontend's
+    type; others get it from the kernel type.
+  - Pointer parameters carry their pointee class from entry. A pointer read
+    from memory carries its lvalue's pointee class unless it already carries
+    one.
+  - Declared locals and local arrays record their class on their block.
+  - Loops keep a pointer local's class across the abstract iteration, and
+    refuse a back edge that changes it.
+  - `int *` and `int **` carry no class yet, because the frontend spells
+    struct pointers with them; step 2 separates them.
+  - Globals, and local `int8` and `uint8` arrays, which the frontend also
+    uses for arrays of structs, are not covered yet.
+
 ## Validation
 
 - The probes above become mdtests: refused for `rank`, `struct` and `bytes`,

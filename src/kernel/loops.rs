@@ -2116,6 +2116,15 @@ fn c_loop_state_components_match_at_back_edge_inner(
     }) {
         changed.push("pointer subobject extents");
     }
+    // Likewise the class of the object a pointer local designates
+    // (`design/effective-types.md`).
+    if top_state.locals().object_values().any(|(name, value)| {
+        c_value_object_class(value).is_some()
+            && next_state.locals().get(name).map(c_value_object_class)
+                != Some(c_value_object_class(value))
+    }) {
+        changed.push("pointer object classes");
+    }
     if top_state.loan_participant != next_state.loan_participant {
         changed.push("stable-view loan participant");
     }
@@ -3602,6 +3611,13 @@ fn abstract_loop_exit_locals(
         {
             extents if extents[1..].iter().all(|extent| *extent == extents[0]) => {
                 with_retained_extent(fresh, held.first())
+            }
+            _ => fresh,
+        };
+        // So do exits that agree on the class of the object it designates.
+        let fresh = match held.iter().map(c_value_object_class).collect::<Vec<_>>() {
+            classes if classes[1..].iter().all(|class| *class == classes[0]) => {
+                with_retained_object_class(fresh, held.first())
             }
             _ => fresh,
         };
@@ -8349,6 +8365,7 @@ pub(super) fn havoc_loop_modified_locals(
         // abstract iteration; the back edge checks that the body returns
         // it to the same one (`c_loop_state_components_match_at_back_edge`).
         let value = with_retained_extent(value, state.locals.get(&name));
+        let value = with_retained_object_class(value, state.locals.get(&name));
         sync_stack_local(&mut state, &name, &value);
         state.locals.set_typed(name, value, c_type);
     }
@@ -8861,6 +8878,19 @@ fn c_value_subobject_extent(value: &CValue) -> Option<&SubobjectExtent> {
         CValue::Pointer(pointer) => pointer.extent(),
         _ => None,
     }
+}
+
+fn c_value_object_class(value: &CValue) -> Option<crate::kernel::effective_type::CAccessClass> {
+    match value {
+        CValue::Pointer(pointer) => pointer.object_class(),
+        _ => None,
+    }
+}
+
+/// `fresh` with the class of the object the pointer value it abstracts
+/// designates.
+fn with_retained_object_class(fresh: CValue, previous: Option<&CValue>) -> CValue {
+    fresh.with_pointer_object_class(previous.and_then(c_value_object_class))
 }
 
 /// `fresh` with the subobject extent of the pointer value it abstracts.

@@ -10924,6 +10924,7 @@ impl Parser {
                 value_type: element_type,
                 volatile: false,
                 pointee_constant: false,
+                access_class: None,
                 source: Default::default(),
             }));
             return Ok(vec![ContractSegment {
@@ -11422,6 +11423,7 @@ impl Parser {
                     value_type: field.c_type.to_kernel_type(),
                     volatile: false,
                     pointee_constant: field.pointee_constant,
+                    access_class: None,
                     source: Default::default(),
                 },
                 start: CExpression::Value(int32(0)),
@@ -11477,6 +11479,7 @@ impl Parser {
             value_type: field.c_type.to_kernel_type(),
             volatile: false,
             pointee_constant: field.pointee_constant,
+            access_class: None,
             source: Default::default(),
         })
     }
@@ -12311,6 +12314,7 @@ impl Parser {
                                         value_type: crate::kernel::CType::Int32,
                                         volatile: false,
                                         pointee_constant: false,
+                                        access_class: None,
                                         source: Default::default(),
                                     }
                                 }
@@ -12872,6 +12876,7 @@ impl Parser {
                         value_type,
                         volatile: false,
                         pointee_constant: false,
+                        access_class: None,
                         source: Default::default(),
                     },
                 ));
@@ -12887,6 +12892,7 @@ impl Parser {
                     value_type,
                     volatile: false,
                     pointee_constant: false,
+                    access_class: None,
                     source: Default::default(),
                 },
             });
@@ -13564,7 +13570,7 @@ impl Parser {
                     self.position += 1;
                     let index = self.parse_ensure_expression()?;
                     self.expect(Token::RBracket)?;
-                    expression = C0Expression::Index(Box::new(expression), Box::new(index));
+                    expression = C0Expression::Index(Box::new(expression), Box::new(index), None);
                 }
                 Some(Token::Arrow | Token::Dot) => {
                     self.position += 1;
@@ -13572,7 +13578,7 @@ impl Parser {
                     let base = expression;
                     expression = self
                         .resolve_c0_field_load(base.clone(), &field_name)?
-                        .unwrap_or_else(|| C0Expression::Load(Box::new(base)));
+                        .unwrap_or_else(|| C0Expression::Load(Box::new(base), None));
                 }
                 _ => unreachable!("postfix expression token checked above"),
             }
@@ -13594,6 +13600,7 @@ impl Parser {
                     C0Expression::Index(
                         Box::new(carrier),
                         Box::new(C0Expression::Int32Literal(0)),
+                        None,
                     )
                 })
             }
@@ -14152,6 +14159,7 @@ fn lowered_field_expression(pointer: CExpression, field: &ResolvedField) -> CExp
             value_type: field.c_type.to_kernel_type(),
             volatile: false,
             pointee_constant: field.pointee_constant,
+            access_class: None,
             source: Default::default(),
         }
     }

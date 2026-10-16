@@ -4290,6 +4290,7 @@ fn symbolic_supplied_range_wakes_concrete_pending_dependency() {
         value_type: CType::Int32Pointer,
         volatile: false,
         pointee_constant: false,
+        access_class: None,
         source: Default::default(),
     };
     let owned = |base: CExpression, end: CExpression| {
