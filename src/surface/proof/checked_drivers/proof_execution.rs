@@ -2075,8 +2075,12 @@ pub(super) fn solve_nested_have<'a>(
                         // step that fails is an error, never a miss for search to
                         // rescue. The checked scope reports the exact declining step.
                         let mut declined = None;
-                        let selected = nested
-                            .try_authoritative_linear_script_reporting(body, &mut declined)?;
+                        let mut unfinished = None;
+                        let selected = nested.try_authoritative_linear_script_reporting(
+                            body,
+                            &mut declined,
+                            &mut unfinished,
+                        )?;
                         if selected.is_none() {
                             let detail = match declined {
                     Some(crate::surface::proof::smart_closures::LinearScriptDecline::Step(
@@ -2097,9 +2101,13 @@ pub(super) fn solve_nested_have<'a>(
                             let goal = crate::surface::diagnostics::describe_click_proposition(
                                 &have.proposition,
                             );
-                            return Err(ClickError::new(format!(
-                                "`have {goal}` was not proved: {detail}"
-                            )));
+                            check_verification_deadline()?;
+                            // Preserve the body's checked prefix and remaining goal,
+                            // rather than attaching the enclosing execution state.
+                            return Err(unfinished
+                                .as_ref()
+                                .unwrap_or(nested.body())
+                                .step_error(format!("`have {goal}` was not proved: {detail}")));
                         }
                         selected
                     }

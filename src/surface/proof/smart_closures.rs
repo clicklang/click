@@ -7701,7 +7701,7 @@ impl<'a> Proof<'a> {
         &self,
         tactics: &[ProofTactic],
     ) -> Result<Option<Self>, ClickError> {
-        self.try_authoritative_linear_script_reporting(tactics, &mut None)
+        self.try_authoritative_linear_script_reporting(tactics, &mut None, None)
     }
 
     /// [`Self::try_authoritative_linear_script`], also reporting why the body
@@ -7711,6 +7711,7 @@ impl<'a> Proof<'a> {
         &self,
         tactics: &[ProofTactic],
         declined: &mut Option<LinearScriptDecline>,
+        unfinished: Option<&mut Option<Self>>,
     ) -> Result<Option<Self>, ClickError> {
         // Address each tactic's diagnostics by its position in the block the
         // user wrote, so a failure inside one `have` body is distinguishable
@@ -7718,7 +7719,7 @@ impl<'a> Proof<'a> {
         let sites = (0..tactics.len())
             .map(|index| self.site().at_block_position(index))
             .collect::<Vec<_>>();
-        self.try_addressed_linear_script(tactics, &sites, declined)
+        self.try_addressed_linear_script(tactics, &sites, declined, unfinished)
     }
 
     /// Checks an explicit planner candidate without attributing its block
@@ -7743,8 +7744,9 @@ impl<'a> Proof<'a> {
         tactics: &[ProofTactic],
         sites: &[ProofStepSite],
         declined: &mut Option<LinearScriptDecline>,
+        unfinished: Option<&mut Option<Self>>,
     ) -> Result<Option<Self>, ClickError> {
-        self.run_addressed_linear_script(tactics, sites, declined, None)
+        self.run_addressed_linear_script(tactics, sites, declined, unfinished)
     }
 
     /// [`Self::try_authoritative_linear_script`], also keeping the proof a
@@ -7757,10 +7759,7 @@ impl<'a> Proof<'a> {
         tactics: &[ProofTactic],
         unfinished: &mut Option<Self>,
     ) -> Result<Option<Self>, ClickError> {
-        let sites = (0..tactics.len())
-            .map(|index| self.site().at_block_position(index))
-            .collect::<Vec<_>>();
-        self.run_addressed_linear_script(tactics, &sites, &mut None, Some(unfinished))
+        self.try_authoritative_linear_script_reporting(tactics, &mut None, Some(unfinished))
     }
 
     /// Runs the arms of one `cases` to completion. The kernel splits a

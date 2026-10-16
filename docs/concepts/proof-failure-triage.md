@@ -133,6 +133,10 @@ selected outcome; permissions consumed by a call are not shown as still held.
 The failed check is not an accepted execution step. A proposition
 proof has a fixed execution state; an execution tactic refused there names that
 restriction rather than implying that the tactic is unavailable everywhere.
+When an explicit script ends with a goal still open, its failure retains the
+checked prefix and the remaining goal and premises after those steps, rather
+than the state at script entry. This includes execution `have` bodies and pure
+theorem scripts.
 
 Written `simp` failures retain a bounded sample of the read-value queries and
 cell walks actually performed during that attempt. Ordinary errors summarize

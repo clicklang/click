@@ -801,7 +801,7 @@ impl<'a> ProofScope<'a> {
     ) -> Result<Option<Self>, ClickError> {
         let Some(body) = self
             .body
-            .try_addressed_linear_script(tactics, sites, &mut None)?
+            .try_addressed_linear_script(tactics, sites, &mut None, None)?
         else {
             return Ok(None);
         };
@@ -814,10 +814,13 @@ impl<'a> ProofScope<'a> {
         &self,
         tactics: &[ProofTactic],
         declined: &mut Option<crate::surface::proof::smart_closures::LinearScriptDecline>,
+        unfinished: &mut Option<Proof<'a>>,
     ) -> Result<Option<Self>, ClickError> {
-        let Some(body) = self
-            .body
-            .try_authoritative_linear_script_reporting(tactics, declined)?
+        let Some(body) = self.body.try_authoritative_linear_script_reporting(
+            tactics,
+            declined,
+            Some(unfinished),
+        )?
         else {
             return Ok(None);
         };

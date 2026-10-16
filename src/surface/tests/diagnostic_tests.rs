@@ -1,6 +1,50 @@
 use super::*;
 
 #[test]
+fn unclosed_have_script_retains_its_remaining_goal_and_introduced_premise() {
+    let source = r#"verifying "f.c";
+        int32 f(int32 x) { ensures result == x; } by {
+            have x == 42 implies x == 43 by { intro(); }
+            execute(); simp();
+        }"#;
+    with_proof_trace("f", || {
+        let error =
+            verify_c0_sources(source, &[("f.c", "int f(int x) { return x; }")]).unwrap_err();
+        let trace = error.trace_context_report().unwrap();
+        assert!(trace.contains("intro"), "{trace}");
+        let failed = trace.split("failed check:").nth(1).unwrap();
+        assert!(failed.contains("proposition proof"), "{trace}");
+        assert!(failed.contains("goal: x == 43"), "{trace}");
+        assert!(failed.contains("x == 42"), "{trace}");
+        assert!(!failed.contains("goal: x == 42 implies"), "{trace}");
+    });
+    let corrected = source
+        .replace("x == 43", "x == 42")
+        .replace("intro();", "intro(); assumption();");
+    verify_c0_sources(&corrected, &[("f.c", "int f(int x) { return x; }")]).unwrap();
+}
+
+#[test]
+fn unclosed_theorem_script_retains_its_remaining_goal_and_introduced_premise() {
+    let source = r#"theorem unfinished(x: int32) {
+        ensures x == 42 implies x == 43 by { intro(); }
+    }"#;
+    with_proof_trace("unfinished", || {
+        let error = verify_c0_sources(source, &[]).unwrap_err();
+        let trace = error.trace_context_report().unwrap();
+        assert!(trace.contains("intro"), "{trace}");
+        let failed = trace.split("failed check:").nth(1).unwrap();
+        assert!(failed.contains("goal: x == 43"), "{trace}");
+        assert!(failed.contains("x == 42"), "{trace}");
+        assert!(!failed.contains("goal: x == 42 implies"), "{trace}");
+    });
+    let corrected = source
+        .replace("x == 43", "x == 42")
+        .replace("intro();", "intro(); assumption();");
+    verify_c0_sources(&corrected, &[]).unwrap();
+}
+
+#[test]
 fn missing_write_permission_explains_the_available_view_and_failed_check() {
     let c = "void write(int *p) { p[0] = 7; }";
     let source =
