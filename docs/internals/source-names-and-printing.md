@@ -49,6 +49,14 @@ snapshots are still stored under each spelling of their program point,
 `loop(N)` and each label of that loop, and read back by spelling, so expansion
 can cite the label the proof wrote.
 
+Proof binders in the parser go through `bind_proof_name`. The newest binding
+of a name wins in every reading position: a value binder hides a `have` fact
+and a resource instance of the same spelling until its block ends, and a
+resource binder hides a fact. The hidden bindings are restored from the same
+log as fact names. In an execution proof, a proof binder may not take a C
+parameter's or C object's name; `intro()` binders keep their `outer.`
+shadowing. The per-kind name sets remain; they are not yet one table.
+
 This is the first consolidation boundary for
 [`one-name-resolver-and-printer.md`](https://github.com/clicklang/click/blob/master/issues/one-name-resolver-and-printer.md),
 not completion of that issue. Parameters, fields, lexical binders,
