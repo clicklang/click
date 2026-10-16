@@ -352,3 +352,11 @@ and insertion color flips. Its explicit lemmas preserve cached values and
 recursive count validity for arbitrary subtrees and identify their shapes with
 the existing `rb_recolor` and `rb_insert_fix_recolor` operations. The root-only
 insertion proof imports this shared recoloring definition.
+
+
+`rbtree_size_insert_context_stop.click` checks the black-parent stopping case
+for arbitrary focused and sibling subtrees and an arbitrary owned outer context.
+Its input bundles the tree and path around their shared cached size. Either
+parent orientation returns the root link and ownership of the whole root tree,
+whose exact model is the original context filled with the original subtree.
+Both augmented insertion wrappers preserve that result.

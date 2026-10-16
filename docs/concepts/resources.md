@@ -264,6 +264,17 @@ and a body with existential witnesses publishes nothing. Only the section's
 own clauses publish; the rest of the frame the section is evaluated against
 is never opened for this purpose.
 
+Named produced-resource arguments use this same read authority from the call's
+own input instances, including the arms the entry premises already select.
+For `produces root->node; produces leaf: cell(root->node);`, a matched input
+bundle owning `root->node` supplies the index read just as an unmatched bundle
+does. Current arguments read post-call memory; `old(...)` arguments retain
+entry authority and memory. This temporary argument frame does not export a
+view of a consumed field to the caller. Regressions are
+`mdtests/produced_resource_index_reads_matched_input_field.md`,
+`mdtests/produced_resource_index_uses_post_call_pointer.md`, and
+`mdtests/produced_resource_index_does_not_export_input_views.md`.
+
 The publication is read authority and nothing more. The instance stays folded,
 so a store to a cell it owns is refused until an explicit `unfold` moves the
 cell into the proof state, and a cell the body does not own is not published
