@@ -5766,11 +5766,8 @@ impl Parser {
                         {
                             return Err(self.error("`result` is reserved for the C value in a step output pattern; rename the produced resource binder"));
                         }
-                        if self.current_contract_bindings.contains(&name)
-                            || self.current_integer_params.contains(&name)
+                        if self.current_integer_params.contains(&name)
                             || self.current_integer_lets.contains(&name)
-                            || self.current_resource_bindings.contains_key(&name)
-                            || self.current_proof_let_names.contains(&name)
                         {
                             return Err(self
                                 .error(format!("call result name `{name}` is already in scope")));
@@ -7807,11 +7804,11 @@ impl Parser {
                     return Err(self.error("`step()` has only the `result` output"));
                 }
                 let name = name.clone();
-                if self.current_contract_bindings.contains(&name)
-                    || self.current_integer_params.contains(&name)
+                // A result is a proof binder: it hides an earlier proof
+                // binding of its name. Contract and theorem names stay
+                // reserved, and a C variable cannot be hidden.
+                if self.current_integer_params.contains(&name)
                     || self.current_integer_lets.contains(&name)
-                    || self.current_resource_bindings.contains_key(&name)
-                    || self.current_proof_let_names.contains(&name)
                 {
                     return Err(
                         self.error(format!("step result name `{name}` is already in scope"))

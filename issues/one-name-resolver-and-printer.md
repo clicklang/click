@@ -37,9 +37,10 @@ variable in an execution proof. Before, a value binder could reuse a `have`
 fact's name, so a citation read the fact while an expression read the value,
 and a match-arm binder could hide a C parameter. That made
 `mdtests/rb_at_rejects_wrong_color_bit.md` refuse its fold at the parent
-word instead of at the color bit it tests. Step and call results still refuse
-reuse outright; loosening them needs the later phases to resolve the result
-by its binding rather than its spelling.
+word instead of at the color bit it tests. Step and call results follow the same
+rule: a result hides an earlier proof binding of its name
+(`mdtests/a_step_result_name_can_be_bound_again.md`). Contract and theorem
+`let` names stay reserved.
 
 The complete scoped table for parameters, fields, binders, constructors,
 resources, program points and project modules remains open. Proof inventories
