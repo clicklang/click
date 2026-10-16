@@ -17,7 +17,7 @@ This contract is incomplete:
 <!-- verified-example: mdtests/increment_without_requires.md -->
 ```click
 int32 increment(int32 x) {
-    ensures increments: result == x + 1 by auto;
+    ensures increments: result == x + 1 by auto();
 }
 ```
 

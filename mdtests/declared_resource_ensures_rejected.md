@@ -9,7 +9,7 @@ abstract resource open_fd(fd: int32);
 verifying "identity.c";
 
 int32 identity(int32 fd) {
-    ensures open_fd(fd) by auto;
+    ensures open_fd(fd) by auto();
 }
 ```
 

@@ -80,36 +80,36 @@ function byte_not(x: uint8) -> int32 {
 
 int32 bitwise_mask(int32 x) {
     requires x == 42;
-    ensures symbolic_mask: result == low_nibble(x) by auto;
+    ensures symbolic_mask: result == low_nibble(x) by auto();
 }
 
 int32 bitwise_precedence() {
-    ensures precedence: result == 1 by auto;
+    ensures precedence: result == 1 by auto();
 }
 
 int32 bitwise_constant() {
-    ensures concrete_mask: result == 10 by auto;
+    ensures concrete_mask: result == 10 by auto();
 }
 
 int32 bitwise_xor_or() {
-    ensures xor_before_or: result == 11 by auto;
+    ensures xor_before_or: result == 11 by auto();
 }
 
 int32 bitwise_not_zero() {
-    ensures surface_not: result == all_bits() by auto;
-    ensures concrete_not: result == -1 by auto;
+    ensures surface_not: result == all_bits() by auto();
+    ensures concrete_not: result == -1 by auto();
 }
 
 int32 bitwise_uint8_promoted(uint8 x) {
-    ensures promoted_byte_mask: result == byte_low_nibble(x) by auto;
+    ensures promoted_byte_mask: result == byte_low_nibble(x) by auto();
 }
 
 int32 bitwise_uint8_not(uint8 x) {
-    ensures promoted_byte_not: result == byte_not(x) by auto;
+    ensures promoted_byte_not: result == byte_not(x) by auto();
 }
 
 uint8 bitwise_uint8_narrow_constant() {
-    ensures narrowed_constant: result == 10 by auto;
+    ensures narrowed_constant: result == 10 by auto();
 }
 ```
 

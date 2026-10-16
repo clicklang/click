@@ -26,7 +26,7 @@ int32 probe(int32 n) {
     step();
     apply(strictly_below(n, n)) using {
         n < n;
-    }
+    };
     simp();
 }
 ```

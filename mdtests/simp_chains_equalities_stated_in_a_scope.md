@@ -69,12 +69,12 @@ int32 caller(int32* occ, int32* other, int32 n) {
         have occ[k] == at(b, occ[k]) by {
             transport(at(b, occ[k]) == at(b, occ[k]), occ[k] == at(b, occ[k])) using {
                 at(b, occ[k]) == at(b, occ[k]);
-            }
+            };
         }
         have at(b, occ[k]) == at(a, occ[k]) by {
             transport(at(a, occ[k]) == at(a, occ[k]), at(b, occ[k]) == at(a, occ[k])) using {
                 at(a, occ[k]) == at(a, occ[k]);
-            }
+            };
         }
         have at(a, occ[k]) == 0 by {
             instantiate(forall (j: int32) {
@@ -82,7 +82,7 @@ int32 caller(int32* occ, int32* other, int32 n) {
             }, k) using {
                 0 <= k;
                 k < n;
-            }
+            };
             simp();
         }
         simp();

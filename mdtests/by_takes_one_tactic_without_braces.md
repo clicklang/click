@@ -11,7 +11,7 @@ theorem one_step_proofs(x: int32) {
     ensures x + 0 == x + 0 by normalize();
     ensures 0 <= x by {
         have x == x by normalize();
-        have 0 <= x by simp() using { 0 <= x; }
+        have 0 <= x by simp() using { 0 <= x; };
         assumption();
     }
 }

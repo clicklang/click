@@ -113,6 +113,12 @@ hold, and every join and recovery compares bindings.
 
 ## The call boundary
 
+For reborrowed views, the planner checks each requested range against its exact
+parent binding before grouping it. The child opening preserves that permitted
+view, so its descriptions carry the already-checked restrictions directly;
+group construction and description creation do not repeat range entailment.
+Live binding, participant, scope, and recovery checks still use the ledger.
+
 Calls are planned jointly and body-independently. Exclusive (`owns` and
 `consumes`) requirements are reserved first, from a direct owned entry, from
 a held owned composite opened one level, or definitionally when the

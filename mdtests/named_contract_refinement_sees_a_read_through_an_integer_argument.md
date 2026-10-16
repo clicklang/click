@@ -43,14 +43,14 @@ contract void KeepsOne(int32* p) {
 void bump(int32* p) {
     owns *p;
     requires low(to_integer(*p)) == 1;
-    ensures low(to_integer(old(*p))) == 1 by auto;
+    ensures low(to_integer(old(*p))) == 1 by auto();
 }
 
 void apply(void (*callback)(int32*), int32* p) {
     owns *p;
     requires KeepsOne(callback);
     requires low(to_integer(*p)) == 1;
-    ensures low(to_integer(*p)) == 1 by auto;
+    ensures low(to_integer(*p)) == 1 by auto();
 }
 
 void caller(int32* p) {

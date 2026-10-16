@@ -20,7 +20,7 @@ theorem chained_integer_equalities(t: Integer, a: Integer, b: Integer, x: Intege
             t == a + x;
             a == b;
             x == y;
-        }
+        };
     }
 }
 
@@ -33,7 +33,7 @@ theorem bounded_integer_sum(t: Integer, a: Integer, b: Integer, x: Integer, y: I
             t == a + x;
             a <= b;
             x <= y;
-        }
+        };
     }
 }
 ```

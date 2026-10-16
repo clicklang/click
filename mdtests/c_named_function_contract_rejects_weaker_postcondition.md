@@ -37,18 +37,18 @@ contract int32 PositiveStep(int32 input) {
 int32 increasing(int32 value) {
     requires 0 <= value;
     requires value <= 100;
-    ensures value < result by auto;
+    ensures value < result by auto();
 }
 
 int32 apply_step(int32 (*callback)(int32), int32 input) {
     requires PositiveStep(callback);
     requires 0 <= input;
     requires input <= 100;
-    ensures result == input + 1 by auto;
+    ensures result == input + 1 by auto();
 }
 
 int32 weak_postcondition_caller() {
-    ensures result == 42 by auto;
+    ensures result == 42 by auto();
 }
 ```
 

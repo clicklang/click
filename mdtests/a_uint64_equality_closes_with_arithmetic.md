@@ -19,7 +19,7 @@ theorem squeeze(a: uint64, b: uint64) {
     requires a <= b;
     requires not a < b;
     ensures a == b by {
-        arithmetic() using { a <= b; not a < b; }
+        arithmetic() using { a <= b; not a < b; };
     }
 }
 
@@ -27,7 +27,7 @@ theorem shifted(i: uint64, j: uint64, n: uint64) {
     requires j == i + 1u64;
     requires i < n;
     ensures j - 1u64 == i by {
-        arithmetic() using { j == i + 1u64; i < n; }
+        arithmetic() using { j == i + 1u64; i < n; };
     }
 }
 
@@ -35,7 +35,7 @@ theorem signed(a: int64, b: int64) {
     requires a <= b;
     requires b <= a;
     ensures a == b by {
-        arithmetic() using { a <= b; b <= a; }
+        arithmetic() using { a <= b; b <= a; };
     }
 }
 ```

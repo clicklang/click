@@ -34,7 +34,7 @@ theorem sized_model_unique(a: SizedTree, b: SizedTree) {
                         have RbTree::Node(ai, ap, ac, sized_shape(al), sized_shape(ar)) == RbTree::Node(bi, bp, bc, sized_shape(bl), sized_shape(br)) by { assumption(); }
                         extract(ai == bi); extract(ap == bp); extract(ac == bc);
                         extract(sized_shape(al) == sized_shape(bl)); extract(sized_shape(ar) == sized_shape(br));
-                        apply(sized_valid_parts(ai, ap, ac, av, al, ar)); apply(sized_valid_parts(bi, bp, bc, bv, bl, br)) using { sized_counts_valid(SizedTree::Node(bi, bp, bc, bv, bl, br)) == 1; }
+                        apply(sized_valid_parts(ai, ap, ac, av, al, ar)); apply(sized_valid_parts(bi, bp, bc, bv, bl, br)) using { sized_counts_valid(SizedTree::Node(bi, bp, bc, bv, bl, br)) == 1; };
                         have bl == sized_left(b) by { rewrite(b == SizedTree::Node(bi, bp, bc, bv, bl, br)); unfold(sized_left(SizedTree::Node(bi, bp, bc, bv, bl, br))); normalize(); }
                         have br == sized_right(b) by { rewrite(b == SizedTree::Node(bi, bp, bc, bv, bl, br)); unfold(sized_right(SizedTree::Node(bi, bp, bc, bv, bl, br))); normalize(); }
                         apply(ih(al, sized_left(b))); apply(ih(ar, sized_right(b)));
@@ -50,9 +50,9 @@ theorem sized_model_unique(a: SizedTree, b: SizedTree) {
                                 to_integer(bv) == 1 + to_integer(sized_value(bl)) + to_integer(sized_value(br));
                                 to_integer(sized_value(al)) == to_integer(sized_value(bl));
                                 to_integer(sized_value(ar)) == to_integer(sized_value(br));
-                            }
+                            };
                         }
-                        apply(click::integer::int32_to_integer_equal_implies_equal(av, bv)) using { to_integer(av) == to_integer(bv); }
+                        apply(click::integer::int32_to_integer_equal_implies_equal(av, bv)) using { to_integer(av) == to_integer(bv); };
                         simp();
                     },
                 }

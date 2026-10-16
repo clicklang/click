@@ -50,7 +50,7 @@ void invoke_clear(void (*callback)(int32*), int32* cell) {
 void direct_predicate_caller(int32* cell) {
     owns cell[0..1];
     ensures IsZero(cell);
-} by auto;
+} by auto();
 ```
 
 ```expect

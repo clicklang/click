@@ -2,7 +2,7 @@
 
 ```click
 theorem first_is_reflexive<T>(left: T, right: T) {
-    ensures left == left by simp;
+    ensures left == left by simp();
 }
 
 theorem conflicting(left: int32, right: int32*) {

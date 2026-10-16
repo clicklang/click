@@ -77,7 +77,7 @@ int32 buffer_push(struct buffer* owner, int32 value) {
     have owner->len < owner->cap by {
         simp() using {
             old(owner->len) + 1 < old(owner->cap);
-        }
+        };
     }
     fold(owned_buffer(owner));
     simp();

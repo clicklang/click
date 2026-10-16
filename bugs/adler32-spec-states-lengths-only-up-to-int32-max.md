@@ -60,10 +60,7 @@ widened by changing callers alone: its parameter types must change.
 - Remove the `<= 2147483647u64` preconditions from the adler2 public
   contracts (`public-general.click` and the other `public-*.click` files)
   and from the incremental and resumed clients, and keep them verifying.
-- Do the same for the zlib canonical and full-stream proofs once
-  `bugs/integer-premise-native-facts-exhaust-simp-view-spelling-budget.md`
-  is fixed, since `canonical.click` and `incremental.click` currently fail
-  for that reason.
+- Do the same for the zlib canonical and full-stream proofs.
 - Add an mdtest that states `adler_spec_a` at a `uint64` length above
   `INT32_MAX` and does not narrow it.
 

@@ -35,7 +35,7 @@ int32 checked_index(int32 i, int32 n) {
         simp() using {
             i >= 0;
             i < n;
-        }
+        };
     }
 }
 ```

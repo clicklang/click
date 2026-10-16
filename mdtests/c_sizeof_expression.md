@@ -20,7 +20,7 @@ verifying "c_sizeof_expression.c";
 
 int32 sizes(struct node* parent, int32 bump) {
     requires bump == 1;
-    ensures result == 4882 by auto;
+    ensures result == 4882 by auto();
 }
 ```
 

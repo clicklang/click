@@ -315,7 +315,7 @@ To get a trace:
 This claim is true: on that path `length >= 32`, so `31 <= length`. The miss
 is `simp()`'s, a bounded search whose arithmetic step handles `int32` goals,
 while this one is a 64-bit `unsigned long` comparison. State the fact with
-`have ... by auto`, which carries machine comparisons to integer arithmetic and
+`have ... by auto()`, which carries machine comparisons to integer arithmetic and
 solves them:
 
 ```click filename=label.click
@@ -326,7 +326,7 @@ uint64 label_fit(uint64 length) {
     ensures result <= length;
 } by {
     execute();
-    have result <= length by auto;
+    have result <= length by auto();
     simp();
 }
 ```
@@ -375,7 +375,7 @@ uint64 label_fit(uint64 length) {
     ensures result <= length;
 } by {
     execute();
-    have result <= length by auto;
+    have result <= length by auto();
     simp();
 }
 
@@ -449,6 +449,7 @@ lists it among the external assumptions. See
 Try the remaining function, `label_copy`:
 
 ```click filename=label.click
+import click::bytes;
 import click::cstr;
 
 verifying "label_fit.c";
@@ -459,13 +460,13 @@ uint64 label_fit(uint64 length) {
     ensures result <= length;
     ensures length < 32u64 implies result == length;
     ensures 32u64 <= length implies result == 31u64;
-} by auto;
+} by auto();
 
 uint64 label_measure(const char* src) {
     views s: cstr_at(src, _);
     ensures s.len < 32u64 implies result == s.len;
     ensures 32u64 <= s.len implies result == 31u64;
-} by auto;
+} by auto();
 
 uint64 label_copy(char* dst, const char* src) {
     views s: cstr_at(src, _);
@@ -474,11 +475,24 @@ uint64 label_copy(char* dst, const char* src) {
     ensures s.len < 32u64 implies result == s.len;
     ensures 32u64 <= s.len implies result == 31u64;
     ensures dst[result] == '\0';
+    ensures bytes::equal(dst, 0u64, src, 0u64, result);
 } by {
     step();
     step();
     step();
     open(cstr_at(src, s.len)) {
+        unfold(bytes::equal);
+        step();
+        mark copied;
+        step();
+        have bytes::equal(dst, 0u64, src, 0u64, n) by {
+            transport(
+                at(copied, (0u64..n).all(|k| {
+                    ((uint8*)dst)[0u64 + k] == old(((uint8*)src)[0u64 + k])
+                })),
+                (0u64..n).all(|k| { ((uint8*)dst)[0u64 + k] == ((uint8*)src)[0u64 + k] })
+            );
+        }
         execute();
     }
 }
@@ -486,7 +500,7 @@ uint64 label_copy(char* dst, const char* src) {
 
 `label_fit` now states exactly what it returns, and `label_measure` and
 `label_copy` state exactly which length they keep: the whole string when it
-fits, 31 bytes otherwise. `by auto` proves the two new `label_fit` claims:
+fits, 31 bytes otherwise. `by auto()` proves the two new `label_fit` claims:
 on each path of the C branch it refutes the claim's other hypothesis, such as
 `length < 32u64` where `length >= 32`. The sidecar imports `click::cstr` for
 `cstr_at`; see [Click library imports](sidecars.md#click-library-imports).
@@ -497,8 +511,18 @@ destination and source. `label_copy` owns `dst` and views the string, which
 keeps them apart, and its contract also states the separation over the
 string's own bytes, `src[0u64..s.len + 1u64]`. Its source may be `const`, as
 in the existing C. The destination's 32-byte ownership and `label_fit`'s bound
-also cover the terminator store. Verify this complete sidecar with
-`click verify label.click`.
+also cover the terminator store.
+
+`label_copy` also states the bytes it copied,
+`bytes::equal(dst, 0u64, src, 0u64, result)`, which needs `import
+click::bytes`. `memcpy` states them about the memory right after the call; the
+proof marks that point `copied`, steps over the terminator store, and
+`transport`s the unfolded fact to the current memory as a `have` over `n`.
+The frame check assumes the fact's guard `k < n` for each read: `dst[k]` is
+below the store at `dst[n]`, and `src[k]` is kept apart from `dst` by the
+`separate` requirement. `execute()` then closes the postcondition, where
+`result` is `n`. The casts to `uint8*` read the bytes as `bytes::equal` does.
+Verify this complete sidecar with `click verify label.click`.
 
 Three kinds of report look different:
 

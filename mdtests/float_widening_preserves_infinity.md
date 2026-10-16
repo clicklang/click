@@ -55,23 +55,23 @@ int32 widen_finite() {
 verifying "float_widening_preserves_infinity.c";
 
 int32 widen_infinity() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 int32 widen_infinity_is_not_nan() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 
 int32 widen_negative_infinity_keeps_sign() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 int32 widen_nan() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 int32 widen_finite() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 ```
 

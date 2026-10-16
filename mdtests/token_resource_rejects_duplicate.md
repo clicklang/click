@@ -18,7 +18,7 @@ int32 use_once(int32 cb) {
     consumes can_complete(cb);
     consumes can_complete(cb);
 
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

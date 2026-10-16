@@ -74,12 +74,12 @@ int32 adopt(struct child* kid) {
 } by {
     step();
     step();
-    branch then {
+    branch {
         step();
         simp();
     } else {}
     let { link: link } = step(parent_attach(p, kid), {});
-    have link.link != ParentLink::Empty by simp;
+    have link.link != ParentLink::Empty by simp();
     step(parent_detach(p), { link: link });
     step();
     simp();

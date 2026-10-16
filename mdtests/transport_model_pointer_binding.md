@@ -33,7 +33,7 @@ int32 update(int32* p) {
                 decreases 0;
                 invariant state.model == old(state.model);
                 invariant state.model == View::At(alias);
-                initialize by simp;
+                initialize by simp();
                 preserve by {
                     unfold(state);
                     step();

@@ -61,7 +61,7 @@ theorem adler_lane_triangle_5551(n: Integer) {
         unfold(adler_lane_triangle(n));
         apply(adler_lane_half_product_5551(n, 2)) using {
             0 <= n; n <= 5551; 2 <= 2; 2 <= 2; 2 != 0;
-        }
+        };
     }
 }
 
@@ -70,12 +70,12 @@ theorem adler_lane_ceiling_5551(n: Integer) {
     requires n <= 5551;
     ensures adler_lane_a_ceiling(n) <= 1481025 by {
         unfold(adler_lane_a_ceiling(n));
-        arithmetic() using { n <= 5551; }
+        arithmetic() using { n <= 5551; };
     }
     ensures adler_lane_b_ceiling(n) <= 4293208920 by {
         have adler_lane_triangle(n) <= 15409576 by apply(adler_lane_triangle_5551(n)) using { 0 <= n; n <= 5551; };
         unfold(adler_lane_b_ceiling(n));
-        arithmetic() using { n <= 5551; adler_lane_triangle(n) <= 15409576; }
+        arithmetic() using { n <= 5551; adler_lane_triangle(n) <= 15409576; };
     }
 }
 
@@ -126,7 +126,7 @@ theorem adler_lane_triangle_5552(n: Integer) {
         unfold(adler_lane_triangle(n));
         apply(adler_lane_half_product_5552(n, 2)) using {
             0 <= n; n <= 5552; 2 <= 2; 2 <= 2; 2 != 0;
-        }
+        };
     }
 }
 
@@ -135,12 +135,12 @@ theorem adler_lane_ceiling_5552(n: Integer) {
     requires n <= 5552;
     ensures adler_lane_a_ceiling(n) <= 1481280 by {
         unfold(adler_lane_a_ceiling(n));
-        arithmetic() using { n <= 5552; }
+        arithmetic() using { n <= 5552; };
     }
     ensures adler_lane_b_ceiling(n) <= 4294690200 by {
         have adler_lane_triangle(n) <= 15415128 by apply(adler_lane_triangle_5552(n)) using { 0 <= n; n <= 5552; };
         unfold(adler_lane_b_ceiling(n));
-        arithmetic() using { n <= 5552; adler_lane_triangle(n) <= 15415128; }
+        arithmetic() using { n <= 5552; adler_lane_triangle(n) <= 15415128; };
     }
 }
 
@@ -236,7 +236,7 @@ theorem adler_lane_a_invariant_step(n: Integer, a: Integer, byte: Integer) {
                 adler_lane_a_ceiling(n) == 65520 + 255 * n;
             };
         unfold(adler_lane_a_ceiling(n + 1));
-        arithmetic() using { a <= 65520 + 255 * n; byte <= 255; }
+        arithmetic() using { a <= 65520 + 255 * n; byte <= 255; };
     }
 }
 
@@ -307,7 +307,7 @@ theorem adler_lane_b_invariant_step(n: Integer, a: Integer, b: Integer, byte: In
         arithmetic() using {
             b <= adler_lane_b_ceiling(n);
             a + byte <= adler_lane_a_ceiling(n + 1);
-        }
+        };
     }
 }
 
@@ -325,7 +325,7 @@ theorem adler_lane_native_a_sum_fits(n: Integer, a: uint32, byte: uint32) {
                 to_integer(a) <= adler_lane_a_ceiling(n);
                 0 <= to_integer(byte); to_integer(byte) <= 255;
             };
-        arithmetic() using { to_integer(a) + to_integer(byte) <= 1481280; }
+        arithmetic() using { to_integer(a) + to_integer(byte) <= 1481280; };
     }
 }
 
@@ -344,7 +344,7 @@ theorem adler_lane_native_a_step(n: Integer, a: uint32, byte: uint32) {
             };
         apply(uint32_widened_add_guard_by_integer_bound(a, byte)) using {
             to_integer(a) + to_integer(byte) <= 4294967295;
-        }
+        };
     }
     ensures to_integer(a + byte) == to_integer(a) + to_integer(byte) by {
         have to_integer(a) + to_integer(byte) <= 4294967295 by apply(adler_lane_native_a_sum_fits(n, a, byte)) using {
@@ -354,7 +354,7 @@ theorem adler_lane_native_a_step(n: Integer, a: uint32, byte: uint32) {
             };
         apply(uint32_add_to_integer(a, byte)) using {
             to_integer(a) + to_integer(byte) <= 4294967295;
-        }
+        };
     }
     ensures to_integer(a + byte) <= adler_lane_a_ceiling(n + 1) by {
         have to_integer(a) + to_integer(byte) <= 4294967295 by apply(adler_lane_native_a_sum_fits(n, a, byte)) using {
@@ -366,7 +366,7 @@ theorem adler_lane_native_a_step(n: Integer, a: uint32, byte: uint32) {
         rewrite(to_integer(a + byte) == to_integer(a) + to_integer(byte));
         apply(adler_lane_a_invariant_step(n, to_integer(a), to_integer(byte))) using {
             to_integer(a) <= adler_lane_a_ceiling(n); to_integer(byte) <= 255;
-        }
+        };
     }
 }
 
@@ -394,7 +394,7 @@ theorem adler_lane_native_b_sum_fits(n: Integer, a: uint32, b: uint32, byte: uin
         arithmetic() using {
             to_integer(b) + (to_integer(a) + to_integer(byte)) <= 4294690200;
             to_integer(a + byte) == to_integer(a) + to_integer(byte);
-        }
+        };
     }
 }
 
@@ -416,7 +416,7 @@ theorem adler_lane_native_b_step(n: Integer, a: uint32, b: uint32, byte: uint32)
             };
         apply(uint32_widened_add_guard_by_integer_bound(b, a + byte)) using {
             to_integer(b) + to_integer(a + byte) <= 4294967295;
-        }
+        };
     }
     ensures to_integer(b + (a + byte)) == to_integer(b) + to_integer(a + byte) by {
         have to_integer(b) + to_integer(a + byte) <= 4294967295 by apply(adler_lane_native_b_sum_fits(n, a, b, byte)) using {
@@ -427,7 +427,7 @@ theorem adler_lane_native_b_step(n: Integer, a: uint32, b: uint32, byte: uint32)
             };
         apply(uint32_add_to_integer(b, a + byte)) using {
             to_integer(b) + to_integer(a + byte) <= 4294967295;
-        }
+        };
     }
     ensures to_integer(b + (a + byte)) <= adler_lane_b_ceiling(n + 1) by {
         have to_integer(b) + to_integer(a + byte) <= 4294967295 by apply(adler_lane_native_b_sum_fits(n, a, b, byte)) using {
@@ -449,6 +449,6 @@ theorem adler_lane_native_b_step(n: Integer, a: uint32, b: uint32, byte: uint32)
         apply(adler_lane_b_invariant_step(n, to_integer(a), to_integer(b), to_integer(byte))) using {
             0 <= n; n < 5552; to_integer(a) <= adler_lane_a_ceiling(n);
             to_integer(b) <= adler_lane_b_ceiling(n); to_integer(byte) <= 255;
-        }
+        };
     }
 }

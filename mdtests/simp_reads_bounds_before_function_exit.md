@@ -49,7 +49,7 @@ int32 separate(int32 x) {
 int32 in_arm(int32 x) {
     requires x >= 0;
     ensures result >= 0 by {
-        branch then {
+        branch {
             step();
             simp();
         } else {

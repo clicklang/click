@@ -19,7 +19,7 @@ verifying "c_decreases_rejects_updated_parameter.c";
 int32 updated_parameter(int32 n) {
     decreases n;
     requires n < 2147483647;
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

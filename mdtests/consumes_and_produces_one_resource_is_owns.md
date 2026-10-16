@@ -18,7 +18,7 @@ resource cell(p: int32*) {
 
 void set(int32 p[], int32 x) {
     consumes cell(p);
-    produces cell(p) by auto;
+    produces cell(p) by auto();
 }
 ```
 

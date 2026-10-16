@@ -35,28 +35,28 @@ theorem step_two(i: uint64, length: uint64) {
         have to_integer(length) <= to_integer(2147483647u64) by apply(uint64_less_equal_to_integer(length, 2147483647u64));
         have to_integer(i) <= to_integer(length) by apply(uint64_less_equal_to_integer(i, length));
         have to_integer(i) + to_integer(1u64) <= 18446744073709551615 by {
-            arithmetic() using { to_integer(i) <= to_integer(length); to_integer(length) <= to_integer(2147483647u64); }
+            arithmetic() using { to_integer(i) <= to_integer(length); to_integer(length) <= to_integer(2147483647u64); };
         }
         have to_integer(i + 1u64) == to_integer(i) + to_integer(1u64) by apply(uint64_add_to_integer(i, 1u64));
         have to_integer(i + 1u64) < to_integer(length) by apply(uint64_less_than_to_integer(i + 1u64, length));
         have to_integer(i) + to_integer(2u64) <= 18446744073709551615 by {
-            arithmetic() using { to_integer(i) <= to_integer(length); to_integer(length) <= to_integer(2147483647u64); }
+            arithmetic() using { to_integer(i) <= to_integer(length); to_integer(length) <= to_integer(2147483647u64); };
         }
         have to_integer(i + 2u64) == to_integer(i) + to_integer(2u64) by apply(uint64_add_to_integer(i, 2u64));
         have to_integer(i + 2u64) == to_integer(i + 1u64) + 1 by {
             arithmetic() using {
                 to_integer(i + 2u64) == to_integer(i) + to_integer(2u64);
                 to_integer(i + 1u64) == to_integer(i) + to_integer(1u64);
-            }
+            };
         }
         have to_integer(i + 1u64) + 1 <= to_integer(length) by {
-            arithmetic() using { to_integer(i + 1u64) < to_integer(length); }
+            arithmetic() using { to_integer(i + 1u64) < to_integer(length); };
         }
         have to_integer(i + 2u64) <= to_integer(length) by {
             arithmetic() using {
                 to_integer(i + 2u64) == to_integer(i + 1u64) + 1;
                 to_integer(i + 1u64) + 1 <= to_integer(length);
-            }
+            };
         }
         apply(uint64_to_integer_less_equal_implies_less_equal(i + 2u64, length));
     }
@@ -71,7 +71,7 @@ theorem step_two_decreases(i: uint64, length: uint64) {
         have to_integer(i) <= to_integer(length) by apply(uint64_less_equal_to_integer(i, length));
         have to_integer(i + 2u64) <= to_integer(length) by apply(uint64_less_equal_to_integer(i + 2u64, length));
         have to_integer(i) + to_integer(2u64) <= 18446744073709551615 by {
-            arithmetic() using { to_integer(i) <= to_integer(length); to_integer(length) <= to_integer(2147483647u64); }
+            arithmetic() using { to_integer(i) <= to_integer(length); to_integer(length) <= to_integer(2147483647u64); };
         }
         have to_integer(i + 2u64) == to_integer(i) + to_integer(2u64) by apply(uint64_add_to_integer(i, 2u64));
         have to_integer(length - i) == to_integer(length) - to_integer(i) by apply(uint64_subtract_to_integer(length, i));
@@ -81,7 +81,7 @@ theorem step_two_decreases(i: uint64, length: uint64) {
                 to_integer(length - (i + 2u64)) == to_integer(length) - to_integer(i + 2u64);
                 to_integer(length - i) == to_integer(length) - to_integer(i);
                 to_integer(i + 2u64) == to_integer(i) + to_integer(2u64);
-            }
+            };
         }
         apply(uint64_to_integer_less_than_implies_less_than(length - (i + 2u64), length - i));
     }

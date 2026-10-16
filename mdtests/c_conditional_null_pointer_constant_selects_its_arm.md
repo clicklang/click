@@ -17,7 +17,7 @@ verifying "c_conditional_null_pointer_constant_selects_its_arm.c";
 
 struct node* drop(struct node* node, int32 pick) {
     requires pick == 1;
-    ensures result == node by auto;
+    ensures result == node by auto();
 }
 ```
 

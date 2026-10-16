@@ -11,7 +11,7 @@ unsigned long bound(unsigned long a, unsigned long b) { return a; }
 ```click
 verifying "bound.c";
 uint64 bound(uint64 a, uint64 b) { ensures result == a; } by {
-    have a <= b - b % 4u64 by auto;
+    have a <= b - b % 4u64 by auto();
     execute(); simp();
 }
 ```

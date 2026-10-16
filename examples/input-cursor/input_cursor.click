@@ -65,7 +65,7 @@ int32 input_cursor_init(
 int32 input_cursor_remaining(struct input_cursor* owner) {
     views input_cursor(owner);
 
-    ensures result == owner->len - owner->pos by auto;
+    ensures result == owner->len - owner->pos by auto();
 }
 
 int32 input_cursor_peek(struct input_cursor* owner) {
@@ -150,7 +150,7 @@ int32 input_cursor_shared_pipeline(
             left->len == length;
             left->data == data;
             separate(memory(*right), memory(data[0..length]));
-        }
+        };
     }
     have left->pos == 0;
     have left->pos < left->len by {
@@ -158,49 +158,49 @@ int32 input_cursor_shared_pipeline(
             1 <= length;
             left->len == length;
             left->pos == 0;
-        }
+        };
     }
     have left->data == data;
     step();
     transport(at(statement(4).entry, left->pos) < at(statement(4).entry, left->len), left->pos < left->len) using {
         at(statement(4).entry, left->pos) < at(statement(4).entry, left->len);
-    }
+    };
     have right->pos < right->len by {
         simp() using {
             1 <= length;
             right->len == length;
             right->pos == 0;
-        }
+        };
     }
     have right->pos == 0;
     have right->data == data;
     have left->data == data by {
         transport(at(statement(4).entry, left->data) == data, left->data == data) using {
             at(statement(4).entry, left->data) == data;
-        }
+        };
         assumption();
     }
     transport(at(statement(4).entry, left->len) == length, left->len == length) using {
         at(statement(4).entry, left->len) == length;
-    }
+    };
     step();
     transport(at(statement(5).entry, right->len) == length, right->len == length) using {
         at(statement(5).entry, right->len) == length;
-    }
+    };
     transport(at(statement(5).entry, left->len) == length, left->len == length) using {
         at(statement(5).entry, left->len) == length;
-    }
+    };
     have right->pos == 0 by {
         transport(at(statement(5).entry, right->pos) == 0, right->pos == 0) using {
             at(statement(5).entry, right->pos) == 0;
-        }
+        };
         assumption();
     }
     have 0 < right->len by {
         simp() using {
             right->len == length;
             1 <= length;
-        }
+        };
     }
     apply(incremented_zero_is_one(
         at(statement(5).entry, left->pos),
@@ -217,12 +217,12 @@ int32 input_cursor_shared_pipeline(
         simp() using {
             right->pos == 0;
             right->data == data;
-        }
+        };
     }
     apply(int32_equality_transitive(right_value, right->data[right->pos], data[0])) using {
         right_value == right->data[right->pos];
         right->data[right->pos] == data[0];
-    }
+    };
     step();
     fold(input_cursor(left));
     simp();

@@ -3,7 +3,7 @@
 `apply(append_nil(xs));` adds `append(xs, IntList::Nil) == xs` as a fact.
 When the application closes no goal, that fact stays in the proof for later
 steps. A step that needs exactly that fact finds it without a spelling, so
-`have ys == xs by auto` beside `ys == append(xs, IntList::Nil)` already
+`have ys == xs by auto()` beside `ys == append(xs, IntList::Nil)` already
 worked. Using it any other way, such as the reversed equality
 `xs == append(xs, IntList::Nil)`, takes a `rewrite` step that cites the fact,
 and `auto` can only write a `rewrite` for a fact with a source spelling. An
@@ -52,14 +52,14 @@ theorem rewrite_by_the_applied_lemma(xs: IntList, ys: IntList) {
     requires ys == append(xs, IntList::Nil);
     ensures ys == xs by {
         apply(append_nil(xs));
-        have ys == xs by auto;
+        have ys == xs by auto();
         assumption();
     }
 }
 theorem reversed(xs: IntList) {
     ensures xs == append(xs, IntList::Nil) by {
         apply(append_nil(xs));
-        have xs == append(xs, IntList::Nil) by auto;
+        have xs == append(xs, IntList::Nil) by auto();
         assumption();
     }
 }
@@ -71,12 +71,12 @@ theorem reversed_in_an_induction_arm(flag: Flag, xs: IntList) {
         induct(flag) as ih {
             Flag::On => {
                 apply(append_nil(xs));
-                have xs == append(xs, IntList::Nil) by auto;
+                have xs == append(xs, IntList::Nil) by auto();
                 assumption();
             }
             Flag::Off => {
                 apply(append_nil(xs));
-                have xs == append(xs, IntList::Nil) by auto;
+                have xs == append(xs, IntList::Nil) by auto();
                 assumption();
             }
         }

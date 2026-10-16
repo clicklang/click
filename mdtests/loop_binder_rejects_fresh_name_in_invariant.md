@@ -47,7 +47,7 @@ void bump_n(struct cell* p, int32 n) {
         invariant i <= n;
         invariant d.count == old(c.count) + i;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             unfold(d);
             step();
@@ -56,7 +56,7 @@ void bump_n(struct cell* p, int32 n) {
             close_invariants();
         }
     }
-    have i == n by simp;
+    have i == n by simp();
     execute();
     simp();
 }

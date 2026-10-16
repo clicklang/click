@@ -12,7 +12,7 @@ int32 divide_overflow() {
 verifying "divide_overflow.c";
 
 int32 divide_overflow() {
-    ensures no_wrapping_result: result == 0 by auto;
+    ensures no_wrapping_result: result == 0 by auto();
 }
 ```
 

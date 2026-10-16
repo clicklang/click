@@ -43,10 +43,10 @@ int32 count_down(int32 n) {
         decreases i;
         invariant i >= 0;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             have 0 <= i - 1 by {
-                apply(int32_positive_predecessor_is_nonnegative(i)) using { i > 0; }
+                apply(int32_positive_predecessor_is_nonnegative(i)) using { i > 0; };
             }
             step();
             step();

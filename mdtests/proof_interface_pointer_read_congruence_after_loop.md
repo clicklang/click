@@ -39,7 +39,7 @@ void probe(struct node *p, struct node *q, struct node *value) {
         owns a: link(p, value);
         invariant parent == p;
         invariant successor == value;
-        initialize by simp;
+        initialize by simp();
         preserve by { step(); step(); step(); close_invariants(); }
     }
     match a.model ensuring {

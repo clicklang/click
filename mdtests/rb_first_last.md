@@ -307,7 +307,7 @@ theorem list_starts_with_append(xs: List<struct rb_node*>, ys: List<struct rb_no
                             value) == 1 by {
                         unfold(rb_list_starts_with(
                             List<struct rb_node*>::Cons(head, list::append(tail, ys)), value));
-                        normalize() using { value == head; }
+                        normalize() using { value == head; };
                     }
                     rewrite(list::append(List<struct rb_node*>::Cons(head, tail), ys)
                         == List<struct rb_node*>::Cons(head, list::append(tail, ys)));
@@ -317,7 +317,7 @@ theorem list_starts_with_append(xs: List<struct rb_node*>, ys: List<struct rb_no
                                              value) == 0 by {
                         rewrite(rb_list_starts_with(List<struct rb_node*>::Cons(head, tail), value)
                             == if value == head { 1 } else { 0 });
-                        normalize() using { not(value == head); }
+                        normalize() using { not(value == head); };
                     }
                     contradiction(rb_list_starts_with(
                         List<struct rb_node*>::Cons(head, tail), value) == 0);
@@ -352,7 +352,7 @@ theorem list_ends_with_cons_nonempty(head: struct rb_node*,
     ensures rb_list_ends_with(List<struct rb_node*>::Cons(head, tail), value)
         == rb_list_ends_with(tail, value) by {
         unfold(rb_list_ends_with(List<struct rb_node*>::Cons(head, tail), value));
-        normalize() using { tail != List<struct rb_node*>::Nil; }
+        normalize() using { tail != List<struct rb_node*>::Nil; };
     }
 }
 
@@ -438,7 +438,7 @@ theorem rb_inorder_first_at_leftmost(tree: RbTree, node: struct rb_node*) {
                             node) == 1 by {
                         unfold(rb_list_starts_with(
                             List<struct rb_node*>::Cons(identity, rb_inorder(right)), node));
-                        normalize() using { node == identity; }
+                        normalize() using { node == identity; };
                     }
                     rewrite(left == RbTree::Empty);
                     rewrite(rb_inorder(RbTree::Node(identity, parent, color, RbTree::Empty, right))
@@ -454,7 +454,7 @@ theorem rb_inorder_first_at_leftmost(tree: RbTree, node: struct rb_node*) {
                         rewrite(rb_identity_is(
                                 RbTree::Node(identity, parent, color, left, right), node)
                             == if node == identity { 1 } else { 0 });
-                        normalize() using { not(node == identity); }
+                        normalize() using { not(node == identity); };
                     }
                     have rb_identity_is(
                             RbTree::Node(identity, parent, color, left, right), node) != 0 by {
@@ -519,7 +519,7 @@ theorem rb_inorder_last_at_rightmost(tree: RbTree, node: struct rb_node*) {
                         unfold(rb_list_ends_with(
                             List<struct rb_node*>::Cons(identity,
                                 List<struct rb_node*>::Nil), node));
-                        normalize() using { node == identity; }
+                        normalize() using { node == identity; };
                     }
                     have rb_list_ends_with(
                             List<struct rb_node*>::Cons(identity,
@@ -545,7 +545,7 @@ theorem rb_inorder_last_at_rightmost(tree: RbTree, node: struct rb_node*) {
                         rewrite(rb_identity_is(
                                 RbTree::Node(identity, parent, color, left, right), node)
                             == if node == identity { 1 } else { 0 });
-                        normalize() using { not(node == identity); }
+                        normalize() using { not(node == identity); };
                     }
                     have rb_identity_is(
                             RbTree::Node(identity, parent, color, left, right), node) != 0 by {
@@ -767,7 +767,7 @@ struct rb_node* rb_first(const struct rb_root* root) {
             }
             have t.model != RbTree::Empty;
             have n != 0;
-            branch then { contradiction(n == 0); } else {}
+            branch { contradiction(n == 0); } else {}
             loop {
                 owns ctx: ctx_at(n, root);
                 owns t: rb_at(n);
@@ -776,7 +776,7 @@ struct rb_node* rb_first(const struct rb_root* root) {
                 invariant ctx_all_left(ctx.model) == 1;
                 invariant plug(ctx.model, t.model) == old(t.model);
 
-                initialize by simp;
+                initialize by simp();
                 preserve by {
                     match t.model {
                         RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
@@ -858,7 +858,7 @@ struct rb_node* rb_first(const struct rb_root* root) {
                             == RbTree::Node(identity, parent, color, left_model, right_model));
                         unfold(rb_identity_is(
                             RbTree::Node(identity, parent, color, left_model, right_model), n));
-                        normalize() using { n == identity; }
+                        normalize() using { n == identity; };
                     }
                     have rb_list_starts_with(rb_inorder(sub.model), n) == 1 by {
                         apply(rb_inorder_first_at_leftmost(sub.model, n));
@@ -932,7 +932,7 @@ struct rb_node* rb_last(const struct rb_root* root) {
             }
             have t.model != RbTree::Empty;
             have n != 0;
-            branch then { contradiction(n == 0); } else {}
+            branch { contradiction(n == 0); } else {}
             loop {
                 owns ctx: ctx_at(n, root);
                 owns t: rb_at(n);
@@ -941,7 +941,7 @@ struct rb_node* rb_last(const struct rb_root* root) {
                 invariant ctx_all_right(ctx.model) == 1;
                 invariant plug(ctx.model, t.model) == old(t.model);
 
-                initialize by simp;
+                initialize by simp();
                 preserve by {
                     match t.model {
                         RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
@@ -1023,7 +1023,7 @@ struct rb_node* rb_last(const struct rb_root* root) {
                             == RbTree::Node(identity, parent, color, left_model, right_model));
                         unfold(rb_identity_is(
                             RbTree::Node(identity, parent, color, left_model, right_model), n));
-                        normalize() using { n == identity; }
+                        normalize() using { n == identity; };
                     }
                     have rb_list_ends_with(rb_inorder(sub.model), n) == 1 by {
                         apply(rb_inorder_last_at_rightmost(sub.model, n));

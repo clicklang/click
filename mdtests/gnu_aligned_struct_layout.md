@@ -29,7 +29,7 @@ int32 sizes() {
 verifying "main.c";
 
 int32 sizes() {
-    ensures result == 24 by auto;
+    ensures result == 24 by auto();
 }
 ```
 

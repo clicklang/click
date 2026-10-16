@@ -61,7 +61,7 @@ theorem walk_in_range(next: int32[], n: int32, from: int32, fuel: Nat) {
                     }, walk(next, from, previous)) using {
                         0 <= walk(next, from, previous);
                         walk(next, from, previous) < n;
-                    }
+                    };
                     assumption();
                 }
                 unfold(walk(next, from, Nat::Succ(previous)));
@@ -100,14 +100,14 @@ theorem walk_frame(a: int32[], b: int32[], n: int32, from: int32, fuel: Nat) {
                     forall (k: int32) {
                         0 <= k and k < n implies 0 <= a[k] and a[k] < n
                     };
-                }
+                };
                 have a[walk(a, from, previous)] == b[walk(a, from, previous)] by {
                     instantiate(forall (k: int32) {
                         0 <= k and k < n implies a[k] == b[k]
                     }, walk(a, from, previous)) using {
                         0 <= walk(a, from, previous);
                         walk(a, from, previous) < n;
-                    }
+                    };
                     assumption();
                 }
                 unfold(walk(a, from, Nat::Succ(previous)));
@@ -115,7 +115,7 @@ theorem walk_frame(a: int32[], b: int32[], n: int32, from: int32, fuel: Nat) {
                 simp() using {
                     walk(a, from, previous) == walk(b, from, previous);
                     a[walk(a, from, previous)] == b[walk(a, from, previous)];
-                }
+                };
             }
         }
     }
@@ -168,7 +168,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
             have 0 <= next[cur] and next[cur] < n by {
                 instantiate(forall (k: int32) {
                     0 <= k and k < n implies 0 <= next[k] and next[k] < n
-                }, cur) using { 0 <= cur; cur < n; }
+                }, cur) using { 0 <= cur; cur < n; };
                 assumption();
             }
             if cur == to {
@@ -197,7 +197,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
                     0 <= cur;
                     cur < n;
                     separate(memory(next[0..n]), memory(visited[0..n]));
-                }
+                };
                 assumption();
             }
             have forall (k: int32) {
@@ -217,7 +217,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
                     0 <= cur;
                     cur < n;
                     separate(memory(next[0..n]), memory(visited[0..n]));
-                }
+                };
                 assumption();
             }
             have forall (k: int32) {
@@ -239,7 +239,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
                     forall (k: int32) {
                         0 <= k and k < cur implies at(iter, visited[k]) == at(iter, visited[k])
                     };
-                }
+                };
                 assumption();
             }
             have forall (k: int32) {
@@ -261,7 +261,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
                     forall (k: int32) {
                         cur < k and k < n implies at(iter, visited[k]) == at(iter, visited[k])
                     };
-                }
+                };
                 assumption();
             }
             apply(unmarked_point_update(at(iter, visited), visited, 0, n, n, cur));
@@ -269,7 +269,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
             have unmarked(visited, 0, n) < unmarked(at(iter, visited), 0, n) by {
                 arithmetic() using {
                     unmarked(visited, 0, n) == unmarked(at(iter, visited), 0, n) - 1;
-                }
+                };
             }
             step();
             have viewable(next[0..n]);
@@ -278,10 +278,10 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
                 simp() using {
                     at(iter, walk(next, from, previous)) == at(iter, cur);
                     walk(at(iter, next), from, previous) == walk(next, from, previous);
-                }
+                };
             }
             have next[walk(next, from, previous)] == next[at(iter, cur)] by {
-                simp() using { walk(next, from, previous) == at(iter, cur); }
+                simp() using { walk(next, from, previous) == at(iter, cur); };
             }
             have exists (fuel: Nat) { walk(next, from, fuel) == cur } by {
                 witness { fuel: Nat::Succ(previous) };

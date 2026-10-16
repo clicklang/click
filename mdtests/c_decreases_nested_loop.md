@@ -40,25 +40,25 @@ int32 nested_count(int32 n, int32 m) {
         invariant i >= 0;
         invariant j >= 0;
         invariant j <= m;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             step();
             loop {
                 decreases m - j;
                 invariant j >= 0;
                 invariant j <= m;
-                initialize by simp;
+                initialize by simp();
                 preserve by {
                     step();
                     close_invariants();
                 }
             }
             have 0 <= i - 1 by {
-                apply(int32_positive_predecessor_is_nonnegative(i)) using { i > 0; }
+                apply(int32_positive_predecessor_is_nonnegative(i)) using { i > 0; };
             }
             step();
-            have i >= 0 by { arithmetic() using { 0 <= i; } }
-            close_invariants by { simp(); }
+            have i >= 0 by { arithmetic() using { 0 <= i; }; }
+            close_invariants() by { simp(); }
         }
     }
     step();

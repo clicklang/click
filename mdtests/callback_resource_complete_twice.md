@@ -32,7 +32,7 @@ int32 complete(int32 cb) {
 int32 complete_twice(int32 cb) {
     consumes can_complete(cb);
 
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

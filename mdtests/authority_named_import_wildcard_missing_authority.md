@@ -21,8 +21,8 @@ int32 run() { ensures result == 0; } by {
     let first = fold(ticket(&pool, 7), { serial: 1 });
     fold(control(&pool));
     step(preserve(&pool), { member: first });
-    have first.serial == 1 by simp;
-    have count(ticket(&pool, _)) == 1 by simp;
+    have first.serial == 1 by simp();
+    have count(ticket(&pool, _)) == 1 by simp();
     unfold(first);
     unfold(authority(ticket(&pool, _)));
     execute(); simp();

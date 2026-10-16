@@ -85,7 +85,7 @@ theorem recursive_constructor_injectivity(
     right: TestList<int32>
 ) {
     requires TestList<int32>::Cons(head, left) == TestList<int32>::Cons(head, right);
-    ensures left == right by simp;
+    ensures left == right by simp();
 }
 ```
 

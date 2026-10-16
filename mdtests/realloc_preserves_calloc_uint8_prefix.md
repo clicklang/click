@@ -24,7 +24,7 @@ uint8 realloc_preserves_calloc_uint8_prefix() {
 verifying "realloc_preserves_calloc_uint8_prefix.c";
 
 uint8 realloc_preserves_calloc_uint8_prefix() {
-    ensures result == 0 or result == 1 by auto;
+    ensures result == 0 or result == 1 by auto();
 }
 ```
 

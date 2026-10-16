@@ -15,7 +15,7 @@ int32 probe(int32 a, int32 b, int32 c) {
     requires defined(a + b + c);
     ensures result == 0;
 } by {
-    apply(int32_add_to_integer(a + b, c)) using { defined(a + b); }
+    apply(int32_add_to_integer(a + b, c)) using { defined(a + b); };
     execute(); simp();
 }
 ```

@@ -16,7 +16,7 @@ unsigned long *view(long long *p) {
 verifying "a_long_long_pointer_is_not_assigned_to_an_unsigned_long_pointer.c";
 
 uint64 *view(int64 *p) {
-    ensures result == p by auto;
+    ensures result == p by auto();
 }
 ```
 

@@ -23,7 +23,7 @@ int32 write_stored_pointer(struct owner* owner) {
     consumes owner->data;
     consumes owner->data[0..1];
 
-    ensures result == 7 by auto;
+    ensures result == 7 by auto();
 }
 ```
 

@@ -16,7 +16,7 @@ verifying "a_written_viewable_range_extent_does_not_prove_a_tighter_bound.c";
 
 int32 count_viewable(int32 *a, int32 n) {
     requires viewable(a[0..n]);
-    ensures result <= 1073741822 by auto;
+    ensures result <= 1073741822 by auto();
 }
 ```
 

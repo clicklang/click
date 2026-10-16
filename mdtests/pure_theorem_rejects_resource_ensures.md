@@ -10,7 +10,7 @@ clauses are propositions, and `ensures viewable(...)` remains one of them.
 
 ```click
 theorem resource_conclusion_is_not_pure(p: int32*) {
-    produces p[0..1] by auto;
+    produces p[0..1] by auto();
 }
 ```
 

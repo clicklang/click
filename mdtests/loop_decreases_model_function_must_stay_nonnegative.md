@@ -51,7 +51,7 @@ void countdown(int32 n) {
         decreases chain_len(c.model) - 5;
         invariant n >= 0;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             match c.model {
                 Chain::Nil => { contradiction(c.model == Chain::Nil); },
@@ -64,7 +64,7 @@ void countdown(int32 n) {
                     have chain_len(rest_model) - 5 < chain_len(c.model) - 5 by {
                         arithmetic() using {
                             chain_len(c.model) == chain_len(rest_model) + 1;
-                        }
+                        };
                     }
                     let { rest: r } = unfold(c);
                     step();

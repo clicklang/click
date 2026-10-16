@@ -35,7 +35,7 @@ int32 consume_uncalled(int32 flag[]) {
 int32 call_twice(int32 flag[]) {
     consumes uncalled(flag);
 
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

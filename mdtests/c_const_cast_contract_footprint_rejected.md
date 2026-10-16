@@ -24,12 +24,12 @@ verifying "c_const_cast_contract_footprint_rejected.c";
 
 int32 overwrite(const int32* q) {
     owns q[0..1];
-    ensures q[0] == 7 by auto;
+    ensures q[0] == 7 by auto();
 }
 
 int32 run() {
     owns table[0..2];
-    ensures result == 7 by auto;
+    ensures result == 7 by auto();
 }
 ```
 

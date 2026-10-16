@@ -33,7 +33,7 @@ int32 note(int32 x) {
     step();
     step();
     step();
-    branch then {
+    branch {
         step();
     } else {
     }

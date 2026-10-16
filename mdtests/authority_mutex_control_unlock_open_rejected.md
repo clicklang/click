@@ -40,7 +40,7 @@ int32 run() {
 } by {
     step();
     step();
-    branch then { step(); simp(); } else {}
+    branch { step(); simp(); } else {}
     step();
     fold(authority(reference(obj)));
     let control = fold(control(obj), { refs: 0 });
@@ -49,7 +49,7 @@ int32 run() {
     unfold(control);
     step();
     fold(reference(obj));
-    have count(reference(obj)) == 1 by simp;
+    have count(reference(obj)) == 1 by simp();
     step();
     simp();
 }

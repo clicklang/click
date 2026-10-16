@@ -28,10 +28,10 @@ void duplicate(int32* pool, int32* p) {
     requires count(member(pool, _)) == 0;
     produces 2 of member(pool, p);
 } by {
-    have defined(count(member(pool, _)) + 1) by simp;
+    have defined(count(member(pool, _)) + 1) by simp();
     step();
-    have count(member(pool, _)) == 1 by simp;
-    have defined(count(member(pool, _)) + 1) by simp;
+    have count(member(pool, _)) == 1 by simp();
+    have defined(count(member(pool, _)) + 1) by simp();
     step();
     execute(); simp();
 }

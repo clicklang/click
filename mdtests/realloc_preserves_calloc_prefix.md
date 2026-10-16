@@ -24,7 +24,7 @@ int32 realloc_preserves_calloc_prefix() {
 verifying "realloc_preserves_calloc_prefix.c";
 
 int32 realloc_preserves_calloc_prefix() {
-    ensures result == 0 or result == -1 by auto;
+    ensures result == 0 or result == -1 by auto();
 }
 ```
 

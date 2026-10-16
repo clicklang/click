@@ -18,7 +18,7 @@ int32 read_value(struct packet input) { return input.value; }
 ```click
 verifying "an_uncertified_claim_is_spelled_in_source_terms.c";
 int32 read_value(struct packet input) {
-    ensures result == load_uint8(byte_offset(input, 0)) by auto;
+    ensures result == load_uint8(byte_offset(input, 0)) by auto();
 }
 ```
 

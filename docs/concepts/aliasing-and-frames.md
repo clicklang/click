@@ -148,7 +148,7 @@ You can also state preservation directly:
 
 <!-- verified-example: mdtests/write_resources_imply_separate.md -->
 ```click
-ensures src[0] == old(src[0]) by auto;
+ensures src[0] == old(src[0]) by auto();
 ```
 
 For larger regions, use quantified or range-shaped facts:

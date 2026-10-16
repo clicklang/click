@@ -71,7 +71,7 @@ void countdown_two(int32 n) {
         decreases c;
         invariant n >= 0;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             match c.model {
                 Chain::Nil => { contradiction(c.model == Chain::Nil); },

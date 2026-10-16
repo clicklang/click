@@ -47,11 +47,11 @@ int32 local_struct_matrix_designators() {
 verifying "local_struct_array_designators.c";
 
 int32 local_struct_array_designators() {
-    ensures result == 67 by auto;
+    ensures result == 67 by auto();
 }
 
 int32 local_struct_matrix_designators() {
-    ensures result == 32 by auto;
+    ensures result == 32 by auto();
 }
 ```
 

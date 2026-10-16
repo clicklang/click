@@ -27,16 +27,16 @@ int32 walk(int32 m, int32 n) {
     ensures result == 0;
 } by {
     step();
-    branch then {
+    branch {
         have 0 <= m - 1 by {
             apply(int32_positive_predecessor_is_nonnegative(m)) using {
                 m > 0;
-            }
+            };
         }
         have m - 1 < m by {
             apply(int32_positive_predecessor_strictly_decreases(m)) using {
                 m > 0;
-            }
+            };
         }
         step();
         step();

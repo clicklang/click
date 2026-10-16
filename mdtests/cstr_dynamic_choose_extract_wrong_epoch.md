@@ -43,7 +43,7 @@ uint64 read_terminator(uint8 bytes[]) {
                                 viewable(bytes[0..found_len + 1u64])
                             ) using {
                                 at(statement(1).entry, viewable(bytes[0..found_len + 1u64]));
-                            }
+                            };
                         }
                     } and {
                         simp();

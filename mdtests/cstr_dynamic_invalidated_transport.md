@@ -46,7 +46,7 @@ uint64 read_terminator(uint8 bytes[], uint64 known_len) {
                                 viewable(bytes[0..known_len + 1u64])
                             ) using {
                                 at(function.entry, viewable(bytes[0..known_len + 1u64]));
-                            }
+                            };
                         }
                     } and {
                         simp();

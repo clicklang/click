@@ -11,7 +11,7 @@ theorem addition_defined(total: int32, b: int32) {
     requires 0 <= b;
     requires b <= 255;
     ensures defined(total + b) by {
-        have defined(total + b) by auto;
+        have defined(total + b) by auto();
         assumption();
     }
 }

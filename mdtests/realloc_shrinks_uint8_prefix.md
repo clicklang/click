@@ -26,7 +26,7 @@ uint8 realloc_shrinks_uint8_prefix() {
 verifying "realloc_shrinks_uint8_prefix.c";
 
 uint8 realloc_shrinks_uint8_prefix() {
-    ensures result == 0 or result == 42 by auto;
+    ensures result == 0 or result == 42 by auto();
 }
 ```
 

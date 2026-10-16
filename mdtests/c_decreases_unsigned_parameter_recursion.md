@@ -24,14 +24,14 @@ uint32 gcd(uint32 a, uint32 b) {
     decreases b;
     ensures result >= 0u32;
 } by {
-    branch then {
+    branch {
         step();
         simp();
     } else {}
     have a % b < b by {
         apply(uint32_remainder_less_than_divisor(a, b)) using {
             b != 0u32;
-        }
+        };
     }
     step();
     step();

@@ -21,7 +21,7 @@ int standard_types(int p[], unsigned char byte, int32_t index, uint8_t tag) {
     requires index < 3;
     requires p[index] <= 2147483137;
     views p[0..3];
-    ensures result == p[index] + byte + tag by auto;
+    ensures result == p[index] + byte + tag by auto();
 }
 ```
 

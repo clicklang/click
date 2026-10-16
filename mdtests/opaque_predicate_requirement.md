@@ -19,7 +19,7 @@ predicate sorted_pair(p: int32[2]) {
 
 int32 opaque_predicate_requirement(int32 p[2]) {
     requires sorted_pair(p);
-    ensures still_sorted: sorted_pair(p) by auto;
+    ensures still_sorted: sorted_pair(p) by auto();
 }
 ```
 

@@ -3,7 +3,7 @@
 `assumption()` checks each side modulo known equalities, without searching
 for arithmetic consequences. Here
 `x <= 10` follows from `x <= 5` but is not itself a fact, so the step is
-refused and names that side. `have x <= 10 by simp;` before it repairs it.
+refused and names that side. `have x <= 10 by simp();` before it repairs it.
 
 ```click
 theorem assumption_missing_side(x: int32) {

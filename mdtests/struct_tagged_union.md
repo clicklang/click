@@ -41,7 +41,7 @@ int32 read_number(struct packet* packet) {
 
     ensures result == packet->payload.number;
 } by {
-    auto;
+    auto();
 }
 ```
 

@@ -7,7 +7,7 @@ requirements are not available at the proof site.
 theorem positive_is_nonnegative(x: int32) {
     requires x > 0;
 
-    ensures x >= 0 by auto;
+    ensures x >= 0 by auto();
 }
 
 theorem bad_apply(y: int32) {

@@ -29,9 +29,9 @@ int32 borrow_first(int32 p[]) {
 }
 
 int32 borrow_then_write(int32 p[]) {
-    owns p[0..1] by auto;
+    owns p[0..1] by auto();
 
-    ensures returns_written: result == 1 by auto;
+    ensures returns_written: result == 1 by auto();
 }
 ```
 

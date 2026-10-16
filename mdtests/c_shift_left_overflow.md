@@ -13,7 +13,7 @@ int32 shift_left_overflow() {
 verifying "shift_left_overflow.c";
 
 int32 shift_left_overflow() {
-    ensures no_wrapping_result: result == 0 by auto;
+    ensures no_wrapping_result: result == 0 by auto();
 }
 ```
 

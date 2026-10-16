@@ -150,7 +150,7 @@ int32 increment_twice(struct mutex_counter* counter) {
     have to_integer(counter->value) == to_integer(0);
     let state = fold(counter_control(counter), { done: 0, slack: 2 });
     let { lifetime: lifetime } = step(pthread_mutex_init(&counter->mutex, 0), { state: state });
-    branch then {
+    branch {
         unfold(state);
         unfold(credit(counter));
         unfold(credit(counter));
@@ -158,7 +158,7 @@ int32 increment_twice(struct mutex_counter* counter) {
         simp();
     } else {}
     step();
-    branch then {
+    branch {
         step(pthread_mutex_destroy(&counter->mutex), { lifetime: lifetime });
         unfold(state);
         unfold(credit(counter));
@@ -167,7 +167,7 @@ int32 increment_twice(struct mutex_counter* counter) {
         simp();
     } else {}
     step();
-    branch then {
+    branch {
         step();
         step(pthread_mutex_destroy(&counter->mutex), { lifetime: lifetime });
         unfold(state);

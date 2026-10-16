@@ -49,25 +49,25 @@ void bump_n(struct cell* p, int32 n) {
         invariant i <= n;
         invariant c.count == old(c.count) + i;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
-            have c.count == i by { simp() using { c.count == old(c.count) + i; old(c.count) == 0; } }
+            have c.count == i by { simp() using { c.count == old(c.count) + i; old(c.count) == 0; }; }
             unfold(c);
             step();
             step();
             let d = fold(counter(p), { count: old(c.count) + i });
-            close_invariants by {
+            close_invariants() by {
                 both {
                     apply(int32_increment_greater_equal_lower_bound(at(statement(3).entry, i), at(statement(3).entry, 0), at(statement(3).entry, n))) using {
                         at(statement(3).entry, i) >= at(statement(3).entry, 0);
                         at(statement(3).entry, i) < at(statement(3).entry, n);
-                    }
+                    };
                 } and {
                     both {
                         intro();
                         apply(int32_increment_upper_bound(at(statement(3).entry, i), at(statement(3).entry, n))) using {
                             at(statement(3).entry, i) < at(statement(3).entry, n);
-                        }
+                        };
                     } and {
                         both {
                             intro();

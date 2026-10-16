@@ -9,7 +9,7 @@ theorem obtained_int32(x: int32) {
         have k > x by assumption();
         have forall (k: int32) { k == k } by { intro(); normalize(); }
         instantiate(forall (j: int32) { j > x implies j > 1000 }, k)
-            using { k > x; }
+            using { k > x; };
         have k > 1000;
         witness { z: k };
         assumption();

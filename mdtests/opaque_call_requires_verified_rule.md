@@ -32,7 +32,7 @@ int32 caller(int32 x) {
 }
 
 int32 helper(int32 x) {
-    ensures result == x by auto;
+    ensures result == x by auto();
 }
 ```
 

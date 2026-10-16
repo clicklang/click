@@ -28,12 +28,12 @@ verifying "c_decreases_odd.c";
 
 int32 even(int32 n) {
     decreases n;
-    ensures result >= 0 by auto;
+    ensures result >= 0 by auto();
 }
 
 int32 odd(int32 n) {
     decreases n;
-    ensures result >= 0 by auto;
+    ensures result >= 0 by auto();
 }
 ```
 

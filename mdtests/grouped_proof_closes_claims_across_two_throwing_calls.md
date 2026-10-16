@@ -1,7 +1,7 @@
 # A grouped proof closes claims across two throwing calls
 
 `caller` steps over two maybe-throwing calls, and its normal path continues
-after the first. The omitted proofs share one implicit `} by auto;`, which
+after the first. The omitted proofs share one implicit `} by auto();`, which
 closes `result == x` on the returned path and `exception == 7` on each
 throw path. Expanding it writes an `outcomes` at each call: the first call's
 `returned` arm continues to the second call, whose `outcomes` sits inside it.
@@ -21,8 +21,8 @@ int32 caller(int32 x) {
 verifying "grouped_proof_closes_claims_across_two_throwing_calls.c";
 
 int32 helper(int32 x) throws int32 {
-    ensures result == x by auto;
-    exceptional ensures exception == 7 by auto;
+    ensures result == x by auto();
+    exceptional ensures exception == 7 by auto();
 }
 
 int32 caller(int32 x) throws int32 {

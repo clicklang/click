@@ -22,7 +22,7 @@ int32 shadow_with_address(int32 c) {
 verifying "c_block_scope_shadowing.c";
 
 int32 shadow_with_address(int32 c) {
-    ensures result == 10 by auto;
+    ensures result == 10 by auto();
 }
 ```
 

@@ -17,7 +17,7 @@ int32 run(int32 value) {
 verifying "c_static_function_always_inline_attribute_rejected.c";
 
 int32 run(int32 value) {
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 ```
 

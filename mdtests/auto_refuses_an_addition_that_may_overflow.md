@@ -7,7 +7,7 @@ With `total` bounded only by `int32` itself, `total + 1` may overflow, so
 theorem may_overflow(total: int32) {
     requires 0 <= total;
     ensures defined(total + 1) by {
-        have defined(total + 1) by auto;
+        have defined(total + 1) by auto();
         assumption();
     }
 }

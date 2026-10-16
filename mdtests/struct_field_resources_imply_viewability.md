@@ -21,10 +21,10 @@ verifying "set_second.c";
 
 int32 set_second(struct pair* p, int32 x) {
     views p->first;
-    owns p->second by auto;
+    owns p->second by auto();
 
-    ensures result == old(p->first) by auto;
-    ensures p->second == x by auto;
+    ensures result == old(p->first) by auto();
+    ensures p->second == x by auto();
 }
 ```
 

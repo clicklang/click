@@ -20,8 +20,8 @@ Click specs can contain C-like expressions:
 
 <!-- verified-example: mdtests/c_fragments_in_contracts.md -->
 ```click
-ensures result == x + 1 by auto;
-ensures p[k] == old(p[k]) by auto;
+ensures result == x + 1 by auto();
+ensures p[k] == old(p[k]) by auto();
 requires viewable(p[0..n]);
 ```
 
@@ -63,7 +63,7 @@ For example:
 
 <!-- verified-example: mdtests/c_fragments_in_contracts.md -->
 ```click
-ensures p[0] == old(p[0]) by auto;
+ensures p[0] == old(p[0]) by auto();
 ```
 
 is easy to read as a C programmer, but internally Click must elaborate both

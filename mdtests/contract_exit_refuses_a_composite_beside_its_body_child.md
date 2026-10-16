@@ -19,7 +19,7 @@ verifying "composite_child.c";
 int32 f(int32* p) {
     owns wrap(p);
     produces p[0..1];
-} by auto;
+} by auto();
 ```
 
 ```expect

@@ -10,7 +10,7 @@ int32 value(void) {
 verifying "c_multibyte_character_literal_rejected.c";
 
 int32 value() {
-    ensures true by auto;
+    ensures true by auto();
 }
 ```
 

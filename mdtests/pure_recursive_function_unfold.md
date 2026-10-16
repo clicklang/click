@@ -20,7 +20,7 @@ function countdown(n: int32) -> int32
 }
 
 int32 keep(int32 n) {
-    ensures countdown(n) == countdown(n) by auto;
+    ensures countdown(n) == countdown(n) by auto();
 }
 ```
 

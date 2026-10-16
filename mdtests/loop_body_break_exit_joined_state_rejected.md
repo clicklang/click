@@ -36,7 +36,7 @@ int32 assign_then_break_claim(int32 n) {
         invariant i >= 0;
         invariant r == 0;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             step();
             step();

@@ -10,7 +10,7 @@ int32 zero(int32 result, struct object* p) {
     views p->values[1][0];
     requires c(result) == 1;
     requires p->values[0][0] == 3 and p->values[1][0] == 7;
-    ensures p->values[c(result)][0] == 3 by auto;
+    ensures p->values[c(result)][0] == 3 by auto();
 }
 ```
 ```expect

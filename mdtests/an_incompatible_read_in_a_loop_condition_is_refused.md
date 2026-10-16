@@ -35,7 +35,7 @@ int32 uprec(int32 a, int64* p) {
         invariant a >= 0;
         invariant a <= 10;
         preserve by {
-            have 0 < a by { arithmetic() using { a >= 0; a != 0; } }
+            have 0 < a by { arithmetic() using { a >= 0; a != 0; }; }
             step();
             close_invariants();
         }

@@ -20,7 +20,7 @@ uint8 calloc_zeroed_uint8() {
 verifying "calloc_zeroed_uint8.c";
 
 uint8 calloc_zeroed_uint8() {
-    ensures result == 0 or result == 1 by auto;
+    ensures result == 0 or result == 1 by auto();
 }
 ```
 

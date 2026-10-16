@@ -33,7 +33,7 @@ int32 loop_owns_preserves_symbolic_index(int32 p[], int32 n) {
         invariant i >= 0;
         invariant i <= n;
         owns p[0..n];
-        initialize by simp;
+        initialize by simp();
         preserve by {
             step();
             step();

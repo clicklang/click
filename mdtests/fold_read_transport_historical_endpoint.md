@@ -34,7 +34,7 @@ void mark_at(int32 *v, int32 *m, int32 n) {
             zeros(at(entry, v), 0, at(entry, m[0])) == zeros(v, 0, at(entry, m[0]))
         ) using {
             zeros(at(entry, v), 0, at(entry, m[0])) == zeros(at(entry, v), 0, at(entry, m[0]));
-        }
+        };
         assumption();
     }
     execute();

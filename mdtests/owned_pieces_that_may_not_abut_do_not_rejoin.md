@@ -30,7 +30,7 @@ void caller(int32* x, int32 i, int32 j) {
     requires j < 4;
     consumes x[0..(i + 1)];
     consumes x[j..(j + 1)];
-    produces x[0..(j + 1)] by auto;
+    produces x[0..(j + 1)] by auto();
 }
 ```
 

@@ -31,16 +31,16 @@ void assign(struct node *parent, struct node *new) {
 verifying "c_builtin_constant_p.c";
 
 int32 either(int32 value) {
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 
 int32 flag(int32 value) {
-    ensures result == 0 or result == 1 by auto;
+    ensures result == 0 or result == 1 by auto();
 }
 
 void assign(struct node* parent, struct node* new) {
     owns parent->left;
-    ensures parent->left == new by auto;
+    ensures parent->left == new by auto();
 }
 ```
 

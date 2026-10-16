@@ -22,7 +22,7 @@ contract int32 Spinner(int32 x) diverges {
 
 int32 run(int32 (*step)(int32), int32 x) diverges {
     requires Spinner(step);
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 ```
 

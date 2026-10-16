@@ -49,7 +49,7 @@ theorem zlib_prefix_append(bytes: uint8[], total: uint64, remaining: uint64) {
 }
 theorem zlib_positive_count(value: int32) {
  requires 1 <= value;
- ensures 0 < value by { arithmetic() using { 1 <= value; } }
+ ensures 0 < value by { arithmetic() using { 1 <= value; }; }
 }
 theorem zlib_equal_byte_integers(left: uint8, right: uint8) {
  requires (int32)left == (int32)right;

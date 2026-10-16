@@ -12,7 +12,7 @@ theorem far_index(a: uint8[], n: uint64) {
         instantiate((0..n).all(|k| { a[k] == 0u8 }), 4294967296u64) using {
             0u64 <= 4294967296u64;
             4294967296u64 < n;
-        }
+        };
         assumption();
     }
 }

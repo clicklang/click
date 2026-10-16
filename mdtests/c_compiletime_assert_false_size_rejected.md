@@ -15,7 +15,7 @@ int32 store(int *cell, int32 value) {
 verifying "c_compiletime_assert_false_size_rejected.c";
 
 int32 store(int32* cell, int32 value) {
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 ```
 

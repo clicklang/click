@@ -39,7 +39,7 @@ void cut(uint8* s, uint64 n) {
         have k == 0u64 by {
             arithmetic() using {
                 k < 1u64;
-            }
+            };
         }
         rewrite(k == 0u64);
         simp();

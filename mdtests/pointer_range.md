@@ -16,7 +16,7 @@ verifying "pointer_range.c";
 int32 write_second(int32* p) {
     requires viewable(p[0..2]);
     consumes p[1..2];
-    ensures writes_and_reads_second_cell: result == 9 by auto;
+    ensures writes_and_reads_second_cell: result == 9 by auto();
 }
 ```
 

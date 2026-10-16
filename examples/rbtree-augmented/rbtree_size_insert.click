@@ -48,7 +48,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
         invariant tree.model == old(tree.model);
         invariant old(tree.model) == SizedTree::Node(node, 0, Color::Red, sized_value(old(tree.model)), sized_left(old(tree.model)), sized_right(old(tree.model)));
         invariant tree.model == SizedTree::Node(node, 0, Color::Red, sized_value(tree.model), sized_left(tree.model), sized_right(tree.model));
-        initialize by simp;
+        initialize by simp();
         preserve by {
             let { metadata: metadata, left: left, right: right } = unfold(tree);
             step(); step();

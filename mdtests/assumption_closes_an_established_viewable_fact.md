@@ -44,7 +44,7 @@ int32 probe(int32 a[], int32 n, int32 k) {
             k <= n;
             0 <= n - 0;
             n - 0 <= 1073741823;
-        }
+        };
     }
     have viewable(a[0..k]) and 0 <= k by {
         both { assumption(); } and { simp(); }
@@ -52,7 +52,7 @@ int32 probe(int32 a[], int32 n, int32 k) {
     have forall (j: int32) { 0 <= j and j <= k implies viewable(a[0..j]) } by {
         intro();
         intro();
-        have j <= n by { arithmetic() using { j <= k; k <= n; } }
+        have j <= n by { arithmetic() using { j <= k; k <= n; }; }
         have viewable(a[0..j]) by {
             transport(viewable(a[0..n]), viewable(a[0..j])) using {
                 viewable(a[0..n]);
@@ -60,7 +60,7 @@ int32 probe(int32 a[], int32 n, int32 k) {
                 j <= n;
                 0 <= n - 0;
                 n - 0 <= 1073741823;
-            }
+            };
         }
         assumption();
     }

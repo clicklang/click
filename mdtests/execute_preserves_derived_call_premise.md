@@ -35,7 +35,7 @@ resource owner_storage(p: struct owner*) {
 int32 accept_larger_capacity(int32 length, int32 capacity) {
     requires length <= capacity;
     ensures result == length;
-} by auto;
+} by auto();
 
 int32 execute_preserves_derived_call_premise(struct owner* owner) {
     requires owner->length <= owner->capacity;

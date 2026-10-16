@@ -32,12 +32,12 @@ int32 drain(struct box* box) {
     loop {
         decreases box->len;
         invariant 0 <= box->len;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             have 0 <= box->len - 1 by {
                 apply(int32_positive_predecessor_is_nonnegative(box->len)) using {
                     box->len > 0;
-                }
+                };
             }
             step();
             close_invariants();

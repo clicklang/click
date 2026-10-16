@@ -23,7 +23,7 @@ void transfer(int32 progress, int32 total, int32 end) {
         arithmetic() using {
             at(statement(0).entry, to_integer(total) <= 255 * to_integer(progress));
             to_integer(end) == at(statement(0).entry, to_integer(progress));
-        }
+        };
     }
     execute(); simp();
 }

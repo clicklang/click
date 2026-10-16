@@ -47,15 +47,15 @@ verifying "first.c";
 verifying "second.c";
 
 int32 read() {
-    ensures result == 11 by auto;
+    ensures result == 11 by auto();
 }
 
 int32 first_anchor() {
-    ensures result == 2 by auto;
+    ensures result == 2 by auto();
 }
 
 int32 second_anchor() {
-    ensures result == 3 by auto;
+    ensures result == 3 by auto();
 }
 ```
 

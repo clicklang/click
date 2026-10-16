@@ -11,7 +11,7 @@ theorem omitted_fact_is_not_ambient(x: int32, y: int32, z: int32) {
     ensures x == z by {
         simp() using {
             x == y;
-        }
+        };
     }
 }
 ```

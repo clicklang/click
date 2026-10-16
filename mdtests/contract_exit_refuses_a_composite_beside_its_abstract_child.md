@@ -23,7 +23,7 @@ int32 f(struct box* a) {
     requires a->id == 1;
     owns boxed(a);
     produces ticket(1);
-} by auto;
+} by auto();
 ```
 
 ```expect

@@ -39,13 +39,13 @@ verifying "call_havoc_union_view.c";
 void set_number(int32* p) {
     owns p[0..1];
     ensures p[0] == 7;
-} by auto;
+} by auto();
 
 int32 caller() {
     owns g.payload.number;
     requires g.payload.number == 3;
     ensures result == 0;
-} by auto;
+} by auto();
 ```
 
 ```expect

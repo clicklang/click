@@ -17,7 +17,7 @@ verifying "a_store_at_a_bounded_index_inside_an_owned_array_parameter_is_authori
 void set_upper(int32* buf, int32 j) {
     owns buf[0..1000];
     requires 500 <= j and j < 1000;
-    ensures buf[j] == 5 by auto;
+    ensures buf[j] == 5 by auto();
 }
 ```
 

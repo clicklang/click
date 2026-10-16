@@ -16,7 +16,7 @@ int32 local_array_rejects_assignment(int32* p) {
 verifying "local_array_rejects_assignment.c";
 
 int32 local_array_rejects_assignment(int32* p) {
-    ensures returns_zero: result == 0 by auto;
+    ensures returns_zero: result == 0 by auto();
 }
 ```
 

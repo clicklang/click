@@ -56,7 +56,7 @@ fn directory_refuses_an_extern_contract_for_a_function_a_sibling_sidecar_verifie
     directory.write("b.c", "int32 g(int32 x) { return x; }\n");
     directory.write(
         "callee.click",
-        "verifying \"b.c\";\nint32 g(int32 x) {\n    ensures result == x by auto;\n}\n",
+        "verifying \"b.c\";\nint32 g(int32 x) {\n    ensures result == x by auto();\n}\n",
     );
     directory.write("caller.click", CALLER_CLICK);
 
@@ -130,7 +130,7 @@ int32 f(int32 x) {
     directory.write("b.c", "int32 g(int32 x) { return x; }\n");
     directory.write(
         "b.click",
-        "verifying \"b.c\";\nint32 g(int32 x) {\n    ensures result == x by auto;\n}\n",
+        "verifying \"b.c\";\nint32 g(int32 x) {\n    ensures result == x by auto();\n}\n",
     );
 
     directory.verify().unwrap();
@@ -148,7 +148,7 @@ fn directory_accepts_sidecars_that_verify_the_same_source() {
         r#"verifying "a.c";
 verifying "b.c" as callee;
 int32 g(int32 x) {
-    ensures result == 42 by auto;
+    ensures result == 42 by auto();
 }
 int32 f(int32 x) {
     ensures result == 42;
@@ -160,7 +160,7 @@ int32 f(int32 x) {
     );
     directory.write(
         "b.click",
-        "verifying \"b.c\";\nint32 g(int32 x) {\n    ensures result == 42 by auto;\n}\n",
+        "verifying \"b.c\";\nint32 g(int32 x) {\n    ensures result == 42 by auto();\n}\n",
     );
 
     directory.verify().unwrap();

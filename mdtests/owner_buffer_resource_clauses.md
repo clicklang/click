@@ -28,7 +28,7 @@ int32 release_owner(int32* p, const int32* q, struct owner* owner) {
     views q[0..1];
     consumes owner_buffer(owner);
 
-    ensures result == q[0] by auto;
+    ensures result == q[0] by auto();
 }
 ```
 

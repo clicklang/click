@@ -3954,7 +3954,7 @@ fn nested_view_reborrow_pins_parent_and_restores_exact_binding() {
     let owned_range = memory(0, 8, true);
     let support = backing(&owned_range);
     let parent_view = memory(0, 8, false);
-    let child_view = memory(2, 4, false);
+    let child_views = [memory(2, 4, false), memory(6, 8, false)];
     let (ledger, owner, reader) = participants();
     let opening = ledger
         .lend(owner, owner, support, owned_range.clone())
@@ -3978,7 +3978,7 @@ fn nested_view_reborrow_pins_parent_and_restores_exact_binding() {
     let parent_bindings = LoanViewBindings::default().with_inserted(occurrence, parent_binding);
     let plan = plan_stable_view_transfer_with_bindings(
         &parent_resources,
-        &[checked(child_view.clone())],
+        &child_views.iter().cloned().map(checked).collect::<Vec<_>>(),
         &assumptions,
         &ledger,
         owner,
@@ -3986,8 +3986,15 @@ fn nested_view_reborrow_pins_parent_and_restores_exact_binding() {
         &parent_bindings,
     )
     .unwrap();
-    assert_eq!(plan.stable_views.len(), 1);
-    assert_ne!(plan.stable_views[0].loan, opening.loan);
+    assert_eq!(plan.stable_views.len(), child_views.len());
+    for (child, viewed) in plan.stable_views.iter().zip(&child_views) {
+        assert_ne!(child.loan, opening.loan);
+        assert_eq!(child.description.viewed(), viewed);
+        assert!(
+            plan.ledger
+                .permits_view(reader, &child.description, child.share, &assumptions)
+        );
+    }
     assert!(!plan.ledger.permits_view(
         owner,
         &opening.description,

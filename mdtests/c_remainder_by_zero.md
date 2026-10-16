@@ -13,7 +13,7 @@ int32 remainder_by_zero() {
 verifying "remainder_by_zero.c";
 
 int32 remainder_by_zero() {
-    ensures no_result: result == 0 by auto;
+    ensures no_result: result == 0 by auto();
 }
 ```
 

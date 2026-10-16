@@ -34,19 +34,19 @@ uint8 last(const uint8* bytes, int64 length) {
         invariant i <= 2147483647i64;
         preserve by {
             have i + 2i64 <= length by {
-                arithmetic() using { 0i64 <= i; i <= length; i + 1i64 < length; length <= 2147483647i64; }
+                arithmetic() using { 0i64 <= i; i <= length; i + 1i64 < length; length <= 2147483647i64; };
             }
             have length - (i + 2i64) < length - i by {
-                arithmetic() using { 0i64 <= i; i <= length; i + 2i64 <= length; length <= 2147483647i64; }
+                arithmetic() using { 0i64 <= i; i <= length; i + 2i64 <= length; length <= 2147483647i64; };
             }
             have 0i64 <= i + 2i64 by {
-                arithmetic() using { 0i64 <= i; i <= length; length <= 2147483647i64; }
+                arithmetic() using { 0i64 <= i; i <= length; length <= 2147483647i64; };
             }
             have i + 2i64 <= 2147483647i64 by {
-                arithmetic() using { i + 2i64 <= length; length <= 2147483647i64; 0i64 <= i; i <= length; }
+                arithmetic() using { i + 2i64 <= length; length <= 2147483647i64; 0i64 <= i; i <= length; };
             }
             have 0i64 <= i + 1i64 by {
-                arithmetic() using { 0i64 <= i; i <= length; length <= 2147483647i64; }
+                arithmetic() using { 0i64 <= i; i <= length; length <= 2147483647i64; };
             }
             step(); step();
             simp();

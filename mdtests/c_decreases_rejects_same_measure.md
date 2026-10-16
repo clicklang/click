@@ -16,7 +16,7 @@ verifying "c_decreases_rejects_same_measure.c";
 
 int32 stuck(int32 n) {
     decreases n;
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

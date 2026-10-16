@@ -17,7 +17,7 @@ The claim about it goes in a Click sidecar, `zero.click`, next to the C:
 verifying "zero.c";
 
 int32 zero() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 
@@ -35,7 +35,7 @@ The claim is small, but it contains the whole Click shape:
   types by their width, so C's `int`, `signed int` and `int32_t` are all
   `int32` (see [Supported types](../reference/language/c.md#supported-types)).
 - `ensures result == 0` states the fact to prove.
-- `by auto` asks Click's default automation to prove it.
+- `by auto()` asks Click's default automation to prove it.
 
 Click symbolically executes the C function, sees that every path returns `0`,
 and proves the postcondition. `click verify` exits with status 0 when every
@@ -57,7 +57,7 @@ The natural postcondition is:
 verifying "increment.c";
 
 int32 increment(int32 x) {
-    ensures result == x + 1 by auto;
+    ensures result == x + 1 by auto();
 }
 ```
 
@@ -75,7 +75,7 @@ proof error:
   `return x + 1;`
 
 tactic@4:
-  auto;
+  auto();
 
 To get a trace:
   click verify --trace-proof increment increment.click
@@ -91,7 +91,7 @@ verifying "increment.c";
 
 int32 increment(int32 x) {
     requires x < 2147483647;
-    ensures result == x + 1 by auto;
+    ensures result == x + 1 by auto();
 }
 ```
 

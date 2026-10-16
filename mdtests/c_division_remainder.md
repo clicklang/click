@@ -57,27 +57,27 @@ function rem3(x: int32) -> int32 {
 }
 
 int32 divide_known(int32 x) {
-    ensures symbolic_division: result == half(x) by auto;
+    ensures symbolic_division: result == half(x) by auto();
 }
 
 int32 remainder_known(int32 x) {
-    ensures symbolic_remainder: result == rem3(x) by auto;
+    ensures symbolic_remainder: result == rem3(x) by auto();
 }
 
 int32 divide_constant() {
-    ensures concrete_division: result == 4 by auto;
+    ensures concrete_division: result == 4 by auto();
 }
 
 int32 remainder_constant() {
-    ensures concrete_remainder: result == 1 by auto;
+    ensures concrete_remainder: result == 1 by auto();
 }
 
 int32 division_precedence() {
-    ensures division_before_addition: result == 11 by auto;
+    ensures division_before_addition: result == 11 by auto();
 }
 
 int32 negative_division() {
-    ensures truncates_toward_zero: result == ~4 by auto;
+    ensures truncates_toward_zero: result == ~4 by auto();
 }
 ```
 

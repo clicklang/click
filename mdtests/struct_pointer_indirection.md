@@ -27,7 +27,7 @@ int32 replace_left(struct node* root, struct node* replacement) {
 
     ensures result == replacement->key;
     ensures root->left == replacement;
-} by auto;
+} by auto();
 ```
 
 ```expect

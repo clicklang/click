@@ -12,7 +12,7 @@ verifying "contract_let_type_mismatch.c";
 int32 identity(int32 x) {
     let byte: uint8 = 300;
 
-    ensures result_value: result == byte by auto;
+    ensures result_value: result == byte by auto();
 }
 ```
 

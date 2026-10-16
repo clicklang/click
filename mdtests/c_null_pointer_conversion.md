@@ -72,23 +72,23 @@ verifying "pointer_is_null.c";
 verifying "call_with_null.c";
 
 int32* return_pointer(int32* p) {
-    ensures result == p by auto;
+    ensures result == p by auto();
 }
 
 int32* return_null() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 
 int32* initialize_null() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 
 int32* assign_null(int32* p) {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 
 uint8* return_byte_null() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 
 int32 clear_pointer(struct holder* owner) {
@@ -104,10 +104,10 @@ int32 clear_pointer(struct holder* owner) {
 int32 pointer_is_null(int32* p) {
     requires p == 0;
     ensures result == 1;
-} by auto;
+} by auto();
 
 int32 call_with_null() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 ```
 

@@ -14,7 +14,7 @@ int32 overflow() {
 verifying "overflow.c";
 
 int32 overflow() {
-    ensures no_wrapping_result: result == 0 by auto;
+    ensures no_wrapping_result: result == 0 by auto();
 }
 ```
 

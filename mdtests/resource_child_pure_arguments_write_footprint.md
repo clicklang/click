@@ -46,7 +46,7 @@ void caller(int32* p) {
     unfold(c);
     have p[0] == at(before_call, p[0]) by {
         transport(at(before_call, p[0]) == at(before_call, p[0]),
-                  p[0] == at(before_call, p[0])) using { }
+                  p[0] == at(before_call, p[0])) using { };
     }
     execute(); simp();
 }

@@ -111,31 +111,31 @@ int32 struct_pointer_stride() {
 verifying "malloc_struct_array.c";
 
 int32 malloc_struct_array() {
-    ensures result == 0 or result == 10 by auto;
+    ensures result == 0 or result == 10 by auto();
 }
 
 verifying "calloc_struct_array.c";
 
 int32 calloc_struct_array() {
-    ensures result == 0 or result == 1 by auto;
+    ensures result == 0 or result == 1 by auto();
 }
 
 verifying "realloc_struct_array.c";
 
 int32 realloc_struct_array() {
-    ensures result == 0 or result == 18 by auto;
+    ensures result == 0 or result == 18 by auto();
 }
 
 verifying "malloc_byte_struct_array.c";
 
 int32 malloc_byte_struct_array() {
-    ensures result == 0 or result == 9 by auto;
+    ensures result == 0 or result == 9 by auto();
 }
 
 verifying "struct_pointer_stride.c";
 
 int32 struct_pointer_stride() {
-    ensures result == 0 or result == 6 by auto;
+    ensures result == 0 or result == 6 by auto();
 }
 ```
 

@@ -67,7 +67,7 @@ struct outer finish(struct outer value) {
     ensures result.inner.flag == 9;
     ensures result.tail == 7;
 } by {
-    auto;
+    auto();
 }
 
 int32 run_struct_by_value_embedded() {

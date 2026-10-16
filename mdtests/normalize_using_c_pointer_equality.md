@@ -16,7 +16,7 @@ void keep(int32* a, int32* b, int32* c) {
     ensures a == c;
 } by {
     execute();
-    normalize() using { }
+    normalize() using { };
 }
 ```
 

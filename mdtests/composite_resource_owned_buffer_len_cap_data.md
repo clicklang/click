@@ -69,7 +69,7 @@ int32 push_one(struct owner* owner, int32 value) {
                 contains(owned_buffer_with_room(owner), memory(owner->cap));
                 contains(owned_buffer_with_room(owner), memory(owner->data));
                 contains(owned_buffer_with_room(owner), memory(owner->data[0..owner->cap]));
-            }
+            };
         }
         have owner->len <= owner->cap;
         have separate(memory(*owner), memory(owner->data[0..owner->cap]));
@@ -94,7 +94,7 @@ int32 push_one(struct owner* owner, int32 value) {
                 contains(owned_buffer_with_room(owner), memory(owner->cap));
                 contains(owned_buffer_with_room(owner), memory(owner->data));
                 contains(owned_buffer_with_room(owner), memory(owner->data[0..owner->cap]));
-            }
+            };
         }
         have owner->len <= owner->cap;
         have separate(memory(*owner), memory(owner->data[0..owner->cap]));

@@ -79,6 +79,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
     let bound_function_block = function_with_prior_loops
         .with_frontier_loop_clause(&scoped_template, loop_index)
         .with_bound_frontier_loop_clauses(&current_loop_clauses[1..]);
+    refuse_rebound_loop_labels(&bound_function_block, claim_label, tactic_index)?;
     validate_region_proof_clauses(&bound_function_block, parsed_function)?;
 
     let initial_state = execution.core.frontier.execution_start_state(state).clone();
@@ -364,4 +365,34 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
         .push(scoped_template.bound_to_loop(loop_index));
     execution.core.frontier_loop_rules.push(loop_rule);
     Ok(expanded_loop)
+}
+
+/// A loop label names one loop on an execution path. `at(label.exit, ...)`
+/// and `label` regions resolve through the clause that declared it, so a
+/// second `loop as label` at another loop would make the same name mean two
+/// program points.
+fn refuse_rebound_loop_labels(
+    function_block: &FunctionBlock,
+    claim_label: &str,
+    tactic_index: usize,
+) -> Result<(), ClickError> {
+    let mut bound = BTreeMap::<&str, &CodeRegion>::new();
+    for clause in function_block.structural_clauses() {
+        let Some(label) = clause.label() else {
+            continue;
+        };
+        if let Some(previous) = bound.insert(label, clause.region())
+            && previous != clause.region()
+        {
+            return Err(ClickError::new(format!(
+                "`{claim_label}` tactic {tactic_index}: loop label `{label}` already names {} on this execution path; give each loop its own label",
+                match previous {
+                    CodeRegion::Function => "function".to_string(),
+                    CodeRegion::Loop(index) => format!("loop({index})"),
+                    CodeRegion::Statement(index) => format!("statement({index})"),
+                }
+            )));
+        }
+    }
+    Ok(())
 }

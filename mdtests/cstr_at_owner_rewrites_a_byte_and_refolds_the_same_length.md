@@ -31,18 +31,18 @@ void poke(uint8* s, uint64 n) {
         } else {
             instantiate(forall (k: uint64) { 0u64 <= k and k < n implies old(s[k]) != '\0' }, k) using {
                 0u64 <= k and k < n;
-            }
+            };
             transport(old(s[k]) != '\0', s[k] != '\0') using {
                 old(s[k]) != '\0';
                 k != 0u64;
-            }
+            };
         }
     }
     have s[n] == '\0' by {
         transport(old(s[n]) == '\0', s[n] == '\0') using {
             old(s[n]) == '\0';
             0u64 < n;
-        }
+        };
     }
     have forall (k: uint64) { 0u64 <= k and k < n + 1u64 implies defined(s[k]) } by {
         intro();
@@ -53,11 +53,11 @@ void poke(uint8* s, uint64 n) {
         } else {
             instantiate(forall (k: uint64) { 0u64 <= k and k < n + 1u64 implies defined(old(s[k])) }, k) using {
                 0u64 <= k and k < n + 1u64;
-            }
+            };
             transport(defined(old(s[k])), defined(s[k])) using {
                 defined(old(s[k]));
                 k != 0u64;
-            }
+            };
         }
     }
     fold(cstr_at(s, n));

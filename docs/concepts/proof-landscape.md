@@ -38,7 +38,7 @@ classification, and its [core tactics](../reference/tactics/index.md#core-tactic
 for the ones a hand-written proof needs.
 
 The current `.click` language exposes function-level `requires` clauses and
-per-guarantee `ensures ... by auto;` clauses, backed by native C symbolic
+per-guarantee `ensures ... by auto();` clauses, backed by native C symbolic
 execution and specification-checking axioms in the kernel. Surface Click
 may contain **C fragments**: pieces of C syntax that keep C-like local syntax
 and typing but elaborate into explicit Kernel Click.

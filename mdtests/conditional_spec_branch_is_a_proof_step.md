@@ -18,7 +18,7 @@ verifying "select_when_positive.c";
 int32 select_when_positive(int32 limit, int32 left, int32 right) {
     requires limit > 0;
     ensures result == (if limit > 0 { left } else { right });
-} by auto;
+} by auto();
 ```
 
 ```expect

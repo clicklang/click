@@ -26,8 +26,8 @@ int32 f(int32 n) {
         execute();
         simp();
     } else {
-        have n > 0 by simp;
-        have n >= 0 by { arithmetic() using { n > 0; } }
+        have n > 0 by simp();
+        have n >= 0 by { arithmetic() using { n > 0; }; }
         loop {
             invariant n >= 0;
         }

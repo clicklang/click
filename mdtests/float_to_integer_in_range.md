@@ -30,19 +30,19 @@ int32 truncates_negative_toward_zero() {
 verifying "float_to_integer_in_range.c";
 
 int32 at_maximum() {
-    ensures result == 2147483647 by auto;
+    ensures result == 2147483647 by auto();
 }
 
 int32 at_minimum() {
-    ensures result == -2147483648 by auto;
+    ensures result == -2147483648 by auto();
 }
 
 int32 truncates_toward_zero() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 int32 truncates_negative_toward_zero() {
-    ensures result == -1 by auto;
+    ensures result == -1 by auto();
 }
 ```
 

@@ -20,7 +20,7 @@ int32 local_array_loop() {
 verifying "local_array_loop.c";
 
 int32 local_array_loop() {
-    ensures returns_second: result == 2 by auto;
+    ensures returns_second: result == 2 by auto();
 }
 ```
 

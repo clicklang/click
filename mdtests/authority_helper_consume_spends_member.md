@@ -43,7 +43,7 @@ int32 run() {
 } by {
     step();
     step();
-    branch then { step(); simp(); } else {}
+    branch { step(); simp(); } else {}
     step();
     fold(authority(reference(obj)));
     fold(reference(obj));

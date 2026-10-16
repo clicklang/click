@@ -18,7 +18,7 @@ verifying "a_store_one_past_an_owned_global_array_is_refused.c";
 void set_upper(int32 j) {
     owns buf[0..1000];
     requires 500 <= j and j <= 1000;
-    ensures buf[j] == 5 by auto;
+    ensures buf[j] == 5 by auto();
 }
 ```
 

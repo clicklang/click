@@ -24,13 +24,13 @@ verifying "write_and_return_permission.c";
 verifying "call_write_and_keep_permission.c";
 
 int32 write_and_return_permission(int32 p[]) {
-    owns p[0..1] by auto;
+    owns p[0..1] by auto();
 
-    ensures returns_written: result == p[0] by auto;
+    ensures returns_written: result == p[0] by auto();
 }
 
 int32 call_write_and_keep_permission(int32 p[]) {
-    owns p[0..1] by auto;
+    owns p[0..1] by auto();
 
 }
 ```

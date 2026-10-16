@@ -26,28 +26,28 @@ uint64 dispatch(uint64 (*what)(uint64), int32 flag) { return flag ? what(4294967
 verifying "conditional_call_wide.c";
 
 unsigned long wide() {
-    ensures result == 4294967296 by auto;
+    ensures result == 4294967296 by auto();
 }
 unsigned long zero() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 unsigned long choose_ul(int32 flag) {
     requires flag != 0;
-    ensures result == 4294967296 by auto;
+    ensures result == 4294967296 by auto();
 }
 unsigned long choose_zero(int32 flag) {
     requires flag == 0;
-    ensures result == 4294967296 by auto;
+    ensures result == 4294967296 by auto();
 }
 int64 wide_i64() {
-    ensures result == 2147483648 by auto;
+    ensures result == 2147483648 by auto();
 }
 int64 one_i64() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 int64 choose_i64(int32 flag) {
     requires flag != 0;
-    ensures result == 2147483648 by auto;
+    ensures result == 2147483648 by auto();
 }
 int32* initiated(int32* p) {
     ensures result == p;

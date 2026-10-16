@@ -15,7 +15,7 @@ int initialize(void) {
 ```click
 verifying "a_false_claim_about_a_converted_integer_constant_is_refused.c";
 
-int initialize() { ensures result == -56 by auto; }
+int initialize() { ensures result == -56 by auto(); }
 ```
 
 ```expect

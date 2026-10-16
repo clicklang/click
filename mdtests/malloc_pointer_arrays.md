@@ -36,13 +36,13 @@ uint8 malloc_uint8_pointer_array() {
 verifying "malloc_int32_pointer_array.c";
 
 int32 malloc_int32_pointer_array() {
-    ensures result == 0 or result == 37 by auto;
+    ensures result == 0 or result == 37 by auto();
 }
 
 verifying "malloc_uint8_pointer_array.c";
 
 uint8 malloc_uint8_pointer_array() {
-    ensures result == 0 or result == 42 by auto;
+    ensures result == 0 or result == 42 by auto();
 }
 ```
 

@@ -15,7 +15,7 @@ int32 run(int32 v) {
 verifying "c_do_while_body_runs_before_its_condition.c";
 
 int32 run(int32 v) {
-    ensures result == v by auto;
+    ensures result == v by auto();
 }
 ```
 

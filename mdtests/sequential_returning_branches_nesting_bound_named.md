@@ -154,29 +154,20 @@ int f() {
 } by {
     step();
     step();
-    branch then {
+    branch {
         step();
         simp();
     } else {}
     step();
     step();
-    branch then {
-        step();
-        step();
-        simp();
-    } else {}
-    step();
-    step();
-    branch then {
-        step();
+    branch {
         step();
         step();
         simp();
     } else {}
     step();
     step();
-    branch then {
-        step();
+    branch {
         step();
         step();
         step();
@@ -184,8 +175,7 @@ int f() {
     } else {}
     step();
     step();
-    branch then {
-        step();
+    branch {
         step();
         step();
         step();
@@ -194,8 +184,7 @@ int f() {
     } else {}
     step();
     step();
-    branch then {
-        step();
+    branch {
         step();
         step();
         step();
@@ -205,8 +194,7 @@ int f() {
     } else {}
     step();
     step();
-    branch then {
-        step();
+    branch {
         step();
         step();
         step();
@@ -217,8 +205,7 @@ int f() {
     } else {}
     step();
     step();
-    branch then {
-        step();
+    branch {
         step();
         step();
         step();
@@ -230,8 +217,7 @@ int f() {
     } else {}
     step();
     step();
-    branch then {
-        step();
+    branch {
         step();
         step();
         step();
@@ -244,8 +230,7 @@ int f() {
     } else {}
     step();
     step();
-    branch then {
-        step();
+    branch {
         step();
         step();
         step();
@@ -259,8 +244,7 @@ int f() {
     } else {}
     step();
     step();
-    branch then {
-        step();
+    branch {
         step();
         step();
         step();
@@ -275,7 +259,23 @@ int f() {
     } else {}
     step();
     step();
-    branch then {
+    branch {
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        simp();
+    } else {}
+    step();
+    step();
+    branch {
         step();
         step();
         step();

@@ -31,7 +31,7 @@ int32 sorted_pair_count(int32 p[2], int32 x) {
         unfold(sorted);
         simp();
     }
-    ensures counted: count_matches(p, 0, 1, x) == 1 by auto;
+    ensures counted: count_matches(p, 0, 1, x) == 1 by auto();
 }
 ```
 

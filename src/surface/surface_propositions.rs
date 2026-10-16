@@ -58,6 +58,12 @@ pub(in crate::surface) struct SurfacePropositionStorage {
     by_predicate: PersistentMap<String, PersistentMap<NodeId, KernelRef>>,
     /// Recorded universally quantified kernel facts.
     universal_kernels: PersistentMap<NodeId, KernelRef>,
+    /// The conjuncts of a recorded kernel conjunction whose surface form is
+    /// not itself a conjunction, each with the recorded conjunctions that
+    /// contain it. A contract clause such as `separate(..)` lowers to the
+    /// separation beside its well-formedness conditions, and a derivation
+    /// that cites only the separation is spelled by the whole clause.
+    by_conjunct: PersistentMap<NodeId, OrderedNodes<KernelRef>>,
     /// Pairs with a connective surface whose recording completed, so that
     /// recording them again would change nothing.
     complete: PersistentSet<(NodeId, NodeId)>,
@@ -773,6 +779,7 @@ impl SurfacePropositionMap {
             && left
                 .universal_kernels
                 .shares_root_with(&right.universal_kernels)
+            && left.by_conjunct.shares_root_with(&right.by_conjunct)
             && left.complete.shares_root_with(&right.complete)
             && left.next_id == right.next_id
     }
@@ -908,6 +915,29 @@ impl SurfacePropositionMap {
                         .unwrap_or_default()
                         .with_inserted(kernel_id, recording.kernel_ref(kernel_index));
                     storage.by_predicate = storage.by_predicate.with_inserted(name.clone(), facts);
+                }
+            }
+            if matches!(kernel, Proposition::And(..))
+                && !matches!(surface, ClickProposition::And(..))
+            {
+                // One unit per conjunction node walked: the walk is the
+                // kernel tree this recording already charged.
+                let mut pending = vec![kernel_index];
+                while let Some(index) = pending.pop() {
+                    crate::instrumentation::record_deterministic_work(1);
+                    if matches!(recording.kernel_node(index), Proposition::And(..)) {
+                        let (first, second) = recording.kernel.children[index as usize];
+                        pending.push(second);
+                        pending.push(first);
+                        continue;
+                    }
+                    let leaf = recording.kernel_id(index);
+                    let containers = storage.by_conjunct.get(&leaf).cloned().unwrap_or_default();
+                    if let Some(containers) =
+                        containers.with_added(kernel_id, || recording.kernel_ref(kernel_index))
+                    {
+                        storage.by_conjunct = storage.by_conjunct.with_inserted(leaf, containers);
+                    }
                 }
             }
             if matches!(kernel, Proposition::ForAll { .. })
@@ -1068,6 +1098,20 @@ impl SurfacePropositionMap {
         self.kernel_forms(kernel)
             .into_iter()
             .flat_map(|forms| forms.nodes().map(|(_, surface)| surface.get()))
+    }
+
+    /// The recorded kernel conjunctions that hold `conjunct` as one of their
+    /// conjuncts while their surface form is a single source fact, in
+    /// recording order. An indexed lookup; nothing else is visited.
+    pub(in crate::surface) fn kernels_containing_conjunct(
+        &self,
+        conjunct: &Proposition,
+    ) -> impl Iterator<Item = &Proposition> {
+        self.storage
+            .kernel_id(conjunct)
+            .and_then(|id| self.storage.by_conjunct.get(&id))
+            .into_iter()
+            .flat_map(|containers| containers.nodes().map(|(_, kernel)| kernel.get()))
     }
 
     pub(in crate::surface) fn snapshot_blind_kernels(

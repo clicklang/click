@@ -7,7 +7,7 @@ attaching the proof to a C function.
 theorem preserves_assumption(x: int32) {
     requires x >= 0;
 
-    ensures x >= 0 by auto;
+    ensures x >= 0 by auto();
 }
 ```
 

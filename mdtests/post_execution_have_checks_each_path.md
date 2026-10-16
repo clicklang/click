@@ -20,7 +20,7 @@ int32 branch_value(int32 flag) {
     ensures result >= 0;
 } by {
     execute();
-    have result == 1 by simp;
+    have result == 1 by simp();
     simp();
 }
 ```

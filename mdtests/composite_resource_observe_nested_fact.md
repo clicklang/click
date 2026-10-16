@@ -22,7 +22,7 @@ resource live_fd(fd: int32) {
 verifying "return_fd.c";
 
 int32 return_fd(int32 fd) {
-    owns live_fd(fd) by auto;
+    owns live_fd(fd) by auto();
 
     ensures result >= 0 by {
         observe(live_fd(fd));

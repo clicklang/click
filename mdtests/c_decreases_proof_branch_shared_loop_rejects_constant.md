@@ -31,11 +31,11 @@ int32 count_to_bound(int32 n) {
         execute();
         simp();
     } else {
-        have n >= 0 by simp;
+        have n >= 0 by simp();
         loop {
             decreases 0;
             invariant 0 <= i and i <= n;
-            initialize by simp;
+            initialize by simp();
             preserve by { step(); close_invariants(); }
         }
         execute();

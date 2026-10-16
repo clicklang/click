@@ -21,13 +21,13 @@ void zap(int32 *v, int32 n) {
     owns v[0..n];
     ensures forall (k: int32) { 0 <= k and k < n - 1 implies v[k] == old(v[k]) };
 } by {
-    branch then {
+    branch {
         step();
         simp();
     } else {}
     step();
-    have 0 <= n - 1 by { arithmetic() using { 0 < n; } }
-    have n - 1 <= 1000 by { arithmetic() using { 0 < n; n <= 1000; } }
+    have 0 <= n - 1 by { arithmetic() using { 0 < n; }; }
+    have n - 1 <= 1000 by { arithmetic() using { 0 < n; n <= 1000; }; }
     mark before_call;
     step();
     transport(
@@ -35,7 +35,7 @@ void zap(int32 *v, int32 n) {
         forall (k: int32) { 0 <= k and k < n - 1 implies v[k] == at(before_call, v[k]) }
     ) using {
         forall (k: int32) { 0 <= k and k < n - 1 implies at(before_call, v[k]) == at(before_call, v[k]) };
-    }
+    };
     execute();
     simp();
 }

@@ -57,5 +57,5 @@ uint64 read_terminator(uint8 bytes[]) {
 ```
 
 ```expect
-fail: 0 of 1 selected derivation premises have checked source spellings; 1 were omitted
+fail: 0 of 1 selected derivation premises have checked source spellings; 1 were omitted: viewable(bytes[0..
 ```

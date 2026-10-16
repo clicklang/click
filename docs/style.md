@@ -66,6 +66,32 @@ diagnostic.
   internal behavior explicitly. Parser acceptance alone is not a stability
   promise.
 
+## Proof example conventions
+
+For a function whose proof needs only the default automation, omit the proof
+clause. Use `by auto();` when an example is explaining that automation explicitly.
+For a one-tactic proof, use `by T(args);`, such as `by simp();` or
+`by assumption();`. Braces are optional around that single tactic. Use
+`by { ... }` for a sequence of tactics. Call-style tactics always take
+parentheses, including `simp()` and `auto()`. Structural forms such as `if`,
+`match`, and `have` retain their own grammar. For binary proof splits
+(`if` and `branch`), write `then` exactly when an `ensuring` interface precedes
+the arms. Call modifiers follow the
+parenthesized head, as in `close_invariants() by { ... }`.
+
+End call statements with `;`, including calls with a `using { ... };` list.
+Do not add a trailing semicolon to proof-control blocks such as `by { ... }`,
+`if`, `both`, or `loop`. The parser still accepts redundant semicolons.
+Generated premise lists put each premise on its own line. Wrap long premises
+and certificate entries near 100 columns with a further four-space indentation;
+keep quoted literals and individual tokens intact.
+
+Use semantic proof marks for states a handwritten proof has already reached.
+Use numeric statement selectors when the example needs to target a source
+coordinate or explain generated output. A mark names a recorded state;
+it is not an execution target. See
+[Proof workflow](concepts/proof-workflow.md#frontier-facts-and-loop-proofs) for the checked example.
+
 ## Canonical terms
 
 - **Surface Click** is the user-written `.click` language.
@@ -82,7 +108,8 @@ diagnostic.
 - **Kernel Click** is the explicit proof core. It has no textual user syntax.
 - A **C fragment** is C syntax embedded in Surface Click and elaborated into
   Kernel Click meaning.
-- A **sidecar** is a `.click` file that specifies one or more C sources.
+- A **sidecar** is a `.click` file that specifies one or more target-language
+  sources.
 - A **proof unit** is one independently selectable function claim or theorem
   proof together with the dependencies needed to check it.
 - **Proof state** is the user-facing model of the current goals, facts,

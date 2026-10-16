@@ -63,27 +63,27 @@ int32 multiply_without_cancellation() {
 verifying "float_cancellation_is_exact.c";
 
 int32 cancel_double() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 int32 cancel_float() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 int32 divide_exact() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 int32 subtract_to_zero() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 int32 add_without_cancellation() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 int32 multiply_without_cancellation() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 ```
 

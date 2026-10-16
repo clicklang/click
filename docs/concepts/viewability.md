@@ -36,7 +36,7 @@ the contract needs:
 ```click
 int32 first(int32 p[]) {
     views p[0..1];
-    ensures result == p[0] by auto;
+    ensures result == p[0] by auto();
 }
 ```
 
@@ -149,7 +149,7 @@ theorem cell_of_a_viewed_range(v: int32[], lo: int32, hi: int32, k: int32) {
     views v[lo..hi];
     requires lo <= k;
     requires k < hi;
-    ensures to_integer(v[k]) == to_integer(v[k]) by simp;
+    ensures to_integer(v[k]) == to_integer(v[k]) by simp();
 }
 ```
 
@@ -169,7 +169,7 @@ fact form:
 ```click
 apply(element_of_a_viewed_range(a, 0, 3, 1)) using {
     viewable(a[0..3]);
-}
+};
 ```
 
 Listing the range cites both of its halves. The application owes the extent
@@ -207,7 +207,7 @@ requires 0 <= k;
 requires k < n;
 requires viewable(p[0..n]);
 views p[0..n];
-ensures result == p[k] by auto;
+ensures result == p[k] by auto();
 ```
 
 Loops usually need invariants to preserve these bounds at every iteration.
@@ -219,8 +219,8 @@ see a range on its own, state it first and the step that needs it goes through:
 
 <!-- verified-example: mdtests/have_viewable_prefix_of_a_range.md -->
 ```click
-have lo <= hi - 1 by { arithmetic() using { lo < hi; 0 < hi; } }
-have hi - 1 < hi by { arithmetic() using { 0 < hi; } }
+have lo <= hi - 1 by { arithmetic() using { lo < hi; 0 < hi; }; }
+have hi - 1 < hi by { arithmetic() using { 0 < hi; }; }
 ```
 
 <!-- verified-example: mdtests/have_viewable_single_cell.md -->
@@ -269,7 +269,7 @@ can be applied; see
 
 <!-- verified-example: mdtests/opaque_call_old_entry_state.md -->
 ```click
-ensures result == old(p[0]) by auto;
+ensures result == old(p[0]) by auto();
 ```
 
 This is how postconditions talk about preservation or change. The expression

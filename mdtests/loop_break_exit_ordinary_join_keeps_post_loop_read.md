@@ -36,7 +36,7 @@ verifying "keep_plain.c";
 void repaint(int32* p) {
     owns p[0..1];
     ensures p[0] == 0;
-} by auto;
+} by auto();
 
 int32 keep(int32* p, int32* q, int32 flag) {
     owns p[0..1];

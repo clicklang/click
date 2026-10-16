@@ -11,7 +11,7 @@ verifying "integer_observed_arguments_snapshots.c";
 
 theorem observed_identity(n: Integer) {
     requires n == 10;
-    ensures n <= 10 by { arithmetic() using { n == 10; } }
+    ensures n <= 10 by { arithmetic() using { n == 10; }; }
 }
 
 void decrement(int32 a) {
@@ -21,10 +21,10 @@ void decrement(int32 a) {
 } by {
     step();
     have old(to_integer(a)) <= 10 by {
-        apply(observed_identity(old(to_integer(a)))) using { old(to_integer(a)) == 10; }
+        apply(observed_identity(old(to_integer(a)))) using { old(to_integer(a)) == 10; };
     }
     have at(statement(0).entry, to_integer(a)) <= 10 by {
-        apply(observed_identity(at(statement(0).entry, to_integer(a)))) using { at(statement(0).entry, to_integer(a)) == 10; }
+        apply(observed_identity(at(statement(0).entry, to_integer(a)))) using { at(statement(0).entry, to_integer(a)) == 10; };
     }
     execute(); simp();
 }

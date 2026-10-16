@@ -23,11 +23,11 @@ verifying "borrowed_local_view_in_bounds.c";
 
 int32 third(int32* values) {
     views values[0..3];
-    ensures result == values[2] by auto;
+    ensures result == values[2] by auto();
 }
 
 int32 borrowed_local_view_in_bounds() {
-    ensures result == 3 by auto;
+    ensures result == 3 by auto();
 }
 ```
 

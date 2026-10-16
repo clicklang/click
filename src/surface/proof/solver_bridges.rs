@@ -1402,7 +1402,7 @@ impl<'a> Proof<'a> {
     }
 
     /// Prove `fact` where the proof stands with `auto` on the stated fact,
-    /// as `have fact by auto;` does.
+    /// as `have fact by auto();` does.
     fn prove_stated_fact(&self, fact: &ClickProposition) -> Result<Option<Self>, ClickError> {
         let Ok(scope) = self.begin_have(fact.clone()) else {
             return Ok(None);

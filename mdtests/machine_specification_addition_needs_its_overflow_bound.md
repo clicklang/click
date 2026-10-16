@@ -7,7 +7,7 @@ for every `x`. The Integer-arithmetic twin is
 
 ```click
 theorem signed_successor_is_greater(x: int32) {
-    ensures x + 1 > x by auto;
+    ensures x + 1 > x by auto();
 }
 ```
 
