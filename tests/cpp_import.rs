@@ -5618,7 +5618,7 @@ fn constructor_local_rejects_throwing_partial_and_reordered_forms() {
 }
 
 #[test]
-fn terminal_destructor_rejects_throwing_virtual_empty_and_nonterminal_cleanup() {
+fn terminal_destructor_rejects_throwing_empty_and_nonterminal_cleanup() {
     let project = Project::terminal_destructor();
     for (source, expected) in [
         (
@@ -5626,18 +5626,11 @@ fn terminal_destructor_rejects_throwing_virtual_empty_and_nonterminal_cleanup() 
                 "~RestoreState() noexcept",
                 "~RestoreState() noexcept(false)",
             ),
-            "public, non-virtual, non-deleted, and explicitly noexcept",
+            "public, non-virtual outside a polymorphic class, non-deleted, and explicitly noexcept",
         ),
         (
             TERMINAL_DESTRUCTOR_SOURCE.replace("~RestoreState() noexcept", "~RestoreState()"),
-            "public, non-virtual, non-deleted, and explicitly noexcept",
-        ),
-        (
-            TERMINAL_DESTRUCTOR_SOURCE.replace(
-                "~RestoreState() noexcept",
-                "virtual ~RestoreState() noexcept",
-            ),
-            "public, non-virtual, non-deleted, and explicitly noexcept",
+            "public, non-virtual outside a polymorphic class, non-deleted, and explicitly noexcept",
         ),
         (
             TERMINAL_DESTRUCTOR_SOURCE.replace(
@@ -7778,7 +7771,9 @@ fn deleted_destructors_do_not_enter_the_defaulted_trivial_profile() {
     );
     let error = refresh_import(&project.config()).unwrap_err();
     assert!(
-        error.contains("destructor must be public, non-virtual, non-deleted"),
+        error.contains(
+            "destructor must be public, non-virtual outside a polymorphic class, non-deleted"
+        ),
         "{error}"
     );
     assert!(!project.artifact().exists());
@@ -18359,19 +18354,71 @@ int total(const Shape& shape, int scale) noexcept { return shape.area(scale); }
 ";
 
 // Virtual dispatch is admitted where every override a call may reach is
-// imported and checked, and no object is built: a polymorphic class with one
-// polymorphic base, reached by reference, and a call graph whose dispatch
-// edges, from a virtual method to each override, close no cycle.
+// imported and checked: a polymorphic class with one polymorphic base,
+// reached by reference or built by a constructor that does not read `this`,
+// and a call graph whose dispatch edges, from a virtual method to each
+// override, close no cycle.
 #[test]
-#[ignore = "nightly: 0.6s in the parallel gate"]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn virtual_dispatch_refuses_construction_recursion_and_other_class_shapes() {
     for (edits, expected) in [
+        // Construction without a constructor, and constructors that read
+        // `this` while the dynamic type changes or build a nonempty base.
         (
             &[(
                 "{ return shape.area(scale); }",
                 "{ Square square; square.side = 1; return square.area(scale); }",
             )][..],
-            "constructing a polymorphic C++ object remains unsupported",
+            "one public non-default noexcept constructor",
+        ),
+        (
+            &[
+                (
+                    "    int side;\n",
+                    "    int side;\n    explicit Square(int s) noexcept : side(area(s)) {}\n",
+                ),
+                (
+                    "{ return shape.area(scale); }",
+                    "{ Square square(scale); return square.area(scale); }",
+                ),
+            ][..],
+            "without reading `this` and has an empty body",
+        ),
+        (
+            &[
+                (
+                    "    int side;\n",
+                    "    int side;\n    explicit Square(int s) noexcept : side(s) { side = s; }\n",
+                ),
+                (
+                    "{ return shape.area(scale); }",
+                    "{ Square square(scale); return square.area(scale); }",
+                ),
+            ][..],
+            "without reading `this` and has an empty body",
+        ),
+        (
+            &[
+                ("= 0; };", "= 0;\n    explicit Shape(int) noexcept {}\n};"),
+                (
+                    "    int side;\n",
+                    "    int side;\n    explicit Square(int s) noexcept : Shape(s), side(s) {}\n",
+                ),
+                (
+                    "{ return shape.area(scale); }",
+                    "{ Square square(scale); return square.area(scale); }",
+                ),
+            ][..],
+            "polymorphic base with no fields or constructors of its own",
+        ),
+        // A base destructor that runs code, which the derived class's
+        // destruction would have to execute.
+        (
+            &[(
+                "= 0; };",
+                "= 0;\n    virtual ~Shape() noexcept { int unused = 0; (void)unused; }\n};",
+            )][..],
+            "its base's destructor is trivial, defaulted, or empty",
         ),
         // A call back through the interface from an override.
         (

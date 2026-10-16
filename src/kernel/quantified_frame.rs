@@ -25,6 +25,9 @@
 //!   antecedent, so the antecedent is proved in the opposite direction);
 //! - conjunctions and disjunctions componentwise; `not a => not b` as
 //!   `b => a`;
+//! - `a and b => c`, for a target `c` that is not a conjunction, from
+//!   `a => c` or `b => c` (conjunction elimination: a guarded postcondition
+//!   `defined(p[k]) and p[k] == v` carries its value conjunct alone);
 //! - a condition leaf when its two spellings differ only in load atoms each
 //!   shown unchanged between its two snapshots (the kernel's checked load
 //!   equality, `explicit_atomic_equality_from_memory_derivations` and the
@@ -260,6 +263,23 @@ impl Framer<'_> {
                 self.prove(b, d, contexts)
             }
             (Proposition::Not(a), Proposition::Not(b)) => self.prove(b, a, contexts),
+            // Conjunction elimination, `a and b => c` from `a => c` or
+            // `b => c`, when the target is not itself a conjunction (which
+            // the componentwise case above takes). The walk descends only
+            // the source's conjunction spine, once per target position.
+            (Proposition::And(a, b), _) if !matches!(to, Proposition::And(_, _)) => {
+                let framed = self.framed_leaves.get();
+                let first = self.prove(a, to, contexts);
+                if first.is_ok() {
+                    return first;
+                }
+                // A failed first conjunct leaves no framed leaf behind.
+                self.framed_leaves.set(framed);
+                self.prove(b, to, contexts).map_err(|second| match second {
+                    QuantifiedFrameRefusal::ShapeMismatch => first.unwrap_err(),
+                    other => other,
+                })
+            }
             (
                 Proposition::CMemoryReadDefined {
                     value_type: from_type,
@@ -408,5 +428,55 @@ mod wide_condition_tests {
             ),
             &|_, _| true,
         ));
+    }
+}
+
+#[cfg(test)]
+mod conjunct_elimination_tests {
+    use super::*;
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/quantified_frame/conjunct_elimination_tests.rs");
+    }
+
+    // Conjunction elimination drops a conjunct only when the remaining one is
+    // itself carried, and dropping a conjunct alone frames nothing.
+    #[test]
+    fn a_conjunct_is_eliminated_only_when_the_other_is_carried() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let leaf =
+            |name: u64| Proposition::ConditionIs(ConditionTerm::Variable(Variable(name)), true);
+        // The stand-in single-fact route carries leaf 1 to leaf 2 and nothing else.
+        let carries = |from: &Proposition, to: &Proposition, _: &PureFactContext| {
+            *from == leaf(1) && *to == leaf(2)
+        };
+        let facts = ProofFacts::default();
+        let assumptions = PureFactContext::new();
+        let same = |context: PureFactContext| context;
+        let variables = BTreeSet::new();
+        let frame = |source: &Proposition, target: &Proposition| {
+            frame_quantified_transport(
+                source,
+                target,
+                &facts,
+                &assumptions,
+                &assumptions,
+                &carries,
+                &same,
+                &variables,
+            )
+        };
+        let both = |a, b| Proposition::And(Box::new(leaf(a)), Box::new(leaf(b)));
+        assert_eq!(frame(&both(1, 3), &leaf(2)), Ok(()));
+        assert_eq!(frame(&both(3, 1), &leaf(2)), Ok(()));
+        assert!(matches!(
+            frame(&both(3, 4), &leaf(2)),
+            Err(QuantifiedFrameRefusal::LeafNotCarried { .. })
+        ));
+        assert_eq!(
+            frame(&both(1, 3), &leaf(3)),
+            Err(QuantifiedFrameRefusal::NothingToFrame)
+        );
     }
 }

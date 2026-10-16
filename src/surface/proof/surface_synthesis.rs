@@ -2030,6 +2030,37 @@ fn synthesize_surface_atomic_proposition(
             ClickProposition::Not(Box::new(comparison))
         });
     }
+    let integer_comparison = match condition {
+        ConditionTerm::IntegerLessThan(left, right) => {
+            Some((left, ComparisonOperator::LessThan, right))
+        }
+        ConditionTerm::IntegerLessEqual(left, right) => {
+            Some((left, ComparisonOperator::LessEqual, right))
+        }
+        ConditionTerm::IntegerGreaterThan(left, right) => {
+            Some((left, ComparisonOperator::GreaterThan, right))
+        }
+        ConditionTerm::IntegerGreaterEqual(left, right) => {
+            Some((left, ComparisonOperator::GreaterEqual, right))
+        }
+        ConditionTerm::IntegerEqual(left, right) => Some((left, ComparisonOperator::Equal, right)),
+        ConditionTerm::IntegerNotEqual(left, right) => {
+            Some((left, ComparisonOperator::NotEqual, right))
+        }
+        _ => None,
+    };
+    if let Some((left, operator, right)) = integer_comparison {
+        let comparison = ClickProposition::Comparison {
+            left: synthesize_surface_integer(left, parameter_binding, state, bound_variables)?,
+            operator,
+            right: synthesize_surface_integer(right, parameter_binding, state, bound_variables)?,
+        };
+        return Some(if *value {
+            comparison
+        } else {
+            ClickProposition::Not(Box::new(comparison))
+        });
+    }
     let (left, operator, right) = match condition {
         ConditionTerm::Bitvector32SignedLessThan(left, right)
         | ConditionTerm::Bitvector64SignedLessThan(left, right)
@@ -2078,6 +2109,47 @@ fn synthesize_surface_atomic_proposition(
     } else {
         Some(ClickProposition::Not(Box::new(comparison)))
     }
+}
+
+/// An affine mathematical Integer term over machine observations, spelled
+/// with `to_integer` around each observation's machine expression. Other
+/// Integer terms are not synthesized.
+fn synthesize_surface_integer(
+    term: &crate::kernel::IntegerTerm,
+    parameter_binding: ParameterBinding<'_>,
+    state: &CState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<ContractExpression> {
+    use crate::kernel::IntegerTerm;
+    let recurse = |term: &IntegerTerm| {
+        synthesize_surface_integer(term, parameter_binding, state, bound_variables).map(Box::new)
+    };
+    Some(match term {
+        IntegerTerm::Constant(value) if value.sign() == num_bigint::Sign::Minus => {
+            ContractExpression::Negate(Box::new(ContractExpression::IntegerLiteral(
+                (-value).to_string(),
+            )))
+        }
+        IntegerTerm::Constant(value) => ContractExpression::IntegerLiteral(value.to_string()),
+        IntegerTerm::Machine(machine) => ContractExpression::Call {
+            name: "to_integer".into(),
+            arguments: vec![synthesize_surface_bitvector(
+                machine.value(),
+                parameter_binding,
+                state,
+                bound_variables,
+            )?],
+        },
+        IntegerTerm::Negate(inner) => ContractExpression::Negate(recurse(inner)?),
+        IntegerTerm::Add(left, right) => ContractExpression::Add(recurse(left)?, recurse(right)?),
+        IntegerTerm::Subtract(left, right) => {
+            ContractExpression::Subtract(recurse(left)?, recurse(right)?)
+        }
+        IntegerTerm::Multiply(left, right) => {
+            ContractExpression::Multiply(recurse(left)?, recurse(right)?)
+        }
+        _ => return None,
+    })
 }
 
 /// A 32-bit unsigned comparison spelled as the comparison it means.
@@ -2587,6 +2659,49 @@ fn synthesize_uint32_operand(expression: ContractExpression) -> Option<ContractE
     }
 }
 
+/// A population's count at function entry, which the kernel holds as an
+/// opaque symbol, is spelled `old(count(R(anchor, _, ...)))`. A fact the
+/// kernel records about it, such as the bound a consumed member places on
+/// it, then has a source spelling and can be cited.
+fn synthesize_population_entry_count(
+    term: &Bitvector32Term,
+    parameter_binding: ParameterBinding<'_>,
+    state: &CState,
+) -> Option<ContractExpression> {
+    let Bitvector32Term::Variable(variable) = term else {
+        return None;
+    };
+    let population = state.population_with_entry_count(*variable)?;
+    let [AlgebraicValue::C(CValue::Pointer(anchor))] = population.arguments() else {
+        return None;
+    };
+    let anchor = synthesize_surface_pointer_expression(
+        anchor.pointer(),
+        parameter_binding,
+        state,
+        &BTreeMap::new(),
+    )?;
+    let wildcards = population.population_arity().map_or(0, |arity| arity - 1);
+    let arguments = std::iter::once(anchor)
+        .chain(std::iter::repeat_n(
+            ContractExpression::ResourceWildcard,
+            wildcards,
+        ))
+        .collect();
+    Some(ContractExpression::Old(Box::new(
+        ContractExpression::ResourceCount(Box::new(ResourceClause::Declared {
+            type_schema: None,
+            resource_type_arguments: Vec::new(),
+            resource_arguments: Vec::new(),
+            access: ResourceAccessMode::Own,
+            kind: ResourceKind::Token,
+            name: population.family().to_string(),
+            arguments,
+            parameter_types: Vec::new(),
+        })),
+    )))
+}
+
 fn synthesize_surface_bitvector(
     term: &Bitvector32Term,
     parameter_binding: ParameterBinding<'_>,
@@ -2678,6 +2793,9 @@ fn synthesize_surface_bitvector(
     }
     if let Some(snapshot) = synthesize_snapshot_local(term) {
         return Some(snapshot);
+    }
+    if let Some(count) = synthesize_population_entry_count(term, parameter_binding, state) {
+        return Some(count);
     }
     let binary = |left: &Bitvector32Term, right: &Bitvector32Term| {
         Some((

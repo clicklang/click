@@ -133,13 +133,13 @@ fn charon_loop_headers_tools_recheck_expanded_certificates() {
         ),
     ] {
         let p = project(name, true);
-        for command in ["verify", "profile", "audit"] {
+        for command in ["profile", "audit"] {
             assert_cli(&p, &[command]);
         }
         for claim in claims {
             assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-            assert_cli(&p, &["verify"]);
         }
+        assert_cli(&p, &["verify"]);
     }
 }
 

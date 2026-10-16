@@ -161,22 +161,46 @@ fn charon_array_values_unchanged_fixture_verifies_external_snapshots() {
     fs::write(p.root.join("borrow.click"), sidecar.as_bytes()).unwrap();
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
-    for (before, after) in [
-        ("ensures result == words[0];", "ensures result == words[1];"),
+    for owner in ["copy_reference", "copy_into", "repeat_call"] {
+        verify_rust_function(sidecar, &prepared, owner).unwrap();
+    }
+    for (owner, before, after) in [
         (
+            "copy_reference",
+            "ensures result == words[0];",
+            "ensures result == words[1];",
+        ),
+        (
+            "copy_into",
             "ensures target[1] == old(source[1]);",
             "ensures target[1] == old(source[0]);",
         ),
-        ("ensures *value == 5u32;", "ensures *value == 4u32;"),
-        ("views source[0..2];", "views source[0..1];"),
-        ("owns target[0..2];", "views target[0..2];"),
-        ("owns target[0..2];", "owns target[0..1];"),
+        (
+            "repeat_call",
+            "ensures *value == 5u32;",
+            "ensures *value == 4u32;",
+        ),
+        ("copy_into", "views source[0..2];", "views source[0..1];"),
+        ("copy_into", "owns target[0..2];", "views target[0..2];"),
+        ("copy_into", "owns target[0..2];", "owns target[0..1];"),
     ] {
         let invalid = sidecar.replace(before, after);
         assert_ne!(invalid, sidecar);
-        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+        let error = verify_rust_function(&invalid, &prepared, owner)
+            .expect_err("the changed function must reject the mutation");
+        assert_eq!(
+            error.kind(),
+            click::surface::ClickErrorKind::Proof,
+            "{before}: {}",
+            error.message()
+        );
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{before}: {}",
+            error.message()
+        );
     }
-    for command in ["verify", "profile", "audit"] {
+    for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
     }
     for claim in [
@@ -188,8 +212,8 @@ fn charon_array_values_unchanged_fixture_verifies_external_snapshots() {
         "assignment_order.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }
 
 #[test]

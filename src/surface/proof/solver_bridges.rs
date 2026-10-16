@@ -650,7 +650,10 @@ impl<'a> Proof<'a> {
         if let Some(closed) = self.try_constructor_join_closure()? {
             return Ok(Some(closed));
         }
-        self.try_wide_equality_solver_closure()
+        if let Some(closed) = self.try_wide_equality_solver_closure()? {
+            return Ok(Some(closed));
+        }
+        self.try_native_goal_by_integer_reading()
     }
 
     /// A goal that restates an available fact through one connected

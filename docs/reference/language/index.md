@@ -905,6 +905,11 @@ difference), so Integer reasoning combines it with other facts. `simp`
 selects Integer equalities over machine observations as rewrite candidates,
 as it selects native equalities
 (`mdtests/an_integer_entry_count_premise_rewrites_a_grown_count.md`).
+A population's count at function entry is spelled `old(count(R(p, _)))`
+in checked certificates, so a fact the kernel records about it, such as the
+bound `count >= 1` a consumed member places on it, is cited like a written
+premise
+(`mdtests/a_consumed_member_bound_on_an_entry_count_is_cited.md`).
 Resources may declare `field total: Integer;`: folding checks the resource's
 facts, and `old(model.total)` retains the entry value across updates.
 Checked resource pattern bindings retain each field's declared carrier, name,

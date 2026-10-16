@@ -2930,7 +2930,12 @@ int32 arena_pipeline(
                     };
                     assumption();
                 }
-                simp();
+                simp() using {
+                    first->arena == arena;
+                    first->arena->occupied[k] == at(f1, first->arena->occupied[k]);
+                    at(f1, first->arena->occupied[k]) == at(f1, arena->occupied[k]);
+                    at(f1, arena->occupied[k]) == 0;
+                };
             }
             have first->start <= k and k < first->end implies arena->occupied[k] == 0 by {
                 intro();
@@ -2944,9 +2949,12 @@ int32 arena_pipeline(
                         first->start <= k;
                         k < first->end;
                     };
-                    simp();
+                    simp() using {
+                        first->arena == arena;
+                        first->arena->occupied[k] == 0;
+                    };
                 }
-                simp();
+                assumption();
             }
             have first->end <= k implies arena->occupied[k] == 0 by {
                 intro();
@@ -2987,7 +2995,12 @@ int32 arena_pipeline(
                     };
                     assumption();
                 }
-                simp();
+                simp() using {
+                    first->arena == arena;
+                    first->arena->occupied[k] == at(f1, first->arena->occupied[k]);
+                    at(f1, first->arena->occupied[k]) == at(f1, arena->occupied[k]);
+                    at(f1, arena->occupied[k]) == 0;
+                };
             }
             if k < first->start {
                 have k < first->start by {
@@ -3242,7 +3255,12 @@ int32 arena_pipeline(
             };
             assumption();
         }
-        simp();
+        simp() using {
+            first->arena->occupied[k] == at(w1, first->arena->occupied[k]);
+            at(w1, first->arena->occupied[k]) == at(w1, arena->occupied[k]);
+            at(w1, arena->occupied[k]) == 0;
+            first->arena == arena;
+        };
     }
     have second->arena == arena by {
         simp();

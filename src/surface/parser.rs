@@ -5766,11 +5766,8 @@ impl Parser {
                         {
                             return Err(self.error("`result` is reserved for the C value in a step output pattern; rename the produced resource binder"));
                         }
-                        if self.current_contract_bindings.contains(&name)
-                            || self.current_integer_params.contains(&name)
+                        if self.current_integer_params.contains(&name)
                             || self.current_integer_lets.contains(&name)
-                            || self.current_resource_bindings.contains_key(&name)
-                            || self.current_proof_let_names.contains(&name)
                         {
                             return Err(self
                                 .error(format!("call result name `{name}` is already in scope")));
@@ -7314,9 +7311,11 @@ impl Parser {
             | ContractExpression::Multiply(left, right) => {
                 self.integer_operand(left) || self.integer_operand(right)
             }
-            ContractExpression::Negate(inner) | ContractExpression::Old(inner) => {
-                self.integer_operand(inner)
-            }
+            ContractExpression::Negate(inner)
+            | ContractExpression::Old(inner)
+            | ContractExpression::At {
+                expression: inner, ..
+            } => self.integer_operand(inner),
             leaf => self.integer_leaf(leaf),
         }
     }
@@ -7379,6 +7378,15 @@ impl Parser {
             }
             ContractExpression::Old(inner) if has_arithmetic_spine(&inner) => {
                 ContractExpression::Old(Box::new(self.observe_machine_operands(*inner)))
+            }
+            ContractExpression::At {
+                selector,
+                expression,
+            } if has_arithmetic_spine(&expression) || self.integer_operand(&expression) => {
+                ContractExpression::At {
+                    selector,
+                    expression: Box::new(self.observe_machine_operands(*expression)),
+                }
             }
             ContractExpression::IntegerLiteral(value) => ContractExpression::IntegerLiteral(value),
             leaf if self.integer_leaf(&leaf) => leaf,
@@ -7807,11 +7815,11 @@ impl Parser {
                     return Err(self.error("`step()` has only the `result` output"));
                 }
                 let name = name.clone();
-                if self.current_contract_bindings.contains(&name)
-                    || self.current_integer_params.contains(&name)
+                // A result is a proof binder: it hides an earlier proof
+                // binding of its name. Contract and theorem names stay
+                // reserved, and a C variable cannot be hidden.
+                if self.current_integer_params.contains(&name)
                     || self.current_integer_lets.contains(&name)
-                    || self.current_resource_bindings.contains_key(&name)
-                    || self.current_proof_let_names.contains(&name)
                 {
                     return Err(
                         self.error(format!("step result name `{name}` is already in scope"))
@@ -14904,7 +14912,10 @@ fn has_arithmetic_spine(expression: &ContractExpression) -> bool {
         | ContractExpression::Subtract(..)
         | ContractExpression::Multiply(..)
         | ContractExpression::Negate(_) => true,
-        ContractExpression::Old(inner) => has_arithmetic_spine(inner),
+        ContractExpression::Old(inner)
+        | ContractExpression::At {
+            expression: inner, ..
+        } => has_arithmetic_spine(inner),
         _ => false,
     }
 }
