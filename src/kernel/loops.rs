@@ -8986,17 +8986,21 @@ fn range_extent_refusal(
 ) -> Option<String> {
     let extent = base.extent()?;
     let refusal = || {
-        Some(format!(
-            "the clause's range of {}-byte elements reaches outside the {}-byte subobject its pointer designates",
-            element_width, extent.width
-        ))
+        Some(match extent.constant_width() {
+            Some(width) => format!(
+                "the clause's range of {element_width}-byte elements reaches outside the {width}-byte subobject its pointer designates"
+            ),
+            None => format!(
+                "the clause's range of {element_width}-byte elements reaches outside the subobject its pointer designates"
+            ),
+        })
     };
     let Some(offset) =
         crate::kernel::reasoning::pointer_byte_offset_from_base(base.pointer(), &extent.start)
     else {
         return refusal();
     };
-    let Ok(width) = i64::try_from(extent.width) else {
+    let Some(width) = extent.constant_width().map(i64::from) else {
         return refusal();
     };
     let element_width = i64::from(element_width);
