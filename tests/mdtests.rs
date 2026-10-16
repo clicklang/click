@@ -107,6 +107,7 @@ const NIGHTLY: &[&str] = &[
     "consumed_population_count_in_ensured_predicate.md",                       // 0.6s
     "contract_owns_composite_argument.md",                                     // 1.2s
     "contract_owns_through_composite_field.md",                                // 0.7s
+    "copied_bytes_through_result_need_an_explicit_transport.md",               // 1.1s
     "copy_n_segment_invariant.md",                                             // 1.4s
     "cpp_guard_unwind_before_second.md",                                       // 1.4s
     "cpp_one_guard_unwind.md",                                                 // 1.0s

@@ -143,6 +143,8 @@ fn failed_simp_reports_actual_cell_queries_separately_from_history_explanations(
             trace.contains("supplemental history explanation"),
             "{trace}"
         );
+        // A supplemental walk is never named as the failed check's own.
+        assert!(!trace.contains("memory-history check stops at"), "{trace}");
     });
     let separated = source.replace("requires i < 2;", "requires i < 2; requires i == 1;");
     verify_c0_sources(&separated, &[("f.c", c)]).unwrap();
