@@ -4957,7 +4957,7 @@ fn subobject_extent_proven(
         }
         let context = assumptions_with_path_context(assumptions, facts, obligations);
         let covered = context.opaque_extent_covers(extent, pointer, bytes)
-            || resources.designated_range_covers(extent, &context, |range| {
+            || resources.designated_range_covers(extent, pointer, bytes, &context, |range| {
                 context.pointer_access_in_held_range(pointer, bytes, range)
             });
         return covered;

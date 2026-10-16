@@ -5627,38 +5627,58 @@ impl ResourceContext {
         Ok((context, inserted))
     }
 
-    /// Whether a held memory range named through the opaque `extent`
-    /// satisfies `covers` (`design/pointer-subobject-extents.md`, Phase C).
-    /// A range named through an extent a pointer equality identified with
-    /// `extent` counts too.
+    /// The held memory ranges the index offers for an access of `bytes`
+    /// bytes at `pointer`: every range that could contain it, found without
+    /// walking unrelated facts.
+    pub(in crate::kernel) fn held_ranges_at(
+        &self,
+        pointer: &Pointer,
+        bytes: u32,
+        assumptions: &PureFactContext,
+    ) -> Vec<&CMemoryRange> {
+        let mut ranges = Vec::new();
+        if let Some(mut entries) = self.read_access_entries(pointer, bytes, assumptions) {
+            while let Some(entry) = entries.next() {
+                crate::instrumentation::record_deterministic_work(1);
+                let fact = self.fact(entry);
+                if let Some(range) = fact.memory_view_range().or_else(|| fact.memory_own_range()) {
+                    ranges.push(range);
+                }
+            }
+        }
+        ranges
+    }
+
+    /// Whether a held range found at `pointer` that carries `extent`'s tag,
+    /// or the tag of an extent a pointer equality identified with it,
+    /// satisfies `covers`.
     pub(in crate::kernel) fn designated_range_covers(
         &self,
         extent: &super::SubobjectExtent,
+        pointer: &Pointer,
+        bytes: u32,
         assumptions: &PureFactContext,
         mut covers: impl FnMut(&CMemoryRange) -> bool,
     ) -> bool {
         let Some(variable) = extent.opaque_variable() else {
             return false;
         };
-        self.facts().iter().any(|fact| {
-            crate::instrumentation::record_deterministic_work(1);
-            fact.memory_view_range()
-                .or_else(|| fact.memory_own_range())
-                .filter(|range| {
-                    range
-                        .designations()
-                        .into_iter()
-                        .flatten()
-                        .any(|designation| {
-                            designation == variable
-                                || assumptions.pointers_known_equal(
-                                    &Pointer::symbolic(designation),
-                                    &extent.start,
-                                )
-                        })
-                })
-                .is_some_and(&mut covers)
-        })
+        self.held_ranges_at(pointer, bytes, assumptions)
+            .into_iter()
+            .filter(|range| {
+                range
+                    .designations()
+                    .into_iter()
+                    .flatten()
+                    .any(|designation| {
+                        designation == variable
+                            || assumptions.pointers_known_equal(
+                                &Pointer::symbolic(designation),
+                                &extent.start,
+                            )
+                    })
+            })
+            .any(&mut covers)
     }
 
     pub fn facts(&self) -> &[CResourceFact] {

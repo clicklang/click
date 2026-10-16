@@ -9076,18 +9076,17 @@ fn opaque_range_extent_refusal(
         // A range the context holds no authority for at all is left to the
         // resource transfer, which names the missing resource; only a range
         // it could otherwise supply is refused for its designation.
-        let authorized = resources.facts().iter().any(|fact| {
-            crate::instrumentation::record_deterministic_work(1);
-            fact.memory_view_range()
-                .or_else(|| fact.memory_own_range())
-                .is_some_and(spans)
-        });
+        let authorized = resources
+            .held_ranges_at(&from, element_width, assumptions)
+            .into_iter()
+            .any(spans);
         if !authorized {
             return None;
         }
     }
-    let held = resources
-        .is_some_and(|resources| resources.designated_range_covers(extent, assumptions, spans));
+    let held = resources.is_some_and(|resources| {
+        resources.designated_range_covers(extent, &from, element_width, assumptions, spans)
+    });
     (!held && !assumptions.opaque_extent_covers_span(extent, &from, &to))
         .then_some(refusal)
         .flatten()
