@@ -1717,3 +1717,14 @@ focused and sibling subtrees and either parent orientation, through both
 augmented wrappers. Its contract returns the root link and the exact original
 `sized_plug` model. This supplies the general stopping boundary for subsequent
 color-flip propagation proofs.
+
+
+Both non-root color-flip sidecars now accept arbitrary owned child subtrees of
+the red focus, with symbolic valid cached sizes at the focus, parent, and
+grandparent. The loop carries the original focused model and cache values;
+explicit count equalities connect the opened ancestor frames to the recolored
+models. Both orientations and both augmented wrappers verify, and both
+12-site expansion audits pass. Whole-root ownership, exact `sized_plug` models,
+and context-depth termination are preserved without changing the Linux C.
+The parent's other child remains empty and the uncle remains a leaf; arbitrary
+neighbor subtrees and repeated flips through red ancestors are still pending.
