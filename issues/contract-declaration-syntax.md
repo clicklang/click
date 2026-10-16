@@ -175,8 +175,10 @@ that writes `int32` for such a source already writes the source's spelling.
    (`step(FeeFrac::IsEmpty(...))`, `&FeeFrac::EvaluateFeeDown`, `executes`
    targets). As the Rust importer does, the C++ importer names each
    function by an injective encoding of its path, which every diagnostic
-   decodes. Remaining: standard-library instances in heads
-   (`std::span<int>`), whose contracts the catalog supplies.
+   decodes. Done: a head's types write records by their C++ paths,
+   `std::span<int>&` and `Box<int, false>&`, the instance printed without
+   defaulted arguments. Remaining: diagnostics print a record type by its
+   layout name.
 3. **`extern` and `contract` for C++ and Rust.** Done: native C++ `extern`
    heads, members included, and calls through C++ function-pointer
    parameters under a named contract, and Rust `contract fn` with calls

@@ -4457,9 +4457,19 @@ impl Parser {
         } else {
             false
         };
-        let spelling = self.expect_ident("type")?;
-        // C++ names a record by its own name; C writes `struct name`.
-        let cpp_record = self.verifies_cpp() && self.struct_layouts.contains_key(&spelling);
+        // C++ names a record by its own name or path, `std::span<int>`; C
+        // writes `struct name`.
+        let qualified_record = if self.verifies_cpp() {
+            self.parse_cpp_record_type()
+        } else {
+            None
+        };
+        let spelling = match &qualified_record {
+            Some(record) => record.clone(),
+            None => self.expect_ident("type")?,
+        };
+        let cpp_record = qualified_record.is_some()
+            || (self.verifies_cpp() && self.struct_layouts.contains_key(&spelling));
         if spelling == "struct" || cpp_record {
             let struct_name = if cpp_record {
                 spelling

@@ -34,7 +34,7 @@ impl Parser {
                     index += 1;
                     // A class template instance's arguments, `Stored<long long>`.
                     if self.tokens.get(index) == Some(&Token::LessThan) {
-                        match template_arguments_at(&self.tokens, index) {
+                        match template_arguments_at(&self.tokens, index, false) {
                             Some((_, end)) => index = end,
                             None => return false,
                         }
@@ -67,7 +67,7 @@ impl Parser {
         if self.peek() != Some(&Token::LessThan) {
             return Ok(None);
         }
-        let Some((printed, end)) = template_arguments_at(&self.tokens, self.position) else {
+        let Some((printed, end)) = template_arguments_at(&self.tokens, self.position, false) else {
             return Err(self.error(
                 "C++ template arguments close with `>` before `(` or `::`, \
                  and spell types, values and `true` or `false`",
@@ -75,6 +75,38 @@ impl Parser {
         };
         self.position = end;
         Ok(Some(printed))
+    }
+
+    /// A record type written by its C++ path, `std::span<int>`,
+    /// `Stored<long long>` or `ns::Rec`, as its layout name, with the path
+    /// consumed. `None`, with nothing consumed, for any other type, a single
+    /// identifier included.
+    pub(super) fn parse_cpp_record_type(&mut self) -> Option<String> {
+        let mut segments = Vec::new();
+        let mut index = self.position;
+        loop {
+            let Some(Token::Ident(name)) = self.tokens.get(index) else {
+                return None;
+            };
+            index += 1;
+            let mut segment = name.clone();
+            if self.tokens.get(index) == Some(&Token::LessThan) {
+                let (arguments, end) = template_arguments_at(&self.tokens, index, true)?;
+                segment.push_str(&arguments);
+                index = end;
+            }
+            segments.push(segment);
+            if self.tokens.get(index) != Some(&Token::ColonColon) {
+                break;
+            }
+            index += 1;
+        }
+        if segments.len() < 2 && !segments[0].contains('<') {
+            return None;
+        }
+        let record = self.cpp_record(&segments.join("::"))?;
+        self.position = index;
+        Some(record)
     }
 
     /// The layout name of the record a head's qualifier spells, `Rec` or
@@ -298,7 +330,7 @@ fn cpp_path_at(tokens: &[Token], start: usize) -> Option<(Vec<String>, usize)> {
                 index += 1;
                 let mut segment = name.clone();
                 if tokens.get(index) == Some(&Token::LessThan)
-                    && let Some((arguments, end)) = template_arguments_at(tokens, index)
+                    && let Some((arguments, end)) = template_arguments_at(tokens, index, false)
                 {
                     segment.push_str(&arguments);
                     index = end;
@@ -317,8 +349,9 @@ fn cpp_path_at(tokens: &[Token], start: usize) -> Option<(Vec<String>, usize)> {
 }
 
 /// Template arguments at `<`, as Clang prints them, and the index after
-/// the closing `>`; `None` unless they close before a `(` or `::`.
-fn template_arguments_at(tokens: &[Token], open: usize) -> Option<(String, usize)> {
+/// the closing `>`; `None` unless they close before a `(` or `::`, or, in a
+/// type, anywhere.
+fn template_arguments_at(tokens: &[Token], open: usize, in_type: bool) -> Option<(String, usize)> {
     let mut printed = String::from("<");
     let mut depth = 1usize;
     let mut word_before = false;
@@ -335,8 +368,9 @@ fn template_arguments_at(tokens: &[Token], open: usize) -> Option<(String, usize
                 depth -= 1;
                 printed.push('>');
                 if depth == 0 {
-                    return matches!(tokens.get(index), Some(Token::LParen | Token::ColonColon))
-                        .then_some((printed, index));
+                    return (in_type
+                        || matches!(tokens.get(index), Some(Token::LParen | Token::ColonColon)))
+                    .then_some((printed, index));
                 }
                 word_before = false;
             }
