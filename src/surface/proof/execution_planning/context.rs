@@ -617,17 +617,32 @@ pub(in crate::surface::proof) struct CertifiedConditionTransition {
     pub(in crate::surface::proof) theorem: Theorem,
 }
 
-pub(in crate::surface::proof) fn surface_c_condition(condition: &CExpression) -> ClickProposition {
+pub(in crate::surface::proof) fn surface_c_condition(
+    condition: &CExpression,
+    state: &CState,
+) -> ClickProposition {
     pub(in crate::surface::proof) fn expression(expression: &CExpression) -> ContractExpression {
         substitute_c_fragment_as_contract_with_numerals(expression, &BTreeMap::new(), true)
             .expect("converting a C expression without substitutions cannot fail")
     }
 
     let comparison = |left: &CExpression, operator: ComparisonOperator, right: &CExpression| {
-        ClickProposition::Comparison {
-            left: expression(left),
+        let address_comparison = matches!(
             operator,
-            right: expression(right),
+            ComparisonOperator::Equal | ComparisonOperator::NotEqual
+        ) && crate::kernel::c_expression_has_pointer_type(state, left)
+            && crate::kernel::c_expression_has_pointer_type(state, right);
+        let operand = |value: &CExpression| {
+            if address_comparison {
+                expression(&crate::kernel::c_cast(value.clone(), CType::UInt64))
+            } else {
+                expression(value)
+            }
+        };
+        ClickProposition::Comparison {
+            left: operand(left),
+            operator,
+            right: operand(right),
         }
     };
     match condition {
@@ -638,7 +653,7 @@ pub(in crate::surface::proof) fn surface_c_condition(condition: &CExpression) ->
             expression,
             target_type: CType::Bool,
             ..
-        } => surface_c_condition(expression),
+        } => surface_c_condition(expression, state),
         CExpression::Equal(left, right) => comparison(left, ComparisonOperator::Equal, right),
         CExpression::NotEqual(left, right) => comparison(left, ComparisonOperator::NotEqual, right),
         CExpression::LessThan(left, right) => comparison(left, ComparisonOperator::LessThan, right),
@@ -651,14 +666,14 @@ pub(in crate::surface::proof) fn surface_c_condition(condition: &CExpression) ->
         CExpression::GreaterEqual(left, right) => {
             comparison(left, ComparisonOperator::GreaterEqual, right)
         }
-        CExpression::Not(body) => ClickProposition::Not(Box::new(surface_c_condition(body))),
+        CExpression::Not(body) => ClickProposition::Not(Box::new(surface_c_condition(body, state))),
         CExpression::And(left, right) => ClickProposition::And(
-            Box::new(surface_c_condition(left)),
-            Box::new(surface_c_condition(right)),
+            Box::new(surface_c_condition(left, state)),
+            Box::new(surface_c_condition(right, state)),
         ),
         CExpression::Or(left, right) => ClickProposition::Or(
-            Box::new(surface_c_condition(left)),
-            Box::new(surface_c_condition(right)),
+            Box::new(surface_c_condition(left, state)),
+            Box::new(surface_c_condition(right, state)),
         ),
         condition => ClickProposition::Comparison {
             left: expression(condition),
@@ -1528,13 +1543,13 @@ mod boolean_guard_tests {
         ] {
             let converted = crate::kernel::c_cast(condition.clone(), CType::Bool);
             assert_eq!(
-                surface_c_condition(&converted),
-                surface_c_condition(&condition)
+                surface_c_condition(&converted, &CState::new()),
+                surface_c_condition(&condition, &CState::new())
             );
             let nested = crate::kernel::c_cast(converted, CType::Bool);
             assert_eq!(
-                surface_c_condition(&nested),
-                surface_c_condition(&condition)
+                surface_c_condition(&nested, &CState::new()),
+                surface_c_condition(&condition, &CState::new())
             );
         }
     }

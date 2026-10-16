@@ -1868,6 +1868,13 @@ fn validate_branch_memory_delta_against_loans(
     Ok(())
 }
 
+/// Read only the expression's existing C type metadata; no load or access
+/// check is performed. Surface branch spelling uses this to keep native
+/// address comparisons separate from contract pointer-value equalities.
+pub(crate) fn c_expression_has_pointer_type(state: &CState, expression: &CExpression) -> bool {
+    super::eval::c_expression_pointee_type(state, expression).is_some()
+}
+
 pub fn c_variable(name: impl Into<String>) -> CExpression {
     CExpression::Variable(name.into())
 }

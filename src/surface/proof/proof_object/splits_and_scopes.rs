@@ -624,7 +624,7 @@ impl<'a> Proof<'a> {
             return Ok(None);
         };
         let statement_index = execution.core.frontier.next_statement_index;
-        let (_, _, statement, _) = next_top_level_statement_from_frontier_position(
+        let (_, current_state, statement, _) = next_top_level_statement_from_frontier_position(
             execution.view(context),
             &execution.core.state,
             context.function,
@@ -641,7 +641,7 @@ impl<'a> Proof<'a> {
             return Ok(None);
         };
         let source_fact = self.lower_surface_proposition(condition, "proof `if` condition")?;
-        let c_surface = surface_c_condition(&c_condition);
+        let c_surface = surface_c_condition(&c_condition, &current_state);
         let c_fact = self.lower_surface_proposition(&c_surface, "current C `if` condition")?;
         if !path_condition_equivalent(&source_fact, &c_fact) {
             return Ok(None);
