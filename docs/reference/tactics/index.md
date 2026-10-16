@@ -835,6 +835,17 @@ where `r == 0`, is closed by modus ponens as a direct step through `extract`'s
 indexed consequent lookup, with the goal's snapshots as written; an antecedent
 that is not exactly available is not proved or searched for.
 
+A guarded universal goal `forall k { G implies A }` closes from an available
+`forall k { G implies A and B }` with the same binder and guards, selected by one
+indexed lookup of the conjuncts guarded universals conclude. The proof is `intro()`
+for the binder and each guard, `instantiate` at the introduced binder, and
+`assumption()`, so `memset`'s `defined(..) and` value postcondition supplies
+`bytes::all_equal`
+([`simp_drops_a_conjunct_of_a_guarded_memset_postcondition.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_drops_a_conjunct_of_a_guarded_memset_postcondition.md)).
+A different guard or an unstated conjunct is not supplied
+([`simp_does_not_weaken_a_guarded_universal_to_a_wider_range.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_does_not_weaken_a_guarded_universal_to_a_wider_range.md),
+[`simp_does_not_drop_a_conjunct_a_universal_lacks.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_does_not_drop_a_conjunct_a_universal_lacks.md)).
+
 Case splits consider only disjunctions sharing a variable with the goal, nested
 at most twice. Equality rewriting chains through the goal's equalities,
 including a scope's own `have`s and pointer equalities reaching the goal's loads
@@ -1266,7 +1277,9 @@ charges the affected expression.
 **Core.** For an implication, negation, or universal goal, add the antecedent or
 named binder and continue with the body goal. A universal's variable keeps the
 name its quantifier wrote; if that name is already in scope it shadows the older
-one, which stays readable as `outer.name`.
+one, which stays readable as `outer.name`. That includes a range quantifier's
+variable in a `have` stated between C statements
+([`intro_names_a_range_variable_in_a_have_between_statements.md`](https://github.com/clicklang/click/blob/master/mdtests/intro_names_a_range_variable_in_a_have_between_statements.md)).
 
 **Failure, checking, and tools:**
 

@@ -4176,3 +4176,119 @@ mod integer_witness_freshness_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod quantified_conjunct_projection_tests {
+    use super::*;
+
+    fn equals(var: u64, constant: u32) -> Proposition {
+        Proposition::ConditionIs(
+            ConditionTerm::equal(
+                Bitvector32Term::Variable(Variable(var)),
+                Bitvector32Term::Constant(constant),
+            ),
+            true,
+        )
+    }
+    fn at_most(var: u64, bound: u32) -> Proposition {
+        Proposition::ConditionIs(
+            ConditionTerm::signed_less_equal(
+                Bitvector32Term::Variable(Variable(var)),
+                Bitvector32Term::Constant(bound),
+            ),
+            true,
+        )
+    }
+    fn and(left: Proposition, right: Proposition) -> Proposition {
+        Proposition::And(Box::new(left), Box::new(right))
+    }
+    /// `forall var { var <= bound implies conclusion(var) }`.
+    fn guarded(var: u64, bound: u32, conclusion: impl Fn(u64) -> Proposition) -> Proposition {
+        Proposition::ForAll {
+            var: Variable(var),
+            sort: Sort::CInt32,
+            body: Box::new(Proposition::Implies(
+                Box::new(at_most(var, bound)),
+                Box::new(conclusion(var)),
+            )),
+        }
+    }
+
+    #[test]
+    fn a_guarded_conjunction_supplies_each_conjunct_under_the_same_guard() {
+        let source = guarded(1, 4, |k| and(at_most(k, 9), equals(k, 7)));
+        let facts = ProofFacts::from_ordered(std::slice::from_ref(&source));
+        // A renamed binder is the same claim.
+        for goal in [
+            guarded(2, 4, |k| equals(k, 7)),
+            guarded(3, 4, |k| at_most(k, 9)),
+        ] {
+            assert_eq!(
+                facts.quantified_conjunct_projection_source(&goal),
+                Some(&source)
+            );
+        }
+    }
+
+    #[test]
+    fn a_nested_conjunction_supplies_its_inner_conjunctions() {
+        let source = guarded(1, 4, |k| {
+            and(and(equals(k, 7), at_most(k, 9)), at_most(k, 12))
+        });
+        let facts = ProofFacts::from_ordered(std::slice::from_ref(&source));
+        for goal in [
+            guarded(2, 4, |k| and(equals(k, 7), at_most(k, 9))),
+            guarded(2, 4, |k| at_most(k, 9)),
+            guarded(2, 4, |k| at_most(k, 12)),
+        ] {
+            assert_eq!(
+                facts.quantified_conjunct_projection_source(&goal),
+                Some(&source)
+            );
+        }
+    }
+
+    #[test]
+    fn a_projection_keeps_the_guard_and_the_conjuncts_exactly() {
+        let source = guarded(1, 4, |k| and(at_most(k, 9), equals(k, 7)));
+        let facts = ProofFacts::from_ordered(&[source]);
+        for goal in [
+            // A different guard is a different claim.
+            guarded(2, 5, |k| equals(k, 7)),
+            // A conjunct the source does not state.
+            guarded(2, 4, |k| equals(k, 8)),
+            // The whole conjunction is the source itself, not a projection.
+            guarded(2, 4, |k| and(at_most(k, 9), equals(k, 7))),
+            // A conjunct that is not about the binder.
+            guarded(2, 4, |_| equals(50, 7)),
+        ] {
+            assert_eq!(facts.quantified_conjunct_projection_source(&goal), None);
+        }
+    }
+
+    #[test]
+    fn a_universal_without_a_conjunction_supplies_nothing() {
+        let source = guarded(1, 4, |k| equals(k, 7));
+        assert!(guarded_universal_conjunct_projections(&source).is_empty());
+        let facts = ProofFacts::from_ordered(&[source]);
+        assert_eq!(
+            facts.quantified_conjunct_projection_source(&guarded(2, 4, |k| equals(k, 7))),
+            None
+        );
+    }
+
+    #[test]
+    fn a_conjunct_of_a_conjunction_fact_is_indexed_too() {
+        let source = guarded(1, 4, |k| and(at_most(k, 9), equals(k, 7)));
+        let facts = ProofFacts::from_ordered(&[]).with_fact(and(equals(60, 1), source.clone()));
+        assert_eq!(
+            facts.quantified_conjunct_projection_source(&guarded(2, 4, |k| equals(k, 7))),
+            Some(&source)
+        );
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/proof/facts/quantified_conjunct_projection_tests.rs");
+    }
+}
