@@ -211,7 +211,10 @@ body's bytes and holds its facts, but no instance, has the call materialize
 `owns R(a)` from those bytes, lend it as `views R(a)`, and recover the bytes
 at return (`mdtests/cstr_at_call_assembles_a_view_from_owned_bytes.md`; the
 refusal without the terminator fact is
-`mdtests/cstr_at_call_assembly_needs_the_terminator_fact.md`). The adapter
+`mdtests/cstr_at_call_assembly_needs_the_terminator_fact.md`, and names it:
+"assembling `views cstr_at(src, n)` from owned pieces requires an exact body
+fact", with the missing fact and the available facts, as a refused fold
+reports them). The adapter
 used to check the body facts by the refinement route only, which missed a
 quantified fact the caller states under another binder; it now also accepts
 the exact routes a fold uses. An owner of `cstr_at` lends it to a `views`
@@ -339,16 +342,22 @@ step 2 is deferred.
    `dst[result] == '\0'`. The obtain-and-transport proof became
    `step`s, an `open` and `execute()`. The copied bytes are not yet stated.
    With M3 the contract's `owns` and `views` already keep `dst` and the
-   string apart, so the `separate` is implied; it stays, unchanged. Three
-   verifier gaps stand between the proof and a `bytes::equal` postcondition
-   (investigated with M3, 2026-10-16): a bare `transport` in a `have` body
-   is refused (`bugs/bare-transport-in-a-have-body-is-unsupported.md`); a
-   `char *` argument to `bytes::equal`'s `uint8[]` parameters unfolds to
-   converted reads that `memcpy`'s postcondition does not match
-   (`bugs/char-argument-to-a-byte-predicate-unfolds-to-converted-reads.md`);
-   and a quantified frame of `dst[k]` with `k < n` across the store to
-   `dst[n]` is refused even with explicit `transport ... using`, which needs
-   a ruling on whether the frame should derive `k != n` from the guard.
+   string apart, so the `separate` is implied; it stays, unchanged. Of the
+   three verifier gaps found between the proof and a `bytes::equal`
+   postcondition (investigated with M3, 2026-10-16), two are fixed: a bare
+   `transport` in a `have` body selects its premises at the frontier the
+   `have` was opened on (`mdtests/bare_transport_inside_have.md`), and a
+   `char *` argument to `bytes::equal`'s `uint8[]` parameters unfolds to the
+   same `uint8` reads as `memcpy`'s postcondition
+   (`mdtests/char_argument_to_byte_predicate_unfolds_as_bytes.md`). The
+   third remains: the copied-bytes equality is not framed across the store
+   to `dst[n]`. Unfolded at exit it reads the state after `memcpy`; the bare
+   `transport` certifies the frame but its planner cannot name surface
+   premises for it; and `transport ... using` refuses the call's fact as a
+   cited premise, because `at(copied, dst[k])` is not the per-read projection
+   the call's unfolded fact reads. The same happens with `unsigned char`
+   buffers. It still needs a ruling on how the frame should derive `k != n`
+   from the guard.
 5. Done: in `src/surface/tests/expansion_tests.rs`, the `read_terminator`
    fixture views `cstr_at(haystack, _)` among the reordered clauses and
    still asserts that no hidden planning transitions occur. It is not an

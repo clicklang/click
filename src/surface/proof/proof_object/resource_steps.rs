@@ -666,7 +666,21 @@ impl<'a> Proof<'a> {
                 } => Some(("unproved prerequisite", proposition.clone(), declaration)),
                 _ => None,
             };
-            self.step_error_with_requirement(refusal.describe(), comparison, requirement)
+            // A fold of a resource that declares no field proposes the
+            // hidden record its body facts read; the refusal shows it.
+            let proposed = (!unfold
+                && instance
+                    .schema()
+                    .fields()
+                    .iter()
+                    .all(|(name, _)| name.contains('.')))
+            .then(|| Arc::new(instance.clone()));
+            self.step_error_with_proposed_record(
+                refusal.describe(),
+                comparison,
+                requirement,
+                proposed,
+            )
         })?;
         crate::kernel::model_fields::register_instance_spelling(instance.identity(), &binding.name);
         let clause_presentations = if unfold {
@@ -1817,6 +1831,39 @@ impl<'a> Proof<'a> {
         }
     }
 
+    /// Unfolds `names` in a goal's surface form. A signed character
+    /// parameter passed to a predicate's `uint8` bytes first takes its
+    /// explicit byte view, as contract lowering and call steps give it: the
+    /// goal's kernel instance already reads those bytes as `uint8`, and a
+    /// textual substitution would read them through the parameter's signed
+    /// type, so the unfolded goal would differ from the same instance's
+    /// unfolding anywhere else.
+    pub(in crate::surface::proof) fn unfold_goal_surface(
+        &self,
+        predicates: &PredicateEnvironment,
+        surface: &ClickProposition,
+        names: &[String],
+    ) -> Result<ClickProposition, String> {
+        let parameters = match self.context.as_ref() {
+            ProofContext::FixedState(context) => Some(context.parameter_binding.parameters),
+            ProofContext::Execution(context) => Some(context.parameter_binding().parameters),
+            ProofContext::Pure(_) => None,
+        };
+        let elaborated = parameters.and_then(|parameters| {
+            crate::surface::lowering::elaborate_character_byte_views(surface, predicates, &|name| {
+                parameters
+                    .iter()
+                    .find(|parameter| parameter.name() == name)
+                    .map(syntax::C0Parameter::c_type)
+            })
+        });
+        unfold_structural_invariant_proposition(
+            predicates,
+            elaborated.as_ref().unwrap_or(surface),
+            names,
+        )
+    }
+
     pub(super) fn apply_proposition_predicate_unfold(
         &self,
         name: &String,
@@ -1835,7 +1882,7 @@ impl<'a> Proof<'a> {
             Some(Obligation::Proposition(goal)) => {
                 let surface = match &goal.surface {
                     Some(surface) => Some(
-                        unfold_structural_invariant_proposition(
+                        self.unfold_goal_surface(
                             spec_definitions.predicates,
                             surface,
                             std::slice::from_ref(name),
@@ -1945,7 +1992,7 @@ impl<'a> Proof<'a> {
                     .surface
                     .as_deref()
                     .map(|surface| {
-                        unfold_structural_invariant_proposition(
+                        self.unfold_goal_surface(
                             context.spec_definitions.predicates,
                             surface,
                             std::slice::from_ref(name),

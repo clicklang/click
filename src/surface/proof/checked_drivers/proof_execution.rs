@@ -683,11 +683,21 @@ pub(in crate::surface::proof) fn apply_source_step_proofs<'a>(
     let solve = |proof: &Proof<'a>, have: &ProofHave| -> Result<Proof<'a>, ClickError> {
         let nested = proof.begin_source_have(have)?;
         let goal = nested.goal().cloned();
-        let selected = solve_nested_have(nested, have)
+        let mut failed_check = None;
+        let selected = solve_nested_have(nested, have, &mut failed_check)
             .map_err(|error| {
-                source_have_error(proof, have, tactic_index, goal.as_ref(), Some(error))
+                source_have_error(proof, have, tactic_index, goal.as_ref(), Some(error), false)
             })?
-            .ok_or_else(|| source_have_error(proof, have, tactic_index, goal.as_ref(), None))?;
+            .ok_or_else(|| {
+                source_have_error(
+                    proof,
+                    have,
+                    tactic_index,
+                    goal.as_ref(),
+                    failed_check.take(),
+                    true,
+                )
+            })?;
         selected.join()
     };
     match step_proof {
@@ -1020,12 +1030,27 @@ fn advance_checked_linear_continuation<'a>(
         } else if let ProofTactic::Have(have) = &indexed.tactic {
             let nested = proof.begin_source_have(have)?;
             let goal = nested.goal().cloned();
-            let selected = solve_nested_have(nested, have)
+            let mut failed_check = None;
+            let selected = solve_nested_have(nested, have, &mut failed_check)
                 .map_err(|error| {
-                    source_have_error(&proof, have, indexed.index, goal.as_ref(), Some(error))
+                    source_have_error(
+                        &proof,
+                        have,
+                        indexed.index,
+                        goal.as_ref(),
+                        Some(error),
+                        false,
+                    )
                 })?
                 .ok_or_else(|| {
-                    source_have_error(&proof, have, indexed.index, goal.as_ref(), None)
+                    source_have_error(
+                        &proof,
+                        have,
+                        indexed.index,
+                        goal.as_ref(),
+                        failed_check.take(),
+                        true,
+                    )
                 })?;
             selected.join()?
         } else if let ProofTactic::ExecuteUntil(region) = &indexed.tactic {
@@ -1956,6 +1981,7 @@ fn source_have_error(
     index: usize,
     goal: Option<&Proposition>,
     cause: Option<ClickError>,
+    root_failure: bool,
 ) -> ClickError {
     // Search failures belong to the written auto goal, rather than the last
     // candidate's nested proof step. Resource exhaustion still takes priority.
@@ -1970,6 +1996,13 @@ fn source_have_error(
             .as_ref()
             .is_none_or(|error| error.kind() == crate::surface::ClickErrorKind::Proof)
         {
+            if root_failure && let Some(error) = cause {
+                return error.with_context(format!(
+                    "`{}` tactic {index}: `auto` could not prove `{}`",
+                    proof.claim_label(),
+                    crate::surface::diagnostics::describe_click_proposition(&have.proposition)
+                ));
+            }
             // Keep the checked predecessor's diagnostic context, just as
             // the other source-have failures do. Search candidates are not
             // the environment in which this written goal failed.
@@ -2025,21 +2058,31 @@ fn source_have_error(
 pub(super) fn solve_nested_have<'a>(
     nested: ProofScope<'a>,
     have: &ProofHave,
+    failed_check: &mut Option<ClickError>,
 ) -> Result<Option<ProofScope<'a>>, ClickError> {
+    let body = nested.body().clone();
     let source_proof = have.checking_proof();
-    let selected = match source_proof.as_ref() {
-        SourceProof::Tactic(SmartTactic::Auto) => nested.try_auto_fact_closure()?,
-        SourceProof::Default | SourceProof::Tactic(SmartTactic::Simp) => {
-            nested.try_simp_closure()?
-        }
-        SourceProof::Script(body) => {
-            // An explicit script is checked by its proof steps alone: a
-            // step that fails is an error, never a miss for search to
-            // rescue. The checked scope reports the exact declining step.
-            let mut declined = None;
-            let selected = nested.try_authoritative_linear_script_reporting(body, &mut declined)?;
-            if selected.is_none() {
-                let detail = match declined {
+    let (selected, checks) =
+        crate::surface::proof_diagnostics::capture_check_observations(
+            || -> Result<_, ClickError> {
+                Ok(match source_proof.as_ref() {
+                    SourceProof::Tactic(SmartTactic::Auto) => nested.try_auto_fact_closure()?,
+                    SourceProof::Default | SourceProof::Tactic(SmartTactic::Simp) => {
+                        nested.try_simp_closure()?
+                    }
+                    SourceProof::Script(body) => {
+                        // An explicit script is checked by its proof steps alone: a
+                        // step that fails is an error, never a miss for search to
+                        // rescue. The checked scope reports the exact declining step.
+                        let mut declined = None;
+                        let mut unfinished = None;
+                        let selected = nested.try_authoritative_linear_script_reporting(
+                            body,
+                            &mut declined,
+                            &mut unfinished,
+                        )?;
+                        if selected.is_none() {
+                            let detail = match declined {
                     Some(crate::surface::proof::smart_closures::LinearScriptDecline::Step(
                         index,
                     )) => match body.get(index) {
@@ -2055,15 +2098,23 @@ pub(super) fn solve_nested_have<'a>(
                     }
                     None => "its body ran to the end with the goal still open".to_string(),
                 };
-                let goal =
-                    crate::surface::diagnostics::describe_click_proposition(&have.proposition);
-                return Err(ClickError::new(format!(
-                    "`have {goal}` was not proved: {detail}"
-                )));
-            }
-            selected
-        }
-    };
+                            let goal = crate::surface::diagnostics::describe_click_proposition(
+                                &have.proposition,
+                            );
+                            check_verification_deadline()?;
+                            // Preserve the body's checked prefix and remaining goal,
+                            // rather than attaching the enclosing execution state.
+                            return Err(unfinished
+                                .as_ref()
+                                .unwrap_or(nested.body())
+                                .step_error(format!("`have {goal}` was not proved: {detail}")));
+                        }
+                        selected
+                    }
+                })
+            },
+        );
+    let selected = selected.map_err(|error| error.with_check_observations(checks.clone()))?;
     // A surface `have` may lower to more than the currently focused
     // proposition goal (for example, a loadability assertion can carry an
     // additional resource obligation). The linear body above advances only
@@ -2071,7 +2122,12 @@ pub(super) fn solve_nested_have<'a>(
     // complete. Treat that unsupported multi-goal shape as a transactional
     // miss so the enclosing checked driver can try another law or report the
     // unsupported shape.
-    Ok(selected.filter(ProofScope::is_complete))
+    let selected = selected.filter(ProofScope::is_complete);
+    if selected.is_none() {
+        check_verification_deadline()?;
+        *failed_check = Some(body.simp_failure().with_check_observations(checks));
+    }
+    Ok(selected)
 }
 
 /// One smart statement step on a preservation-region descendant, with the
@@ -3185,12 +3241,27 @@ fn advance_focused_execution_arm<'a>(
         } else if let ProofTactic::Have(have) = &indexed.tactic {
             let nested = proof.begin_source_have(have)?;
             let goal = nested.goal().cloned();
-            let selected = solve_nested_have(nested, have)
+            let mut failed_check = None;
+            let selected = solve_nested_have(nested, have, &mut failed_check)
                 .map_err(|error| {
-                    source_have_error(&proof, have, indexed.index, goal.as_ref(), Some(error))
+                    source_have_error(
+                        &proof,
+                        have,
+                        indexed.index,
+                        goal.as_ref(),
+                        Some(error),
+                        false,
+                    )
                 })?
                 .ok_or_else(|| {
-                    source_have_error(&proof, have, indexed.index, goal.as_ref(), None)
+                    source_have_error(
+                        &proof,
+                        have,
+                        indexed.index,
+                        goal.as_ref(),
+                        failed_check.take(),
+                        true,
+                    )
                 })?;
             selected.join()?
         } else if let ProofTactic::ExecuteUntil(region) = &indexed.tactic {
@@ -4728,10 +4799,13 @@ fn advance_linear_open_scope<'a>(
         // proof has no such source tactic.
         let checkpoint = scope.checkpoint();
         let nested = scope.begin_source_have(have)?;
-        let selected = solve_nested_have(nested, have)?;
+        let mut failed_check = None;
+        let selected = solve_nested_have(nested, have, &mut failed_check)?;
         let Some(selected) = selected else {
             let fact = crate::surface::diagnostics::describe_click_proposition(&have.proposition);
-            return Err(ClickError::new(format!("Requires {fact}")));
+            return Err(failed_check
+                .map(|error| error.with_context(format!("Requires {fact}")))
+                .unwrap_or_else(|| ClickError::new(format!("Requires {fact}"))));
         };
         scope = scope.join_nested(selected)?;
         if indexed.source_index != owning_source_index

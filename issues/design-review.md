@@ -124,8 +124,14 @@ Progress: a prototype on `examples/bounded-pool` written in Integer form
 shrinks the sidecar from 437 to 284 lines, and showed that built-in checks
 read only machine facts. Step 1 is done: an Integer comparison of exact
 machine observations also files its native comparison, so resource
-quantities and count definedness accept Integer premises. Next: the
-switch-over itself, then Integer-valued population counts.
+quantities and count definedness accept Integer premises. Step 2 has
+started: `arithmetic "integer";` opts a file into the rule, as a migration
+switch removed when the default flips, and the kernel decides Integer
+comparisons of machine observations through their native comparisons.
+Under the directive, `bounded-pool`'s `pool_init` verifies with its bridge
+lemmas removed; the next blocker is population counts, which are still
+`int32` machine sums. Next: Integer-valued population counts, then the
+migration file by file and the flip.
 
 Afterwards, delete the `machine_integer` and `integer` lemmas Integer
 arithmetic makes unnecessary, complete the families that remain, and give
@@ -270,20 +276,6 @@ Decision: fix, after performance and completeness (maintainer,
 it would slow the priorities, which are performance at the scale of large
 real-world projects and then completeness, both measured in practice. A
 false acceptance, once found, is still fixed first, as a bug.
-
-### M4. Field-less resources hide a record
-
-Today: a field-less `pair(p)` keeps its child's fields "in a record the
-author does not write" (`docs/reference/language/index.md`); the alternative
-was dropped because the kernel treats a field-less body as a function of its
-arguments in about thirty places (`design/proof-language-rulings.md`).
-
-Proposed fix: require explicit fields, or show the record in diagnostics and
-expansion. This revisits a recorded ruling.
-
-Decision: fix (maintainer, 2026-10-14): show the record in diagnostics and
-expansion output. Explicit fields are not required; the recorded ruling
-stands.
 
 ## Strengths the review credited
 

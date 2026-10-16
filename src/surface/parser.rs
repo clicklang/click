@@ -179,6 +179,9 @@ pub(in crate::surface) struct ProgramLayouts {
     /// The layout name of each C++ record a head spells otherwise, by that
     /// spelling: `Stored<long long>` is `Stored__long_long`.
     pub(in crate::surface) record_spellings: BTreeMap<String, String>,
+    /// The typedef names of the verified C sources a function head may
+    /// write, with their types.
+    pub(in crate::surface) c_typedefs: BTreeMap<String, syntax::C0HeadTypedef>,
 }
 
 /// Whether the library declaration `name` of module `identity` is known by
@@ -715,6 +718,8 @@ struct Parser {
     cpp_object_methods: cpp_class_objects::ObjectMethods,
     /// See [`ProgramLayouts::record_spellings`].
     record_spellings: BTreeMap<String, String>,
+    /// See [`ProgramLayouts::c_typedefs`].
+    c_typedefs: BTreeMap<String, syntax::C0HeadTypedef>,
     match_nesting: usize,
     proposition_nesting: usize,
     proof_nesting: usize,
@@ -780,6 +785,9 @@ struct Parser {
     current_arm_binding_types: BTreeMap<String, AlgebraicFieldType>,
     current_integer_params: BTreeSet<String>,
     current_integer_lets: BTreeSet<String>,
+    /// Whether specification comparisons with arithmetic are Integer
+    /// comparisons (`arithmetic "integer";`).
+    integer_arithmetic: bool,
     /// Every parameter of the theorem being parsed, of any type, so a
     /// `have name: P` cannot take a parameter's name.
     current_theorem_param_names: BTreeSet<String>,
@@ -1096,6 +1104,7 @@ impl Parser {
         parser.closure_captures = layouts.closure_captures;
         parser.plain_char = layouts.plain_char;
         parser.int64_t_rank = layouts.int64_t_rank.unwrap_or(LongRank::Long);
+        parser.c_typedefs = layouts.c_typedefs;
         if layouts.language == Some(SourceLanguage::Cpp) {
             // A sidecar verifying a C++ header is C++ by its import, which
             // its `verifying` path does not say: its class object state is
@@ -1145,6 +1154,12 @@ impl Parser {
         } else {
             library_paths::top_level_theorem_names(&tokens)
         };
+        // `arithmetic "integer";` decides how every specification comparison
+        // in the file reads, wherever the directive appears.
+        let integer_arithmetic = tokens.windows(2).any(|pair| {
+            matches!(pair, [Token::Ident(keyword), Token::String(value)]
+                if keyword == "arithmetic" && value == "integer")
+        });
         // Source clauses may follow declarations. Choose the spelling for the
         // whole file so moving the clause cannot bypass a Rust syntax check.
         let language =
@@ -1177,6 +1192,7 @@ impl Parser {
             rust_object_traits,
             cpp_object_methods,
             record_spellings: BTreeMap::new(),
+            c_typedefs: BTreeMap::new(),
             source_aliases: BTreeMap::new(),
             qualified_functions: BTreeMap::new(),
             qualified_objects: None,
@@ -1246,6 +1262,7 @@ impl Parser {
             current_arm_binding_types: BTreeMap::new(),
             current_integer_params: BTreeSet::new(),
             current_integer_lets: BTreeSet::new(),
+            integer_arithmetic,
             current_theorem_param_names: BTreeSet::new(),
             current_proof_let_names: BTreeSet::new(),
             proof_let_restores: Vec::new(),
@@ -1359,6 +1376,7 @@ impl Parser {
         let mut verifying_sources = Vec::new();
         let mut c_target_name = None;
         let mut c_mode = None;
+        let mut integer_arithmetic = false;
         let mut thread_runtime = None;
         let mut algebraic_type_definitions = Vec::new();
         let mut predicate_definitions = Vec::new();
@@ -1402,6 +1420,23 @@ impl Parser {
                     );
                 }
                 *slot = Some(self.parse_c_target_directive(directive)?);
+            } else if self.peek_ident() == Some("arithmetic")
+                && matches!(self.peek_next(), Some(Token::String(_)))
+            {
+                self.expect_ident_spelling("arithmetic")?;
+                let at = self.error_context();
+                let name = self.expect_string("specification arithmetic")?;
+                self.expect(Token::Semicolon)?;
+                if name != "integer" {
+                    return Err(self.error_at(
+                        at,
+                        format!("unknown specification arithmetic `{name}`; the accepted value is `integer`"),
+                    ));
+                }
+                if integer_arithmetic {
+                    return Err(self.error("a Click file declares `arithmetic` more than once"));
+                }
+                integer_arithmetic = true;
             } else if self.peek_ident() == Some("runtime")
                 && matches!(self.peek_next(), Some(Token::String(_)))
             {
@@ -1577,6 +1612,7 @@ impl Parser {
             verifying_sources,
             c_target,
             thread_runtime: thread_runtime.unwrap_or_default(),
+            integer_arithmetic,
             algebraic_type_definitions,
             predicate_definitions,
             click_function_definitions,
@@ -4383,10 +4419,13 @@ impl Parser {
 
         loop {
             // `const std::function<int(int)>& f` or `std::function<int(int)> f`:
-            // a callable value, as a function pointer is.
-            if let Some((c_type, function_pointer_signature)) =
-                self.parse_cpp_std_function_type()?
-            {
+            // a callable value, as a function pointer is; so is `unary f` for a
+            // C function-pointer typedef.
+            let callable = match self.parse_cpp_std_function_type()? {
+                Some(callable) => Some(callable),
+                None => self.parse_c_function_pointer_typedef()?,
+            };
+            if let Some((c_type, function_pointer_signature)) = callable {
                 let name = self.expect_ident("parameter name")?;
                 parameters.push(FunctionParameter {
                     click_type: ClickType::C(c_type),
@@ -4412,6 +4451,44 @@ impl Parser {
                         });
                     }
                     _ => return Err(self.error("expected `,` or `)` after a parameter")),
+                }
+            }
+            // `triple values` for a C array typedef, `int values[3]`.
+            if let Some((element, length, constant)) = self.parse_c_array_typedef()? {
+                let name = self.expect_ident("parameter name")?;
+                let parsed_type = ParsedType {
+                    c_type: element,
+                    struct_name: None,
+                    struct_pointer: false,
+                    constant,
+                    pointee_constant: false,
+                    reference: false,
+                };
+                let parsed_parameter = self.array_parameter(name, parsed_type, Some(length))?;
+                if let Some(bytes) = parsed_parameter.declared_bytes {
+                    declared_loadable_bytes.push((parsed_parameter.parameter.name.clone(), bytes));
+                }
+                parameters.push(parsed_parameter.parameter);
+                match self.peek() {
+                    Some(Token::Comma) => {
+                        self.position += 1;
+                        continue;
+                    }
+                    Some(Token::RParen) => {
+                        return Ok(ParsedParameters {
+                            parameters,
+                            struct_params,
+                            struct_array_params,
+                            reference_params,
+                            declared_loadable_bytes,
+                        });
+                    }
+                    _ => {
+                        return Err(self.error(
+                            "expected `,` or `)` after a parameter of an array typedef, \
+                             which already has its length",
+                        ));
+                    }
                 }
             }
             let parsed_type = self.parse_type()?;
@@ -4483,8 +4560,20 @@ impl Parser {
         }
     }
 
+    /// A typedef name of the verified source is written only in a function
+    /// head, which restates the declaration.
+    fn check_head_typedef(&self, spelling: &str) -> Result<(), ClickError> {
+        if self.exact_long_rank {
+            return Ok(());
+        }
+        Err(self.error(format!(
+            "`{spelling}` is a typedef name of the verified source, which a function head \
+             may write; a specification writes Click's type, such as `int32`"
+        )))
+    }
+
     fn parse_type(&mut self) -> Result<ParsedType, ClickError> {
-        let is_constant = if self.peek_ident() == Some("const") {
+        let mut is_constant = if self.peek_ident() == Some("const") {
             self.position += 1;
             true
         } else {
@@ -4503,8 +4592,32 @@ impl Parser {
         };
         let cpp_record = qualified_record.is_some()
             || (self.verifies_cpp() && self.struct_layouts.contains_key(&spelling));
-        if spelling == "struct" || cpp_record {
-            let struct_name = if cpp_record {
+        // A function head may write a typedef name of the verified C source
+        // for the type it stands for, where the name is not a standard
+        // spelling; a specification writes Click's type.
+        let typedef_struct = match self.c_typedefs.get(&spelling) {
+            Some(syntax::C0HeadTypedef::Struct {
+                name,
+                c_type,
+                constant,
+                pointee_constant,
+            }) => {
+                self.check_head_typedef(&spelling)?;
+                is_constant |= constant;
+                Some((name.clone(), *c_type, *pointee_constant))
+            }
+            _ => None,
+        };
+        // A pointer alias has already supplied its `*`s: a `const` written
+        // before it qualifies the pointer, as in C.
+        let alias_pointer = typedef_struct
+            .as_ref()
+            .filter(|(_, c_type, _)| *c_type != C0Type::Int32)
+            .map(|(_, c_type, pointee_constant)| (*c_type, *pointee_constant));
+        if spelling == "struct" || cpp_record || typedef_struct.is_some() {
+            let struct_name = if let Some((name, _, _)) = typedef_struct {
+                name
+            } else if cpp_record {
                 spelling
             } else {
                 self.expect_ident("struct name")?
@@ -4514,7 +4627,7 @@ impl Parser {
                 self.position += 1;
                 object_constant = true;
             }
-            if self.peek() == Some(&Token::Amp) {
+            if self.peek() == Some(&Token::Amp) && alias_pointer.is_none() {
                 self.position += 1;
                 return Ok(ParsedType {
                     c_type: C0Type::Int32Pointer,
@@ -4525,10 +4638,10 @@ impl Parser {
                     reference: true,
                 });
             }
-            if self.peek() == Some(&Token::Star) {
-                let mut c_type = C0Type::Int32;
-                let mut pointee_constant = false;
-                let mut saw_pointer = false;
+            if self.peek() == Some(&Token::Star) || alias_pointer.is_some() {
+                let (mut c_type, mut pointee_constant) =
+                    alias_pointer.unwrap_or((C0Type::Int32, false));
+                let mut saw_pointer = alias_pointer.is_some();
                 while self.peek() == Some(&Token::Star) {
                     if saw_pointer && pointee_constant {
                         return Err(self.error(
@@ -4596,6 +4709,8 @@ impl Parser {
         } else {
             LongRank::Long
         };
+        // A scalar pointer alias's pointee qualification, as for a struct one.
+        let mut alias_scalar_pointer = None;
         let scalar_type = if let Some((c_type, count)) = integer {
             self.position += count - 1;
             c_type
@@ -4620,6 +4735,27 @@ impl Parser {
                 "volatile" => {
                     return Err(self.error("the `volatile` qualifier is not supported by Click"));
                 }
+                _ if let Some(typedef) = self.c_typedefs.get(&spelling) => {
+                    self.check_head_typedef(&spelling)?;
+                    let syntax::C0HeadTypedef::Scalar {
+                        c_type,
+                        constant,
+                        pointee_constant,
+                    } = *typedef
+                    else {
+                        return Err(self.error(format!(
+                            "the typedef `{spelling}` stands for a union, or volatile or aligned \
+                             type, or for different types in two verified sources, or is an array \
+                             or function pointer written other than as a parameter's type; a head \
+                             writes its C type"
+                        )));
+                    };
+                    is_constant |= constant;
+                    if c_type.is_pointer() {
+                        alias_scalar_pointer = Some(pointee_constant);
+                    }
+                    c_type
+                }
                 _ => {
                     return Err(self.error(format!(
                     "unknown C type `{spelling}`; expected a supported standard spelling or `struct`"
@@ -4629,12 +4765,12 @@ impl Parser {
         };
         let mut c_type = scalar_type;
         let mut object_constant = is_constant;
-        let mut pointee_constant = false;
+        let mut pointee_constant = alias_scalar_pointer.unwrap_or(false);
         if self.peek_ident() == Some("const") {
             self.position += 1;
             object_constant = true;
         }
-        let mut saw_pointer = false;
+        let mut saw_pointer = alias_scalar_pointer.is_some();
         // `T&` is carried by a pointer to `T`. A reference to a pointer is
         // not supported.
         let mut reference = false;
@@ -4842,6 +4978,55 @@ impl Parser {
         Ok((name, c_type, function_pointer_signature))
     }
 
+    /// A parameter type that is a function-pointer typedef name of the
+    /// verified C source, `unary f`: its callable type. `None`, with nothing
+    /// consumed, for any other type.
+    fn parse_c_function_pointer_typedef(
+        &mut self,
+    ) -> Result<Option<(C0Type, syntax::C0FunctionPointerSignature)>, ClickError> {
+        let Some(name) = self.peek_ident() else {
+            return Ok(None);
+        };
+        let Some(syntax::C0HeadTypedef::FunctionPointer { c_type, signature }) =
+            self.c_typedefs.get(name)
+        else {
+            return Ok(None);
+        };
+        // `unary *f` is a pointer to a function pointer, which the type
+        // parser refuses.
+        if !matches!(self.peek_next(), Some(Token::Ident(_))) {
+            return Ok(None);
+        }
+        let callable = (*c_type, signature.clone());
+        self.check_head_typedef(name)?;
+        self.position += 1;
+        Ok(Some(callable))
+    }
+
+    /// A parameter type that is a scalar array typedef name of the verified
+    /// C source, `triple values`: its element type, length and element
+    /// `const`. `None`, with nothing consumed, for any other type.
+    fn parse_c_array_typedef(&mut self) -> Result<Option<(C0Type, u32, bool)>, ClickError> {
+        let Some(name) = self.peek_ident() else {
+            return Ok(None);
+        };
+        let Some(syntax::C0HeadTypedef::Array {
+            element,
+            length,
+            constant,
+        }) = self.c_typedefs.get(name)
+        else {
+            return Ok(None);
+        };
+        if !matches!(self.peek_next(), Some(Token::Ident(_))) {
+            return Ok(None);
+        }
+        let array = (*element, *length, *constant);
+        self.check_head_typedef(name)?;
+        self.position += 1;
+        Ok(Some(array))
+    }
+
     /// A C++ `std::function<R(A...)>` parameter type, possibly `const` and
     /// taken by reference: the callable type of its signature. `None`, with
     /// nothing consumed, when the type is not one.
@@ -5029,6 +5214,28 @@ impl Parser {
                 struct_array: true,
             });
         }
+        self.position += 1;
+        let length = match self.peek() {
+            Some(Token::Number(length)) => {
+                let length = *length;
+                self.position += 1;
+                Some(length)
+            }
+            _ => None,
+        };
+        self.expect(Token::RBracket)?;
+        self.array_parameter(name, parsed_type, length)
+    }
+
+    /// A scalar array parameter, `int values[3]`, which C passes as a
+    /// pointer to its first element; `length`, when written, bounds the
+    /// bytes the head declares.
+    fn array_parameter(
+        &self,
+        name: String,
+        parsed_type: ParsedType,
+        length: Option<u32>,
+    ) -> Result<ParsedParameter, ClickError> {
         let (pointer_type, element_width) = match parsed_type.c_type {
             C0Type::Int8 => (C0Type::Int8Pointer, 1),
             C0Type::Int16 => (C0Type::Int16Pointer, 2),
@@ -5054,14 +5261,7 @@ impl Parser {
             C0Type::UInt128Pointer => (C0Type::UInt128PointerPointer, 8),
             _ => return Err(self.error("only scalar array parameters are supported")),
         };
-
-        self.position += 1;
-        let mut declared_bytes = None;
-        if let Some(Token::Number(length)) = self.peek() {
-            declared_bytes = length.checked_mul(element_width);
-            self.position += 1;
-        }
-        self.expect(Token::RBracket)?;
+        let declared_bytes = length.and_then(|length| length.checked_mul(element_width));
         Ok(ParsedParameter {
             parameter: FunctionParameter {
                 click_type: ClickType::C(pointer_type),
@@ -6609,11 +6809,11 @@ impl Parser {
                 ) => {
                     let operator = self.parse_comparison_operator("proposition")?;
                     let right = self.parse_comparison_operand()?;
-                    return Ok(ClickProposition::Comparison {
-                        left: ContractExpression::Call { name, arguments },
+                    return Ok(self.specification_comparison(
+                        ContractExpression::Call { name, arguments },
                         operator,
                         right,
-                    });
+                    ));
                 }
                 Some(
                     Token::Plus
@@ -7012,11 +7212,128 @@ impl Parser {
         let operator = self.parse_comparison_operator("proposition")?;
         let right = self.parse_comparison_operand()?;
 
-        Ok(ClickProposition::Comparison {
+        Ok(self.specification_comparison(left, operator, right))
+    }
+
+    /// A comparison as the file's specification arithmetic reads it. Under
+    /// `arithmetic "integer";` a comparison that does arithmetic, or that
+    /// compares an Integer with a machine value, compares exact Integers:
+    /// each machine operand of its arithmetic is observed with
+    /// `to_integer`, so `x + 1 > x` reads
+    /// `to_integer(x) + 1 > to_integer(x)`. A comparison with a pointer
+    /// operand keeps its C meaning.
+    fn specification_comparison(
+        &self,
+        left: ContractExpression,
+        operator: ComparisonOperator,
+        right: ContractExpression,
+    ) -> ClickProposition {
+        if self.integer_arithmetic && operator != ComparisonOperator::In {
+            let left_integer = self.integer_operand(&left);
+            let right_integer = self.integer_operand(&right);
+            let mixed = left_integer != right_integer;
+            let arithmetic = has_arithmetic_spine(&left) || has_arithmetic_spine(&right);
+            if !(left_integer && right_integer)
+                && (mixed || arithmetic)
+                && !self.has_pointer_operand(&left)
+                && !self.has_pointer_operand(&right)
+            {
+                return ClickProposition::Comparison {
+                    left: self.observe_machine_operands(left),
+                    operator,
+                    right: self.observe_machine_operands(right),
+                };
+            }
+        }
+        ClickProposition::Comparison {
             left,
             operator,
             right,
-        })
+        }
+    }
+
+    /// Whether `expression` is already an exact Integer: an Integer
+    /// binding, a `to_integer` observation, or arithmetic over them.
+    fn integer_operand(&self, expression: &ContractExpression) -> bool {
+        match expression {
+            ContractExpression::Add(left, right)
+            | ContractExpression::Subtract(left, right)
+            | ContractExpression::Multiply(left, right) => {
+                self.integer_operand(left) || self.integer_operand(right)
+            }
+            ContractExpression::Negate(inner) | ContractExpression::Old(inner) => {
+                self.integer_operand(inner)
+            }
+            leaf => self.integer_leaf(leaf),
+        }
+    }
+
+    fn integer_leaf(&self, expression: &ContractExpression) -> bool {
+        match expression {
+            ContractExpression::Call { name, .. } => {
+                name == "to_integer"
+                    || crate::surface::integer_truncation::is_integer_truncation(name)
+            }
+            ContractExpression::Binding(name)
+            | ContractExpression::CBinding(name)
+            | ContractExpression::CFragment(CExpression::Variable(name)) => {
+                self.current_integer_params.contains(name)
+                    || self.current_integer_lets.contains(name)
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether an arithmetic operand of `expression` is a pointer parameter.
+    fn has_pointer_operand(&self, expression: &ContractExpression) -> bool {
+        match expression {
+            ContractExpression::Add(left, right)
+            | ContractExpression::Subtract(left, right)
+            | ContractExpression::Multiply(left, right) => {
+                self.has_pointer_operand(left) || self.has_pointer_operand(right)
+            }
+            ContractExpression::Negate(inner) | ContractExpression::Old(inner) => {
+                self.has_pointer_operand(inner)
+            }
+            ContractExpression::CBinding(name)
+            | ContractExpression::CFragment(CExpression::Variable(name)) => self
+                .current_c_parameter_types
+                .get(name)
+                .is_some_and(|c_type| c_type.is_pointer()),
+            _ => false,
+        }
+    }
+
+    /// `expression` with each machine operand of its arithmetic observed
+    /// with `to_integer`. Unsuffixed literals take the Integer type from
+    /// context, and Integer operands are left as they are.
+    fn observe_machine_operands(&self, expression: ContractExpression) -> ContractExpression {
+        match expression {
+            ContractExpression::Add(left, right) => ContractExpression::Add(
+                Box::new(self.observe_machine_operands(*left)),
+                Box::new(self.observe_machine_operands(*right)),
+            ),
+            ContractExpression::Subtract(left, right) => ContractExpression::Subtract(
+                Box::new(self.observe_machine_operands(*left)),
+                Box::new(self.observe_machine_operands(*right)),
+            ),
+            ContractExpression::Multiply(left, right) => ContractExpression::Multiply(
+                Box::new(self.observe_machine_operands(*left)),
+                Box::new(self.observe_machine_operands(*right)),
+            ),
+            ContractExpression::Negate(inner) => {
+                ContractExpression::Negate(Box::new(self.observe_machine_operands(*inner)))
+            }
+            ContractExpression::Old(inner) if has_arithmetic_spine(&inner) => {
+                ContractExpression::Old(Box::new(self.observe_machine_operands(*inner)))
+            }
+            ContractExpression::IntegerLiteral(value) => ContractExpression::IntegerLiteral(value),
+            leaf if self.integer_leaf(&leaf) => leaf,
+            leaf => ContractExpression::Call {
+                name: "to_integer".to_string(),
+                arguments: vec![leaf],
+            },
+        }
     }
 
     /// A comparison operand whose outermost operator is `&`, `|` or `^` must
@@ -10607,6 +10924,7 @@ impl Parser {
                 value_type: element_type,
                 volatile: false,
                 pointee_constant: false,
+                access_class: None,
                 source: Default::default(),
             }));
             return Ok(vec![ContractSegment {
@@ -11105,6 +11423,7 @@ impl Parser {
                     value_type: field.c_type.to_kernel_type(),
                     volatile: false,
                     pointee_constant: field.pointee_constant,
+                    access_class: None,
                     source: Default::default(),
                 },
                 start: CExpression::Value(int32(0)),
@@ -11160,6 +11479,7 @@ impl Parser {
             value_type: field.c_type.to_kernel_type(),
             volatile: false,
             pointee_constant: field.pointee_constant,
+            access_class: None,
             source: Default::default(),
         })
     }
@@ -11994,6 +12314,7 @@ impl Parser {
                                         value_type: crate::kernel::CType::Int32,
                                         volatile: false,
                                         pointee_constant: false,
+                                        access_class: None,
                                         source: Default::default(),
                                     }
                                 }
@@ -12555,6 +12876,7 @@ impl Parser {
                         value_type,
                         volatile: false,
                         pointee_constant: false,
+                        access_class: None,
                         source: Default::default(),
                     },
                 ));
@@ -12570,6 +12892,7 @@ impl Parser {
                     value_type,
                     volatile: false,
                     pointee_constant: false,
+                    access_class: None,
                     source: Default::default(),
                 },
             });
@@ -13247,7 +13570,7 @@ impl Parser {
                     self.position += 1;
                     let index = self.parse_ensure_expression()?;
                     self.expect(Token::RBracket)?;
-                    expression = C0Expression::Index(Box::new(expression), Box::new(index));
+                    expression = C0Expression::Index(Box::new(expression), Box::new(index), None);
                 }
                 Some(Token::Arrow | Token::Dot) => {
                     self.position += 1;
@@ -13255,7 +13578,7 @@ impl Parser {
                     let base = expression;
                     expression = self
                         .resolve_c0_field_load(base.clone(), &field_name)?
-                        .unwrap_or_else(|| C0Expression::Load(Box::new(base)));
+                        .unwrap_or_else(|| C0Expression::Load(Box::new(base), None));
                 }
                 _ => unreachable!("postfix expression token checked above"),
             }
@@ -13277,6 +13600,7 @@ impl Parser {
                     C0Expression::Index(
                         Box::new(carrier),
                         Box::new(C0Expression::Int32Literal(0)),
+                        None,
                     )
                 })
             }
@@ -13835,6 +14159,7 @@ fn lowered_field_expression(pointer: CExpression, field: &ResolvedField) -> CExp
             value_type: field.c_type.to_kernel_type(),
             volatile: false,
             pointee_constant: field.pointee_constant,
+            access_class: None,
             source: Default::default(),
         }
     }
@@ -14314,4 +14639,17 @@ fn composite_body_child_slots(body: &CompositeResourceBody) -> BTreeSet<String> 
             _ => None,
         })
         .collect()
+}
+
+/// Whether `expression` does `+`, `-`, `*` or negation at its top, looking
+/// through `old`.
+fn has_arithmetic_spine(expression: &ContractExpression) -> bool {
+    match expression {
+        ContractExpression::Add(..)
+        | ContractExpression::Subtract(..)
+        | ContractExpression::Multiply(..)
+        | ContractExpression::Negate(_) => true,
+        ContractExpression::Old(inner) => has_arithmetic_spine(inner),
+        _ => false,
+    }
 }

@@ -250,6 +250,19 @@ impl SnapshotLabels {
         labels
     }
 
+    /// Restore the selected proof's source bindings after the verifier thread
+    /// has unwound. Current-state registration below still distinguishes a
+    /// reassigned parameter from its entry value.
+    pub(crate) fn register_naming(&mut self, binding: ParameterBinding<'_>) {
+        let names = Self::naming(binding);
+        self.pointer_sources.extend(names.pointer_sources);
+        self.source_names.extend(names.source_names);
+        self.source_types.extend(names.source_types);
+        if self.naming.is_none() {
+            self.naming = names.naming;
+        }
+    }
+
     pub(crate) fn register_current_state(&mut self, state: &CState) {
         let (names, values) = crate::surface::diagnostics::local_naming_tables(state);
         let current = Self::naming(ParameterBinding::new(&names, &values));
@@ -422,6 +435,11 @@ impl SnapshotLabels {
 
     pub(crate) fn source_name(&mut self, variable: Variable, name: String) {
         self.source_names.entry(variable).or_insert(name);
+    }
+
+    /// An explicit proof binding takes precedence over a compiler temporary.
+    pub(crate) fn immutable_source_name(&mut self, variable: Variable, name: String) {
+        self.source_names.insert(variable, name);
     }
 
     /// Names the `Integer` variable `variable` with `name`, when nothing named
@@ -656,7 +674,7 @@ pub(crate) fn render_memory_history_check(
         labels.state_phrase(memory)
     };
     Some(format!(
-        "memory-history check stops at {snapshot}:\n    store: {} bytes at {written}\n    read range checked: {bytes} bytes at {read}",
+        "memory-history check stops at {snapshot}:\n    store: {} bytes at {written}\n    read range checked: {bytes} bytes at {read}\n    supplemental history explanation: equality and ownership facts from the failed check are not used by this walk",
         written_bytes,
     ))
 }
@@ -840,6 +858,40 @@ pub(in crate::surface) fn render_resource_facts_diagnostic(
     });
     text.push_str(&labels.trace_legend());
     text
+}
+
+/// A resource list spelled with the report's own label set and no legend, so
+/// a placeholder in a hidden record (`record { first.v: <unnamed A> }`) is the
+/// same value the report's pure facts call `<unnamed A>`. The caller appends
+/// the shared legend once.
+pub(in crate::surface) fn render_resource_facts_labeled(
+    facts: &[CResourceFact],
+    labels: &mut SnapshotLabels,
+) -> String {
+    crate::surface::diagnostics::describe_bounded_list(facts, |fact| {
+        render_resource_fact_spelled(fact, labels)
+    })
+}
+
+/// One instance of `name` with its hidden record in the source spelling a
+/// resource list uses, `pair(p) record { first.v: <unnamed A> }`; `None` when
+/// the schema is a resource's own declared fields.
+pub(in crate::surface) fn render_hidden_record_instance_labeled(
+    name: &str,
+    arguments: &[crate::kernel::AlgebraicValue],
+    schema: &[(String, crate::kernel::ResourceFieldType)],
+    fields: &[crate::kernel::AlgebraicValue],
+    labels: &mut SnapshotLabels,
+) -> Option<String> {
+    let record = surface::source_hidden_record(schema, fields, labels)?;
+    let application = surface::source_resource(
+        &crate::kernel::CResource::Composite {
+            name: name.to_owned(),
+            arguments: arguments.into(),
+        },
+        labels,
+    );
+    Some(format!("{application} {record}"))
 }
 
 pub(in crate::surface) fn render_resource_diagnostic(

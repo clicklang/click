@@ -1058,6 +1058,11 @@ struct ProofDiagnosticProofState(
     // function outcome.
     Option<CValue>,
     Vec<crate::kernel::ReadResolutionDiagnostic>,
+    // The instance a refused `fold` proposed, when it keeps a hidden record,
+    // so the refusal shows the record its failed body fact reads.
+    Option<Arc<crate::kernel::ResourceInstance>>,
+    &'static str,
+    (Vec<syntax::C0Parameter>, Vec<CExpression>),
 );
 
 fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
@@ -1168,6 +1173,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         &self,
         labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
     ) {
+        labels.register_naming(ParameterBinding::new(&self.13.0, &self.13.1));
         for (variable, name) in &self.2 {
             labels.source_name(*variable, name.clone());
         }
@@ -1182,7 +1188,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
             if let ContractExpression::CFragment(CExpression::Value(value)) = expression
                 && let Some(variable) = diagnostic_value_variable(value)
             {
-                labels.source_name(variable, name.clone());
+                labels.immutable_source_name(variable, name.clone());
                 labels.source_type(variable, value.c_type());
             }
         }
@@ -1203,10 +1209,12 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         if let Some(branch) = self.0.state().open_branches().get(self.0.focused_branch())
             && let Some(execution) = branch.state.execution.as_deref()
         {
-            labels.register_current_state(&execution.core.state);
-            for (name, value) in execution.core.state.locals().object_values() {
-                if let Some(variable) = diagnostic_value_variable(value) {
-                    labels.source_name(variable, name.to_string());
+            if self.3.is_none() {
+                labels.register_current_state(&execution.core.state);
+                for (name, value) in execution.core.state.locals().object_values() {
+                    if let Some(variable) = diagnostic_value_variable(value) {
+                        labels.source_name(variable, name.to_string());
+                    }
                 }
             }
             register_recorded_snapshot_names(labels, &execution.presentation.recorded_snapshots);
@@ -1223,6 +1231,10 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
             .map(|(label, fact, _)| (*label, fact.as_ref()))
     }
 
+    fn proposed_hidden_record(&self) -> Option<&crate::kernel::ResourceInstance> {
+        self.11.as_deref()
+    }
+
     fn memory_history(
         &self,
     ) -> Option<&crate::surface::proof_diagnostics::MemoryHistoryDiagnostic> {
@@ -1231,6 +1243,22 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
 
     fn read_resolutions(&self) -> &[crate::kernel::ReadResolutionDiagnostic] {
         &self.10
+    }
+
+    fn proof_context_kind(&self) -> Option<&str> {
+        Some(self.12)
+    }
+
+    fn resources(&self) -> &[CResourceFact] {
+        if let Some(state) = &self.3 {
+            return state.resources().facts();
+        }
+        self.0
+            .state()
+            .open_branches()
+            .get(self.0.focused_branch())
+            .and_then(|branch| branch.state.execution.as_deref())
+            .map_or(&[], |execution| execution.core.state.resources().facts())
     }
 
     fn kernel_goal(&self) -> Option<&Proposition> {
@@ -1456,6 +1484,7 @@ impl Proof<'_> {
         ClickError::with_diagnostic(
             message.clone(),
             crate::surface::proof_diagnostics::ProofFailureDiagnostic {
+                checks: None,
                 origin: crate::surface::proof_diagnostics::ProofDiagnosticOrigin {
                     stage: "return-fold certification".into(),
                     location: self.claim_label().to_owned(),
@@ -1703,7 +1732,13 @@ impl Proof<'_> {
                 // live locals still name the values their goals contain.
                 // CState shares its persistent storage; no environment is copied.
                 ProofContext::FixedState(context) => Some(context.fixed_state.state.clone()),
-                _ => None,
+                // The execution branch may still be the pre-execution root.
+                // An outcome goal carries the authoritative post-state,
+                // including permissions consumed or produced by its calls.
+                ProofContext::Execution(_) => self
+                    .outcome_fixed_state_view()
+                    .map(|view| view.fixed_state.state.clone()),
+                ProofContext::Pure(_) => None,
             },
             None,
             None,
@@ -1712,6 +1747,9 @@ impl Proof<'_> {
             source_types,
             result.cloned(),
             Vec::new(),
+            None,
+            self.proof_context_description(),
+            self.diagnostic_naming_tables(),
         )
     }
 }
@@ -2679,6 +2717,30 @@ impl<'a> Proof<'a> {
         self.goal().ok_or_else(|| self.step_error(message))
     }
 
+    fn proof_context_description(&self) -> &'static str {
+        match self.context.as_ref() {
+            ProofContext::Pure(_) => "pure proposition proof",
+            ProofContext::FixedState(_) => "fixed-state proposition proof",
+            ProofContext::Execution(_) if self.goal().is_some() => {
+                "proposition proof at a fixed C execution state"
+            }
+            ProofContext::Execution(_) => "C execution proof",
+        }
+    }
+
+    pub(in crate::surface::proof) fn unsupported_operation_error(&self, name: &str) -> ClickError {
+        let context = self.proof_context_description();
+        let reason =
+            if self.goal().is_some() && matches!(name, "execute" | "execute_until" | "step") {
+                "this proof establishes a proposition; C execution cannot advance inside it"
+            } else {
+                "this operation is not available in this proof context"
+            };
+        self.step_error(format!(
+            "unsupported proof operation `{name}` in a {context}: {reason}"
+        ))
+    }
+
     fn require_execution_frontier(&self, operation: &str) -> Result<(), ClickError> {
         matches!(self.focused_obligation(), Some(Obligation::Frontier(_)))
             .then_some(())
@@ -2719,6 +2781,18 @@ impl<'a> Proof<'a> {
         self.step_error_with_details(message, comparison, requirement, None, Vec::new())
     }
 
+    /// A refused `fold` of an instance that keeps a hidden record: the
+    /// failed body fact, with the record the fold proposed beside it.
+    pub(in crate::surface::proof) fn step_error_with_proposed_record(
+        &self,
+        message: impl Into<String>,
+        comparison: Option<crate::surface::proof_trace::ChildArgumentTrace>,
+        requirement: Option<(&'static str, Box<Proposition>, Option<String>)>,
+        proposed: Option<Arc<crate::kernel::ResourceInstance>>,
+    ) -> ClickError {
+        self.step_error_with_state(message, comparison, requirement, None, Vec::new(), proposed)
+    }
+
     fn step_error_with_details(
         &self,
         message: impl Into<String>,
@@ -2727,12 +2801,32 @@ impl<'a> Proof<'a> {
         rejected: Option<Arc<crate::kernel::proof::RejectedResourceRewriteFact>>,
         read_resolutions: Vec<crate::kernel::ReadResolutionDiagnostic>,
     ) -> ClickError {
+        self.step_error_with_state(
+            message,
+            comparison,
+            requirement,
+            rejected,
+            read_resolutions,
+            None,
+        )
+    }
+
+    fn step_error_with_state(
+        &self,
+        message: impl Into<String>,
+        comparison: Option<crate::surface::proof_trace::ChildArgumentTrace>,
+        requirement: Option<(&'static str, Box<Proposition>, Option<String>)>,
+        rejected: Option<Arc<crate::kernel::proof::RejectedResourceRewriteFact>>,
+        read_resolutions: Vec<crate::kernel::ReadResolutionDiagnostic>,
+        proposed: Option<Arc<crate::kernel::ResourceInstance>>,
+    ) -> ClickError {
         let reason = message.into();
         let mut diagnostic_state = self.diagnostic_state();
         diagnostic_state.4 = comparison;
         diagnostic_state.5 = requirement;
         diagnostic_state.7 = rejected;
         diagnostic_state.10 = read_resolutions;
+        diagnostic_state.11 = proposed;
         let location = self
             .site
             .path()
@@ -2744,6 +2838,7 @@ impl<'a> Proof<'a> {
             reason
         );
         let diagnostic = crate::surface::proof_diagnostics::ProofFailureDiagnostic {
+            checks: None,
             origin: crate::surface::proof_diagnostics::ProofDiagnosticOrigin {
                 stage: "proof step".to_owned(),
                 location,
@@ -2772,6 +2867,7 @@ impl<'a> Proof<'a> {
             .path()
             .unwrap_or_else(|| format!("checked step {}", self.node.depth + 1));
         let diagnostic = crate::surface::proof_diagnostics::ProofFailureDiagnostic {
+            checks: None,
             origin: crate::surface::proof_diagnostics::ProofDiagnosticOrigin {
                 stage: "proof step".to_owned(),
                 location,

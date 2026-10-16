@@ -3464,6 +3464,29 @@ impl ResourceContext {
             })
     }
 
+    /// The live owned support a projected view occurrence was published
+    /// from, when `occurrence` is such a projection. A projection carries no
+    /// loan of its own: its authority is the exact owned occurrence it is
+    /// indexed under, so a read it covers is a read of that owner's memory.
+    /// Answered by the occurrence's own entry, without scanning the frame.
+    pub(crate) fn owned_projection_support(
+        &self,
+        occurrence: ResourceOccurrenceId,
+    ) -> Option<(ResourceOccurrenceId, &CResourceFact)> {
+        let entry = self.storage.entry_by_occurrence.get(&occurrence)?;
+        let support = self.storage.supported_by.get(entry)?;
+        let support_occurrence = *self.storage.support_occurrence_by_projection.get(entry)?;
+        (support.is_own()
+            && self
+                .storage
+                .entry_by_occurrence
+                .get(&support_occurrence)
+                .is_some_and(|support_entry| {
+                    self.storage.facts.get(support_entry) == Some(support)
+                }))
+        .then_some((support_occurrence, support))
+    }
+
     /// Validate every projection indexed under one exact support occurrence.
     /// The reverse index bounds this check by the affected support rather than
     /// scanning unrelated resources in the frame.
@@ -4639,6 +4662,25 @@ impl ResourceContext {
             .copied()
             .filter(|entry| contains(self.fact(*entry).resource(), &other_resource))
             .collect::<BTreeSet<_>>();
+        // No owner in `other`'s own block: its owner can live in a block an
+        // exact pointer equality identifies with `other`'s address (a fresh
+        // symbolic block equal to a parameter's address, say). Only then
+        // walk that equality component, so queries the block answers keep
+        // their cost.
+        let excluded = if excluded.is_empty() {
+            let start = other.start_pointer();
+            [other.base(), &start]
+                .into_iter()
+                .flat_map(|pointer| assumptions.pointer_equality_component(pointer))
+                .filter(|(alias, _)| alias.block != other.base().block)
+                .flat_map(|(alias, _)| {
+                    self.owned_memory_candidates_at(&alias.block, &alias, assumptions)
+                })
+                .filter(|entry| contains(self.fact(*entry).resource(), &other_resource))
+                .collect::<BTreeSet<_>>()
+        } else {
+            excluded
+        };
         if excluded.is_empty() {
             return Vec::new();
         }
@@ -6401,6 +6443,156 @@ impl ResourceContext {
             return Some(self);
         }
         None
+    }
+
+    /// Rejoins each returned owned memory piece in `seeds` with the owned
+    /// pieces that abut it, after a call returned the piece it borrowed.
+    ///
+    /// Only the piece's neighbours in the constant-range index are candidates
+    /// (the same probe the composition check makes), so the work is the
+    /// rejoined chain's, not the block's: every parameter object shares the
+    /// external argument block. A merged owner's supported projections and
+    /// cached expansions are read through the support indexes and restored
+    /// while their owner survives; a projection of an owner merged away is
+    /// dropped with it, since the merged owner supplies the same view.
+    pub(crate) fn rejoined_memory_around(
+        mut self,
+        seeds: &[CResourceFact],
+        assumptions: &PureFactContext,
+    ) -> Self {
+        for seed in seeds {
+            if seed.memory_own_range().is_none() {
+                continue;
+            }
+            let Some(mut entry) = self.storage.index.exact.get(seed).and_then(|entries| {
+                entries
+                    .iter()
+                    .copied()
+                    .find(|entry| self.storage.supported_by.get(entry).is_none())
+            }) else {
+                continue;
+            };
+            while let Some((neighbour, merged)) = self.abutting_owned_memory(entry, assumptions) {
+                let mut supported = Vec::new();
+                let mut expansions = Vec::new();
+                self.collect_removed_support(entry, &mut supported, &mut expansions);
+                self.collect_removed_support(neighbour, &mut supported, &mut expansions);
+                self.remove_entry(entry);
+                if self.storage.facts.contains_key(&neighbour) {
+                    self.remove_entry(neighbour);
+                }
+                entry = self.storage.next_entry_id;
+                self.insert_fact(merged);
+                self = self
+                    .restore_supported_projection_pairs(supported)
+                    .restore_cached_support_expansions(expansions);
+            }
+        }
+        self
+    }
+
+    /// The owned memory piece next to `entry` in the constant-range index
+    /// that the pair rule merges with it, and the merged fact.
+    fn abutting_owned_memory(
+        &self,
+        entry: ResourceEntryId,
+        assumptions: &PureFactContext,
+    ) -> Option<(ResourceEntryId, CResourceFact)> {
+        let fact = self.fact(entry);
+        let range = fact.memory_own_range()?;
+        let (Some(start), Some(end)) = signed_range_endpoints(range) else {
+            return None;
+        };
+        let key = (range.base().clone(), true, start, end);
+        let index = &self.storage.index.concrete_memory;
+        let before = index
+            .get_less_than(&key)
+            .filter(|(candidate, _)| candidate.0 == key.0 && candidate.1)
+            .and_then(|(_, entries)| entries.iter().next_back().copied());
+        let after = index
+            .get_greater_than(&key)
+            .filter(|(candidate, _)| candidate.0 == key.0 && candidate.1)
+            .and_then(|(_, entries)| entries.iter().next().copied());
+        [before, after]
+            .into_iter()
+            .flatten()
+            .filter(|candidate| {
+                *candidate != entry && self.storage.supported_by.get(candidate).is_none()
+            })
+            .find_map(|candidate| {
+                crate::instrumentation::record_deterministic_work(1);
+                normalize_resource_fact_pair(fact, self.fact(candidate), assumptions)
+                    .map(|merged| (candidate, merged))
+            })
+    }
+
+    fn supported_projection_pair(
+        &self,
+        entry: ResourceEntryId,
+        support: &CResourceFact,
+    ) -> (
+        Option<ResourceOccurrenceId>,
+        CResourceFact,
+        CResourceFact,
+        Option<ResourceSupportMetadata>,
+    ) {
+        (
+            self.storage
+                .support_occurrence_by_projection
+                .get(&entry)
+                .copied(),
+            support.clone(),
+            self.fact(entry).clone(),
+            self.storage
+                .support_metadata_by_projection
+                .get(&self.occurrence(entry))
+                .cloned(),
+        )
+    }
+
+    /// The supported projections and cached expansion that removing `entry`
+    /// drops: its own occurrence's, and those of the projections that cascade
+    /// with it (`remove_entry`), found through the support-occurrence index.
+    fn collect_removed_support(
+        &self,
+        entry: ResourceEntryId,
+        supported: &mut Vec<(
+            Option<ResourceOccurrenceId>,
+            CResourceFact,
+            CResourceFact,
+            Option<ResourceSupportMetadata>,
+        )>,
+        expansions: &mut Vec<(ResourceOccurrenceId, Vec<CResourceFact>)>,
+    ) {
+        let mut pending = vec![entry];
+        let mut visited = BTreeSet::new();
+        while let Some(current) = pending.pop() {
+            if !visited.insert(current) || !self.storage.facts.contains_key(&current) {
+                continue;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            let occurrence = self.occurrence(current);
+            if let Some(expansion) = self
+                .storage
+                .expansions_by_support_occurrence
+                .get(&occurrence)
+            {
+                expansions.push((occurrence, expansion.as_ref().clone()));
+            }
+            let Some(projections) = self
+                .storage
+                .projections_by_support_occurrence
+                .get(&occurrence)
+            else {
+                continue;
+            };
+            for projection in projections.iter().copied() {
+                if let Some(support) = self.storage.supported_by.get(&projection) {
+                    supported.push(self.supported_projection_pair(projection, support));
+                }
+                pending.push(projection);
+            }
+        }
     }
 
     /// Normalizes only the resource buckets affected by `seeds`.
@@ -10712,7 +10904,7 @@ mod support_removal_tests {
             .store(short_pointer.clone(), int16(0))
             .store(
                 wide_pointer.clone(),
-                CValue::Float64(Bitvector32Term::Constant(0)),
+                CValue::Float64(Bitvector32Term::UInt64Constant(0)),
             );
         let short_load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&memory),

@@ -2,8 +2,8 @@ use super::ResourceReference;
 use super::loans::{
     CheckedLoanCallEvidence, CompositeLoanBacking, CompositeProjectionEvidence, LoanId, LoanLedger,
     LoanRefusal, LoanRefusalOperation, LoanRefusalSubject, LoanViewBinding, LoanViewBindings,
-    StableViewTransferPlan, append_checked_loan_evidence, concat_checked_loan_evidence,
-    empty_checked_loan_evidence_sequence, plan_stable_view_transfer_with_protocol_effect,
+    StableViewTransferPlan, append_checked_loan_evidence, empty_checked_loan_evidence_sequence,
+    plan_stable_view_transfer_with_protocol_effect,
 };
 use super::model_fields::{ModelFieldOrigin, ModelMint, algebraic_value_variable};
 use super::prelude::*;
@@ -23,12 +23,34 @@ fn execute_c_function_body_paths(
     execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
-    let initial = execute_c_statement_paths(
+    execute_function_body_paths(
+        state,
+        function,
+        assumptions,
+        execution_context,
+        budget,
+        &mut super::eval::StatementJudgment::Executes,
+    )
+}
+
+/// A function body under `judgment`, following its forward `goto`s: each
+/// jump continues from the target's remaining statements, at most once per
+/// target along a path.
+fn execute_function_body_paths(
+    state: &CState,
+    function: &CFunction,
+    assumptions: &PureFactContext,
+    execution_context: CExecutionContext<'_>,
+    budget: &mut ExecutionBudget,
+    judgment: &mut super::eval::StatementJudgment<'_, '_>,
+) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+    let initial = super::eval::execute_statement_paths(
         state,
         function.body(),
         assumptions,
         execution_context,
         budget,
+        judgment,
     )?;
     if function.control_target_count() == 0 {
         return Ok(initial);
@@ -58,7 +80,7 @@ fn execute_c_function_body_paths(
             completed.push(invalid_goto_path(path, "goto control flow is not forward"));
             continue;
         }
-        let suffix = execute_c_statement_paths_with_prefix(
+        let suffix = super::eval::execute_statement_paths_with_prefix(
             jump_state,
             &target.remaining,
             assumptions,
@@ -67,75 +89,8 @@ fn execute_c_function_body_paths(
             &path.obligations,
             &path.loan_evidence,
             budget,
+            judgment,
         )?;
-        pending.extend(
-            suffix
-                .into_iter()
-                .map(|suffix_path| (suffix_path, jump_count + 1)),
-        );
-    }
-    budget.check_path_width(completed.len())?;
-    Ok(completed)
-}
-
-fn execute_c_function_body_verification_paths(
-    state: &CState,
-    function: &CFunction,
-    assumptions: &PureFactContext,
-    execution_context: CExecutionContext<'_>,
-    budget: &mut ExecutionBudget,
-    variables: &mut KernelVariableGenerator,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
-    let initial = execute_c_statement_verification_paths(
-        state,
-        function.body(),
-        assumptions,
-        execution_context,
-        budget,
-        variables,
-    )?;
-    if function.control_target_count() == 0 {
-        return Ok(initial);
-    }
-    let mut pending = initial
-        .into_iter()
-        .map(|path| (path, 0usize))
-        .collect::<Vec<_>>();
-    let mut completed = Vec::new();
-    while let Some((path, jump_count)) = pending.pop() {
-        let CStatementOutcome::Jump {
-            target,
-            state: jump_state,
-        } = &path.outcome
-        else {
-            completed.push(path);
-            continue;
-        };
-        let Some(target) = function.control_target(*target) else {
-            completed.push(invalid_goto_path(
-                path,
-                "goto refers to an unknown function target",
-            ));
-            continue;
-        };
-        if jump_count >= function.control_target_count() {
-            completed.push(invalid_goto_path(path, "goto control flow is not forward"));
-            continue;
-        }
-        let mut suffix = execute_c_statement_verification_paths_with_prefix(
-            jump_state,
-            &target.remaining,
-            assumptions,
-            execution_context,
-            &path.facts,
-            &path.obligations,
-            budget,
-            variables,
-        )?;
-        for suffix_path in &mut suffix {
-            suffix_path.loan_evidence =
-                concat_checked_loan_evidence(&path.loan_evidence, &suffix_path.loan_evidence);
-        }
         pending.extend(
             suffix
                 .into_iter()
@@ -750,6 +705,31 @@ fn with_canonical_borrowed_pointer_memory(
     state.clone().with_memory(memory)
 }
 
+/// Rejoins each owned memory piece this call borrowed and returned with the
+/// caller's pieces that abut it, as a recovered loan's return rejoins its
+/// block (`StableViewTransferPlan::recover_stable_views`). A call that lent
+/// nothing else returns before that recovery; without this its returned
+/// piece would stay split from the caller's residue, so a later typed access
+/// would depend on whether the call also borrowed something. Only the
+/// returned pieces' neighbours are read
+/// (`ResourceContext::rejoined_memory_around`).
+fn rejoin_borrowed_memory(
+    resources: ResourceContext,
+    transfer: &CFunctionResourceTransfer,
+    assumptions: &PureFactContext,
+) -> ResourceContext {
+    let seeds = transfer
+        .borrowed_inputs
+        .iter()
+        .filter(|input| input.fact.memory_own_range().is_some())
+        .map(|input| input.fact.clone())
+        .collect::<Vec<_>>();
+    if seeds.is_empty() {
+        return resources;
+    }
+    resources.rejoined_memory_around(&seeds, assumptions)
+}
+
 /// `output_assumptions` carries the call's certified output facts (the
 /// callee's ensures) on top of `assumptions`, for matching a produced
 /// composite's viewed pieces, which are evaluated at the post-state, against
@@ -781,7 +761,7 @@ fn recover_candidate_stable_view_resources(
             )));
         }
         return Ok((
-            return_resources,
+            rejoin_borrowed_memory(return_resources, transfer, assumptions),
             caller_state.loan_ledger().cloned(),
             caller_state.loan_participant(),
             caller_state.loan_view_bindings().clone(),
@@ -812,7 +792,7 @@ fn recover_candidate_stable_view_resources(
         && transfer.produced_borrowing_pieces.is_empty()
     {
         return Ok((
-            return_resources,
+            rejoin_borrowed_memory(return_resources, transfer, assumptions),
             caller_state.loan_ledger().cloned(),
             caller_state.loan_participant(),
             caller_state.loan_view_bindings().clone(),
@@ -1508,6 +1488,7 @@ pub(super) fn execute_c_function_paths(
 /// boundary, so the views the contract declares become loans of this
 /// application and recovery returns them.
 #[allow(clippy::too_many_arguments)]
+/// `CFunctionExecutes` for `function` applied to `arguments`.
 pub(super) fn execute_c_function_paths_with_contract_resources(
     state: &CState,
     function: &CFunction,
@@ -1518,223 +1499,17 @@ pub(super) fn execute_c_function_paths_with_contract_resources(
     prepare_contract_resources: bool,
     defer_conditional_resource_effect: bool,
 ) -> ExecutionResult<Vec<CFunctionPath>> {
-    budget.consume_function_call()?;
-    if arguments.len() != function.parameters().len() {
-        return Ok(vec![CFunctionPath::new(
-            CFunctionOutcome::RuntimeError(CRuntimeError::WrongArity {
-                expected: function.parameters().len(),
-                actual: arguments.len(),
-            }),
-            Vec::new().into(),
-            Vec::new(),
-        )]);
-    }
-
-    let mut paths = Vec::new();
-    for arguments_path in evaluate_c_arguments_paths(
+    execute_function_paths(
         state,
+        function,
         arguments,
         assumptions,
+        execution_context,
         budget,
-        Some(execution_context.environment),
-    )? {
-        if let Some(outcome) = arguments_path.outcome {
-            paths.push(CFunctionPath::new(
-                outcome,
-                arguments_path.facts,
-                arguments_path.obligations,
-            ));
-            continue;
-        }
-
-        let path_assumptions = assumptions_with_path_context(
-            assumptions,
-            &arguments_path.facts,
-            &arguments_path.obligations,
-        );
-        if let Some(undefined_behavior) = freed_pointer_argument_conversion(
-            state,
-            function.contract_interface(),
-            &arguments_path.values,
-            &path_assumptions,
-        ) {
-            paths.push(CFunctionPath::new(
-                CFunctionOutcome::UndefinedBehavior(undefined_behavior),
-                arguments_path.facts,
-                arguments_path.obligations,
-            ));
-            continue;
-        }
-        let Some((argument_values, argument_obligations)) = coerce_c_function_arguments(
-            function,
-            &arguments_path.values,
-            &arguments_path.obligations,
-            &path_assumptions,
-        ) else {
-            paths.push(CFunctionPath::new(
-                CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
-                    argument_binding_error(function, &arguments_path.values).to_string(),
-                )),
-                arguments_path.facts,
-                arguments_path.obligations,
-            ));
-            continue;
-        };
-        let Some(callee_state) = bind_c_function_arguments(state, function, &argument_values)
-        else {
-            paths.push(CFunctionPath::new(
-                CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
-                    argument_binding_error(function, &argument_values).to_string(),
-                )),
-                arguments_path.facts,
-                argument_obligations,
-            ));
-            continue;
-        };
-
-        let body_assumptions = assumptions_with_path_context(
-            assumptions,
-            &arguments_path.facts,
-            &argument_obligations,
-        );
-        let (callee_state, resource_transfer) = if prepare_contract_resources {
-            // The contract boundary of a whole-function judgment: the body
-            // runs from the resources the contract declares, consumed
-            // definitionally. Lending is the call site's job (the planner in
-            // `execute_c_function_call_paths`) and the proof's entry
-            // construction (`c_state_with_borrowed_contract_inputs`); a
-            // judgment over a body that already happened must not lend again.
-            let resource_transfer = match prepare_function_resource_transfer(
-                state,
-                &callee_state,
-                function,
-                &body_assumptions,
-                budget,
-                true,
-                ResourceTransitionPurpose::FunctionBoundary,
-            )? {
-                Ok(resource_transfer) => resource_transfer,
-                Err(error) => {
-                    paths.push(CFunctionPath::new(
-                        CFunctionOutcome::RuntimeError(error),
-                        arguments_path.facts,
-                        argument_obligations,
-                    ));
-                    continue;
-                }
-            };
-            (
-                callee_state_with_resource_transfer(callee_state, &resource_transfer),
-                Some(resource_transfer),
-            )
-        } else {
-            (callee_state, None)
-        };
-        for body_path in execute_c_function_body_paths(
-            &callee_state,
-            function,
-            &body_assumptions,
-            execution_context,
-            budget,
-        )? {
-            let Some((mut facts, obligations)) = merge_execution_pure_facts_and_obligations(
-                &arguments_path.facts,
-                &argument_obligations,
-                &body_path.facts,
-                &body_path.obligations,
-                assumptions,
-            ) else {
-                continue;
-            };
-            if let Some(parameter) = modified_by_value_aggregate_parameter_with_current_ensure(
-                &callee_state,
-                &body_path.outcome,
-                function,
-            ) {
-                paths.push(CFunctionPath::new(CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
-                        format!(
-                            "by-value aggregate parameter `{parameter}` is modified, but a postcondition reads its current state"
-                        ),
-                    )), facts, obligations));
-                continue;
-            }
-            let return_assumptions =
-                assumptions_with_path_context(assumptions, &facts, &obligations);
-            let (outcome, obligations, loan_evidence) = if defer_conditional_resource_effect {
-                // This is the body-only candidate used to assemble a checked
-                // proof frontier. Its function-boundary transition is applied
-                // by `checked_contract_exit_outcome_with_boundary_transfer`,
-                // which records an explicit
-                // deferred marker when a conditional produced effect is not
-                // decided by the proof entry facts.
-                without_loan_evidence(function_outcome_from_body(
-                    state,
-                    function,
-                    complete_void_fallthrough(function, body_path.outcome),
-                    obligations,
-                    &return_assumptions,
-                    None,
-                ))
-            } else if let Some(resource_transfer) = &resource_transfer {
-                if resource_transfer.stable_view_plan.is_some()
-                    || function_needs_outcome_resource_transfer(function)
-                {
-                    function_outcome_from_body_with_resource_transfer(
-                        state,
-                        function,
-                        complete_void_fallthrough(function, body_path.outcome),
-                        obligations,
-                        &return_assumptions,
-                        resource_transfer,
-                        &argument_values,
-                        true,
-                        budget,
-                    )?
-                } else if function_changes_declared_resource_quantities(function) {
-                    without_loan_evidence(function_outcome_from_body_changing_quantities(
-                        state,
-                        function,
-                        complete_void_fallthrough(function, body_path.outcome),
-                        obligations,
-                        &return_assumptions,
-                    )?)
-                } else {
-                    without_loan_evidence(function_outcome_from_body(
-                        state,
-                        function,
-                        complete_void_fallthrough(function, body_path.outcome),
-                        obligations,
-                        &return_assumptions,
-                        None,
-                    ))
-                }
-            } else {
-                without_loan_evidence(function_outcome_from_body(
-                    state,
-                    function,
-                    complete_void_fallthrough(function, body_path.outcome),
-                    obligations,
-                    &return_assumptions,
-                    None,
-                ))
-            };
-
-            append_string_literal_loadable_facts(function, &outcome, &mut facts);
-
-            paths.push(CFunctionPath {
-                outcome,
-                facts,
-                obligations,
-                loan_evidence: append_checked_loan_evidence(
-                    &body_path.loan_evidence,
-                    loan_evidence,
-                ),
-            });
-        }
-    }
-
-    budget.check_path_width(paths.len())?;
-    Ok(paths)
+        prepare_contract_resources,
+        defer_conditional_resource_effect,
+        &mut super::eval::StatementJudgment::Executes,
+    )
 }
 
 /// Refresh only caller slots named by the completed body's store events.
@@ -1765,6 +1540,7 @@ fn refresh_returned_local_bindings_from_stores(
     }
 }
 
+/// `CFunctionVerifies` for `function` applied to `arguments`.
 pub(super) fn execute_c_function_verification_paths(
     state: &CState,
     function: &CFunction,
@@ -1776,6 +1552,57 @@ pub(super) fn execute_c_function_verification_paths(
     prepare_contract_resources: bool,
     defer_conditional_resource_effect: bool,
 ) -> ExecutionResult<Vec<CFunctionPath>> {
+    execute_function_paths(
+        state,
+        function,
+        arguments,
+        assumptions,
+        execution_context,
+        budget,
+        prepare_contract_resources,
+        defer_conditional_resource_effect,
+        &mut super::eval::StatementJudgment::Verifies(variables),
+    )
+}
+
+/// Profiles `operation` under `name` when the verification judgment runs
+/// it; an execution's work is attributed to its caller.
+fn measured_under<T>(
+    verifies: bool,
+    function: &CFunction,
+    name: &str,
+    operation: impl FnOnce() -> T,
+) -> T {
+    if verifies {
+        crate::instrumentation::measure_operation(
+            function.name(),
+            "independent kernel execution",
+            name,
+            operation,
+        )
+    } else {
+        operation()
+    }
+}
+
+/// `function` applied to `arguments` under `judgment`: arguments are
+/// evaluated and bound, the contract's resources are prepared when the
+/// judgment is over a whole function, the body runs, and each body outcome
+/// becomes a function outcome at the boundary. The two judgments differ in
+/// one step, which says so: verification installs the recursion anchor of a
+/// function that declares a measure.
+fn execute_function_paths(
+    state: &CState,
+    function: &CFunction,
+    arguments: &[CExpression],
+    assumptions: &PureFactContext,
+    execution_context: CExecutionContext<'_>,
+    budget: &mut ExecutionBudget,
+    prepare_contract_resources: bool,
+    defer_conditional_resource_effect: bool,
+    judgment: &mut super::eval::StatementJudgment<'_, '_>,
+) -> ExecutionResult<Vec<CFunctionPath>> {
+    let verifies = matches!(judgment, super::eval::StatementJudgment::Verifies(_));
     budget.consume_function_call()?;
     if arguments.len() != function.parameters().len() {
         return Ok(vec![CFunctionPath::new(
@@ -1789,9 +1616,9 @@ pub(super) fn execute_c_function_verification_paths(
     }
 
     let mut paths = Vec::new();
-    for arguments_path in crate::instrumentation::measure_operation(
-        function.name(),
-        "independent kernel execution",
+    for arguments_path in measured_under(
+        verifies,
+        function,
         "verification argument evaluation",
         || {
             evaluate_c_arguments_paths(
@@ -1900,12 +1727,21 @@ pub(super) fn execute_c_function_verification_paths(
         // recursion anchor installed. The anchor is derived from the function
         // in hand, not from anything a caller supplies, and a function that
         // declares no measure gets the environment unchanged.
-        let anchored_environment = match crate::kernel::termination::c_function_recursion_anchor(
-            function,
-            &callee_state,
-            &body_assumptions,
-            budget,
-        ) {
+        //
+        // Execution runs the body as it is, so it has no anchor to install:
+        // a recursive call there executes, and the budget bounds it.
+        let anchor = match judgment {
+            super::eval::StatementJudgment::Verifies(_) => {
+                crate::kernel::termination::c_function_recursion_anchor(
+                    function,
+                    &callee_state,
+                    &body_assumptions,
+                    budget,
+                )
+            }
+            super::eval::StatementJudgment::Executes => Ok(None),
+        };
+        let anchored_environment = match anchor {
             Ok(Some(anchor)) => std::borrow::Cow::Owned(
                 execution_context
                     .environment
@@ -1922,27 +1758,19 @@ pub(super) fn execute_c_function_verification_paths(
                 continue;
             }
         };
-        let body_paths = crate::instrumentation::measure_operation(
-            function.name(),
-            "independent kernel execution",
-            "verification body execution",
-            || {
-                execute_c_function_body_verification_paths(
-                    &callee_state,
-                    function,
-                    &body_assumptions,
-                    CExecutionContext::new(&anchored_environment, execution_context.semantics),
-                    budget,
-                    variables,
-                )
-            },
-        )?;
+        let body_paths = measured_under(verifies, function, "verification body execution", || {
+            execute_function_body_paths(
+                &callee_state,
+                function,
+                &body_assumptions,
+                CExecutionContext::new(&anchored_environment, execution_context.semantics),
+                budget,
+                judgment,
+            )
+        })?;
         for body_path in body_paths {
-            let Some((mut facts, obligations)) = crate::instrumentation::measure_operation(
-                function.name(),
-                "independent kernel execution",
-                "verification fact merge",
-                || {
+            let Some((mut facts, obligations)) =
+                measured_under(verifies, function, "verification fact merge", || {
                     merge_execution_pure_facts_and_obligations(
                         &arguments_path.facts,
                         &argument_obligations,
@@ -1950,8 +1778,8 @@ pub(super) fn execute_c_function_verification_paths(
                         &body_path.obligations,
                         assumptions,
                     )
-                },
-            ) else {
+                })
+            else {
                 continue;
             };
             if let Some(parameter) = modified_by_value_aggregate_parameter_with_current_ensure(
@@ -3111,11 +2939,14 @@ fn execute_verified_function_applications_with_suspension(
             for argument in arguments {
                 collect_c_expression_bitvector_variables(argument, &mut existing_variables);
             }
-            collect_assumption_variables(assumptions, &mut existing_variables);
             existing_variables
         },
     );
-    let mut variables = KernelVariableGenerator::fresh_for_execution(existing_variables);
+    // The facts' variables are reserved by their ceiling rather than
+    // collected: collecting walked every fact, and every snapshot a fact
+    // names, at every call.
+    let mut variables = KernelVariableGenerator::fresh_for_execution(existing_variables)
+        .reserving_through(assumptions.execution_variable_ceiling());
     let memory_identity = variables.next_in(budget)?;
     let result_identity = variables.next_in(budget)?;
     let exceptional_payload_identity =
@@ -3562,9 +3393,9 @@ fn execute_verified_function_applications_with_suspension(
         // resources agree on its fresh fields.
         let mut produced_instances = BTreeMap::new();
         // Current arguments of a produced instance are read at return, where
-        // the contract's input instances still address cells their unmatched
-        // bodies owned (`produces after: state(region->arena)` beside a
-        // consumed region). These views come only from the contract's inputs
+        // the contract's input instances still address cells their decided
+        // arms or unmatched bodies owned (`produces after: state(region->arena)`
+        // beside a consumed region). These views come only from the contract's inputs
         // and are computed once. Entry arguments use entry_contract_state.
         let mut produced_argument_state: Option<CState> = None;
         for resource in interface.resource_ensures() {
@@ -3610,19 +3441,22 @@ fn execute_verified_function_applications_with_suspension(
             // original spec's reference arguments are captured separately.
             let instance_resource = instance_resource.with_resource_arguments(Vec::new());
             let argument_state = produced_argument_state.get_or_insert_with(|| {
-                let views = transfer
-                    .callee_resources
-                    .facts()
-                    .iter()
-                    .flat_map(|fact| {
-                        unmatched_instance_body_views(
-                            fact,
-                            interface.composite_resource_definitions(),
-                            &post_state,
-                            &effective_assumptions,
-                        )
-                    })
-                    .collect::<Vec<_>>();
+                // Use the same decided-arm read authority as ordinary return
+                // clauses, visiting only this call's inputs, never its frame.
+                let mut views = instance_arm_views(
+                    &transfer.callee_resources,
+                    interface.composite_resource_definitions(),
+                    &post_state,
+                    &effective_assumptions,
+                );
+                views.extend(transfer.callee_resources.facts().iter().flat_map(|fact| {
+                    unmatched_instance_body_views(
+                        fact,
+                        interface.composite_resource_definitions(),
+                        &post_state,
+                        &effective_assumptions,
+                    )
+                }));
                 if views.is_empty() {
                     post_state.clone()
                 } else {
@@ -10004,6 +9838,7 @@ fn candidate_composite_view_adapter(
     caller_state: &CState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
+    unestablished: &mut Option<Proposition>,
 ) -> ExecutionResult<Option<CompositeViewAdapter>> {
     let CResource::Composite { name, arguments } = required.resource() else {
         return Ok(None);
@@ -10037,15 +9872,32 @@ fn candidate_composite_view_adapter(
     {
         return Ok(None);
     }
-    if !composite_definition_facts_hold(definition, arguments, caller_state, assumptions, budget)? {
-        return Ok(None);
-    }
+    let mut gap = None;
+    let facts_hold = composite_definition_facts_hold(
+        definition,
+        arguments,
+        caller_state,
+        assumptions,
+        budget,
+        &mut gap,
+    )?;
+    // A backing below is owned authority the view would be assembled from.
+    // Where one exists but a body fact does not hold, the refusal names that
+    // fact; a caller with no backing has nothing to assemble, and its
+    // refusal stays the missing view.
+    let mut refuse_for_the_fact = || {
+        *unestablished = gap.take();
+        Ok(None)
+    };
     // The materialized form: the caller's own owners already cover the
     // frontier piecewise, so the head is exactly those facts under another
     // name and recovery gives them back unchanged.
     if let Some(remaining) = remove_frontier(resources.clone(), &frontier, assumptions)
         && let Ok(materialized) = remaining.try_compose_with_fact(head.clone(), assumptions)
     {
+        if !facts_hold {
+            return refuse_for_the_fact();
+        }
         return Ok(Some(CompositeViewAdapter {
             resources: materialized,
             head,
@@ -10096,6 +9948,9 @@ fn candidate_composite_view_adapter(
         };
         if checked_frontier_coverage(owner_frontier, &frontier, assumptions).is_none() {
             continue;
+        }
+        if !facts_hold {
+            return refuse_for_the_fact();
         }
         return Ok(Some(CompositeViewAdapter {
             resources: resources.clone(),
@@ -10175,12 +10030,17 @@ fn remove_frontier(
 /// in and must be available by the kernel's exact routes. There is no search
 /// here; a fact the caller has not established is a prompt refusal the proof
 /// can answer with an explicit step.
+/// Whether the body facts of `definition` hold for `arguments` in the
+/// caller's state. A body fact the caller has not established is recorded in
+/// `unestablished`, lowered at the caller's memory, so a refused assembly can
+/// name it as a refused `fold` does.
 fn composite_definition_facts_hold(
     definition: &CCompositeResourceDefinition,
     arguments: &[AlgebraicValue],
     caller_state: &CState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
+    unestablished: &mut Option<Proposition>,
 ) -> ExecutionResult<bool> {
     if definition.facts().is_empty() {
         return Ok(true);
@@ -10235,6 +10095,7 @@ fn composite_definition_facts_hold(
             || established.settles_exactly(&path.proposition)
             || resource_body_fact_is_established(&established, &path.proposition))
         {
+            *unestablished = Some(path.proposition.clone());
             return Ok(false);
         }
     }
@@ -10926,6 +10787,9 @@ fn prepare_contract_resource_transfer_unexplained(
                 "could not allocate stable-view callee participant".to_string(),
             )));
         };
+        // A viewed composite the caller would assemble from its owned
+        // pieces, mapped to the first body fact it has not established.
+        let mut assembly_gaps = BTreeMap::new();
         let composite_backings = if stable_requirements.iter().any(|requirement| {
             requirement.fact.is_view()
                 && matches!(requirement.fact.resource(), CResource::Composite { .. })
@@ -10950,6 +10814,7 @@ fn prepare_contract_resource_transfer_unexplained(
                         .view_occurrences_for_fact(&requirement.fact, assumptions)
                         .is_empty()
                 {
+                    let mut unestablished = None;
                     match candidate_composite_view_adapter(
                         &planning_resources,
                         &requirement.fact,
@@ -10957,6 +10822,7 @@ fn prepare_contract_resource_transfer_unexplained(
                         caller_state,
                         assumptions,
                         budget,
+                        &mut unestablished,
                     )? {
                         Some(adapter) => {
                             planning_resources = adapter.resources;
@@ -10964,7 +10830,12 @@ fn prepare_contract_resource_transfer_unexplained(
                             adapted = adapter.adapted;
                             restored = adapter.restored;
                         }
-                        None => continue,
+                        None => {
+                            if let Some(fact) = unestablished {
+                                assembly_gaps.insert(requirement.fact.clone(), fact);
+                            }
+                            continue;
+                        }
                     }
                 }
                 let Some((support, owned)) = planning_resources
@@ -11172,6 +11043,17 @@ fn prepare_contract_resource_transfer_unexplained(
                 {
                     return Ok(Err(CRuntimeError::MissingResource {
                         resource: Box::new(resource.clone()),
+                    }));
+                }
+                // A view the caller holds the pieces of, but could not
+                // assemble because a body fact is unproved: name that fact,
+                // as a refused `fold` does, rather than the missing loan.
+                if let super::loans::StableViewPlanError::MissingResource(resource) = &error
+                    && let Some(fact) = assembly_gaps.remove(resource)
+                {
+                    return Ok(Err(CRuntimeError::UnestablishedAssemblyFact {
+                        assembled: Box::new(resource.clone()),
+                        fact: Box::new(fact),
                     }));
                 }
                 if let Some(diagnostic) = error.loan_diagnostic(LoanRefusalOperation::Plan) {
@@ -16387,7 +16269,14 @@ pub(in crate::kernel) fn resource_clause_section_supply(
     // A matched instance supplies the cells of the arm this section's
     // premises select, and nothing when they select none (D7). The arm stays
     // folded either way: only its read authority is published here.
-    let mut views = instance_arm_views(&base, definitions, state, assumptions);
+    let mut views = supplied
+        .iter()
+        .filter_map(|fact| match fact.resource() {
+            CResource::Instance(instance) => Some(instance),
+            _ => None,
+        })
+        .flat_map(|instance| instance_arm_read_authority(instance, definitions, state, assumptions))
+        .collect::<Vec<_>>();
     // A control may contain an authority that generic composite expansion
     // cannot expose without a live population ledger. Its declared memory is
     // still readable through the folded clause, independently of that ledger.
@@ -16598,12 +16487,13 @@ pub(super) fn instance_arm_read_authority(
     state: &CState,
     assumptions: &PureFactContext,
 ) -> Vec<CResourceFact> {
-    let Some(definition) = definitions
-        .iter()
-        .find(|definition| definition.name() == instance.name())
-    else {
+    let Ok(index) = definitions.binary_search_by(|definition| {
+        crate::instrumentation::record_deterministic_work(1);
+        definition.name().cmp(instance.name())
+    }) else {
         return Vec::new();
     };
+    let definition = &definitions[index];
     let Some(body) = definition.matched.as_ref() else {
         return Vec::new();
     };

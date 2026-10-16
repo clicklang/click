@@ -45,59 +45,11 @@ function sized_context_three_expected(phase: SizedInsertContextThreePhase, node:
 }
 
 
-theorem sized_context_parent_word_black(ctx: SizedContext, parent: struct rb_node*, word: uint64) {
-    requires parent == sized_context_parent(ctx, 0);
-    requires word == address(parent) + 1;
-    ensures sized_context_parent_word(ctx, word) == 1 by {
-        match ctx {
-            SizedContext::Top => {
-                have parent == 0 by {
-                    rewrite(parent == sized_context_parent(ctx, 0));
-                    rewrite(ctx == SizedContext::Top);
-                    unfold(sized_context_parent(SizedContext::Top, 0)); normalize();
-                }
-                have word == address(0) + 1 by {
-                    rewrite(word == address(parent) + 1);
-                    rewrite(parent == 0); normalize();
-                }
-                rewrite(ctx == SizedContext::Top);
-                unfold(sized_context_parent_word(SizedContext::Top, word));
-                normalize() using { word == address(0) + 1; }
-            },
-            SizedContext::Left(a, ancestor, color, count, sibling, up) => {
-                have parent == a by {
-                    rewrite(parent == sized_context_parent(ctx, 0));
-                    rewrite(ctx == SizedContext::Left(a, ancestor, color, count, sibling, up));
-                    unfold(sized_context_parent(SizedContext::Left(a, ancestor, color, count, sibling, up), 0)); normalize();
-                }
-                have word == address(a) + 1 by {
-                    rewrite(a == parent); assumption();
-                }
-                rewrite(ctx == SizedContext::Left(a, ancestor, color, count, sibling, up));
-                unfold(sized_context_parent_word(SizedContext::Left(a, ancestor, color, count, sibling, up), word));
-                normalize() using { word == address(a) + 1; }
-            },
-            SizedContext::Right(a, ancestor, color, count, sibling, up) => {
-                have parent == a by {
-                    rewrite(parent == sized_context_parent(ctx, 0));
-                    rewrite(ctx == SizedContext::Right(a, ancestor, color, count, sibling, up));
-                    unfold(sized_context_parent(SizedContext::Right(a, ancestor, color, count, sibling, up), 0)); normalize();
-                }
-                have word == address(a) + 1 by {
-                    rewrite(a == parent); assumption();
-                }
-                rewrite(ctx == SizedContext::Right(a, ancestor, color, count, sibling, up));
-                unfold(sized_context_parent_word(SizedContext::Right(a, ancestor, color, count, sibling, up), word));
-                normalize() using { word == address(a) + 1; }
-            },
-        }
-    }
-}
-
 resource sized_insert_context_three_at(node: struct rb_node*, root: struct rb_root*) {
     field phase: SizedInsertContextThreePhase;
     field model: SizedTree;
     field context: SizedContext;
+    field whole_model: SizedTree;
     match phase {
         SizedInsertContextThreePhase::Before(g, p, above) => {
             owns link: sized_link_at(g, root, 3);
@@ -108,11 +60,11 @@ resource sized_insert_context_three_at(node: struct rb_node*, root: struct rb_ro
             fact model == sized_context_three_before(g, p, node, above);
         },
         SizedInsertContextThreePhase::After(g, p, above) => {
-            owns link: sized_link_at(p, root, 3);
-            owns tree: sized_at(p);
-            fact link.model == context;
+            owns root->rb_node;
+            owns whole: sized_at(root->rb_node);
             fact above == sized_context_parent(context, 0);
-            fact tree.model == model;
+            fact whole.model == whole_model;
+            fact sized_parent_is(whole.model, 0) == 1;
         },
     }
 }
@@ -123,6 +75,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
     owns state: sized_insert_context_three_at(node, root);
     requires sized_context_three_pending(state.phase) == 1;
     ensures state.context == old(state.context);
+    ensures state.whole_model == sized_plug(old(state.context), state.model);
     ensures state.phase == sized_context_three_finish(old(state.phase));
     ensures sized_shape(state.model) == sized_context_three_expected(old(state.phase), node);
 } by {
@@ -171,7 +124,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
             }
             let parent_tree = fold(sized_at(p), { model: SizedTree::Node(p, g, Color::Red, 2, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Empty) }, { metadata: p_size, left: focus, right: p_right });
             let tree = fold(sized_at(g), { model: old(state.model) }, { metadata: g_size, left: parent_tree, right: g_right });
-            let state = fold(sized_insert_context_three_at(node, root), { phase: SizedInsertContextThreePhase::Before(g, p, above), model: old(state.model), context: old(state.context) }, { tree: tree, link: link });
+            let state = fold(sized_insert_context_three_at(node, root), { phase: SizedInsertContextThreePhase::Before(g, p, above), model: old(state.model), context: old(state.context), whole_model: old(state.whole_model) }, { tree: tree, link: link });
             loop {
                 owns state: sized_insert_context_three_at(node, root);
                 decreases 0;
@@ -327,10 +280,46 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         unfold(sized_shape(SizedTree::Empty));
                         unfold(sized_context_three_after(g, p, node, above)); normalize();
                     }
+                    have rb_subtree_size(sized_context_three_after(g, p, node, above)) == 3 by {
+                        unfold(sized_context_three_after(g, p, node, above));
+                        unfold(rb_subtree_size(RbTree::Node(p, above, Color::Black, RbTree::Node(node, p, Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Node(g, p, Color::Red, RbTree::Empty, RbTree::Empty))));
+                        unfold(rb_subtree_size(RbTree::Node(node, p, Color::Red, RbTree::Empty, RbTree::Empty)));
+                        unfold(rb_subtree_size(RbTree::Node(g, p, Color::Red, RbTree::Empty, RbTree::Empty)));
+                        unfold(rb_subtree_size(RbTree::Empty)); normalize();
+                    }
+                    have to_integer(sized_value(checked.model)) == 3 by {
+                        rewrite(to_integer(sized_value(checked.model)) == rb_subtree_size(sized_shape(checked.model)));
+                        rewrite(sized_shape(checked.model) == sized_context_three_after(g, p, node, above));
+                        assumption();
+                    }
+                    have sized_value(checked.model) == 3 by {
+                        apply(click::integer::int32_to_integer_equal_implies_equal(sized_value(checked.model), 3));
+                    }
+                    apply(sized_parent_is_shape(checked.model, above));
+                    have rb_parent_is(sized_shape(checked.model), above) == 1 by {
+                        rewrite(sized_shape(checked.model) == sized_context_three_after(g, p, node, above));
+                        unfold(sized_context_three_after(g, p, node, above));
+                        unfold(rb_parent_is(RbTree::Node(p, above, Color::Black, RbTree::Node(node, p, Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Node(g, p, Color::Red, RbTree::Empty, RbTree::Empty)), above)); normalize();
+                    }
+                    have sized_parent_is(checked.model, above) == 1 by {
+                        rewrite(sized_parent_is(checked.model, above) == rb_parent_is(sized_shape(checked.model), above));
+                        assumption();
+                    }
+                    let { frames: path } = unfold(link);
+                    have path.model == old(state.context) by { assumption(); }
+                    have sized_parent_is(checked.model, sized_context_parent(path.model, 0)) == 1 by {
+                        rewrite(path.model == old(state.context));
+                        rewrite(sized_context_parent(old(state.context), 0) == above);
+                        assumption();
+                    }
+                    mark before_restore;
+                    let { whole: whole } = restore_sized_context(p, root->rb_node, 0, 3, { path: path, sub: checked });
+                    have whole.model == sized_plug(old(state.context), at(before_restore, checked.model)) by { assumption(); }
                     let state = fold(sized_insert_context_three_at(node, root), {
-                        phase: SizedInsertContextThreePhase::After(g, p, above), model: checked.model, context: old(state.context)
-                    }, { tree: checked, link: link });
+                        phase: SizedInsertContextThreePhase::After(g, p, above), model: at(before_restore, checked.model), context: old(state.context), whole_model: whole.model
+                    }, { whole: whole });
                     have state.context == old(state.context) by { assumption(); }
+                    have state.whole_model == sized_plug(old(state.context), state.model) by { assumption(); }
                     have state.phase == sized_context_three_finish(old(state.phase)) by {
                         unfold(sized_context_three_finish(SizedInsertContextThreePhase::Before(g, p, above))); simp();
                     }
@@ -353,6 +342,7 @@ void insert::__rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     owns state: sized_insert_context_three_at(node, root);
     requires sized_context_three_pending(state.phase) == 1;
     ensures state.context == old(state.context);
+    ensures state.whole_model == sized_plug(old(state.context), state.model);
     ensures state.phase == sized_context_three_finish(old(state.phase));
     ensures sized_shape(state.model) == sized_context_three_expected(old(state.phase), node);
 } by {
@@ -367,6 +357,7 @@ void insert::rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     owns state: sized_insert_context_three_at(node, root);
     requires sized_context_three_pending(state.phase) == 1;
     ensures state.context == old(state.context);
+    ensures state.whole_model == sized_plug(old(state.context), state.model);
     ensures state.phase == sized_context_three_finish(old(state.phase));
     ensures sized_shape(state.model) == sized_context_three_expected(old(state.phase), node);
 } by {

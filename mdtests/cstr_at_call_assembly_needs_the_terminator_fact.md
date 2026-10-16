@@ -5,6 +5,8 @@ The negative twin of
 `measure` owns the bytes and states every fact of `cstr_at(src, n)` except
 the terminator `src[n] == '\0'`. The bytes alone are not a C string of length
 `n`, so the call cannot assemble the view its callee requires and is refused.
+Assembling is a fold, so the refusal names the instance and the missing body
+fact, as a refused `fold` does.
 
 ```c filename=cstr_at_call_assembly_needs_the_terminator_fact.c
 uint64 string_length(const uint8 *s, uint64 n);
@@ -38,5 +40,5 @@ uint64 measure(uint8* src, uint64 n) {
 ```
 
 ```expect
-fail: selected resource `views cstr_at(src, n)`
+fail: assembling `views cstr_at(src, n)` from owned pieces requires an exact body fact: missing pure fact: old(src[n]) == 0
 ```

@@ -1,6 +1,6 @@
 use super::*;
 use crate::kernel::CStatementStoreSource;
-use crate::kernel::loans::empty_checked_loan_evidence_sequence;
+use crate::kernel::loans::{CheckedLoanCallEvidenceSequence, empty_checked_loan_evidence_sequence};
 mod scalar_arrays;
 
 #[cfg(test)]
@@ -597,6 +597,7 @@ fn write_c_lvalue_paths_without_local_reference(
 
     let lvalue_extent = lvalue.extent.clone();
     let lvalue_value_type = lvalue.value_type;
+    let lvalue_classes = (lvalue.access_class(), lvalue.object_class());
     match lvalue.storage {
         CLValueStorage::Local { name } => {
             if state
@@ -661,7 +662,15 @@ fn write_c_lvalue_paths_without_local_reference(
                 &facts,
                 &obligations,
                 assumptions,
-            ) {
+            )
+            .or_else(|| {
+                effective_type_refusal_of(
+                    &state.memory,
+                    &pointer,
+                    lvalue_classes.0,
+                    lvalue_classes.1,
+                )
+            }) {
                 return Ok(vec![CStatementExecutionPath::new(
                     CStatementOutcome::UndefinedBehavior(refusal),
                     facts,
@@ -2778,6 +2787,23 @@ pub(in crate::kernel) fn paths_after_scope_exit(
         .collect()
 }
 
+/// The execution judgment a statement is stepped under
+/// (`docs/internals/kernel.md`, "Execution semantics"). One driver,
+/// [`execute_statement_paths`], serves both; each place they differ is a
+/// branch on this value.
+pub(in crate::kernel) enum StatementJudgment<'generator, 'scope> {
+    /// `CStatementExecutes`: concrete operational outcomes. A loop runs by
+    /// unrolling its iterations.
+    Executes,
+    /// `CStatementVerifies`: an annotated loop is stepped as its checked
+    /// abstraction instead, from an environment's verified loop rule or from
+    /// its own invariant and effect checks, and may end in
+    /// `VerificationDiverges`. The generator names the identities an
+    /// abstracted loop head invents.
+    Verifies(&'generator mut KernelVariableGenerator<'scope>),
+}
+
+/// `CStatementExecutes` for `statement`.
 pub(in crate::kernel) fn execute_c_statement_paths(
     state: &CState,
     statement: &CStatement,
@@ -2785,26 +2811,62 @@ pub(in crate::kernel) fn execute_c_statement_paths(
     execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+    execute_statement_paths(
+        state,
+        statement,
+        assumptions,
+        execution_context,
+        budget,
+        &mut StatementJudgment::Executes,
+    )
+}
+
+/// Steps `statement` under `judgment`. Every statement the judgment
+/// contains, in a sequence, a branch, a loop body, a switch case or a
+/// handler, is stepped under the same judgment.
+pub(in crate::kernel) fn execute_statement_paths(
+    state: &CState,
+    statement: &CStatement,
+    assumptions: &PureFactContext,
+    execution_context: CExecutionContext<'_>,
+    budget: &mut ExecutionBudget,
+    judgment: &mut StatementJudgment<'_, '_>,
+) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     // Keep a source block's sequence spine out of the large leaf-operation
     // frame. Adding a fact index must not multiply stack use per statement.
     if let CStatement::Seq(first, second) = statement {
         let mut paths = Vec::new();
-        for first_path in
-            execute_c_statement_paths(state, first, assumptions, execution_context, budget)?
-        {
-            match first_path.outcome {
+        for first_path in execute_statement_paths(
+            state,
+            first,
+            assumptions,
+            execution_context,
+            budget,
+            judgment,
+        )? {
+            let CStatementExecutionPath {
+                loop_invariant_correspondence: _,
+                outcome,
+                facts,
+                obligations,
+                loan_evidence,
+            } = first_path;
+            match outcome {
                 CStatementOutcome::Normal(state) => {
-                    paths.extend(execute_c_statement_paths_with_prefix(
+                    paths.extend(execute_statement_paths_with_prefix(
                         &state,
                         second,
                         assumptions,
                         execution_context,
-                        &first_path.facts,
-                        &first_path.obligations,
-                        &first_path.loan_evidence,
+                        &facts,
+                        &obligations,
+                        &loan_evidence,
                         budget,
+                        judgment,
                     )?);
                 }
+                // Control leaves the sequence with everything the first
+                // statement's path established, its loan evidence included.
                 outcome @ (CStatementOutcome::Break(_)
                 | CStatementOutcome::Continue(_)
                 | CStatementOutcome::Jump { .. }
@@ -2812,17 +2874,153 @@ pub(in crate::kernel) fn execute_c_statement_paths(
                 | CStatementOutcome::Throw { .. }
                 | CStatementOutcome::VerificationDiverges
                 | CStatementOutcome::UndefinedBehavior(_)
-                | CStatementOutcome::RuntimeError(_)) => paths.push(CStatementExecutionPath::new(
+                | CStatementOutcome::RuntimeError(_)) => paths.push(CStatementExecutionPath {
+                    loop_invariant_correspondence: Default::default(),
                     outcome,
-                    first_path.facts,
-                    first_path.obligations,
-                )),
+                    facts,
+                    obligations,
+                    loan_evidence,
+                }),
             }
         }
         budget.check_path_width(paths.len())?;
         return Ok(paths);
     }
-    execute_c_statement_leaf_paths(state, statement, assumptions, execution_context, budget)
+    match judgment {
+        // Profiling attributes a verification run's work to its leaf
+        // statements; a branch and an abstracted loop are attributed to the
+        // statements they step.
+        StatementJudgment::Verifies(_)
+            if !matches!(statement, CStatement::If { .. }) && !is_annotated_loop(statement) =>
+        {
+            crate::instrumentation::measure_operation(
+                "kernel",
+                "independent kernel execution",
+                verification_operation_name(statement),
+                || {
+                    execute_c_statement_leaf_paths(
+                        state,
+                        statement,
+                        assumptions,
+                        execution_context,
+                        budget,
+                        judgment,
+                    )
+                },
+            )
+        }
+        _ => execute_c_statement_leaf_paths(
+            state,
+            statement,
+            assumptions,
+            execution_context,
+            budget,
+            judgment,
+        ),
+    }
+}
+
+/// `statement` under `judgment`, after a prefix whose facts, obligations and
+/// loan evidence its paths carry first.
+pub(in crate::kernel) fn execute_statement_paths_with_prefix(
+    state: &CState,
+    statement: &CStatement,
+    assumptions: &PureFactContext,
+    execution_context: CExecutionContext<'_>,
+    prefix_facts: &(impl ExecutionFactSource + ?Sized),
+    prefix_obligations: &[ProofObligation],
+    prefix_loan_evidence: &CheckedLoanCallEvidenceSequence,
+    budget: &mut ExecutionBudget,
+    judgment: &mut StatementJudgment<'_, '_>,
+) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+    let effective_assumptions =
+        assumptions_with_path_context(assumptions, prefix_facts, prefix_obligations);
+    let paths = execute_statement_paths(
+        state,
+        statement,
+        &effective_assumptions,
+        execution_context,
+        budget,
+        judgment,
+    )?
+    .into_iter()
+    .filter_map(|path| {
+        let (facts, obligations) = merge_execution_pure_facts_and_obligations(
+            prefix_facts,
+            prefix_obligations,
+            &path.facts,
+            &path.obligations,
+            assumptions,
+        )?;
+        Some(CStatementExecutionPath {
+            loop_invariant_correspondence: Default::default(),
+            outcome: path.outcome,
+            facts,
+            obligations,
+            loan_evidence: crate::kernel::loans::concat_checked_loan_evidence(
+                prefix_loan_evidence,
+                &path.loan_evidence,
+            ),
+        })
+    })
+    .collect::<Vec<_>>();
+    budget.check_path_width(paths.len())?;
+    Ok(paths)
+}
+
+/// A loop with invariant, effect or termination checks: the verification
+/// judgment steps it as its checked abstraction.
+fn is_annotated_loop(statement: &CStatement) -> bool {
+    matches!(
+        statement,
+        CStatement::While {
+            invariant_checks,
+            effect_checks,
+            ranking_measures,
+            structural_measure,
+            ..
+        } if !invariant_checks.is_empty()
+            || !effect_checks.is_empty()
+            || !ranking_measures.is_empty()
+            || structural_measure.is_some()
+    )
+}
+
+fn verification_operation_name(statement: &CStatement) -> &'static str {
+    match statement {
+        CStatement::EndScalarReference(_) => "verification statement: borrow end",
+        CStatement::ScalarReferenceScope(_) => "verification statement: borrow scope",
+        CStatement::Skip => "verification statement: skip",
+        CStatement::Break => "verification statement: break",
+        CStatement::Continue => "verification statement: continue",
+        CStatement::Goto { .. } => "verification statement: goto",
+        CStatement::ForStep { .. } => "verification statement: continue with for step",
+        CStatement::EndAutomaticLifetimes { .. } => {
+            "verification statement: automatic lifetime end"
+        }
+        CStatement::Declare { .. } => "verification statement: declare",
+        CStatement::DeclareAggregate { .. } => "verification statement: declare aggregate",
+        CStatement::CopyAggregate { .. } => "verification statement: aggregate copy",
+        CStatement::InitializeScalarArray { .. } => {
+            "verification statement: scalar array initialization"
+        }
+        CStatement::Assign { .. } => "verification statement: assign",
+        CStatement::CallAssign { .. } => "verification statement: call assign",
+        CStatement::Call { .. } => "verification statement: call",
+        CStatement::HeapAllocate { .. } => "verification statement: heap allocate",
+        CStatement::HeapFree { .. } => "verification statement: heap free",
+        CStatement::Assert { .. } => "verification statement: assert",
+        CStatement::Return(_) => "verification statement: return",
+        CStatement::Throw(_) => "verification statement: throw",
+        CStatement::TryCatchInt32 { .. } => "verification statement: int32 handler",
+        CStatement::Store { .. } => "verification statement: store",
+        CStatement::TypedStore { .. } => "verification statement: typed store",
+        CStatement::Update { .. } => "verification statement: update",
+        CStatement::While { .. } => "verification statement: while",
+        CStatement::Switch { .. } => "verification statement: switch",
+        CStatement::If { .. } => "verification statement: if",
+        CStatement::Seq(_, _) => "verification statement: sequence",
+    }
 }
 
 fn execute_c_statement_leaf_paths(
@@ -2831,16 +3029,18 @@ fn execute_c_statement_leaf_paths(
     assumptions: &PureFactContext,
     execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
+    judgment: &mut StatementJudgment<'_, '_>,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     budget.install_c_byte_order(execution_context.environment.byte_order());
     if let Some(pending) = &state.pending_thread_create {
         if let Some(resolved) = pending.resolve(state, assumptions) {
-            return execute_c_statement_paths(
+            return execute_statement_paths(
                 &resolved,
                 statement,
                 assumptions,
                 execution_context,
                 budget,
+                judgment,
             );
         }
         match statement {
@@ -2860,12 +3060,13 @@ fn execute_c_statement_leaf_paths(
             } if !pending.protects_local(state, name) => {
                 let mut bare = state.clone();
                 bare.pending_thread_create = None;
-                let mut paths = execute_c_statement_paths(
+                let mut paths = execute_statement_paths(
                     &bare,
                     statement,
                     assumptions,
                     execution_context,
                     budget,
+                    judgment,
                 )?;
                 for path in &mut paths {
                     if let CStatementOutcome::Normal(next) = &mut path.outcome {
@@ -2900,12 +3101,13 @@ fn execute_c_statement_leaf_paths(
             {
                 let mut bare = state.clone();
                 bare.pending_thread_create = None;
-                let mut paths = execute_c_statement_paths(
+                let mut paths = execute_statement_paths(
                     &bare,
                     statement,
                     assumptions,
                     execution_context,
                     budget,
+                    judgment,
                 )?;
                 for path in &mut paths {
                     if let CStatementOutcome::Normal(next) = &mut path.outcome {
@@ -3066,9 +3268,14 @@ fn execute_c_statement_leaf_paths(
                 }
             };
             let mut paths = Vec::new();
-            for step_path in
-                execute_c_statement_paths(&retired, step, assumptions, execution_context, budget)?
-            {
+            for step_path in execute_statement_paths(
+                &retired,
+                step,
+                assumptions,
+                execution_context,
+                budget,
+                judgment,
+            )? {
                 let outcome = match step_path.outcome {
                     CStatementOutcome::Normal(next_state) if *continue_after => {
                         CStatementOutcome::Continue(next_state)
@@ -3092,6 +3299,7 @@ fn execute_c_statement_leaf_paths(
             pointee_constant,
             initializer,
             zero_fill,
+            declared_class,
         } => {
             let outcome = if *c_type == CType::Void {
                 CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch)
@@ -3104,6 +3312,7 @@ fn execute_c_statement_leaf_paths(
                     *pointee_volatile,
                     *constant,
                     *pointee_constant,
+                    *declared_class,
                 )
                 .and_then(|state| match zero_fill {
                     Some(zero_fill) => zero_fill_declared_array(state, name, zero_fill),
@@ -3400,9 +3609,14 @@ fn execute_c_statement_leaf_paths(
             ..
         } => {
             let mut paths = Vec::new();
-            for try_path in
-                execute_c_statement_paths(state, try_body, assumptions, execution_context, budget)?
-            {
+            for try_path in execute_statement_paths(
+                state,
+                try_body,
+                assumptions,
+                execution_context,
+                budget,
+                judgment,
+            )? {
                 if let CStatementOutcome::Throw {
                     value: value @ CValue::Int32(_),
                     state: thrown_state,
@@ -3429,7 +3643,7 @@ fn execute_c_statement_leaf_paths(
                             (**handler).clone(),
                         ),
                     );
-                    paths.extend(execute_c_statement_paths_with_prefix(
+                    paths.extend(execute_statement_paths_with_prefix(
                         thrown_state,
                         &bound_handler,
                         assumptions,
@@ -3438,6 +3652,7 @@ fn execute_c_statement_leaf_paths(
                         &try_path.obligations,
                         &try_path.loan_evidence,
                         budget,
+                        judgment,
                     )?);
                 } else {
                     paths.push(try_path);
@@ -3466,6 +3681,7 @@ fn execute_c_statement_leaf_paths(
                 value_type: *value_type,
                 volatile: *volatile,
                 pointee_constant: *pointee_constant,
+                access_class: None,
                 source: Default::default(),
             },
             value,
@@ -3532,7 +3748,7 @@ fn execute_c_statement_leaf_paths(
                             // existing however control leaves it.
                             let declared = scope_declared_names(branch);
                             paths.extend(paths_after_scope_exit(
-                                execute_c_statement_paths_with_prefix(
+                                execute_statement_paths_with_prefix(
                                     &branch_state,
                                     branch,
                                     assumptions,
@@ -3541,6 +3757,7 @@ fn execute_c_statement_leaf_paths(
                                     &truthiness_path.obligations,
                                     &empty_checked_loan_evidence_sequence(),
                                     budget,
+                                    judgment,
                                 )?,
                                 &declared,
                             ));
@@ -3575,16 +3792,39 @@ fn execute_c_statement_leaf_paths(
             do_while,
             body,
             ..
-        } => execute_c_while_paths(
-            state,
-            condition,
-            invariant,
-            *do_while,
-            body,
-            assumptions,
-            execution_context,
-            budget,
-        )?,
+        } => {
+            // The one judgment-specific step: verification takes an
+            // annotated loop, or one an environment rule covers, as its
+            // checked abstraction. Execution, and verification of a loop
+            // with neither, unrolls it.
+            let abstracted = match judgment {
+                StatementJudgment::Verifies(variables) => {
+                    crate::kernel::loops::abstract_loop_paths(
+                        state,
+                        statement,
+                        assumptions,
+                        execution_context,
+                        budget,
+                        variables,
+                    )?
+                }
+                StatementJudgment::Executes => None,
+            };
+            match abstracted {
+                Some(paths) => paths,
+                None => execute_c_while_paths(
+                    state,
+                    condition,
+                    invariant,
+                    *do_while,
+                    body,
+                    assumptions,
+                    execution_context,
+                    budget,
+                    judgment,
+                )?,
+            }
+        }
         CStatement::Switch { expression, cases } => execute_c_switch_paths(
             state,
             expression,
@@ -3592,6 +3832,7 @@ fn execute_c_statement_leaf_paths(
             assumptions,
             execution_context,
             budget,
+            judgment,
         )?,
     };
     budget.check_path_width(paths.len())?;
@@ -3605,6 +3846,7 @@ fn execute_c_switch_paths(
     assumptions: &PureFactContext,
     execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
+    judgment: &mut StatementJudgment<'_, '_>,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     // A `switch` body is one scope: cases fall through into each other, so a
     // declaration in one case is in scope in the next and stops existing only
@@ -3640,6 +3882,7 @@ fn execute_c_switch_paths(
                     assumptions,
                     execution_context,
                     budget,
+                    judgment,
                 )?);
             }
             CExpressionOutcome::UndefinedBehavior(error) => {
@@ -3669,6 +3912,7 @@ fn execute_c_switch_dispatch_paths(
     assumptions: &PureFactContext,
     execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
+    judgment: &mut StatementJudgment<'_, '_>,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     if case_index == cases.len() {
         let default_index = cases.iter().position(|case| case.value.is_none());
@@ -3682,6 +3926,7 @@ fn execute_c_switch_dispatch_paths(
                 assumptions,
                 execution_context,
                 budget,
+                judgment,
             ),
             None => Ok(vec![CStatementExecutionPath::new(
                 CStatementOutcome::Normal(Box::new(state.clone())),
@@ -3703,6 +3948,7 @@ fn execute_c_switch_dispatch_paths(
             assumptions,
             execution_context,
             budget,
+            judgment,
         );
     };
     let condition = ConditionTerm::equal(selector.clone(), Bitvector32Term::Constant(value));
@@ -3726,6 +3972,7 @@ fn execute_c_switch_dispatch_paths(
                 assumptions,
                 execution_context,
                 budget,
+                judgment,
             )?);
         } else {
             paths.extend(execute_c_switch_dispatch_paths(
@@ -3738,6 +3985,7 @@ fn execute_c_switch_dispatch_paths(
                 assumptions,
                 execution_context,
                 budget,
+                judgment,
             )?);
         }
     }
@@ -3753,6 +4001,7 @@ fn execute_c_switch_suffix_paths(
     assumptions: &PureFactContext,
     execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
+    judgment: &mut StatementJudgment<'_, '_>,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     if case_index == cases.len() {
         return Ok(vec![CStatementExecutionPath::new(
@@ -3763,12 +4012,13 @@ fn execute_c_switch_suffix_paths(
     }
     let case_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
     let mut paths = Vec::new();
-    for case_path in execute_c_statement_paths(
+    for case_path in execute_statement_paths(
         state,
         &cases[case_index].body,
         &case_assumptions,
         execution_context,
         budget,
+        judgment,
     )? {
         let Some((case_facts, case_obligations)) = merge_execution_pure_facts_and_obligations(
             &facts,
@@ -3789,6 +4039,7 @@ fn execute_c_switch_suffix_paths(
                 assumptions,
                 execution_context,
                 budget,
+                judgment,
             )?),
             CStatementOutcome::Break(next_state) => paths.push(CStatementExecutionPath::new(
                 CStatementOutcome::Normal(next_state),
@@ -3882,6 +4133,7 @@ pub(in crate::kernel) fn execute_c_while_paths(
     assumptions: &PureFactContext,
     execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
+    judgment: &mut StatementJudgment<'_, '_>,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     struct PendingLoopPath {
         state: CState,
@@ -4015,12 +4267,13 @@ pub(in crate::kernel) fn execute_c_while_paths(
                         // iteration leaves it: the back edge, `break`,
                         // `continue`, and every transfer out of the loop.
                         for body_path in paths_after_scope_exit(
-                            execute_c_statement_paths(
+                            execute_statement_paths(
                                 &current_state,
                                 body,
                                 &body_assumptions,
                                 execution_context,
                                 budget,
+                                judgment,
                             )?,
                             &body_declared,
                         ) {
@@ -4338,6 +4591,7 @@ pub(in crate::kernel) fn declare_local(
     pointee_volatile: bool,
     constant: bool,
     pointee_constant: bool,
+    declared_class: Option<crate::kernel::effective_type::CAccessClass>,
 ) -> Result<CState, CRuntimeError> {
     let mut state = state.clone();
     let pointer = local_declaration_pointer(&mut state, name)?;
@@ -4381,12 +4635,11 @@ pub(in crate::kernel) fn declare_local(
         | CType::Float64PointerPointer
         | CType::FunctionPointer(_) => C_POINTER_BYTE_WIDTH,
         CType::Int32Array(length) => {
-            state.set_memory(
-                state
-                    .memory
-                    .clone()
-                    .with_block(pointer.block.clone(), length.saturating_mul(4)),
-            );
+            state.set_memory(state.memory.clone().with_classed_block(
+                pointer.block.clone(),
+                declared_class,
+                length.saturating_mul(4),
+            ));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 CType::Int32,
@@ -4397,12 +4650,11 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         CType::UInt8Array(length) => {
-            state.set_memory(
-                state
-                    .memory
-                    .clone()
-                    .with_block(pointer.block.clone(), length),
-            );
+            state.set_memory(state.memory.clone().with_classed_block(
+                pointer.block.clone(),
+                declared_class,
+                length,
+            ));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 CType::UInt8,
@@ -4413,12 +4665,11 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         CType::Int8Array(length) => {
-            state.set_memory(
-                state
-                    .memory
-                    .clone()
-                    .with_block(pointer.block.clone(), length),
-            );
+            state.set_memory(state.memory.clone().with_classed_block(
+                pointer.block.clone(),
+                declared_class,
+                length,
+            ));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 CType::Int8,
@@ -4429,12 +4680,11 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         CType::Int16Array(length) => {
-            state.set_memory(
-                state
-                    .memory
-                    .clone()
-                    .with_block(pointer.block.clone(), length.saturating_mul(2)),
-            );
+            state.set_memory(state.memory.clone().with_classed_block(
+                pointer.block.clone(),
+                declared_class,
+                length.saturating_mul(2),
+            ));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 CType::Int16,
@@ -4445,12 +4695,11 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         CType::UInt16Array(length) => {
-            state.set_memory(
-                state
-                    .memory
-                    .clone()
-                    .with_block(pointer.block.clone(), length.saturating_mul(2)),
-            );
+            state.set_memory(state.memory.clone().with_classed_block(
+                pointer.block.clone(),
+                declared_class,
+                length.saturating_mul(2),
+            ));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 CType::UInt16,
@@ -4461,12 +4710,11 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         CType::UInt32Array(length) => {
-            state.set_memory(
-                state
-                    .memory
-                    .clone()
-                    .with_block(pointer.block.clone(), length.saturating_mul(4)),
-            );
+            state.set_memory(state.memory.clone().with_classed_block(
+                pointer.block.clone(),
+                declared_class,
+                length.saturating_mul(4),
+            ));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 CType::UInt32,
@@ -4477,12 +4725,11 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         CType::Int64Array(length) => {
-            state.set_memory(
-                state
-                    .memory
-                    .clone()
-                    .with_block(pointer.block.clone(), length.saturating_mul(8)),
-            );
+            state.set_memory(state.memory.clone().with_classed_block(
+                pointer.block.clone(),
+                declared_class,
+                length.saturating_mul(8),
+            ));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 CType::Int64,
@@ -4493,12 +4740,11 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         CType::Int128Array(length) => {
-            state.set_memory(
-                state
-                    .memory
-                    .clone()
-                    .with_block(pointer.block.clone(), length.saturating_mul(16)),
-            );
+            state.set_memory(state.memory.clone().with_classed_block(
+                pointer.block.clone(),
+                declared_class,
+                length.saturating_mul(16),
+            ));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 CType::Int128,
@@ -4509,12 +4755,11 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         CType::UInt64Array(length) => {
-            state.set_memory(
-                state
-                    .memory
-                    .clone()
-                    .with_block(pointer.block.clone(), length.saturating_mul(8)),
-            );
+            state.set_memory(state.memory.clone().with_classed_block(
+                pointer.block.clone(),
+                declared_class,
+                length.saturating_mul(8),
+            ));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 CType::UInt64,
@@ -4525,12 +4770,11 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         CType::UInt128Array(length) => {
-            state.set_memory(
-                state
-                    .memory
-                    .clone()
-                    .with_block(pointer.block.clone(), length.saturating_mul(16)),
-            );
+            state.set_memory(state.memory.clone().with_classed_block(
+                pointer.block.clone(),
+                declared_class,
+                length.saturating_mul(16),
+            ));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 CType::UInt128,
@@ -4541,12 +4785,11 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         CType::Float32Array(length) => {
-            state.set_memory(
-                state
-                    .memory
-                    .clone()
-                    .with_block(pointer.block.clone(), length.saturating_mul(4)),
-            );
+            state.set_memory(state.memory.clone().with_classed_block(
+                pointer.block.clone(),
+                declared_class,
+                length.saturating_mul(4),
+            ));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 CType::Float32,
@@ -4557,12 +4800,11 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         CType::Float64Array(length) => {
-            state.set_memory(
-                state
-                    .memory
-                    .clone()
-                    .with_block(pointer.block.clone(), length.saturating_mul(8)),
-            );
+            state.set_memory(state.memory.clone().with_classed_block(
+                pointer.block.clone(),
+                declared_class,
+                length.saturating_mul(8),
+            ));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 CType::Float64,
@@ -4573,8 +4815,9 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         CType::PointerArray(element, length) => {
-            state.set_memory(state.memory.clone().with_block(
+            state.set_memory(state.memory.clone().with_classed_block(
                 pointer.block.clone(),
+                declared_class,
                 length.saturating_mul(C_POINTER_BYTE_WIDTH),
             ));
             state.locals.set_array_object_at_with_constant(
@@ -4587,10 +4830,11 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
     };
-    state.set_memory(state.memory.clone().with_declared_scalar_block(
+    state.set_memory(state.memory.clone().with_classed_scalar_block(
         pointer.block.clone(),
         byte_width,
         c_type,
+        declared_class,
     ));
     state.resources = state
         .resources

@@ -31,6 +31,7 @@ name differ, user-facing documentation uses the Surface Click name.
 - [Verification efficiency](verification-efficiency.md)
 - [Testing Click](testing.md)
 - [Feature playbook](feature-playbook.md)
+- [Polish mode workflow](polish-mode.md)
 - [Contributing](contributing.md)
 - [Maintainer quickstart](maintainer-quickstart.md)
 

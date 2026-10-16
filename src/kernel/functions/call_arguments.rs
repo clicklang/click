@@ -950,7 +950,8 @@ pub(in crate::kernel) fn bind_c_function_arguments(
         }
         let value = coerce_c_function_argument_without_obligations(value, parameter)?
             .with_pointer_pointee_volatile(parameter.pointee_is_volatile())
-            .with_pointer_pointee_constant(parameter.pointee_is_constant());
+            .with_pointer_pointee_constant(parameter.pointee_is_constant())
+            .with_pointer_object_class(parameter.pointee_class());
         if address_taken_parameters.contains(parameter.name()) {
             let slot = CMemory::frame_local_pointer(frame, parameter.name());
             register_block_alignment(&slot.block, parameter.c_type().abi_alignment());
@@ -1092,7 +1093,8 @@ pub(super) fn bind_c_contract_arguments(
         }
         let value = coerce_c_function_argument_without_obligations(value, parameter)?
             .with_pointer_pointee_volatile(parameter.pointee_is_volatile())
-            .with_pointer_pointee_constant(parameter.pointee_is_constant());
+            .with_pointer_pointee_constant(parameter.pointee_is_constant())
+            .with_pointer_object_class(parameter.pointee_class());
         callee_state.locals.set_typed_qualified_with_all_qualifiers(
             parameter.name().to_string(),
             value,

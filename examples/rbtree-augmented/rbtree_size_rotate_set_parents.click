@@ -13,6 +13,55 @@ function sized_context_parent_word(ctx: SizedContext, word: uint64) -> int32 {
     }
 }
 
+theorem sized_context_parent_word_black(ctx: SizedContext, parent: struct rb_node*, word: uint64) {
+    requires parent == sized_context_parent(ctx, 0);
+    requires word == address(parent) + 1;
+    ensures sized_context_parent_word(ctx, word) == 1 by {
+        match ctx {
+            SizedContext::Top => {
+                have parent == 0 by {
+                    rewrite(parent == sized_context_parent(ctx, 0));
+                    rewrite(ctx == SizedContext::Top);
+                    unfold(sized_context_parent(SizedContext::Top, 0)); normalize();
+                }
+                have word == address(0) + 1 by {
+                    rewrite(word == address(parent) + 1);
+                    rewrite(parent == 0); normalize();
+                }
+                rewrite(ctx == SizedContext::Top);
+                unfold(sized_context_parent_word(SizedContext::Top, word));
+                normalize() using { word == address(0) + 1; }
+            },
+            SizedContext::Left(a, ancestor, color, count, sibling, up) => {
+                have parent == a by {
+                    rewrite(parent == sized_context_parent(ctx, 0));
+                    rewrite(ctx == SizedContext::Left(a, ancestor, color, count, sibling, up));
+                    unfold(sized_context_parent(SizedContext::Left(a, ancestor, color, count, sibling, up), 0)); normalize();
+                }
+                have word == address(a) + 1 by {
+                    rewrite(a == parent); assumption();
+                }
+                rewrite(ctx == SizedContext::Left(a, ancestor, color, count, sibling, up));
+                unfold(sized_context_parent_word(SizedContext::Left(a, ancestor, color, count, sibling, up), word));
+                normalize() using { word == address(a) + 1; }
+            },
+            SizedContext::Right(a, ancestor, color, count, sibling, up) => {
+                have parent == a by {
+                    rewrite(parent == sized_context_parent(ctx, 0));
+                    rewrite(ctx == SizedContext::Right(a, ancestor, color, count, sibling, up));
+                    unfold(sized_context_parent(SizedContext::Right(a, ancestor, color, count, sibling, up), 0)); normalize();
+                }
+                have word == address(a) + 1 by {
+                    rewrite(a == parent); assumption();
+                }
+                rewrite(ctx == SizedContext::Right(a, ancestor, color, count, sibling, up));
+                unfold(sized_context_parent_word(SizedContext::Right(a, ancestor, color, count, sibling, up), word));
+                normalize() using { word == address(a) + 1; }
+            },
+        }
+    }
+}
+
 void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                              struct rb_root* root, int32 color) {
     consumes c: sized_link_at(old, root, ((struct sized_node*)(void*)old)->size);

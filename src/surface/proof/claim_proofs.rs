@@ -957,14 +957,15 @@ use exit_claim::{ClaimCertificate, ClaimClosure, ClosedClaim};
 /// the facts its loads introduced: the goal a claim proof closes is what
 /// claim certification lowers, so the completion matches by construction.
 /// A lowering with several paths is not yet closed as several goals.
-fn kernel_claim_goal(
-    function: &CFunction,
+fn kernel_claim_goal<'a>(
+    function: &'a CFunction,
     claim: &FunctionClaimRef<'_>,
     pre_state: &CState,
     arguments: &[CExpression],
     outcome: &CFunctionOutcome,
     assumptions: &PureFactContext,
     unfolded_predicates: &[String],
+    return_context: &mut Option<Option<crate::kernel::CFunctionEnsureGoalContext<'a>>>,
 ) -> Option<crate::kernel::CClaimGoal> {
     let mut goals = match claim {
         FunctionClaimRef::Ensure(source_index, _) => {
@@ -981,15 +982,25 @@ fn kernel_claim_goal(
                             _ => None,
                         }
                     })?;
-            crate::kernel::c_function_ensure_goals(
-                function,
-                contract_index,
-                pre_state,
-                arguments,
-                outcome,
-                assumptions,
-                unfolded_predicates,
-            )?
+            return_context
+                .get_or_insert_with(|| {
+                    crate::instrumentation::measure_operation(
+                        function.name(),
+                        "explicit return closer",
+                        "return claim state preparation",
+                        || {
+                            crate::kernel::CFunctionEnsureGoalContext::new(
+                                function,
+                                pre_state,
+                                arguments,
+                                outcome,
+                                assumptions,
+                            )
+                        },
+                    )
+                })
+                .as_ref()?
+                .goals(contract_index, unfolded_predicates)?
         }
         FunctionClaimRef::ExceptionalEnsure(source_index, _) => {
             let contract_index =
@@ -1027,18 +1038,19 @@ fn kernel_claim_goal(
 /// a registered predicate ensure first, then the body when the proof has
 /// unfolded that predicate. A closer step is exact, so the closer tries each
 /// form; two forms at most.
-fn kernel_claim_goal_forms(
-    function: &CFunction,
+fn kernel_claim_goal_forms<'a>(
+    function: &'a CFunction,
     claim: &FunctionClaimRef<'_>,
     pre_state: &CState,
     arguments: &[CExpression],
     outcome: &CFunctionOutcome,
     assumptions: &PureFactContext,
     unfolded_predicates: &[String],
+    return_context: &mut Option<Option<crate::kernel::CFunctionEnsureGoalContext<'a>>>,
 ) -> Vec<crate::kernel::CClaimGoal> {
     let mut forms = Vec::new();
-    // With no unfolded predicates both configurations are identical. Each
-    // lowering reconstructs the contract's entry and exit resource views.
+    // With no unfolded predicates both configurations are identical. Both
+    // forms lower against the same lazily prepared entry and exit views.
     let unfolded = (!unfolded_predicates.is_empty()).then_some(unfolded_predicates);
     for unfolds in std::iter::once(&[][..]).chain(unfolded) {
         if let Some(form) = crate::instrumentation::measure_operation(
@@ -1054,6 +1066,7 @@ fn kernel_claim_goal_forms(
                     outcome,
                     assumptions,
                     unfolds,
+                    return_context,
                 )
             },
         ) && !forms.contains(&form)
@@ -1158,6 +1171,7 @@ fn begin_outcome_existence_proof<'a>(
         outcome,
         root.facts().assumptions(),
         &[],
+        &mut None,
     );
     let mut proof = focus_claim_goal(&root, kernel_goal, &surface_goal)?;
     for equality in &rewrite_claim_equalities[claim_index] {
@@ -1227,6 +1241,7 @@ fn close_claim_directly_from_outcome<'a>(
         outcome,
         root.facts().assumptions(),
         &[],
+        &mut None,
     );
     let listed_goal = kernel_goal.clone();
     let mut proof = match focus_claim_goal(&root, kernel_goal, surface_goal) {
@@ -1467,7 +1482,6 @@ fn close_claim_directly_from_outcome<'a>(
         &path_facts,
         &path_case_facts(entry_facts, execution_paths, path_index),
         resource_facts,
-        parameter_binding,
         match outcome {
             CFunctionOutcome::Return { value, .. } => Some(value),
             _ => None,
@@ -2207,6 +2221,10 @@ pub(super) fn finish_ordered_proof<'a>(
                     // A failed whole-contract transition must not be retried
                     // once per returned member in an expanded simp proof.
                     let mut assumption_transition_attempted = false;
+                    // Exact closers discharge claims without changing the ambient
+                    // outcome or facts. Share their lazily prepared return views,
+                    // including a failed preparation, until another tactic runs.
+                    let mut return_claim_context = None;
                     // The facts before each post-return tactic, by source
                     // tactic: a refused return fold names the tactic that
                     // introduced the fact it could not justify. Each entry
@@ -2247,6 +2265,17 @@ pub(super) fn finish_ordered_proof<'a>(
                         }
                         if !matches!(deferred.tactic, PostExecutionTactic::Assumption) {
                             assumption_transition_attempted = false;
+                        }
+                        if !matches!(
+                            deferred.tactic,
+                            PostExecutionTactic::Assumption
+                                | PostExecutionTactic::Normalize
+                                | PostExecutionTactic::NormalizeUsing(_)
+                                | PostExecutionTactic::ArithmeticUsing(_)
+                                | PostExecutionTactic::ArithmeticCertificate(_)
+                                | PostExecutionTactic::Both(_)
+                        ) {
+                            return_claim_context = None;
                         }
                         let tactic_index = &deferred.tactic_index;
                         let source_index = &deferred.source_index;
@@ -3033,6 +3062,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                             .apply_outcome_contract_resources(pre_state, function)
                                     {
                                         outcome = transitioned.focused_outcome_snapshot()?;
+                                        return_claim_context = None;
                                         resource_transition_applied = true;
                                         outcome_proof = Some(transitioned);
                                     }
@@ -3091,6 +3121,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         &outcome,
                                         &assumptions_from_propositions(&path_requirements),
                                         &unfolded_predicates,
+                                        &mut return_claim_context,
                                     );
                                     // Expansion can emit a checked `have` of
                                     // the original claim after rewriting it.
@@ -3455,6 +3486,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         &outcome,
                                         &assumptions_from_propositions(&path_requirements),
                                         &unfolded_predicates,
+                                        &mut return_claim_context,
                                     );
                                     let goal_candidates = match (
                                         &rewritten_claim_goals[claim_index],
@@ -3714,6 +3746,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // roots; the evolving outcome proof supplies
                                 // them when this path derived a goal, and the
                                 // path lineage itself is not advanced.
+                                let mut return_claim_context = None;
                                 let mut rewrote_any = false;
                                 let mut first_error = None;
                                 let mut retained_certificate = None;
@@ -3734,6 +3767,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         &outcome,
                                         &assumptions_from_propositions(&path_requirements),
                                         &unfolded_predicates,
+                                        &mut return_claim_context,
                                     );
                                     let goal_candidates = match (
                                         &rewritten_claim_goals[claim_index],
@@ -4227,7 +4261,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 selected = false;
                                                 break;
                                             }
-                                            let selected_scope = if let Some(premises) = restricted_premises {
+                                            let (selected_scope, checks) = crate::surface::proof_diagnostics::capture_check_observations(|| -> Result<_, ClickError> {
+                                                Ok(if let Some(premises) = restricted_premises {
                                                 let selected = scope.try_restricted_simp_closure(premises);
                                                 check_verification_deadline()?;
                                                 selected
@@ -4239,7 +4274,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 scope.try_auto_closure_after_simp()?
                                             } else {
                                                 None
-                                            };
+                                            })
+                                            });
+                                            let selected_scope = selected_scope.map_err(|error| error.with_check_observations(checks.clone()))?;
                                             let Some(scope) = selected_scope else {
                                                 check_verification_deadline()?;
                                                 if !require_explicit_closers {
@@ -4290,9 +4327,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                                         )
                                                     })
                                                     .unwrap_or_default();
-                                                return Err(direct_proof.step_error(format!(
+                                                return Err(scope.body().step_error(format!(
                                                     "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `{closer_name}` search did not retain a complete proof for `{claim_label}`{detail}{transition_detail}",
-                                                )));
+                                                )).with_check_observations(checks));
                                             };
                                             let joined = scope.join()?;
                                             direct_proof = joined;
@@ -4323,6 +4360,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 Vec::new(),
                                             )
                                         } else {
+                                            let mut claim_goal_context = None;
                                             let claim_goals = direct_claims
                                                 .iter()
                                                 .map(|(claim_index, _, _)| {
@@ -4336,6 +4374,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                                             &path_requirements,
                                                         ),
                                                         &unfolded_predicates,
+                                                        &mut claim_goal_context,
                                                     )
                                                 })
                                                 .collect::<Vec<_>>();

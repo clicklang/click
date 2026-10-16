@@ -804,9 +804,12 @@ pub(super) fn describe_missing_pure_fact(
         crate::surface::proof_diagnostics::render::render_proposition_labeled(required, &mut labels)
     };
     let available = describe_context_facts_labeled(pure_facts, execution_pure_facts, &mut labels);
+    let resources = crate::surface::proof_diagnostics::render::render_resource_facts_labeled(
+        resource_facts,
+        &mut labels,
+    );
     format!(
-        "missing pure fact: {requirement}\n  available pure facts: {available}\n  available resource facts: {}{}",
-        render_resource_facts_diagnostic(resource_facts, parameter_binding),
+        "missing pure fact: {requirement}\n  available pure facts: {available}\n  available resource facts: {resources}{}",
         labels.trace_legend()
     )
 }
@@ -939,7 +942,10 @@ contract claims are closed.
 /// premise of a closure that failed on it, so listing it only pushes the
 /// relevant ones past the item limit. The walk is over a variable-to-fact
 /// index, so it reads each fact's variables once.
-fn pure_facts_relevant_to(goal: &Proposition, facts: &[Proposition]) -> Vec<Proposition> {
+pub(super) fn pure_facts_relevant_to(
+    goal: &Proposition,
+    facts: &[Proposition],
+) -> Vec<Proposition> {
     use std::collections::{BTreeMap, BTreeSet};
     let variables_of = |proposition: &Proposition| {
         let mut variables = BTreeSet::new();
@@ -1005,7 +1011,6 @@ pub(super) fn describe_goal_proof_context(
     pure_facts: &[Proposition],
     case_facts: &[Proposition],
     resource_facts: &[CResourceFact],
-    parameter_binding: ParameterBinding<'_>,
     result: Option<&CValue>,
     labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
 ) -> String {
@@ -1033,9 +1038,12 @@ pub(super) fn describe_goal_proof_context(
     // One label set for the whole context, so a `<state A>` on the case
     // line is the same memory as one among the pure facts.
     let pure = describe_context_facts_labeled(&relevant, &[], labels);
+    let resources = crate::surface::proof_diagnostics::render::render_resource_facts_labeled(
+        resource_facts,
+        labels,
+    );
     format!(
-        "{GOAL_PROOF_CONTEXT_HEADER}{case}\n  pure facts: {pure}\n  resource facts: {}{}",
-        render_resource_facts_diagnostic(resource_facts, parameter_binding),
+        "{GOAL_PROOF_CONTEXT_HEADER}{case}\n  pure facts: {pure}\n  resource facts: {resources}{}",
         labels.trace_legend()
     )
 }
@@ -1046,14 +1054,18 @@ pub(super) fn describe_proof_context(
     parameter_binding: ParameterBinding<'_>,
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
 ) -> String {
+    // One label set, so a placeholder in a resource's hidden record is the
+    // value the pure facts give the same name.
+    let mut labels =
+        crate::surface::proof_diagnostics::render::SnapshotLabels::naming(parameter_binding);
+    let pure = describe_context_facts_labeled(pure_facts, execution_pure_facts, &mut labels);
+    let resources = crate::surface::proof_diagnostics::render::render_resource_facts_labeled(
+        resource_facts,
+        &mut labels,
+    );
     format!(
-        "proof context:\n  pure facts: {}\n  resource facts: {}",
-        describe_context_pure_and_execution_facts(
-            pure_facts,
-            execution_pure_facts,
-            parameter_binding
-        ),
-        render_resource_facts_diagnostic(resource_facts, parameter_binding)
+        "proof context:\n  pure facts: {pure}\n  resource facts: {resources}{}",
+        labels.trace_legend()
     )
 }
 
@@ -1508,6 +1520,16 @@ pub(super) fn describe_runtime_error(
             } else {
                 format!("missing resource fact `{fact}`")
             }
+        }
+        crate::kernel::CRuntimeError::UnestablishedAssemblyFact { assembled, fact } => {
+            use crate::surface::proof_diagnostics::render::{SnapshotLabels, render_proposition_labeled};
+            let mut labels = SnapshotLabels::naming(parameter_binding);
+            format!(
+                "assembling `{}` from owned pieces requires an exact body fact: missing pure fact: {}{}",
+                render_resource_fact_diagnostic(assembled, parameter_binding),
+                render_proposition_labeled(fact, &mut labels),
+                labels.trace_legend()
+            )
         }
         crate::kernel::CRuntimeError::UnbackedReturnedView { view } => format!(
             "{}: `{}`",
@@ -2304,6 +2326,33 @@ fn parameter_relative_endpoints(
     )
 }
 
+/// A call refused because assembling a viewed composite from the caller's
+/// owned pieces is a fold whose body fact is unproved: the instance, the
+/// missing fact and the available facts, as a refused `fold` reports them.
+/// `None` for every other runtime error.
+pub(super) fn describe_unestablished_assembly_fact(
+    error: &crate::kernel::CRuntimeError,
+    pure_facts: &[Proposition],
+    resource_facts: &[CResourceFact],
+    parameter_binding: ParameterBinding<'_>,
+    execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
+) -> Option<String> {
+    let crate::kernel::CRuntimeError::UnestablishedAssemblyFact { assembled, fact } = error else {
+        return None;
+    };
+    Some(format!(
+        "assembling `{}` from owned pieces requires an exact body fact: {}",
+        render_resource_fact_diagnostic(assembled, parameter_binding),
+        describe_missing_pure_fact(
+            fact,
+            pure_facts,
+            resource_facts,
+            parameter_binding,
+            execution_pure_facts
+        )
+    ))
+}
+
 /// A note for a missing memory range that a held range over the same base
 /// would cover if its bounds reached. The verdict compared the endpoints;
 /// say which comparisons were not established, so `owns b[0..n]` against
@@ -2397,6 +2446,33 @@ pub(super) fn describe_missing_range_end_note(
         .map_or(String::new(), |(parameter, _)| {
             format!(" (byte offsets from `{}`)", parameter.name())
         });
+    // A read-only range is not an ownership supplier even when its byte
+    // footprint covers the store. Explain that concrete mode mismatch without
+    // searching for a new proof or treating it as successful authorization.
+    let access_note = if resource.is_own()
+        && let Some(view) = resource_facts.iter().find(|fact| {
+            let Some(held) = fact.memory_view_range() else {
+                return false;
+            };
+            if held == required {
+                return true;
+            }
+            comparable(held).is_some_and(|(hs, he, rs, re)| {
+                match (hs.as_const(), he.as_const(), rs.as_const(), re.as_const()) {
+                    (Some(hs), Some(he), Some(rs), Some(re)) => {
+                        (hs as i32) <= rs as i32 && (re as i32) <= he as i32
+                    }
+                    _ => false,
+                }
+            })
+        }) {
+        format!(
+            "\n  access check: {reserved_prefix}write ownership required; available `{}` covers the requested range but permits reading only",
+            render_resource_fact_diagnostic(view, parameter_binding)
+        )
+    } else {
+        String::new()
+    };
     let candidates = resource_facts
         .iter()
         .filter_map(|fact| {
@@ -2423,7 +2499,7 @@ pub(super) fn describe_missing_range_end_note(
         .min_by_key(|(_, sides)| sides.len())
         .cloned()
     else {
-        return match &reservation {
+        let range_note = match &reservation {
             Some(miss) => format!(
                 "\n  note: {reserved_prefix}no remaining owner covers `{}`; remaining: {}",
                 describe_memory_range(required, parameter_binding),
@@ -2434,6 +2510,7 @@ pub(super) fn describe_missing_range_end_note(
             ),
             None => String::new(),
         };
+        return access_note + &range_note;
     };
     let decided = |lower: &Bitvector32Term, upper: &Bitvector32Term| {
         Some(lower.as_const()? as i32 <= upper.as_const()? as i32)
@@ -2447,7 +2524,7 @@ pub(super) fn describe_missing_range_end_note(
             .find(|(lower, upper)| decided(lower, upper) == Some(false))
             .expect("found a refuted side above");
         return format!(
-            "\n  note: {reserved_prefix}held `{}` does not cover `{}`: `{} <= {}` is false{coordinate_note}",
+            "{access_note}\n  note: {reserved_prefix}held `{}` does not cover `{}`: `{} <= {}` is false{coordinate_note}",
             render_resource_fact_diagnostic(held_fact, parameter_binding),
             describe_memory_range(required, parameter_binding),
             describe_bitvector_with_context(lower, parameter_binding),
@@ -2466,10 +2543,10 @@ pub(super) fn describe_missing_range_end_note(
         })
         .collect::<Vec<_>>();
     if conditions.is_empty() {
-        return String::new();
+        return access_note;
     }
     format!(
-        "\n  note: {reserved_prefix}held `{}` covers `{}` only when {}{coordinate_note}",
+        "{access_note}\n  note: {reserved_prefix}held `{}` covers `{}` only when {}{coordinate_note}",
         render_resource_fact_diagnostic(held_fact, parameter_binding),
         describe_memory_range(required, parameter_binding),
         conditions.join(" and "),
@@ -3057,7 +3134,7 @@ pub(super) fn describe_resource_version_mismatch(
         explanation.resource,
         resource_tracker::OwnedResource::ModelField { .. }
     ) {
-        message.push_str(" This diagnostic checks recorded memory history without using the proof context's equality and ownership facts.");
+        message.push_str("\n  supplemental history explanation: This diagnostic checks recorded memory history without using the proof context's equality and ownership facts.");
     }
     Some(message)
 }
@@ -5517,6 +5594,7 @@ fn describe_untyped_array_field_read(
                 value_type,
                 volatile,
                 pointee_constant,
+                access_class: _,
                 source,
             },
         ..
@@ -5573,6 +5651,7 @@ fn describe_untyped_array_field_read(
         value_type: element_type,
         volatile: *volatile,
         pointee_constant: *pointee_constant,
+        access_class: None,
         source: source.clone(),
     }))
 }

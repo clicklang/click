@@ -281,15 +281,17 @@ through arbitrary ancestors and writable erase integration remain unfinished.
 
 
 `rbtree_size_insert_context_color_flip.click` and its mirrored counterpart
-extend the four-node flip beneath a nonnull black parent with an arbitrary
-owned outer ancestor context and arbitrary sibling trees. The loop moves past
+prove a flip beneath a nonnull black parent with arbitrary owned children of
+the red focus, symbolic cached sizes at the focus, parent, and grandparent,
+and an arbitrary owned outer ancestor context with arbitrary sibling trees.
+The parent's other child remains empty and the uncle is a leaf. The loop moves past
 the two inner frames, stops at the black parent, and uses the previously
 proved `restore_sized_context` to return the whole root tree. The postcondition
 states its exact model as the unchanged outer context filled with the recolored
 subtree; cached counts and links are preserved throughout. The ranking measure
 is the actual context depth, reduced by two on the continuing path. This covers
-a single flip followed by a black-parent exit, not repeated flips through red
-ancestors or non-root rotations.
+a single flip followed by a black-parent exit. Repeated flips through red
+ancestors remain unfinished.
 
 
 `rbtree_size_change_child.click` now checks the insertion translation unit's
@@ -322,7 +324,41 @@ still needs the writable callback and whole-context restoration.
 `rbtree_size_insert_context_rotation.click` composes the checked parent-update
 helper and writable size callback for a left-left insertion rotation under an
 arbitrary owned ancestor context. The unchanged C and both augmented insertion
-wrappers return the repaired three-node subtree and the same outer context,
-including its ancestor caches. Its retained-session expansion is a nightly
-regression for call-frame address matching. Refolding that pair into the whole
-root tree remains the next step.
+wrappers return ownership of the whole root tree after refolding the repaired
+three-node subtree through the preserved ancestor context. The postcondition
+identifies its model with `sized_plug` and retains the subtree's exact rotated
+shape. Its retained-session expansion is a nightly regression for call-frame
+address matching. The other non-root rotation shapes remain.
+
+
+`rbtree_size_insert_mirrored_context_rotation.click` proves the right-right case
+with the same whole-root ownership result and unchanged ancestor caches. Both
+augmented insertion wrappers check the mirrored writable callback. The two
+context cases share the packed black-parent-word lemma in the parent-update
+helper, and each has a retained expansion regression.
+
+
+`rbtree_size_insert_context_double_rotation.click` and its mirrored counterpart
+check the left-right and right-left three-node insertion rotations under an
+arbitrary owned ancestor context. Each composes two writable size callbacks,
+identifies the intermediate repaired model by uniqueness, updates the incoming
+link, and restores ownership of the whole root tree. The postcondition relates
+that model to `sized_plug` of the original context and repaired subtree. Both
+augmented insertion wrappers preserve the same result. Repeated color flips
+through red ancestors, general insertion subtrees, and writable erase integration
+remain unfinished.
+
+
+`rbtree_size_recolor.click` supplies shared model operations for root recoloring
+and insertion color flips. Its explicit lemmas preserve cached values and
+recursive count validity for arbitrary subtrees and identify their shapes with
+the existing `rb_recolor` and `rb_insert_fix_recolor` operations. The root-only
+insertion proof imports this shared recoloring definition.
+
+
+`rbtree_size_insert_context_stop.click` checks the black-parent stopping case
+for arbitrary focused and sibling subtrees and an arbitrary owned outer context.
+Its input bundles the tree and path around their shared cached size. Either
+parent orientation returns the root link and ownership of the whole root tree,
+whose exact model is the original context filled with the original subtree.
+Both augmented insertion wrappers preserve that result.

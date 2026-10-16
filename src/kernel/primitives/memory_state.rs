@@ -1822,6 +1822,7 @@ impl CBlock {
             size: Bitvector32Term::Constant(size),
             read_only: false,
             declared_scalar_type: None,
+            declared_class: None,
         }
     }
 
@@ -1830,6 +1831,7 @@ impl CBlock {
             size: Bitvector32Term::Constant(size),
             read_only: true,
             declared_scalar_type: None,
+            declared_class: None,
         }
     }
 
@@ -1838,6 +1840,7 @@ impl CBlock {
             size,
             read_only: false,
             declared_scalar_type: None,
+            declared_class: None,
         }
     }
 
@@ -2575,17 +2578,68 @@ impl CMemory {
             .is_some_and(|block| block.declared_scalar_type.is_some())
     }
 
-    /// Declares one complete automatic scalar, retaining its type while its
-    /// cells are unwritten, forgotten, or accessed through character pointers.
+    /// The declared class of the object `pointer` lies in, when its block
+    /// records one (`design/effective-types.md`).
+    pub(in crate::kernel) fn declared_class(
+        &self,
+        pointer: &Pointer,
+    ) -> Option<crate::kernel::effective_type::CAccessClass> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.blocks.get(&pointer.block)?.declared_class
+    }
+
+    /// A fresh block whose object, or every element of it, has
+    /// `declared_class` (`design/effective-types.md`). The class is part of
+    /// the declaration, so the block-declared derivation covers it.
+    pub(in crate::kernel) fn with_classed_block(
+        self,
+        block: PointerBlock,
+        declared_class: Option<crate::kernel::effective_type::CAccessClass>,
+        size: u32,
+    ) -> Self {
+        let Some(declared_class) = declared_class else {
+            return self.with_block(block, size);
+        };
+        let mut memory = self;
+        let base = intern_derivation_base(&mut memory);
+        let mut declaration = CBlock::new(size);
+        declaration.declared_class = Some(declared_class);
+        std::sync::Arc::make_mut(&mut memory.blocks).insert(block.clone(), declaration);
+        record_c_memory_derivation(
+            &mut memory,
+            CMemoryDerivation::BlockDeclared { base, block },
+        );
+        memory
+    }
+
+    /// [`Self::with_classed_scalar_block`] with the class its kernel type
+    /// gives.
+    #[cfg(test)]
     pub(in crate::kernel) fn with_declared_scalar_block(
-        mut self,
+        self,
         block: PointerBlock,
         size: u32,
         c_type: CType,
     ) -> Self {
+        self.with_classed_scalar_block(block, size, c_type, None)
+    }
+
+    /// Declares one complete automatic scalar, retaining its type while its
+    /// cells are unwritten, forgotten, or accessed through character pointers.
+    /// The scalar's declared class is `declared_class`, or what its kernel
+    /// type gives (`design/effective-types.md`).
+    pub(in crate::kernel) fn with_classed_scalar_block(
+        mut self,
+        block: PointerBlock,
+        size: u32,
+        c_type: CType,
+        declared_class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
         let base = intern_derivation_base(&mut self);
         let mut declaration = CBlock::new(size);
         declaration.declared_scalar_type = Some(c_type);
+        declaration.declared_class = declared_class
+            .or_else(|| crate::kernel::effective_type::CAccessClass::of_kernel_type(c_type));
         std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), declaration);
         record_c_memory_derivation(&mut self, CMemoryDerivation::BlockDeclared { base, block });
         self
@@ -5065,6 +5119,11 @@ impl CMemory {
         value: CValue,
         context: &PureFactContext,
     ) -> Self {
+        crate::kernel::debug_assert_widths(
+            "a stored value",
+            || crate::kernel::value_width_mismatch(&value),
+            &value,
+        );
         // Most scalar stores have no union views to displace. When one is
         // present, forget views at every possibly overlapping spelling before
         // recording the new scalar cell.
@@ -5899,7 +5958,19 @@ impl CMemory {
                     &normalized_cell_pointer,
                 ))
             {
-                return CachedValueFate::Forgotten;
+                return if crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(
+                    &normalized_pointer,
+                    bytes,
+                    &normalized_cell_pointer,
+                    crate::kernel::reasoning::cell_access_byte_width(cell_value),
+                    assumptions,
+                )
+                .is_some()
+                {
+                    CachedValueFate::Kept
+                } else {
+                    CachedValueFate::Forgotten
+                };
             }
             if assumptions.access_owned_apart_from_store(
                 &owned_footprint,
@@ -5987,7 +6058,19 @@ impl CMemory {
                     &normalized_cell_pointer,
                 ))
             {
-                return CachedValueFate::Forgotten;
+                return if crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(
+                    &normalized_pointer,
+                    bytes,
+                    &normalized_cell_pointer,
+                    cell_type.byte_width().max(1),
+                    assumptions,
+                )
+                .is_some()
+                {
+                    CachedValueFate::Kept
+                } else {
+                    CachedValueFate::Forgotten
+                };
             }
             if assumptions.access_owned_apart_from_store(
                 &owned_footprint,
@@ -6031,19 +6114,6 @@ impl CMemory {
                 CachedValueFate::Forgotten
             }
         };
-        #[cfg(debug_assertions)]
-        if !gap_kept.is_empty() {
-            crate::instrumentation::uncharged_debug_check(|| {
-                crate::kernel::reasoning::store_gap::check_gap_kept_cells(
-                    &memory.cells,
-                    &gap_kept,
-                    &normalized_pointer,
-                    &mut |pointer: &Pointer, value: &CValue| {
-                        cell_fate(pointer, value) == CachedValueFate::Kept
-                    },
-                );
-            });
-        }
         let ordered = memory
             .cells
             .ordered_store_candidates(&normalized_pointer, bytes, &candidates, assumptions)

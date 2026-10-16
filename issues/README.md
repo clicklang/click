@@ -125,14 +125,12 @@ Specification and proof:
 - [Verify the Linux rbtree example on the recursive structure models](rbtree-example.md)
 - [Make simple tactics fast: exact requirements, expandable `auto` for the rest](simplify-step.md)
 - [Scaling: stamp out quadratic work in simple checking](scaling.md)
-- [Difference logic: the fast path for arithmetic requirements and conditions](difference-logic.md)
 - [Launch design review: open critiques, each to be fixed or ruled wontfix](design-review.md) (depends on simplify-step.md)
 - [Finish place-based resource clauses](resource-place-syntax.md)
 
 Architecture:
 
 - [One source-tactic interpreter for every proof context](one-tactic-interpreter.md)
-- [One kernel statement executor for both execution judgments](one-statement-executor.md)
 - [One name resolver and one printer for surface syntax](one-name-resolver-and-printer.md)
 - [Finish the equality service: delete the overlapping equality stores](one-equality-service.md)
 - [One integer term type that carries its width](one-integer-term-type.md)

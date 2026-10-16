@@ -94,16 +94,3 @@ expansion round-trip regression.
   behavior.
 - The gate, the nightly corpus and the expansion audit show no verdict
   changes. Any change that does appear is filed and explained.
-</content>
-</invoke>
-<invoke name="Bash">
-<parameter name="command">cd /home/user/click-simplify-step && python3 - <<'EOF'
-p='issues/README.md'
-s=open(p).read()
-s=s.replace("## P1: before launch (9)","## P1: before launch (11)")
-old="- [Finish place-based resource clauses](resource-place-syntax.md)\n"
-assert old in s
-s=s.replace(old, old+"\nArchitecture:\n\n- [One source-tactic interpreter for every proof context](one-tactic-interpreter.md)\n- [One kernel statement executor for both execution judgments](one-statement-executor.md)\n")
-open(p,'w').write(s)
-EOF
-git diff issues/README.md

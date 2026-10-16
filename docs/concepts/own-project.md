@@ -446,7 +446,6 @@ Try the remaining function, `label_copy`:
 
 ```click filename=label.click
 import click::cstr;
-import click::machine_integer;
 
 verifying "label_fit.c";
 verifying "label_copy.c";
@@ -456,25 +455,7 @@ uint64 label_fit(uint64 length) {
     ensures result <= length;
     ensures length < 32u64 implies result == length;
     ensures 32u64 <= length implies result == 31u64;
-} by {
-    if length < 32u64 {
-        execute();
-        have 32u64 <= length implies result == 31u64 by {
-            intro();
-            apply(uint64_less_equal_less_than_transitive(32u64, length, 32u64));
-            contradiction(32u64 < 32u64);
-        }
-        simp();
-    } else {
-        execute();
-        have result <= length by auto;
-        have length < 32u64 implies result == length by {
-            intro();
-            contradiction(length < 32u64);
-        }
-        simp();
-    }
-}
+} by auto;
 
 uint64 label_measure(const char* src) {
     views s: cstr_at(src, _);
@@ -501,10 +482,10 @@ uint64 label_copy(char* dst, const char* src) {
 
 `label_fit` now states exactly what it returns, and `label_measure` and
 `label_copy` state exactly which length they keep: the whole string when it
-fits, 31 bytes otherwise. `label_fit`'s proof splits on the length and cites
-a `uint64` ordering theorem from the `click::machine_integer` library module,
-so the sidecar imports it, and `click::cstr` for `cstr_at`; see
-[Click library imports](sidecars.md#click-library-imports).
+fits, 31 bytes otherwise. `by auto` proves the two new `label_fit` claims:
+on each path of the C branch it refutes the claim's other hypothesis, such as
+`length < 32u64` where `length >= 32`. The sidecar imports `click::cstr` for
+`cstr_at`; see [Click library imports](sidecars.md#click-library-imports).
 `label_copy` opens the string it views to lend a prefix of its bytes to
 `memcpy`. `memcpy` owns its destination and views its source, and a call
 cannot lend overlapping bytes both ways, so the copy needs a separate

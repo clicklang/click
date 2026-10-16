@@ -80,6 +80,22 @@ Profiling attributes this work to `return claim goal lowering`. The
 [unfolded-predicate fixture](https://github.com/clicklang/click/blob/master/mdtests/explicit_return_closer_keeps_unfolded_predicate_goal.md)
 keeps the distinct folded and unfolded forms available when they are needed.
 
+Return-goal lowering separates entry/exit view preparation from individual
+ensures. Consecutive exact return closers (`assumption`, `normalize`,
+`arithmetic using`, checked arithmetic certificates and `both`) share one lazy
+`CFunctionEnsureGoalContext`, including failed preparation, because they only
+discharge claims. Every other deferred tactic discards it before running; an
+assumption closer's checked contract-resource transition also discards it.
+Rewrite and smart-completion batches share views only inside their own fixed
+frontier. There is no global cache or structural state comparison. The nested
+`return claim state preparation` operation attributes the preparation cost;
+it overlaps `return claim goal lowering`, so do not add their work or times.
+Regular scalar regressions bound lowering work by resources plus claims
+at sizes 1, 2, 4 and 8 for both assumption runs and normalization batches.
+A named nightly regression independently varies four resource sizes and
+three claim sizes, retaining the full matrix without slowing the regular gate. It does not bound every part of contract
+verification or eliminate preparation after a frontier-changing tactic.
+
 ### Refused ownership separation
 
 A refused separation of fixed fields on independent pointer parameters uses
@@ -348,17 +364,17 @@ charged to visible semantic output rather than hidden ambient state:
   (or two constant offsets), is decided by `c - k` alone, and `Pointer`
   orders every `S + c` of one anchor as one key range by `c`, so the store
   keeps the cells whose windows its bytes clear without visiting them and
-  asks only the cells within eight bytes of its own and those at other
-  spellings. The ranges name only shapes whose ladder answer is "keep" by
-  structural cancellation and constant arithmetic, reading no fact, and
-  they are empty while implicit provenance is captured or after the
-  deadline; debug builds re-ask the ladder about the cells at each end of
-  every range, and `skipping_constant_gap_cells_leaves_every_store_unchanged`
-  compares generated store sequences both ways, forget marks included. A
-  line of constant-index stores (`a[0] = …; a[1] = …`) costs 477 to 11,339
-  units of store work at 4 to 64 stores in a debug build (467 to 8,959 in
-  release), where it cost 445 to 46,017
-  (`stores_to_constant_indices_are_near_linear`). Recorded strict signed
+  asks only cells whose windows could overlap and those at other spellings.
+  The ranges name only shapes whose per-cell answer is "keep" by structural
+  cancellation and constant arithmetic, reading no fact. Exact same-block
+  byte geometry also takes precedence over conservative whole-object
+  invalidation from known C-address aliases. The ranges are empty while
+  implicit provenance is captured or after the deadline.
+  `skipping_constant_gap_cells_leaves_every_store_unchanged` compares generated
+  store sequences both ways, forget marks included; production stores do not
+  recheck the cells their producer has proved separate. The multi-size
+  `stores_to_constant_indices_are_near_linear` regression checks a line of
+  constant-index stores (`a[0] = …; a[1] = …`). Recorded strict signed
   variable orders now also form incremental paths, with logical ranks from a
   weighted union forest rather than variable identifiers. Exact order and
   endpoint-bound queries use those paths without traversing the intervening
@@ -966,7 +982,16 @@ equality `this == &other` makes `this->size` and `other.size` one cell
 `work_is_independent_of_unrelated_bounded_values` pins insertion and query
 work beside 16 to 1,024 unrelated values, and
 `decisions_hold_in_every_model_and_are_complete` checks each answer against
-every model of generated fact sets. See `issues/difference-logic.md`.
+every model of generated fact sets.
+
+The graph decides difference constraints only. Non-linear arithmetic and
+relations between sums of variables are out of its reach, and so is an
+overflow bound that rests on a guard over a sum: `a <= INT_MAX - b` is not a
+difference constraint. Simple checking does not rediscover such a bound; a
+proof states it with a lemma, as
+`explicit_nonnegative_add_definedness_certifies_the_whole_contract` does with
+`int32_nonnegative_add_within_max_is_defined`. Implicit `auto` is not
+promised to close what the fast path leaves open.
 
 ## Termination heights and local descent
 
@@ -1212,6 +1237,18 @@ history walk in a restricted context. Its positive answer never issues or
 retains evidence: the selected restricted query must still succeed. The
 former all-condition candidate trials and full-context retained leaves are
 gone. Traversal is charged to `atomic dependency selection`; interruption returns no partial proof.
+
+Before spelling a supported typed equality, simp retains only the sources
+already named by its evidence: exact equality edges, constant-pinning facts,
+paired order facts, or the index equalities inside load-address congruence.
+The kernel rebuilds the selected context from those sources and assigns its
+identity without another solver query. Connected aliases that the evidence
+did not use therefore add no certificate premises. Offset rules that still
+consult unrecorded constant sources keep their original selection, as do
+other evidence families. Legacy evidence retains the bounded subset search.
+The two `simp_retains_recorded_*` scaling regressions grow connected facts
+from 8 through 128 while retaining two equality links or one load-index fact;
+each also checks that withdrawing a required fact invalidates the proof.
 
 `atomic_memory_evidence_cites_only_connected_conditions` keeps one-source
 evidence at one premise, equality-assisted evidence at two, and refuses a

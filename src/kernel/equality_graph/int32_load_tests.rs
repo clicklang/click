@@ -235,6 +235,38 @@ fn explicit_cross_snapshot_load_equality_composes_without_merging_snapshots() {
     assert!(reverse_order.equality_graph.are_int32_equal(&old_j, &new_j));
 }
 
+#[test]
+fn reads_at_equal_addresses_are_equal_without_equal_pointers() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let memory = intern_c_memory(
+        CMemory::new()
+            .with_block("left", 64)
+            .with_block("right", 64),
+    );
+    let at = |block: &str, bytes: i64| Pointer {
+        block: block.into(),
+        offset: PointerOffsetTerm::Constant(bytes),
+    };
+    let address_of = |pointer: Pointer| Bitvector32Term::pointer_address(pointer);
+    let after = intern_c_memory(
+        memory
+            .memory()
+            .clone()
+            .store(at("left", 8), CValue::Int32(Bitvector32Term::Constant(9))),
+    );
+    for field in [0, 8] {
+        let left = load(&memory, &at("left", field), 4);
+        let right = load(&memory, &at("right", field), 4);
+        let changed = load(&after, &at("right", field), 4);
+        let mut graph = EqualityGraph::default();
+        assert!(!graph.are_int32_equal(&left, &right));
+        graph.add_uint64_equality(&address_of(at("left", 0)), &address_of(at("right", 0)));
+        assert!(graph.are_int32_equal(&left, &right), "field at {field}");
+        assert!(!graph.are_int32_equal(&left, &changed));
+        assert!(!graph.are_equal(&at("left", field), &at("right", field)));
+    }
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/equality_graph/int32_load_tests.rs");

@@ -2289,7 +2289,6 @@ fn checked_condition_evidence_preserves_the_tail_for_empty_if_arms() {
     for value in [true, false] {
         let progress = check_evidence_events(
             &[condition_event(&state, &condition, value)],
-            &ProofFacts::default(),
             state.clone(),
             Some(source.clone()),
         )
@@ -2313,7 +2312,6 @@ fn checked_condition_evidence_rejects_a_different_source_condition() {
     assert!(
         check_evidence_events(
             &[condition_event(&state, &theorem_condition, true)],
-            &ProofFacts::default(),
             state,
             Some(source),
         )

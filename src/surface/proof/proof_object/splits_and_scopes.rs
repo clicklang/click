@@ -452,6 +452,7 @@ impl<'a> Proof<'a> {
             &[ProofTactic::Both(both.clone())],
             std::slice::from_ref(self.site()),
             &mut None,
+            None,
         )?
         .ok_or_else(|| self.step_error("`both` requires complete proofs of both conjuncts"))
     }
@@ -1187,14 +1188,10 @@ impl<'a> Proof<'a> {
                 ProofContext::Execution(context) => context.spec_definitions.predicates,
             };
             let active_unfolds = self.focused_branch_unfolds().to_vec();
-            unfold_structural_invariant_proposition(
-                predicate_environment,
-                &proposition,
-                &active_unfolds,
-            )
-            .map_err(|message| {
-                self.step_error(format!("could not unfold `have` goal: {message}"))
-            })?
+            self.unfold_goal_surface(predicate_environment, &proposition, &active_unfolds)
+                .map_err(|message| {
+                    self.step_error(format!("could not unfold `have` goal: {message}"))
+                })?
         } else {
             proposition.clone()
         };
@@ -1317,8 +1314,16 @@ impl<'a> Proof<'a> {
             execution.presentation.chosen_projection = None;
             Arc::new(execution)
         });
+        // Outcome certification must see the assumptions that preceded this
+        // scope, not the facts its checked premise-selection operations just
+        // derived. Keep those selected facts in the successor below.
+        let retain_outcome_root = self.focused_outcome_data().is_some();
         let body_context = BranchState {
-            facts: body_facts,
+            facts: if retain_outcome_root {
+                self.facts().clone()
+            } else {
+                body_facts.clone()
+            },
             unfolded_predicates: self.focused_branch_unfolds().clone(),
             execution: body_execution,
         };
@@ -1357,10 +1362,19 @@ impl<'a> Proof<'a> {
             body.surface_bindings = parent.surface_bindings.clone();
             body.introduced_antecedents = parent.introduced_antecedents.clone();
         }
+        let selected_obligation = retain_outcome_root.then(|| body_goal.obligation.clone());
+        let body_state = KernelProofObject::root(self.state().locals().clone(), body_goal);
+        let body_state = if let Some(obligation) = selected_obligation {
+            body_state
+                .replace_focused_obligation_and_facts(obligation, body_facts)
+                .map_err(|_| self.step_error("selected have facts lost their proposition scope"))?
+        } else {
+            body_state
+        };
         let body = Proof {
             site: self.site.nested(ProofStepBlock::Have),
             context: self.context.clone(),
-            state: KernelProofObject::root(self.state().locals().clone(), body_goal),
+            state: body_state,
             node: Arc::new(ProofNode {
                 path_memo: Default::default(),
                 parent: None,

@@ -106,12 +106,15 @@ instead of from what the step changed.
    the rule in `AGENTS.md` (construct valid proofs; never produce-then-check):
    a step still runs its executor up to three times (a probe before
    obligations, and a call before its `return`), instance, observation and
-   population rewrites still re-check their producer's result, a join walks
-   its own arms once to collect their memory steps, and condition and
-   function-level theorems still list their contexts. A walk that meets an
-   already checked branch or proof-case join no longer walks its arms again,
-   so a statement inside nested joins is walked once per join that directly
-   holds it rather than once per enclosing join. A plain composite `fold` or `unfold` is recorded from its
+   population rewrites still re-check their producer's result, and condition
+   and function-level theorems still list their contexts. A walk that meets
+   an already checked branch or proof-case join no longer walks its arms
+   again, so a statement inside nested joins is walked once per join that
+   directly holds it rather than once per enclosing join. That walk, which
+   collects the arms' memory steps, reads each recorded event's result and
+   re-checks no premise or rewrite; it takes no facts. The function's
+   completion walk still re-checks population-authority rewrites and
+   lifetime ends. A plain composite `fold` or `unfold` is recorded from its
    producer's result without re-expanding or comparing (2.84 billion
    instructions at N = 64; fold work at N = 256 137,981 to 22,782).
 5. **Fixed: satisfying a composite checked every held one of its shape.**
@@ -129,6 +132,20 @@ instead of from what the step changed.
    and the projection starts from that map and filters only the `local:`
    cells and the load's own block; each `heap_objects` unfold is flat
    (141 units at every position at N = 24).
+7. **Fixed: a call reserved every variable its assumptions mention.** To
+   pick fresh identities, a verified call collected every variable of every
+   assumption, including each variable every named snapshot holds: per call
+   the facts times the snapshot's variables, so cubic in `objects_and_calls`
+   (`collect_assumption_variables`, x50 from N = 32 to 128). A fact context
+   now keeps an upper bound on the execution-range variables its facts
+   mention (`ExecutionVariableCeiling`): filing a fact reads its syntax, a
+   fact that names a snapshot is taken whole once when an execution first
+   asks, and executions allocate above the bound instead of reserving the
+   facts' variables (`asking_after_every_fact_takes_each_snapshot_fact_whole_once`).
+   `objects_and_calls` at N = 128: 10.69 to 9.90 billion instructions.
+   Separately, lowering a function's requirements bound every parameter
+   into the entry state again for each requirement; the state is now built
+   once per requirement list.
 
 Related scaling bugs stay in `bugs/` until fixed:
 [sequential-loop-clause-grows-with-earlier-loops.md](../bugs/sequential-loop-clause-grows-with-earlier-loops.md).

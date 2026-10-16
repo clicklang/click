@@ -65,7 +65,8 @@ units at every size. This removes that individual ambient scan; it does not
 remove the growing lower-bound candidate count or close this bug.
 
 The quadratic part is gone. Simple checking no longer calls the general
-decision (`issues/difference-logic.md` step 4), so no candidate lower bounds
+decision (see "Condition decisions in simple checking" in
+`docs/internals/verification-efficiency.md`), so no candidate lower bounds
 are decided. The largest loop clause now charges 1,847, 2,485, 3,759 and
 5,031 units at N = 4, 8, 16 and 24, about 160 per earlier loop. A trace of
 deterministic work at N = 8, 16 and 24 puts that growth in two places:

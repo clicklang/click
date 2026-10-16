@@ -851,6 +851,26 @@ the matched result has one consistent carrier; contextual Integer literals in
 their arms inherit that result type. Mixed C and Integer arithmetic remains
 rejected unless an explicit conversion is present.
 
+### Integer specification arithmetic
+
+`arithmetic "integer";` opts a file into Integer-default specification
+arithmetic, the decided default
+([design-review P2](https://github.com/clicklang/click/blob/master/issues/design-review.md)).
+The directive is a migration switch: files adopt it one by one, and it is
+removed once the default changes. In such a file, a specification comparison
+that does `+`, `-`, `*` or negation, or that compares an Integer with a
+machine value, compares exact Integers: each machine operand of its
+arithmetic is observed with `to_integer`, so `x + 1 > x` reads
+`to_integer(x) + 1 > to_integer(x)` and holds for every `int32` and
+`uint32`. Unsuffixed literals take the Integer type. A comparison with a
+pointer parameter among its arithmetic operands, and a comparison without
+arithmetic between machine values, keep their C meaning; the latter has the
+same truth either way. Expansions and diagnostics print the inserted
+`to_integer`. See
+`mdtests/integer_arithmetic_makes_specification_addition_exact.md` and its
+C-arithmetic twin
+`mdtests/machine_specification_addition_needs_its_overflow_bound.md`.
+
 An Integer comparison of exact observations of one machine type, such as
 `0 <= to_integer(capacity)` or `to_integer(x) != to_integer(y)`, also
 establishes the native comparison it is equivalent to, `0 <= capacity` or
@@ -861,7 +881,8 @@ definedness of a population count, therefore accept the Integer premise
 comparison is exactly as strong as the Integer one
 (`mdtests/an_integer_premise_files_no_stronger_machine_fact.md`); a constant
 outside the type's range, or observations of two different types, establish
-no native fact.
+no native fact. Deciding such an Integer comparison likewise asks the native
+comparison it is equivalent to.
 Resources may declare `field total: Integer;`: folding checks the resource's
 facts, and `old(model.total)` retains the entry value across updates.
 Checked resource pattern bindings retain each field's declared carrier, name,
@@ -2030,6 +2051,16 @@ a name, `owns pair(p);`, unfolded with `let { first: c } = unfold(pair(p));`,
 and folded with `fold(pair(p), { first: c });`, which takes only the child
 map; with the child bound to `first`, `fold(pair(p));` takes it by name
 (`mdtests/a_hidden_record_folds_its_child_by_name.md`). Holding it by name, `owns x: pair(p);`, is also accepted.
+
+The record has no source syntax, but diagnostics and expansion show it. A
+refusal lists a held instance with its record,
+`owns pair(p) record { first.v: <unnamed A> }`, using the same placeholders
+as the pure facts beside it
+(`mdtests/a_hidden_record_is_shown_beside_its_resource.md`). A refused fold
+adds `proposed fold: pair(p) record { ... }` below its failed body fact
+(`mdtests/a_refused_fold_shows_the_hidden_record_it_proposed.md`).
+`click expand` writes the record a fold sets as a trailing comment, which the
+parser ignores: `fold(pair(p), { first: c }); // record { first.v: c.v }`.
 
 A resource that declares fields of its own says where a named child's field
 is kept with one equation,

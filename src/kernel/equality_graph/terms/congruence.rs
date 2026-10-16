@@ -171,15 +171,11 @@ impl TermClasses {
                     // them opaque instead of guessing a machine width.
                     if wide {
                         if let Some((memory, pointer)) = uint64_read(term) {
-                            Node::UInt64Read(
-                                memory.read_identity(),
-                                self.address(pointer.block, pointer.offset).0,
-                            )
+                            let address = self.address(pointer.block, pointer.offset).0;
+                            Node::UInt64Read(memory.read_identity(), self.read_address(address))
                         } else if let T::PointerAddress(pointer) = term {
-                            Node::UInt64Address(
-                                self.address(pointer.block.clone(), pointer.offset.clone())
-                                    .0,
-                            )
+                            values.push(self.numeric_address(pointer));
+                            continue;
                         } else {
                             Node::UInt64(MachineAtom::uint64(term.clone()))
                         }

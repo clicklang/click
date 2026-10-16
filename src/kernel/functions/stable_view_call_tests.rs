@@ -643,12 +643,14 @@ fn candidate_composite_view_with_an_unestablished_fact_is_refused() {
     );
     let (_, transfer) = plan_adapter_lend(&function);
     let error = transfer.expect_err("an unestablished body fact is refused");
-    let CRuntimeError::LoanRefusal(diagnostic) = &error else {
+    // Assembling the view is a fold, so the refusal names the instance and
+    // the body fact it could not establish rather than a missing loan.
+    let CRuntimeError::UnestablishedAssemblyFact { assembled, .. } = &error else {
         panic!("{error}");
     };
     assert_eq!(
-        diagnostic.category(),
-        crate::kernel::loans::LoanRefusalCategory::Missing
+        assembled.as_ref(),
+        &CResourceFact::view_composite("cell".into(), vec![CValue::pointer(pointer())])
     );
     // The same adapter with a fact the call already establishes is
     // accepted, so the refusal above is the fact check and not the shape.
@@ -2607,4 +2609,72 @@ fn candidate_symbolic_token_population_consume_plans_beside_a_lent_view() {
             .callee_resources
             .satisfies_fact(&CResourceFact::view_memory(viewed), &PureFactContext::new())
     );
+}
+
+/// Both execution judgments step a sequence with one driver. A sequence
+/// whose first statement leaves abnormally carries that statement's loan
+/// evidence out with it under either judgment; the concrete driver once
+/// rebuilt the path without it. Here a lending call runs first, so the
+/// evidence is what leaves.
+#[test]
+fn an_abnormal_sequence_exit_keeps_its_loan_evidence_under_both_judgments() {
+    let pointer = pointer();
+    let function = reader("sequence_exit_reader", false);
+    let call = c_call(
+        "sequence_exit_reader",
+        vec![CExpression::Value(CValue::pointer(pointer.clone()))],
+    );
+    let exits = [
+        ("break", c_break()),
+        ("return", c_return(c_int32_literal(0))),
+        ("throw", CStatement::Throw(c_int32_literal(1))),
+        ("runtime error", c_assign("undeclared", c_int32_literal(1))),
+    ];
+    for (name, exit) in exits {
+        let statement = c_seq(
+            c_seq(call.clone(), exit),
+            c_assign("unreached", c_int32_literal(2)),
+        );
+        let ledger = LoanLedger::new();
+        let participant = ledger.fresh_participant().expect("caller participant");
+        let state = caller(&pointer)
+            .with_loan_ledger(Some(ledger))
+            .with_loan_participant(Some(participant));
+        let environment = environment(&function).with_function(function.clone());
+        let executes = crate::kernel::eval::execute_c_statement_paths(
+            &state,
+            &statement,
+            &PureFactContext::new(),
+            CExecutionContext::apply_verified_rules(&environment),
+            &mut ExecutionBudget::new(),
+        )
+        .expect("the sequence executes");
+        let mut variables = KernelVariableGenerator::fresh_for(0, BTreeSet::new());
+        let verifies = crate::kernel::loops::execute_c_statement_verification_paths(
+            &state,
+            &statement,
+            &PureFactContext::new(),
+            CExecutionContext::apply_verified_rules(&environment),
+            &mut ExecutionBudget::new(),
+            &mut variables,
+        )
+        .expect("the sequence verifies");
+        assert_eq!(executes.len(), 1, "{name}: {executes:?}");
+        assert!(
+            !matches!(executes[0].outcome, CStatementOutcome::Normal(_)),
+            "{name}: the sequence leaves abnormally"
+        );
+        assert_eq!(
+            executes[0].loan_evidence.len(),
+            1,
+            "{name}: the concrete path keeps the call's evidence"
+        );
+        assert!(
+            verifies
+                .iter()
+                .any(|path| path.outcome == executes[0].outcome
+                    && path.loan_evidence.len() == executes[0].loan_evidence.len()),
+            "{name}: the concrete path is a verification path carrying its evidence"
+        );
+    }
 }

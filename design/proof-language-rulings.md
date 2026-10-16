@@ -59,7 +59,9 @@ only by the tests that read them.
   record, which remembers the child's values across a fold. A rule under
   which each unfold yields fresh values was considered and dropped: the
   kernel treats a fieldless resource's body as a function of its arguments
-  and memory in about thirty places.
+  and memory in about thirty places. Diagnostics and `click expand` show
+  the record (`record { first.v: ... }`; a comment in expansion output),
+  as the maintainer decided on 2026-10-14 (launch review item M4).
 - A call binds a callee's instance binder automatically when only one
   binding is possible, and never chooses between two.
 - `diverges` stays on the signature and `decreases` stays a clause: one is a

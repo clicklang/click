@@ -292,7 +292,7 @@ impl PureFactContext {
         }
         // The difference graph is read first: what it decides follows from
         // these facts, including a fact it showed implied and so was never
-        // added (`issues/difference-logic.md`). Only a graph already built
+        // added (`docs/internals/verification-efficiency.md`). Only a graph already built
         // is read, so a context that withdrew a fact does not rebuild one.
         if let Some(value) = self
             .difference_graph
@@ -350,6 +350,16 @@ impl PureFactContext {
         // (`proposition_holds_without_facts`).
         if let Some(value) = condition.reflexive_value() {
             return Some(value);
+        }
+        // An Integer comparison of exact observations of one machine type
+        // has the truth of its native comparison, which the machine
+        // reasoning below decides (`native_comparison_of_integer_observation`).
+        if let Some((native, truth)) =
+            crate::kernel::assumptions::native_comparison_of_integer_observation(condition, true)
+            && &native != condition
+            && let Some(value) = self.decide(&native)
+        {
+            return Some(value == truth);
         }
         if let Some(value) = self.decide_uint64_constant_order_bounds(condition) {
             return Some(value);
