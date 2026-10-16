@@ -5670,9 +5670,14 @@ pub(crate) enum C0HeadTypedef {
         constant: bool,
         pointee_constant: bool,
     },
-    /// An alias of an array, function pointer, union, or a volatile, aligned
-    /// or extended-precision type, which a head writes as its type, or one
-    /// that two verified sources give different types.
+    /// A function pointer, `typedef int (*unary)(int);`, with its signature.
+    FunctionPointer {
+        c_type: C0Type,
+        signature: C0FunctionPointerSignature,
+    },
+    /// An alias of an array, union, or a volatile, aligned or
+    /// extended-precision type, which a head writes as its type, or one that
+    /// two verified sources give different types.
     Other,
 }
 
@@ -5682,6 +5687,17 @@ impl C0HeadTypedef {
     }
 
     fn restated(parsed: &ParsedType) -> Option<Self> {
+        if let (C0Type::FunctionPointer(_), Some(signature)) =
+            (parsed.c_type, &parsed.function_pointer_signature)
+            && !parsed.is_volatile
+            && parsed.volatile_levels == 0
+            && !parsed.is_constant
+        {
+            return Some(Self::FunctionPointer {
+                c_type: parsed.c_type,
+                signature: signature.clone(),
+            });
+        }
         if parsed.long_double
             || parsed.aligned_typedef
             || parsed.opaque_builtin

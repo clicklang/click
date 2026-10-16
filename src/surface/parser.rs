@@ -4419,10 +4419,13 @@ impl Parser {
 
         loop {
             // `const std::function<int(int)>& f` or `std::function<int(int)> f`:
-            // a callable value, as a function pointer is.
-            if let Some((c_type, function_pointer_signature)) =
-                self.parse_cpp_std_function_type()?
-            {
+            // a callable value, as a function pointer is; so is `unary f` for a
+            // C function-pointer typedef.
+            let callable = match self.parse_cpp_std_function_type()? {
+                Some(callable) => Some(callable),
+                None => self.parse_c_function_pointer_typedef()?,
+            };
+            if let Some((c_type, function_pointer_signature)) = callable {
                 let name = self.expect_ident("parameter name")?;
                 parameters.push(FunctionParameter {
                     click_type: ClickType::C(c_type),
@@ -4703,9 +4706,10 @@ impl Parser {
                     } = *typedef
                     else {
                         return Err(self.error(format!(
-                            "the typedef `{spelling}` stands for an array, function pointer, \
-                             union, or volatile or aligned type, or for different types in two \
-                             verified sources; a head writes its C type"
+                            "the typedef `{spelling}` stands for an array, union, or volatile or \
+                             aligned type, or for different types in two verified sources, or is \
+                             a function pointer written other than as a parameter's type; a head \
+                             writes its C type"
                         )));
                     };
                     is_constant |= constant;
@@ -4934,6 +4938,31 @@ impl Parser {
         let (c_type, function_pointer_signature) =
             self.parse_function_pointer_signature_tail(return_type)?;
         Ok((name, c_type, function_pointer_signature))
+    }
+
+    /// A parameter type that is a function-pointer typedef name of the
+    /// verified C source, `unary f`: its callable type. `None`, with nothing
+    /// consumed, for any other type.
+    fn parse_c_function_pointer_typedef(
+        &mut self,
+    ) -> Result<Option<(C0Type, syntax::C0FunctionPointerSignature)>, ClickError> {
+        let Some(name) = self.peek_ident() else {
+            return Ok(None);
+        };
+        let Some(syntax::C0HeadTypedef::FunctionPointer { c_type, signature }) =
+            self.c_typedefs.get(name)
+        else {
+            return Ok(None);
+        };
+        // `unary *f` is a pointer to a function pointer, which the type
+        // parser refuses.
+        if !matches!(self.peek_next(), Some(Token::Ident(_))) {
+            return Ok(None);
+        }
+        let callable = (*c_type, signature.clone());
+        self.check_head_typedef(name)?;
+        self.position += 1;
+        Ok(Some(callable))
     }
 
     /// A C++ `std::function<R(A...)>` parameter type, possibly `const` and

@@ -62,5 +62,5 @@ void run(pthread_mutex_t *mu) {
 ```
 
 ```expect
-fail: the typedef `pthread_mutex_t` stands for an array, function pointer, union, or volatile or aligned type
+fail: the typedef `pthread_mutex_t` stands for an array, union, or volatile or aligned type
 ```
