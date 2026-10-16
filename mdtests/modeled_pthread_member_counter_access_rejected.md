@@ -25,7 +25,7 @@ int run(struct cell *cell) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 authorized resource reference(cell: struct cell*) {}
 verifying "modeled_pthread_member_counter_access_rejected.c";

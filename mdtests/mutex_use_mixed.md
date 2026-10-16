@@ -15,7 +15,7 @@ int run(struct holder *holder, int *out, int *value) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_use_mixed.c";
 void inner(struct holder *holder, int32 *out, int32 *value) {

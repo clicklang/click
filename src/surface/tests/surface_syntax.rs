@@ -785,7 +785,7 @@ fn parses_the_c_target_directive() {
         crate::languages::c::target::CTarget::SUPPORTED
     );
 
-    let file = parse("target \"x86_64-linux-userspace\";\nverifying \"fill3.c\";")
+    let file = parse("target \"x86_64-unknown-linux-gnu\";\nverifying \"fill3.c\";")
         .expect("a declared target should parse");
     assert_eq!(
         file.declared_c_target(),
@@ -806,11 +806,11 @@ fn the_pre_parse_target_scan_agrees_with_the_parser() {
     for (source, expected) in [
         ("verifying \"fill3.c\";", CTarget::SUPPORTED),
         (
-            "target \"x86_64-linux-kernel\";\nverifying \"fill3.c\";",
+            "target \"x86_64-unknown-linux-gnu\";\nmode \"kernel\";\nverifying \"fill3.c\";",
             CTarget::X86_64LinuxKernel,
         ),
         (
-            "target \"x86_64-linux-userspace\";\nverifying \"fill3.c\";",
+            "target \"x86_64-unknown-linux-gnu\";\nverifying \"fill3.c\";",
             CTarget::X86_64LinuxUserspace,
         ),
     ] {
@@ -831,14 +831,14 @@ fn the_pre_parse_target_scan_agrees_with_the_parser() {
     // whatever this source means, the parser decides it.
     assert_eq!(
         crate::surface::selected_c_target(
-            "theorem nested() { target \"x86_64-linux-userspace\"; }"
+            "theorem nested() { target \"x86_64-unknown-linux-gnu\"; }"
         )
         .expect("pre-parse scan"),
         CTarget::SUPPORTED
     );
 
     let error = crate::surface::selected_c_target(
-        "target \"x86_64-linux-kernel\";\ntarget \"x86_64-linux-userspace\";",
+        "target \"x86_64-unknown-linux-gnu\";\nmode \"kernel\";\ntarget \"x86_64-unknown-linux-gnu\";",
     )
     .expect_err("a file selects at most one target");
     assert!(
@@ -852,10 +852,12 @@ fn rejects_an_unknown_or_repeated_c_target() {
     let error = parse("target \"x86_64-linux-embedded\";").expect_err("unknown target name");
     assert!(
         error.message().contains("unknown C target")
-            && error.message().contains("`x86_64-linux-userspace`"),
+            && error
+                .message()
+                .contains("the accepted target is `x86_64-unknown-linux-gnu`"),
         "{error:?}"
     );
-    let error = parse("target \"x86_64-linux-kernel\";\ntarget \"x86_64-linux-kernel\";")
+    let error = parse("target \"x86_64-unknown-linux-gnu\";\nmode \"kernel\";\ntarget \"x86_64-unknown-linux-gnu\"; mode \"kernel\";")
         .expect_err("a file selects at most one target");
     assert!(
         error.message().contains("more than one `target`"),

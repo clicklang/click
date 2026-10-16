@@ -22,7 +22,7 @@ void object_retain(struct object *obj) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "authority_mutex_locked_retain_without_cap_rejected.c";
 authorized resource reference(obj: struct object*) {}

@@ -11,7 +11,7 @@ int is_negative(char c) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 import "userspace_char_predicates_module.click";
 verifying "imported_char_module.c";
 

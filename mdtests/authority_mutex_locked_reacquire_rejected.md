@@ -17,7 +17,7 @@ void twice(struct object *obj) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "authority_mutex_locked_reacquire_rejected.c";
 authorized resource reference(obj: struct object*) {}

@@ -933,6 +933,7 @@ fn project_unit_selection(
 #[serde(deny_unknown_fields)]
 struct ProjectConfigJson {
     target: Option<String>,
+    mode: Option<String>,
     runtime: Option<String>,
     resource_semantics: Option<String>,
     /// Units are read by [`crate::project::Project`].
@@ -963,13 +964,17 @@ fn read_c_project_profile(
         .map_err(|error| format!("failed to read `{}`: {error}", path.display()))?;
     let config: ProjectConfigJson = serde_json::from_str(&source)
         .map_err(|error| format!("invalid Click project config `{}`: {error}", path.display()))?;
-    let target = config
-        .target
-        .map(|name| {
-            crate::languages::c::target::CTarget::from_name(&name)
-                .ok_or_else(|| format!("unknown C target `{name}` in `{}`", path.display()))
-        })
-        .transpose()?;
+    let target = if config.target.is_none() && config.mode.is_none() {
+        None
+    } else {
+        Some(
+            crate::languages::c::target::CTarget::from_parts(
+                config.target.as_deref(),
+                config.mode.as_deref(),
+            )
+            .map_err(|error| format!("{error} in `{}`", path.display()))?,
+        )
+    };
     let runtime = config
         .runtime
         .map(|name| {
@@ -2266,7 +2271,7 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         fs::write(
             root.join("settings.click"),
-            "target \"x86_64-linux-kernel\";\n",
+            "target \"x86_64-unknown-linux-gnu\";\nmode \"kernel\";\n",
         )
         .unwrap();
         let click = "import \"settings.click\";\nverifying \"k.c\";\n";
@@ -2307,7 +2312,7 @@ mod tests {
         .unwrap();
         fs::write(
             root.join("click.project.json"),
-            r#"{"target":"x86_64-linux-userspace","runtime":"modeled-pthread"}"#,
+            r#"{"target":"x86_64-unknown-linux-gnu","runtime":"modeled-pthread"}"#,
         )
         .unwrap();
         let project = read_click_project(&path, click).unwrap();
@@ -2329,12 +2334,12 @@ mod tests {
             crate::surface::selected_project_c_target(&project)
                 .unwrap()
                 .name(),
-            "x86_64-linux-userspace"
+            "x86_64-unknown-linux-gnu (userspace)"
         );
 
         fs::write(
             root.join("click.project.json"),
-            r#"{"target":"x86_64-linux-userspace"}"#,
+            r#"{"target":"x86_64-unknown-linux-gnu"}"#,
         )
         .unwrap();
         let without_runtime = read_click_project(&path, click).unwrap();
@@ -2350,8 +2355,11 @@ mod tests {
                 .is_none()
         );
 
-        let conflicting =
-            click.replacen("verifying", "target \"x86_64-linux-kernel\";\nverifying", 1);
+        let conflicting = click.replacen(
+            "verifying",
+            "target \"x86_64-unknown-linux-gnu\";\nmode \"kernel\";\nverifying",
+            1,
+        );
         fs::write(&path, &conflicting).unwrap();
         let project = read_click_project(&path, &conflicting).unwrap();
         assert!(
@@ -2401,7 +2409,7 @@ mod tests {
         fs::create_dir_all(&nested).unwrap();
         fs::write(
             root.join("click.project.json"),
-            r#"{"target":"x86_64-linux-userspace","runtime":"modeled-pthread"}"#,
+            r#"{"target":"x86_64-unknown-linux-gnu","runtime":"modeled-pthread"}"#,
         )
         .unwrap();
         let click = "verifying \"answer.c\";\nint32 answer() { ensures result == 1; } by { execute(); simp(); }\n";
@@ -2427,7 +2435,7 @@ mod tests {
         fs::create_dir_all(&nested).unwrap();
         fs::write(
             root.join("click.project.json"),
-            r#"{"target":"x86_64-linux-userspace","runtime":"modeled-pthread"}"#,
+            r#"{"target":"x86_64-unknown-linux-gnu","runtime":"modeled-pthread"}"#,
         )
         .unwrap();
         let click = "verifying \"answer.c\";\nint32 answer() { ensures result == 1; } by { execute(); simp(); }\n";
@@ -2446,7 +2454,7 @@ mod tests {
         crate::surface::verify_c0_project(&project, &source_refs(&sources)).unwrap();
         fs::write(
             nested.join("click.project.json"),
-            r#"{"target":"x86_64-linux-userspace","runtime":"modeled-pthread"}"#,
+            r#"{"target":"x86_64-unknown-linux-gnu","runtime":"modeled-pthread"}"#,
         )
         .unwrap();
         assert!(

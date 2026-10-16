@@ -24,7 +24,7 @@ int run(void) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "modeled_pthread_retire_while_lent_rejected.c";
 authorized resource reference(obj: struct object*) {}

@@ -8,7 +8,7 @@ unsigned char first(const unsigned char *p, unsigned long whole, unsigned long r
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "suffix.c";
 uint8 first(const uint8* p, uint64 whole, uint64 remaining) {
     requires whole <= 5551u64;

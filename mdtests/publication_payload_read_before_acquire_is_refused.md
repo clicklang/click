@@ -14,7 +14,7 @@ int peek(struct channel *channel) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "publication_payload_read_before_acquire_is_refused.c";
 resource ready_payload(channel: struct channel*) {

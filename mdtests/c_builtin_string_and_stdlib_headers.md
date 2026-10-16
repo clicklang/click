@@ -37,7 +37,7 @@ int copy_pair(void) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "builtin_libc_headers.c";
 
 int copy_pair() {

@@ -214,7 +214,7 @@ fn uninitialized_mutex_is_a_named_proof_prerequisite() {
         void use_mutex(struct cell *cell) { pthread_mutex_lock(&cell->mu); }
     "#;
     let click_source = r#"
-        target "x86_64-linux-userspace";
+        target "x86_64-unknown-linux-gnu";
         runtime "modeled-pthread";
         verifying "mutex.c";
         void use_mutex(struct cell *cell) { ensures 0 == 0; } by { step(); }
@@ -249,7 +249,7 @@ fn worker_without_protocol_contract_is_a_proof_error() {
         }
     "#;
     let click_source = r#"
-        target "x86_64-linux-userspace";
+        target "x86_64-unknown-linux-gnu";
         runtime "modeled-pthread";
         resource box_state(box: struct box*) {
             field value: int32;
@@ -2790,7 +2790,7 @@ const CLOSURE_TRACE_C: &str = r#"unsigned long drain(unsigned long len) {
 }
 "#;
 
-const CLOSURE_TRACE_CLICK: &str = r#"target "x86_64-linux-userspace";
+const CLOSURE_TRACE_CLICK: &str = r#"target "x86_64-unknown-linux-gnu";
 verifying "loop.c";
 uint64 drain(uint64 len) {
  requires len == 16u64;
@@ -2918,7 +2918,7 @@ fn failed_invariant_closure_trace_prefix_is_lazy_and_scales() {
 #[test]
 fn failed_invariant_closure_trace_keeps_its_branch_guard() {
     let c = "unsigned long branch_drain(unsigned long len, int flag) { while (len >= 16) { if (flag == 0) { len -= 16; } else { len -= 8; } } return len; }";
-    let source = r#"target "x86_64-linux-userspace";
+    let source = r#"target "x86_64-unknown-linux-gnu";
         verifying "loop.c";
         uint64 branch_drain(uint64 len, int32 flag) {
             requires len == 16u64;
@@ -2960,7 +2960,7 @@ fn failed_invariant_closure_trace_keeps_its_branch_guard() {
 fn native_view_simp_reports_the_actual_premise_spelling_limit() {
     let source = |extra_bounds: usize, body: &str| {
         let mut source = String::from(
-            "target \"x86_64-linux-userspace\"; theorem broad_view(p: uint8[], n: uint64) { views p[0u64..n]; requires 1u64 <= n;",
+            "target \"x86_64-unknown-linux-gnu\"; theorem broad_view(p: uint8[], n: uint64) { views p[0u64..n]; requires 1u64 <= n;",
         );
         for bound in 2..2 + extra_bounds {
             source.push_str(&format!(" requires n <= {bound}u64;"));
@@ -3022,7 +3022,7 @@ fn native_view_simp_reports_the_actual_premise_spelling_limit() {
 
 #[test]
 fn native_view_simp_distinguishes_a_rejected_kernel_query() {
-    let source = "target \"x86_64-linux-userspace\"; theorem false_view(p: uint8[], n: uint64) { views p[0u64..n]; requires n == 0u64; ensures viewable(p[0u64..1u64]) by { simp(); } }";
+    let source = "target \"x86_64-unknown-linux-gnu\"; theorem false_view(p: uint8[], n: uint64) { views p[0u64..n]; requires n == 0u64; ensures viewable(p[0u64..1u64]) by { simp(); } }";
     let error = verify_c0_sources(source, &[]).expect_err("an empty view cannot cover one byte");
     let report = error.concise_report();
     assert!(

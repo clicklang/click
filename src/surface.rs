@@ -311,6 +311,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "mark",
     "match",
     "memory",
+    "mode",
     "normalize",
     "not",
     "object",

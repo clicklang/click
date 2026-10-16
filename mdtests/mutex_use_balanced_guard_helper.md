@@ -12,7 +12,7 @@ void helper(struct holder *holder) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_use_balanced_guard_helper.c";
 void keep_guard(struct holder *holder) {

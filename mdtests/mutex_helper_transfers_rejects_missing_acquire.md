@@ -7,7 +7,7 @@ void acquire(struct holder *p) {}
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "missing_acquire.c";
 void acquire(struct holder *p) {

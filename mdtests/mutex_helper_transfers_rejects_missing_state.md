@@ -9,7 +9,7 @@ void release(struct counter *p) { pthread_mutex_unlock(&p->mu); }
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 resource counter_state(p: struct counter*) {
     field value: uint32;

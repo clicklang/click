@@ -1,8 +1,8 @@
 # The kernel target rejects user-space system headers
 
-The `x86_64-linux-kernel` target has no `<stddef.h>` or `<pthread.h>` model, so
+The `kernel` mode has no `<stddef.h>` or `<pthread.h>` model, so
 this source is rejected under it. The same source verifies under
-`target "x86_64-linux-userspace";` (`mdtests/userspace_target_directive.md`).
+`target "x86_64-unknown-linux-gnu";` (`mdtests/userspace_target_directive.md`).
 
 ```c filename=null_pointer.c
 #include <stddef.h>
@@ -14,7 +14,8 @@ int32_t is_null(int32_t* p) {
 ```
 
 ```click
-target "x86_64-linux-kernel";
+target "x86_64-unknown-linux-gnu";
+mode "kernel";
 verifying "null_pointer.c";
 
 int32 is_null(int32* p) {
@@ -27,5 +28,5 @@ int32 is_null(int32* p) {
 ```
 
 ```expect
-fail: system header `<stddef.h>` is not supported for x86_64-linux-kernel; Click models it for `x86_64-linux-userspace`, selected with `target "x86_64-linux-userspace";` in the sidecar
+fail: system header `<stddef.h>` is not supported for x86_64-unknown-linux-gnu (kernel); Click models it for `x86_64-unknown-linux-gnu (userspace)`, selected with `mode "userspace";` in the sidecar
 ```

@@ -1,6 +1,6 @@
 # User-space plain `char` is signed
 
-Under `x86_64-linux-userspace`, plain `char` is signed, as GCC and Clang
+In `userspace` mode, plain `char` is signed, as GCC and Clang
 build it for the x86-64 System V ABI. The character constant `'\xc8'` is a
 `char` holding the byte 0xC8, which is -56, so `c < 0` holds.
 `kernel_plain_char_is_unsigned.md` is the same program under the kernel
@@ -14,7 +14,7 @@ int negative_byte(void) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "userspace_plain_char.c";
 
 int32 negative_byte() {

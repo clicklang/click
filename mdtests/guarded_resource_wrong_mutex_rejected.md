@@ -14,7 +14,7 @@ void wrong(struct cell *cell) { pthread_mutex_init(&cell->other, 0); }
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 resource cell_state(cell: struct cell*) {
     field value: int32;

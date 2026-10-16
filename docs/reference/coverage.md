@@ -56,16 +56,16 @@ verification then runs offline.
 
 | Feature | C | C++ | Rust |
 | --- | --- | --- | --- |
-| x86-64 Linux LP64 | Supported: `x86_64-linux-userspace` (default) and `x86_64-linux-kernel`; `mdtests/userspace_target_directive.md` | Partial: `x86_64-unknown-linux-gnu`, C++20, fixed exception and RTTI profile; `examples/basic-cpp/` | Partial: `x86_64-unknown-linux-gnu`, overflow checks on, `panic=abort`; `examples/basic-rust/` |
+| x86-64 Linux LP64 | Supported: `x86_64-unknown-linux-gnu` in the `userspace` (default) and `kernel` modes; `mdtests/userspace_target_directive.md` | Partial: `x86_64-unknown-linux-gnu`, C++20, fixed exception and RTTI profile; `examples/basic-cpp/` | Partial: `x86_64-unknown-linux-gnu`, overflow checks on, `panic=abort`; `examples/basic-rust/` |
 | Other targets (32-bit, big-endian, other OS or ABI) | Not supported | Not supported | Not supported |
 | Kernel and user-space profiles | Supported: distinct predefines, headers, and artifact identity; `tests/compiler_import.rs::userspace_and_kernel_imports_have_distinct_identity_for_identical_c` | Not supported: hosted target only | Not supported: hosted target only; no `no_std` profile |
-| Plain `char` signedness | Supported: signed under `x86_64-linux-userspace`, unsigned under `x86_64-linux-kernel`; `mdtests/userspace_plain_char_is_signed.md` | Not supported: plain and signed `char` are refused; `unsigned char` and `std::byte` only | Not applicable: bytes are `u8`; the `char` type is not admitted |
+| Plain `char` signedness | Supported: signed in `userspace` mode, unsigned in `kernel`; `mdtests/userspace_plain_char_is_signed.md` | Not supported: plain and signed `char` are refused; `unsigned char` and `std::byte` only | Not applicable: bytes are `u8`; the `char` type is not admitted |
 | Struct layout source | Partial: Click's own LP64 rules, not checked against a compiler; `mdtests/gnu_aligned_struct_layout.md` | Supported: Clang-reported layouts, checked; `tests/cpp_import.rs::distinct_record_layouts_keep_field_widths_offsets_and_ownership` | Supported: rustc-reported layouts; `examples/rust-move-drop/` |
 | Packed structs, bit-fields | Not supported | Not supported | Not applicable: no `repr(packed)` admitted |
 
 > **Note:** Plain `char` follows the selected C target: signed under
-> `x86_64-linux-userspace`, as GCC and Clang build x86-64 user space by
-> default, and unsigned under `x86_64-linux-kernel`, matching the kernel's
+> `userspace` mode, as GCC and Clang build x86-64 user space by
+> default, and unsigned in `kernel` mode, matching the kernel's
 > `-funsigned-char`. As in GCC and Clang, where it is only a `-Wpointer-sign`
 > warning, an uncast conversion between `char *`, `signed char *`, and
 > `unsigned char *` is accepted and reads the bytes as the explicit cast

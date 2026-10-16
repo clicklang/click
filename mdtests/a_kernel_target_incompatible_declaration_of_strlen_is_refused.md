@@ -1,6 +1,6 @@
 # A kernel-target incompatible declaration of `strlen` is refused
 
-Click's `x86_64-linux-kernel` target compiles hosted, without
+Click's `kernel` mode compiles hosted, without
 `-ffreestanding` or `-fno-builtin`, so `strlen` names the C library
 function there as in user space, and GCC 14 (`-std=gnu11 -funsigned-char
 -nostdinc`) warns that `int strlen(int s);` conflicts with the built-in
@@ -16,7 +16,8 @@ int length_of(int s) {
 ```
 
 ```click
-target "x86_64-linux-kernel";
+target "x86_64-unknown-linux-gnu";
+mode "kernel";
 verifying "main.c";
 
 int32 length_of(int32 s) {

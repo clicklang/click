@@ -12,7 +12,7 @@ void start(struct box *box) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 resource box_state(box: struct box*) {
     field value: int32;

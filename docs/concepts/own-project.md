@@ -121,7 +121,7 @@ uint64 label_fit(uint64 length) {
 ```
 
 `unsigned long` is `uint64` under Click's default target,
-`x86_64-linux-userspace`; see
+`x86_64-unknown-linux-gnu` in `userspace` mode; see
 [Supported types](../reference/language/c.md#supported-types). The proof
 `execute(); simp();` runs the C symbolically along every path and then closes
 each postcondition from what execution established.
@@ -159,7 +159,7 @@ from the compile command: `-I`, `-iquote`, `-isystem`, `-D`, `-U`, and
     "label": {
       "language": "c",
       "compiler": "/usr/bin/gcc",
-      "environment": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+      "env": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
       "args": ["-std=c11", "-O2", "-Iinclude", "-DLABEL_CAPACITY=32"],
       "sources": {
         "label_fit.c": {}
@@ -184,7 +184,7 @@ preprocessor flags:
     "label": {
       "language": "c",
       "compiler": "/usr/bin/gcc",
-      "environment": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+      "env": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
       "args": ["-Iinclude", "-DLABEL_CAPACITY=32"],
       "sources": {
         "label_fit.c": {}
@@ -220,9 +220,10 @@ Some details of the configuration:
   default the project directory; a unit may instead read an external tree,
   such as a git submodule, in place.
 - The target is the project's: without a `"target"` the project uses
-  `x86_64-linux-userspace`. Linux kernel code uses `x86_64-linux-kernel`,
-  selected by `"target": "x86_64-linux-kernel"` in `click.project.json`,
-  which also selects the modeled pthread runtime; see
+  `x86_64-unknown-linux-gnu`, and without a `"mode"` it uses
+  `userspace`. Linux kernel code uses `kernel` mode, selected by
+  `"mode": "kernel"` in `click.project.json`, the same file whose
+  `"runtime"` selects the modeled pthread runtime; see
   [Selecting a target](../reference/language/c.md#selecting-a-target).
 - Click does not read a `Makefile` or a C `compile_commands.json`. Copy the
   flags by hand from `make -n` output or from the entry's `arguments` or
@@ -348,7 +349,7 @@ add it to the unit as a second source; the unit's `args` apply to both:
     "label": {
       "language": "c",
       "compiler": "/usr/bin/gcc",
-      "environment": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+      "env": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
       "args": ["-Iinclude", "-DLABEL_CAPACITY=32"],
       "sources": {
         "label_fit.c": {},
@@ -410,8 +411,8 @@ with `#include <stdio.h>`, the lock would fail with:
 
 ```text
 click: unit `label`: preprocess label_copy.c: compiler exited with exit status: 1: In file included from label_copy.c:1:
-<click>/stdio.h:2:2: error: #error "<stdio.h> is not one of Click's modeled system headers for x86_64-linux-userspace; see docs/reference/language/c.md#system-headers"
-    2 | #error "<stdio.h> is not one of Click's modeled system headers for x86_64-linux-userspace; see docs/reference/language/c.md#system-headers"
+<click>/stdio.h:2:2: error: #error "<stdio.h> is not one of Click's modeled system headers for x86_64-unknown-linux-gnu (userspace); see docs/reference/language/c.md#system-headers"
+    2 | #error "<stdio.h> is not one of Click's modeled system headers for x86_64-unknown-linux-gnu (userspace); see docs/reference/language/c.md#system-headers"
       |  ^~~~~
 ```
 

@@ -11,7 +11,8 @@ int outer(const char *src) {
 ```click
 import click::cstr;
 
-target "x86_64-linux-kernel";
+target "x86_64-unknown-linux-gnu";
+mode "kernel";
 verifying "cstr_plain_char_kernel_requirement_reaches_callee.c";
 int32 check(const char* src) {
     requires cstr::readable(src);

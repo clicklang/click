@@ -21,7 +21,7 @@ int run(void) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 abstract resource permit();
 verifying "modeled_pthread_abstract_resource_transfer.c";
