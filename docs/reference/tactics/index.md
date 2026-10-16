@@ -1942,7 +1942,11 @@ is carried when the recorded history shows its cell unchanged between its two
 snapshots, read against the current context's own facts (for example `k < n`
 excluding a store to `dst[n]`, `k != cur`
 excluding a store to `visited[cur]`, or `0 <= k and k < n` with a contract
-separation placing `left[k]` apart from it).
+separation placing `left[k]` apart from it). A source `A and B` reaches a
+target that is only `A` or only `B`: after
+`memset(dst, 7, 4); dst[4] = 0;`, `memset`'s guarded postcondition carries to
+`(0u64..4u64).all(|k| { dst[k] == 7 })`, and `simp` offers that source when the
+goal is held at a recorded point only as one of its conjuncts.
 
 The structural frame carries `defined(...)` leaves through the typed-read
 transport rule, preserving initialization and lifetime evidence. Equal read
@@ -1966,7 +1970,7 @@ leaf it wanted.
 Click checks that transport only; expansion is unchanged, and profiling charges
 the named evidence.
 
-**Checked examples:** [`field_derived_precise_effect_after_metadata_write.md`](https://github.com/clicklang/click/blob/master/mdtests/field_derived_precise_effect_after_metadata_write.md), [`have_viewable_prefix_of_a_range.md`](https://github.com/clicklang/click/blob/master/mdtests/have_viewable_prefix_of_a_range.md), [`sweep_maintains_a_zero_unmarked_count.md`](https://github.com/clicklang/click/blob/master/mdtests/sweep_maintains_a_zero_unmarked_count.md), [`sweep_prefix_survives_its_endpoint_store_by_simp.md`](https://github.com/clicklang/click/blob/master/mdtests/sweep_prefix_survives_its_endpoint_store_by_simp.md), [`quantified_frame_carries_a_fact_past_the_excluded_store.md`](https://github.com/clicklang/click/blob/master/mdtests/quantified_frame_carries_a_fact_past_the_excluded_store.md), [`quantified_frame_preserves_uint64_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/quantified_frame_preserves_uint64_equality.md), [`memcpy_then_terminator_keeps_copied_bytes.md`](https://github.com/clicklang/click/blob/master/mdtests/memcpy_then_terminator_keeps_copied_bytes.md)
+**Checked examples:** [`field_derived_precise_effect_after_metadata_write.md`](https://github.com/clicklang/click/blob/master/mdtests/field_derived_precise_effect_after_metadata_write.md), [`have_viewable_prefix_of_a_range.md`](https://github.com/clicklang/click/blob/master/mdtests/have_viewable_prefix_of_a_range.md), [`sweep_maintains_a_zero_unmarked_count.md`](https://github.com/clicklang/click/blob/master/mdtests/sweep_maintains_a_zero_unmarked_count.md), [`sweep_prefix_survives_its_endpoint_store_by_simp.md`](https://github.com/clicklang/click/blob/master/mdtests/sweep_prefix_survives_its_endpoint_store_by_simp.md), [`quantified_frame_carries_a_fact_past_the_excluded_store.md`](https://github.com/clicklang/click/blob/master/mdtests/quantified_frame_carries_a_fact_past_the_excluded_store.md), [`quantified_frame_preserves_uint64_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/quantified_frame_preserves_uint64_equality.md), [`memcpy_then_terminator_keeps_copied_bytes.md`](https://github.com/clicklang/click/blob/master/mdtests/memcpy_then_terminator_keeps_copied_bytes.md), [`a_guarded_memset_value_claim_crosses_a_disjoint_store.md`](https://github.com/clicklang/click/blob/master/mdtests/a_guarded_memset_value_claim_crosses_a_disjoint_store.md)
 
 ### Unfolding predicates
 

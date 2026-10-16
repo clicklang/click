@@ -1327,7 +1327,11 @@ direction), and each differing condition leaf is carried by the kernel's
 checked load-history question (`explicit_atomic_equality_from_memory_derivations`
 and the condition bridge's `memory_loads_proven_equal`), read in the querying
 context's own facts rather than only the listed ones, or by the ordinary
-single-fact transport, read in its own listed and certified premises. So `forall (k) { 0 <= k and k < n and k != cur implies
+single-fact transport, read in its own listed and certified premises. A
+differing `defined(..)` leaf is carried by that single-fact transport, which
+preserves initialization and lifetime evidence. A source conjunction meets a target
+that is not one by conjunction elimination, so `memset`'s
+`defined(dst[k]) and dst[k] == v` carries its value conjunct alone. So `forall (k) { 0 <= k and k < n and k != cur implies
 at(before, visited[k]) == visited[k] }` crosses the store to `visited[cur]`,
 and `forall (k) { 0 <= k and k < n implies old(left[k]) == left[k] }` crosses
 it and a call whose checked write set is `visited[0..n]`. Every per-read
