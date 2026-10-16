@@ -101,6 +101,7 @@ mod integer_conversions;
 mod integer_truncation;
 mod lowering;
 mod modules;
+mod names;
 mod parser;
 pub use crate::languages::{claim_label_matches, display_source_names, source_display_name};
 pub(crate) mod planning;
@@ -118,6 +119,7 @@ mod verification;
 
 pub use crate::source::SourceContainer;
 use checking::*;
+pub(crate) use expansion::click_import_sites_in_container;
 pub use expansion::{
     CProofClaim, ClaimExpansion, ClaimLocationError, ClaimLocationScope, ClickImportSite,
     ProofSourceIndex, SelectedTacticExpansion, SmartTacticCandidate, SmartTacticSelectionError,

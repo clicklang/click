@@ -2622,6 +2622,30 @@ pub(super) fn finish_ordered_proof<'a>(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: `have` requires a return outcome"
                                     )));
                                 };
+                                // A deferred branch can leave the return-resource
+                                // transition until an explicit closer. Prepare it
+                                // before publishing a new outcome fact as well:
+                                // otherwise the later transition changes a
+                                // count-dependent predicate's captured ledger.
+                                // An introduced proposition keeps its own scope.
+                                if !introduced_claim_scope
+                                    && !resource_transition_applied
+                                    && matches!(outcome, CFunctionOutcome::Return { .. })
+                                    && claims.iter().enumerate().any(|(index, claim)| {
+                                        !closures[index].is_closed()
+                                            && matches!(
+                                                claim.clause().ensure(),
+                                                Ensure::Resource(_)
+                                            )
+                                    })
+                                    && let Ok(transitioned) = required_outcome(&outcome_proof)?
+                                        .apply_outcome_contract_resources(pre_state, function)
+                                {
+                                    outcome = transitioned.focused_outcome_snapshot()?;
+                                    return_claim_context = None;
+                                    resource_transition_applied = true;
+                                    outcome_proof = Some(transitioned);
+                                }
                                 // A `have` after `intro` belongs to the active
                                 // claim proof, which owns the introduced binder.
                                 // Earlier `have` steps extend the outcome proof.

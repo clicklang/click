@@ -167,6 +167,7 @@ enum Node {
     Machine128(MachineAtom),
     IntegerOperation(IntegerOperation),
     IntegerFunction(crate::kernel::SharedPureApplication, usize),
+    PointerFunction(crate::kernel::SharedPureApplication, usize),
     AlgebraicVariable(crate::kernel::SharedPureApplication, Variable),
     AlgebraicConstructor(crate::kernel::SharedPureApplication, String, usize),
     AlgebraicFunction(crate::kernel::SharedPureApplication, String, usize),
@@ -390,16 +391,18 @@ pub(super) struct TermClasses {
         ),
     >,
     alignment_witnesses: PersistentMap<u64, (u64, Pointer)>,
-    // One zero-offset typed-read value per class. Congruence emits only
+    // One zero-offset pointer read or pure-call value per class. Congruence emits only
     // newly identified pairs for the legacy affine/index projection.
-    read_witnesses: PersistentMap<u64, PointerBlock>,
-    read_merges: imbl::Vector<(PointerBlock, PointerBlock)>,
+    pointer_value_witnesses: PersistentMap<u64, PointerBlock>,
+    pointer_value_merges: imbl::Vector<(PointerBlock, PointerBlock)>,
     nodes: PersistentMap<Node, u64>,
     load_blocks: PersistentMap<PointerBlock, u64>,
     registered_int32_loads: PersistentSet<u64>,
     // Registration dependencies are drained before any public answer. Keeping
     // this worklist iterative handles loads used as indices of further loads.
     pending_loads: Vec<(u64, crate::kernel::SharedCMemory, crate::kernel::Pointer)>,
+    pending_pointer_calls: Vec<(u64, crate::kernel::SharedPureApplication)>,
+    registering_dependencies: bool,
     // Weight counts class members plus registered parent uses. Moving the
     // lighter side bounds both root depth and reindexing, including a class
     // with many application parents repeatedly joined to fresh singleton terms.
@@ -680,7 +683,7 @@ impl TermClasses {
         let address = self.read_address(address);
         let read = self.intern_node(Node::PointerRead(snapshot, address, kind));
         self.close_with_affine_definition(vec![(value, read)], true);
-        self.retain_read_witness(self.root(value), block);
+        self.retain_pointer_value_witness(self.root(value), block);
     }
 
     /// The operand of a read: the numeric address of `address`, not the
@@ -742,18 +745,20 @@ impl TermClasses {
             .clone()
     }
 
-    fn retain_read_witness(&mut self, root: u64, block: PointerBlock) {
-        if let Some(other) = self.read_witnesses.get(&root) {
+    fn retain_pointer_value_witness(&mut self, root: u64, block: PointerBlock) {
+        if let Some(other) = self.pointer_value_witnesses.get(&root) {
             if other != &block {
-                self.read_merges.push_back((other.clone(), block));
+                self.pointer_value_merges.push_back((other.clone(), block));
             }
         } else {
-            self.read_witnesses.insert(root, block);
+            self.pointer_value_witnesses.insert(root, block);
         }
     }
 
-    pub(super) fn take_read_merges(&mut self) -> imbl::Vector<(PointerBlock, PointerBlock)> {
-        std::mem::take(&mut self.read_merges)
+    pub(super) fn take_pointer_value_merges(
+        &mut self,
+    ) -> imbl::Vector<(PointerBlock, PointerBlock)> {
+        std::mem::take(&mut self.pointer_value_merges)
     }
 
     #[cfg(test)]
@@ -781,6 +786,7 @@ impl TermClasses {
         self.register_pending_loads();
         self.close_with_affine_definition(vec![(raw, operand)], true);
         let next_block = self.load_blocks.len() as u64;
+        let new_block = !self.load_blocks.contains_key(&block);
         let block_id = match self.load_blocks.get(&block) {
             Some(id) => *id,
             None => {
@@ -796,7 +802,22 @@ impl TermClasses {
         let mut uses = self.address_uses.get(&block).cloned().unwrap_or_default();
         if !uses.contains_key(&id) {
             uses.insert(id, Arc::new(offset));
-            self.address_uses.insert(block, uses);
+            self.address_uses.insert(block.clone(), uses);
+        }
+        if new_block && let PointerBlock::PureFunctionApplication(application) = block {
+            // Give the call its zero-offset address once. Arguments may enqueue
+            // nested calls; the shared dependency worklist drains them iteratively.
+            let zero = if operand == self.intern(&PointerOffsetTerm::Constant(0)) {
+                id
+            } else {
+                self.address_without_shift(
+                    PointerBlock::PureFunctionApplication(application.clone()),
+                    PointerOffsetTerm::Constant(0),
+                )
+                .0
+            };
+            self.pending_pointer_calls.push((zero, application));
+            self.register_pending_loads();
         }
         (id, new, raw)
     }
@@ -1324,7 +1345,24 @@ impl TermClasses {
     }
 
     fn register_pending_loads(&mut self) {
-        while let Some((id, memory, pointer)) = self.pending_loads.pop() {
+        if self.registering_dependencies {
+            return;
+        }
+        self.registering_dependencies = true;
+        loop {
+            if let Some((value, application)) = self.pending_pointer_calls.pop() {
+                crate::instrumentation::record_deterministic_work(1);
+                let call = self.intern_pointer_call(&application);
+                self.close_with_affine_definition(vec![(value, call)], true);
+                self.retain_pointer_value_witness(
+                    self.root(value),
+                    PointerBlock::PureFunctionApplication(application),
+                );
+                continue;
+            }
+            let Some((id, memory, pointer)) = self.pending_loads.pop() else {
+                break;
+            };
             crate::instrumentation::record_deterministic_work(1);
             // Integer reads use the same complete address application as
             // pointer and uint64 reads. A checked equality between addresses
@@ -1333,6 +1371,7 @@ impl TermClasses {
             let address = self.read_address(address);
             self.register_application(id, Application::Int32Load(memory.read_identity(), address));
         }
+        self.registering_dependencies = false;
     }
 
     fn intern_uint64(&mut self, term: &crate::kernel::Bitvector32Term) -> u64 {
@@ -1783,9 +1822,9 @@ impl TermClasses {
                 self.mark_non_affine(kept);
                 self.mark_non_affine(moved);
             }
-            if let Some(witness) = self.read_witnesses.get(&moved).cloned() {
-                self.read_witnesses.remove(&moved);
-                self.retain_read_witness(kept, witness);
+            if let Some(witness) = self.pointer_value_witnesses.get(&moved).cloned() {
+                self.pointer_value_witnesses.remove(&moved);
+                self.retain_pointer_value_witness(kept, witness);
             }
             self.merge_affine_applications(moved, kept);
             let weight = self.weight(kept) + self.weight(moved);

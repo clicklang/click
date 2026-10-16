@@ -1862,7 +1862,7 @@ pub(in crate::surface) fn describe_iterated_memory(
     text
 }
 
-fn describe_resource_subject(resource: &ResourceSubject) -> String {
+pub(super) fn describe_resource_subject(resource: &ResourceSubject) -> String {
     match resource {
         ResourceSubject::Memory(segment) => {
             format!("memory({})", describe_contract_segment(segment))
@@ -5891,7 +5891,7 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             // parentheses are what let the result sit where a term is
             // expected, as in `result == (if c { a } else { b })`.
             "(if {} {{ {} }} else {{ {} }})",
-            describe_click_proposition(condition),
+            printing::source_click_proposition(condition),
             describe_contract_expression(then_branch),
             describe_contract_expression(else_branch)
         ),
@@ -6007,7 +6007,7 @@ pub(super) fn describe_binary_contract_expression(
 
 /// The `aligned(p, n)` sugar behind `address(p) & (n - 1) == 0`, so a
 /// generated or expanded alignment fact renders in its source spelling.
-fn aligned_sugar(proposition: &ClickProposition) -> Option<(&CExpression, u64)> {
+pub(super) fn aligned_sugar(proposition: &ClickProposition) -> Option<(&CExpression, u64)> {
     let ClickProposition::Comparison {
         left,
         operator: ComparisonOperator::Equal,
@@ -6026,7 +6026,7 @@ fn aligned_sugar(proposition: &ClickProposition) -> Option<(&CExpression, u64)> 
 /// inside has no cast spelling in Click (only `address(p)` or `aligned`),
 /// so rendering the qualified sides expression by expression would emit an
 /// unparseable `(uint64)p`.
-fn snapshot_aligned_sugar(
+pub(super) fn snapshot_aligned_sugar(
     proposition: &ClickProposition,
 ) -> Option<(&SnapshotSelector, &CExpression, u64)> {
     let ClickProposition::Comparison {
@@ -6110,7 +6110,7 @@ pub(in crate::surface) fn with_refusal_spelling<T>(spell: impl FnOnce() -> T) ->
 /// means, marked `(unsigned)` as [`describe_unsigned_comparison`] marks the
 /// kernel form, so it never reads as the signed comparison of the same
 /// operands.
-fn unsigned_order_sugar(proposition: &ClickProposition) -> Option<String> {
+pub(super) fn unsigned_order_sugar(proposition: &ClickProposition) -> Option<String> {
     const SIGN_BIT: &str = "-2147483648";
     let ClickProposition::Comparison {
         left,
@@ -6163,170 +6163,12 @@ fn unsigned_order_sugar(proposition: &ClickProposition) -> Option<String> {
 }
 
 pub(super) fn describe_click_proposition(proposition: &ClickProposition) -> String {
-    if let Some((pointer, alignment)) = aligned_sugar(proposition) {
-        return format!("aligned({}, {alignment})", describe_c_expression(pointer));
-    }
-    if let Some((selector, pointer, alignment)) = snapshot_aligned_sugar(proposition) {
-        return format!(
-            "at({}, aligned({}, {alignment}))",
-            describe_snapshot_selector(selector),
-            describe_c_expression(pointer)
-        );
-    }
-    if REFUSAL_SPELLING.with(std::cell::Cell::get)
-        && let Some(unsigned) = unsigned_order_sugar(proposition)
-    {
-        return unsigned;
-    }
-    match proposition {
-        ClickProposition::Comparison {
-            left,
-            operator,
-            right,
-        } => format!(
-            "{} {operator} {}",
-            describe_contract_expression(left),
-            describe_contract_expression(right)
-        ),
-        ClickProposition::FloatClassification {
-            expression,
-            classification,
-        } => format!(
-            "{}({})",
-            match classification {
-                syntax::C0FloatClassification::Finite => "isfinite",
-                syntax::C0FloatClassification::Infinite => "isinf",
-                syntax::C0FloatClassification::Zero => "iszero",
-                syntax::C0FloatClassification::Subnormal => "issubnormal",
-                syntax::C0FloatClassification::Nan => "isnan",
-            },
-            describe_contract_expression(expression)
-        ),
-        ClickProposition::Separate { left, right } => format!(
-            "separate({}, {})",
-            describe_resource_subject(left),
-            describe_resource_subject(right)
-        ),
-        ClickProposition::Contains { parent, child } => format!(
-            "contains({}, {})",
-            describe_resource_subject(parent),
-            describe_resource_subject(child)
-        ),
-        ClickProposition::Loadable { segment } => {
-            format!("viewable({})", describe_contract_segment(segment))
-        }
-        ClickProposition::Defined { expression } => {
-            format!("defined({})", describe_contract_expression(expression))
-        }
-        ClickProposition::At {
-            selector,
-            proposition,
-        } => format!(
-            "at({}, {})",
-            describe_snapshot_selector(selector),
-            describe_click_proposition(proposition)
-        ),
-        // Connectives print as the sidecar writes them, with only the
-        // parentheses Click's precedence needs (`docs/reference/language/
-        // grammar.md`): `implies` binds loosest and to the right, then `or`,
-        // `and`, and prefix `not`.
-        ClickProposition::And(left, right) => format!(
-            "{} and {}",
-            describe_click_operand(left, CONNECTIVE_AND),
-            describe_click_operand(right, CONNECTIVE_NOT)
-        ),
-        ClickProposition::Or(left, right) => format!(
-            "{} or {}",
-            describe_click_operand(left, CONNECTIVE_OR),
-            describe_click_operand(right, CONNECTIVE_AND)
-        ),
-        ClickProposition::Not(proposition) => {
-            format!(
-                "not {}",
-                describe_click_operand(proposition, CONNECTIVE_NOT)
-            )
-        }
-        ClickProposition::Implies(left, right) => format!(
-            "{} implies {}",
-            describe_click_operand(left, CONNECTIVE_OR),
-            describe_click_operand(right, CONNECTIVE_IMPLIES)
-        ),
-        ClickProposition::ForAll {
-            click_type,
-            name,
-            body,
-            ..
-        } => format!(
-            "forall ({name}: {}) {{ {} }}",
-            describe_click_type(click_type),
-            describe_click_proposition(body)
-        ),
-        ClickProposition::Exists {
-            click_type,
-            name,
-            body,
-            ..
-        } => format!(
-            "exists ({name}: {}) {{ {} }}",
-            describe_click_type(click_type),
-            describe_click_proposition(body)
-        ),
-        ClickProposition::RangeAll {
-            start,
-            end,
-            item,
-            body,
-            ..
-        } => format!(
-            "({}..{}).all({item} => {})",
-            describe_contract_expression(start),
-            describe_contract_expression(end),
-            describe_click_proposition(body)
-        ),
-        ClickProposition::RangeAny {
-            start,
-            end,
-            item,
-            body,
-            ..
-        } => format!(
-            "({}..{}).any({item} => {})",
-            describe_contract_expression(start),
-            describe_contract_expression(end),
-            describe_click_proposition(body)
-        ),
-        ClickProposition::PredicateCall { name, arguments } => format!(
-            "{name}({})",
-            arguments
-                .iter()
-                .map(describe_contract_expression)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-    }
-}
-
-const CONNECTIVE_IMPLIES: u8 = 1;
-const CONNECTIVE_OR: u8 = 2;
-const CONNECTIVE_AND: u8 = 3;
-const CONNECTIVE_NOT: u8 = 4;
-
-/// A proposition as an operand of a connective that needs at least
-/// `minimum` precedence there, parenthesized when it binds more loosely.
-fn describe_click_operand(proposition: &ClickProposition, minimum: u8) -> String {
-    let precedence = match proposition {
-        ClickProposition::Implies(..) => CONNECTIVE_IMPLIES,
-        ClickProposition::Or(..) => CONNECTIVE_OR,
-        ClickProposition::And(..) => CONNECTIVE_AND,
-        ClickProposition::Not(..) => CONNECTIVE_NOT,
-        _ => u8::MAX,
-    };
-    let text = describe_click_proposition(proposition);
-    if precedence < minimum {
-        format!("({text})")
+    let mode = if REFUSAL_SPELLING.with(std::cell::Cell::get) {
+        printing::PropositionSpelling::Refusal
     } else {
-        text
-    }
+        printing::PropositionSpelling::Diagnostic
+    };
+    printing::print_proposition(proposition, mode)
 }
 
 pub(super) fn describe_snapshot_selector(selector: &SnapshotSelector) -> String {

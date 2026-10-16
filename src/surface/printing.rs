@@ -1,108 +1,207 @@
 use super::diagnostics::{
-    describe_contract_expression, describe_contract_segment, describe_snapshot_selector,
+    aligned_sugar, describe_c_expression, describe_contract_expression, describe_contract_segment,
+    describe_resource_subject, describe_snapshot_selector, snapshot_aligned_sugar,
+    unsigned_order_sugar,
 };
 use super::*;
 
+/// Source output always selects source syntax explicitly, regardless of a
+/// diagnostic caller's thread-local presentation preference.
 pub(in crate::surface) fn source_click_proposition(proposition: &ClickProposition) -> String {
-    fn at_precedence(proposition: &ClickProposition, required: u8) -> String {
-        let (precedence, source) = match proposition {
-            ClickProposition::Implies(left, right) => (
-                1,
-                format!(
-                    "{} implies {}",
-                    at_precedence(left, 2),
-                    at_precedence(right, 1)
-                ),
-            ),
-            ClickProposition::Or(left, right) => (
-                2,
-                format!("{} or {}", at_precedence(left, 2), at_precedence(right, 3)),
-            ),
-            ClickProposition::And(left, right) => (
-                3,
-                format!("{} and {}", at_precedence(left, 3), at_precedence(right, 4)),
-            ),
-            ClickProposition::Not(body) => (4, format!("not {}", at_precedence(body, 4))),
-            ClickProposition::At {
-                selector,
-                proposition,
-            } => (
-                5,
-                format!(
-                    "at({}, {})",
-                    describe_snapshot_selector(selector),
-                    at_precedence(proposition, 0)
-                ),
-            ),
-            ClickProposition::ForAll {
-                click_type: c_type,
-                name,
-                body,
-                ..
-            } => (
-                5,
-                format!(
-                    "forall ({name}: {}) {{ {} }}",
-                    validation::describe_click_type(c_type),
-                    at_precedence(body, 0)
-                ),
-            ),
-            ClickProposition::Exists {
-                click_type: c_type,
-                name,
-                body,
-                ..
-            } => (
-                5,
-                format!(
-                    "exists ({name}: {}) {{ {} }}",
-                    validation::describe_click_type(c_type),
-                    at_precedence(body, 0)
-                ),
-            ),
-            ClickProposition::RangeAll {
-                start,
-                end,
-                item,
-                body,
-                ..
-            } => (
-                5,
-                format!(
-                    "({}..{}).all(|{item}| {{ {} }})",
-                    describe_contract_expression(start),
-                    describe_contract_expression(end),
-                    at_precedence(body, 0)
-                ),
-            ),
-            ClickProposition::RangeAny {
-                start,
-                end,
-                item,
-                body,
-                ..
-            } => (
-                5,
-                format!(
-                    "({}..{}).any(|{item}| {{ {} }})",
-                    describe_contract_expression(start),
-                    describe_contract_expression(end),
-                    at_precedence(body, 0)
-                ),
-            ),
-            proposition => (
-                5,
-                super::diagnostics::describe_click_proposition(proposition),
-            ),
-        };
-        if precedence < required {
-            format!("({source})")
-        } else {
-            source
-        }
-    }
+    print_proposition(proposition, PropositionSpelling::Source)
+}
 
-    at_precedence(proposition, 0)
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(super) enum PropositionSpelling {
+    Source,
+    Diagnostic,
+    Refusal,
+}
+
+pub(super) fn print_proposition(
+    proposition: &ClickProposition,
+    mode: PropositionSpelling,
+) -> String {
+    if let Some((pointer, alignment)) = aligned_sugar(proposition) {
+        return format!("aligned({}, {alignment})", describe_c_expression(pointer));
+    }
+    if let Some((selector, pointer, alignment)) = snapshot_aligned_sugar(proposition) {
+        return format!(
+            "at({}, aligned({}, {alignment}))",
+            describe_snapshot_selector(selector),
+            describe_c_expression(pointer)
+        );
+    }
+    if mode == PropositionSpelling::Refusal
+        && let Some(unsigned) = unsigned_order_sugar(proposition)
+    {
+        return unsigned;
+    }
+    match proposition {
+        ClickProposition::Comparison {
+            left,
+            operator,
+            right,
+        } => format!(
+            "{} {operator} {}",
+            describe_contract_expression(left),
+            describe_contract_expression(right)
+        ),
+        ClickProposition::FloatClassification {
+            expression,
+            classification,
+        } => format!(
+            "{}({})",
+            match classification {
+                syntax::C0FloatClassification::Finite => "isfinite",
+                syntax::C0FloatClassification::Infinite => "isinf",
+                syntax::C0FloatClassification::Zero => "iszero",
+                syntax::C0FloatClassification::Subnormal => "issubnormal",
+                syntax::C0FloatClassification::Nan => "isnan",
+            },
+            describe_contract_expression(expression)
+        ),
+        ClickProposition::Separate { left, right } => format!(
+            "separate({}, {})",
+            describe_resource_subject(left),
+            describe_resource_subject(right)
+        ),
+        ClickProposition::Contains { parent, child } => format!(
+            "contains({}, {})",
+            describe_resource_subject(parent),
+            describe_resource_subject(child)
+        ),
+        ClickProposition::Loadable { segment } => {
+            format!("viewable({})", describe_contract_segment(segment))
+        }
+        ClickProposition::Defined { expression } => {
+            format!("defined({})", describe_contract_expression(expression))
+        }
+        ClickProposition::At {
+            selector,
+            proposition,
+        } => format!(
+            "at({}, {})",
+            describe_snapshot_selector(selector),
+            print_proposition(proposition, mode)
+        ),
+        // Connectives print as the sidecar writes them, with only the
+        // parentheses Click's precedence needs (`docs/reference/language/
+        // grammar.md`): `implies` binds loosest and to the right, then `or`,
+        // `and`, and prefix `not`.
+        ClickProposition::And(left, right) => format!(
+            "{} and {}",
+            proposition_operand(left, CONNECTIVE_AND, mode),
+            proposition_operand(right, CONNECTIVE_NOT, mode)
+        ),
+        ClickProposition::Or(left, right) => format!(
+            "{} or {}",
+            proposition_operand(left, CONNECTIVE_OR, mode),
+            proposition_operand(right, CONNECTIVE_AND, mode)
+        ),
+        ClickProposition::Not(proposition) => {
+            format!(
+                "not {}",
+                proposition_operand(proposition, CONNECTIVE_NOT, mode)
+            )
+        }
+        ClickProposition::Implies(left, right) => format!(
+            "{} implies {}",
+            proposition_operand(left, CONNECTIVE_OR, mode),
+            proposition_operand(right, CONNECTIVE_IMPLIES, mode)
+        ),
+        ClickProposition::ForAll {
+            click_type,
+            name,
+            body,
+            ..
+        } => format!(
+            "forall ({name}: {}) {{ {} }}",
+            validation::describe_click_type(click_type),
+            print_proposition(body, mode)
+        ),
+        ClickProposition::Exists {
+            click_type,
+            name,
+            body,
+            ..
+        } => format!(
+            "exists ({name}: {}) {{ {} }}",
+            validation::describe_click_type(click_type),
+            print_proposition(body, mode)
+        ),
+        ClickProposition::RangeAll {
+            start,
+            end,
+            item,
+            body,
+            ..
+        } => {
+            let body = print_proposition(body, mode);
+            let (start, end) = (
+                describe_contract_expression(start),
+                describe_contract_expression(end),
+            );
+            if mode == PropositionSpelling::Source {
+                format!("({start}..{end}).all(|{item}| {{ {body} }})")
+            } else {
+                format!("({start}..{end}).all({item} => {body})")
+            }
+        }
+        ClickProposition::RangeAny {
+            start,
+            end,
+            item,
+            body,
+            ..
+        } => {
+            let body = print_proposition(body, mode);
+            let (start, end) = (
+                describe_contract_expression(start),
+                describe_contract_expression(end),
+            );
+            if mode == PropositionSpelling::Source {
+                format!("({start}..{end}).any(|{item}| {{ {body} }})")
+            } else {
+                format!("({start}..{end}).any({item} => {body})")
+            }
+        }
+        ClickProposition::PredicateCall { name, arguments } => format!(
+            "{name}({})",
+            arguments
+                .iter()
+                .map(describe_contract_expression)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+const CONNECTIVE_IMPLIES: u8 = 1;
+const CONNECTIVE_OR: u8 = 2;
+const CONNECTIVE_AND: u8 = 3;
+const CONNECTIVE_NOT: u8 = 4;
+
+/// A proposition as an operand of a connective that needs at least
+/// `minimum` precedence there, parenthesized when it binds more loosely.
+fn proposition_operand(
+    proposition: &ClickProposition,
+    minimum: u8,
+    mode: PropositionSpelling,
+) -> String {
+    let precedence = match proposition {
+        ClickProposition::Implies(..) => CONNECTIVE_IMPLIES,
+        ClickProposition::Or(..) => CONNECTIVE_OR,
+        ClickProposition::And(..) => CONNECTIVE_AND,
+        ClickProposition::Not(..) => CONNECTIVE_NOT,
+        _ => u8::MAX,
+    };
+    let text = print_proposition(proposition, mode);
+    if precedence < minimum {
+        format!("({text})")
+    } else {
+        text
+    }
 }
 
 pub fn format_proof_tactics(tactics: &[ProofTactic]) -> Result<String, CertificateError> {
@@ -1617,6 +1716,55 @@ fn line(output: &mut String, prefix: &str, text: &str) {
     output.push('\n');
 }
 
+/// Spell canonical references with the file's import bindings. Token spans
+/// ensure a path inside a literal or comment is never rewritten.
+fn spell_names(symbols: &names::FileSymbols, source: &str) -> Result<String, ClickError> {
+    let tokens = parser::source_tokens(source)?;
+    let mut output = String::with_capacity(source.len());
+    let mut copied = 0;
+    let mut index = 0;
+    while index < tokens.len() {
+        if tokens[index].text != "click" {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        let mut path = String::from("click");
+        while tokens
+            .get(index + 1)
+            .is_some_and(|token| token.text == "::")
+        {
+            let Some(next) = tokens.get(index + 2) else {
+                break;
+            };
+            if !next
+                .text
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+            {
+                break;
+            }
+            path.push_str("::");
+            path.push_str(&next.text);
+            index += 2;
+        }
+        if index > start {
+            output.push_str(&source[copied..tokens[start].span.start]);
+            output.push_str(&symbols.spelling(&path));
+            copied = tokens[index].span.end;
+        }
+        index += 1;
+    }
+    output.push_str(&source[copied..]);
+    Ok(output)
+}
+
+pub(super) fn spell_source_names(context: &str, source: &str) -> String {
+    names::FileSymbols::for_source(context)
+        .and_then(|symbols| spell_names(&symbols, source))
+        .unwrap_or_else(|_| source.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1635,6 +1783,57 @@ mod tests {
         output.clear();
         wrapped_line(&mut output, "", &format!("{long_name} == 0;"));
         assert!(output.contains(&long_name));
+    }
+
+    #[test]
+    fn source_propositions_ignore_refusal_mode_even_when_nested() {
+        let expression =
+            |text: &str| ContractExpression::CFragment(CExpression::Variable(text.into()));
+        let flipped = ContractExpression::BitwiseXor(
+            Box::new(ContractExpression::CFragment(CExpression::Value(
+                CValue::Int32(Bitvector32Term::Constant(0x8000_0000)),
+            ))),
+            Box::new(expression("x")),
+        );
+        let proposition = ClickProposition::And(
+            Box::new(ClickProposition::Comparison {
+                left: flipped,
+                operator: ComparisonOperator::LessThan,
+                right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
+                    Bitvector32Term::Constant(0),
+                ))),
+            }),
+            Box::new(ClickProposition::Comparison {
+                left: expression("x"),
+                operator: ComparisonOperator::Equal,
+                right: expression("x"),
+            }),
+        );
+        let conditional = ClickProposition::Comparison {
+            left: ContractExpression::If {
+                condition: Box::new(proposition.clone()),
+                then_branch: Box::new(expression("x")),
+                else_branch: Box::new(expression("y")),
+            },
+            operator: ComparisonOperator::Equal,
+            right: expression("x"),
+        };
+        let conditional_source = source_click_proposition(&conditional);
+        diagnostics::with_refusal_spelling(|| {
+            assert_eq!(source_click_proposition(&conditional), conditional_source);
+        });
+        let source = source_click_proposition(&proposition);
+        assert!(!source.contains("(unsigned)"));
+        let refusal = diagnostics::with_refusal_spelling(|| {
+            assert_eq!(source_click_proposition(&proposition), source);
+            diagnostics::describe_click_proposition(&proposition)
+        });
+        assert!(refusal.contains("(unsigned)"), "{refusal}");
+        assert!(parser::has_valid_source_tokens(&source));
+        let file = format!(
+            "theorem rendered(x: int32, y: int32) {{ requires {source}; ensures 0 == 0 by simp(); }}"
+        );
+        parser::parse(&file).unwrap();
     }
 
     #[test]

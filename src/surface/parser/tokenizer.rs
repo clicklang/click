@@ -1,9 +1,29 @@
 use super::*;
 
-pub(super) fn tokenize(
+type SpannedTokens = (Vec<Token>, Vec<SourcePosition>, Vec<std::ops::Range<usize>>);
+
+pub(in crate::surface) fn tokenize(
     source: &str,
     container: Option<&crate::source::SourceContainer>,
 ) -> Result<(Vec<Token>, Vec<SourcePosition>), ClickError> {
+    tokenize_impl::<false>(source, container).map(|(tokens, positions, _)| (tokens, positions))
+}
+
+/// The parser and source tools share token boundaries, including literal suffixes
+/// and compound punctuation. Spans are byte offsets in the unmodified source.
+pub(super) fn tokenize_with_spans(
+    source: &str,
+    container: Option<&crate::source::SourceContainer>,
+) -> Result<SpannedTokens, ClickError> {
+    tokenize_impl::<true>(source, container)
+}
+
+fn tokenize_impl<const SPANS: bool>(
+    source: &str,
+    container: Option<&crate::source::SourceContainer>,
+) -> Result<SpannedTokens, ClickError> {
+    let mut byte_index = 0;
+    let mut spans = Vec::new();
     // Sized once from the byte length, an upper bound on the characters:
     // collecting from `chars()` regrows from a quarter of it, and each
     // regrowth touches fresh pages.
@@ -19,10 +39,14 @@ pub(super) fn tokenize(
         // Each scan below only moves `index` forward.
         for &passed in &chars[cursor_index..index] {
             cursor.advance(passed);
+            if SPANS {
+                byte_index += passed.len_utf8();
+            }
         }
         cursor_index = index;
         let position = cursor.position();
         let tokens_before = tokens.len();
+        let token_start = index;
         match ch {
             '#' => {
                 return Err(ClickError::new(format!(
@@ -413,10 +437,17 @@ pub(super) fn tokenize(
         debug_assert!(tokens.len() <= tokens_before + 1);
         if tokens.len() > tokens_before {
             positions.push(position);
+            if SPANS {
+                let bytes = chars[token_start..index]
+                    .iter()
+                    .map(|ch| ch.len_utf8())
+                    .sum::<usize>();
+                spans.push(byte_index..byte_index + bytes);
+            }
         }
     }
 
-    Ok((tokens, positions))
+    Ok((tokens, positions, spans))
 }
 
 fn tokenize_char_literal(chars: &[char], start: usize) -> Result<(u8, usize), ClickError> {

@@ -2011,7 +2011,9 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
         invariant 0 <= i and i <= n;
 "#,
         );
-        for bound in 1..=12 {
+        // The two base facts plus seven bounds export nine facts: the
+        // smallest delta that detects the old eight-fact trace truncation.
+        for bound in 1..=7 {
             source.push_str(&format!("        invariant i >= -{bound};\n"));
         }
         source.push_str(
@@ -2494,7 +2496,10 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
     /// work budget stops it in that phase, at the same unit on every run.
     #[test]
     fn a_large_program_entry_stops_at_the_work_budget_in_its_storage_phase() {
-        let initializers = (0..5000)
+        // 2048 explicit elements still exhaust this budget in storage; parsing
+        // thousands more only made this limit-scope regression slower.
+        const ELEMENTS: usize = 2048;
+        let initializers = (0..ELEMENTS)
             .map(|index| format!("{{{}, 0}}", index % 97))
             .collect::<Vec<_>>()
             .join(", ");
@@ -2502,7 +2507,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
             "large-entry",
             &format!(
                 "struct node {{ int32 key; struct node *next; }};\n\
-                 struct node pool[5000] = {{{initializers}}};\n\
+                 struct node pool[{ELEMENTS}] = {{{initializers}}};\n\
                  int main(void) {{ return pool[0].key; }}\n"
             ),
             "verifying \"program.c\";\n\
@@ -2519,7 +2524,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
                 "60000".to_string(),
                 click_path.display().to_string(),
             ])
-            .expect_err("sixty thousand units cannot build a 5,000-element initialized entry")
+            .expect_err("sixty thousand units cannot build a 2,048-element initialized entry")
         };
         // The first run in a process also fills process-wide caches, so it
         // spends a few more units (a fresh `click verify` process always

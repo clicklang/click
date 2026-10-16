@@ -884,7 +884,7 @@ fn standard_library_inventory_is_bidirectional() {
     // A module that has dropped its name prefixes lists its functions,
     // predicates and theorems by their in-scope paths, `list::append`,
     // since bare names repeat across modules.
-    let paths = fs::read_to_string(root().join("src/surface/parser/library_paths.rs"))
+    let paths = fs::read_to_string(root().join("src/surface/names.rs"))
         .expect("read library path resolution");
     let qualified = paths
         .split_once("const QUALIFIED_MODULES: &[&str] = &[")

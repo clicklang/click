@@ -303,6 +303,9 @@ cargo nextest run "${fixture_targets[@]}" --filterset "$fixture_filter" \
 # day it does and not a week later.
 elapsed=$((SECONDS - gate_started))
 printf 'gate finished in %dm%02ds\n' $((elapsed / 60)) $((elapsed % 60))
+# Report-only, like the time above: the examples over the proof-size budget
+# (`docs/internals/verification-efficiency.md`, "Proof-size budget").
+python3 -I scripts/proof-ratio.py --over
 if [[ "${#skipped_frontends[@]}" -gt 0 ]]; then
     echo "warning: this gate run was partial; CI runs the skipped suites:" >&2
     for skipped in "${skipped_frontends[@]}"; do

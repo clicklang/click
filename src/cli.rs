@@ -1041,6 +1041,15 @@ pub fn read_click_project_at_root(
     click_source: &str,
     project_root: &Path,
 ) -> Result<ClickProject, String> {
+    read_click_project_at_root_with_offset(sidecar, click_source, project_root, 0)
+}
+
+fn read_click_project_at_root_with_offset(
+    sidecar: &Path,
+    click_source: &str,
+    project_root: &Path,
+    line_offset: usize,
+) -> Result<ClickProject, String> {
     let entry = fs::canonicalize(sidecar)
         .map_err(|error| format!("failed to resolve `{}`: {error}", sidecar.display()))?;
     let root = fs::canonicalize(project_root).map_err(|error| {
@@ -1068,6 +1077,7 @@ pub fn read_click_project_at_root(
         &mut resolved_imports,
         &mut state,
         &mut stack,
+        line_offset,
     )?;
     let identity = |path: &Path| -> Result<String, String> {
         path.strip_prefix(&root)
@@ -1127,6 +1137,7 @@ fn load_click_module(
     resolved_imports: &mut BTreeMap<PathBuf, Vec<PathBuf>>,
     state: &mut BTreeMap<PathBuf, u8>,
     stack: &mut Vec<PathBuf>,
+    line_offset: usize,
 ) -> Result<(), String> {
     match state.get(path).copied() {
         Some(2) => return Ok(()),
@@ -1167,13 +1178,15 @@ fn load_click_module(
         .get(path)
         .cloned()
         .ok_or_else(|| format!("Click module `{}` was not loaded", path.display()))?;
-    let sites = click_import_sites(&source).map_err(|error| {
-        format!(
-            "failed to scan imports in `{}`: {}",
-            path.display(),
-            error.report()
-        )
-    })?;
+    let container = SourceContainer::new(
+        path.strip_prefix(root)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .replace('\\', "/"),
+        line_offset,
+    );
+    let sites = crate::surface::click_import_sites_in_container(&source, Some(&container))
+        .map_err(|error| error.concise_report())?;
     let parent = containing_directory(path);
     let mut imports = Vec::with_capacity(sites.len());
     for site in sites {
@@ -1220,7 +1233,7 @@ fn load_click_module(
             sources.insert(imported.clone(), imported_source);
         }
         imports.push(imported.clone());
-        load_click_module(&imported, root, sources, resolved_imports, state, stack)?;
+        load_click_module(&imported, root, sources, resolved_imports, state, stack, 0)?;
     }
     // Keep source order so the resolver can relate every canonical edge back
     // to its exact import declaration. Graph traversal and artifact hashing
@@ -1820,9 +1833,23 @@ pub fn read_mdtest_project_if_needed(
     inputs: &CInput,
 ) -> Result<Option<ClickProject>, String> {
     let mdtest = read_mdtest(path)?;
-    let has_imports = !click_import_sites(click_source)
-        .map_err(|error| error.report())?
-        .is_empty();
+    let container = SourceContainer::new(
+        path.file_name()
+            .unwrap_or(path.as_os_str())
+            .to_string_lossy()
+            .into_owned(),
+        mdtest.click_start_line.saturating_sub(1),
+    );
+    let sites =
+        match crate::surface::click_import_sites_in_container(click_source, Some(&container)) {
+            Ok(sites) => sites,
+            // Project discovery must not turn an expected lexical refusal into
+            // a fixture setup failure. The direct verifier will report the same
+            // tokenizer error before it can use any declaration or import.
+            Err(_) if matches!(inputs, CInput::Bundle(_)) => return Ok(None),
+            Err(error) => return Err(error.concise_report()),
+        };
+    let has_imports = !sites.is_empty();
     let config_path = containing_directory(path).join("click.project.json");
     let has_config = match fs::symlink_metadata(&config_path) {
         Ok(_) => true,
@@ -1849,8 +1876,14 @@ fn read_mdtest_click_project(
     mdtest: &MdTest,
     click_source: &str,
 ) -> Result<ClickProject, String> {
-    let mut project = read_click_project(path, click_source)?
-        .with_entry_line_offset(mdtest.click_start_line.saturating_sub(1));
+    let line_offset = mdtest.click_start_line.saturating_sub(1);
+    let mut project = read_click_project_at_root_with_offset(
+        path,
+        click_source,
+        containing_directory(path),
+        line_offset,
+    )?
+    .with_entry_line_offset(line_offset);
     let entry = project.entry().to_owned();
     for ((filename, _), start_line) in mdtest.c_sources.iter().zip(&mdtest.c_start_lines) {
         project = project.with_c_source_container(

@@ -1,17 +1,44 @@
 mod cpp_class_objects;
 mod cpp_model;
 mod cpp_syntax;
-mod library_paths;
 mod rust_literals;
+use super::names;
 mod rust_syntax;
 mod rust_trait_objects;
 pub(crate) use rust_trait_objects::implementation_interface_contract;
-mod tokenizer;
+pub(super) mod tokenizer;
 use cpp_model::rewrite_model_accessors;
 use rust_syntax::rust_signature_hint;
 
 use crate::languages::SourceLanguage;
 use tokenizer::tokenize;
+
+/// A written parser token and its exact source span. Source tools retain the
+/// original spelling rather than reconstructing literals from their values.
+#[derive(Clone, Debug)]
+pub(in crate::surface) struct SourceToken {
+    pub text: String,
+    pub span: std::ops::Range<usize>,
+}
+
+pub(in crate::surface) fn source_tokens(source: &str) -> Result<Vec<SourceToken>, ClickError> {
+    source_tokens_in_container(source, None)
+}
+
+pub(in crate::surface) fn source_tokens_in_container(
+    source: &str,
+    container: Option<&crate::source::SourceContainer>,
+) -> Result<Vec<SourceToken>, ClickError> {
+    let (_, _, spans) = tokenizer::tokenize_with_spans(source, container)
+        .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
+    Ok(spans
+        .into_iter()
+        .map(|span| SourceToken {
+            text: source[span.clone()].to_string(),
+            span,
+        })
+        .collect())
+}
 
 /// Smart search may synthesize kernel values that diagnostics can print but
 /// source cannot name. Check the rendered candidate without resolving names
@@ -29,7 +56,7 @@ use claim_labels::{ClaimClauseKind, flattened_claim_ids};
 /// so it must preserve this part of the original file's library context.
 pub(super) fn library_path_modules(source: &str) -> Result<BTreeSet<&'static str>, ClickError> {
     let (tokens, positions) = tokenizer::tokenize(source, None)?;
-    library_paths::resolve_library_paths(tokens, positions, None).map(|(_, _, modules)| modules)
+    names::resolve_library_paths(tokens, positions, None).map(|resolved| resolved.path_modules)
 }
 
 #[derive(Clone, Debug)]
@@ -191,28 +218,6 @@ pub(in crate::surface) struct ProgramLayouts {
     /// The typedef names of the verified C sources a function head may
     /// write, with their types.
     pub(in crate::surface) c_typedefs: BTreeMap<String, syntax::C0HeadTypedef>,
-}
-
-/// Whether the library declaration `name` of module `identity` is known by
-/// its qualified identity.
-pub(in crate::surface) fn is_qualified_library_declaration(identity: &str, name: &str) -> bool {
-    library_paths::is_qualified_declaration(identity, name)
-}
-
-/// The in-scope spelling `m::name` of a full path to a declaration of a
-/// module whose names need a path; `None` for any other name.
-pub(in crate::surface) fn qualified_module_spelling(path: &str) -> Option<String> {
-    library_paths::qualified_module_spelling(path)
-}
-
-/// The qualified identity of the Click library theorem `name`: `name`
-/// itself when it is already qualified or names no library theorem. Built-in
-/// tactics name library theorems through this.
-pub(in crate::surface) fn library_theorem_identity(name: &str) -> String {
-    library_paths::library_theorem_identities()
-        .get(name)
-        .cloned()
-        .unwrap_or_else(|| name.to_string())
 }
 
 pub(super) fn parse_with_layouts_and_aggregate_objects(
@@ -395,7 +400,7 @@ fn standard_library_pure_function_names() -> &'static BTreeSet<String> {
                     Token::RBrace => depth = depth.saturating_sub(1),
                     Token::Ident(word) if depth == 0 && word == "function" => {
                         if let Some(Token::Ident(name)) = tokens.get(index + 1) {
-                            if library_paths::is_qualified_declaration(identity, name) {
+                            if names::is_qualified_declaration(identity, name) {
                                 names.insert(format!("{path}::{name}"));
                             } else {
                                 names.insert(name.clone());
@@ -440,7 +445,7 @@ fn is_tactic_name(name: &str) -> bool {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-enum Token {
+pub(super) enum Token {
     Ident(String),
     Number(u32),
     // Keep literal metadata shared so adding Rust forms does not enlarge
@@ -651,7 +656,7 @@ struct Parser {
     library_module: bool,
     /// The theorems the file declares, which a citation by bare name names
     /// before any library theorem of that name. Empty in a library module.
-    local_theorems: BTreeSet<String>,
+    symbols: names::FileSymbols,
     source_aliases: BTreeMap<String, String>,
     qualified_functions: BTreeMap<(String, String), String>,
     qualified_objects: Option<BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>>,
@@ -1154,7 +1159,12 @@ impl Parser {
     ) -> Result<Self, ClickError> {
         let (tokens, positions) = tokenize(source, container)?;
         let (tokens, positions) = rewrite_model_accessors(tokens, positions, &struct_layouts);
-        let (tokens, positions, path_library_modules) = library_paths::resolve_library_paths(
+        let names::ResolvedLibraryTokens {
+            tokens,
+            positions,
+            path_modules: path_library_modules,
+            symbols,
+        } = names::resolve_library_paths(
             tokens,
             positions,
             container.map(|container| &*container.filename),
@@ -1164,11 +1174,6 @@ impl Parser {
         // library theorem that way, its own included.
         let library_module =
             container.is_some_and(|container| container.filename.starts_with("library/"));
-        let local_theorems = if library_module {
-            BTreeSet::new()
-        } else {
-            library_paths::top_level_theorem_names(&tokens)
-        };
         // `arithmetic "integer";` decides how every specification comparison
         // in the file reads, wherever the directive appears.
         let integer_arithmetic = tokens.windows(2).any(|pair| {
@@ -1267,7 +1272,7 @@ impl Parser {
             recursion_peers_by_function: BTreeMap::new(),
             implied_library_modules: path_library_modules,
             library_module,
-            local_theorems,
+            symbols,
             current_c_parameter_types: BTreeMap::new(),
             current_parameter_struct_casts: BTreeMap::new(),
             aggregate_objects_by_function,
@@ -1715,7 +1720,7 @@ impl Parser {
             ));
         }
         for name in &selected {
-            if !library_paths::module_declares(&identity, name) {
+            if !names::module_declares(&identity, name) {
                 return Err(self.error_at(
                     at.clone(),
                     format!("Click library module `{spelling}` declares no `{name}` to import"),
@@ -9358,13 +9363,7 @@ impl Parser {
 
     fn parse_theorem_application(&mut self) -> Result<TheoremApplication, ClickError> {
         let (name, arguments) = self.parse_call_arguments("theorem name")?;
-        let name = if self.local_theorems.contains(&name) {
-            name
-        } else {
-            library_paths::bare_theorem_citation(&name)
-                .cloned()
-                .unwrap_or(name)
-        };
+        let name = self.symbols.theorem_identity(name);
         Ok(TheoremApplication { name, arguments })
     }
 

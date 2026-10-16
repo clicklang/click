@@ -316,7 +316,7 @@ pub(super) fn apply(
 ) -> ProofStep {
     ProofStep::ApplyTheoremUsing {
         application: TheoremApplication {
-            name: crate::surface::parser::library_theorem_identity(name),
+            name: crate::surface::names::library_theorem_identity(name),
             arguments,
         },
         premises,

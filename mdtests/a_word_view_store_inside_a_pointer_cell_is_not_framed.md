@@ -7,12 +7,14 @@ view is byte four of the pointer at `q`, which is its upper half on an LP64
 target, so the pointer the next line reads back is not the pointer that was
 there.
 
-It is here because it reached the answer by a route the byte-view files do
-not. Both sides are pointer values, so the goal is a pointer-offset equality;
-the offsets are loads scaled by the element width, and the equality of *those*
-was decided by comparing the two loads' origin snapshots cell by cell. That
-comparison is now vetoed by the recorded history like the others, so the one
-rule answers a goal written three different ways.
+It was here because it reached the answer by a route the byte-view files do
+not: both sides are pointer values, and the equality of their scaled
+offsets was decided by comparing the two loads' origin snapshots cell by
+cell. An `int` store into an `int *` object is itself undefined (C11
+6.5p7), and the strict-aliasing check now refuses the store before any goal
+is reached. A word store into a pointer cell through a non-character type
+always breaks that rule, so the route is unreachable; the byte-view files
+keep covering the framing rule.
 
 ```c filename=a_word_view_store_inside_a_pointer_cell_is_not_framed.c
 int32* stale_pointer_read(int32** q) {
@@ -36,5 +38,5 @@ int32* stale_pointer_read(int32** q) {
 ```
 
 ```expect
-fail: unclosed goal: result == old(q[0]); the two sides read the same address in different memory snapshots (`result` reads the outcome state, `old(q[0])` reads function entry)
+fail: an object of type `int *` accessed through an lvalue of type `int`
 ```

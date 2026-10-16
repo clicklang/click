@@ -29,7 +29,7 @@ impl CProofClaim {
 }
 
 pub fn verifying_source_paths(click_source: &str) -> Result<Vec<String>, ClickError> {
-    let tokens = scan_source_tokens(click_source)?;
+    let tokens = proof_source_tokens(click_source)?;
     let mut paths = Vec::new();
     for window in tokens.windows(2) {
         if window[0].text == "verifying"
@@ -51,7 +51,7 @@ pub fn map_verifying_source_paths(
     click_source: &str,
     map: impl Fn(&str) -> Option<String>,
 ) -> Result<String, ClickError> {
-    let tokens = scan_source_tokens(click_source)?;
+    let tokens = proof_source_tokens(click_source)?;
     let mut replacements = Vec::new();
     for window in tokens.windows(2) {
         if window[0].text == "verifying"
@@ -94,7 +94,7 @@ pub fn selected_c_target(click_source: &str) -> Result<CTarget, ClickError> {
 /// Scans the explicit runtime selector before the full sidecar is parsed.
 /// Incremental sessions use it to refuse a changed runtime identity.
 pub fn selected_thread_runtime(click_source: &str) -> Result<CThreadRuntime, ClickError> {
-    let tokens = scan_source_tokens(click_source)?;
+    let tokens = proof_source_tokens(click_source)?;
     let mut selected = None;
     let mut depth = 0usize;
     for window in tokens.windows(3) {
@@ -189,7 +189,7 @@ pub fn selected_project_c_target(project: &ClickProject) -> Result<CTarget, Clic
 }
 
 fn declared_c_target(click_source: &str) -> Result<Option<CTarget>, ClickError> {
-    let tokens = scan_source_tokens(click_source)?;
+    let tokens = proof_source_tokens(click_source)?;
     let mut target = None;
     let mut mode = None;
     let mut depth = 0usize;
@@ -240,7 +240,14 @@ pub struct ClickImportSite {
 /// Finds top-level import declarations for the filesystem graph loader. Full
 /// syntax and interface validation still happens in the shared parser.
 pub fn click_import_sites(click_source: &str) -> Result<Vec<ClickImportSite>, ClickError> {
-    let tokens = scan_source_tokens(click_source)?;
+    click_import_sites_in_container(click_source, None)
+}
+
+pub(crate) fn click_import_sites_in_container(
+    click_source: &str,
+    container: Option<&crate::source::SourceContainer>,
+) -> Result<Vec<ClickImportSite>, ClickError> {
+    let tokens = parser::source_tokens_in_container(click_source, container)?;
     let mut sites = Vec::new();
     for window in tokens.windows(2) {
         if window[0].text == "import"
@@ -266,7 +273,7 @@ pub fn expand_c0_claim_source(
     claim: CProofClaim,
 ) -> Result<String, ClickError> {
     let sources = CSourceContext::bundle(c_sources);
-    let tokens = scan_source_tokens(click_source)?;
+    let tokens = proof_source_tokens(click_source)?;
     let function = find_function(&tokens, function_name)?;
     let file = parse_source_with_c_layouts(click_source, c_sources)?;
     let function_block = proof_function_blocks(&file)
@@ -322,7 +329,7 @@ pub fn expand_verified_function_claim_source_by_label(
         return Ok(None);
     };
     let function_name = function_block.signature().name();
-    let tokens = scan_source_tokens(click_source)?;
+    let tokens = proof_source_tokens(click_source)?;
     let Ok(function) = find_function(&tokens, function_name) else {
         return Ok(None);
     };
@@ -366,7 +373,7 @@ fn expand_project_claim_source(
         .ok_or_else(|| ClickError::new(format!("missing entry module `{}`", project.entry())))?;
     let sources = CSourceContext::of(inputs)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
-    let tokens = scan_source_tokens(click_source)?;
+    let tokens = proof_source_tokens(click_source)?;
     let function = find_function(&tokens, function_name)?;
     let function_block = proof_function_blocks(&file)
         .find(|function| function.signature().name() == function_name)
@@ -416,7 +423,7 @@ fn expand_c0_prepared_claim_source(
     claim: CProofClaim,
 ) -> Result<String, ClickError> {
     let sources = CSourceContext::prepared(imports);
-    let tokens = scan_source_tokens(click_source)?;
+    let tokens = proof_source_tokens(click_source)?;
     let function = find_function(&tokens, function_name)?;
     let file = parse_source_with_c_layouts_context(click_source, &sources)?;
     let function_block = proof_function_blocks(&file)
@@ -660,7 +667,7 @@ fn expand_program_prepared_claim_source_context(
 ) -> Result<String, ClickError> {
     let sources = CSourceContext::program(import)?;
     let file = parse_source_with_c_layouts_context(click_source, &sources)?;
-    let tokens = scan_source_tokens(click_source)?;
+    let tokens = proof_source_tokens(click_source)?;
     let function = find_function(&tokens, function_name)?;
     let function_block = proof_function_blocks(&file)
         .find(|function| function.signature().name() == function_name)
@@ -806,7 +813,7 @@ fn expand_loop_phase_claim(
         return Ok(None);
     };
     let function_name = function_block.signature().name();
-    let tokens = scan_source_tokens(click_source)?;
+    let tokens = proof_source_tokens(click_source)?;
     let _reference_result_source = super::diagnostics::ReferenceResultSourceScope::enter(
         function_block.signature().returns_reference(),
     );
@@ -1232,7 +1239,7 @@ pub(in crate::surface) fn verification_target_at_file(
     column: usize,
 ) -> Result<VerificationTarget, ClickError> {
     let wanted = offset_at_position(click_source, line, column)?;
-    let tokens = scan_source_tokens(click_source)?;
+    let tokens = proof_source_tokens(click_source)?;
     for theorem in file.theorem_definitions() {
         if !file.theorem_is_selected(theorem.name()) {
             continue;
@@ -1517,7 +1524,7 @@ fn expand_c0_tactic_source_at_context(
     let replacement = indent_replacement(click_source, span.start, &replacement);
     let expanded = splice_source(
         click_source,
-        &scan_source_tokens(click_source)?,
+        &proof_source_tokens(click_source)?,
         &span,
         &replacement,
     );
@@ -1667,7 +1674,7 @@ fn expand_program_prepared_tactic_source_at_context(
     let (span, replacement) = selected.replacement(click_source, &replacement_tactics)?;
     let expanded = splice_source(
         click_source,
-        &scan_source_tokens(click_source)?,
+        &proof_source_tokens(click_source)?,
         &span,
         &replacement,
     );
@@ -1767,7 +1774,7 @@ fn expand_c0_prepared_tactic_source_at_context(
     let (span, replacement) = selected.replacement(click_source, &replacement_tactics)?;
     let expanded = splice_source(
         click_source,
-        &scan_source_tokens(click_source)?,
+        &proof_source_tokens(click_source)?,
         &span,
         &replacement,
     );
@@ -1832,7 +1839,7 @@ fn rewrite_verified_pure_theorem(
     theorem_name: &str,
     ensure_index: usize,
 ) -> Result<String, ClickError> {
-    let tokens = scan_source_tokens(click_source)?;
+    let tokens = proof_source_tokens(click_source)?;
     let theorem = verified
         .iter()
         .find(|theorem| {
@@ -1956,11 +1963,7 @@ fn select_expansion_theorem<'a>(
     })
 }
 
-#[derive(Clone, Debug)]
-struct SourceToken {
-    text: String,
-    span: Range<usize>,
-}
+use super::parser::SourceToken;
 
 #[derive(Clone, Copy)]
 struct FunctionSource {
@@ -1968,142 +1971,9 @@ struct FunctionSource {
     body_close: usize,
 }
 
-fn scan_source_tokens(source: &str) -> Result<Vec<SourceToken>, ClickError> {
+fn proof_source_tokens(source: &str) -> Result<Vec<SourceToken>, ClickError> {
     source_index::record_tokenization_work(source.len());
-    let mut tokens = Vec::new();
-    let mut index = 0;
-    while index < source.len() {
-        let character = source[index..]
-            .chars()
-            .next()
-            .expect("index is maintained at a character boundary");
-        if character.is_whitespace() {
-            index += character.len_utf8();
-            continue;
-        }
-        if character == '#' || source[index..].starts_with("//") {
-            index += source[index..].find('\n').unwrap_or(source.len() - index);
-            continue;
-        }
-        if source[index..].starts_with("/*") {
-            let Some(end) = source[index + 2..].find("*/") else {
-                return Err(ClickError::new(format!(
-                    "{}: unterminated block comment",
-                    position_at_offset(source, index)
-                )));
-            };
-            index += 2 + end + 2;
-            continue;
-        }
-        let start = index;
-        let after_path_separator = tokens.len() >= 2
-            && tokens[tokens.len() - 2..]
-                .iter()
-                .all(|token: &SourceToken| token.text == ":");
-        if character == '{'
-            && after_path_separator
-            && let Some(length) = closure_segment_length(&source[index..])
-        {
-            // A Rust closure's path segment, `caller::{closure#0}`, is one
-            // name, as the surface tokenizer reads it.
-            index += length;
-        } else if character == '('
-            && after_path_separator
-            && let Some(length) = lambda_segment_length(&source[index..])
-        {
-            // So is a C++ lambda's, `caller::(lambda#0)`.
-            index += length;
-        } else if character.is_ascii_alphabetic() || character == '_' {
-            index += character.len_utf8();
-            while index < source.len() {
-                let next = source[index..]
-                    .chars()
-                    .next()
-                    .expect("index is maintained at a character boundary");
-                if !next.is_ascii_alphanumeric() && next != '_' {
-                    break;
-                }
-                index += next.len_utf8();
-            }
-        } else if character.is_ascii_digit() {
-            index += character.len_utf8();
-            while index < source.len() {
-                let next = source[index..]
-                    .chars()
-                    .next()
-                    .expect("index is maintained at a character boundary");
-                if !next.is_ascii_digit() {
-                    break;
-                }
-                index += next.len_utf8();
-            }
-        } else if character == '\''
-            && let mut rest = source[index + 1..].chars()
-            && rest
-                .next()
-                .is_some_and(|next| next.is_ascii_alphabetic() || next == '_')
-            && rest.next() != Some('\'')
-        {
-            // A Rust lifetime, `'a`, as the surface tokenizer reads it.
-            index += 1;
-            while let Some(next) = source[index..].chars().next()
-                && (next.is_ascii_alphanumeric() || next == '_')
-            {
-                index += 1;
-            }
-        } else if matches!(character, '"' | '\'') {
-            let quote = character;
-            index += character.len_utf8();
-            let mut terminated = false;
-            while index < source.len() {
-                let next = source[index..]
-                    .chars()
-                    .next()
-                    .expect("index is maintained at a character boundary");
-                index += next.len_utf8();
-                if next == '\\' {
-                    if index < source.len() {
-                        let escaped = source[index..]
-                            .chars()
-                            .next()
-                            .expect("index is maintained at a character boundary");
-                        index += escaped.len_utf8();
-                    }
-                } else if next == quote {
-                    terminated = true;
-                    break;
-                }
-            }
-            if !terminated {
-                return Err(ClickError::new(
-                    "unterminated literal while locating proof source",
-                ));
-            }
-        } else {
-            index += character.len_utf8();
-        }
-        tokens.push(SourceToken {
-            text: source[start..index].to_string(),
-            span: start..index,
-        });
-    }
-    with_implicit_proof_blocks(tokens)
-}
-
-/// The length of a closure path segment, `{closure#0}`, at the start of
-/// `text`.
-fn closure_segment_length(text: &str) -> Option<usize> {
-    let rest = text.strip_prefix("{closure#")?;
-    let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
-    (digits > 0 && rest[digits..].starts_with('}')).then_some("{closure#".len() + digits + 1)
-}
-
-/// The length of a C++ lambda path segment, `(lambda#0)`, at the start of
-/// `text`.
-fn lambda_segment_length(text: &str) -> Option<usize> {
-    let rest = text.strip_prefix("(lambda#")?;
-    let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
-    (digits > 0 && rest[digits..].starts_with(')')).then_some("(lambda#".len() + digits + 1)
+    with_implicit_proof_blocks(parser::source_tokens(source)?)
 }
 
 /// A proof written as one tactic, `by T(args);`, is the block
@@ -2159,7 +2029,7 @@ fn splice_source(
     span: &Range<usize>,
     replacement: &str,
 ) -> String {
-    let replacement = library_citation_spelling(source, replacement);
+    let replacement = printing::spell_source_names(source, replacement);
     let replacement = replacement.as_str();
     let mut open_blocks = Vec::new();
     let mut enclosing: Option<Range<usize>> = None;
@@ -2205,105 +2075,6 @@ fn splice_source(
     with_cited_library_imports(spliced, replacement, source)
 }
 
-/// `replacement` with each library theorem a tactic cited by its qualified
-/// identity written as the file writes it. A module whose names need a path
-/// is cited by the bare name when the file imports it selectively, and
-/// otherwise by `m::name` only when that module is in scope. Preserve full
-/// paths already written in the source: parsing them also records the module
-/// as an import, which a retained proof rewrite must not silently remove.
-/// Other library theorems may use their unshadowed bare names.
-fn library_citation_spelling(source: &str, replacement: &str) -> String {
-    let mut spelled = String::with_capacity(replacement.len());
-    let mut module_visibility = BTreeMap::new();
-    let mut rest = replacement;
-    while let Some(start) = rest.find("click::") {
-        let path_end = rest[start..]
-            .find(|character: char| {
-                !(character.is_alphanumeric() || character == '_' || character == ':')
-            })
-            .map_or(rest.len(), |offset| start + offset);
-        let path = &rest[start..path_end];
-        let bare = path.rsplit("::").next().unwrap_or(path);
-        let shadowed = source.lines().any(|line| {
-            line.trim_start()
-                .strip_prefix("theorem ")
-                .is_some_and(|after| {
-                    after
-                        .split(|character: char| !(character.is_alphanumeric() || character == '_'))
-                        .next()
-                        == Some(bare)
-                })
-        });
-        spelled.push_str(&rest[..start]);
-        if let Some(short) = crate::surface::parser::qualified_module_spelling(path) {
-            if selectively_imports(source, path) {
-                spelled.push_str(bare);
-            } else if !source.contains(path)
-                && *module_visibility
-                    .entry(path.rsplit_once("::").expect("qualified library path").0)
-                    .or_insert_with(|| library_module_in_scope(source, path))
-            {
-                spelled.push_str(&short);
-            } else {
-                spelled.push_str(path);
-            }
-        } else if source.contains(path) {
-            spelled.push_str(path);
-        } else if !shadowed && crate::surface::parser::library_theorem_identity(bare) == path {
-            spelled.push_str(bare);
-        } else {
-            spelled.push_str(path);
-        }
-        rest = &rest[path_end..];
-    }
-    spelled.push_str(rest);
-    spelled
-}
-
-/// Whether an implicit or written import permits the short module spelling.
-/// A full path elsewhere in the file loads declarations but does not bring
-/// the module's short name into scope in the parser.
-fn library_module_in_scope(source: &str, path: &str) -> bool {
-    let Some((module, _)) = path.rsplit_once("::") else {
-        return false;
-    };
-    validation::implicit_library_modules()
-        .any(|identity| crate::surface::library_module_path(identity) == module)
-        || scan_source_tokens(source).is_ok_and(|tokens| {
-            tokens.split(|token| token.text == ";").any(|statement| {
-                if statement.first().is_none_or(|token| token.text != "import") {
-                    return false;
-                }
-                let imported = statement[1..]
-                    .iter()
-                    .map(|token| token.text.as_str())
-                    .collect::<String>();
-                imported == module || imported.starts_with(&format!("{module}::{{"))
-            })
-        })
-}
-
-/// Whether `source` brings the library declaration `path` into scope by its
-/// bare name with a selective import, `import click::m::{name, ...};`.
-fn selectively_imports(source: &str, path: &str) -> bool {
-    let Some((module, name)) = path.rsplit_once("::") else {
-        return false;
-    };
-    source.split(';').any(|statement| {
-        statement
-            .trim_start()
-            .strip_prefix("import ")
-            .and_then(|import| import.trim().strip_prefix(module))
-            .and_then(|rest| rest.trim_start().strip_prefix("::"))
-            .and_then(|rest| rest.trim_start().strip_prefix('{'))
-            .is_some_and(|names| {
-                names
-                    .split([',', '}'])
-                    .any(|selected| selected.trim() == name)
-            })
-    })
-}
-
 /// `source` with an `import click::...;` line for each Click library module
 /// whose theorem `replacement` cites but `source` does not yet see. A
 /// tactic's expansion writes out the library theorems the tactic applied,
@@ -2312,15 +2083,9 @@ fn with_cited_library_imports(source: String, replacement: &str, original: &str)
     let cited = replacement
         .split(|character: char| !(character.is_alphanumeric() || character == '_'))
         .filter(|word| !word.is_empty());
-    let mut imported = source
-        .match_indices("import click::")
-        .filter_map(|(start, prefix)| {
-            let path = &source[start + prefix.len()..];
-            let path = &path[..path.find(';')?];
-            let path = path.split_once("::{").map_or(path, |(module, _)| module);
-            Some(format!("library/{}.click", path.trim().replace("::", "/")))
-        })
-        .collect::<Vec<_>>();
+    let mut imported = names::FileSymbols::for_source(&source)
+        .map(|symbols| symbols.visible_modules())
+        .unwrap_or_default();
     imported.extend(
         parser::library_path_modules(&source)
             .unwrap_or_default()
@@ -2328,9 +2093,8 @@ fn with_cited_library_imports(source: String, replacement: &str, original: &str)
             .map(str::to_owned),
     );
     let mut missing = validation::library_modules_to_import(&imported, cited);
-    // A resource's checked identity may have a bare spelling (cstr_at),
-    // even when its only source occurrence used a full library path. Keep
-    // that module visible after replacing the occurrence with its proof.
+    // Preserve dependencies contributed by fully qualified resource paths
+    // even when the replacement uses the resource's canonical bare name.
     for module in parser::library_path_modules(original).unwrap_or_default() {
         if !imported.iter().any(|import| import == module) && !missing.contains(&module) {
             missing.push(module);
@@ -2374,13 +2138,13 @@ fn proof_function_blocks(file: &ClickFile) -> impl Iterator<Item = &FunctionBloc
 /// one starts at `index`; `index` itself otherwise.
 fn after_rust_return_type(tokens: &[SourceToken], index: usize) -> usize {
     let text = |at: usize| tokens.get(at).map(|token| token.text.as_str());
-    if text(index) != Some("-") || text(index + 1) != Some(">") {
+    if text(index) != Some("->") {
         return index;
     }
-    if text(index + 2) == Some("(") {
-        index + 4
-    } else {
+    if text(index + 1) == Some("(") {
         index + 3
+    } else {
+        index + 2
     }
 }
 
@@ -2558,8 +2322,8 @@ fn cpp_declarator_name_ending_at(tokens: &[SourceToken], end: usize) -> String {
             name => name.to_string(),
         };
         segments.insert(0, format!("{segment}{arguments}"));
-        if at >= 3 && text(at - 1) == ":" && text(at - 2) == ":" {
-            at -= 3;
+        if at >= 2 && text(at - 1) == "::" {
+            at -= 2;
             continue;
         }
         break;
@@ -2575,9 +2339,8 @@ fn printed_template_arguments(tokens: &[SourceToken]) -> String {
     while index < tokens.len() {
         let text = tokens[index].text.as_str();
         match text {
-            ":" if tokens.get(index + 1).is_some_and(|next| next.text == ":") => {
+            "::" => {
                 printed.push_str("::");
-                index += 1;
                 word_before = false;
             }
             "," => {
@@ -2606,14 +2369,13 @@ fn printed_template_arguments(tokens: &[SourceToken]) -> String {
     printed
 }
 
-/// The `>` closing the generic list opened at `open`. The scanner reads
-/// `->` as `-` and `>`, which closes nothing.
+/// The `>` closing the generic list opened at `open`. A parser arrow token
+/// `->` closes nothing.
 fn rust_generic_list_end(tokens: &[SourceToken], open: usize) -> Option<usize> {
     let mut depth = 0usize;
-    for at in open..tokens.len() {
-        match tokens[at].text.as_str() {
+    for (at, token) in tokens.iter().enumerate().skip(open) {
+        match token.text.as_str() {
             "<" => depth += 1,
-            ">" if at > 0 && tokens[at - 1].text == "-" => {}
             ">" => {
                 depth -= 1;
                 if depth == 0 {
@@ -2630,10 +2392,10 @@ fn rust_generic_list_end(tokens: &[SourceToken], open: usize) -> Option<usize> {
 fn rust_path_ending_at(tokens: &[SourceToken], end: usize) -> Vec<&str> {
     let mut segments = vec![tokens[end].text.as_str()];
     let mut at = end;
-    // The scanner reads `::` as two `:` tokens.
-    while at >= 3 && tokens[at - 1].text == ":" && tokens[at - 2].text == ":" {
-        segments.insert(0, tokens[at - 3].text.as_str());
-        at -= 3;
+    // The parser retains the path separator as one token.
+    while at >= 2 && tokens[at - 1].text == "::" {
+        segments.insert(0, tokens[at - 2].text.as_str());
+        at -= 2;
     }
     segments
 }
@@ -3666,7 +3428,7 @@ fn expand_selected_tactics_context(
     rewritten.push_str(&source[cursor..]);
     // Removing several no-op occurrences can empty a proof block together.
     // Fill only blocks touched by this rewrite, preserving unrelated syntax.
-    let tokens = scan_source_tokens(&rewritten)?;
+    let tokens = proof_source_tokens(&rewritten)?;
     let mut region = 0;
     let mut empty_blocks = Vec::new();
     for window in tokens.windows(3) {
@@ -4044,7 +3806,7 @@ fn claim_source_regions(
     file: &ClickFile,
     scope: ClaimLocationScope,
 ) -> Result<Vec<ClaimRegion>, ClickError> {
-    let tokens = scan_source_tokens(click_source)?;
+    let tokens = proof_source_tokens(click_source)?;
     let declarations = declaration_source_index(&tokens)?;
     let mut regions = Vec::new();
     let clause_region = |clause: usize, edit: &ProofSourceEdit| {
@@ -4467,7 +4229,7 @@ fn rust_trait_argument_suffix(header: &[SourceToken], impl_type: &str) -> Option
         ["&", path @ ..] => (true, false, path),
         path => (false, false, path),
     };
-    let segments: Vec<&str> = path.iter().copied().filter(|text| *text != ":").collect();
+    let segments: Vec<&str> = path.iter().copied().filter(|text| *text != "::").collect();
     if segments.is_empty() {
         return None;
     }
@@ -4540,7 +4302,7 @@ fn declaration_source_index(
                 // `trait path {`: the path is all that comes between.
                 if let Some(open) = (index..tokens.len()).find(|at| tokens[*at].text == "{")
                     && open > index + 1
-                    && open - 1 - 3 * (rust_path_ending_at(tokens, open - 1).len() - 1) == index + 1
+                    && open - 1 - 2 * (rust_path_ending_at(tokens, open - 1).len() - 1) == index + 1
                 {
                     let close = matching_delimiter(tokens, open, "{", "}")?;
                     let path = rust_path_ending_at(tokens, open - 1);
@@ -4586,7 +4348,7 @@ fn declaration_source_index(
             // i32>(`, follow the name; the function is the path before them.
             "<" if candidate.is_none() && !cpp && index > 0 => {
                 let path = rust_path_ending_at(tokens, index - 1);
-                let path_start = index - 1 - 3 * (path.len() - 1);
+                let path_start = index - 1 - 2 * (path.len() - 1);
                 if path_start
                     .checked_sub(1)
                     .is_some_and(|before| tokens[before].text == "fn")
@@ -4672,7 +4434,7 @@ fn source_tactic_entries(
     click_source: &str,
     file: &ClickFile,
 ) -> Result<Vec<SourceTacticEntry>, ClickError> {
-    let tokens = scan_source_tokens(click_source)?;
+    let tokens = proof_source_tokens(click_source)?;
     let mut entries = Vec::new();
     let declarations = declaration_source_index(&tokens)?;
     for theorem in file.theorem_definitions() {
@@ -5278,7 +5040,7 @@ pub fn tactic_source_position(
 /// declaration is the name followed by its parameters or body outside every
 /// brace; a use of the name inside a body is not one.
 pub fn click_declaration_source_position(click_source: &str, name: &str) -> Option<SourcePosition> {
-    let tokens = scan_source_tokens(click_source).ok()?;
+    let tokens = proof_source_tokens(click_source).ok()?;
     let mut depth = 0usize;
     let declared = tokens.iter().enumerate().find_map(|(index, token)| {
         match token.text.as_str() {
@@ -5369,7 +5131,7 @@ fn c0_tactic_source_position_file(
     claim_label: &str,
     source_index: usize,
 ) -> Result<SourcePosition, ClickError> {
-    let tokens = scan_source_tokens(click_source)?;
+    let tokens = proof_source_tokens(click_source)?;
     let offsets = c0_tactic_source_offsets_with_tokens(file, claim_label, &tokens)?;
     offsets
         .get(source_index)
@@ -5451,7 +5213,7 @@ fn c0_tactic_source_positions_file(
     click_source: &str,
     claim_label: &str,
 ) -> Result<Vec<SourcePosition>, ClickError> {
-    let tokens = scan_source_tokens(click_source)?;
+    let tokens = proof_source_tokens(click_source)?;
     let offsets = c0_tactic_source_offsets_with_tokens(file, claim_label, &tokens)?;
     Ok(positions_at_offsets(click_source, offsets))
 }
@@ -5751,7 +5513,7 @@ pub fn nested_tactic_source_position(
     outer: &SourcePosition,
     nested_indices: &[usize],
 ) -> Result<SourcePosition, ClickError> {
-    let tokens = scan_source_tokens(source)?;
+    let tokens = proof_source_tokens(source)?;
     let offset = offset_at_position(source, outer.line, outer.column)?;
     let mut current = tokens
         .iter()
@@ -5832,7 +5594,7 @@ pub fn tactic_source_at_position(
     source: &str,
     position: &SourcePosition,
 ) -> Result<String, ClickError> {
-    let tokens = scan_source_tokens(source)?;
+    let tokens = proof_source_tokens(source)?;
     let offset = offset_at_position(source, position.line, position.column)?;
     let start = tokens
         .iter()
@@ -5850,7 +5612,7 @@ pub fn tactic_arm_containing_position(
     tactic_position: &SourcePosition,
     target_position: &SourcePosition,
 ) -> Result<Option<usize>, ClickError> {
-    let tokens = scan_source_tokens(source)?;
+    let tokens = proof_source_tokens(source)?;
     let tactic_offset = offset_at_position(source, tactic_position.line, tactic_position.column)?;
     let target_offset = offset_at_position(source, target_position.line, target_position.column)?;
     let start = tokens
@@ -5905,7 +5667,7 @@ pub fn tactic_have_body_contains_position(
     tactic_position: &SourcePosition,
     target_position: &SourcePosition,
 ) -> Result<bool, ClickError> {
-    let tokens = scan_source_tokens(source)?;
+    let tokens = proof_source_tokens(source)?;
     let tactic_offset = offset_at_position(source, tactic_position.line, tactic_position.column)?;
     let target_offset = offset_at_position(source, target_position.line, target_position.column)?;
     let start = tokens
@@ -5950,7 +5712,7 @@ pub fn tactic_line_has_multiple_starts(
     {
         return Ok(true);
     }
-    let tokens = scan_source_tokens(source)?;
+    let tokens = proof_source_tokens(source)?;
     let Some(start) = tokens.iter().position(|token| token.span.start == selected) else {
         return Ok(true);
     };
@@ -5964,7 +5726,7 @@ pub fn tactic_line_has_multiple_starts(
 /// Candidate written tactic starts on a Click source line, for selecting a
 /// trace target without requiring a column when the line is unambiguous.
 pub fn tactic_starts_on_line(source: &str, line: usize) -> Result<Vec<SourcePosition>, ClickError> {
-    let tokens = scan_source_tokens(source)?;
+    let tokens = proof_source_tokens(source)?;
     // The line's byte range, found once: asking each tactic start for its
     // line would rescan the source from the top for every tactic in it.
     let mut line_starts = std::iter::once(0).chain(
@@ -5989,7 +5751,7 @@ pub fn tactic_starts_on_line(source: &str, line: usize) -> Result<Vec<SourcePosi
         let preceding = open.checked_sub(1).and_then(|index| tokens.get(index));
         // A match arm's block follows `=>`, which the scanner emits as the
         // two punctuation tokens `=` and `>`.
-        let arm_block = open >= 2 && tokens[open - 2].text == "=" && tokens[open - 1].text == ">";
+        let arm_block = open >= 1 && tokens[open - 1].text == "=>";
         let direct_proof_block = arm_block
             || preceding.is_some_and(|token| {
                 matches!(token.text.as_str(), "by" | "then" | "else" | "and" | "both")
@@ -6401,7 +6163,7 @@ fn tactic_end_token(
                     // `branch ensuring { ... } then { ... } else { ... }`
                     // and `if P ensuring { ... } then { ... } else { ... }`
                     // continue past their interface block.
-                    if !(matches!(continuation, Some("else" | "by" | "="))
+                    if !(matches!(continuation, Some("else" | "by" | "=" | "=>"))
                         || (tokens[start].text == "both" && continuation == Some("and"))
                         || (tokens[start].text == "match" && continuation == Some("{"))
                         || (matches!(tokens[start].text.as_str(), "branch" | "if")
@@ -6494,7 +6256,7 @@ fn find_cases_arm_blocks(
     while cursor < outer_close {
         if tokens[cursor].text == "{" {
             let close = matching_delimiter(tokens, cursor, "{", "}")?;
-            if cursor >= 2 && tokens[cursor - 2].text == "=" && tokens[cursor - 1].text == ">" {
+            if cursor >= 1 && tokens[cursor - 1].text == "=>" {
                 arms.push((cursor, close));
             }
             cursor = close + 1;
@@ -6535,8 +6297,8 @@ fn find_outcomes_arm_blocks(
     while cursor < outer_close {
         if tokens[cursor].text == "{" {
             let close = matching_delimiter(tokens, cursor, "{", "}")?;
-            if cursor >= 3 && tokens[cursor - 2].text == "=" && tokens[cursor - 1].text == ">" {
-                match tokens[cursor - 3].text.as_str() {
+            if cursor >= 2 && tokens[cursor - 1].text == "=>" {
+                match tokens[cursor - 2].text.as_str() {
                     "returned" => returned = Some((cursor, close)),
                     "threw" => threw = Some((cursor, close)),
                     _ => {}

@@ -1910,7 +1910,12 @@ ownership. The regression is
 `mdtests/model_identity_pointer_payload_rejects_other_cell.md` as its negative.
 A pure function may return a pointer type. Its opaque application retains the
 function and argument values until checked unfolding; equality rewriting can
-enter those arguments. The result has the declared pointer type and grants no
+enter those arguments. Shared equality closure also establishes equal results
+from equal typed arguments, including model aliases and nested pointer calls.
+Argument order, scalar types, and array-reference snapshots remain distinct;
+result equality does not imply argument equality. See
+`mdtests/pure_pointer_call_congruence.md` and its missing-argument-equality negative.
+The result has the declared pointer type and grants no
 ownership or separation from another pointer. See `mdtests/pure_pointer_result.md`
 and its unequal-pointer, distinct-call, and unowned-read negatives.
 
