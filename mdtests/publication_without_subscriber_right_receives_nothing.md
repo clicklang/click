@@ -17,7 +17,7 @@ int consume_again(struct channel *channel) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "publication_without_subscriber_right_receives_nothing.c";
 resource ready_payload(channel: struct channel*) {

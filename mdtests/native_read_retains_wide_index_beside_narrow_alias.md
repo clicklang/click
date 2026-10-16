@@ -7,7 +7,7 @@ selects a held view; it cannot supply one.
 int read(const unsigned char *cursor, const unsigned char *base, unsigned long held, unsigned long remaining, const unsigned char *alternate, int narrow) { return *cursor++; }
 ```
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "read.c";
 int32 read(const uint8* cursor, const uint8* base, uint64 held, uint64 remaining, const uint8* alternate, int32 narrow) {
  requires 1u64 <= remaining;

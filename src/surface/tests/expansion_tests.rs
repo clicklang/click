@@ -361,6 +361,28 @@ fn hidden_record_resource_expansion_round_trips() {
     }
 }
 
+// A fold of a resource without fields sets a hidden record that has no
+// source syntax; expansion shows it as a trailing comment, and the output
+// still parses and verifies.
+#[test]
+fn expansion_shows_a_folds_hidden_record_as_a_comment() {
+    let c = "struct cell { int32 value; }; struct pair { struct cell* a; int32 n; }; \
+             int32 get(struct pair* p) { return p->n; }";
+    let source = "resource counted(c: struct cell*) { field v: int32; owns c->value; fact c->value == v; } \
+                  resource pair(p: struct pair*) { owns p->a; owns p->n; owns first: counted(p->a); \
+                  fact p->n == first.v; fact first.v >= 0; } \
+                  verifying \"f.c\"; int32 get(struct pair* p) { owns pair(p); ensures result >= 0; } by { \
+                  let { first: c } = unfold(pair(p)); execute(); fold(pair(p), { first: c }); simp(); }";
+    let sources = [("f.c", c)];
+    let expanded = expand_c0_claim_source(source, &sources, "get", CProofClaim::Grouped)
+        .expect("the hidden-record proof expands");
+    assert!(
+        expanded.contains("fold(pair(p), { first: c }); // record { first.v: c.v }"),
+        "{expanded}"
+    );
+    verify_c0_sources(&expanded, &sources).expect("the commented expansion verifies");
+}
+
 // The reconstruction rule must survive checked tactic expansion and retained
 // verification, rather than working only during ordinary execution search.
 #[test]

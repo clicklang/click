@@ -22,7 +22,7 @@ unsigned int run(struct counter *p) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "population_access.c";
 authorized resource member(p: struct counter*) {}

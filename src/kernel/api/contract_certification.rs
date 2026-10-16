@@ -844,6 +844,9 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &CRuntimeEr
             "the protected resource selected at mutex initialization must be restored".to_string()
         }
         CRuntimeError::MissingResource { .. } => "a required resource is not available".to_string(),
+        CRuntimeError::UnestablishedAssemblyFact { .. } => {
+            "assembling a required view from owned pieces requires an exact body fact".to_string()
+        }
         CRuntimeError::UnbackedReturnedView { .. } => {
             CRuntimeError::UNBACKED_RETURNED_VIEW.to_string()
         }

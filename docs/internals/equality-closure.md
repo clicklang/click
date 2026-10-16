@@ -29,6 +29,13 @@ one predicate, not an additional premise. Later pointer aliases can therefore
 reuse the original address comparison without reconstructing a cancelled
 base from an arbitrary class representative.
 
+A consumer that accepts an offset equality reads a same-block pointer
+equality through `ConditionTerm::pointer_offset_sides`, not by matching
+`PointerOffsetEqual` alone. In particular, a `have` at an execution frontier
+whose goal compares two loads of one pointer-valued field takes the
+load-equality bridge in either form
+(`mdtests/loop_node_link_frames_across_parent_link_store.md`).
+
 The bridge registers only the selected addresses and offsets. It neither
 enumerates pointer aliases nor derives equal blocks from equal offsets.
 Truth remains scoped to its admitted premise; withdrawing either that premise

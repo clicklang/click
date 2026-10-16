@@ -11,7 +11,7 @@ void run(struct holder *p) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_helper_reserved_storage.c";
 void reset(struct holder* p) {

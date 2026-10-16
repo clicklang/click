@@ -1028,10 +1028,11 @@ impl ProofFacts {
                     if self.contains(&Proposition::ConditionIs(condition.clone(), !value)))
             // `i < 0` and `i >= 0` are different conditions, not one
             // condition at both polarities, so the negation is recognized
-            // through the same bounded list of equivalent spellings a
-            // disjunct side already uses in `apply_assumption`. This
-            // is a fixed-size set of exact lookups, not a fact-set search.
-            || super::fact_reasoning::condition_polarity_forms(&negated)
+            // through the bounded list of equivalent spellings the other
+            // explicit closers use, in every order family (`x >= 32u64`
+            // beside `x < 32u64` as well as the `int32` pair). This is a
+            // fixed-size set of exact lookups, not a fact-set search.
+            || super::fact_reasoning::order_claim_forms(&negated)
                 .iter()
                 .any(|form| self.contains(form))
             || super::fact_reasoning::normalizes_context_free_leaf(&negated))

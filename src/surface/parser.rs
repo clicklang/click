@@ -1357,7 +1357,8 @@ impl Parser {
         self.index_algebraic_variant_fields();
         let mut imports = Vec::new();
         let mut verifying_sources = Vec::new();
-        let mut c_target = None;
+        let mut c_target_name = None;
+        let mut c_mode = None;
         let mut thread_runtime = None;
         let mut algebraic_type_definitions = Vec::new();
         let mut predicate_definitions = Vec::new();
@@ -1386,14 +1387,21 @@ impl Parser {
                 imports.push(self.parse_import()?);
             } else if self.peek_ident() == Some("verifying") {
                 verifying_sources.push(self.parse_verifying_source()?);
-            } else if self.peek_ident() == Some("target")
+            } else if let Some(directive @ ("target" | "mode")) =
+                self.peek_ident().map(str::to_owned).as_deref()
                 && matches!(self.peek_next(), Some(Token::String(_)))
             {
-                let target = self.parse_c_target()?;
-                if c_target.is_some() {
-                    return Err(self.error("a Click file declares more than one `target`"));
+                let slot = if directive == "target" {
+                    &mut c_target_name
+                } else {
+                    &mut c_mode
+                };
+                if slot.is_some() {
+                    return Err(
+                        self.error(format!("a Click file declares more than one `{directive}`"))
+                    );
                 }
-                c_target = Some(target);
+                *slot = Some(self.parse_c_target_directive(directive)?);
             } else if self.peek_ident() == Some("runtime")
                 && matches!(self.peek_next(), Some(Token::String(_)))
             {
@@ -1561,6 +1569,7 @@ impl Parser {
                 }
             }
         }
+        let c_target = self.resolve_c_target(c_target_name, c_mode)?;
         let file = ClickFile {
             c_function_names: std::sync::Arc::new(c_function_names),
             imports,
@@ -1991,24 +2000,48 @@ impl Parser {
         Ok(source_path)
     }
 
-    /// Parses `target "x86_64-linux-kernel";`, the C implementation target
-    /// this file's C sources are preprocessed and verified under. The
-    /// accepted spellings come from `CTarget` itself, so this and the
-    /// pre-parse scan in `expansion` never drift apart.
-    fn parse_c_target(&mut self) -> Result<crate::languages::c::target::CTarget, ClickError> {
-        self.expect_ident_spelling("target")?;
+    /// Parses `target "x86_64-unknown-linux-gnu";` or
+    /// `mode "kernel";`, which together select the C implementation
+    /// target this file's C sources are preprocessed and verified under. The
+    /// pair resolves through `CTarget::from_parts` once the file is parsed,
+    /// as the pre-parse scan in `expansion` resolves it, so the two never
+    /// drift apart.
+    fn parse_c_target_directive(
+        &mut self,
+        directive: &str,
+    ) -> Result<(String, Option<SourcePosition>), ClickError> {
+        self.expect_ident_spelling(directive)?;
         let at = self.error_context();
-        let name = self.expect_string("C target name")?;
+        let name = self.expect_string(if directive == "target" {
+            "C target name"
+        } else {
+            "C mode name"
+        })?;
         self.expect(Token::Semicolon)?;
-        crate::languages::c::target::CTarget::from_name(&name).ok_or_else(|| {
-            self.error_at(
-                at,
-                format!(
-                    "unknown C target `{name}`; accepted targets are {}",
-                    crate::languages::c::target::CTarget::accepted_names()
-                ),
-            )
-        })
+        Ok((name, at))
+    }
+
+    /// Resolves the file's `target` and `mode` directives, each with
+    /// where it was written, so a refused name points at its own directive.
+    fn resolve_c_target(
+        &self,
+        target: Option<(String, Option<SourcePosition>)>,
+        mode: Option<(String, Option<SourcePosition>)>,
+    ) -> Result<Option<crate::languages::c::target::CTarget>, ClickError> {
+        use crate::languages::c::target::CTarget;
+        if target.is_none() && mode.is_none() {
+            return Ok(None);
+        }
+        if let Some((name, at)) = &target {
+            CTarget::from_parts(Some(name), None)
+                .map_err(|error| self.error_at(at.clone(), error))?;
+        }
+        CTarget::from_parts(
+            target.as_ref().map(|(name, _)| name.as_str()),
+            mode.as_ref().map(|(name, _)| name.as_str()),
+        )
+        .map(Some)
+        .map_err(|error| self.error_at(mode.and_then(|(_, at)| at), error))
     }
 
     fn parse_thread_runtime(
@@ -4010,7 +4043,7 @@ impl Parser {
             exceptional_ensures,
             ensure_source_clauses,
             ensure_claim_ids,
-            grouped_proof,
+            grouped_proof: grouped_proof.map(std::sync::Arc::new),
             parameter_struct_casts,
             parameter_field_places,
             pointee_field_places,
@@ -4457,9 +4490,19 @@ impl Parser {
         } else {
             false
         };
-        let spelling = self.expect_ident("type")?;
-        // C++ names a record by its own name; C writes `struct name`.
-        let cpp_record = self.verifies_cpp() && self.struct_layouts.contains_key(&spelling);
+        // C++ names a record by its own name or path, `std::span<int>`; C
+        // writes `struct name`.
+        let qualified_record = if self.verifies_cpp() {
+            self.parse_cpp_record_type()
+        } else {
+            None
+        };
+        let spelling = match &qualified_record {
+            Some(record) => record.clone(),
+            None => self.expect_ident("type")?,
+        };
+        let cpp_record = qualified_record.is_some()
+            || (self.verifies_cpp() && self.struct_layouts.contains_key(&spelling));
         if spelling == "struct" || cpp_record {
             let struct_name = if cpp_record {
                 spelling

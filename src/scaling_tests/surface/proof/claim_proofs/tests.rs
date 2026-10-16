@@ -5,6 +5,40 @@
 use super::*;
 
 #[test]
+fn explicit_closers_lower_each_return_goal_once_without_unfoldings() {
+    use crate::instrumentation::{VerificationEvent, collect, measure_deterministic_work};
+    crate::surface::verify_c0_sources("theorem warm() { ensures true by normalize(); }", &[])
+        .unwrap();
+    for size in [2, 4, 8, 16] {
+        let claims = "ensures result == x;\n".repeat(size);
+        let closers = "assumption();\n".repeat(size);
+        let source = format!(
+            "verifying \"echo.c\"; int32 echo(int32 x) {{ {claims} }} by {{ step(); {closers} }}"
+        );
+        let ((verified, events), work) = measure_deterministic_work(|| {
+            collect(|| {
+                crate::surface::verify_c0_sources(
+                    &source,
+                    &[("echo.c", "int32 echo(int32 x) { return x; }")],
+                )
+            })
+        });
+        assert_eq!(verified.unwrap().len(), size);
+        let lowerings = events
+            .iter()
+            .filter(|event| {
+                matches!(event,
+                    VerificationEvent::OperationFinished { function, name, .. }
+                        if function == "echo" && name == "return claim goal lowering"
+                )
+            })
+            .count();
+        eprintln!("return-goal lowerings: claims={size}, lowerings={lowerings}, work={work}");
+        assert_eq!(lowerings, size, "each exact closer needs one goal lowering");
+    }
+}
+
+#[test]
 fn joint_resource_receipts_ignore_unrelated_holdings() {
     use crate::kernel::{Bitvector32Term, CResource, CResourceFact, ResourceContext};
     fn unit(name: String) -> CResourceFact {

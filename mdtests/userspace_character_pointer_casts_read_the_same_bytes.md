@@ -25,7 +25,7 @@ int back_to_char(unsigned char *u) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "character_casts.c";
 
 int32 as_signed(char* p) {

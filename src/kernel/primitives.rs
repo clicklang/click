@@ -492,8 +492,9 @@ pub enum Bitvector32Term {
     MemoryLoad(SharedCMemory, Box<Pointer>, LoadKind),
     /// The 64-bit integer representation of a non-null object pointer under
     /// the LP64 profile.  The term keeps the exact source pointer, so the
-    /// integer carries provenance: a cast back recovers that pointer, and two
-    /// addresses compare as their pointers do.  No arithmetic on the term
+    /// integer carries provenance: a cast back recovers that pointer.  Equal
+    /// pointers have equal addresses; equal addresses are not equal pointers
+    /// (a C pointer comparison states only the latter).  No arithmetic on the term
     /// is interpreted as address arithmetic; tag bits are handled by checked
     /// rewrites on top of this term.
     PointerAddress(Box<Pointer>),
@@ -5068,6 +5069,14 @@ pub enum CRuntimeError {
         held: Box<CResourceFact>,
     },
     LoanRefusal(Box<crate::kernel::LoanRefusalDiagnostic>),
+    /// A call needs `assembled`, a viewed composite the caller holds the
+    /// pieces of but not the instance, and assembling it is a fold: `fact`
+    /// is the first body fact, lowered at the caller's memory, the caller
+    /// has not established. Diagnostic only.
+    UnestablishedAssemblyFact {
+        assembled: Box<CResourceFact>,
+        fact: Box<Proposition>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]

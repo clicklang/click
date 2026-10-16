@@ -229,6 +229,11 @@ struct DynamicViewDependencyIndex {
     /// it exclusively, so a body fact over it needs no loan: it is supported
     /// exactly as a read of ambient owned memory is.
     owned: ResourceContext,
+    /// The owned instance an `open` keeps folded while its body is exposed.
+    /// A view it publishes over its own bytes borrows nothing: its authority
+    /// is this live owner. Only this one owner's projections count; any
+    /// other observation still needs a loan.
+    opened_owner: Option<crate::kernel::ResourceOccurrenceId>,
 }
 
 impl DynamicViewDependencyIndex {
@@ -260,7 +265,13 @@ impl DynamicViewDependencyIndex {
                 .unchecked_with_facts(unbound_views.iter().cloned()),
             owned: ResourceContext::new_with_equalities(assumptions)
                 .unchecked_with_facts(owned.iter().cloned()),
+            opened_owner: None,
         }
+    }
+
+    fn with_opened_owner(mut self, owner: Option<crate::kernel::ResourceOccurrenceId>) -> Self {
+        self.opened_owner = owner;
+        self
     }
 }
 
@@ -318,11 +329,25 @@ fn dynamic_body_fact_dependency(
             return Err("current body fact is covered by an unbound view".into());
         }
         let mut candidates = Vec::new();
+        let mut owned_projection = false;
         for occurrence in state
             .resources()
             .view_occurrences_for_fact(&required_view, assumptions)
         {
             let Some(candidate) = state.resources().loan_dependency(occurrence) else {
+                // A view the instance being opened publishes over its own
+                // bytes (an owned `cstr_at` held folded across `open`)
+                // borrows nothing: its authority is that live owner, so the
+                // read is a read of owned memory, as after `unfold`.
+                if temporary_views.opened_owner.is_some_and(|owner| {
+                    state
+                        .resources()
+                        .owned_projection_support(occurrence)
+                        .is_some_and(|(support, _)| support == owner)
+                }) {
+                    owned_projection = true;
+                    continue;
+                }
                 return Err(
                     "current body fact is covered by an unbound viewed memory occurrence".into(),
                 );
@@ -340,10 +365,11 @@ fn dynamic_body_fact_dependency(
             candidates.push(candidate.clone());
         }
         if candidates.is_empty() {
-            if state
-                .resources()
-                .directly_supporting_owned_entry(&required_view, assumptions)
-                .is_some()
+            if owned_projection
+                || state
+                    .resources()
+                    .directly_supporting_owned_entry(&required_view, assumptions)
+                    .is_some()
                 || temporary_views
                     .owned
                     .directly_supporting_owned_entry(&required_view, assumptions)
@@ -3457,6 +3483,20 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         }
     }
 
+    // An owned instance `open` keeps folded: the one owner whose own views
+    // may support its body facts without a loan.
+    let opened_owner = (access == ResourceBodyAccess::Open && !opening_view)
+        .then(|| {
+            match state
+                .resources()
+                .owned_occurrences_for_fact(&abstract_resource)
+                .as_slice()
+            {
+                [occurrence] => Some(*occurrence),
+                _ => None,
+            }
+        })
+        .flatten();
     for fact in body_facts {
         let fact = substitute_click_proposition(fact, &substitutions).map_err(|message| {
                 ClickError::new(format!(
@@ -3535,7 +3575,8 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             &temporary_unbound_views,
             &temporary_owned,
             available_pure_facts.assumptions(),
-        );
+        )
+        .with_opened_owner(opened_owner);
         if let Some(binding) = dynamic_body_fact_dependency(
             &lowered_fact,
             &fact_state,
@@ -3886,6 +3927,9 @@ fn fold_composite_resources_on_outcome_with_facts(
             ))
         })?;
         let mut closing_view = false;
+        // The owned instance an `open` kept folded; its own views support
+        // the body facts this closing fold re-checks.
+        let mut opened_owner = None;
         let mut authority_closing_fact_state = None;
         let mut authority_control_definition = None;
         let mut folded_representation_already_present = false;
@@ -3981,6 +4025,13 @@ fn fold_composite_resources_on_outcome_with_facts(
                 closing_view = state
                     .resources()
                     .satisfies_fact(&viewed_population, assumptions);
+            } else if matches!(closure, ResourceBodyClosure::CloseOpen { .. })
+                && let [occurrence] = state
+                    .resources()
+                    .owned_occurrences_for_fact(&population)
+                    .as_slice()
+            {
+                opened_owner = Some(*occurrence);
             }
             let (name, _) = match population.resource() {
                 CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
@@ -4077,7 +4128,8 @@ fn fold_composite_resources_on_outcome_with_facts(
             &[],
             &temporary_unbound_views,
             pure_facts.assumptions(),
-        );
+        )
+        .with_opened_owner(opened_owner);
         for fact in body_facts {
             let source_fact = fact;
             let fact = substitute_click_proposition(fact, &substitutions).map_err(|message| {

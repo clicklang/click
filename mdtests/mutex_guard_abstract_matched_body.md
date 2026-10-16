@@ -22,7 +22,7 @@ int read_counter(struct counter *counter) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 
 spec enum LockMode { Idle, Holding, }

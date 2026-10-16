@@ -108,7 +108,8 @@ bound to that exact declaration, so a user function named `memcpy` does not
 acquire it, and a partial, unaligned, or untyped copy establishes no typed
 value. These contracts describe only
 supported C types; `void *` dereference or ownership and unbounded string
-viewability remain outside the model. `memcpy` requires non-overlapping ranges.
+viewability remain outside the model. `memcpy` and `memcmp` read under
+`views`, and `memcpy` owns its destination, so its ranges cannot overlap.
 
 A body-less variadic prototype such as `int report(const char *format, ...);`
 is retained as a declaration only. Click has no model of variable arguments,

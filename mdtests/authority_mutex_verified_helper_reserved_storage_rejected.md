@@ -18,7 +18,7 @@ int run(struct holder *holder) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "authority_mutex_verified_helper_reserved_storage_rejected.c";
 void touch(struct holder *holder) {

@@ -22,7 +22,7 @@ int run(struct cell *cell) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 resource cell_at(cell: struct cell*) {
     owns cell->value;

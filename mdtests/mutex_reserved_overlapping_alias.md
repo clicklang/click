@@ -15,7 +15,7 @@ int run(struct holder *holder) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_reserved_overlapping_alias.c";
 struct holder* identity(struct holder* p) { ensures result == p; } by { execute(); simp(); }

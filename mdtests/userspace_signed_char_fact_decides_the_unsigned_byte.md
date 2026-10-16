@@ -36,7 +36,7 @@ int pass_seven(char *p) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "signed_char_fact_decides_the_unsigned_byte.c";
 
 int32 first_unsigned(char* p) {

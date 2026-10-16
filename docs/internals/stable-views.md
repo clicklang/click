@@ -8,8 +8,8 @@ a test. The public meaning for contract authors is in
 [Resources](../concepts/resources.md); the kernel layout is in
 [Kernel implementation](kernel.md) and [Separation logic](separation-logic.md).
 The campaign that landed it, "fix-views", ran from 2026-09-11 to
-2026-09-14; its dated checkpoints are in the git history of
-`issues/fix-views.md`.
+2026-09-14; its dated checkpoints are preserved in the
+[archived campaign record](https://github.com/clicklang/click/blob/0e1f41f01614184635ccabcd3766cbb3a6120dea/issues/fix-views.md).
 
 ## Meaning
 

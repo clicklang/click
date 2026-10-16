@@ -32,7 +32,7 @@ void run_direct(struct counter *p) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 
 resource counter_state(p: struct counter*) {

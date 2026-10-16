@@ -17,7 +17,7 @@ void publish(struct channel *channel) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "stdatomic_operations_need_the_modeled_pthread_runtime.c";
 void publish(struct channel *channel) {
     owns channel->payload;

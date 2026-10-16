@@ -16,7 +16,7 @@ int run(struct holder *holder) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_storage_store_while_live_rejected.c";
 int32 run(struct holder *holder) {

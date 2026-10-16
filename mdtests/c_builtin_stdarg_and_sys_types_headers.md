@@ -19,7 +19,7 @@ off_t advance(off_t offset, ssize_t step) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "types_headers.c";
 
 int64 advance(int64 offset, int64 step) {

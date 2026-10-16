@@ -1,10 +1,11 @@
-# An overlapping copy is refused by the separation precondition
+# An overlapping copy is refused by the disjoint owned and viewed ranges
 
-The `memcpy` contract requires `separate` source and destination ranges: it
-is a non-overlapping copy primitive. Copying within one allocation with
-overlapping source and destination cannot establish that separation, so the
-call is refused. The overlapping bytes are named in the diagnostic; no byte
-moves and no representation is established.
+The `memcpy` contract owns its destination and views its source, and the
+`owns` and `views` clauses of one contract are disjoint: it is a
+non-overlapping copy primitive. Copying within one allocation with
+overlapping source and destination would lend `buf[0..8]` as a view while
+lending `buf[2..10]` as owned, so the call is refused. No byte moves and no
+representation is established.
 
 ```c filename=overlapping_memcpy.c
 void *malloc(unsigned long size);
@@ -31,5 +32,5 @@ int f() {
 ```
 
 ```expect
-fail:  separate(buf[2..10], buf[0..8])
+fail: a required resource overlaps a live borrowed footprint
 ```

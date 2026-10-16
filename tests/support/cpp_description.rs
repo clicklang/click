@@ -195,7 +195,7 @@ pub fn unit_digest(description: &Path) -> String {
     let (project_file, _, _) = describe_project(description).unwrap();
     let project = read_json(&project_file, "project file").unwrap();
     let data = serde_json::to_vec(&serde_json::json!({
-        "target": "x86_64-linux-userspace",
+        "target": "x86_64-unknown-linux-gnu",
         "unit": project["units"][unit_name(description)],
     }))
     .unwrap();

@@ -2031,6 +2031,16 @@ and folded with `fold(pair(p), { first: c });`, which takes only the child
 map; with the child bound to `first`, `fold(pair(p));` takes it by name
 (`mdtests/a_hidden_record_folds_its_child_by_name.md`). Holding it by name, `owns x: pair(p);`, is also accepted.
 
+The record has no source syntax, but diagnostics and expansion show it. A
+refusal lists a held instance with its record,
+`owns pair(p) record { first.v: <unnamed A> }`, using the same placeholders
+as the pure facts beside it
+(`mdtests/a_hidden_record_is_shown_beside_its_resource.md`). A refused fold
+adds `proposed fold: pair(p) record { ... }` below its failed body fact
+(`mdtests/a_refused_fold_shows_the_hidden_record_it_proposed.md`).
+`click expand` writes the record a fold sets as a trailing comment, which the
+parser ignores: `fold(pair(p), { first: c }); // record { first.v: c.v }`.
+
 A resource that declares fields of its own says where a named child's field
 is kept with one equation,
 `fact first.v == first_v;`. After it, `first.v` in the body reads that
@@ -3363,9 +3373,14 @@ held as `int32` cells, so a struct whose size is not a multiple of four bytes
 has no `*p` form and is refused by name
 (`mdtests/whole_struct_needs_a_whole_number_of_int32_cells.md`); own its
 fields one by one. A struct with a flexible array member is outside the
-supported C subset. Holding every field separately does not yet stand in for
-`*p` at a call when a field is narrower than an `int32` cell
-(`bugs/whole-struct-ownership-does-not-reassemble-from-a-byte-field.md`).
+supported C subset. A call can assemble `owns *p` from adjacent owned fields,
+including byte fields, when their combined footprint covers every byte of
+the object and the required alignment is established. A scalar field clause
+covers its ABI slot up to the next field or the end of the struct, including
+tail padding after the final field. Viewed fields cannot complete an owned
+footprint; explicit byte fragments must cover padding too. See the
+[byte-field regression](https://github.com/clicklang/click/blob/master/mdtests/whole_struct_reassembles_from_byte_fields.md)
+and [tail-padding regression](https://github.com/clicklang/click/blob/master/mdtests/whole_struct_reassembles_from_padded_byte_field.md).
 A file-scope struct named in `owns g` or `views g` covers that complete
 object, with the same extent and declared field types as `*p` when `p == &g`.
 The same rule applies to a qualified name such as `unit::g`; a pointer-valued
@@ -3387,9 +3402,11 @@ Both require the corresponding read permission and initialized storage.
 `address(pointer)` is the `uint64` integer representation of an object pointer
 under the LP64 profile. It is the spec spelling of the C cast
 `(unsigned long) pointer` and denotes the same kernel term: the address keeps
-the exact source pointer, so `address(p) == address(q)` is decided exactly as
-`p == q`, `address(p) == 0` as `p == 0`, and a comparison with an integer that
-has no pointer origin stays undecided. Rewriting the pointer to null reduces
+the exact source pointer. `address(p) == address(q)` holds when `p == q`
+does, but not conversely: it is what a C comparison between pointers states,
+and it carries no permission from one pointer to the other.
+`address(p) == 0` is decided as `p == 0`, and a comparison with an integer
+that has no pointer origin stays undecided. Rewriting the pointer to null reduces
 its address to `uint64` zero, also inside arithmetic with symbolic operands.
 Contracts use it to describe words that hold a pointer in integer form,
 such as `ensures node->word == address(next)`

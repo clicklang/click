@@ -1058,6 +1058,9 @@ struct ProofDiagnosticProofState(
     // function outcome.
     Option<CValue>,
     Vec<crate::kernel::ReadResolutionDiagnostic>,
+    // The instance a refused `fold` proposed, when it keeps a hidden record,
+    // so the refusal shows the record its failed body fact reads.
+    Option<Arc<crate::kernel::ResourceInstance>>,
     &'static str,
     (Vec<syntax::C0Parameter>, Vec<CExpression>),
 );
@@ -1170,7 +1173,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         &self,
         labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
     ) {
-        labels.register_naming(ParameterBinding::new(&self.12.0, &self.12.1));
+        labels.register_naming(ParameterBinding::new(&self.13.0, &self.13.1));
         for (variable, name) in &self.2 {
             labels.source_name(*variable, name.clone());
         }
@@ -1228,6 +1231,10 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
             .map(|(label, fact, _)| (*label, fact.as_ref()))
     }
 
+    fn proposed_hidden_record(&self) -> Option<&crate::kernel::ResourceInstance> {
+        self.11.as_deref()
+    }
+
     fn memory_history(
         &self,
     ) -> Option<&crate::surface::proof_diagnostics::MemoryHistoryDiagnostic> {
@@ -1239,7 +1246,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
     }
 
     fn proof_context_kind(&self) -> Option<&str> {
-        Some(self.11)
+        Some(self.12)
     }
 
     fn resources(&self) -> &[CResourceFact] {
@@ -1740,6 +1747,7 @@ impl Proof<'_> {
             source_types,
             result.cloned(),
             Vec::new(),
+            None,
             self.proof_context_description(),
             self.diagnostic_naming_tables(),
         )
@@ -2773,6 +2781,18 @@ impl<'a> Proof<'a> {
         self.step_error_with_details(message, comparison, requirement, None, Vec::new())
     }
 
+    /// A refused `fold` of an instance that keeps a hidden record: the
+    /// failed body fact, with the record the fold proposed beside it.
+    pub(in crate::surface::proof) fn step_error_with_proposed_record(
+        &self,
+        message: impl Into<String>,
+        comparison: Option<crate::surface::proof_trace::ChildArgumentTrace>,
+        requirement: Option<(&'static str, Box<Proposition>, Option<String>)>,
+        proposed: Option<Arc<crate::kernel::ResourceInstance>>,
+    ) -> ClickError {
+        self.step_error_with_state(message, comparison, requirement, None, Vec::new(), proposed)
+    }
+
     fn step_error_with_details(
         &self,
         message: impl Into<String>,
@@ -2781,12 +2801,32 @@ impl<'a> Proof<'a> {
         rejected: Option<Arc<crate::kernel::proof::RejectedResourceRewriteFact>>,
         read_resolutions: Vec<crate::kernel::ReadResolutionDiagnostic>,
     ) -> ClickError {
+        self.step_error_with_state(
+            message,
+            comparison,
+            requirement,
+            rejected,
+            read_resolutions,
+            None,
+        )
+    }
+
+    fn step_error_with_state(
+        &self,
+        message: impl Into<String>,
+        comparison: Option<crate::surface::proof_trace::ChildArgumentTrace>,
+        requirement: Option<(&'static str, Box<Proposition>, Option<String>)>,
+        rejected: Option<Arc<crate::kernel::proof::RejectedResourceRewriteFact>>,
+        read_resolutions: Vec<crate::kernel::ReadResolutionDiagnostic>,
+        proposed: Option<Arc<crate::kernel::ResourceInstance>>,
+    ) -> ClickError {
         let reason = message.into();
         let mut diagnostic_state = self.diagnostic_state();
         diagnostic_state.4 = comparison;
         diagnostic_state.5 = requirement;
         diagnostic_state.7 = rejected;
         diagnostic_state.10 = read_resolutions;
+        diagnostic_state.11 = proposed;
         let location = self
             .site
             .path()

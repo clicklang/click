@@ -2372,7 +2372,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
     fn marker_contents_include_environment_switches() {
         let relative = Path::new("examples/tiny/tiny.click");
         let plain = marker_contents("abc", relative, "fp", "", CTarget::SUPPORTED);
-        assert!(plain.contains("\ntarget=x86_64-linux-userspace\n"));
+        assert!(plain.contains("\ntarget=x86_64-unknown-linux-gnu (userspace)\n"));
         let switches = environment_switches_from([(
             "CLICK_DISABLE_TACTIC_BUDGETS".to_string(),
             "1".to_string(),
@@ -2777,7 +2777,10 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
             "verifier-a",
             CTarget::SUPPORTED
         ));
-        let other_target = valid.replace("target=x86_64-linux-userspace", "target=another-target");
+        let other_target = valid.replace(
+            "target=x86_64-unknown-linux-gnu (userspace)",
+            "target=another-target",
+        );
         assert!(!valid_marker(
             &other_target,
             "abc123",

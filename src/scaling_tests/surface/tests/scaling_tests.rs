@@ -912,7 +912,7 @@ fn call_with_unrelated_facts(fact_count: usize) -> (String, String) {
         "int32 call_target(uint8 bytes[], int32 n) {\n    return memcmp(bytes, bytes, 2);\n}\n"
             .to_string();
     let mut click_source = String::from(
-        "verifying \"call_target.c\";\n\nint32 call_target(uint8 bytes[], int32 n) {\n    requires viewable(bytes[0..2]);\n",
+        "verifying \"call_target.c\";\n\nint32 call_target(uint8 bytes[], int32 n) {\n    views bytes[0..2];\n",
     );
     for index in 0..fact_count {
         click_source.push_str(&format!("    requires n != {};\n", index + 100));
@@ -920,28 +920,6 @@ fn call_with_unrelated_facts(fact_count: usize) -> (String, String) {
     click_source.push_str(
         "    ensures 1 == 1 by {
         step() by {
-            have defined(bytes[0]) and defined(bytes[0]) by {
-                both {
-                    transport(at(function.entry, viewable(bytes[0..2])), defined(bytes[0])) using {
-                        at(function.entry, viewable(bytes[0..2]));
-                    }
-                } and {
-                    transport(at(function.entry, viewable(bytes[0..2])), defined(bytes[0])) using {
-                        at(function.entry, viewable(bytes[0..2]));
-                    }
-                }
-            }
-            have defined(bytes[1]) and defined(bytes[1]) by {
-                both {
-                    transport(at(function.entry, viewable(bytes[0..2])), defined(bytes[1])) using {
-                        at(function.entry, viewable(bytes[0..2]));
-                    }
-                } and {
-                    transport(at(function.entry, viewable(bytes[0..2])), defined(bytes[1])) using {
-                        at(function.entry, viewable(bytes[0..2]));
-                    }
-                }
-            }
             enumerate();
         }
         step();
@@ -6874,9 +6852,8 @@ fn failing_simp_work_is_flat_along_a_variable_chain() {
 /// the search costs each path the same, so its total is linear in the
 /// returns.
 ///
-/// The whole verification is not yet linear in the returns
-/// (`bugs/early-return-paths-store-facts-whole.md` lists what remains), so
-/// only this search's own work is asserted.
+/// This regression asserts only the transport search's own work, rather
+/// than the cost of the whole verification.
 #[test]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn simp_snapshot_transport_search_is_linear_in_early_returns() {

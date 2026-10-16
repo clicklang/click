@@ -3,7 +3,7 @@
     "zlib": {
       "language": "c",
       "compiler": "/usr/bin/gcc",
-      "environment": {
+      "env": {
         "PATH": "/usr/bin:/bin",
         "LC_ALL": "C",
         "SOURCE_DATE_EPOCH": "0"

@@ -18,7 +18,7 @@ int run(struct holder *holder) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_reserved_helper_write.c";
 void overwrite(struct holder *holder) {

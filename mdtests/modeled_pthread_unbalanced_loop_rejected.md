@@ -17,7 +17,7 @@ int run(struct holder *holder, int n) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "modeled_pthread_unbalanced_loop_rejected.c";
 

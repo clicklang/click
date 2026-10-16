@@ -316,11 +316,29 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             } else {
                 format!("let {} = ", binding.name)
             };
+            // The hidden record this fold sets has no source syntax, so it
+            // is shown as a trailing comment the parser ignores, in the
+            // `record { first.v: c.v }` spelling diagnostics use.
+            let record = if only_hidden {
+                format!(
+                    " // record {{ {} }}",
+                    fields
+                        .iter()
+                        .map(|(name, value)| format!(
+                            "{name}: {}",
+                            describe_contract_expression(value)
+                        ))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            } else {
+                String::new()
+            };
             line(
                 output,
                 &prefix,
                 &format!(
-                    "{result}fold({}, {inputs});",
+                    "{result}fold({}, {inputs});{record}",
                     format_resource_target(resource)
                 ),
             );

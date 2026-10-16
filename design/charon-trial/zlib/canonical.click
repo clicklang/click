@@ -1,4 +1,4 @@
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "adler32.c";
 import "canonical-helpers.click";
 uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {

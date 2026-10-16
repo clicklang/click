@@ -16,7 +16,7 @@ The original zlib license is included. No implementation, loop, macro, or header
 was changed. The system headers zlib includes are Click's modeled headers, not
 a C library's.
 
-The locked selection uses `x86_64-linux-userspace`, LP64 little-endian layout,
+The locked selection uses target `x86_64-unknown-linux-gnu` in `userspace` mode, LP64 little-endian layout,
 unsigned plain char, C11, and GCC 13. `NO_DIVIDE` and `Z_SOLO` are undefined.
 The [project file](click.project.json) declares one C unit, `zlib`, for
 `adler32.c` and the `incremental.c` client, built with `-std=c11` as zlib's

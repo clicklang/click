@@ -2691,8 +2691,9 @@ impl<'a> Proof<'a> {
         tactic_index: usize,
     ) -> Result<Self, ClickError> {
         self.apply_planned_fact_transport_inner(surface_source, surface_target, tactic_index)
-            .inspect_err(|_| {
+            .map_err(|error| {
                 self.record_certification_failure_trace(self.claim_label(), 0);
+                self.attach_step_diagnostic(error)
             })
     }
 
@@ -2773,15 +2774,29 @@ impl<'a> Proof<'a> {
                 context.spec_definitions,
             )
             .map_err(|error| {
-                ClickError::new(format!(
-                    "`{claim_label}` tactic {tactic_index}: {}",
-                    fact_transport_planning_failure(
-                        surface_source,
-                        surface_target,
-                        view.unfolded_predicates,
-                        &error,
-                    )
-                ))
+                let mut reason = fact_transport_planning_failure(
+                    surface_source,
+                    surface_target,
+                    view.unfolded_predicates,
+                    &error,
+                );
+                if crate::instrumentation::deadline_exceeded() {
+                    // Lowering already produced these checked identities.
+                    // A stopped planner may print them without rechecking or
+                    // trying further proof routes after its budget expired.
+                    use crate::surface::proof_diagnostics::render;
+                    let _typed = render::TypedNotationScope::enter();
+                    let mut labels = render::SnapshotLabels::with_state(
+                        context.parameter_binding(), state,
+                    );
+                    let source = render::render_proposition_labeled(&source, &mut labels);
+                    let target = render::render_proposition_labeled(&target, &mut labels);
+                    reason.push_str(&format!(
+                        "\n  checked source (holds): {source}\n  checked target (wanted): {target}{}",
+                        labels.trace_legend(),
+                    ));
+                }
+                ClickError::new(format!("`{claim_label}` tactic {tactic_index}: {reason}"))
             })?
         };
         self.apply_step(ProofStep::TransportUsing {

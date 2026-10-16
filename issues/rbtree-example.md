@@ -1680,3 +1680,10 @@ while preserving the incoming-link model. The sized parent-update helper now
 calls it internally and no longer requires callers to supply this disequality.
 C comparisons and `assumption()` share the indexed nonempty separation rule;
 full non-root insertion still needs callback composition and context restoration.
+
+
+The sized left-left insertion rotation now composes the parent-update helper
+with its writable callback under an arbitrary owned outer context, and both
+augmented insertion wrappers verify. The result retains the repaired subtree
+and exact ancestor context. Its sixteen-site expansion audit passes; the next
+step is whole-root restoration, followed by the other non-root rotation shapes.

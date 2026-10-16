@@ -42,7 +42,7 @@ int publish_once(struct channel *channel) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "publication_one_shot_handoff.c";
 

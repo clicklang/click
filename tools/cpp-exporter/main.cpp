@@ -3550,8 +3550,12 @@ private:
       own = "~" + destructor->getParent()->getNameAsString();
     else
       own = function->getNameAsString();
-    if (const auto *arguments = function->getTemplateSpecializationArgs())
-      own += printed_template_arguments(arguments->asArray());
+    if (const auto *arguments = function->getTemplateSpecializationArgs()) {
+      const auto *primary = function->getPrimaryTemplate();
+      own += printed_template_arguments(
+          arguments->asArray(),
+          primary != nullptr ? primary->getTemplateParameters() : nullptr);
+    }
     segments.push_back(own);
     llvm::json::Array path;
     for (const std::string &segment : segments)
@@ -3591,17 +3595,23 @@ private:
     std::string segment = record->getNameAsString();
     if (const auto *instance =
             llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(record))
-      segment += printed_template_arguments(instance->getTemplateArgs().asArray());
+      segment += printed_template_arguments(
+          instance->getTemplateArgs().asArray(),
+          instance->getSpecializedTemplate()->getTemplateParameters());
     return segment;
   }
 
-  // Template arguments as Clang prints them, `<long long, true>`.
-  std::string printed_template_arguments(llvm::ArrayRef<clang::TemplateArgument> arguments) {
+  // Template arguments as Clang prints them against their parameters,
+  // `<long long, true>`: a trailing argument equal to its default is left
+  // out and an integer is printed without a suffix, so `std::span<int>` and
+  // `std::span<int, 4>` are spelled as C++ source writes them.
+  std::string printed_template_arguments(llvm::ArrayRef<clang::TemplateArgument> arguments,
+                                         const clang::TemplateParameterList *parameters) {
     std::string printed;
     llvm::raw_string_ostream stream(printed);
     clang::PrintingPolicy policy = context_.getPrintingPolicy();
     policy.SuppressTagKeyword = true;
-    clang::printTemplateArgumentList(stream, arguments, policy);
+    clang::printTemplateArgumentList(stream, arguments, policy, parameters);
     return stream.str();
   }
 

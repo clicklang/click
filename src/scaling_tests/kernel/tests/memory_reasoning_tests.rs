@@ -732,3 +732,127 @@ fn stated_pointer_separation_lookup_visits_only_its_anchor_index() {
         );
     }
 }
+
+#[test]
+fn kept_frame_class_lookup_adds_only_selected_physical_coverage() {
+    let pointer = |id| Pointer {
+        block: PointerBlock::Symbolic(Variable(id)),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let queried = pointer(951_001);
+    let middle = pointer(951_002);
+    let owner = pointer(951_003);
+    let assumptions = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::pointer_equal(queried.clone(), middle.clone()),
+            true,
+        )
+        .assume_condition(ConditionTerm::pointer_equal(middle, owner.clone()), true);
+    let fact = |base| {
+        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            base,
+            0u32.into(),
+            1u32.into(),
+            8,
+        ))
+    };
+    for size in [16u64, 64, 256, 1024] {
+        let mut ranges = ResourceContext::new_with_equalities(&assumptions)
+            .unchecked_with_fact(fact(owner.clone()));
+        for index in 0..size {
+            ranges = ranges.unchecked_with_fact(fact(pointer(952_000 + index)));
+        }
+        let ((ordinary, ordinary_work), ordinary_maps) =
+            crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    ranges
+                        .memory_write_range(&queried, 8, &assumptions)
+                        .is_some_and(|range| assumptions.kept_range_holds_access(range, &owner, 8))
+                })
+            });
+        assert!(ordinary);
+        let kept = crate::kernel::primitives::CallKeptRanges::new(ranges, Vec::new(), None);
+        let ((found, frame_work), frame_maps) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                kept.holds_access(&queried, 8, &assumptions)
+            })
+        });
+        assert!(found);
+        assert!(
+            frame_work <= ordinary_work,
+            "frame adds no owner scan at size {size}"
+        );
+        assert!(
+            frame_maps <= ordinary_maps,
+            "frame adds no map traversal at size {size}"
+        );
+    }
+}
+
+#[test]
+fn rechecked_kept_frame_checks_selected_equality_without_rebuilding_foreign_inputs() {
+    let pointer = |id| Pointer::symbolic(Variable(id));
+    let queried = pointer(954_001);
+    let middle = pointer(954_002);
+    let owner = pointer(954_003);
+    for size in [16u64, 64, 256, 1024] {
+        let inputs = || {
+            let mut facts = PureFactContext::new()
+                .assume_condition(
+                    ConditionTerm::pointer_equal(queried.clone(), middle.clone()),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::pointer_equal(middle.clone(), owner.clone()),
+                    true,
+                );
+            for index in 0..size {
+                facts = facts.assume_condition(
+                    ConditionTerm::pointer_equal(
+                        pointer(955_000 + index),
+                        pointer(957_000 + index),
+                    ),
+                    true,
+                );
+            }
+            facts
+        };
+        let first = inputs();
+        let recheck = inputs();
+        let control = inputs();
+        let mut ranges = ResourceContext::new_with_equalities(&first).unchecked_with_fact(
+            CResourceFact::own_memory(CMemoryRange::new(owner.clone(), 2u32.into(), 4u32.into())),
+        );
+        for index in 0..size {
+            ranges = ranges.unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                pointer(955_000 + index),
+                0u32.into(),
+                1u32.into(),
+            )));
+        }
+        let kept = crate::kernel::primitives::CallKeptRanges::new(ranges, Vec::new(), None);
+        let access = queried.offset_by_bytes(8);
+        let ((expected, expected_work), expected_maps) =
+            crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    kept.holds_access(&access, 8, &first)
+                        && control.pointers_known_equal(&access, &owner.offset_by_bytes(8))
+                })
+            });
+        assert!(expected);
+        let ((found, work), maps) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                kept.holds_access(&access, 8, &recheck)
+            })
+        });
+        assert!(found);
+        assert!(
+            work <= expected_work,
+            "recheck rebuilds unrelated inputs at size {size}: {work} > {expected_work}"
+        );
+        assert!(
+            maps <= expected_maps,
+            "recheck traverses unrelated inputs at size {size}: {maps} > {expected_maps}"
+        );
+    }
+}
