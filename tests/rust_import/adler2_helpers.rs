@@ -1911,9 +1911,57 @@ fn adler_four_byte_recombination_rejects_off_by_one_residues() {
     }
 }
 
+// The original module is checked once by the caller. Each expansion changes
+// one theorem, so its cold check selects that entire owner (including any
+// other ensures clauses), rather than repeating every unchanged proof body.
+fn recheck_expanded_theorem(original: &str, source: &str, claim: &str) {
+    let (owner, _) = claim.split_once(".ensures_").expect("a pure theorem claim");
+    // These fixtures place each theorem's outer closing brace at column one.
+    // Confirm every other declaration/proof is byte-for-byte unchanged before
+    // reusing the original module's full positive check.
+    let extent = |text: &str| {
+        let start = text
+            .find(&format!("theorem {owner}("))
+            .expect("the selected theorem exists");
+        let end = start
+            + text[start..]
+                .find("\n}")
+                .expect("the theorem has its own closing line")
+            + "\n}".len();
+        (start, end)
+    };
+    let (before_start, before_end) = extent(original);
+    let (after_start, after_end) = extent(source);
+    assert_eq!(
+        &original[..before_start],
+        &source[..after_start],
+        "{claim}: changed prefix"
+    );
+    assert_eq!(
+        &original[before_end..],
+        &source[after_end..],
+        "{claim}: changed suffix"
+    );
+    let project = click::surface::ClickProject::new(
+        "expanded.click",
+        [click::surface::ClickModuleSource::new(
+            "expanded.click",
+            source,
+            [],
+        )],
+    );
+    click::surface::verify_project_theorem(
+        &project,
+        &click::surface::ProgramInputs::Bundle(vec![]),
+        owner,
+    )
+    .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
+}
+
 #[test]
 #[ignore = "nightly: common checksum specification expansion and mutation checks"]
 fn adler_common_spec_expands_and_rejects_false_results() {
+    click::surface::verify_c0_sources(COMMON_ADLER_SPEC, &[]).unwrap();
     for claim in [
         "adler_byte_observation_same_index.ensures_0",
         "adler_sum_append_four.ensures_0",
@@ -1953,7 +2001,7 @@ fn adler_common_spec_expands_and_rejects_false_results() {
         let expanded =
             click::surface::expand_c0_claim_source_by_label(COMMON_ADLER_SPEC, &[], claim)
                 .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
-        click::surface::verify_c0_sources(&expanded, &[]).unwrap();
+        recheck_expanded_theorem(COMMON_ADLER_SPEC, &expanded, claim);
     }
     for (before, after) in [
         (
