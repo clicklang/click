@@ -241,10 +241,12 @@ that writes `int32` for such a source already writes the source's spelling.
    `ensures` read as new and `old(...)` as at entry. A polymorphic local is
    built by its explicit constructor when the constructor reads no `this`
    and its base has no fields; the compiler's vtable setup is trusted. A
-   defaulted, implicit or empty virtual destructor only resets the vtable
-   pointer and runs no proof code. Remaining for C++: overriding a defining
-   class's method, virtual destructors with effects, and constructing
-   objects whose base has fields or a constructor.
+   defaulted, implicit or empty virtual destructor, of any access, only
+   resets the vtable pointer and runs no proof code; a class's own
+   destructor with a body is verified as any destructor is, over a base
+   whose destruction runs none. Remaining for C++: overriding a defining
+   class's method, base destructors with effects, and constructing objects
+   whose base has fields or a constructor.
 
 ## Intended regressions
 

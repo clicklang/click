@@ -4216,16 +4216,16 @@ private:
 
   // A polymorphic class whose destruction does nothing but reset the
   // vtable pointer, which the compiler does and no proof reads: its
-  // destructor is implicit, defaulted, or public with an empty body, its
-  // fields have trivial destruction, and so does its base or it is such a
-  // class too. Its virtual destructor then runs no code a proof sees.
+  // destructor is implicit, defaulted, or has an empty body, and what runs
+  // after it does nothing either. Clang's access checks decide who may
+  // destroy it, so a protected base destructor is one too.
   static bool no_op_virtual_destructor(const clang::CXXRecordDecl *record) {
     record = record == nullptr ? nullptr : record->getDefinition();
     if (record == nullptr || !record->isPolymorphic() ||
         record->hasTrivialDestructor())
       return false;
     if (const clang::CXXDestructorDecl *destructor = record->getDestructor()) {
-      if (destructor->isDeleted() || destructor->getAccess() != clang::AS_public)
+      if (destructor->isDeleted())
         return false;
       if (!destructor->isImplicit() && !destructor->isDefaulted()) {
         const auto *definition = llvm::dyn_cast_or_null<clang::CXXDestructorDecl>(
@@ -4238,6 +4238,13 @@ private:
           return false;
       }
     }
+    return destruction_after_body_is_no_op(record);
+  }
+
+  // What a class's destruction runs after its destructor's body: its
+  // fields' destructors, then its base's. Neither may run code a proof
+  // sees, since base destruction is not executed.
+  static bool destruction_after_body_is_no_op(const clang::CXXRecordDecl *record) {
     for (const clang::FieldDecl *field : record->fields()) {
       const auto *field_record = field->getType()->getAsCXXRecordDecl();
       if (field_record != nullptr && field_record->getDefinition() != nullptr &&
@@ -4335,7 +4342,7 @@ private:
   // one public non-virtual base, itself polymorphic, at offset zero; its own
   // fields follow the whole base. Nothing copies it: it is reached through a
   // reference or built in a local by its constructor, and its destruction
-  // runs no code a proof sees.
+  // runs at most its own destructor's body.
   bool validate_polymorphic_record(const clang::CXXRecordDecl *record) {
     if (record->getNumVBases() != 0 || record->getNumBases() > 1) {
       fail(record->getLocation(),
@@ -4343,20 +4350,21 @@ private:
       return false;
     }
     const clang::CXXDestructorDecl *destructor = record->getDestructor();
-    const bool no_op_destructor = no_op_virtual_destructor(record);
-    // A written non-virtual destructor is checked as any is, which names
-    // what it lacks.
-    if ((destructor == nullptr || !destructor->isVirtual()) &&
-        needs_destructor_body(destructor) && !validate_destructor(destructor, record))
-      return false;
-    if (!no_op_destructor &&
-        ((destructor != nullptr && destructor->isVirtual()) ||
-         needs_destructor_body(destructor) || !record->hasTrivialDestructor())) {
-      fail(record->getLocation(),
-           "a polymorphic C++ class's destructor is trivial, or virtual with an "
-           "empty body over fields with trivial destruction and a base of the "
-           "same kind; other destructors remain unsupported");
-      return false;
+    // A destructor that runs code is the class's own, written here, and
+    // checked as any is; what runs after its body, the fields' and the
+    // base's destruction, does nothing. A local's destructor is called
+    // directly, so whether it is virtual does not change the call.
+    if (!record->hasTrivialDestructor() && !no_op_virtual_destructor(record)) {
+      if (!needs_destructor_body(destructor) ||
+          !destruction_after_body_is_no_op(record)) {
+        fail(record->getLocation(),
+             "a polymorphic C++ class's destructor runs code only in its own "
+             "written body: its fields have trivial destruction and its base's "
+             "destructor is trivial, defaulted, or empty");
+        return false;
+      }
+      if (!validate_destructor(destructor, record))
+        return false;
     }
     const auto &layout = context_.getASTRecordLayout(record);
     if (record->getNumBases() == 1) {
@@ -4572,12 +4580,13 @@ private:
     if (destructor->getParent()->getCanonicalDecl() !=
             record->getCanonicalDecl() ||
         destructor->getAccess() != clang::AS_public ||
-        destructor->isVirtual() || destructor->isDeleted() ||
+        (destructor->isVirtual() && !record->isPolymorphic()) ||
+        destructor->isDeleted() ||
         prototype == nullptr || !prototype->isNothrow() ||
         prototype->getExceptionSpecType() != clang::EST_BasicNoexcept ||
         !destructor->getExceptionSpecSourceRange().isValid()) {
       fail(destructor->getLocation(),
-           "the supported destructor must be public, non-virtual, non-deleted, and explicitly noexcept");
+           "the supported destructor must be public, non-virtual outside a polymorphic class, non-deleted, and explicitly noexcept");
       return false;
     }
     if (!destructor->doesThisDeclarationHaveABody() ||
