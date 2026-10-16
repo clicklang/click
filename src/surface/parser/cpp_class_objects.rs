@@ -597,15 +597,17 @@ fn rewrite_function(
     }
     let position = source[head.body_open].1.clone();
     let read_objects = |clause: Vec<Spanned>| {
-        holders.iter().fold(clause, |clause, (holder, object, kept)| {
-            rewrite_calls(
-                &clause,
-                holder,
-                &object.functions,
-                *kept,
-                &|function, position| field_read(holder, function, position),
-            )
-        })
+        holders
+            .iter()
+            .fold(clause, |clause, (holder, object, kept)| {
+                rewrite_calls(
+                    &clause,
+                    holder,
+                    &object.functions,
+                    *kept,
+                    &|function, position| field_read(holder, function, position),
+                )
+            })
     };
     let mut clauses = Vec::new();
     let mut keeps = Vec::new();
