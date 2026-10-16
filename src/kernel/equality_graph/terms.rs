@@ -184,6 +184,7 @@ enum Node {
     UInt64Read((u32, u32), u64),
     Address(u64, u64),
     AddressShift(u64, i64),
+    AddressOffset(u64, u64),
     PointerRead((u32, u32), u64, crate::kernel::LoadKind),
     Footprint(u64, u64),
     Int32(MachineAtom),
@@ -208,6 +209,7 @@ enum Application {
     UInt64Read((u32, u32), u64),
     Address(u64, u64),
     AddressShift(u64, i64),
+    AddressOffset(u64, u64),
     PointerRead((u32, u32), u64, crate::kernel::LoadKind),
     Footprint(u64, u64),
     Add(u64, u64),
@@ -229,6 +231,7 @@ impl Application {
             | Self::UInt64Binary(_, left, right)
             | Self::Int32Add(left, right)
             | Self::Int32Binary(_, left, right)
+            | Self::AddressOffset(left, right)
             | Self::Footprint(left, right) => [Some(left), Some(right)],
             Self::Int32Unary(_, value)
             | Self::Address(_, value)
@@ -268,6 +271,9 @@ impl Application {
             }
             Self::Address(block, offset) => Self::Address(block, classes.root(offset)),
             Self::AddressShift(address, bytes) => Self::AddressShift(classes.root(address), bytes),
+            Self::AddressOffset(address, offset) => {
+                Self::AddressOffset(classes.root(address), classes.root(offset))
+            }
             Self::PointerRead(snapshot, address, kind) => {
                 Self::PointerRead(snapshot, classes.root(address), kind)
             }
@@ -660,7 +666,7 @@ impl TermClasses {
                 .registered_address_shifts
                 .contains(&(address, raw_offset))
         {
-            let base = self.address_without_shift(block, base).0;
+            let base = self.address_without_shift(block.clone(), base).0;
             let shifted = self.intern_node(Node::AddressShift(base, bytes));
             self.close_with_affine_definition(vec![(address, shifted)], true);
             if !self.numeric_shifts.contains_key(&address) {
@@ -669,6 +675,24 @@ impl TermClasses {
             self.registered_address_shifts = self
                 .registered_address_shifts
                 .with_value((address, raw_offset));
+        }
+        if let PointerOffsetTerm::Add(base, displacement) = &offset
+            && displacement.as_const().is_none()
+            && !self.registered_address_shifts.contains(&(address, raw_offset))
+            && let Some(block_id) = self.load_blocks.get(&block).copied()
+        {
+            // Only a retained typed-read base needs this extra application:
+            // ordinary affine coordinates already share offset congruence.
+            // Query the selected prefix without creating unrelated addresses.
+            let base_offset = self.intern(base);
+            if let Some(base) = self.registered_addresses.get(&(block_id, base_offset)).copied()
+                && self.read_witnesses.contains_key(&self.root(base))
+            {
+                let displacement = self.intern(displacement);
+                let shifted = self.intern_node(Node::AddressOffset(base, displacement));
+                self.close_with_affine_definition(vec![(address, shifted)], true);
+                self.registered_address_shifts = self.registered_address_shifts.with_value((address, raw_offset));
+            }
         }
         (address, new)
     }
@@ -1264,6 +1288,10 @@ impl TermClasses {
             Node::AddressShift(address, bytes) => {
                 self.address_nodes = self.address_nodes.with_value(id);
                 Some(Application::AddressShift(*address, *bytes))
+            }
+            Node::AddressOffset(address, offset) => {
+                self.address_nodes = self.address_nodes.with_value(id);
+                Some(Application::AddressOffset(*address, *offset))
             }
             Node::PointerRead(snapshot, address, kind) => {
                 Some(Application::PointerRead(*snapshot, *address, *kind))

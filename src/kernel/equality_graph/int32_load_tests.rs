@@ -271,3 +271,36 @@ fn reads_at_equal_addresses_are_equal_without_equal_pointers() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/equality_graph/int32_load_tests.rs");
 }
+
+#[test]
+fn native_pointer_aliases_reach_named_nested_pointer_reads() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let memory = memory();
+    let field = address(940_061);
+    let arena = Pointer::symbolic(Variable(940_062));
+    let native = Pointer::loaded_value(&memory, &field);
+    let mut graph = EqualityGraph::default();
+    graph.add_equality(&native, &arena);
+    let named_read = |address: &Pointer| {
+        let value = Pointer::loaded(address.block.clone(), load(&memory, address, 8), 4);
+        graph.register_pointer_read_definition(&value, &memory, address);
+        value
+    };
+    let named_arena = named_read(&field);
+    let direct = named_read(&arena.clone().offset_by_bytes(8));
+    let indirect = named_read(&named_arena.offset_by_bytes(8));
+    let direct_cell = direct.clone().offset_by_elements(var(940_063), 4);
+    let indirect_cell = indirect.clone().offset_by_elements(var(940_063), 4);
+    let scalar_left = load(&memory, &direct_cell, 4);
+    let scalar_right = load(&memory, &indirect_cell, 4);
+    assert!(graph.are_int32_equal(&scalar_left, &scalar_right));
+    let other_cell = indirect.clone().offset_by_elements(var(940_064), 4);
+    assert!(!graph.are_int32_equal(&scalar_left, &load(&memory, &other_cell, 4)));
+    let other_width = indirect.clone().offset_by_elements(var(940_063), 8);
+    assert!(!graph.are_int32_equal(&scalar_left, &load(&memory, &other_width, 4)));
+    let unrelated = EqualityGraph::default();
+    assert!(!unrelated.are_int32_equal(&scalar_left, &scalar_right));
+    assert!(graph.are_equal(&direct, &indirect));
+    let forged_stride = Pointer::loaded(field.block.clone(), load(&memory, &field, 8), 8);
+    assert!(!graph.are_equal(&forged_stride, &arena));
+}

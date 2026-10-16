@@ -138,3 +138,36 @@ fn raw_read_address_registration_does_not_walk_memory_history() {
         );
     }
 }
+
+#[test]
+fn nested_named_pointer_reads_ignore_unrelated_definitions() {
+    let costs = [16u64, 64, 256, 1024].map(|size| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = memory();
+        for index in 0..size {
+            memory.memory().symbolic_pointer_load(
+                &address(950_000 + index), 4, CType::Int32Pointer,
+            );
+        }
+        let field = address(940_061);
+        let arena = Pointer::symbolic(Variable(940_062));
+        let mut graph = EqualityGraph::default();
+        graph.add_equality(&Pointer::loaded_value(&memory, &field), &arena);
+        let named_read = |address: &Pointer| {
+            let value = Pointer::loaded(address.block.clone(), load(&memory, address, 8), 4);
+            graph.register_pointer_read_definition(&value, &memory, address);
+            value
+        };
+        let named_arena = named_read(&field);
+        let direct = named_read(&arena.offset_by_bytes(8));
+        let indirect = named_read(&named_arena.offset_by_bytes(8));
+        let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let direct = direct.offset_by_elements(var(940_063), 4);
+            let indirect = indirect.offset_by_elements(var(940_063), 4);
+            graph.are_int32_equal(&load(&memory, &direct, 4), &load(&memory, &indirect, 4))
+        });
+        assert!(equal);
+        work
+    });
+    assert!(costs[0] > 0 && costs.iter().all(|work| *work <= costs[0] + 128), "{costs:?}");
+}
