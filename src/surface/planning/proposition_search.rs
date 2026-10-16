@@ -622,6 +622,23 @@ impl PropositionSearch for PureFactContext {
             if let Some(evidence) = evidence {
                 return Some((direct, premises_id, evidence));
             }
+            // A native prefix needs its source view and the selected coverage
+            // path, not every comparison connected to the source's length.
+            if for_simp
+                && sources.len() == 1
+                && let Some(premises) = native_view_prefix_premises(self, proposition, &sources[0])
+            {
+                let candidate = premises
+                    .into_iter()
+                    .fold(PureFactContext::new(), |context, fact| {
+                        context.assume_proposition(fact)
+                    });
+                let (evidence, premises_id) =
+                    candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
+                if let Some(evidence) = evidence {
+                    return Some((candidate, premises_id, evidence));
+                }
+            }
             let (conditions, propositions, _, _) = connected_atomic_premises(
                 self,
                 proposition,
@@ -1890,6 +1907,55 @@ fn atomic_context_from_facts(
     } else {
         available.restricted_to_facts(conditions, propositions)
     }
+}
+
+/// Select only the exact order edges covering a native view's prefix. The
+/// ordinary restricted kernel query still decides snapshot transport and
+/// retirement; a prefix that needs other dependencies uses the usual planner.
+fn native_view_prefix_premises(
+    context: &PureFactContext,
+    goal: &Proposition,
+    source: &Proposition,
+) -> Option<Vec<Proposition>> {
+    let (
+        Proposition::CMemoryLoadable {
+            base,
+            bytes,
+            wide: true,
+            ..
+        },
+        Proposition::CMemoryLoadable {
+            base: source_base,
+            bytes: source_bytes,
+            wide: true,
+            ..
+        },
+    ) = (goal, source)
+    else {
+        return None;
+    };
+    if base != source_base {
+        return None;
+    }
+    let coverage = Proposition::ConditionIs(
+        ConditionTerm::uint64_less_equal(bytes.clone(), source_bytes.clone()),
+        true,
+    );
+    let mut premises = vec![source.clone()];
+    if context.proves_exact(&coverage) {
+        premises.push(coverage);
+    } else {
+        let (evidence, _) = context.proves_atomic_for_derivation_with_id(&coverage, true);
+        let Some(AtomicPropositionDerivationEvidence::WideOrderPath {
+            unsigned: true,
+            path,
+        }) = evidence
+        else {
+            return None;
+        };
+        premises.extend(path.into_iter().map(|step| step.premise().clone()));
+    }
+    Some(premises)
 }
 
 #[cfg(test)]

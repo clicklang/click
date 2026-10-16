@@ -3154,72 +3154,29 @@ fn failed_invariant_closure_trace_keeps_its_branch_guard() {
     });
 }
 
-/// A positive kernel view query must not be reported as a missing extent.
-/// Exercise the presentation boundary and retain its exact stage and counts
-/// in both ordinary CLI reports and traces, including a nested written simp.
+/// Native prefix proofs retain the source view and its coverage bound even
+/// when unrelated bounds exceed the general premise-reduction budget.
 #[test]
-#[ignore = "nightly: 0.8s in the parallel gate"]
-fn native_view_simp_reports_the_actual_premise_spelling_limit() {
-    let source = |extra_bounds: usize, body: &str| {
-        let mut source = String::from(
-            "target \"x86_64-unknown-linux-gnu\"; theorem broad_view(p: uint8[], n: uint64) { views p[0u64..n]; requires 1u64 <= n;",
-        );
-        for bound in 2..2 + extra_bounds {
-            source.push_str(&format!(" requires n <= {bound}u64;"));
-        }
-        source.push_str(&format!(
-            " ensures viewable(p[0u64..1u64]) by {{ {body} }} }}"
-        ));
-        source
-    };
-    // Connected bounds within the bounded reduction now retain just the
-    // source view and its coverage bound, even beyond the spelling limit.
-    for extra_bounds in [29, 30, 31, 62] {
-        verify_c0_sources(&source(extra_bounds, "simp();"), &[])
-            .expect("a derivation within the 64-premise spelling budget should check");
-    }
-    for body in [
-        "simp();",
-        "have viewable(p[0u64..1u64]) by { simp(); } assumption();",
-    ] {
-        // A selection outside the bounded reduction still obeys the same
-        // 64-premise source-spelling limit and must report it accurately.
-        let source = source(63, body);
-        let check = |error: &ClickError| {
-            for report in [error.message().to_owned(), error.concise_report()] {
-                assert!(
-                    report.contains("accepted by the kernel native view checker"),
-                    "{report}"
-                );
-                assert!(report.contains("simp view premise spelling"), "{report}");
-                assert!(
-                    report.contains("contains 130 premises; source spelling permits at most 64"),
-                    "{report}"
-                );
-                assert!(!report.contains("what is left"), "{report}");
-                assert!(!report.contains("valid 32-bit byte extent"), "{report}");
-                assert!(report.len() <= 16 * 1024, "ordinary report is bounded");
-            }
-        };
-        let error =
-            verify_c0_sources(&source, &[]).expect_err("the existing budget must remain in force");
-        check(&error);
-        with_proof_trace("broad_view", || {
-            let error = verify_c0_sources(&source, &[]).unwrap_err();
-            check(&error);
-            let trace = error.trace_context_report().expect("requested proof trace");
-            assert!(
-                trace.contains("contains 130 premises; source spelling permits at most 64"),
-                "{trace}"
+fn native_view_simp_selects_only_coverage_premises() {
+    for extra_bounds in [31, 63, 127, 255] {
+        for body in [
+            "simp();",
+            "have viewable(p[0u64..1u64]) by { simp(); } assumption();",
+            "simp() using { 1u64 <= n; viewable(p[0u64..n]); };",
+        ] {
+            let mut source = String::from(
+                "target \"x86_64-unknown-linux-gnu\"; theorem broad_view(p: uint8[], n: uint64) { views p[0u64..n]; requires 1u64 <= n;",
             );
-            assert!(trace.contains("bytes:uint64=1u64"), "{trace}");
-        });
+            for bound in 2..2 + extra_bounds {
+                source.push_str(&format!(" requires n <= {bound}u64;"));
+            }
+            source.push_str(&format!(
+                " ensures viewable(p[0u64..1u64]) by {{ {body} }} }}"
+            ));
+            verify_c0_sources(&source, &[])
+                .expect("a prefix uses only its source view and coverage bound");
+        }
     }
-    verify_c0_sources(
-        &source(63, "simp() using { 1u64 <= n; viewable(p[0u64..n]); };"),
-        &[],
-    )
-    .expect("the same view checks with its two relevant explicit premises");
 }
 
 #[test]
