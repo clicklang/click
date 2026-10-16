@@ -10924,6 +10924,13 @@ pub struct PureFactContext {
         (PointerOffsetTerm, PointerOffsetTerm),
         crate::persistent::PersistentSet<Proposition>,
     >,
+    /// The same stated nonempty separation evidence for anchors whose
+    /// blocks differ. Such a separation distinguishes complete pointers,
+    /// but says nothing about their offsets alone.
+    pub(super) separated_anchor_pointers: crate::persistent::PersistentMap<
+        (Pointer, Pointer),
+        crate::persistent::PersistentSet<Proposition>,
+    >,
     /// Exact signed-order bounds keyed by either endpoint — under the term
     /// the fact wrote and, when different, its canonical form as an alias.
     /// Each entry carries the fact's own endpoint term first, so evidence

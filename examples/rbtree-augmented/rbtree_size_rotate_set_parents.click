@@ -1,7 +1,7 @@
 verifying "rb_insert_augmented.c" as insert;
 verifying "rbtree_size_compute.c";
 verifying "rbtree_size_copy.c";
-import "rbtree_size_change_child.click";
+import "rbtree_size_link_distinct.click";
 
 function sized_context_parent_word(ctx: SizedContext, word: uint64) -> int32 {
     match ctx {
@@ -25,13 +25,17 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
     requires 0 <= color;
     requires color <= 1;
     requires sized_context_parent_word(c.model, old->__rb_parent_color) == 1;
-    requires sized_context_parent(c.model, 0) == 0 or new != sized_context_parent(c.model, 0);
     produces after: sized_link_at(new, root, ((struct sized_node*)(void*)old)->size);
     ensures after.model == old(c.model);
     ensures ((struct sized_node*)(void*)old)->size == old(((struct sized_node*)(void*)old)->size);
     ensures new->__rb_parent_color == old(old->__rb_parent_color);
     ensures old->__rb_parent_color == address(new) + color;
 } by {
+    sized_link_replacement_distinct(old, new, root,
+        ((struct sized_node*)(void*)old)->size, { link: c });
+    have sized_context_parent(old(c.model), 0) == 0 or new != sized_context_parent(old(c.model), 0) by {
+        rewrite(old(c.model) == c.model); assumption();
+    }
     match c.model {
         SizedContext::Top => {
             let { frames: frames } = unfold(c);
