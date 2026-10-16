@@ -348,17 +348,17 @@ charged to visible semantic output rather than hidden ambient state:
   (or two constant offsets), is decided by `c - k` alone, and `Pointer`
   orders every `S + c` of one anchor as one key range by `c`, so the store
   keeps the cells whose windows its bytes clear without visiting them and
-  asks only the cells within eight bytes of its own and those at other
-  spellings. The ranges name only shapes whose ladder answer is "keep" by
-  structural cancellation and constant arithmetic, reading no fact, and
-  they are empty while implicit provenance is captured or after the
-  deadline; debug builds re-ask the ladder about the cells at each end of
-  every range, and `skipping_constant_gap_cells_leaves_every_store_unchanged`
-  compares generated store sequences both ways, forget marks included. A
-  line of constant-index stores (`a[0] = …; a[1] = …`) costs 477 to 11,339
-  units of store work at 4 to 64 stores in a debug build (467 to 8,959 in
-  release), where it cost 445 to 46,017
-  (`stores_to_constant_indices_are_near_linear`). Recorded strict signed
+  asks only cells whose windows could overlap and those at other spellings.
+  The ranges name only shapes whose per-cell answer is "keep" by structural
+  cancellation and constant arithmetic, reading no fact. Exact same-block
+  byte geometry also takes precedence over conservative whole-object
+  invalidation from known C-address aliases. The ranges are empty while
+  implicit provenance is captured or after the deadline.
+  `skipping_constant_gap_cells_leaves_every_store_unchanged` compares generated
+  store sequences both ways, forget marks included; production stores do not
+  recheck the cells their producer has proved separate. The multi-size
+  `stores_to_constant_indices_are_near_linear` regression checks a line of
+  constant-index stores (`a[0] = …; a[1] = …`). Recorded strict signed
   variable orders now also form incremental paths, with logical ranks from a
   weighted union forest rather than variable identifiers. Exact order and
   endpoint-bound queries use those paths without traversing the intervening
