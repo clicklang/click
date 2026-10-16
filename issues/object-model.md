@@ -796,7 +796,7 @@ gate and nightly suite were not run.
 The next shared proof-retention extraction preserves completed post-return
 transports as execution evidence and gives post-return `have` scopes their
 original assumptions, keeping facts derived by premise selection in the checked
-successor. It does not replay transport or relax return-fact certification.
+successor. Return-fact certification remains strict.
 The original arena-write C is retained in a complete Markdown fixture.
 
 On upstream baseline `60c97316a`, 1,048 selected unit tests pass, including the

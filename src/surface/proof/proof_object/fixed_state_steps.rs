@@ -3517,8 +3517,8 @@ impl<'a> Proof<'a> {
             // Retain its proposition judgment under the pre-transport facts,
             // as a completed `have` does, so subsequent return folds consume
             // the derivation rather than treating its conclusion as a new
-            // ambient assumption. This closes the checked operation directly;
-            // it does not replay transport or re-prove the target.
+            // ambient assumption. Close the operation directly from its
+            // completed transport judgment.
             let transport_root = KernelProofObject::root(
                 self.state().locals().clone(),
                 OpenBranch::surface_proposition_at_outcome(
