@@ -2273,7 +2273,7 @@ fn simp_rejects_loop_backed_claims() {
     assert!(
         error
             .message()
-            .contains("`simp` requires execution to reach function exit first"),
+            .contains("`simp` closes the outcome claims at function exit and does not execute"),
         "{}",
         error.message()
     );
