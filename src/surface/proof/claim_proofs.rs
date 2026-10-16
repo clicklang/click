@@ -1037,15 +1037,25 @@ fn kernel_claim_goal_forms(
     unfolded_predicates: &[String],
 ) -> Vec<crate::kernel::CClaimGoal> {
     let mut forms = Vec::new();
-    for unfolds in [&[][..], unfolded_predicates] {
-        if let Some(form) = kernel_claim_goal(
-            function,
-            claim,
-            pre_state,
-            arguments,
-            outcome,
-            assumptions,
-            unfolds,
+    // With no unfolded predicates both configurations are identical. Each
+    // lowering reconstructs the contract's entry and exit resource views.
+    let unfolded = (!unfolded_predicates.is_empty()).then_some(unfolded_predicates);
+    for unfolds in std::iter::once(&[][..]).chain(unfolded) {
+        if let Some(form) = crate::instrumentation::measure_operation(
+            function.name(),
+            "explicit return closer",
+            "return claim goal lowering",
+            || {
+                kernel_claim_goal(
+                    function,
+                    claim,
+                    pre_state,
+                    arguments,
+                    outcome,
+                    assumptions,
+                    unfolds,
+                )
+            },
         ) && !forms.contains(&form)
         {
             forms.push(form);
