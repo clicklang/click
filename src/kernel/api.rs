@@ -4678,6 +4678,7 @@ fn symbolic_c_statement_execution_with_loop_rule(
         // on its paths was discharged or assumable, so this is the kernel's
         // own note of what the summary already paid for.
         recursion_anchor: environment.recursion_anchor_handle(),
+        variable_index: Default::default(),
     });
     let paths = paths
         .into_iter()

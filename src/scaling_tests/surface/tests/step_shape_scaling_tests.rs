@@ -743,19 +743,41 @@ fn heap_object_stores_and_releases_cost_the_same_at_every_position() {
     assert_no_drift("heap_objects", heap_objects, 4);
 }
 
-/// Known growth, recorded so that it is measured on every change and a fix
-/// is noticed: when one of these stops drifting, make it an ordinary
-/// no-drift test here and delete the cause from `issues/scaling.md` or the
-/// bug it names.
-/// `bugs/sequential-loop-clause-grows-with-earlier-loops.md`.
+/// A `loop` clause's work does not depend on the loops before it: it reads
+/// the contexts and indexes the proof keeps rather than rebuilding them from
+/// every earlier loop's facts. Five loops, because the first clause's own
+/// warm-up hides a drift among only three.
 #[test]
-fn known_drift_sequential_loop_clauses() {
-    // Five loops: the remaining growth is about 44 units per earlier loop,
-    // and the first clause's own warm-up hides it among only three.
+fn sequential_loop_clauses_cost_the_same_at_every_position() {
     let loops = run(loops, 5).loops;
     assert!(
-        drifts(&loops),
-        "sequential loop clauses stopped drifting ({loops:?}); delete this test and the bug \
-         `sequential-loop-clause-grows-with-earlier-loops.md`"
+        !drifts(&loops),
+        "sequential loop clauses drift with the loops before them: {loops:?}"
+    );
+}
+
+/// The contexts a `loop` tactic builds, charged or not, do not grow with
+/// the loops before it. Its executions copy the path's facts, and their
+/// direct-transport context and the initialization proof's indexed facts
+/// are the ones the proof keeps, extended by the loop's own facts. Building
+/// either from every path fact at each loop (both once did) assumes a further
+/// context entry per earlier fact at every loop; the transport context's
+/// build is charged nothing, so clause work alone does not show it.
+#[test]
+fn sequential_loops_build_the_same_context_entries_each() {
+    let entries = [3, 6, 12].map(|n| {
+        let (c, click) = loops(n);
+        let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
+        verify_c0_sources(&click, &[("hunt.c", c.as_str())])
+            .unwrap_or_else(|error| panic!("loops at {n}: {}", error.message()));
+        crate::kernel::reasoning::path_facts::context_rebuild_entries() - before
+    });
+    let per_loop = [(entries[1] - entries[0]) / 3, (entries[2] - entries[1]) / 6];
+    assert!(
+        per_loop[1] <= per_loop[0] + band(per_loop[0]),
+        "each further loop builds {} context entries at 3 to 6 loops and {} at 6 to 12 \
+         ({entries:?})",
+        per_loop[0],
+        per_loop[1]
     );
 }

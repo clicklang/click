@@ -12,6 +12,7 @@
 //! The context is the one a rebuild from the list would produce: it is
 //! built by the same fold over the same facts in the same order.
 
+use crate::kernel::proof::ProofFacts;
 use crate::kernel::proof::PropositionSource;
 use crate::kernel::{Proposition, PureFactContext};
 use std::sync::Mutex;
@@ -101,13 +102,28 @@ impl BuiltContext {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub(crate) struct PureFactList {
     facts: Vec<Proposition>,
     built: BuiltContext,
     /// The context of the facts' direct-transport premises
     /// (`kernel::proof::fact_reasoning::direct_fact_transport_premises`).
     transport_built: BuiltContext,
+    /// The indexed proof facts this list was copied from, and the length of
+    /// the prefix they hold, so a proof over the list extends them by the
+    /// facts appended since instead of indexing every fact again.
+    source: Option<(ProofFacts, usize)>,
+}
+
+impl std::fmt::Debug for PureFactList {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("PureFactList")
+            .field("facts", &self.facts)
+            .field("built", &self.built)
+            .field("transport_built", &self.transport_built)
+            .finish_non_exhaustive()
+    }
 }
 
 impl PartialEq for PureFactList {
@@ -124,6 +140,7 @@ impl From<Vec<Proposition>> for PureFactList {
             facts,
             built: BuiltContext::default(),
             transport_built: BuiltContext::default(),
+            source: None,
         }
     }
 }
@@ -164,12 +181,44 @@ impl PureFactList {
         Self::with_built_context(facts, built)
     }
 
+    /// The facts of a proof, in its order, with every context and index the
+    /// proof already keeps: its context, its direct-transport context when it
+    /// keeps one, and the proof facts themselves. The proof's contexts were
+    /// built over the same facts in the order they were added, which is not
+    /// necessarily this order; a context is the facts it assumes, not the
+    /// order it met them in, so the list keeps them rather than rebuilding.
+    pub(crate) fn from_proof_facts(source: &ProofFacts) -> Self {
+        let mut list = Self::from_source(source);
+        let length = list.facts.len();
+        if let Some(transport) = source.direct_transport_assumptions() {
+            list.transport_built = BuiltContext(Mutex::new(Some((length, transport.clone()))));
+        }
+        list.source = Some((source.clone(), length));
+        list
+    }
+
+    /// Indexed proof facts holding exactly this list's facts, in its order:
+    /// the proof facts it was copied from extended by the facts appended
+    /// since, or every fact indexed afresh when it was not copied from any
+    /// or a fact inside the copied prefix has since changed.
+    pub(crate) fn proof_facts(&self) -> ProofFacts {
+        match &self.source {
+            Some((source, length)) => self.facts[*length..]
+                .iter()
+                .fold(source.clone(), |facts, fact| {
+                    facts.with_kernel_checked_fact(fact.clone())
+                }),
+            None => ProofFacts::from_ordered(&self.facts),
+        }
+    }
+
     /// `facts` with the context `built` holds for a prefix of them.
     pub(crate) fn with_built_context(facts: Vec<Proposition>, built: BuiltContext) -> Self {
         Self {
             facts,
             built,
             transport_built: BuiltContext::default(),
+            source: None,
         }
     }
 
@@ -254,6 +303,13 @@ impl PureFactList {
     fn invalidate_from(&mut self, index: usize) {
         self.built.invalidate_from(index);
         self.transport_built.invalidate_from(index);
+        if self
+            .source
+            .as_ref()
+            .is_some_and(|(_, length)| *length > index)
+        {
+            self.source = None;
+        }
     }
 }
 
@@ -264,5 +320,9 @@ impl PropositionSource for PureFactList {
 
     fn pure_context(&self) -> PureFactContext {
         self.context()
+    }
+
+    fn indexed_proof_facts(&self) -> ProofFacts {
+        self.proof_facts()
     }
 }
