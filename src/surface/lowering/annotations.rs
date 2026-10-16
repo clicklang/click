@@ -47,7 +47,12 @@ fn integer_comparison_operator(
 fn is_unsuffixed_integer_literal_expression(expression: &ContractExpression) -> bool {
     match expression {
         ContractExpression::IntegerLiteral(_) => true,
-        ContractExpression::Negate(inner) => is_unsuffixed_integer_literal_expression(inner),
+        // A snapshot of a literal is the literal.
+        ContractExpression::Negate(inner)
+        | ContractExpression::Old(inner)
+        | ContractExpression::At {
+            expression: inner, ..
+        } => is_unsuffixed_integer_literal_expression(inner),
         ContractExpression::Add(left, right)
         | ContractExpression::Subtract(left, right)
         | ContractExpression::Multiply(left, right) => {
@@ -4452,10 +4457,24 @@ impl AnnotationLowerer<'_> {
                 selector,
                 expression,
             } => {
-                let snapshot = self
-                    .snapshot_environment(selector, environment)?
-                    .ok_or_else(|| "Integer values require a recorded program point".to_string())?;
-                return self.lower_contract_integer_to_spec(expression, &snapshot);
+                if let Some(snapshot) = self.snapshot_environment(selector, environment)? {
+                    return self.lower_contract_integer_to_spec(expression, &snapshot);
+                }
+                // `at(function.entry, e)` is `old(e)` and the current point
+                // is `e`, as for C values and sequences.
+                return match self.resolve_visit_selector(selector, environment)? {
+                    ResolvedProgramPoint::Current => {
+                        self.lower_contract_integer_to_spec(expression, environment)
+                    }
+                    ResolvedProgramPoint::FunctionEntry => {
+                        let old_environment =
+                            environment.old_state(&self.entry_values, self.entry_state.memory())?;
+                        self.lower_contract_integer_to_spec(expression, &old_environment)
+                    }
+                    ResolvedProgramPoint::LoopEntry(_) => {
+                        Err("Integer values require a recorded program point".to_string())
+                    }
+                };
             }
             _ => {}
         }
