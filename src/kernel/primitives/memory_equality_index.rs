@@ -1213,31 +1213,61 @@ impl ResourceContext {
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> Option<&CMemoryRange> {
-        self.memory_equalities
+        let published = self
+            .memory_equalities
             .lock()
             .expect("memory equality index")
             .published
-            .as_ref()?;
-        let mut entries = self.write_access_entries(pointer, bytes, assumptions)?;
-        while let Some(entry) = entries.next() {
-            crate::instrumentation::record_deterministic_work(1);
-            let fact = self.storage.facts.get(&entry)?;
-            let Some(range) = fact.memory_own_range() else {
-                continue;
-            };
-            let Some(quantity) = fact.owned_quantity_term() else {
-                continue;
-            };
-            let Some(address) = entries.address(entry) else {
-                continue;
-            };
-            if super::resource_algebra::resource_quantity_is_positive(quantity, assumptions)
-                && assumptions.kept_range_holds_access(range, &address, bytes)
-            {
-                return Some(range);
+            .clone()?;
+        let select = |mut entries: MemoryAccessCandidates, needs_current_equality: bool| {
+            while let Some(entry) = entries.next() {
+                crate::instrumentation::record_deterministic_work(1);
+                let fact = self.storage.facts.get(&entry)?;
+                let Some(range) = fact.memory_own_range() else {
+                    continue;
+                };
+                let Some(quantity) = fact.owned_quantity_term() else {
+                    continue;
+                };
+                let Some(address) = entries.address(entry) else {
+                    continue;
+                };
+                if needs_current_equality && !assumptions.pointers_known_equal(pointer, &address) {
+                    continue;
+                }
+                if super::resource_algebra::resource_quantity_is_positive(quantity, assumptions)
+                    && assumptions.kept_range_holds_access(range, &address, bytes)
+                {
+                    return Some(range);
+                }
             }
+            None
+        };
+        // Content-addressed call snapshots retain their first frame. Rechecking
+        // a proof gives that frame another input lineage, whose class IDs cannot
+        // be paired with the retained payload. Its prepared index can still
+        // select a spelling; the current graph must establish that equality.
+        // Try this bounded selection before pairing another input, so recheck
+        // does not rebuild an index over the frame or ambient equality history.
+        if published.graph.input_key().root() != assumptions.equality_graph.input_key().root()
+            && let Some(entries) = Self::indexed_access_entries(&published, pointer, bytes, true)
+                .or_else(|| Self::partial_start_entries(&published, pointer, bytes, true))
+                .or_else(|| Self::relative_access_entries(&published, pointer, bytes, true))
+            && let Some(range) = select(
+                MemoryAccessCandidates {
+                    entries,
+                    query: pointer.clone(),
+                    index: published,
+                },
+                true,
+            )
+        {
+            return Some(range);
         }
-        None
+        select(
+            self.write_access_entries(pointer, bytes, assumptions)?,
+            false,
+        )
     }
 
     /// Pair at proof boundaries, then apply only resource and class deltas.

@@ -7288,3 +7288,55 @@ fn kept_call_frame_uses_transitive_model_pointer_classes() {
     let borrowed = crate::kernel::primitives::CallKeptRanges::new(views, Vec::new(), None);
     assert!(!borrowed.holds_access(&access, 8, &assumptions));
 }
+
+#[test]
+fn kept_call_frame_with_loaded_owner_survives_equivalent_input_lineages() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let address = Pointer::symbolic(Variable(953_001));
+    let memory = CMemory::new();
+    let CValue::Pointer(value) = memory.symbolic_pointer_load(&address, 4, CType::Int32Pointer)
+    else {
+        panic!("a typed pointer read");
+    };
+    let owner = value.pointer().clone();
+    let queried = Pointer::symbolic(Variable(953_002));
+    let middle = Pointer::symbolic(Variable(953_003));
+    let inputs = || {
+        PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::pointer_equal(queried.clone(), middle.clone()),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::pointer_equal(middle.clone(), owner.clone()),
+                true,
+            )
+    };
+    let first = inputs();
+    let recheck = inputs();
+    let frame = |facts: &PureFactContext| {
+        crate::kernel::primitives::CallKeptRanges::new(
+            ResourceContext::new_with_equalities(facts).unchecked_with_fact(
+                CResourceFact::own_memory(CMemoryRange::new(
+                    owner.clone(),
+                    4u32.into(),
+                    6u32.into(),
+                )),
+            ),
+            Vec::new(),
+            None,
+        )
+    };
+    let access = queried.offset_by_bytes(16);
+    let kept = frame(&first);
+    assert!(kept.holds_access(&access, 8, &first));
+    assert!(frame(&recheck).holds_access(&access, 8, &recheck));
+    assert!(
+        kept.holds_access(&access, 8, &recheck),
+        "equivalent stated inputs must not lose the recorded owner"
+    );
+    assert!(
+        !kept.holds_access(&access, 8, &PureFactContext::new()),
+        "retained class membership is not evidence in a weaker context"
+    );
+}
