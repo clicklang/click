@@ -370,8 +370,34 @@ impl TermClasses {
         a: &crate::kernel::AlgebraicTerm,
         b: &crate::kernel::AlgebraicTerm,
     ) -> bool {
-        self.algebraic_nodes(a, b)
-            .is_some_and(|(a, b)| self.close(vec![(a, b)]))
+        let Some((left, right)) = self.algebraic_nodes(a, b) else {
+            return false;
+        };
+        let changed = self.close(vec![(left, right)]);
+        for (node, term) in [(left, a), (right, b)] {
+            if matches!(
+                term.node,
+                crate::kernel::AlgebraicTermNode::Constructor { .. }
+            ) {
+                let root = self.root(node);
+                if !self.algebraic_constructors.contains_key(&root) {
+                    self.algebraic_constructors
+                        .insert(root, Arc::new(term.clone()));
+                }
+            }
+        }
+        changed
+    }
+
+    pub(in crate::kernel::equality_graph) fn known_algebraic_constructor(
+        &mut self,
+        model: &crate::kernel::AlgebraicTerm,
+    ) -> Option<crate::kernel::AlgebraicTerm> {
+        let node = self.intern_algebraic(model);
+        self.register_pending_loads();
+        self.algebraic_constructors
+            .get(&self.root(node))
+            .map(|constructor| constructor.as_ref().clone())
     }
 
     fn opaque_argument(&mut self, argument: &A) -> u64 {

@@ -5,8 +5,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use click::cli::{
     self, CInput, RunLimits, containing_directory, looks_like_mdtest, parse_duration,
-    parse_source_line_location, prepare_mdtest_inputs, read_c_inputs, read_lone_sidecar_project,
-    read_mdtest, read_mdtest_project_if_needed, source_refs,
+    parse_source_line_location, prepare_mdtest_inputs, read_c_inputs, read_lone_sidecar_inputs,
+    read_lone_sidecar_project, read_mdtest, read_mdtest_project_if_needed, source_refs,
 };
 use click::surface::{
     ClickProject, SmartTacticCandidate, SmartTacticSelectionError,
@@ -161,8 +161,7 @@ fn run_bounded(arguments: &Arguments) -> Result<ExpandedArtifact, String> {
             arguments.click_path.display()
         )
     })?;
-    let inputs = read_c_inputs(&arguments.click_path, &click_source)?;
-    let project = read_lone_sidecar_project(&arguments.click_path, &click_source)?;
+    let (project, inputs) = read_lone_sidecar_inputs(&arguments.click_path, &click_source)?;
     let (claim, expanded) = generate_expansion(|| {
         expand_selection(
             Some(&project),
@@ -259,8 +258,7 @@ fn write_context_preserved(
     fs::write(&staged, rebased.as_bytes())
         .map_err(|error| format!("failed to stage `{}`: {error}", staged.display()))?;
     let verification = (|| -> Result<(), String> {
-        let verified_inputs = read_c_inputs(&staged, &rebased)?;
-        let verified_project = read_lone_sidecar_project(&staged, &rebased)?;
+        let (verified_project, verified_inputs) = read_lone_sidecar_inputs(&staged, &rebased)?;
         let original_project = read_lone_sidecar_project(&arguments.click_path, &artifact.source)?;
         if original_project.c_profile() != verified_project.c_profile() {
             return Err("`--output` would change the Click project C configuration; place the output in the same project directory".to_string());
@@ -1587,7 +1585,6 @@ int32 identity(int32 x) {
 #[cfg(all(test, not(target_os = "macos")))]
 mod prepared_output_tests {
     use super::*;
-    use click::languages::c::compiler_import::create_lock;
     use std::env;
 
     fn setup_prepared(sequence: u64) -> PathBuf {
@@ -1628,17 +1625,21 @@ mod prepared_output_tests {
             Path::new("/usr/bin/gcc").is_file(),
             "prepared-import fixture requires GCC at /usr/bin/gcc; provision it before scripts/check.sh"
         );
-        let config = serde_json::json!({
-            "schema": 1,
+        let project = serde_json::json!({
             "target": "x86_64-linux-kernel",
-            "compiler": "/usr/bin/gcc",
-            "working_directory": ".",
-            "environment": {"allow": {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "SOURCE_DATE_EPOCH": "0"}},
-            "sources": [{"logical_source": "main.c", "path": "main.c", "args": ["-DVARIANT=1", "-isystem", "configured"], "artifact": "main.i"}]
+            "units": {"main": {
+                "language": "c",
+                "compiler": "/usr/bin/gcc",
+                "environment": {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "SOURCE_DATE_EPOCH": "0"},
+                "args": ["-DVARIANT=1", "-isystem", "configured"],
+                "sources": {"main.c": {}}
+            }}
         });
-        let config_path = directory.join("main.click.import.json");
-        fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
-        create_lock(&config_path).expect("lock the prepared import");
+        let project_file = directory.join(click::project::FILE_NAME);
+        fs::write(&project_file, serde_json::to_vec_pretty(&project).unwrap()).unwrap();
+        click::project::Project::load(&project_file)
+            .and_then(|project| project.lock())
+            .expect("lock the prepared import");
         directory
     }
 

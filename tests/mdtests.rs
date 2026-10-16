@@ -87,6 +87,7 @@ const NIGHTLY: &[&str] = &[
     "c_named_function_contract_accepts_symbolic_mutable_subrange.md",          // 0.6s
     "c_named_function_contract_frames_guarded_composite.md",                   // 0.8s
     "c_named_function_contract_refinement_theorem.md",                         // 0.7s
+    "c_pointer_field_preserving_calls_join_branches.md",                       // 2.6s
     "c_switch.md",                                                             // 0.5s
     "call_frames_pointer_after_named_unfolds.md",                              // 1.0s
     "call_frees_owned_allocation_beside_borrowed_view.md",                     // 1.0s
@@ -110,6 +111,10 @@ const NIGHTLY: &[&str] = &[
     "cpp_one_guard_unwind.md",                                                 // 1.0s
     "cpp_single_guard_throw_step.md",                                          // 1.1s
     "cpp_two_guard_unwind.md",                                                 // 1.8s
+    "cstr_at_binder_length_is_proved_for_every_length.md",                     // 0.8s
+    "cstr_at_binder_length_sizes_a_later_segment.md",                          // 0.7s
+    "cstr_at_call_map_names_the_string_a_call_assembles.md",                   // 0.8s
+    "cstr_at_owning_binder_keeps_its_length.md",                               // 1.1s
     "cstr_dynamic_indexed_read.md",                                            // 0.6s
     "cstr_strlen_through_identity_casts.md",                                   // 0.5s
     "entry_alignment_premise_expands.md",                                      // 1.4s

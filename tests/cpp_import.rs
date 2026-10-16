@@ -916,6 +916,76 @@ impl Project {
         self.directory.join("demo.click.import.json")
     }
 
+    /// Replaces the per-sidecar config with the equivalent project unit
+    /// `demo`: the compilation command's own arguments, the selected source
+    /// and its function, and the config's profile. Then locks the project
+    /// with this fixture's exporter.
+    fn adopt(&self) {
+        let config: serde_json::Value =
+            serde_json::from_slice(&fs::read(self.config()).unwrap()).unwrap();
+        let database: serde_json::Value = serde_json::from_slice(
+            &fs::read(
+                self.directory
+                    .join(config["compilation_database"].as_str().unwrap()),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let mut arguments = database[0]["arguments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|argument| argument.as_str().unwrap().to_string())
+            .skip(1);
+        let mut args = Vec::new();
+        while let Some(argument) = arguments.next() {
+            match argument.as_str() {
+                "-x" | "-c" | "-o" => {
+                    arguments.next();
+                }
+                "-fexceptions" | "-fno-exceptions" | "-frtti" | "-fno-rtti" => {}
+                _ if argument.starts_with("-std=") || argument.starts_with("--target=") => {}
+                _ => args.push(argument),
+            }
+        }
+        let logical = config["logical_source"].as_str().unwrap();
+        let mut source = serde_json::json!({
+            "functions": [config["function"]],
+            "exception_behavior": config["exception_behavior"],
+            "dependencies": config["dependencies"],
+        });
+        if config["source"] != config["logical_source"] {
+            source["translation_unit"] = config["source"].clone();
+        }
+        if let Some(assertions) = config.get("library_assertions") {
+            source["library_assertions"] = assertions.clone();
+        }
+        let project = serde_json::json!({"units": {"demo": {
+            "language": "c++",
+            "exceptions": config["exceptions"],
+            "rtti": config["rtti"],
+            "args": args,
+            "sources": {logical: source},
+        }}});
+        let project_file = self.directory.join(click::project::FILE_NAME);
+        fs::write(&project_file, serde_json::to_vec_pretty(&project).unwrap()).unwrap();
+        fs::remove_file(self.config()).unwrap();
+        let _ = fs::remove_file(self.lock());
+        let _ = fs::remove_file(self.artifact());
+        click::project::Project::load(&project_file)
+            .and_then(|project| {
+                // The fixture's private exporter copy may already be gone.
+                let built = std::env::var_os("CLICK_CPP_EXPORTER").map(PathBuf::from);
+                let exporter = if self.exporter.exists() {
+                    self.exporter.clone()
+                } else {
+                    built.expect("scripts/check.sh supplies the pinned C++ exporter")
+                };
+                project.lock_with_cpp_exporter(Some(&exporter))
+            })
+            .expect("lock the adopted project");
+    }
+
     fn artifact(&self) -> PathBuf {
         self.directory
             .join(format!("{}.click-cpp.json", self.source_name))
@@ -1656,27 +1726,14 @@ fn logical_negation_checks_full_width_truth_and_observer_results_offline() {
 #[test]
 fn clang_export_is_deterministic_typed_and_loads_without_clang() {
     let project = Project::new();
-    let output = Command::new(env!("CARGO_BIN_EXE_click"))
-        .args([
-            "import",
-            "lock",
-            project.directory.join("demo.click").to_str().unwrap(),
-        ])
-        .output()
-        .expect("run the ordinary import command");
-    assert!(
-        output.status.success(),
-        "click import failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    refresh_import(&project.config()).expect("export the semantic artifact");
     let first_artifact = fs::read(project.artifact()).unwrap();
     let first_lock = fs::read(project.lock()).unwrap();
     refresh_import(&project.config()).expect("repeat the same semantic export");
     assert_eq!(fs::read(project.artifact()).unwrap(), first_artifact);
     assert_eq!(fs::read(project.lock()).unwrap(), first_lock);
 
-    fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
-    let prepared = load_import(&project.config()).expect("locked loading must not execute Clang");
+    let prepared = load_import(&project.config()).expect("load the locked artifact");
     assert_eq!(prepared.export().schema, 60);
     assert!(prepared.export().reachable_functions.is_empty());
     assert_eq!(prepared.logical_source(), "increment.cpp");
@@ -1727,6 +1784,41 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
             ..
         }
     ));
+    // The ordinary command locks the same unit as a project, repeatably, and
+    // loading it needs no exporter.
+    project.adopt();
+    let lock = || {
+        let output = Command::new(env!("CARGO_BIN_EXE_click"))
+            .env("CLICK_CPP_EXPORTER", &project.exporter)
+            .args(["import", "lock", project.directory.to_str().unwrap()])
+            .output()
+            .expect("run the ordinary import command");
+        assert!(
+            output.status.success(),
+            "click import failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        (
+            fs::read(
+                project
+                    .directory
+                    .join(".click/demo/increment.cpp.click-cpp.json"),
+            )
+            .unwrap(),
+            fs::read(project.directory.join(click::project::LOCK_NAME)).unwrap(),
+        )
+    };
+    let first = lock();
+    assert_eq!(lock(), first);
+    fs::remove_file(&project.exporter).expect("make the frontend unavailable after locking");
+    let sidecar = project.directory.join("demo.click");
+    fs::write(&sidecar, SIDECAR).unwrap();
+    let CInput::PreparedProgram(import) =
+        read_c_inputs(&sidecar, SIDECAR).expect("locked loading must not execute Clang")
+    else {
+        panic!("language=c++ must select the C++ prepared-input path")
+    };
+    assert_eq!(import.identity().len(), 64);
 }
 
 #[test]
@@ -1988,6 +2080,7 @@ fn included_header_definition_is_selected_locked_and_validated() {
         .replace("increment.cpp", "selected.h")
         .replace("increment", "header_increment");
     fs::write(&sidecar, &sidecar_source).unwrap();
+    project.adopt();
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
     let inputs = read_c_inputs(&sidecar, &sidecar_source).expect("load the header import offline");
     let CInput::PreparedProgram(import) = inputs else {
@@ -2053,6 +2146,7 @@ fn exception_enabled_profile_verifies_a_checked_normal_only_header_graph() {
         .replace("increment.cpp", "selected.h")
         .replace("increment", "header_increment");
     fs::write(&sidecar, &sidecar_source).unwrap();
+    project.adopt();
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
     let inputs = read_c_inputs(&sidecar, &sidecar_source)
         .expect("load the exception-enabled header import offline");
@@ -3447,6 +3541,7 @@ fn locked_cpp_function_verifies_through_the_shared_sidecar_path_offline() {
     let sidecar = project.directory.join("demo.click");
     fs::write(&sidecar, SIDECAR).unwrap();
     refresh_import(&project.config()).expect("refresh the C++ import explicitly");
+    project.adopt();
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
@@ -3516,6 +3611,7 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
     );
     assert!(contains_if(lowered.kernel_function().body()));
 
+    project.adopt();
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let inputs = read_c_inputs(&sidecar, &click_source).unwrap();
     let CInput::PreparedProgram(import) = inputs else {
@@ -3618,6 +3714,7 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
     assert_eq!(parameters[1].c_type(), CType::Int32Pointer);
     assert!(parameters[1].pointee_is_constant());
 
+    project.adopt();
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let inputs = read_c_inputs(&sidecar, &click_source).unwrap();
     let CInput::PreparedProgram(import) = inputs else {

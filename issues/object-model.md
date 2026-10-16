@@ -28,6 +28,12 @@ against the revision they describe before being presented as upstream behavior.
 milestones; [the Rust reference](../docs/reference/rust.md) records the supported Rust subset;
 its [Linux frontend milestone](../design/rust-charon-assessment.md#completed-linux-frontend-delivery) is complete.
 
+Pointer-field compatibility recovery is complete in candidate `ebe4f69a1` on
+`codex/pointer-field-recovery`: the original vector and string projects verify
+all 13 and 15 proofs with unchanged C, contracts, resources and limits. See the
+[closure evidence](../design/object-model-recovery-audit.md#pointer-field-postcondition-closure).
+This does not activate the archived model or change the last full audit count.
+
 ## Recovery starting point
 
 The preserved implementation checkpoint is `b92deef95` on
@@ -418,7 +424,7 @@ keep the 41/52 audit count until a new complete example run establishes otherwis
 bindings, including retained-session checking, without publishing their value
 bridges to sibling contexts. The positive regression passes all four proof
 modes; 133 selected recovery controls pass. Continue with the
-[string/vector postcondition gap](../bugs/c-pointer-field-postconditions-lose-frame-evidence.md),
+[string/vector postcondition gap](https://github.com/clicklang/click/blob/439b841c4633c9282354e772ffdf95748fb5dc41/bugs/c-pointer-field-postconditions-lose-frame-evidence.md),
 keeping C and claims intact and distinguishing an explicit checked equality
 proof from `assumption`'s exact-fact lookup. The full example audit remains 41/52.
 
@@ -659,3 +665,38 @@ upstream-based `95fe8cbd1`. The active migration inventory control and the
 specifically selected source/obligation control pass; the other two ignored
 chunk tool controls were not run. The last complete archive audit remains
 **49/52** pending a rerun; arena and owned-vector are the other failures.
+
+
+The complete normal archive audit at `a9635866d` passes **50/52** in 121.71
+seconds: chunks-exact is restored, leaving arena and owned-vector. Concurrent
+compilation affected elapsed time. PR #1150 merged; its sole pushed commit
+`64f0f0d46` is verified as an upstream ancestor. No full green gate or native
+feature activation is claimed.
+
+Recovery commit `31c252a80` reconciles the already-landed held-owner address-class
+repair `a676ba284`. Its nine selected kernel controls and Markdown fixture pass,
+including scope, physical-width and four-size scaling controls. Neither remaining
+original example is restored by that repair. The reduced
+[descriptor-window failure](../bugs/archive-descriptor-window-fold-misses-owned-prefix.md)
+preserves direct descriptor-field access and the occupancy store; it passes the
+identified upstream baseline and fails the recovery archive at the window fold.
+The checked cell walk stops at loop havoc, and indexed reassembly misses the
+prefix despite the checked memory-resolution comparison accepting its base.
+Endpoint-chain and canonical-`take` experiments did not repair it and were
+reverted. Keep the remaining work focused on checked loop/frame evidence and
+selected resource suppliers, without reopening the accepted object-model design.
+
+
+Recovery checkpoint `df56e3e28` reconciles upstream PR #1155's checked structural
+branch-join effects and explicit vector preservation proof. The complete normal
+example audit now passes **51/52** in 116.53 seconds, with no new failure.
+Owned-vector is restored; arena alone fails at `arena_alloc.contract` tactic 239.
+This is a failed audit with one known failure, not a green-tree verdict.
+
+In the reduced arena proof, explicitly proving that the current data pointer
+equals its entry value gets past ownership reassembly. The fold then rejects
+the resource's separation fact; additionally proving the occupied pointer and
+capacity unchanged does not discharge that fact automatically. Preserve the
+distinction between selecting ownership and transferring separation premises
+when investigating the remaining failure. No new object-model design choice
+has been identified.

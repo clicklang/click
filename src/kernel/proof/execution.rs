@@ -656,7 +656,7 @@ fn checks_population_authority_exchange(
         && (anchor.offset != crate::kernel::PointerOffsetTerm::Constant(0)
             || !(matches!(&anchor.block, crate::kernel::PointerBlock::Heap(_))
                 && before.memory.live_heap_block_size(anchor).is_some()
-                || anchor.block.starts_with("local:") && before.memory.has_block(&anchor.block)))
+                || anchor.block.is_local_block() && before.memory.has_block(&anchor.block)))
     {
         return Err("population authority rewrite requires live base storage".into());
     }
@@ -864,7 +864,7 @@ fn checks_population_member_exchange(
         && (anchor.offset != crate::kernel::PointerOffsetTerm::Constant(0)
             || !(matches!(&anchor.block, crate::kernel::PointerBlock::Heap(_))
                 && before.memory.live_heap_block_size(anchor).is_some()
-                || anchor.block.starts_with("local:") && before.memory.has_block(&anchor.block)))
+                || anchor.block.is_local_block() && before.memory.has_block(&anchor.block)))
     {
         return Err("population member rewrite requires live base storage".into());
     }
@@ -4306,6 +4306,7 @@ impl CheckedExecutionBranch {
             split.continuation.clone(),
         );
         let mut checked_arms = Vec::with_capacity(2);
+        let mut memory_steps = Vec::with_capacity(2);
         for (index, arm) in arms.iter().enumerate() {
             let events = arm.execution_evidence[0]
                 .suffix_since(parent_trace)
@@ -4331,6 +4332,7 @@ impl CheckedExecutionBranch {
             if &progress.state != arm.reached_state() {
                 return Err("a branch arm theorem trace does not reach its recorded state");
             }
+            memory_steps.push(progress.memory_steps);
             checked_arms.push(CheckedExecutionBranchArm {
                 facts: arm_facts[index].clone(),
                 events,
@@ -4339,12 +4341,15 @@ impl CheckedExecutionBranch {
         let [then_arm, else_arm] = checked_arms
             .try_into()
             .map_err(|_| "the checked branch does not have exactly two arms")?;
-        let interface_effect_facts = checked_interface_effect_facts(
+        // A structural join retains the same checked statement-effect records
+        // as an interface join, including a call's complete-pointer refinements.
+        let interface_effect_facts = checked_interface_effect_facts_along(
             &split.state,
             arms[0].reached_state(),
             arms,
             arm_facts,
             arm_effect_facts,
+            Some([&memory_steps[0], &memory_steps[1]]),
         )?;
         Ok(Self {
             split,
@@ -4650,7 +4655,7 @@ fn memory_diff_is_covered_by_writes(
     before
         .differing_cell_pointers(after)
         .into_iter()
-        .filter(|pointer| !pointer.block.starts_with("local:"))
+        .filter(|pointer| !pointer.block.is_local_block())
         .all(|diff_pointer| {
             if !after.has_known_cell_at(&diff_pointer) {
                 return false;
@@ -4689,7 +4694,7 @@ fn memory_diff_is_covered_by_ranges(
     before
         .differing_cell_pointers(after)
         .into_iter()
-        .filter(|pointer| !pointer.block.starts_with("local:"))
+        .filter(|pointer| !pointer.block.is_local_block())
         .all(|diff_pointer| {
             if !after.has_known_cell_at(&diff_pointer) {
                 return false;
@@ -4739,6 +4744,7 @@ fn interface_chain_memory_matches(
     c_memories_definitionally_equal(ended.as_ref().unwrap_or(produced), recorded, assumptions)
 }
 
+#[cfg(test)]
 fn checked_interface_effect_facts(
     split_state: &CState,
     joined_state: &CState,

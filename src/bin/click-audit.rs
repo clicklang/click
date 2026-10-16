@@ -10,8 +10,8 @@ use std::time::{Duration, Instant};
 use crate::git::{git_commit_id, git_repo_root, git_show};
 use click::cli::{
     self, CInput, MdTestExpectation, TargetSelection, containing_directory, find_mdtests,
-    format_duration, looks_like_mdtest, parse_duration, prepare_mdtest_inputs, read_c_inputs,
-    read_lone_sidecar_project, read_mdtest_project_if_needed, select_targets, shell_quote,
+    format_duration, looks_like_mdtest, parse_duration, prepare_mdtest_inputs,
+    read_lone_sidecar_inputs, read_mdtest_project_if_needed, select_targets, shell_quote,
     source_refs,
 };
 use click::surface::{
@@ -1247,8 +1247,7 @@ fn load_audit_source_from_text(
             mdtest: Some(mdtest),
         });
     }
-    let inputs = read_c_inputs(path, &container_source)?;
-    let project = read_lone_sidecar_project(path, &container_source)?;
+    let (project, inputs) = read_lone_sidecar_inputs(path, &container_source)?;
     let c_sources = match &inputs {
         CInput::Bundle(sources) => sources.clone(),
         CInput::Prepared(_) | CInput::PreparedProgram(_) => Vec::new(),

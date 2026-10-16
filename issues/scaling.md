@@ -117,14 +117,15 @@ instead of from what the step changed.
    `heap_objects` fold cost 3 units per live object. It now reads the held
    composites whose pointer is related to the required one
    (`direct_match_candidates_for`), and folds are flat.
-6. **A load through an unresolved pointer keeps every cell it may alias.**
-   `canonical_memory_for_pointer_load` is assumption-free, and a `Symbolic`
-   block's alias candidates narrow nothing, so the canonical memory of a
-   load through one heap object keeps every earlier object's cell and every
-   local's slot: each `heap_objects` unfold still grows 3 units per earlier
-   object. The slots are unreachable by any pointer value, as cause 1 used
-   for stores; the other objects' cells need ownership, which
-   canonicalization does not consult.
+6. **Fixed: a load through an unresolved pointer rebuilt every cell it may
+   alias.** `canonical_memory_for_pointer_load` is assumption-free, and a
+   `Symbolic` block's alias candidates narrow nothing, so the canonical memory
+   of a load through one heap object was rebuilt from every earlier object's
+   cell and every local's slot, at every unfold. The cell store now keeps the
+   pointer-reachable cells with their values, caught up by its own changes,
+   and the projection starts from that map and filters only the `local:`
+   cells and the load's own block; each `heap_objects` unfold is flat
+   (141 units at every position at N = 24).
 
 Related scaling bugs stay in `bugs/` until fixed:
 [sequential-loop-clause-grows-with-earlier-loops.md](../bugs/sequential-loop-clause-grows-with-earlier-loops.md).

@@ -3,7 +3,7 @@
 Status: approved 2026-10-15, with an owning `cstr_at` body. The owning body,
 the contract's choice of `views`, `owns`, or `consumes`/`produces`, and
 call-site assembly from owned bytes are implemented. The binder form (c) and
-the resource-term call map are being built on per-call contract value
+the resource-term call map are implemented on per-call contract value
 parameters (see [Kernel mechanism for (c)](#kernel-mechanism-for-c)), a
 kernel concept the original proposal assumed already existed. Assembly from
 viewed bytes is deferred (see [(d)](#d-call-site-assembly-of-a-viewed-composite)).
@@ -139,7 +139,7 @@ names are preferred.
 
 ### Kernel mechanism for (c)
 
-Not implemented. The paragraph above assumed that the kernel binds the
+Implemented as sketched here. The paragraph above assumed that the kernel binds the
 argument value "the same way" it binds instance identities. It does not: a
 binder today names an exclusive, field-bearing instance
 (`CResource::Instance`), and `cell.field` is a kernel projection of that
@@ -171,6 +171,29 @@ call, today only fixed by a function-value fact) and the function entry
 (fresh values for value parameters), and it touches certification, the
 contract interface identity, expansion, and the import summary. The
 maintainer approved this mechanism on 2026-10-15.
+
+What landed:
+
+- A `views` binder, or an `owns` or `consumes` binder with a `_` argument,
+  is a value binder. An `owns` or `consumes` binder without `_` still names
+  a field-bearing instance. Value binders are refused in named contracts.
+- Declaration expansion names each `_` after the resource's parameter and
+  appends `s.len` to the signature after the C parameters; the signature
+  check compares only the C parameters, and lowering moves the value
+  parameters back out of the kernel function's C parameters
+  (`CFunction::with_trailing_value_parameters`).
+- A proof entry binds the value parameters at fresh values beside the C
+  arguments (`bind_c_function_arguments`).
+- At a call, `call_value_arguments` takes each value from the one instance
+  that agrees with the clause's other arguments: a term the call map names,
+  otherwise a held instance found by the indexed shape-and-root candidate
+  query. `{ s: str }` names the caller's own binder's clause. No instance, or
+  two with different values, is refused; equal values are not searched for.
+- `s` itself is a name for the clause, not an instance identity, so
+  `{ s: str }` and `s.len` are the whole interface.
+
+Mdtests: `cstr_at_binder_*`, `cstr_at_owning_binder_keeps_its_length.md`,
+and `cstr_at_call_map_*`.
 
 ## (d) Call-site assembly of a viewed composite
 
@@ -263,13 +286,13 @@ structure; assembly for `owns` or `consumes` requirements.
 ## Migration plan
 
 PR A landed the owning body, the `views`/`owns`/`consumes`-`produces`
-choice, the terminator mdtests, and assembly from owned bytes. Steps 1 and
-the viewed-bytes half of 2 wait on the kernel decisions above.
+choice, the terminator mdtests, and assembly from owned bytes. Its second
+increment landed step 1. The viewed-bytes half of step 2 is deferred.
 
-1. Implement (c): `views` and fieldless binders, `_`, `s.param`, the
-   resource-term map entry, on the kernel mechanism the maintainer chooses.
-   Add mdtests for each, including ambiguity refusal, an `owns` binder with
-   `old(s.len)`, and a later segment that names `s.len`.
+1. Done: (c), `views` and fieldless binders, `_`, `s.param`, the
+   resource-term map entry, with ambiguity, missing-instance and unheld-term
+   refusals, an `owns` binder with `old(s.len)`, and a later memory segment
+   that names `s.len`.
 2. Implement (d) from viewed bytes, with positive, missing-view, failed-fact
    and non-qualifying-body mdtests, and a scaling regression that grows
    string length and unrelated held resources.

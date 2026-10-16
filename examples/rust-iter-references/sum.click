@@ -210,7 +210,6 @@ fn sum(bytes: &[u8]) -> i32 {
                     0u64 < at(iteration, iter_remaining);
                 }
             }
-            close_invariants();
         }
     }
     have iter_remaining == 0u64 by {

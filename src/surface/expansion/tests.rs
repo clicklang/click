@@ -3320,3 +3320,31 @@ fn premise_free_applications_are_simple_but_required_premises_stay_smart() {
         .is_err()
     );
 }
+
+#[test]
+fn qualified_c_contract_source_locations_preserve_file_aliases() {
+    let source = "verifying \"first.c\" as first;\nverifying \"second.c\" as second;\nint32 first::helper() { ensures result == 1; } by { execute(); simp(); }\nint32 second::helper() { ensures result == 2; } by { execute(); simp(); }\n";
+    let tokens = scan_source_tokens(source).unwrap();
+    let declarations = declaration_source_index(&tokens).unwrap();
+    for (name, line) in [("first::helper", 3), ("second::helper", 4)] {
+        let found = find_function(&tokens, name).unwrap();
+        assert_eq!(declarations[name].body_open, found.body_open);
+        assert_eq!(declarations[name].body_close, found.body_close);
+        assert_eq!(
+            click_declaration_source_position(source, name),
+            Some(SourcePosition::new(line, 1))
+        );
+    }
+}
+
+#[test]
+fn a_rust_verifying_alias_does_not_change_path_identity() {
+    let source = "verifying \"first.rs\" as first; fn first::helper() -> i32 { ensures result == 1; } by { execute(); simp(); }";
+    let tokens = scan_source_tokens(source).unwrap();
+    let declarations = declaration_source_index(&tokens).unwrap();
+    assert!(
+        declarations.contains_key(&crate::languages::rust::names::path_name(&[
+            "first", "helper"
+        ]))
+    );
+}

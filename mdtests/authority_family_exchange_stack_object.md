@@ -1,9 +1,7 @@
-# Implicit stack storage is not transferable object ownership
+# Local record storage can be transferred into an authority-governed family
 
-This unchanged C exposes a separate ownership gap: local struct declarations
-provide implicit access, not explicit transferable object facts. The helper
-proof verifies, but packaging the local second object is currently refused.
-This is not evidence of support for moving stack storage into a resource.
+The unchanged stack-object caller packages both records into resource members.
+The helper must also preserve its payload value for the final sum to verify.
 
 ```c filename=family_exchange.c
 struct payload { int32 value; };
@@ -32,6 +30,7 @@ void checkout(int32* pool, struct payload* p) {
     requires defined(count(item(pool, _)) + 1);
     requires count(item(pool, p)) == 0;
     produces item(pool, p);
+    ensures p->value == old(p->value);
     ensures count(capacity(pool)) == old(count(capacity(pool))) - 1;
     ensures count(item(pool, _)) == old(count(item(pool, _))) + 1;
     ensures count(item(pool, p)) == 1;
@@ -63,5 +62,5 @@ int32 lifecycle() { ensures result == 3; } by {
 ```
 
 ```expect
-fail: missing resource fact `owns second`
+pass
 ```

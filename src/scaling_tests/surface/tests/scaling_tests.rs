@@ -4393,6 +4393,7 @@ fn call_separation_requirements_ignore_unrelated_owned_objects() {
     let unproved = "requires separate(memory(a->left), memory(b->left));";
     let mut separated_work = Vec::new();
     let mut guarded_work = Vec::new();
+    let mut refused_work = Vec::new();
     for size in [2, 4, 8, 16] {
         let parameters = (0..size)
             .map(|i| format!(", struct node* q{i}"))
@@ -4434,11 +4435,22 @@ fn call_separation_requirements_ignore_unrelated_owned_objects() {
         guarded_work.push(run(guarded, guard) - run(guard, guard));
         // `b->left` is neither owned nor separated from `a->left` by
         // anything the caller knows: the requirement stays unproved.
+        let (refused, work) = checking(unproved, "");
+        refused_work.push(work);
         assert!(
-            checking(unproved, "").0.is_err(),
+            refused.is_err(),
             "an unestablished separation passed beside {size} owned objects"
         );
     }
+    eprintln!(
+        "call separation work: proved {separated_work:?}, guarded {guarded_work:?}, refused {refused_work:?}"
+    );
+    assert!(
+        refused_work
+            .iter()
+            .all(|work| *work > 0 && *work == refused_work[0]),
+        "refused requirement checking grows with unrelated owners: {refused_work:?}"
+    );
     assert!(
         separated_work.iter().all(|work| *work == separated_work[0]),
         "separation requirement checking grows with unrelated owned objects: {separated_work:?}"
@@ -8459,4 +8471,54 @@ fn source_only_transport_does_not_reconstruct_unrelated_integer_facts() {
         work.windows(2).all(|pair| pair[1] <= pair[0] * 2),
         "source-only transport must not reconstruct an ambient fact per input: {work:?}"
     );
+}
+
+/// Branches that call through a pointer-field resource retain their statement
+/// effect records beside unrelated caller facts, rather than reconstructing
+/// the call's internal memory chain at the join.
+#[test]
+#[ignore = "nightly: four modular pointer-field branch joins"]
+fn pointer_field_call_branch_join_scales_with_unrelated_caller_facts() {
+    let path = std::path::Path::new("c_pointer_field_preserving_calls_join_branches.md");
+    let fixture = crate::cli::parse_mdtest(
+        path,
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/mdtests/c_pointer_field_preserving_calls_join_branches.md"
+        )),
+    )
+    .unwrap();
+    let source = fixture.click_source.unwrap();
+    let c_source = &fixture.c_sources[0].1;
+    let mut samples = Vec::new();
+    for size in [64, 128, 256, 512] {
+        let parameters = (0..size)
+            .map(|index| format!(", int32 noise_{index}"))
+            .collect::<String>();
+        let requirements = (0..size)
+            .map(|index| format!("    requires 0 <= noise_{index};\n"))
+            .collect::<String>();
+        let signature = "int32 replace\n)";
+        assert_eq!(source.matches(signature).count(), 1);
+        assert_eq!(c_source.matches(signature).count(), 1);
+        let signature = format!("int32 replace{parameters}\n)");
+        let c_source = c_source.replace("int32 replace\n)", &signature);
+        let source = source.replace("int32 replace\n)", &signature);
+        let start = source.find("int32 vector_replace_if(").unwrap();
+        let source = format!(
+            "{}{}",
+            &source[..start],
+            source[start..].replacen(
+                "    requires 0 <= index;",
+                &format!("{requirements}    requires 0 <= index;"),
+                1,
+            )
+        );
+        let (result, sample) = scaling_sample(size, || {
+            verify_c0_sources(&source, &[("vector.c", c_source.as_str())])
+        });
+        result.unwrap_or_else(|error| panic!("size {size}: {}", error.message()));
+        samples.push(sample);
+    }
+    assert_near_linear_scaling("pointer-field call branch join", &samples);
 }

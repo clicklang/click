@@ -231,8 +231,12 @@ C++ items were chosen explicitly; the rest are the recommended defaults.
   all fourteen sidecars. No per-sidecar import config remains in the
   repository; `make-fixture.py` still reads the original full-checkout
   per-sidecar lock.
-- **Remaining:** porting `make-fixture.py` to the project lock, then refusing per-sidecar
-  configs in the command line and deleting their loaders; the module root still comes
+- **Command-line refusal.** `click verify`, the proof tools and `click import
+  lock` refuse a sidecar's own `<sidecar>.import.json` with a diagnostic naming
+  the replacement unit. The mdtest C++ fixtures, the example gate and the tests
+  that drive the command line build project files.
+- **Remaining:** porting `make-fixture.py` to the project lock, then porting
+  the library-level tests and deleting the per-sidecar loaders; the module root still comes
   from imports rather than the project file; the shared lock envelope; the
   optimization level and flag policy.
 

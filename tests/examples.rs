@@ -11,7 +11,6 @@ use click::cli::{
     read_click_project_at_root, read_verifying_sources, source_refs,
 };
 use click::instrumentation::{self, ArtifactReuseRejection, HiddenPrerequisiteRoute};
-use click::languages::refresh_compiler_import;
 use click::surface::{
     c0_tactic_source_position, project_tactic_source_position, verify_c0_prepared_project,
     verify_c0_project, verify_c0_sources, verify_c0_sources_at, verify_program_prepared_project,
@@ -1194,30 +1193,6 @@ fn run_example_project(project: &Path) -> Result<(), String> {
     for click_path in click_paths {
         let click_source = fs::read_to_string(&click_path)
             .map_err(|error| format!("failed to read `{}`: {error}", click_path.display()))?;
-        let name = click_path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .ok_or_else(|| format!("invalid example sidecar `{}`", click_path.display()))?;
-        let config = click_path.with_file_name(format!("{name}.import.json"));
-        // Native Rust artifacts are checked offline here. The required
-        // charon-live gate freshly extracts every canonical Rust source and
-        // checks its contract; ordinary archive consumers need no Charon toolchain.
-        let native_rust = if config.exists() {
-            let metadata: serde_json::Value =
-                serde_json::from_slice(&fs::read(&config).map_err(|error| error.to_string())?)
-                    .map_err(|error| error.to_string())?;
-            metadata["language"] == "rust"
-        } else {
-            false
-        };
-        if config.exists() && !native_rust {
-            refresh_compiler_import(&config).map_err(|error| {
-                format!(
-                    "sidecar `{}` import refresh failed: {error}",
-                    click_path.display()
-                )
-            })?;
-        }
         let click_project = read_click_project_at_root(
             &click_path,
             &click_source,
@@ -2465,4 +2440,131 @@ fn expanded_library_names_resolve_and_audit() {
             String::from_utf8_lossy(&audited.stderr)
         );
     }
+}
+
+/// The grow call's old-prefix fact cannot be framed across push's writable
+/// buffer. Use push's exact call-exit guarantee and frame each side separately.
+#[test]
+#[ignore = "nightly: original grow-then-push proof across all proof modes"]
+fn owned_vector_grow_then_push_prefix_rechecks_in_all_proof_modes() {
+    limits::spawn(
+        "vector grow-then-push proof modes",
+        "click-vector-prefix-modes".into(),
+        || {
+            let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            let path = root.join("examples/owned-vector/vector.click");
+            let source = fs::read_to_string(&path).unwrap();
+            let c_sources = read_verifying_sources(&path, &source).unwrap();
+            let sources = source_refs(&c_sources);
+            verify_c0_sources(&source, &sources).unwrap();
+            let expanded = click::surface::expand_c0_claim_source(
+                &source,
+                &sources,
+                "allocated_vector_push",
+                click::surface::CProofClaim::Grouped,
+            )
+            .expect("the complete grow-then-push claim must expand");
+            let declaration = expanded.find("int32 allocated_vector_push(").unwrap();
+            let offset = declaration + expanded[declaration..].find("ensures").unwrap();
+            let line = expanded[..offset].bytes().filter(|b| *b == b'\n').count() + 1;
+            let column = expanded[..offset].rsplit('\n').next().unwrap().len() + 1;
+            verify_c0_sources_at(&expanded, &sources, line, column)
+                .expect("the expanded grow-then-push claim must check fresh");
+            let (session, _) =
+                click::surface::C0VerificationSession::new(&source, &sources).unwrap();
+            session
+                .verify_at(&expanded, line, column)
+                .expect("the expanded grow-then-push claim must check retained");
+        },
+    )
+    .unwrap();
+}
+
+/// The branch summary must retain the setter's result and actual write authority.
+#[test]
+#[ignore = "nightly: pointer-field call branch rejection controls"]
+fn pointer_field_call_branch_rejects_wrong_result_and_missing_backing_authority() {
+    limits::spawn(
+        "pointer-field branch rejection controls",
+        "click-pointer-field-branch-negative".into(),
+        || {
+            let path = Path::new("mdtests/c_pointer_field_preserving_calls_join_branches.md");
+            let fixture = click::cli::parse_mdtest(
+                path,
+                include_str!("../mdtests/c_pointer_field_preserving_calls_join_branches.md"),
+            )
+            .unwrap();
+            let source = fixture.click_source.unwrap();
+            let c_sources = fixture.c_sources;
+            let original_c = &c_sources[0].1;
+            let wrong = original_c.replace("data[index] = value;", "data[index] = 0;");
+            assert_ne!(wrong, *original_c);
+            assert!(verify_c0_sources(&source, &[("vector.c", wrong.as_str())]).is_err());
+            let ownership = "    owns owner->data[0..owner->cap];\n";
+            assert_eq!(source.matches(ownership).count(), 1);
+            let missing = source.replace(ownership, "");
+            assert!(verify_c0_sources(&missing, &source_refs(&c_sources)).is_err());
+        },
+    )
+    .unwrap();
+}
+
+/// A borrowed quantified fact must survive an unrelated write in every proof mode.
+#[test]
+#[ignore = "nightly: borrowed-composite expansion, retained checks, and rejection mutations"]
+fn borrowed_composite_fact_after_write_expands_and_rechecks() {
+    limits::spawn(
+        "borrowed composite after a write",
+        "click-borrowed-composite-after-write".into(),
+        || {
+            let path = Path::new(
+                "mdtests/a_borrowed_composite_quantified_fact_opens_after_an_unrelated_write.md",
+            );
+            let fixture = click::cli::parse_mdtest(
+                path,
+                include_str!(
+                    "../mdtests/a_borrowed_composite_quantified_fact_opens_after_an_unrelated_write.md"
+                ),
+            )
+            .unwrap();
+            let source = fixture.click_source.as_deref().unwrap();
+            let sources = source_refs(&fixture.c_sources);
+            verify_c0_sources(source, &sources).unwrap();
+            let expanded = click::surface::expand_c0_claim_source(
+                source,
+                &sources,
+                "first",
+                click::surface::CProofClaim::Grouped,
+            )
+            .expect("opening the borrowed fact after a write must expand");
+            verify_c0_sources(&expanded, &sources)
+                .expect("the expanded borrowed fact must check fresh");
+            let offset = expanded.find("ensures result != 0;").unwrap();
+            let line = expanded[..offset].bytes().filter(|byte| *byte == b'\n').count() + 1;
+            let column = expanded[..offset].rsplit('\n').next().unwrap().len() + 1;
+            let (session, _) = click::surface::C0VerificationSession::new(source, &sources).unwrap();
+            session
+                .verify_at(&expanded, line, column)
+                .expect("the expanded borrowed fact must check retained");
+            drop(session);
+
+            for (before, after) in [
+                ("ensures result != 0;", "ensures result == 0;"),
+                ("owns q[0..1];", ""),
+                (
+                    "fact forall (k: int32) { 0 <= k and k < n implies p[k] != 0 };",
+                    "",
+                ),
+            ] {
+                assert_eq!(source.matches(before).count(), 1);
+                let changed = source.replace(before, after);
+                assert!(verify_c0_sources(&changed, &sources).is_err(), "{before}");
+            }
+            let original = &fixture.c_sources[0].1;
+            let borrowed_write = original.replace("q[0] = 1;", "p[0] = 0;");
+            assert_ne!(borrowed_write, *original);
+            assert!(verify_c0_sources(source, &[("probe.c", &borrowed_write)]).is_err());
+        },
+    )
+    .unwrap();
 }

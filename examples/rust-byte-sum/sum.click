@@ -20,9 +20,7 @@ fn sum(bytes: &[u8]) -> i32 {
     }
     loop {
         decreases bytes.len() - i;
-        views bytes[0..bytes.len()];
         invariant i <= bytes.len();
-        invariant bytes.len() <= 1000u64;
         invariant 0 <= to_integer(total) and to_integer(total) <= 255 * to_integer(i);
         invariant to_integer(total) == prefix(bytes, i);
         preserve by {
@@ -79,9 +77,6 @@ fn sum(bytes: &[u8]) -> i32 {
             }
             execute_until(assignment(i, 1));
             step();
-            have i <= bytes.len();
-            step(); step(); step();
-            close_invariants();
         }
     }
     have i == bytes.len() by {

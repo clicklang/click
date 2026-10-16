@@ -3190,8 +3190,8 @@ impl PureFactContext {
                 "resource separation: composition members",
                 || {
                     self.composition_separated_members(
-                        left_range.base(),
-                        right_range.base(),
+                        &left_range.start_pointer(),
+                        &right_range.start_pointer(),
                         |member| {
                             self.proves_resource_contains_inner(
                                 &CResource::Memory(member.clone()),
@@ -3237,26 +3237,49 @@ impl PureFactContext {
                     return false;
                 }
                 self.resource_compositions.iter().any(|resources| {
-                    let intervals = resources
-                        .owned_memory_ranges_separate_from(
-                            &target.base().block,
-                            &CResource::Memory(other.clone()),
-                            |owner, child| self.proves_resource_contains_inner(owner, child),
-                        )
-                        .into_iter()
-                        .filter_map(|range| {
-                            if range.wide_bounds().is_some() {
-                                return None;
-                            }
-                            self.fact_range_interval_on_target(
-                                target,
-                                range.base(),
-                                range.start(),
-                                range.end(),
-                            )
-                        })
-                        .collect();
-                    range_intervals_cover_target(target, intervals)
+                    let cover = |ranges: Vec<CMemoryRange>| {
+                        let intervals = ranges
+                            .into_iter()
+                            .filter_map(|range| {
+                                if range.wide_bounds().is_some() {
+                                    return None;
+                                }
+                                self.fact_range_interval_on_target(
+                                    target,
+                                    range.base(),
+                                    range.start(),
+                                    range.end(),
+                                )
+                            })
+                            .collect();
+                        range_intervals_cover_target(target, intervals)
+                    };
+                    let indexed = cover(resources.owned_memory_ranges_separate_from(
+                        target,
+                        other,
+                        self,
+                        |owner, child| self.proves_resource_contains_inner(owner, child),
+                    ));
+                    #[cfg(debug_assertions)]
+                    if crate::instrumentation::separation_candidate_cross_checks_enabled()
+                        && !crate::instrumentation::in_uncharged_debug_check()
+                    {
+                        crate::instrumentation::uncharged_debug_check(|| {
+                            let full =
+                                cover(resources.owned_memory_ranges_separate_from_full_scan(
+                                    &target.base().block,
+                                    &CResource::Memory(other.clone()),
+                                    |owner, child| {
+                                        self.proves_resource_contains_inner(owner, child)
+                                    },
+                                ));
+                            assert_eq!(
+                                indexed, full,
+                                "indexed separation interval cover differs from full scan"
+                            );
+                        });
+                    }
+                    indexed
                 })
             };
             if crate::instrumentation::measure_operation(

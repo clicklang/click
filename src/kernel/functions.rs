@@ -6686,7 +6686,7 @@ fn execute_verified_function_applications_with_suspension(
                     && (anchor.offset != PointerOffsetTerm::Constant(0)
                         || !(matches!(&anchor.block, PointerBlock::Heap(_))
                             && post_state.memory.live_heap_block_size(anchor).is_some()
-                            || anchor.block.starts_with("local:")
+                            || anchor.block.is_local_block()
                                 && post_state.memory.has_block(&anchor.block)))
                 {
                     paths.push(resource_call_failure("Requires live base storage for R(p)"));
@@ -7730,8 +7730,38 @@ fn prepare_verified_function_call<'a>(
         )));
     };
     // A named contract's value parameters take the values its fact fixed,
-    // as the call parameters take the call's arguments.
-    if application.value_arguments.len() != contract_interface.value_parameters().len() {
+    // as the call parameters take the call's arguments. A function's own
+    // contract value parameters, a binder's `s.len`, take the values the
+    // proof's call map names or the one held instance each one's clause
+    // selects. The choice is not trusted: the requirements are then checked
+    // at those values.
+    let selected_value_arguments;
+    let application_value_arguments = if application.value_arguments.is_empty()
+        && !contract_interface.value_parameters().is_empty()
+    {
+        selected_value_arguments = match call_value_arguments(
+            application.name,
+            contract_interface,
+            caller_state,
+            &entry_state,
+            environment,
+            &path_assumptions,
+            budget,
+        )? {
+            Ok(values) => values,
+            Err(message) => {
+                return Ok(Err(CFunctionPath::new(
+                    CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message)),
+                    arguments_path.facts,
+                    argument_obligations,
+                )));
+            }
+        };
+        selected_value_arguments.as_slice()
+    } else {
+        application.value_arguments
+    };
+    if application_value_arguments.len() != contract_interface.value_parameters().len() {
         return Ok(Err(CFunctionPath::new(
             CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
                 "contract `{}` needs values for its value parameters",
@@ -7744,7 +7774,7 @@ fn prepare_verified_function_call<'a>(
     for (parameter, value) in contract_interface
         .value_parameters()
         .iter()
-        .zip(application.value_arguments)
+        .zip(application_value_arguments)
     {
         entry_state.locals.set_typed_qualified_with_all_qualifiers(
             parameter.name().to_string(),
@@ -7977,7 +8007,10 @@ fn prepare_verified_function_call<'a>(
         &path_assumptions,
     ) {
         Ok(state) => state,
-        Err(CRuntimeError::FunctionContract(message)) => {
+        Err(
+            CRuntimeError::FunctionContract(message)
+            | CRuntimeError::UnsuppliedResourceValue(message),
+        ) => {
             return Ok(Err(resource_call_failure(&message)));
         }
         Err(error) => return Ok(Err(resource_call_failure(&format!("{error}")))),
@@ -9036,6 +9069,183 @@ fn loadability_obligation_shape(proposition: &Proposition) -> bool {
         }
         _ => false,
     }
+}
+
+/// The values of a function contract's value parameters at one call.
+///
+/// Each parameter takes its argument from the one instance that agrees with
+/// every other argument of the clause the parameter appears in:
+/// `views cstr_at(s, str.len)` takes `n` from `cstr_at(src, n)` when `s` is
+/// `src`. The instances are the resource terms the proof's call map names
+/// when one of them agrees, and otherwise the instances the caller holds,
+/// owned or viewed. No instance, or two that differ at the parameter, is a
+/// refusal naming the parameter; the proof can then name the instance. The
+/// held lookup is the indexed candidate query by the clause's family and
+/// first pointer, so it reads only the caller's instances of that resource.
+/// A named term grants nothing: the call still requires the clause at the
+/// chosen value.
+fn call_value_arguments(
+    function: &str,
+    interface: &CFunctionContractInterface,
+    caller_state: &CState,
+    entry_state: &CState,
+    environment: &CExecutionEnvironment,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Result<Vec<CValue>, String>> {
+    let parameters = interface.value_parameters();
+    let selected = environment
+        .selected_call_value_arguments
+        .as_ref()
+        .filter(|selected| selected.0 == function)
+        .map(|selected| selected.1.as_slice())
+        .unwrap_or(&[]);
+    // The clauses are evaluated with each parameter at a placeholder: the
+    // probe only selects candidates, and a parameter position is never
+    // compared.
+    let mut probe_state = entry_state.clone();
+    let placeholders = parameters
+        .iter()
+        .map(|parameter| symbolic_call_result(parameter.c_type(), Variable(0)))
+        .collect::<Vec<_>>();
+    super::api::bind_contract_value_parameters(&mut probe_state, parameters, &placeholders);
+    let mut values = Vec::with_capacity(parameters.len());
+    for parameter in parameters {
+        crate::instrumentation::record_deterministic_work(1);
+        let is_parameter = |argument: &CExpression| {
+            matches!(argument, CExpression::Variable(name)
+                if parameters.iter().any(|parameter| parameter.name() == name))
+        };
+        let clause = interface.resource_requires().iter().find_map(|spec| {
+            match spec.term() {
+            CResourceTerm::Composite {
+                name,
+                arguments,
+                argument_snapshots,
+                parameter_types,
+            } => arguments
+                .iter()
+                .position(|argument| {
+                    matches!(argument, CExpression::Variable(name) if name == parameter.name())
+                })
+                .map(|position| {
+                    (spec, name, arguments, argument_snapshots, parameter_types, position)
+                }),
+            _ => None,
+        }
+        });
+        let Some((spec, name, arguments, argument_snapshots, parameter_types, position)) = clause
+        else {
+            return Ok(Err(format!(
+                "call to `{function}` needs a value for `{}`, which no resource clause selects",
+                parameter.name()
+            )));
+        };
+        let probe = match evaluate_function_declared_resource_spec(
+            &probe_state,
+            &probe_state,
+            spec.access(),
+            ResourceFamily::Composite,
+            name,
+            arguments,
+            argument_snapshots,
+            parameter_types,
+            spec.source_arguments(),
+            &BTreeMap::new(),
+            assumptions,
+            budget,
+        )? {
+            Ok(fact) => fact,
+            Err(_) => {
+                return Ok(Err(format!(
+                    "call to `{function}` could not evaluate the `{name}` clause that selects `{}`",
+                    parameter.name()
+                )));
+            }
+        };
+        let CResource::Composite {
+            arguments: probe_arguments,
+            ..
+        } = probe.resource()
+        else {
+            continue;
+        };
+        let agrees = |left: &AlgebraicValue, right: &AlgebraicValue| match (
+            left.as_c_value(),
+            right.as_c_value(),
+        ) {
+            (Some(CValue::Pointer(left)), Some(CValue::Pointer(right))) => {
+                left.pointer() == right.pointer()
+            }
+            _ => left == right,
+        };
+        let matching_values = |candidates: &mut dyn Iterator<Item = &CResourceFact>| {
+            let mut found: Vec<CValue> = Vec::new();
+            for candidate in candidates {
+                crate::instrumentation::record_deterministic_work(1);
+                let CResource::Composite {
+                    name: held,
+                    arguments: held_arguments,
+                } = candidate.resource()
+                else {
+                    continue;
+                };
+                if held != name
+                    || held_arguments.len() != probe_arguments.len()
+                    || !arguments
+                        .iter()
+                        .zip(probe_arguments.iter().zip(held_arguments.iter()))
+                        .all(|(argument, (probe, held))| {
+                            is_parameter(argument) || agrees(probe, held)
+                        })
+                {
+                    continue;
+                }
+                let Some(value) = held_arguments[position].as_c_value() else {
+                    continue;
+                };
+                if !found.contains(value) {
+                    found.push(value.clone());
+                }
+            }
+            found
+        };
+        let mut found = matching_values(&mut selected.iter());
+        let named = selected.iter().any(|term| {
+            matches!(term.resource(), CResource::Composite { name: term_name, .. } if term_name == name)
+        });
+        if found.is_empty() && named {
+            return Ok(Err(format!(
+                "call to `{function}`: the call map's `{name}` term does not agree with the arguments of the clause that selects `{}`",
+                parameter.name()
+            )));
+        }
+        if found.is_empty() {
+            found = matching_values(
+                &mut caller_state
+                    .resources()
+                    .direct_match_candidates_for(&probe, assumptions)
+                    .into_iter(),
+            );
+        }
+        match found.as_slice() {
+            [value] => values.push(value.clone()),
+            [] => {
+                return Ok(Err(format!(
+                    "call to `{function}` needs a held `{name}` instance to give `{}` its value; the caller holds none that matches its other arguments",
+                    parameter.name()
+                )));
+            }
+            _ => {
+                return Ok(Err(format!(
+                    "call to `{function}` cannot choose `{}`: the caller holds {} `{name}` instances that match; name one in the call map",
+                    parameter.name(),
+                    found.len()
+                )));
+            }
+        }
+    }
+    Ok(Ok(values))
 }
 
 fn resource_call_failure(message: &str) -> CFunctionPath {
@@ -10368,9 +10578,7 @@ pub(crate) fn storage_writes_outside_owned_footprint(
     transition_resources: Option<&[CCheckedResourceFact]>,
     prepared_projection: Option<&CFunctionMemoryEffectProjection>,
 ) -> ExecutionResult<Option<Vec<StorageWriteOutsideFootprint>>> {
-    let is_storage = |pointer: &Pointer| {
-        pointer.block.starts_with("global:") || pointer.block.starts_with("static:")
-    };
+    let is_storage = |pointer: &Pointer| pointer.block.is_static_storage_block();
     let storage_writes: Vec<(Pointer, u32)> =
         crate::kernel::reasoning::memory_effect_write_accesses(facts)
             .into_iter()
@@ -10772,7 +10980,7 @@ fn project_explicit_memory_segments(
                 let range = canonical_memory_range(segment.into_range());
                 ranges.insert(range);
             }
-            Err(message) => return Ok(Err(message)),
+            Err(message) => return Ok(Err(message.into())),
         }
     }
     Ok(Ok((ranges.into_iter().collect(), evidence_facts.into())))
@@ -16564,6 +16772,18 @@ pub(in crate::kernel) fn bind_c_function_arguments(
             );
         }
     }
+    // A contract's value parameters, such as a binder's `s.len`, follow the
+    // C arguments when a proof is entered: at fresh values, as the C
+    // parameters are, so the proof holds for every value.
+    let value_parameters = function.contract_interface().value_parameters();
+    let c_count = function.parameters().len();
+    if !value_parameters.is_empty() && values.len() == c_count + value_parameters.len() {
+        super::api::bind_contract_value_parameters(
+            &mut callee_state,
+            value_parameters,
+            &values[c_count..],
+        );
+    }
     construction_return::bind(
         caller_state,
         function.contract_interface(),
@@ -18187,7 +18407,7 @@ fn aggregate_copy_reads_uninitialized(
                     bytes,
                     &PureFactContext::new(),
                 )
-                || (source_field.block.starts_with("local:")
+                || (source_field.block.is_local_block()
                     && memory.access_in_bounds(&source_field, bytes))
             {
                 return true;
@@ -18301,7 +18521,7 @@ fn uninitialized_aggregate_copy_source_cell(
             element_type.byte_width(),
             &PureFactContext::new(),
         )
-        || (source_field.block.starts_with("local:")
+        || (source_field.block.is_local_block()
             && memory.access_in_bounds(source_field, element_type.byte_width()))
 }
 
@@ -19771,7 +19991,7 @@ fn prepare_contract_resource_transfer_unexplained(
         .iter()
         .filter(|requirement| {
             let unsupplied_local = |range: &CMemoryRange| {
-                range.base().block.starts_with("local:")
+                range.base().block.is_local_block()
                     && callee_state.memory().has_block(&range.base().block)
                     && !callee_state
                         .memory()
@@ -19797,7 +20017,7 @@ fn prepare_contract_resource_transfer_unexplained(
         .collect::<Vec<_>>();
     let (local_read_views, intrinsic_read_views): (Vec<_>, Vec<_>) = implicit_read_views.into_iter()
         .partition(|requirement| matches!(requirement.fact.resource(), CResource::Memory(range)
-            if range.base().block.starts_with("local:") && !callee_state.memory().is_read_only_block(&range.base().block)));
+            if range.base().block.is_local_block() && !callee_state.memory().is_read_only_block(&range.base().block)));
     // A composite view whose checked body is empty on this path protects no
     // bytes and holds no token, so there is nothing to lend and nothing a
     // loan could suspend (D6: an empty permission grants no dereference).
@@ -20359,7 +20579,7 @@ fn prepare_contract_resource_transfer_unexplained(
         if matches!(
             intrinsic_view.fact.resource(),
             CResource::Memory(range)
-                if range.base().block.starts_with("local:")
+                if range.base().block.is_local_block()
                     && !local_view_range_within_block(range, callee_state.memory())
         ) {
             return Ok(Err(CRuntimeError::MissingResource {
@@ -20446,7 +20666,7 @@ fn prepare_contract_resource_transfer_unexplained(
         // whatever the caller keeps beyond it: `views a[0..3]` on an
         // `int32 b[2]` used to be discharged by the block merely existing.
         if let CResourceFact::View(CResource::Memory(range)) = resource
-            && range.base().block.starts_with("local:")
+            && range.base().block.is_local_block()
             && callee_state.memory().has_block(&range.base().block)
             && !callee_state
                 .memory()
@@ -24485,7 +24705,7 @@ pub(super) fn loop_instance_guard(
     let pointer = match pointer {
         Ok(CValue::Pointer(pointer)) => pointer,
         Ok(_) => return Err("loop guard requires a mutex pointer".into()),
-        Err(message) => return Err(message),
+        Err(message) => return Err(message.into()),
     };
     Ok(Some((pointer.pointer().clone(), held.clone())))
 }
@@ -28843,6 +29063,9 @@ fn annotate_resource_clause_error(error: CRuntimeError, note: String) -> CRuntim
         CRuntimeError::FunctionContract(message) => {
             CRuntimeError::FunctionContract(format!("{message} ({note})"))
         }
+        CRuntimeError::UnsuppliedResourceValue(message) => {
+            CRuntimeError::UnsuppliedResourceValue(format!("{message} ({note})"))
+        }
         CRuntimeError::ContractResourceDiagnostic {
             reason,
             held,
@@ -28872,21 +29095,26 @@ fn resource_clause_runtime_error(
 /// a section that stalls on these as a pair; anything else is one clause's own
 /// problem.
 fn resource_clause_failure_awaits_supply(error: &CRuntimeError) -> bool {
-    if let CRuntimeError::ContractResourceDiagnostic { memory, .. } = error {
-        return memory.is_some();
+    match error {
+        CRuntimeError::ContractResourceDiagnostic { memory, .. } => memory.is_some(),
+        CRuntimeError::UnsuppliedResourceValue(_) => true,
+        _ => false,
     }
-    let CRuntimeError::FunctionContract(message) = error else {
-        return false;
-    };
-    // An endpoint the facts do not keep defined is the clause's own
-    // problem: no other clause's cells make `i + 1` stop overflowing.
-    if message.contains(crate::kernel::loops::UNRULED_OUT_UNDEFINED_BEHAVIOR) {
-        return false;
+}
+
+/// The refusal for a resource clause value that did not evaluate. Another
+/// clause may supply what it read, unless the expression may have undefined
+/// behavior the facts do not rule out: no other clause's cells make `i + 1`
+/// stop overflowing, so that needs a requirement.
+fn unevaluated_resource_value(
+    refusal: &super::loops::ValueRefusal,
+    message: String,
+) -> CRuntimeError {
+    if refusal.is_undefined_behavior() {
+        CRuntimeError::FunctionContract(message)
+    } else {
+        CRuntimeError::UnsuppliedResourceValue(message)
     }
-    message.starts_with("could not evaluate an owned memory resource segment")
-        || message.starts_with("could not evaluate a viewed memory resource segment")
-        || message.starts_with("could not evaluate `")
-        || message.starts_with("could not evaluate resource `")
 }
 
 fn resource_clause_cycle_runtime_error(
@@ -29557,14 +29785,17 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
             {
                 Ok(segment) => segment,
                 Err(reason) => {
-                    return Ok(Err(CRuntimeError::FunctionContract(format!(
-                        "could not evaluate {} memory resource segment: {reason}",
-                        if resource.is_view() {
-                            "a viewed"
-                        } else {
-                            "an owned"
-                        },
-                    ))));
+                    return Ok(Err(unevaluated_resource_value(
+                        &reason,
+                        format!(
+                            "could not evaluate {} memory resource segment: {reason}",
+                            if resource.is_view() {
+                                "a viewed"
+                            } else {
+                                "an owned"
+                            },
+                        ),
+                    )));
                 }
             };
             let range = EvaluatedMemorySegment {
@@ -29768,7 +29999,7 @@ fn evaluate_declared_quantity(
                     required,
                     memory: None,
                 },
-                _ => CRuntimeError::FunctionContract(message),
+                _ => CRuntimeError::FunctionContract(message.into()),
             }),
         },
     )
@@ -30174,14 +30405,18 @@ fn evaluate_function_declared_resource_spec(
                             CResourceAccessMode::Own => "owns",
                             CResourceAccessMode::View => "views",
                         };
-                        return Ok(Err(CRuntimeError::FunctionContract(format!(
-                            "could not evaluate `{spelling}` while checking `{action} {name}({})`: {error}",
-                            source_arguments.unwrap_or_default().join(", ")
-                        ))));
+                        return Ok(Err(unevaluated_resource_value(
+                            &error,
+                            format!(
+                                "could not evaluate `{spelling}` while checking `{action} {name}({})`: {error}",
+                                source_arguments.unwrap_or_default().join(", ")
+                            ),
+                        )));
                     }
-                    return Ok(Err(CRuntimeError::FunctionContract(format!(
-                        "could not evaluate resource `{name}` argument {index}: {error}"
-                    ))));
+                    return Ok(Err(unevaluated_resource_value(
+                        &error,
+                        format!("could not evaluate resource `{name}` argument {index}: {error}"),
+                    )));
                 }
             }
         };
@@ -30581,7 +30816,7 @@ fn end_function_body_automatic_lifetimes(
     let mut selected = BTreeSet::new();
     for slot in state.locals.slots() {
         crate::instrumentation::record_deterministic_work(1);
-        if slot.block.starts_with("local:")
+        if slot.block.is_local_block()
             && !(function.return_aggregate_layout().is_some()
                 && matches!(returned, Some(CValue::Pointer(pointer)) if pointer.pointer().block == slot.block))
             && !caller.has_block(&slot.block)
@@ -30627,7 +30862,7 @@ pub(in crate::kernel) fn function_exit_memory(
     }
     match value {
         CValue::Pointer(pointer)
-            if pointer.pointer().block.starts_with("local:")
+            if pointer.pointer().block.is_local_block()
                 && !caller_state.memory.has_block(&pointer.pointer().block) =>
         {
             callee_state

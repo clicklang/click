@@ -182,13 +182,13 @@ pub struct C0Function {
     /// Function-scope C label spellings resolved to kernel identities and
     /// executable statement indices after the complete body is parsed.
     control_targets: BTreeMap<String, (crate::kernel::CControlTargetId, usize)>,
-    structs: BTreeMap<String, C0StructLayout>,
-    enums: BTreeMap<String, C0EnumDefinition>,
-    unions: BTreeMap<String, C0UnionLayout>,
-    globals: BTreeMap<String, C0Global>,
-    global_arrays: BTreeMap<String, C0GlobalArray>,
-    global_aggregates: BTreeMap<String, C0GlobalAggregate>,
-    global_aggregate_arrays: BTreeMap<String, C0GlobalAggregateArray>,
+    structs: DeclarationMap<C0StructLayout>,
+    enums: DeclarationMap<C0EnumDefinition>,
+    unions: DeclarationMap<C0UnionLayout>,
+    globals: DeclarationMap<C0Global>,
+    global_arrays: DeclarationMap<C0GlobalArray>,
+    global_aggregates: DeclarationMap<C0GlobalAggregate>,
+    global_aggregate_arrays: DeclarationMap<C0GlobalAggregateArray>,
     static_locals: BTreeMap<String, C0StaticLocal>,
     static_arrays: BTreeMap<String, C0StaticArray>,
     static_aggregates: BTreeMap<String, C0StaticAggregate>,
@@ -2346,6 +2346,29 @@ pub enum C0Type {
     PointerArray(crate::kernel::CPointerArrayElement, LongRank, u32),
 }
 
+/// A translation unit's declarations of one kind, by name. Every parsed
+/// function keeps the declarations visible at its definition; a persistent
+/// map shares them, so that snapshot is O(1) and a later declaration costs
+/// O(log n), however declarations and definitions interleave.
+pub type DeclarationMap<V> = imbl::OrdMap<String, V>;
+
+/// Struct layouts by name, whichever map holds them.
+pub trait StructLayouts {
+    fn struct_layout(&self, name: &str) -> Option<&C0StructLayout>;
+}
+
+impl StructLayouts for BTreeMap<String, C0StructLayout> {
+    fn struct_layout(&self, name: &str) -> Option<&C0StructLayout> {
+        self.get(name)
+    }
+}
+
+impl StructLayouts for DeclarationMap<C0StructLayout> {
+    fn struct_layout(&self, name: &str) -> Option<&C0StructLayout> {
+        self.get(name)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CAbi {
     Lp64,
@@ -3303,13 +3326,13 @@ impl C0Function {
             body: C0Statement::Skip,
             callback_statement_sources: std::sync::Arc::default(),
             control_targets: BTreeMap::new(),
-            structs: BTreeMap::new(),
-            enums: BTreeMap::new(),
-            unions: BTreeMap::new(),
-            globals: BTreeMap::new(),
-            global_arrays: BTreeMap::new(),
-            global_aggregates: BTreeMap::new(),
-            global_aggregate_arrays: BTreeMap::new(),
+            structs: DeclarationMap::new(),
+            enums: DeclarationMap::new(),
+            unions: DeclarationMap::new(),
+            globals: DeclarationMap::new(),
+            global_arrays: DeclarationMap::new(),
+            global_aggregates: DeclarationMap::new(),
+            global_aggregate_arrays: DeclarationMap::new(),
             static_locals: BTreeMap::new(),
             static_arrays: BTreeMap::new(),
             static_aggregates: BTreeMap::new(),
@@ -3337,6 +3360,19 @@ impl C0Function {
 
     pub fn parameters(&self) -> &[C0Parameter] {
         &self.parameters
+    }
+
+    /// This declaration with contract value parameters after its C
+    /// parameters, so a contract that reads them lowers as it lowers the C
+    /// parameters. The lowered function moves them back out of its C
+    /// parameters ([`crate::kernel::CFunction::with_trailing_value_parameters`]).
+    pub(crate) fn with_trailing_value_parameters(
+        &self,
+        parameters: impl IntoIterator<Item = C0Parameter>,
+    ) -> Self {
+        let mut function = self.clone();
+        function.parameters.extend(parameters);
+        function
     }
 
     pub fn return_type(&self) -> C0Type {
@@ -3367,31 +3403,31 @@ impl C0Function {
         self.prelowered_kernel_function.as_ref()
     }
 
-    pub fn structs(&self) -> &BTreeMap<String, C0StructLayout> {
+    pub fn structs(&self) -> &DeclarationMap<C0StructLayout> {
         &self.structs
     }
 
-    pub fn enums(&self) -> &BTreeMap<String, C0EnumDefinition> {
+    pub fn enums(&self) -> &DeclarationMap<C0EnumDefinition> {
         &self.enums
     }
 
-    pub fn unions(&self) -> &BTreeMap<String, C0UnionLayout> {
+    pub fn unions(&self) -> &DeclarationMap<C0UnionLayout> {
         &self.unions
     }
 
-    pub fn globals(&self) -> &BTreeMap<String, C0Global> {
+    pub fn globals(&self) -> &DeclarationMap<C0Global> {
         &self.globals
     }
 
-    pub fn global_arrays(&self) -> &BTreeMap<String, C0GlobalArray> {
+    pub fn global_arrays(&self) -> &DeclarationMap<C0GlobalArray> {
         &self.global_arrays
     }
 
-    pub fn global_aggregates(&self) -> &BTreeMap<String, C0GlobalAggregate> {
+    pub fn global_aggregates(&self) -> &DeclarationMap<C0GlobalAggregate> {
         &self.global_aggregates
     }
 
-    pub fn global_aggregate_arrays(&self) -> &BTreeMap<String, C0GlobalAggregateArray> {
+    pub fn global_aggregate_arrays(&self) -> &DeclarationMap<C0GlobalAggregateArray> {
         &self.global_aggregate_arrays
     }
 
@@ -3457,14 +3493,14 @@ impl C0Function {
         &self.string_literals
     }
 
-    pub(crate) fn with_globals(mut self, globals: BTreeMap<String, C0Global>) -> Self {
+    pub(crate) fn with_globals(mut self, globals: DeclarationMap<C0Global>) -> Self {
         self.globals = globals;
         self
     }
 
     pub(crate) fn with_global_arrays(
         mut self,
-        global_arrays: BTreeMap<String, C0GlobalArray>,
+        global_arrays: DeclarationMap<C0GlobalArray>,
     ) -> Self {
         self.global_arrays = global_arrays;
         self
@@ -3472,7 +3508,7 @@ impl C0Function {
 
     pub(crate) fn with_global_aggregates(
         mut self,
-        global_aggregates: BTreeMap<String, C0GlobalAggregate>,
+        global_aggregates: DeclarationMap<C0GlobalAggregate>,
     ) -> Self {
         self.global_aggregates = global_aggregates;
         self
@@ -3480,7 +3516,7 @@ impl C0Function {
 
     pub(crate) fn with_global_aggregate_arrays(
         mut self,
-        global_aggregate_arrays: BTreeMap<String, C0GlobalAggregateArray>,
+        global_aggregate_arrays: DeclarationMap<C0GlobalAggregateArray>,
     ) -> Self {
         self.global_aggregate_arrays = global_aggregate_arrays;
         self
@@ -5603,12 +5639,12 @@ pub(crate) struct C0TranslationUnit {
     pub function_declaration_lines: BTreeMap<String, Vec<usize>>,
     pub builtin_pthread_declarations: BTreeSet<String>,
     pub shadowed_pthread_names: BTreeSet<String>,
-    pub structs: BTreeMap<String, C0StructLayout>,
-    pub unions: BTreeMap<String, C0UnionLayout>,
-    pub globals: BTreeMap<String, C0Global>,
-    pub global_arrays: BTreeMap<String, C0GlobalArray>,
-    pub global_aggregates: BTreeMap<String, C0GlobalAggregate>,
-    pub global_aggregate_arrays: BTreeMap<String, C0GlobalAggregateArray>,
+    pub structs: DeclarationMap<C0StructLayout>,
+    pub unions: DeclarationMap<C0UnionLayout>,
+    pub globals: DeclarationMap<C0Global>,
+    pub global_arrays: DeclarationMap<C0GlobalArray>,
+    pub global_aggregates: DeclarationMap<C0GlobalAggregate>,
+    pub global_aggregate_arrays: DeclarationMap<C0GlobalAggregateArray>,
     /// External objects named in value or address positions by this unit.
     pub referenced_external_objects: BTreeSet<String>,
 }
@@ -7196,8 +7232,8 @@ fn zero_initializer_value(c_type: C0Type) -> C0Expression {
 
 fn flatten_aggregate_layout(
     fields: &BTreeMap<String, C0StructField>,
-    structs: &BTreeMap<String, C0StructLayout>,
-    unions: &BTreeMap<String, C0UnionLayout>,
+    structs: &DeclarationMap<C0StructLayout>,
+    unions: &DeclarationMap<C0UnionLayout>,
 ) -> (Vec<C0AggregateField>, Vec<C0AggregateUnion>) {
     fn row_major_index_path(flat_index: u32, shape: &[u32]) -> String {
         let mut remaining = flat_index;
@@ -7705,8 +7741,8 @@ struct Parser {
     /// so a site quotes the expansion site rather than the replacement.
     written_lines: std::sync::Arc<BTreeMap<usize, std::sync::Arc<str>>>,
     position: usize,
-    structs: BTreeMap<String, C0StructLayout>,
-    enums: BTreeMap<String, C0EnumDefinition>,
+    structs: DeclarationMap<C0StructLayout>,
+    enums: DeclarationMap<C0EnumDefinition>,
     enum_constants: BTreeMap<String, i32>,
     typedefs: BTreeMap<String, ParsedType>,
     parsing_function_header: bool,
@@ -7726,7 +7762,7 @@ struct Parser {
     variable_function_pointers: BTreeMap<String, C0FunctionPointerSignature>,
     variable_constants: BTreeSet<String>,
     variable_pointee_constants: BTreeSet<String>,
-    unions: BTreeMap<String, C0UnionLayout>,
+    unions: DeclarationMap<C0UnionLayout>,
     /// The names declared in each open lexical scope, innermost last. The
     /// source name is retained for lookup, while `kernel_name` is the
     /// identity emitted into the C0 AST. Click's kernel keys a local by its
@@ -7779,10 +7815,10 @@ struct Parser {
     shadowed_pthread_names: BTreeSet<String>,
     function_source_names: BTreeMap<String, String>,
     defined_functions: BTreeSet<String>,
-    globals: BTreeMap<String, C0Global>,
-    global_arrays: BTreeMap<String, C0GlobalArray>,
-    global_aggregates: BTreeMap<String, C0GlobalAggregate>,
-    global_aggregate_arrays: BTreeMap<String, C0GlobalAggregateArray>,
+    globals: DeclarationMap<C0Global>,
+    global_arrays: DeclarationMap<C0GlobalArray>,
+    global_aggregates: DeclarationMap<C0GlobalAggregate>,
+    global_aggregate_arrays: DeclarationMap<C0GlobalAggregateArray>,
     referenced_external_objects: BTreeSet<String>,
     static_locals: BTreeMap<String, C0StaticLocal>,
     static_arrays: BTreeMap<String, C0StaticArray>,
@@ -8265,8 +8301,8 @@ impl Parser {
             source_lines: source.split('\n').map(Box::from).collect(),
             written_lines: std::sync::Arc::default(),
             position: 0,
-            structs: BTreeMap::new(),
-            enums: BTreeMap::new(),
+            structs: DeclarationMap::new(),
+            enums: DeclarationMap::new(),
             enum_constants: BTreeMap::new(),
             typedefs: BTreeMap::new(),
             parsing_function_header: false,
@@ -8282,7 +8318,7 @@ impl Parser {
             variable_function_pointers: BTreeMap::new(),
             variable_constants: BTreeSet::new(),
             variable_pointee_constants: BTreeSet::new(),
-            unions: BTreeMap::new(),
+            unions: DeclarationMap::new(),
             scopes: Vec::new(),
             out_of_scope_names: BTreeSet::new(),
             address_taken_variables: BTreeSet::new(),
@@ -8306,10 +8342,10 @@ impl Parser {
             shadowed_pthread_names: BTreeSet::new(),
             function_source_names: BTreeMap::new(),
             defined_functions: BTreeSet::new(),
-            globals: BTreeMap::new(),
-            global_arrays: BTreeMap::new(),
-            global_aggregates: BTreeMap::new(),
-            global_aggregate_arrays: BTreeMap::new(),
+            globals: DeclarationMap::new(),
+            global_arrays: DeclarationMap::new(),
+            global_aggregates: DeclarationMap::new(),
+            global_aggregate_arrays: DeclarationMap::new(),
             referenced_external_objects: BTreeSet::new(),
             static_locals: BTreeMap::new(),
             static_arrays: BTreeMap::new(),
@@ -10568,11 +10604,19 @@ impl Parser {
                 }
                 match array_length {
                     GlobalArrayLength::Complete(shape) => {
-                        let length = array_shape_element_count(&shape).ok_or_else(|| {
-                            self.error_here(format!(
-                                "file-scope array dimensions are too large for `{name}`"
-                            ))
-                        })?;
+                        // The block's byte size, not only its element count,
+                        // must fit the layout width.
+                        let length = array_shape_element_count(&shape)
+                            .filter(|length| {
+                                length
+                                    .checked_mul(parsed_type.c_type.abi_size_bytes())
+                                    .is_some()
+                            })
+                            .ok_or_else(|| {
+                                self.error_here(format!(
+                                    "file-scope array dimensions are too large for `{name}`"
+                                ))
+                            })?;
                         let has_initializer =
                             inferred_initializer.is_some() || self.peek() == Some(&Token::Equal);
                         let initializer = if has_initializer {
@@ -23269,25 +23313,5 @@ mod scope_metadata_tests {
     #[cfg(test)]
     mod scaling_tests {
         include!("../../scaling_tests/languages/c/syntax/scope_metadata_tests.rs");
-    }
-}
-
-#[cfg(test)]
-mod hunt_investigation_tests {
-    use super::*;
-
-    /// Investigation repro (bug hunt phase 2b): array sizes fold through
-    /// `saturating_mul`, so an `int` array of 2^30 elements parses as a
-    /// block one byte short of its true layout (2^32 saturates to u32::MAX)
-    /// — while the struct path refuses past the u32 limit with a "layout is
-    /// too large" error.
-    #[test]
-    fn hunt_investigation_array_element_count_saturates_instead_of_refusing() {
-        let (size, _) = CAbi::SUPPORTED.size_and_alignment(C0Type::Int32Array(0x4000_0000));
-        assert_eq!(
-            size,
-            u32::MAX,
-            "BUG: the 2^32-byte layout saturates to u32::MAX instead of being refused"
-        );
     }
 }

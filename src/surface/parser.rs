@@ -133,6 +133,8 @@ pub(in crate::surface) struct FunctionLocals {
 /// that are memory-backed.
 #[derive(Clone, Default)]
 pub(in crate::surface) struct ProgramLayouts {
+    /// A C definition's execution name, indexed by translation unit and source spelling.
+    pub(in crate::surface) qualified_functions: BTreeMap<(String, String), String>,
     pub(in crate::surface) c_object_names: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
     /// The other members of each function's recursive C component, for the
     /// functions in a component of two or more. An expression `decreases`
@@ -630,6 +632,7 @@ struct Parser {
     /// before any library theorem of that name. Empty in a library module.
     local_theorems: BTreeSet<String>,
     source_aliases: BTreeMap<String, String>,
+    qualified_functions: BTreeMap<(String, String), String>,
     qualified_objects: Option<BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>>,
     /// Set while a `tactic` declaration's signature is parsed: the name
     /// follows directly, the parameters use Click's `name: type` spelling,
@@ -648,6 +651,10 @@ struct Parser {
     child_slot_identities: BTreeSet<Variable>,
     current_resource_fields: BTreeMap<String, ResourceFieldAccess>,
     current_resource_targets: BTreeMap<String, ResourceClause>,
+    /// The current function block's value binders, `views s: R(a, _);`.
+    current_value_binders: BTreeMap<String, ValueBinder>,
+    /// Their declaration order, for the function block.
+    current_value_binder_order: Vec<String>,
     in_resource_definition: bool,
     /// The fields of each resource declared so far, hidden ones included.
     declared_resource_fields: BTreeMap<String, Vec<ResourceFieldDefinition>>,
@@ -848,6 +855,10 @@ enum CalleeResourceBinderKind {
     /// A runtime binder that names a resource type, not an instance:
     /// `atomic_init`'s `payload`.
     Type,
+    /// A value binder, `views s: R(a, _);`: the caller may name the instance
+    /// it selects with a resource term or one of its own value binders, or
+    /// leave it to the call.
+    Value,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1010,6 +1021,15 @@ enum ContractLetBindingKind {
 }
 
 impl ContractLetBinding {
+    /// `let name = value;`, as a value binder's parameter names its argument.
+    pub(in crate::surface) fn value_binding(name: String, value: ContractExpression) -> Self {
+        Self {
+            name,
+            click_type: None,
+            kind: ContractLetBindingKind::Value(value),
+        }
+    }
+
     pub(super) fn value(&self) -> Option<&ContractExpression> {
         match &self.kind {
             ContractLetBindingKind::Value(value) => Some(value),
@@ -1068,6 +1088,7 @@ impl Parser {
             .implied_library_modules
             .extend(layouts.library_modules);
         parser.qualified_objects = Some(layouts.qualified_objects);
+        parser.qualified_functions = layouts.qualified_functions;
         parser.local_struct_pointers_by_function = layouts.local_struct_pointers;
         parser.closure_captures = layouts.closure_captures;
         parser.plain_char = layouts.plain_char;
@@ -1154,6 +1175,7 @@ impl Parser {
             cpp_object_methods,
             record_spellings: BTreeMap::new(),
             source_aliases: BTreeMap::new(),
+            qualified_functions: BTreeMap::new(),
             qualified_objects: None,
             pending_tactic_signature: false,
             tactic_names: BTreeSet::new(),
@@ -1163,6 +1185,8 @@ impl Parser {
             child_slot_identities: BTreeSet::new(),
             current_resource_fields: BTreeMap::new(),
             current_resource_targets: BTreeMap::new(),
+            current_value_binders: BTreeMap::new(),
+            current_value_binder_order: Vec::new(),
             in_resource_definition: false,
             declared_resource_fields: BTreeMap::new(),
             declared_resource_child_slots: BTreeMap::new(),
@@ -1509,17 +1533,32 @@ impl Parser {
             theorem_definitions.push(self.parse_theorem_definition()?);
         }
         self.position = end;
+        let mut c_function_names = self
+            .local_struct_pointers_by_function
+            .iter()
+            .filter_map(|(source, info)| {
+                info.execution_name
+                    .as_ref()
+                    .map(|target| (source.clone(), target.clone()))
+            })
+            .collect::<BTreeMap<_, _>>();
+        for block in &function_blocks {
+            let signature = block.signature();
+            if let Some(source) = &signature.c_source {
+                let (_, name) = signature
+                    .name()
+                    .rsplit_once("::")
+                    .expect("qualified C head");
+                if let Some(target) = self
+                    .qualified_functions
+                    .get(&(source.clone(), name.to_string()))
+                {
+                    c_function_names.insert(signature.name().to_string(), target.clone());
+                }
+            }
+        }
         let file = ClickFile {
-            c_function_names: std::sync::Arc::new(
-                self.local_struct_pointers_by_function
-                    .iter()
-                    .filter_map(|(source, info)| {
-                        info.execution_name
-                            .as_ref()
-                            .map(|target| (source.clone(), target.clone()))
-                    })
-                    .collect(),
-            ),
+            c_function_names: std::sync::Arc::new(c_function_names),
             imports,
             library_imports,
             verifying_sources,
@@ -3229,6 +3268,8 @@ impl Parser {
         let previous_function_block = std::mem::replace(&mut self.in_function_block, true);
         let previous_resource_targets = std::mem::take(&mut self.current_resource_targets);
         let previous_resource_bindings = std::mem::take(&mut self.current_resource_bindings);
+        let previous_value_binders = std::mem::take(&mut self.current_value_binders);
+        let previous_value_binder_order = std::mem::take(&mut self.current_value_binder_order);
         // A crate trait's method is declared without `extern`, as Rust
         // writes it in the `trait` block.
         if external && self.rust_trait_interface.is_none() {
@@ -3246,6 +3287,17 @@ impl Parser {
             self.exact_long_rank = previous;
             signature?
         };
+        let table_name = signature
+            .c_source
+            .as_ref()
+            .and_then(|path| {
+                let (_, name) = signature.name().rsplit_once("::")?;
+                self.qualified_functions
+                    .get(&(path.clone(), name.to_string()))
+            })
+            .map(String::as_str)
+            .unwrap_or_else(|| signature.name())
+            .to_string();
         if let Some(struct_name) = return_struct_name {
             struct_params.insert("result".to_string(), struct_name);
         }
@@ -3255,7 +3307,7 @@ impl Parser {
         // its own reading.
         for name in self
             .local_struct_pointers_by_function
-            .get(signature.name())
+            .get(&table_name)
             .into_iter()
             .flat_map(|locals| &locals.references)
         {
@@ -3297,7 +3349,7 @@ impl Parser {
         // proof just as a parameter is. The signature wins a shared spelling.
         for (name, struct_name) in self
             .local_struct_pointers_by_function
-            .get(signature.name())
+            .get(&table_name)
             .into_iter()
             .flat_map(|locals| &locals.struct_pointers)
         {
@@ -3318,9 +3370,7 @@ impl Parser {
         );
         let previous_c_object_names = std::mem::replace(
             &mut self.current_c_object_names,
-            self.c_object_names_by_function
-                .get(signature.name())
-                .cloned(),
+            self.c_object_names_by_function.get(&table_name).cloned(),
         );
         let previous_c_parameter_types = std::mem::replace(
             &mut self.current_c_parameter_types,
@@ -3334,7 +3384,7 @@ impl Parser {
             std::mem::take(&mut self.current_parameter_struct_casts);
         let aggregate_objects = self
             .aggregate_objects_by_function
-            .get(signature.name())
+            .get(&table_name)
             .cloned()
             .unwrap_or_default();
         let previous_aggregate_objects =
@@ -3343,7 +3393,7 @@ impl Parser {
         // function, for indexing shapes and element widths alike.
         let global_array_shapes = self
             .global_array_shapes_by_function
-            .get(signature.name())
+            .get(&table_name)
             .cloned()
             .unwrap_or_default()
             .into_iter()
@@ -3352,9 +3402,8 @@ impl Parser {
         let previous_global_array_shapes =
             std::mem::replace(&mut self.current_global_array_shapes, global_array_shapes);
         let mut visible_struct_array_params = struct_array_params;
-        if let Some(aggregate_array_objects) = self
-            .aggregate_array_objects_by_function
-            .get(signature.name())
+        if let Some(aggregate_array_objects) =
+            self.aggregate_array_objects_by_function.get(&table_name)
         {
             visible_struct_array_params.extend(
                 aggregate_array_objects
@@ -3544,7 +3593,16 @@ impl Parser {
                 }
                 Some("owns") => {
                     self.position += 1;
-                    let resource = self.parse_owned_resource_binding()?;
+                    let resource = if self.value_binder_follows(false) {
+                        self.parse_value_binder(
+                            ResourceAccessMode::Own,
+                            signature.name(),
+                            &parameter_names,
+                            requires.len(),
+                        )?
+                    } else {
+                        self.parse_owned_resource_binding()?
+                    };
                     let proof = self.parse_proof_clause_or_default()?;
                     let binder_resource =
                         apply_contract_lets_to_resource_clause(resource.clone(), &contract_lets)
@@ -3580,7 +3638,16 @@ impl Parser {
                 }
                 Some("views") => {
                     self.position += 1;
-                    let resource = self.parse_resource_target(ResourceAccessMode::View)?;
+                    let resource = if self.value_binder_follows(true) {
+                        self.parse_value_binder(
+                            ResourceAccessMode::View,
+                            signature.name(),
+                            &parameter_names,
+                            requires.len(),
+                        )?
+                    } else {
+                        self.parse_resource_target(ResourceAccessMode::View)?
+                    };
                     self.expect(Token::Semicolon)?;
                     requires.push(
                         apply_contract_lets_to_requirement(
@@ -3592,7 +3659,16 @@ impl Parser {
                 }
                 Some("consumes") => {
                     self.position += 1;
-                    let resource = self.parse_owned_resource_binding()?;
+                    let resource = if self.value_binder_follows(false) {
+                        self.parse_value_binder(
+                            ResourceAccessMode::Own,
+                            signature.name(),
+                            &parameter_names,
+                            requires.len(),
+                        )?
+                    } else {
+                        self.parse_owned_resource_binding()?
+                    };
                     self.expect(Token::Semicolon)?;
                     let binder_resource =
                         apply_contract_lets_to_resource_clause(resource.clone(), &contract_lets)
@@ -3779,7 +3855,7 @@ impl Parser {
         }
         let c_object_names = self
             .c_object_names_by_function
-            .get(signature.name())
+            .get(&table_name)
             .cloned()
             .unwrap_or_else(|| {
                 std::sync::Arc::new(
@@ -3801,6 +3877,15 @@ impl Parser {
         self.in_function_block = previous_function_block;
         self.current_resource_bindings = previous_resource_bindings;
         self.current_resource_targets = previous_resource_targets;
+        let mut value_binders_by_name =
+            std::mem::replace(&mut self.current_value_binders, previous_value_binders);
+        let value_binders = std::mem::replace(
+            &mut self.current_value_binder_order,
+            previous_value_binder_order,
+        )
+        .into_iter()
+        .filter_map(|name| value_binders_by_name.remove(&name))
+        .collect::<Vec<_>>();
         self.current_aggregate_objects = previous_aggregate_objects;
         self.current_global_array_shapes = previous_global_array_shapes;
         self.current_struct_array_params = previous_struct_array_params;
@@ -3868,7 +3953,7 @@ impl Parser {
         // signature wins a shared spelling.
         for (name, struct_name) in self
             .local_struct_pointers_by_function
-            .get(signature.name())
+            .get(&table_name)
             .into_iter()
             .flat_map(|locals| &locals.struct_pointers)
         {
@@ -3888,7 +3973,7 @@ impl Parser {
             super::pointee_field_places(parameter_field_places.values(), &self.struct_layouts);
         let recursion_peers = self
             .recursion_peers_by_function
-            .get(signature.name())
+            .get(&table_name)
             .cloned()
             .unwrap_or_default();
         // A named contract's value parameters follow its C parameters, so its
@@ -3900,7 +3985,7 @@ impl Parser {
                 .extend(self.contract_value_parameters.iter().cloned());
         }
         // A closure's captures lead its signature, as they lead its function.
-        if !external && let Some(captures) = self.closure_captures.get(signature.name()) {
+        if !external && let Some(captures) = self.closure_captures.get(&table_name) {
             let mut parameters = captures.clone();
             parameters.append(&mut signature.parameters);
             signature.parameters = parameters;
@@ -3925,6 +4010,8 @@ impl Parser {
             parameter_struct_casts,
             parameter_field_places,
             pointee_field_places,
+            value_binders,
+            witness_count: 0,
         })
     }
 
@@ -4001,6 +4088,7 @@ impl Parser {
             }
             return Ok(ParsedFunctionSignature {
                 signature: FunctionSignature {
+                    c_source: None,
                     return_type: C0Type::Void,
                     return_pointee_constant: false,
                     return_reference: false,
@@ -4054,6 +4142,7 @@ impl Parser {
         } else {
             parsed_return_type.c_type
         };
+        let mut c_source = None;
         let (name, receiver) = if self.verifies_cpp() {
             let declarator = self.parse_cpp_declarator(is_static)?;
             if declarator.returnless != returnless {
@@ -4065,7 +4154,20 @@ impl Parser {
             }
             (declarator.name, declarator.receiver)
         } else {
-            (self.expect_ident("function name")?, None)
+            let alias = self.expect_ident("function name")?;
+            let name =
+                if self.peek() == Some(&Token::ColonColon) {
+                    self.position += 1;
+                    let name = self.expect_ident("C function name")?;
+                    c_source =
+                        Some(self.source_aliases.get(&alias).cloned().ok_or_else(|| {
+                            self.error(format!("unknown C source alias `{alias}`"))
+                        })?);
+                    format!("{alias}::{name}")
+                } else {
+                    alias
+                };
+            (name, None)
         };
         self.expect(Token::LParen)?;
         let mut parsed_parameters = self.parse_parameters()?;
@@ -4143,6 +4245,7 @@ impl Parser {
 
         let parsed = ParsedFunctionSignature {
             signature: FunctionSignature {
+                c_source,
                 return_type,
                 return_pointee_constant: parsed_return_type.pointee_constant,
                 return_reference: parsed_return_type.reference,
@@ -5056,16 +5159,21 @@ impl Parser {
     /// The closing parenthesis comes from the precomputed nesting table, so
     /// the decision costs one lookup rather than a scan.
     fn call_binder_transport_follows(&self) -> bool {
-        if !matches!(self.peek(), Some(Token::Ident(_))) || self.peek_next() != Some(&Token::LParen)
-        {
+        if !matches!(self.peek(), Some(Token::Ident(_))) {
             return false;
         }
-        let Some(close) = self
-            .matching_parentheses
-            .get(self.position + 1)
-            .cloned()
-            .flatten()
-        else {
+        let open = if self.peek_next() == Some(&Token::ColonColon) {
+            if !matches!(self.tokens.get(self.position + 2), Some(Token::Ident(_))) {
+                return false;
+            }
+            self.position + 3
+        } else {
+            self.position + 1
+        };
+        if self.tokens.get(open) != Some(&Token::LParen) {
+            return false;
+        }
+        let Some(close) = self.matching_parentheses.get(open).cloned().flatten() else {
             return false;
         };
         self.tokens.get(close + 1) == Some(&Token::Comma)
@@ -5079,11 +5187,16 @@ impl Parser {
         output: Option<CallOutputPattern>,
         tactic: bool,
     ) -> Result<CallBinderTransport, ClickError> {
-        let callee = self.expect_ident(if tactic {
+        let mut callee = self.expect_ident(if tactic {
             "tactic name"
         } else {
             "call step callee"
         })?;
+        if !tactic && self.peek() == Some(&Token::ColonColon) {
+            self.position += 1;
+            callee.push_str("::");
+            callee.push_str(&self.expect_ident("C function name")?);
+        }
         // The binder map is the last argument in both forms, as a fold's
         // field map is: a call step writes `step(callee(...), { ... })` and a
         // tactic application writes `name(..., { ... })`, where the map is
@@ -5130,9 +5243,53 @@ impl Parser {
         let mut bound = BTreeSet::new();
         let mut instances = BTreeSet::new();
         let mut type_arguments = Vec::new();
+        let mut value_arguments = Vec::new();
         while has_map && self.peek() != Some(&Token::RBrace) {
             let binder = self.expect_ident("callee resource binder")?;
             self.expect(Token::Colon)?;
+            if let Some(declaration) = declared.get(&binder)
+                && declaration.kind == CalleeResourceBinderKind::Value
+            {
+                if !bound.insert(binder.clone()) {
+                    return Err(self.error(format!("duplicate binder `{binder}` in the call map")));
+                }
+                let argument = if matches!(self.peek(), Some(Token::Ident(_)))
+                    && self.peek_next() == Some(&Token::LParen)
+                {
+                    let term = self.parse_declared_resource_call()?;
+                    if let (ResourceClause::Declared { name, .. }, Some(expected)) =
+                        (&term, &declaration.family)
+                        && name != expected
+                    {
+                        return Err(self.error(format!(
+                            "binder `{binder}` selects a `{expected}`, not a `{name}`"
+                        )));
+                    }
+                    ValueBinderArgument::Term(term)
+                } else {
+                    let caller = self.expect_ident("resource term or value binder")?;
+                    let Some(caller_binder) = self.current_value_binders.get(&caller) else {
+                        return Err(self.error(format!(
+                            "`{caller}` is not a value binder of this function; name the instance with a resource term such as `{binder}: {}(...)`",
+                            declaration.family.as_deref().unwrap_or("resource")
+                        )));
+                    };
+                    if Some(&caller_binder.resource) != declaration.family.as_ref() {
+                        return Err(self.error(format!(
+                            "binder `{binder}` selects a `{}`, but `{caller}` names a `{}`",
+                            declaration.family.as_deref().unwrap_or("resource"),
+                            caller_binder.resource
+                        )));
+                    }
+                    ValueBinderArgument::Binder(caller)
+                };
+                value_arguments.push((binder, argument));
+                if self.peek() != Some(&Token::Comma) {
+                    break;
+                }
+                self.position += 1;
+                continue;
+            }
             if let Some(declaration) = declared.get(&binder)
                 && declaration.kind == CalleeResourceBinderKind::Type
             {
@@ -5358,6 +5515,7 @@ impl Parser {
             binders,
             produced,
             type_arguments,
+            value_arguments,
             result,
         })
     }
@@ -5529,6 +5687,123 @@ impl Parser {
 
     /// Records an instance binder in the selected function/interface registry.
     /// Call maps name those declarations, including produced identities.
+    /// Whether a value binder follows: `name: R(...)` where the clause is a
+    /// `views` clause, or one of `R`'s arguments is `_`. An `owns` or
+    /// `consumes` binder without `_` keeps naming an instance.
+    fn value_binder_follows(&self, view: bool) -> bool {
+        let open = self.position + 3;
+        if !matches!(self.peek(), Some(Token::Ident(_)))
+            || self.peek_next() != Some(&Token::Colon)
+            || !matches!(self.tokens.get(self.position + 2), Some(Token::Ident(_)))
+            || self.tokens.get(open) != Some(&Token::LParen)
+        {
+            return false;
+        }
+        if view {
+            return true;
+        }
+        let Some(close) = self.matching_parentheses.get(open).cloned().flatten() else {
+            return false;
+        };
+        self.tokens[open + 1..close]
+            .iter()
+            .any(|token| matches!(token, Token::Ident(name) if name == "_"))
+    }
+
+    /// `name: R(a, _)`: the clause `R(a, s.#1)` with a placeholder at each
+    /// `_`, which declaration expansion names after `R`'s parameter. The
+    /// binder is recorded for `s.<parameter>` and for callers' call maps.
+    fn parse_value_binder(
+        &mut self,
+        access: ResourceAccessMode,
+        function: &str,
+        parameter_names: &BTreeSet<String>,
+        requirement_index: usize,
+    ) -> Result<ResourceClause, ClickError> {
+        if self.in_contract_definition {
+            return Err(self.error(
+                "a value binder `name: resource(..., _)` is supported only in a C function contract",
+            ));
+        }
+        let name = self.expect_ident("binder name")?;
+        self.expect(Token::Colon)?;
+        if self.current_value_binders.contains_key(&name)
+            || self.current_resource_bindings.contains_key(&name)
+            || self.current_contract_bindings.contains(&name)
+            || parameter_names.contains(&name)
+        {
+            return Err(self.error(format!("duplicate binder `{name}`")));
+        }
+        let resource = self.expect_ident("resource name")?;
+        if matches!(
+            resource.as_str(),
+            "authority" | "mutex_live" | "mutex_guard" | "mutex_use" | "publisher" | "subscriber"
+        ) {
+            return Err(self.error(format!("`{resource}` cannot be named by a value binder")));
+        }
+        self.expect(Token::LParen)?;
+        let mut written = Vec::new();
+        if self.peek() != Some(&Token::RParen) {
+            loop {
+                if self.peek_ident() == Some("_") {
+                    self.position += 1;
+                    written.push(None);
+                } else {
+                    written.push(Some(self.parse_contract_expression()?));
+                }
+                match self.peek() {
+                    Some(Token::Comma) => self.position += 1,
+                    Some(Token::RParen) => break,
+                    _ => return Err(self.error("expected `,` or `)` after resource argument")),
+                }
+            }
+        }
+        self.expect(Token::RParen)?;
+        let arguments = written
+            .iter()
+            .enumerate()
+            .map(|(index, argument)| {
+                argument.clone().unwrap_or_else(|| {
+                    ContractExpression::CFragment(CExpression::Variable(ValueBinder::placeholder(
+                        &name, index,
+                    )))
+                })
+            })
+            .collect();
+        let binder = ValueBinder {
+            name: name.clone(),
+            resource: resource.clone(),
+            arguments: written,
+            requirement_index,
+        };
+        self.current_value_binders.insert(name.clone(), binder);
+        self.current_value_binder_order.push(name.clone());
+        crate::instrumentation::record_deterministic_work(1);
+        self.callee_resource_binders
+            .entry(function.to_string())
+            .or_default()
+            .insert(
+                name,
+                CalleeResourceBinder {
+                    identity: Variable(0),
+                    family: Some(resource.clone()),
+                    resource: None,
+                    parameter_names: Vec::new(),
+                    kind: CalleeResourceBinderKind::Value,
+                },
+            );
+        Ok(ResourceClause::Declared {
+            type_schema: None,
+            resource_type_arguments: Vec::new(),
+            resource_arguments: Vec::new(),
+            access,
+            kind: ResourceKind::Token,
+            name: resource,
+            arguments,
+            parameter_types: Vec::new(),
+        })
+    }
+
     fn record_callee_resource_binder(
         &mut self,
         function: &str,
@@ -8607,6 +8882,13 @@ impl Parser {
         if self.peek_ident() == Some("simp") && self.peek_next() == Some(&Token::Semicolon) {
             self.position += 2;
             return Ok(vec![ProofTactic::Simp]);
+        }
+        // `auto` has no script spelling, and the bare closer is already the
+        // smart one; say so rather than suggest the `by auto;` just written.
+        if self.peek_ident() == Some("auto") {
+            return Err(self.error(
+                "`close_invariants by auto` is not a form: write `close_invariants();`, whose closer is already smart, or end the `preserve` script and let the back edge close implicitly",
+            ));
         }
         match self.peek() {
             Some(Token::Ident(_)) => Ok(vec![self.parse_proof_tactic()?]),
@@ -11795,6 +12077,20 @@ impl Parser {
                             .children
                             .push(std::mem::replace(&mut access.field, next));
                         access.click_type = None;
+                        continue;
+                    }
+                    if let ContractExpression::CFragment(CExpression::Variable(owner)) = &expression
+                        && self.current_value_binders.contains_key(owner)
+                    {
+                        if self.peek() != Some(&Token::Dot) {
+                            return Err(self.error("binder parameters use `.`, not `->`"));
+                        }
+                        let owner = owner.clone();
+                        self.position += 1;
+                        let parameter = self.expect_ident("resource parameter name")?;
+                        expression = ContractExpression::CFragment(CExpression::Variable(format!(
+                            "{owner}.{parameter}"
+                        )));
                         continue;
                     }
                     if let ContractExpression::CFragment(CExpression::Variable(owner)) = &expression
