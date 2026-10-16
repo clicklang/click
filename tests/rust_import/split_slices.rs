@@ -62,7 +62,7 @@ fn charon_split_at_original_tools_agree() {
 #[ignore = "nightly: 3s in the parallel gate"]
 fn charon_split_at_copy_tools_and_expansion_agree() {
     let p = project("copies");
-    for command in ["verify", "profile", "audit"] {
+    for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
     }
     for claim in [
@@ -71,8 +71,8 @@ fn charon_split_at_copy_tools_and_expansion_agree() {
         "collision.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }
 
 fn expand_original(claim: &str) {

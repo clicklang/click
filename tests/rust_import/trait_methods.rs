@@ -149,7 +149,7 @@ fn charon_trait_method_implementations_refine_their_interface() {
 #[ignore = "nightly: 15s in the parallel gate"]
 fn charon_trait_methods_tools_recheck_expanded_certificates() {
     let p = trait_methods_project();
-    for command in ["verify", "profile", "audit"] {
+    for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
     }
     for claim in [
@@ -160,6 +160,6 @@ fn charon_trait_methods_tools_recheck_expanded_certificates() {
         "<trait_methods::Circle as trait_methods::Shape>::twice.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }

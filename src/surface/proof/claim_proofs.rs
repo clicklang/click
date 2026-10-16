@@ -492,6 +492,12 @@ fn prove_claims_by_checked_tactics(
         caller_requirement_index: Arc::new(caller_requirement_index),
         caller_source_owner: Some(caller_source_owner),
         function_entry_state: Some(function_entry_state),
+        parameter_index: Some((
+            parsed_function.parameters().as_ptr() as usize,
+            Arc::new(crate::surface::ParameterIndex::new(
+                parsed_function.parameters(),
+            )),
+        )),
         entry_context: Some(entry_context),
         function_source_registry,
         grouped_contract: grouped,
@@ -1861,6 +1867,22 @@ pub(super) fn finish_ordered_proof<'a>(
                                     Ensure::Proposition(ClickProposition::Implies(left, _)) => {
                                         Some(left.as_ref().clone())
                                     }
+                                    _ => None,
+                                })
+                        })
+                        .flatten()
+                })
+                .or_else(|| {
+                    // A scalar return can fork without a written C branch.
+                    // Its checked postcondition can select distinct endings
+                    // just as an OR arm or implication guard does. Each
+                    // outcome must independently decide opposite sides below.
+                    shared_terminal_leaf
+                        .then(|| {
+                            claims
+                                .iter()
+                                .find_map(|claim| match claim.clause().ensure() {
+                                    Ensure::Proposition(proposition) => Some(proposition.clone()),
                                     _ => None,
                                 })
                         })

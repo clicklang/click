@@ -3055,7 +3055,7 @@ fn verify_c0_sources_in_context(
                     &storage_entry_state,
                     contract_function.resource_requires(),
                     contract_function.composite_resource_definitions(),
-                    &entry_assumptions,
+                    &entry_assumptions.clone().assume_entry_clause_extents(),
                     &mut transition_budget,
                 ) {
                     Ok(Ok((_, checked))) => Some(checked),
@@ -6292,7 +6292,7 @@ pub(in crate::surface) fn function_resource_summary(
                 )
                 .map_err(ClickError::new)?;
                 crate::surface::lowering::elaborate_requirement_proposition(
-                    parsed_function.parameters(),
+                    ParameterBinding::new(parsed_function.parameters(), &[]),
                     guard_entry_state.get_or_init(|| {
                         crate::kernel::initialize_c_function_globals(
                             &CState::new(),

@@ -15,6 +15,10 @@ use std::hash::{Hash, Hasher};
 use std::sync::{Arc, OnceLock};
 
 pub(crate) const SAME_OBJECT_PREDICATE_NAME: &str = "__click_same_object";
+/// The prefix of the fact that an opaque subobject extent covers a range of
+/// `element_width`-byte elements: `{prefix}{element_width}(start, from, to)`
+/// (`design/pointer-subobject-extents.md`, Phase C).
+pub(crate) const SUBOBJECT_COVERS_PREDICATE_PREFIX: &str = "__click_subobject_covers_";
 pub(crate) const MUTEX_HELD_PREDICATE_NAME: &str = "__click_mutex_held";
 
 mod contracts;
@@ -1090,6 +1094,11 @@ struct CPointerQualifiers {
     /// checked against it.
     object_class: Option<crate::kernel::effective_type::CAccessClass>,
     local_reference: Option<super::loans::LocalScalarReference>,
+    /// The opaque extent of the pointer this one selected a member of, if
+    /// any (`design/pointer-subobject-extents.md`, Phase C): a clause
+    /// through the member also claims that pointer designates the member.
+    /// Not part of the value's identity.
+    within: RangeDesignation,
 }
 
 /// The subobject a pointer was formed from, narrower than its complete
@@ -1114,6 +1123,94 @@ pub struct SubobjectExtent {
 }
 
 impl SubobjectExtent {
+    /// The first identity an opaque extent may use.
+    pub(crate) const OPAQUE_VARIABLE_BASE: u64 = 1 << 44;
+    /// The first identity past the opaque-extent range.
+    pub(crate) const OPAQUE_VARIABLE_CEILING: u64 = 1 << 45;
+
+    /// The unknown extent of a pointer whose formation the function did not
+    /// see (`design/pointer-subobject-extents.md`, Phase C). `variable` names
+    /// it and nothing else: its start and width are opaque, so no access
+    /// through it is inside it until evidence says so. No producer assigns
+    /// one yet (Phase C step 2).
+    #[cfg(test)]
+    pub(crate) fn opaque(variable: Variable) -> Self {
+        debug_assert!(
+            (Self::OPAQUE_VARIABLE_BASE..Self::OPAQUE_VARIABLE_CEILING).contains(&variable.0)
+        );
+        Self {
+            start: Pointer::symbolic(variable),
+            width: Bitvector32Term::Variable(variable),
+        }
+    }
+
+    /// The variable naming this extent, when it is opaque.
+    pub(crate) fn opaque_variable(&self) -> Option<Variable> {
+        let PointerBlock::Symbolic(variable) = &self.start.block else {
+            return None;
+        };
+        self.is_opaque().then_some(*variable)
+    }
+
+    /// Whether this is an opaque extent, known only through coverage facts.
+    pub(crate) fn is_opaque(&self) -> bool {
+        let PointerBlock::Symbolic(variable) = &self.start.block else {
+            return false;
+        };
+        (Self::OPAQUE_VARIABLE_BASE..Self::OPAQUE_VARIABLE_CEILING).contains(&variable.0)
+            && self.start.offset == PointerOffsetTerm::Constant(0)
+            && self.width == Bitvector32Term::Variable(*variable)
+    }
+
+    /// The fact that this opaque extent covers `range`.
+    pub(crate) fn coverage_fact(&self, range: &CMemoryRange) -> Proposition {
+        let pointer = |pointer: Pointer| {
+            Term::CValue(CValue::Pointer(CPointerValue::new(
+                pointer,
+                CType::VoidPointer,
+            )))
+        };
+        let width = range.element_width();
+        Proposition::Predicate {
+            name: format!("{SUBOBJECT_COVERS_PREDICATE_PREFIX}{width}"),
+            arguments: vec![
+                pointer(self.start.clone()),
+                pointer(
+                    range
+                        .base()
+                        .offset_by_elements(range.start().clone(), width),
+                ),
+                pointer(range.base().offset_by_elements(range.end().clone(), width)),
+            ],
+        }
+    }
+
+    /// The range a coverage fact names: its first element's address, its
+    /// element count and its element width.
+    pub(crate) fn covered_range(
+        proposition: &Proposition,
+    ) -> Option<(Pointer, Bitvector32Term, u32)> {
+        let Proposition::Predicate { name, arguments } = proposition else {
+            return None;
+        };
+        let width = name
+            .strip_prefix(SUBOBJECT_COVERS_PREDICATE_PREFIX)?
+            .parse::<u32>()
+            .ok()?;
+        let [
+            _,
+            Term::CValue(CValue::Pointer(from)),
+            Term::CValue(CValue::Pointer(to)),
+        ] = arguments.as_slice()
+        else {
+            return None;
+        };
+        let count = to
+            .pointer()
+            .element_index_from_base_with_width(from.pointer(), width)?;
+        Some((from.pointer().clone(), count, width))
+    }
+
     /// The `width` bytes at `start`: a member's extent.
     pub(crate) fn constant(start: Pointer, width: u32) -> Self {
         Self {
@@ -1214,6 +1311,36 @@ impl CPointerValue {
 
     pub(crate) fn extent(&self) -> Option<&SubobjectExtent> {
         self.qualifiers.as_ref()?.extent.as_ref()
+    }
+
+    /// The opaque extents a clause through this pointer makes claims about:
+    /// its own, and the one it selected a member of.
+    pub(crate) fn designations(&self) -> [Option<Variable>; 2] {
+        [
+            self.extent().and_then(SubobjectExtent::opaque_variable),
+            self.qualifiers
+                .as_ref()
+                .and_then(|qualifiers| qualifiers.within.0),
+        ]
+    }
+
+    /// Selects a member of this pointer: the member's extent replaces this
+    /// one, and an opaque extent is remembered as the one it lies within.
+    pub(crate) fn with_member_extent(self, extent: SubobjectExtent) -> Self {
+        let within = self
+            .extent()
+            .and_then(SubobjectExtent::opaque_variable)
+            .or_else(|| {
+                self.qualifiers
+                    .as_ref()
+                    .and_then(|qualifiers| qualifiers.within.0)
+            });
+        let mut value = self.with_extent(Some(extent));
+        if within.is_some() {
+            Arc::make_mut(value.qualifiers.get_or_insert_with(Default::default)).within =
+                RangeDesignation(within);
+        }
+        value
     }
 
     pub(crate) fn object_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
@@ -3417,6 +3544,49 @@ pub struct CMemoryRange {
     /// How the bounds are read. Last, so ranges order by base first and
     /// `Int32` ranges keep the order they had among themselves.
     kind: RangeIndexKind,
+    /// The opaque extent of the pointer whose clause named this range, if
+    /// any. Not part of the range's identity.
+    designation: RangeDesignation<[Option<Variable>; 2]>,
+}
+
+/// The opaque subobject extent a held range was named through
+/// (`design/pointer-subobject-extents.md`, Phase C). A clause through a
+/// pointer of unseen formation claims the pointer designates the range, and
+/// whoever established the clause checked that claim, so holding the range
+/// is evidence for accesses through that extent. It never distinguishes two
+/// ranges: matching, splitting and joining ignore it, and a range that loses
+/// it only loses that evidence.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct RangeDesignation<T = Option<Variable>>(T);
+
+impl<T: std::fmt::Debug> std::fmt::Debug for RangeDesignation<T> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{:?}", self.0)
+    }
+}
+
+impl<T> PartialEq for RangeDesignation<T> {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl<T> Eq for RangeDesignation<T> {}
+
+impl<T> std::hash::Hash for RangeDesignation<T> {
+    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
+}
+
+impl<T> PartialOrd for RangeDesignation<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<T> Ord for RangeDesignation<T> {
+    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
+    }
 }
 
 /// The integer type of a range's bounds. Two ranges with the same terms in
@@ -10858,7 +11028,7 @@ pub(super) struct AtomicConnectionFacts {
 /// The representation and deferral choices a context reasons under, one bit
 /// each. The bits occupy the top byte of the context's content fingerprint.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-pub(super) struct ReasoningPolicy(u8);
+pub(super) struct ReasoningPolicy(u16);
 
 impl ReasoningPolicy {
     pub(super) const DEFER_NON_EXACT_LOADABILITY_OBLIGATIONS: Self = Self(1 << 0);
@@ -10871,13 +11041,17 @@ impl ReasoningPolicy {
     /// This affects representation only, never validity obligations.
     pub(super) const KEEP_SPEC_LOADS_SYMBOLIC: Self = Self(1 << 6);
     pub(super) const REQUIRE_OWNED_EXPRESSION_LOADS: Self = Self(1 << 7);
+    /// Evaluate a contract entry's own clauses: a clause through a pointer
+    /// with an opaque extent states what the extent covers, so it is not
+    /// checked against it (`design/pointer-subobject-extents.md`, Phase C).
+    pub(super) const ASSUME_ENTRY_CLAUSE_EXTENTS: Self = Self(1 << 8);
 
     pub(super) fn contains(self, choice: Self) -> bool {
         self.0 & choice.0 != 0
     }
 
     pub(super) fn fingerprint(self) -> u64 {
-        u64::from(self.0) << 56
+        u64::from(self.0) << 48
     }
 
     pub(super) fn toggle(&mut self, choice: Self) {

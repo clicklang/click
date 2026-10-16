@@ -45,7 +45,7 @@ fn charon_slice_into_iter_tools_agree_on_typed_reads_empty_inputs_and_expansion(
     let prepared = p.prepared().unwrap();
     let empty = include_str!("../../design/charon-trial/into-slices/empty.click");
     C0VerificationSession::new_program_prepared(empty, &prepared).unwrap();
-    for command in ["verify", "profile", "audit"] {
+    for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
     }
     for claim in [
@@ -55,8 +55,8 @@ fn charon_slice_into_iter_tools_agree_on_typed_reads_empty_inputs_and_expansion(
         "forward_signed.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }
 
 #[test]

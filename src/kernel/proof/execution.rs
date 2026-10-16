@@ -3033,11 +3033,13 @@ impl CheckedFunctionEntry {
         let function = Arc::new(function.clone());
         let boundary_transfer = {
             Some(
+                // The function's own entry clauses; the proof keeps the
+                // unflagged assumptions (`assume_entry_clause_extents`).
                 crate::kernel::functions::capture_checked_boundary_resource_transfer(
                     caller_state,
                     function.clone(),
                     arguments,
-                    &assumptions,
+                    &assumptions.clone().assume_entry_clause_extents(),
                     &mut ExecutionBudget::beside_live_state(),
                 )
                 .map_err(|limit| {

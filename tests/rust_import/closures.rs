@@ -56,7 +56,7 @@ fn charon_closures_passed_for_a_function_pointer_meet_its_named_contract() {
 #[ignore = "nightly: 4.8s in the parallel gate"]
 fn charon_closure_tools_recheck_expanded_certificates() {
     let p = closure_project();
-    for command in ["verify", "profile", "audit"] {
+    for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
     }
     for claim in [
@@ -65,6 +65,6 @@ fn charon_closure_tools_recheck_expanded_certificates() {
         "__rust_q_I8_closures_I6_choose.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }

@@ -9,6 +9,11 @@ listed as assumptions in [trust](../docs/concepts/trust.md). Moving a
 declaration must not change what it means. A primitive or `extern` contract
 must not lose its trust listing or its checked use.
 
+This issue also tracks Integer-default specification arithmetic
+([below](#integer-default-specification-arithmetic)), which decides which
+library lemmas survive. That work adds kernel rules; each one carries its
+own soundness argument and regressions.
+
 ## Motivation
 
 Click's library was `stdlib/prelude.click`, one 1,661-line file loaded
@@ -272,14 +277,80 @@ Each step is a separate PR that leaves every example verifying:
   Rename, rather than alias, unless a public example depends on the old
   name.
 
-### Sequencing with Integer-default specification arithmetic
+### Integer-default specification arithmetic
 
-[design-review.md](design-review.md) P2 is decided (maintainer,
-2026-10-15): specification arithmetic uses `Integer` by default. Most of the
-110 width lemmas exist only to bridge machine arithmetic, so once that lands
-they are deleted rather than completed, and only the families that remain
-are completed. The `machine_integer` and `integer` renames follow that
-deletion, so the rename does not touch lemmas about to disappear.
+Moved here from the launch design review (formerly item P2 of
+[design-review.md](design-review.md)), since it decides which library
+lemmas survive.
+
+
+Today: `+` in a specification is the C operation and is partial
+(`docs/reference/language/index.md`, "an int32 fold's `+` is partial in
+specifications"). Proofs bridge with `to_integer`, width-specific lemmas
+(`int64_less_equal_transitive` and about 110 more in `library/`)
+and hand-written `arithmetic_certificate` blocks: about 270 lines of
+`examples/bounded-pool/bounded_pool.click` show counters do not overflow.
+ACSL, Dafny and Verus specs use mathematical integers by default.
+
+Proposed fix: specification arithmetic is over `Integer` by default; C
+semantics are written explicitly where a spec means them.
+
+Done when: decided, and if fixed, the examples shrink accordingly.
+
+Decision: fix (maintainer, 2026-10-15). Specification arithmetic is over
+`Integer` by default, with these rules:
+
+- In a specification, `+`, `-`, `*`, unary minus and the comparisons on
+  machine integers are Integer operations. A machine operand widens
+  implicitly, since that loses nothing; narrowing stays explicit
+  (`to_int32(z)` with its bound obligations).
+- Unsigned wraparound is written explicitly, with a wrapping operation or
+  `% 2^N`. The migration rewrites each unsigned specification operation into
+  that form, and a proof that no wrap occurs removes it.
+- Integer `/` and `%` truncate toward zero, as C and ACSL do.
+- Bitwise operators and shifts stay machine-typed; their results widen when
+  combined with Integer arithmetic.
+- `defined(e)` remains the way a specification states C evaluation.
+- One switch-over by scripted migration, not a per-file mode. A prototype
+  on `examples/bounded-pool` and one unsigned-heavy example comes first, to
+  measure the proof that disappears and check timing against the
+  [verification efficiency contract](../docs/internals/verification-efficiency.md).
+
+Progress: a prototype on `examples/bounded-pool` written in Integer form
+shrinks the sidecar from 437 to 284 lines, and showed that built-in checks
+read only machine facts. Step 1 is done: an Integer comparison of exact
+machine observations also files its native comparison, so resource
+quantities and count definedness accept Integer premises. Step 2 has
+started: `arithmetic "integer";` opts a file into the rule, as a migration
+switch removed when the default flips, and the kernel decides Integer
+comparisons of machine observations through their native comparisons.
+Under the directive, `bounded-pool`'s `pool_init` verifies with its bridge
+lemmas removed; the next blocker is population counts, which are still
+`int32` machine sums. Step 3 has started: `auto` proves that an in-range
+machine `+` or `-` is the Integer operation (`integer_operation_identity`),
+using native comparisons as Integer facts and machine type ranges, so
+`ensures result == x - 1;` verifies from `requires 1 <= x;` with no bridge
+lemma. A count with ruled-out overflow observes as the exact Integer sum or
+difference, count comparisons widen under the directive, `simp` selects
+Integer equalities as rewrites, and an Integer equality over 32-bit
+observations files its wrapped word equality for built-in checks.
+`pool_init`, `pool_destroy` and `pool_zero_pipeline` now verify under the
+directive. `auto` also reads native bounds such as the consumed-member
+`count >= 1` as Integer facts, proves a machine comparison through its
+Integer reading, and cites callee postconditions at their call sites. In a
+draft of `bounded-pool` under the directive, `pool_checkout`, `pool_return`,
+`pool_shrink` and `pool_grow` also verify with their bridge lemmas and
+helper theorems removed (`pool_checkout` drops from 28 proof lines to 7).
+The other pipelines are blocked: `step()` does not hand a call precondition
+such as `a < 100` to `auto`, which would prove it from Integer facts. Next:
+that hand-off, the rest of the pool, then the migration file by file and the
+flip.
+
+Sequencing with the library: most of the 110 width lemmas exist only to
+bridge machine arithmetic, so once the default flips they are deleted rather
+than completed, and only the families that remain are completed. The
+`machine_integer` and `integer` renames follow that deletion, so the rename
+does not touch lemmas about to disappear.
 
 ### Naming decisions (maintainer, 2026-10-15)
 
@@ -313,6 +384,9 @@ deletion, so the rename does not touch lemmas about to disappear.
   `import click::...;`, so a sidecar's imports show which modules it uses.
 - C, C++ and Rust library contracts arrive with the header or module the
   verified code uses.
+- Specification arithmetic is over `Integer` by default, the
+  `arithmetic "integer";` migration switch is gone, and the examples have
+  shrunk accordingly.
 - The checked list of width-lemma families has no gaps, and the decision on
   each family follows the Integer-default arithmetic decision described
   above.

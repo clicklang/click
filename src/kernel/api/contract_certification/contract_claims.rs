@@ -1042,7 +1042,7 @@ fn prepare_function_claim_path(
             &entry_state,
             function.resource_requires(),
             function.composite_resource_definitions(),
-            &assumptions,
+            &assumptions.clone().assume_entry_clause_extents(),
             &mut budget,
         ) {
             Ok(Ok(resources)) => resources,

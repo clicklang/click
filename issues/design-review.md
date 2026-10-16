@@ -9,7 +9,9 @@ without a known false acceptance. Each item that becomes a reproduced false acce
 
 Items P1–P4, W4 and W5 waited on the SMT-backed `auto`
 ([design/smt-auto-stage1.md](../design/smt-auto-stage1.md)), which landed;
-P3 and P4 are done and the others are ruled below. Also depends on [simplify-step.md](simplify-step.md), which now holds the
+P3 and P4 are done, P2 (Integer-default specification arithmetic) moved
+to [standard-library.md](standard-library.md), and the others are ruled
+below. Also depends on [simplify-step.md](simplify-step.md), which now holds the
 critique that "simple" `step()` is not simple (formerly W3).
 
 On 2026-10-12 Click was reviewed the way an expert launch audience would
@@ -80,7 +82,8 @@ Token ratios run two to four times the line ratios because proof lines are
 long: `rbtree_erase_color_flips_red_all.click` is 518 KB with lines over
 1,300 characters.
 
-Proposed fix: item P2 and the landed P6 (loop facts carry across steps
+Proposed fix: Integer-default specification arithmetic
+([standard-library.md](standard-library.md)) and the landed P6 (loop facts carry across steps
 and the back edge closes implicitly), plus a published proof-to-code budget
 per example that the gate reports.
 
@@ -88,82 +91,13 @@ Done when: the examples meet a stated budget, or the budget and the reason
 for exceeding it are published.
 
 Decision: fix (maintainer, 2026-10-15). The gate reports each example's
-proof-to-code ratio against the 20x budget, report-only at first; P2 is the
-main remaining lever for meeting it.
+proof-to-code ratio against the 20x budget, report-only at first; Integer-default
+specification arithmetic is the main remaining lever for meeting it.
 
 Progress: the report is in. `scripts/check.sh` ends by listing the examples
 over the target, with token ratios beside line ratios. What remains is
 bringing those examples under the target, or publishing the reason each one
 exceeds it.
-
-### P2. Spec arithmetic is machine arithmetic
-
-Today: `+` in a specification is the C operation and is partial
-(`docs/reference/language/index.md`, "an int32 fold's `+` is partial in
-specifications"). Proofs bridge with `to_integer`, width-specific lemmas
-(`int64_less_equal_transitive` and about 110 more in `library/`)
-and hand-written `arithmetic_certificate` blocks: about 270 lines of
-`examples/bounded-pool/bounded_pool.click` show counters do not overflow.
-ACSL, Dafny and Verus specs use mathematical integers by default.
-
-Proposed fix: specification arithmetic is over `Integer` by default; C
-semantics are written explicitly where a spec means them.
-
-Done when: decided, and if fixed, the examples shrink accordingly.
-
-Decision: fix (maintainer, 2026-10-15). Specification arithmetic is over
-`Integer` by default, with these rules:
-
-- In a specification, `+`, `-`, `*`, unary minus and the comparisons on
-  machine integers are Integer operations. A machine operand widens
-  implicitly, since that loses nothing; narrowing stays explicit
-  (`to_int32(z)` with its bound obligations).
-- Unsigned wraparound is written explicitly, with a wrapping operation or
-  `% 2^N`. The migration rewrites each unsigned specification operation into
-  that form, and a proof that no wrap occurs removes it.
-- Integer `/` and `%` truncate toward zero, as C and ACSL do.
-- Bitwise operators and shifts stay machine-typed; their results widen when
-  combined with Integer arithmetic.
-- `defined(e)` remains the way a specification states C evaluation.
-- One switch-over by scripted migration, not a per-file mode. A prototype
-  on `examples/bounded-pool` and one unsigned-heavy example comes first, to
-  measure the proof that disappears and check timing against the
-  [verification efficiency contract](../docs/internals/verification-efficiency.md).
-
-Progress: a prototype on `examples/bounded-pool` written in Integer form
-shrinks the sidecar from 437 to 284 lines, and showed that built-in checks
-read only machine facts. Step 1 is done: an Integer comparison of exact
-machine observations also files its native comparison, so resource
-quantities and count definedness accept Integer premises. Step 2 has
-started: `arithmetic "integer";` opts a file into the rule, as a migration
-switch removed when the default flips, and the kernel decides Integer
-comparisons of machine observations through their native comparisons.
-Under the directive, `bounded-pool`'s `pool_init` verifies with its bridge
-lemmas removed; the next blocker is population counts, which are still
-`int32` machine sums. Step 3 has started: `auto` proves that an in-range
-machine `+` or `-` is the Integer operation (`integer_operation_identity`),
-using native comparisons as Integer facts and machine type ranges, so
-`ensures result == x - 1;` verifies from `requires 1 <= x;` with no bridge
-lemma. A count with ruled-out overflow observes as the exact Integer sum or
-difference, count comparisons widen under the directive, `simp` selects
-Integer equalities as rewrites, and an Integer equality over 32-bit
-observations files its wrapped word equality for built-in checks.
-`pool_init`, `pool_destroy` and `pool_zero_pipeline` now verify under the
-directive. `auto` also reads native bounds such as the consumed-member
-`count >= 1` as Integer facts, proves a machine comparison through its
-Integer reading, and cites callee postconditions at their call sites. In a
-draft of `bounded-pool` under the directive, `pool_checkout`, `pool_return`,
-`pool_shrink` and `pool_grow` also verify with their bridge lemmas and
-helper theorems removed (`pool_checkout` drops from 28 proof lines to 7).
-The other pipelines are blocked: `step()` does not hand a call precondition
-such as `a < 100` to `auto`, which would prove it from Integer facts. Next:
-that hand-off, the rest of the pool, then the migration file by file and the
-flip.
-
-Afterwards, delete the `machine_integer` and `integer` lemmas Integer
-arithmetic makes unnecessary, complete the families that remain, and give
-those modules qualified names
-([standard-library.md](standard-library.md)).
 
 ### P5. Copy-paste across case files and sidecars
 

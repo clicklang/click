@@ -662,6 +662,7 @@ fn write_c_lvalue_paths_without_local_reference(
                 &facts,
                 &obligations,
                 assumptions,
+                state.resources(),
             )
             .or_else(|| {
                 effective_type_refusal_of(

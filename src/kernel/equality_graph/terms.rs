@@ -1674,6 +1674,16 @@ impl TermClasses {
         self.close(pending);
     }
 
+    fn retain_condition_truth(&mut self, id: u64, truth: u8) {
+        let root = self.root(id);
+        let previous = self.condition_truth.get(&root).copied().unwrap_or(0);
+        let combined = previous | truth;
+        self.scalar_constant_conflict |= combined == 3;
+        if combined != previous {
+            self.condition_truth.insert(root, combined);
+        }
+    }
+
     fn reindex_application(&mut self, id: u64, pending: &mut Vec<(u64, u64)>) {
         crate::instrumentation::record_deterministic_work(1);
         if let Some(old) = self.application_signatures.get(&id).copied()
@@ -1686,6 +1696,23 @@ impl TermClasses {
             .get(&id)
             .expect("registered application")
             .signature(self);
+        // Equality inputs merge operands rather than adding a second truth
+        // predicate. A disequality becomes contradictory when those operands
+        // meet, including after a late congruence merge. Parent-use indexing
+        // brings only affected predicates here.
+        if let Application::Condition(kind, left, right) = signature
+            && left == right
+        {
+            use congruence::ConditionKind::*;
+            let truth = match kind {
+                Int32Eq | UInt64Eq | PointerEq | OffsetEq | AlgebraicEq | IntegerEq => Some(1),
+                IntegerNe => Some(2),
+                _ => None,
+            };
+            if let Some(truth) = truth {
+                self.retain_condition_truth(id, truth);
+            }
+        }
         if signature
             .operands()
             .any(|operand| self.non_affine_classes.contains(&operand))
@@ -1872,9 +1899,8 @@ impl TermClasses {
                     .insert(kept, (lower.max(kept_lower), upper.min(kept_upper)));
             }
             if let Some(truth) = self.condition_truth.get(&moved).copied() {
-                let kept_truth = self.condition_truth.get(&kept).copied().unwrap_or(0);
                 self.condition_truth.remove(&moved);
-                self.condition_truth.insert(kept, kept_truth | truth);
+                self.retain_condition_truth(kept, truth);
             }
             self.parents.insert(moved, kept);
             self.history = Some(Arc::new(MergeHistory {

@@ -7577,10 +7577,12 @@ impl CState {
                     .map_err(|error| format!("control authority evaluation failed: {error}"))?
                 }
                 super::super::CResourceTerm::Memory(_) => {
+                    // The held control's body, as its fold established it
+                    // (`assume_entry_clause_extents`).
                     super::super::functions::evaluate_function_resource_spec(
                         &evaluation,
                         spec,
-                        assumptions,
+                        &assumptions.clone().assume_entry_clause_extents(),
                         &mut budget,
                     )
                     .map_err(|error| format!("control memory evaluation failed: {error}"))?
@@ -7589,10 +7591,12 @@ impl CState {
                 super::super::CResourceTerm::Token { name, .. }
                     if name == CResourceFact::ALLOCATION_RESOURCE_NAME =>
                 {
+                    // The held control's body, as its fold established it
+                    // (`assume_entry_clause_extents`).
                     super::super::functions::evaluate_function_resource_spec(
                         &evaluation,
                         spec,
-                        assumptions,
+                        &assumptions.clone().assume_entry_clause_extents(),
                         &mut budget,
                     )
                     .map_err(|error| format!("control allocation evaluation failed: {error}"))?

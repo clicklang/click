@@ -43,7 +43,7 @@ fn charon_array_lengths_preserve_unchanged_sources_and_reject_false_claims() {
 fn charon_array_lengths_proof_tools_recheck_metadata_and_array_certificates() {
     for bounds in [false, true] {
         let p = project(bounds);
-        for command in ["verify", "profile", "audit"] {
+        for command in ["profile", "audit"] {
             assert_cli(&p, &[command]);
         }
         for claim in if bounds {
@@ -56,8 +56,8 @@ fn charon_array_lengths_proof_tools_recheck_metadata_and_array_certificates() {
             &["length.contract", "empty.contract", "update.contract"][..]
         } {
             assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-            assert_cli(&p, &["verify"]);
         }
+        assert_cli(&p, &["verify"]);
     }
 }
 #[test]

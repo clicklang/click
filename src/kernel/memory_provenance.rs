@@ -121,6 +121,7 @@ pub(in crate::kernel) fn record_transport_cell_walk(
             "hop limit reached"
         } else {
             match stop {
+                CellWalkStop::CommonSnapshot => "common snapshot reached",
                 CellWalkStop::OldestRecorded => "oldest recorded snapshot reached",
                 CellWalkStop::Affected => "step affects the queried bytes",
                 CellWalkStop::NotShownSeparate => "step not proved separate from the queried bytes",
@@ -3096,6 +3097,41 @@ impl LoadCellWalks {
     ) -> Option<Self> {
         let left_bytes = crate::kernel::load_term_access_width(left_memory, pointer, kind);
         let right_bytes = crate::kernel::load_term_access_width(right_memory, pointer, kind);
+        // A shared snapshot already fixes one version of the cell. Reuse the
+        // typed two-sided frame walk so a cold query never follows history
+        // older than both endpoints. Writes and unresolved steps retain the
+        // existing source/value and refutation routes below.
+        if left_bytes == right_bytes
+            && let Some((left, right)) = join_read_agreement(
+                left_memory,
+                right_memory,
+                pointer,
+                left_bytes,
+                &crate::kernel::resource_tracker::step_effect::Evidence {
+                    assumptions,
+                    cross_loop_havoc: true,
+                },
+            )
+        {
+            for (memory, cell) in [(left_memory, &left), (right_memory, &right)] {
+                record_transport_cell_walk(
+                    memory,
+                    pointer,
+                    left_bytes,
+                    cell,
+                    CellWalkStop::CommonSnapshot,
+                    None,
+                );
+            }
+            return Some(Self {
+                left,
+                right,
+                left_stop: CellWalkStop::CommonSnapshot,
+                right_stop: CellWalkStop::CommonSnapshot,
+                kind,
+            });
+        }
+
         let (left, left_stop) =
             memory_dag_cell_source_with_stop(left_memory, pointer, left_bytes, assumptions, true)?;
         let (right, right_stop) = memory_dag_cell_source_with_stop(
@@ -3149,8 +3185,8 @@ impl LoadCellWalks {
     /// up: the cell one step older is a different *version* of this cell. Two
     /// loads separated by one of those are not one value by any structural
     /// route, whatever the snapshots' cell maps happen to have kept. The
-    /// other two stops prove nothing — the history simply ran out, or a step
-    /// could not be classified — and leave every other route to speak.
+    /// exhaustion and unclassified stops prove nothing and leave every other
+    /// route to speak. A common-snapshot stop instead establishes equality.
     fn cross_an_affecting_step(&self) -> bool {
         self.left_stop == CellWalkStop::Affected || self.right_stop == CellWalkStop::Affected
     }
@@ -4621,6 +4657,7 @@ fn wide_read_observations_have_value(
                             "64-hop query limit reached"
                         } else {
                             match stop {
+                                CellWalkStop::CommonSnapshot => "common snapshot reached",
                                 CellWalkStop::OldestRecorded => "oldest recorded snapshot reached",
                                 CellWalkStop::Affected => "step affects the read's bytes",
                                 CellWalkStop::NotShownSeparate => {
