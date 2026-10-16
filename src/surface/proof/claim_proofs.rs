@@ -492,6 +492,12 @@ fn prove_claims_by_checked_tactics(
         caller_requirement_index: Arc::new(caller_requirement_index),
         caller_source_owner: Some(caller_source_owner),
         function_entry_state: Some(function_entry_state),
+        parameter_index: Some((
+            parsed_function.parameters().as_ptr() as usize,
+            Arc::new(crate::surface::ParameterIndex::new(
+                parsed_function.parameters(),
+            )),
+        )),
         entry_context: Some(entry_context),
         function_source_registry,
         grouped_contract: grouped,
