@@ -245,10 +245,10 @@ memory transport, and it still left two mdtests and two examples failing on
 reads of one cell across snapshots. Narrowing the C comparison itself needs
 none of that.
 
-## Phase C: pointers of unseen formation (proposed)
+## Phase C: pointers of unseen formation
 
-Status: proposed 2026-10-16, not approved. Decisions E1-E3 below await the
-maintainer.
+Status: approved 2026-10-16; decisions E1-E3 accepted as recommended. Step 1
+is delivered.
 
 ### The hole
 
@@ -307,7 +307,12 @@ each check stays a local decision with no scan of unrelated pointers.
 
 ### Steps
 
-1. Width as a term, constant everywhere: no behavior change.
+1. Width as a term, constant everywhere: no behavior change. Done:
+   `SubobjectExtent::width` is a `Bitvector32Term`. A consumer that still
+   needs a constant (an unsigned 64-bit clause range, the refusal's byte
+   count) treats an unknown width as not proven. Substitution and variable
+   collection map only `start`; step 2 extends them to the width when it
+   first carries variables.
 2. Symbolic extents for parameters and pointers loaded at entry, with
    coverage from entry clauses. Add the bug's two programs as rejected
    fixtures and run the full corpus; investigate each new failure as either

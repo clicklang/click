@@ -448,3 +448,33 @@ fn interface_join_provenance_uses_checked_arms_before_marker_union() {
         "marker-union scratch memories must not become extra incoming arms"
     );
 }
+
+#[test]
+fn binding_a_local_copies_a_search_path_not_the_frame() {
+    // A frame's locals are persistent maps: binding one more name into a
+    // frame another state still shares copies the path to it, so binding a
+    // function's N parameters one at a time costs N log N, not N^2.
+    let mut copied = Vec::new();
+    for size in [64, 1024] {
+        let mut state = CState::new();
+        for index in 0..size {
+            state = state.with_local(
+                format!("p{index}"),
+                CValue::Int32(Bitvector32Term::Constant(0)),
+            );
+        }
+        let shared = state.clone();
+        let before = crate::persistent::persistent_node_allocations();
+        let bound = state.with_local("next", CValue::Int32(Bitvector32Term::Constant(1)));
+        copied.push(crate::persistent::persistent_node_allocations() - before);
+        assert!(shared.locals.get("next").is_none());
+        assert!(bound.locals.get("next").is_some());
+    }
+    assert!(copied[0] > 0, "binding a local allocates persistent nodes");
+    assert!(
+        copied[1] <= copied[0] + 16,
+        "binding into 1024 locals copied {} nodes, into 64 copied {}",
+        copied[1],
+        copied[0]
+    );
+}

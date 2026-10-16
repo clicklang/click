@@ -146,6 +146,17 @@ instead of from what the step changed.
    Separately, lowering a function's requirements bound every parameter
    into the entry state again for each requirement; the state is now built
    once per requirement list.
+8. **Building a function's entry context is quadratic in its parameters.**
+   Several entry passes lower each requirement or resource clause on its
+   own and rebuild, per requirement, structures that span every parameter:
+   the entry state with each parameter bound, the parameter value map, the
+   array references. `objects_and_calls`' entry context grows x7 from
+   N = 32 to 128. Fixed in part: the passes that lower one requirement at a
+   time now share one lowering state, and a frame's locals are persistent
+   maps, so binding a local copies a search path rather than every binding
+   (`binding_a_local_copies_a_search_path_not_the_frame`); `objects_and_calls`
+   at N = 128, 9.90 to 9.58 billion instructions. Still open: each resource
+   clause's lowering rebuilds the parameter values and array references.
 
 Related scaling bugs stay in `bugs/` until fixed:
 [sequential-loop-clause-grows-with-earlier-loops.md](../bugs/sequential-loop-clause-grows-with-earlier-loops.md).

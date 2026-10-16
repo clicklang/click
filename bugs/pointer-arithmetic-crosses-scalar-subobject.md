@@ -221,5 +221,5 @@ In each callee the contract states the pointer's designation exactly, but
 its value has no extent, so the equality is an address equality and the
 read is authorized by `p->second`'s view at the same address. The proposed
 repair is Phase C of the
-[subobject-extent design](../design/pointer-subobject-extents.md#phase-c-pointers-of-unseen-formation-proposed).
+[subobject-extent design](../design/pointer-subobject-extents.md#phase-c-pointers-of-unseen-formation).
 

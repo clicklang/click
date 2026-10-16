@@ -3733,7 +3733,7 @@ fn subobject_pointer(offset: i64, start: i64, width: u64) -> CPointerValue {
             block: "pair".into(),
             offset: PointerOffsetTerm::Constant(start),
         },
-        width,
+        width: Bitvector32Term::Constant(u32::try_from(width).unwrap()),
     }))
 }
 
@@ -3800,7 +3800,7 @@ fn substitution_maps_the_extent_start_with_the_address() {
     let value = CValue::Pointer(
         CPointerValue::new(address(4), CType::Int32Pointer).with_extent(Some(SubobjectExtent {
             start: address(0),
-            width: 4,
+            width: Bitvector32Term::Constant(4),
         })),
     );
     let replacement = Bitvector32Term::Variable(Variable(98_102));
@@ -3816,7 +3816,7 @@ fn substitution_maps_the_extent_start_with_the_address() {
         substituted.extent(),
         Some(&SubobjectExtent {
             start: expected(0),
-            width: 4,
+            width: Bitvector32Term::Constant(4),
         })
     );
 }

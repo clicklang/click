@@ -449,7 +449,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                     "or (result == -1i64 and virtual_bytes",
                     "or (result == 0i64 and virtual_bytes",
                 ),
-                "CFeeRateGetFeeMissingFeeBounds" => (
+                "CFeeRateGetFeeNativeFeeBounds" => (
                     "requires this->m_feerate.base.size != 0 implies to_integer(this->m_feerate.base.fee) <= 9223372036854775807;",
                     "",
                 ),
@@ -479,8 +479,15 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 root_source.replacen(from, to, 1)
             );
             let parsed = read_click_project(&sidecar, &hostile).unwrap();
-            let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
-            assert!(error.message().len() < 8000, "{}", error.message());
+            if name == "CFeeRateGetFeeNativeFeeBounds" {
+                verify_program_prepared_project(&parsed, &import)
+                    .unwrap_or_else(|error| panic!("native int64 fee bounds: {}", error.message()));
+            } else {
+                let error = verify_program_prepared_project(&parsed, &import)
+                    .err()
+                    .unwrap_or_else(|| panic!("{name} accepted its mutated claim"));
+                assert!(error.message().len() < 8000, "{}", error.message());
+            }
         } else if phase == Some(RoundingPhase::TransportRejections) {
             fs::write(
                 root.join("bitcoin-src/src/util/feefrac.h"),
@@ -617,6 +624,27 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
             )
         )
     {
+        // Native int64 fields already satisfy their representable range.
+        // Removing these redundant requirements must keep verifying; the
+        // mutations below still remove actual branch transport or forge values.
+        if phase == Some(RoundingPhase::TransportRejections)
+            && name.contains("ResultFit")
+            && (name.ends_with("Unified")
+                || name.ends_with("Negative")
+                || name.ends_with("PositiveWide"))
+        {
+            let native_bounds = source
+                .replace(
+                    "requires -9223372036854775808 <= to_integer(this->fee);",
+                    "",
+                )
+                .replace("requires to_integer(this->fee) <= 9223372036854775807;", "");
+            assert_ne!(native_bounds, source);
+            let parsed = read_click_project(&sidecar, &native_bounds).unwrap();
+            verify_program_prepared_project(&parsed, &import).unwrap_or_else(|error| {
+                panic!("{name} must use native fee bounds: {}", error.message())
+            });
+        }
         let hostile = if name.contains("ResultFit") && name.ends_with("SymbolicFast") {
             let down = selected.ends_with("Down");
             let fit = if down {
@@ -710,8 +738,6 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                     vec![source.replace(lower, ""), source.replace(upper, ""), source.replace(strict, &strict.replace(" < ", " <= "))]
                 }
                 RoundingPhase::TransportRejections => vec![
-                    source.replace("requires -9223372036854775808 <= to_integer(this->fee);", ""),
-                    source.replace("requires to_integer(this->fee) <= 9223372036854775807;", ""),
                     source.replace("apply(int64_greater_equal_to_integer(this->fee, 0i64));", ""),
                     source.replace("apply(int64_less_than_to_integer(this->fee, 8589934592i64));", ""),
                 ],
@@ -761,7 +787,6 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
             } else {
                 vec![
                     source.replace(if name.ends_with("Negative") { "requires not (this->fee >= 0i64);" } else { "requires this->fee >= 0i64 and not (this->fee < 8589934592i64);" }, ""),
-                    source.replace("requires to_integer(this->fee) <= 9223372036854775807;", ""),
                     source.replace("to_integer(product) == to_integer(this->fee) * to_integer(at_size)", "to_integer(product) == to_integer(this->fee) * to_integer(at_size) + 1"),
                     source.replace(if down { "(to_integer(result) + 1) * to_integer(this->size)" } else { "(to_integer(result) + -1) * to_integer(this->size)" }, "to_integer(result) * to_integer(this->size)"),
                     source.replace(if down { "to_integer(result) * to_integer(this->size) <= to_integer(this->fee) * to_integer(at_size)" } else { "to_integer(this->fee) * to_integer(at_size) <= to_integer(result) * to_integer(this->size)" }, if down { "to_integer(result) * to_integer(this->size) < to_integer(this->fee) * to_integer(at_size)" } else { "to_integer(this->fee) * to_integer(at_size) < to_integer(result) * to_integer(this->size)" }),
@@ -2481,7 +2506,7 @@ fn upstream_unified_result_fit_down_rejects_missing_or_weakened_fit_bounds() {
 
 #[test]
 #[ignore = "nightly: 7s in the parallel gate"]
-fn upstream_unified_result_fit_down_rejects_missing_fee_bounds_and_branch_transport() {
+fn upstream_unified_result_fit_down_checks_native_fee_bounds_and_branch_transport() {
     check_upstream_result_fit_unified_fee_evaluation("Down", RoundingPhase::TransportRejections);
 }
 
@@ -2529,7 +2554,7 @@ fn upstream_unified_result_fit_up_rejects_missing_or_weakened_fit_bounds() {
 
 #[test]
 #[ignore = "nightly: 7s in the parallel gate"]
-fn upstream_unified_result_fit_up_rejects_missing_fee_bounds_and_branch_transport() {
+fn upstream_unified_result_fit_up_checks_native_fee_bounds_and_branch_transport() {
     check_upstream_result_fit_unified_fee_evaluation("Up", RoundingPhase::TransportRejections);
 }
 
@@ -2928,9 +2953,9 @@ fn upstream_getfee_rejects_false_minimum_correction() {
 }
 #[test]
 #[ignore = "nightly: 5s in the parallel gate"]
-fn upstream_getfee_rejects_missing_fee_observer_bounds() {
+fn upstream_getfee_accepts_native_fee_observer_bounds() {
     check_getfee(
-        "CFeeRateGetFeeMissingFeeBounds",
+        "CFeeRateGetFeeNativeFeeBounds",
         Some(RoundingPhase::Rejections),
     );
 }

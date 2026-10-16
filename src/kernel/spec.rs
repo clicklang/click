@@ -7420,13 +7420,28 @@ fn pointer_designation_equality(
     if left == right {
         return None;
     }
-    Some(Proposition::ConditionIs(
-        if left.width == right.width {
-            pointer_equality_condition(left.start.clone(), right.start.clone())
-        } else {
-            ConditionTerm::Constant(false)
-        },
+    let starts = Proposition::ConditionIs(
+        pointer_equality_condition(left.start.clone(), right.start.clone()),
         true,
+    );
+    if left.width == right.width {
+        return Some(starts);
+    }
+    if left.constant_width().is_some() && right.constant_width().is_some() {
+        return Some(Proposition::ConditionIs(
+            ConditionTerm::Constant(false),
+            true,
+        ));
+    }
+    Some(Proposition::And(
+        Box::new(starts),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(
+                Box::new(left.width.clone()),
+                Box::new(right.width.clone()),
+            ),
+            true,
+        )),
     ))
 }
 

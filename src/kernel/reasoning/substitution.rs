@@ -712,95 +712,91 @@ fn walk_c_resource<S: VariableSubstitution + ?Sized>(resource: &CResource, s: &S
 }
 
 fn walk_c_state<S: VariableSubstitution + ?Sized>(state: &CState, s: &S) -> CState {
-    let bindings = std::sync::Arc::new(
-        state
-            .locals
-            .bindings
-            .iter()
-            .map(|(name, binding)| {
-                let binding = match binding {
-                    CLocalBinding::Object {
-                        storage_declared,
-                        value,
-                        c_type,
-                        slot,
-                        volatile,
-                        pointee_volatile,
-                        constant,
-                        pointee_constant,
-                    } => CLocalBinding::Object {
-                        storage_declared: *storage_declared,
-                        value: s.c_value(value),
-                        c_type: *c_type,
-                        slot: s.local_slot(slot),
-                        volatile: *volatile,
-                        pointee_volatile: *pointee_volatile,
-                        constant: *constant,
-                        pointee_constant: *pointee_constant,
-                    },
-                    CLocalBinding::UninitializedObject {
-                        c_type,
-                        slot,
-                        volatile,
-                        pointee_volatile,
-                        constant,
-                        pointee_constant,
-                    } => CLocalBinding::UninitializedObject {
-                        c_type: *c_type,
-                        slot: s.local_slot(slot),
-                        volatile: *volatile,
-                        pointee_volatile: *pointee_volatile,
-                        constant: *constant,
-                        pointee_constant: *pointee_constant,
-                    },
-                    CLocalBinding::GlobalObject {
-                        c_type,
-                        slot,
-                        volatile,
-                        pointee_volatile,
-                        constant,
-                        pointee_constant,
-                    } => CLocalBinding::GlobalObject {
-                        c_type: *c_type,
-                        slot: s.local_slot(slot),
-                        volatile: *volatile,
-                        pointee_volatile: *pointee_volatile,
-                        constant: *constant,
-                        pointee_constant: *pointee_constant,
-                    },
-                    CLocalBinding::ArrayObject {
-                        element_type,
-                        length,
-                        slot,
-                        constant,
-                    } => CLocalBinding::ArrayObject {
-                        element_type: *element_type,
-                        length: *length,
-                        slot: s.local_slot(slot),
-                        constant: *constant,
-                    },
-                    CLocalBinding::AggregateObject {
-                        layout,
-                        slot,
-                        constant,
-                    } => CLocalBinding::AggregateObject {
-                        layout: layout.clone(),
-                        slot: s.local_slot(slot),
-                        constant: *constant,
-                    },
-                };
-                (name.clone(), binding)
-            })
-            .collect(),
-    );
-    let slots = std::sync::Arc::new(
-        state
-            .locals
-            .slots
-            .iter()
-            .map(|(pointer, name)| (s.local_slot(pointer), name.clone()))
-            .collect(),
-    );
+    let bindings = state
+        .locals
+        .bindings
+        .iter()
+        .map(|(name, binding)| {
+            let binding = match binding {
+                CLocalBinding::Object {
+                    storage_declared,
+                    value,
+                    c_type,
+                    slot,
+                    volatile,
+                    pointee_volatile,
+                    constant,
+                    pointee_constant,
+                } => CLocalBinding::Object {
+                    storage_declared: *storage_declared,
+                    value: s.c_value(value),
+                    c_type: *c_type,
+                    slot: s.local_slot(slot),
+                    volatile: *volatile,
+                    pointee_volatile: *pointee_volatile,
+                    constant: *constant,
+                    pointee_constant: *pointee_constant,
+                },
+                CLocalBinding::UninitializedObject {
+                    c_type,
+                    slot,
+                    volatile,
+                    pointee_volatile,
+                    constant,
+                    pointee_constant,
+                } => CLocalBinding::UninitializedObject {
+                    c_type: *c_type,
+                    slot: s.local_slot(slot),
+                    volatile: *volatile,
+                    pointee_volatile: *pointee_volatile,
+                    constant: *constant,
+                    pointee_constant: *pointee_constant,
+                },
+                CLocalBinding::GlobalObject {
+                    c_type,
+                    slot,
+                    volatile,
+                    pointee_volatile,
+                    constant,
+                    pointee_constant,
+                } => CLocalBinding::GlobalObject {
+                    c_type: *c_type,
+                    slot: s.local_slot(slot),
+                    volatile: *volatile,
+                    pointee_volatile: *pointee_volatile,
+                    constant: *constant,
+                    pointee_constant: *pointee_constant,
+                },
+                CLocalBinding::ArrayObject {
+                    element_type,
+                    length,
+                    slot,
+                    constant,
+                } => CLocalBinding::ArrayObject {
+                    element_type: *element_type,
+                    length: *length,
+                    slot: s.local_slot(slot),
+                    constant: *constant,
+                },
+                CLocalBinding::AggregateObject {
+                    layout,
+                    slot,
+                    constant,
+                } => CLocalBinding::AggregateObject {
+                    layout: layout.clone(),
+                    slot: s.local_slot(slot),
+                    constant: *constant,
+                },
+            };
+            (name.clone(), binding)
+        })
+        .collect::<crate::persistent::PersistentMap<_, _>>();
+    let slots = state
+        .locals
+        .slots
+        .iter()
+        .map(|(pointer, name)| (s.local_slot(pointer), name.clone()))
+        .collect();
     CState {
         locals: CLocalEnvironment { bindings, slots },
         aggregate_destination: state.aggregate_destination.as_ref().map(|destination| {

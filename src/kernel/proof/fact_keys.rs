@@ -786,7 +786,7 @@ enum AlphaCValueKey {
         pointee_constant: bool,
         pointer: AlphaPointerKey,
         /// The subobject extent's start key and byte width.
-        extent: Option<(AlphaPointerKey, u64)>,
+        extent: Option<(AlphaPointerKey, AlphaBitvectorKey)>,
     },
 }
 
@@ -1767,7 +1767,11 @@ fn alpha_c_value_key_with_bindings<const ALLOW_LOADS: bool>(
                         bindings,
                         next_binder,
                     )?,
-                    extent.width,
+                    alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
+                        &extent.width,
+                        bindings,
+                        next_binder,
+                    )?,
                 )),
                 None => None,
             },
