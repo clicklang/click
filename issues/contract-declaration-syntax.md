@@ -125,8 +125,8 @@ that writes `int32` for such a source already writes the source's spelling.
   the `step(Name())` and `step(Name(instance))` applications are refused with
   their replacements. A head must have exactly the C types of its
   declaration, `long` apart from `long long`. A head may write the source's
-  scalar, struct, pointer and function-pointer typedef names (`json_bool`,
-  `pid_t`, `node_t`, `node_ptr`, `unary f`), not yet its array aliases.
+  scalar, struct, pointer, function-pointer and array typedef names
+  (`json_bool`, `pid_t`, `node_t`, `node_ptr`, `unary f`, `triple values`).
 - **C++.** Verified functions are written as C++ declares them:
   `Restore::Restore(int* slot)`, `Restore::~Restore()`,
   `void FeeFrac::operator+=(const FeeFrac& other)`, `bool FeeFrac::IsEmpty() const`,
@@ -167,8 +167,8 @@ that writes `int32` for such a source already writes the source's spelling.
    parameters, `step(Name, { handle: value })` binds them, the retired forms
    are refused and migrated, and a head must have exactly its declaration's
    C types. Done: a head writes a verified source's scalar, struct,
-   pointer and function-pointer typedef names, `u32`, `json_bool`,
-   `node_t`, `node_ptr`, `unary f`. Remaining: array aliases in heads.
+   pointer, function-pointer and array typedef names, `u32`, `json_bool`,
+   `node_t`, `node_ptr`, `unary f`, `triple values`.
 2. **Native C++ heads.** Done for verified functions: qualified members with
    implicit `this`, constructors, destructors, `operator` names, `const` and
    `static` members, and `bool` function template arguments, with the corpus
