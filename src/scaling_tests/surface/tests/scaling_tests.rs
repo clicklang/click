@@ -5147,8 +5147,8 @@ fn an_unfolded_constant_composite_range_costs_the_same_whatever_its_length() {
 }
 
 /// A symbolic read must not make refolding a compact owned range enumerate
-/// its slots. Check both a valid current-value claim and the invalid old-value
-/// claim: the latter also used to repeat the enumeration during failed search.
+/// its slots. Check the current value, the old value at a distinct index,
+/// and refusal of the old value when the index may alias the store.
 #[test]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn symbolic_read_refold_and_refusal_do_not_enumerate_range_elements() {
@@ -5162,21 +5162,26 @@ fn symbolic_read_refold_and_refusal_do_not_enumerate_range_elements() {
         &[("read.c", c_source)],
     )
     .expect("warm-up verifies");
-    for old_value in [false, true] {
+    for (old_value, distinct_index) in [(false, false), (true, true), (true, false)] {
         let samples = [64, 4096, 1_048_576].map(|length| {
             let value = if old_value { "old(a[k])" } else { "a[k]" };
+            let distinct = if distinct_index {
+                "requires k != 3;"
+            } else {
+                ""
+            };
             let source = format!(
                 "verifying \"read.c\";\n\
                  resource block(p: int32*) {{ owns p[0..{length}]; }}\n\
                  int32 read_after_store(int32 *a, int32 k) {{\n\
-                   owns block(a); requires 0 <= k; requires k < {length};\n\
+                   owns block(a); requires 0 <= k; requires k < {length}; {distinct}\n\
                    ensures result == {value};\n\
                  }} by {{ unfold(block(a)); execute(); fold(block(a)); simp(); }}"
             );
             let (result, sample) = scaling_sample(length, || {
                 verify_c0_sources(&source, &[("read.c", c_source)])
             });
-            if old_value {
+            if old_value && !distinct_index {
                 let error = result.expect_err("the symbolic index may be the changed element");
                 assert!(
                     error
@@ -5186,7 +5191,7 @@ fn symbolic_read_refold_and_refusal_do_not_enumerate_range_elements() {
                     error.message()
                 );
             } else {
-                result.expect("refolding preserves the just-read value");
+                result.expect("refolding preserves the selected current or unchanged old value");
             }
             let fold_work = sample
                 .named_work
@@ -5199,7 +5204,10 @@ fn symbolic_read_refold_and_refusal_do_not_enumerate_range_elements() {
         let least = samples.iter().map(|(_, work, _)| *work).min().unwrap();
         let most = samples.iter().map(|(_, work, _)| *work).max().unwrap();
         assert!(least > 0);
-        assert!(most < 30_000, "old={old_value}: {samples:?}");
+        assert!(
+            most < 30_000,
+            "old={old_value}, distinct={distinct_index}: {samples:?}"
+        );
         assert!(samples[0].2 > 0, "fold must be measured: {samples:?}");
         for pair in samples.windows(2) {
             assert_eq!(pair[0].2, pair[1].2, "fold enumerated slots: {samples:?}");

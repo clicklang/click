@@ -429,6 +429,8 @@ struct ClosureDistinctnessFailure {
 /// remembers.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum ClosureFactCheck {
+    /// Whether a bare condition target holds in the selected live context.
+    ConditionTarget,
     /// Whether a load-variable chain through the listed facts bridges the
     /// target.
     LoadVariableBridge,

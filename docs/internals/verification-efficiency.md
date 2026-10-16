@@ -80,6 +80,18 @@ Existing produce-then-check code is a defect, tracked in
 change is: does this re-validate something the same session produced? If so,
 restructure it so the producing operation is the only one.
 
+An explicit outcome closer searches once. Its failure explanation may lower
+the goal and describe its checked context, but does not rerun `simp` or
+`auto`. Live-context fact transport uses the context-bound target rule
+directly; standalone theorem export retains its separate explicit-premise
+contract. A reflexive scalar source contributes no logical assumption, so
+temporary transport contexts omit its incidental load names. This preserves
+the shared identity of otherwise identical frame queries without dropping
+facts from the recorded proof or its failure report.
+Failed condition-target questions use the existing closure-scoped failure
+memo, keyed by their target and selected context. Successful checks still run
+and collect provenance; failures that meet a cycle cut or limit are not cached.
+
 Explicit return closers lower the folded claim goal once. They also try its
 unfolded form only when the proof has unfolded a predicate; an empty unfold
 list must not repeat the same lowering and its entry/exit resource expansion.
