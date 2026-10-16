@@ -795,15 +795,22 @@ fn sequential_loop_clauses_cost_the_same_at_every_position() {
 /// either from every path fact at each loop (both once did) assumes a further
 /// context entry per earlier fact at every loop; the transport context's
 /// build is charged nothing, so clause work alone does not show it.
+///
+/// Across the twelve-loop run, the last clause also costs what the second
+/// does. A drift of a unit or two per earlier loop is below the band between
+/// neighbours: restoring the entry's blocks at each loop head once rebuilt
+/// the block table, and comparing it walked every block declared so far.
 #[test]
 fn sequential_loops_build_the_same_context_entries_each() {
-    let entries = [3, 6, 12].map(|n| {
-        let (c, click) = loops(n);
+    let runs = [3, 6, 12].map(|n| {
         let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
-        verify_c0_sources(&click, &[("hunt.c", c.as_str())])
-            .unwrap_or_else(|error| panic!("loops at {n}: {}", error.message()));
-        crate::kernel::reasoning::path_facts::context_rebuild_entries() - before
+        let run = run(loops, n);
+        (
+            crate::kernel::reasoning::path_facts::context_rebuild_entries() - before,
+            run.loops,
+        )
     });
+    let entries = runs.each_ref().map(|(entries, _)| *entries);
     let per_loop = [(entries[1] - entries[0]) / 3, (entries[2] - entries[1]) / 6];
     assert!(
         per_loop[1] <= per_loop[0] + band(per_loop[0]),
@@ -811,6 +818,13 @@ fn sequential_loops_build_the_same_context_entries_each() {
          ({entries:?})",
         per_loop[0],
         per_loop[1]
+    );
+    let clauses = &runs[2].1;
+    let (second, last) = (clauses[1], clauses[clauses.len() - 1]);
+    assert!(
+        last <= second + band(second),
+        "the last of twelve loop clauses costs {last} where the second costs {second}: \
+         {clauses:?}"
     );
 }
 

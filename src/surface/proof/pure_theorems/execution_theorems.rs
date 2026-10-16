@@ -277,7 +277,7 @@ pub(super) fn verify_execution_theorem(
             ),
         };
     }
-    block.grouped_proof = Some(ensure.proof().clone());
+    block.grouped_proof = Some(std::sync::Arc::new(ensure.proof().clone()));
     let arguments = execution
         .parameters
         .iter()

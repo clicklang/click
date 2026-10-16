@@ -293,8 +293,10 @@ Each step is its own pull request.
      rebuilt. The scans now run once per function. Most of the rebuilds
      now extend a kept context, and the `loop` tactic extends the proof's
      own transport context and indexed facts rather than building them from
-     every path fact. Together they take the clause from about 160 units per
-     earlier loop to a few; the bug records what remains.
+     every path fact, and a loop head keeps its block table when restoring
+     it changes nothing. Together they take the clause from about 160 units
+     per earlier loop to a logarithmic drift; the bug records the uncharged
+     time that remains.
 
 ## Acceptance criteria
 

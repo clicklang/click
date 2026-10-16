@@ -1091,7 +1091,13 @@ fn expand_declared_resources_in_function_block(
     function.grouped_proof = function
         .grouped_proof
         .take()
-        .map(|proof| expand_declared_resource_proof(proof, resource_definitions))
+        .map(|proof| {
+            expand_declared_resource_proof(
+                std::sync::Arc::unwrap_or_clone(proof),
+                resource_definitions,
+            )
+            .map(std::sync::Arc::new)
+        })
         .transpose()?;
     Ok(())
 }

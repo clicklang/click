@@ -3996,7 +3996,7 @@ impl Parser {
             exceptional_ensures,
             ensure_source_clauses,
             ensure_claim_ids,
-            grouped_proof,
+            grouped_proof: grouped_proof.map(std::sync::Arc::new),
             parameter_struct_casts,
             parameter_field_places,
             pointee_field_places,
