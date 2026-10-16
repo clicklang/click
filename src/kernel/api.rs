@@ -290,12 +290,21 @@ pub fn uint32(bits: impl Into<Bitvector32Term>) -> CValue {
     CValue::UInt32(bits.into())
 }
 
+/// A 64-bit value. A plain 32-bit constant, as `int64(-1)` writes, is widened
+/// to the 64-bit constant it denotes, sign-extended for `int64` and
+/// zero-extended for `uint64`, so the value's term has the value's width.
 pub fn int64(bits: impl Into<Bitvector32Term>) -> CValue {
-    CValue::Int64(bits.into())
+    CValue::Int64(match bits.into() {
+        Bitvector32Term::Constant(bits) => Bitvector32Term::Int64Constant(i64::from(bits as i32)),
+        term => term,
+    })
 }
 
 pub fn uint64(bits: impl Into<Bitvector32Term>) -> CValue {
-    CValue::UInt64(bits.into())
+    CValue::UInt64(match bits.into() {
+        Bitvector32Term::Constant(bits) => Bitvector32Term::UInt64Constant(u64::from(bits)),
+        term => term,
+    })
 }
 
 pub fn float32(bits: impl Into<Bitvector32Term>) -> CValue {

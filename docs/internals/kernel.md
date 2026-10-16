@@ -491,8 +491,22 @@ overlap. The composite definition supplies the checked `contains` and
 
 In `src/kernel/`:
 
-- `Bitvector32Term`: symbolic 32-bit integer terms, including arithmetic,
-  `If`, `RangeFold`, and memory loads.
+- `Bitvector32Term`: the one term arena for every C integer and float value,
+  including arithmetic, `If`, `RangeFold`, and memory loads. Despite its
+  name it holds every width, and records none: the width is implied by the
+  operator family (`Add` is 32-bit, `Int64Add` and `UInt64Add` 64-bit), the
+  constant's shape (`Constant`, `Int64Constant`, `UInt64Constant`, a 128-bit
+  `MachineIntegerConstant`), a load's kind, or a cast's destination. Values of
+  8 and 16 bits and `_Bool` ride in the 32-bit carrier, and floats in the
+  carrier of their bit width. `term_width.rs` infers that carrier width.
+  Debug builds refuse a condition assumed into a fact context, a value an
+  expression evaluates to, or a value stored to memory whose widths disagree:
+  an operand of the wrong width, arms of different widths, a `CValue` tag
+  whose term has another width, or a comparison whose operands are not the
+  width it names. The one exception is a load equation (a store fact or a
+  load variable's defining fact), written with the 32-bit equality at any
+  width, whose sides need only agree with each other. Making the width part of
+  the term is the open issue `issues/one-integer-term-type.md`.
 - `PointerOffsetTerm`: pointer-offset expressions.
 - `ConditionTerm`: proof-level truth-valued conditions such as signed and
   unsigned order, equality, overflow, pointer-offset equality, and typed

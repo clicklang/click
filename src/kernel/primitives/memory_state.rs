@@ -5065,6 +5065,11 @@ impl CMemory {
         value: CValue,
         context: &PureFactContext,
     ) -> Self {
+        crate::kernel::debug_assert_widths(
+            "a stored value",
+            || crate::kernel::value_width_mismatch(&value),
+            &value,
+        );
         // Most scalar stores have no union views to displace. When one is
         // present, forget views at every possibly overlapping spelling before
         // recording the new scalar cell.

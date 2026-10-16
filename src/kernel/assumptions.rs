@@ -5519,6 +5519,11 @@ impl PureFactContext {
             return self;
         }
         crate::kernel::eval::check_canonical_at_creation(&condition, value);
+        crate::kernel::debug_assert_widths(
+            "an assumed condition",
+            || crate::kernel::condition_width_mismatch(&condition),
+            &condition,
+        );
         if let ConditionTerm::Bitvector32Equal(left, right) = &condition
             && let Some((left, right)) = bitvector_equality_after_additive_cancellation(left, right)
         {

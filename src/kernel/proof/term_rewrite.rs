@@ -1080,8 +1080,8 @@ fn exhausted_c_value(value: &CValue) -> CValue {
         CValue::UInt16(_) => CValue::UInt16(Bitvector32Term::Constant(0)),
         CValue::Int32(_) => CValue::Int32(Bitvector32Term::Constant(0)),
         CValue::UInt32(_) => CValue::UInt32(Bitvector32Term::Constant(0)),
-        CValue::Int64(_) => CValue::Int64(Bitvector32Term::Constant(0)),
-        CValue::UInt64(_) => CValue::UInt64(Bitvector32Term::Constant(0)),
+        CValue::Int64(_) => CValue::Int64(Bitvector32Term::Int64Constant(0)),
+        CValue::UInt64(_) => CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
         CValue::Int128(_) => MachineIntegerType::Int128
             .constant_value(
                 crate::kernel::MachineIntegerConstant::from_signed(
@@ -1101,7 +1101,7 @@ fn exhausted_c_value(value: &CValue) -> CValue {
             )
             .unwrap(),
         CValue::Float32(_) => CValue::Float32(Bitvector32Term::Constant(0)),
-        CValue::Float64(_) => CValue::Float64(Bitvector32Term::Constant(0)),
+        CValue::Float64(_) => CValue::Float64(Bitvector32Term::UInt64Constant(0)),
         CValue::Pointer(pointer) => CValue::Pointer(
             CPointerValue::new(exhausted_pointer(), pointer.c_type())
                 .with_pointee_volatile(pointer.pointee_volatile())
