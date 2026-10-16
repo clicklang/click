@@ -3499,7 +3499,10 @@ mod tests {
             Err(SignedArithmeticCheckError::DoesNotFollow)
         );
 
-        let pointer = Bitvector32Term::PointerAddress(Box::new(Pointer::symbolic(Variable(3))));
+        let pointer = Bitvector32Term::PointerAddress(
+            Box::new(Pointer::symbolic(Variable(3))),
+            crate::kernel::AddressObjectClass::NONE,
+        );
         let pointer_premise = le(pointer.clone(), Bitvector32Term::Constant(0));
         let pointer_certificate = SignedArithmeticCertificate {
             nodes: vec![SignedArithmeticNode::Premise {

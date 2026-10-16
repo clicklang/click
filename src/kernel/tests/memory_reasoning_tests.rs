@@ -7112,8 +7112,14 @@ fn a_parameter_partition_follows_transitive_interior_address_aliases() {
             ),
         original.clone().assume_condition(
             ConditionTerm::uint64_equal(
-                Bitvector32Term::PointerAddress(Box::new(write.clone())),
-                Bitvector32Term::PointerAddress(Box::new(q.clone())),
+                Bitvector32Term::PointerAddress(
+                    Box::new(write.clone()),
+                    crate::kernel::AddressObjectClass::NONE,
+                ),
+                Bitvector32Term::PointerAddress(
+                    Box::new(q.clone()),
+                    crate::kernel::AddressObjectClass::NONE,
+                ),
             ),
             true,
         ),

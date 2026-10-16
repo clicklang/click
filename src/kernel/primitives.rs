@@ -431,6 +431,52 @@ impl LoadKind {
     }
 }
 
+/// The object class an address term retains from the pointer it was formed
+/// from (`design/effective-types.md`). Like a pointer value's class, it is
+/// not part of the value's identity: it compares equal to every other
+/// annotation, hashes to nothing, and orders as equal, so equality, fact
+/// lookup, rewriting and premise matching see one address however it is
+/// annotated. Only an integer-to-pointer cast reads it, and the destination
+/// type of that cast never supplies it.
+#[derive(Clone, Debug, Default)]
+pub struct AddressObjectClass(Option<crate::kernel::effective_type::CAccessClass>);
+
+impl AddressObjectClass {
+    pub const NONE: Self = Self(None);
+
+    pub(crate) fn new(class: Option<crate::kernel::effective_type::CAccessClass>) -> Self {
+        Self(class)
+    }
+
+    pub(crate) fn class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
+        self.0.clone()
+    }
+}
+
+impl PartialEq for AddressObjectClass {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for AddressObjectClass {}
+
+impl std::hash::Hash for AddressObjectClass {
+    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
+}
+
+impl PartialOrd for AddressObjectClass {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for AddressObjectClass {
+    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Bitvector32Term {
     Constant(u32),
@@ -504,10 +550,12 @@ pub enum Bitvector32Term {
     /// (a C pointer comparison states only the latter).  No arithmetic on the term
     /// is interpreted as address arithmetic; tag bits are handled by checked
     /// rewrites on top of this term.
-    PointerAddress(Box<Pointer>),
-    /// The same numeric address with checked source object-class evidence.
-    /// The destination type of a later cast never supplies this class.
-    ObjectPointerAddress(Box<Pointer>, crate::kernel::effective_type::CAccessClass),
+    ///
+    /// The second field is the checked object class of the pointer the
+    /// address was formed from, when one is known. It is evidence for a
+    /// later integer-to-pointer cast, never part of the term's identity: a
+    /// classed and a bare spelling of one address are the same term.
+    PointerAddress(Box<Pointer>, AddressObjectClass),
     IntegerToMachine {
         value: SharedIntegerTerm,
         destination: MachineIntegerType,
