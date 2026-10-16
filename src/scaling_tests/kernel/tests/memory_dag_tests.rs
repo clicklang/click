@@ -1139,3 +1139,57 @@ fn preliminary_byte_gap_uses_only_selected_recorded_order() {
         );
     }
 }
+
+#[test]
+fn indexed_byte_separation_ignores_unrelated_external_ranges() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = |id| Pointer { block: PointerBlock::ExternalArgument, offset: PointerOffsetTerm::Variable(Variable(id)) };
+    let separate = |p, q| Proposition::CResourceSeparate {
+        left: Box::new(CResource::Memory(memory_range(p, 0, 2))),
+        right: Box::new(CResource::Memory(memory_range(q, 0, 2))),
+    };
+    let p = pointer(970_121);
+    let q = pointer(970_122);
+    let mut previous = None;
+    for size in [16, 64, 256, 1024] {
+        let mut context = PureFactContext::new();
+        for i in 0..size {
+            context = context.assume_proposition(separate(pointer(980_000 + 2*i), pointer(980_001 + 2*i)));
+        }
+        context = context.assume_proposition(separate(p.clone(), q.clone()));
+        let (proof, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(&q, 8, &p, 8, &context)
+        });
+        assert!(proof.is_some());
+        if let Some(previous) = previous { assert_eq!(work, previous, "unrelated ranges at {size}"); }
+        previous = Some(work);
+    }
+}
+
+#[test]
+fn numeric_byte_geometry_ignores_unrelated_address_classes() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = |id| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(id)),
+    };
+    let numeric_alias = |p: Pointer, q: Pointer| Proposition::ConditionIs(
+        ConditionTerm::uint64_equal(Bitvector32Term::pointer_address(p), Bitvector32Term::pointer_address(q)), true,
+    );
+    let p = pointer(970_131);
+    let q = pointer(970_132);
+    let mut previous = None;
+    for size in [16, 64, 256, 1024] {
+        let mut context = PureFactContext::new();
+        for i in 0..size {
+            context = context.assume_proposition(numeric_alias(pointer(990_000 + 2*i), pointer(990_001 + 2*i).offset_by_bytes(8)));
+        }
+        context = context.assume_proposition(numeric_alias(q.clone(), p.offset_by_bytes(8)));
+        let (proof, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(&q, 8, &p, 8, &context)
+        });
+        assert!(proof.is_some());
+        if let Some(previous) = previous { assert_eq!(work, previous, "unrelated address classes at {size}"); }
+        previous = Some(work);
+    }
+}

@@ -4921,6 +4921,26 @@ impl PureFactContext {
         }
     }
 
+    /// Stated separations whose nonempty anchors are exactly these addresses.
+    /// Unlike the block-pair bucket, unrelated external parameters cannot be
+    /// candidates. Consumers must still check both complete access widths.
+    pub(in crate::kernel) fn anchored_memory_separation_candidates(
+        &self,
+        left: &Pointer,
+        right: &Pointer,
+    ) -> impl Iterator<Item = &Proposition> {
+        let left = self.equality_graph.storage_address(left);
+        let right = self.equality_graph.storage_address(right);
+        let facts = if left.block == right.block {
+            self.separated_anchor_offsets
+                .get(&Self::separated_anchor_key(left.offset, right.offset))
+        } else {
+            self.separated_anchor_pointers
+                .get(&Self::separated_pointer_key(left, right))
+        };
+        facts.into_iter().flat_map(|facts| facts.iter())
+    }
+
     /// The stated memory separations between these two blocks, from the
     /// block-pair index. A composition's same-block separations are not
     /// here: they are asked of the composition when a query needs one
