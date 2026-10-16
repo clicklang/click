@@ -2404,10 +2404,14 @@ impl ConditionTerm {
         }
     }
 
-    /// Two pointer addresses are equal exactly when their pointers are, and
-    /// an address is zero exactly when its pointer is null. Any other
-    /// address-versus-integer comparison stays undecided: an integer with no
-    /// pointer origin never proves or refutes identity with an allocation.
+    /// The pointer condition that decides an address comparison. Equal
+    /// pointers have equal addresses, and an address is zero exactly when its
+    /// pointer is null. Equal addresses do not make equal pointers (a pointer
+    /// one past an object may have the next object's address), so this only
+    /// decides the comparison and never replaces it as a fact
+    /// (`ConditionTerm::int64_equal`). Any other address-versus-integer
+    /// comparison stays undecided: an integer with no pointer origin never
+    /// proves or refutes identity with an allocation.
     pub(crate) fn address_equality_as_pointer_equality(
         left: &Bitvector32Term,
         right: &Bitvector32Term,
@@ -2500,8 +2504,13 @@ impl ConditionTerm {
         if left == right {
             return Self::Constant(true);
         }
-        if let Some(condition) = Self::address_equality_as_pointer_equality(&left, &right) {
-            return condition;
+        // An address is zero exactly when its pointer is null. Two addresses
+        // stay an address equality: equal addresses are not equal pointers.
+        if let (Bitvector32Term::PointerAddress(pointer), other)
+        | (other, Bitvector32Term::PointerAddress(pointer)) = (&left, &right)
+            && other.uint64_as_const() == Some(0)
+        {
+            return Self::pointer_equal(pointer.as_ref().clone(), Pointer::null());
         }
         match (left.bitvector64_as_const(), right.bitvector64_as_const()) {
             (Some(left), Some(right)) => Self::Constant(left == right),
@@ -4574,17 +4583,84 @@ mod integer_equality_citation_tests {
     }
 }
 
+#[cfg(test)]
+mod connective_walk_tests {
+    use super::*;
+
+    /// A right side whose left sibling already decides the connective is
+    /// not asked, and the answer is the one asking it would give.
+    #[test]
+    fn a_decided_connective_does_not_ask_its_right_side() {
+        let side = |name: u64| {
+            Proposition::ConditionIs(
+                ConditionTerm::signed_less_than(
+                    Bitvector32Term::Variable(Variable(name)),
+                    Bitvector32Term::Constant(0),
+                ),
+                true,
+            )
+        };
+        let (held, missing, other) = (side(1), side(2), side(3));
+        let or = |left: &Proposition, right: &Proposition| {
+            Proposition::Or(Box::new(left.clone()), Box::new(right.clone()))
+        };
+        let and = |left: &Proposition, right: &Proposition| {
+            Proposition::And(Box::new(left.clone()), Box::new(right.clone()))
+        };
+        let walk = |root: &Proposition| {
+            let asked = std::cell::RefCell::new(Vec::new());
+            let result = first_unavailable_connective_side(root, &|side| {
+                asked.borrow_mut().push(side.clone());
+                side == &held
+            })
+            .cloned();
+            (result, asked.into_inner())
+        };
+        // `held or missing` holds without asking `missing`.
+        let (result, asked) = walk(&or(&held, &missing));
+        assert_eq!(result, None);
+        assert!(!asked.contains(&missing), "{asked:?}");
+        // `missing or held` asks both and holds.
+        let (result, asked) = walk(&or(&missing, &held));
+        assert_eq!(result, None);
+        assert!(asked.contains(&held));
+        // `missing or other` names the disjunction.
+        let root = or(&missing, &other);
+        assert_eq!(walk(&root).0, Some(root.clone()));
+        // `missing and held` names `missing` without asking `held`.
+        let (result, asked) = walk(&and(&missing, &held));
+        assert_eq!(result, Some(missing.clone()));
+        assert!(!asked.contains(&held), "{asked:?}");
+        // `held and missing` asks both and names `missing`.
+        assert_eq!(walk(&and(&held, &missing)).0, Some(missing.clone()));
+        // Nested: the decided disjunction skips its right side, and the
+        // enclosing conjunction still asks its own.
+        let (result, asked) = walk(&and(&or(&held, &missing), &other));
+        assert_eq!(result, Some(other.clone()));
+        assert!(
+            !asked.contains(&missing) && asked.contains(&other),
+            "{asked:?}"
+        );
+    }
+}
+
 /// Whether `root` follows from facts through its own `and`/`or` structure:
 /// a side holds when `available` says so, a conjunction when both sides do,
 /// a disjunction when either does. Returns the first side that fails, or
 /// `None` when the goal holds. The walk is iterative because conjunction
-/// spines are long, and it visits each side of the goal at most once.
+/// spines are long, and it visits each side of the goal at most once. A
+/// right side is not visited when its left side already decides the
+/// connective: a disjunction whose left side holds, or a conjunction whose
+/// left side fails.
 pub(crate) fn first_unavailable_connective_side<'a>(
     root: &'a Proposition,
     available: &impl Fn(&Proposition) -> bool,
 ) -> Option<&'a Proposition> {
     enum Task<'a> {
         Visit(&'a Proposition),
+        // The right side of a connective, visited only when the left side's
+        // result, on top of the result stack, leaves the connective open.
+        VisitRight(&'a Proposition, &'a Proposition),
         Join(&'a Proposition),
     }
     let mut tasks = vec![Task::Visit(root)];
@@ -4600,8 +4676,30 @@ pub(crate) fn first_unavailable_connective_side<'a>(
             }
             Task::Visit(side @ (Proposition::And(left, right) | Proposition::Or(left, right))) => {
                 tasks.push(Task::Join(side));
-                tasks.push(Task::Visit(right));
+                tasks.push(Task::VisitRight(side, right));
                 tasks.push(Task::Visit(left));
+            }
+            // The join reads the right side only when the left side leaves
+            // the connective open: an available left disjunct joins to
+            // `None`, and an unavailable left conjunct joins to itself,
+            // whatever the right side gives. So the placeholder pushed for
+            // an unread right side leaves every result unchanged, and the
+            // right side is not asked. Asking it was not free: `available`
+            // runs frozen atomic checkers, and the right disjunct of a
+            // null-guarded requirement, `p == 0 or separate(memory(q),
+            // memory(p->f))` with `p == 0` known, is a separation nothing
+            // can establish, refused only after every route had asked the
+            // owned members of its block to contain each side.
+            Task::VisitRight(parent, right) => {
+                let left = *results
+                    .last()
+                    .expect("a right side follows its left side's result");
+                match (parent, left) {
+                    (Proposition::Or(..), None) | (Proposition::And(..), Some(_)) => {
+                        results.push(None);
+                    }
+                    _ => tasks.push(Task::Visit(right)),
+                }
             }
             Task::Visit(side) => results.push(Some(side)),
             Task::Join(side) => {

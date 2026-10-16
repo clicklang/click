@@ -91,6 +91,23 @@ pub(super) fn uint64_binary(
     Some((op, a, b))
 }
 
+/// The same registered four-byte read accepted by `enqueue_int32_load`.
+/// A scalar variable without this typed producer metadata stays opaque.
+pub(super) fn int32_read(
+    term: &crate::kernel::Bitvector32Term,
+) -> Option<(crate::kernel::SharedCMemory, Pointer)> {
+    let crate::kernel::Bitvector32Term::Variable(variable) = term else {
+        return None;
+    };
+    if crate::kernel::registered_load_kind_for_variable(variable)
+        != Some(crate::kernel::LoadKind::Bits32)
+        || crate::kernel::registered_load_bytes_for_variable(variable) != Some(4)
+    {
+        return None;
+    }
+    crate::kernel::registered_load_for_variable(variable)
+}
+
 pub(super) fn uint64_read(
     term: &crate::kernel::Bitvector32Term,
 ) -> Option<(crate::kernel::SharedCMemory, Pointer)> {
@@ -160,7 +177,7 @@ enum Application {
     Int32Scaled(u64, i64),
     // Defining snapshot, exact storage block ID, offset node/class ID.
     // Only registered four-byte loads in the int32 interpretation enter here.
-    Int32Load((u32, u32), u64, u64),
+    Int32Load((u32, u32), u64),
 }
 
 impl Application {
@@ -179,7 +196,7 @@ impl Application {
             | Self::PointerRead(_, value, _)
             | Self::AddressShift(value, _)
             | Self::Int32Scaled(value, _)
-            | Self::Int32Load(_, _, value) => [Some(value), None],
+            | Self::Int32Load(_, value) => [Some(value), None],
         }
         .into_iter()
         .flatten()
@@ -220,9 +237,7 @@ impl Application {
                 Self::Int32Binary(op, classes.root(left), classes.root(right))
             }
             Self::Int32Scaled(value, width) => Self::Int32Scaled(classes.root(value), width),
-            Self::Int32Load(snapshot, block, offset) => {
-                Self::Int32Load(snapshot, block, classes.root(offset))
-            }
+            Self::Int32Load(snapshot, address) => Self::Int32Load(snapshot, classes.root(address)),
         }
     }
 }
@@ -265,6 +280,10 @@ pub(super) struct TermClasses {
             crate::kernel::SharedPureApplication,
         ),
     >,
+    // One exact constructor witness per typed model class. Only a selected
+    // equality's root operands are retained, once, so nested models are not
+    // copied at every subtree. Union carries this witness in constant work.
+    algebraic_constructors: PersistentMap<u64, Arc<crate::kernel::AlgebraicTerm>>,
     condition_kinds: PersistentSet<(congruence::ConditionKind, bool)>,
     // Truth is an annotation of a condition class, not a union between all
     // true facts. Unrelated order facts must not create value equivalences.
@@ -292,6 +311,10 @@ pub(super) struct TermClasses {
     // A displacement definition is permanent for one raw address spelling.
     // Repeated queries reuse it without re-registering its base or closure.
     registered_address_shifts: PersistentSet<(u64, u64)>,
+    // The displacement of each registered shifted address whose numeric sum
+    // no read has needed yet: `read_address` defines it on first use, so an
+    // address that is never read (a resource's) adds no numeric nodes.
+    numeric_shifts: PersistentMap<u64, (u64, i64)>,
     // The address node of each registered (block, raw offset) spelling. Its
     // affine definition is permanent, so a repeated registration (every
     // pointer equality query registers both sides) returns it after interning
@@ -593,6 +616,9 @@ impl TermClasses {
             let base = self.address_without_shift(block, base).0;
             let shifted = self.intern_node(Node::AddressShift(base, bytes));
             self.close_with_affine_definition(vec![(address, shifted)], true);
+            if !self.numeric_shifts.contains_key(&address) {
+                self.numeric_shifts = self.numeric_shifts.with_inserted(address, (base, bytes));
+            }
             self.registered_address_shifts = self
                 .registered_address_shifts
                 .with_value((address, raw_offset));
@@ -611,9 +637,37 @@ impl TermClasses {
         value: u64,
         block: PointerBlock,
     ) {
+        let address = self.read_address(address);
         let read = self.intern_node(Node::PointerRead(snapshot, address, kind));
         self.close_with_affine_definition(vec![(value, read)], true);
         self.retain_read_witness(self.root(value), block);
+    }
+
+    /// The operand of a read: the numeric address of `address`, not the
+    /// pointer. Memory is addressed, so two reads of one snapshot at equal
+    /// addresses read the same bytes even when the pointers are not equal
+    /// (a C pointer comparison states only an address equality). Equal
+    /// pointers have equal addresses, so pointer congruence still reaches
+    /// every read through this application.
+    pub(super) fn read_address(&mut self, address: u64) -> u64 {
+        let numeric = self.intern_node(Node::UInt64Address(address));
+        // The numeric address of a displaced pointer is the base's plus the
+        // displacement (modulo 2^64), so an address equality of two bases
+        // relates the reads of one field of each. Defined once, on first read.
+        if let Some((base, bytes)) = self.numeric_shifts.get(&address).copied() {
+            self.numeric_shifts = self.numeric_shifts.without_key(&address);
+            let numeric_base = self.read_address(base);
+            let displacement = self.intern_node(Node::UInt64(MachineAtom::uint64(
+                crate::kernel::Bitvector32Term::UInt64Constant(bytes as u64),
+            )));
+            let sum = self.intern_node(Node::UInt64Binary(
+                UInt64Binary::Add,
+                numeric_base,
+                displacement,
+            ));
+            self.close_with_affine_definition(vec![(numeric, sum)], true);
+        }
+        numeric
     }
 
     fn retain_read_witness(&mut self, root: u64, block: PointerBlock) {
@@ -1199,21 +1253,12 @@ impl TermClasses {
     fn register_pending_loads(&mut self) {
         while let Some((id, memory, pointer)) = self.pending_loads.pop() {
             crate::instrumentation::record_deterministic_work(1);
-            let next_block = self.load_blocks.len() as u64;
-            let block = match self.load_blocks.get(&pointer.block) {
-                Some(block) => *block,
-                None => {
-                    self.address_blocks
-                        .insert(next_block, pointer.block.clone());
-                    self.load_blocks.insert(pointer.block, next_block);
-                    next_block
-                }
-            };
-            let offset = self.intern(&pointer.offset);
-            self.register_application(
-                id,
-                Application::Int32Load(memory.read_identity(), block, offset),
-            );
+            // Integer reads use the same complete address application as
+            // pointer and uint64 reads. A checked equality between addresses
+            // must reindex this read even when no affine block relabel exists.
+            let address = self.address(pointer.block, pointer.offset).0;
+            let address = self.read_address(address);
+            self.register_application(id, Application::Int32Load(memory.read_identity(), address));
         }
     }
 
@@ -1573,6 +1618,13 @@ impl TermClasses {
             }
             self.merge_storage_addresses(moved, kept);
             self.merge_pointer_facts(moved, kept);
+            if let Some(constructor) = self.algebraic_constructors.get(&moved).cloned() {
+                crate::instrumentation::record_deterministic_work(1);
+                self.algebraic_constructors.remove(&moved);
+                if !self.algebraic_constructors.contains_key(&kept) {
+                    self.algebraic_constructors.insert(kept, constructor);
+                }
+            }
             self.merge_additive_addresses(moved, kept);
             self.merge_additive_offsets(moved, kept);
             self.merge_alignment_witnesses(moved, kept);

@@ -22,8 +22,8 @@ what it builds, for which target and with which toolchain.
 By user direction (2026-10-15), C, C++ and Rust are all launch languages, and
 a project configuration is the foundation the front-end work builds on. This
 issue owns the configuration model. [cpp-support.md](cpp-support.md) and
-[rust-support.md](rust-support.md) own their front ends' identity and
-coverage. [multiple-compilers.md](multiple-compilers.md) owns ABI and layout
+[the completed Linux Rust frontend](../design/rust-charon-assessment.md#completed-linux-frontend-delivery)
+record their front ends' identity and coverage. [multiple-compilers.md](multiple-compilers.md) owns ABI and layout
 validation. Those front ends consume the units defined here.
 
 ## Current state
@@ -218,11 +218,37 @@ C++ items were chosen explicitly; the rest are the recommended defaults.
   the cross-host fixture and the Linux rbtree integration are projects; the
   rbtree unit reads the extracted closure in place as its `inputs` root, and
   each re-locked artifact is byte-identical to its predecessor. The pinned
-  zlib fixture keeps its per-sidecar configs: its `zconf.h` includes
-  `<stdarg.h>` and `<sys/types.h>`, which Click's modeled headers refuse, so
-  current Click cannot re-lock it.
-- **Remaining:** migrating zlib and the C++ configs, then refusing per-sidecar
-  configs in the command line and deleting their loaders; the module root still comes
+  zlib fixture is a project too: Click now models the type-only
+  `<stdarg.h>` (`va_list`) and `<sys/types.h>` (`ssize_t`, `off_t`) its
+  `zconf.h` includes, and its unit drops the hand-copied host `-isystem`
+  directories, so its prepared sources hold no C library text.
+- **C++ migration.** `examples/basic-cpp` is a project with one C++ unit and
+  committed, portable locks: `prepare.py` and the compilation-database
+  template are gone, and it rejoins the nightly audit. The Bitcoin Core
+  integration is a project whose `bitcoin` unit's arguments are the real
+  CMake command (a gate test checks it); the pinned exporter supplies its own
+  Clang resource directory, so no unit states a machine path. One lock serves
+  all fourteen sidecars. No per-sidecar import config remains in the
+  repository.
+- **Command-line refusal.** `click verify`, the proof tools and `click import
+  lock` refuse a sidecar's own `<sidecar>.import.json` with a diagnostic naming
+  the replacement unit. The mdtest C++ fixtures, the example gate and the tests
+  that drive the command line build project files.
+- **Per-sidecar imports retired.** The library's per-sidecar loaders and their
+  config and lock formats are deleted. The tests describe fixtures in the old
+  shape and translate them into project units through shared test helpers;
+  `make-fixture.py` reads the project lock and checks the unit's arguments
+  against the CMake command.
+- **One target spelling.** C targets are spelled like C++ and Rust: the
+  triple `x86_64-unknown-linux-gnu`, with `"mode": "userspace"` (default) or
+  `"kernel"` in `click.project.json` and `mode "kernel";` in a sidecar. A
+  unit's compiler variables are its `env`; the old unit `environment` field
+  is refused with the new name. The retired single-name targets are refused
+  with their replacement, every C lock records the triple and mode, and the
+  committed C locks were re-locked with byte-identical artifacts. C++ and Rust
+  unit digests do not bind the C target or mode, so their locks are
+  unchanged.
+- **Remaining:** the module root still comes
   from imports rather than the project file; the shared lock envelope; the
   optimization level and flag policy.
 

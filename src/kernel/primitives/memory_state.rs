@@ -2274,7 +2274,7 @@ fn call_havoc_keeps_cell(
     preserve_local_slots: bool,
 ) -> CallHavocCellRule {
     if preserve_local_slots
-        && pointer.block.starts_with("local:")
+        && pointer.block.is_local_block()
         // An opaque pointer may reach a local even when no exact alias has
         // yet been stated. Absence of an alias is not separation evidence.
         && mutable_ranges.iter().all(|range| !matches!(range.base().block, PointerBlock::Symbolic(_)))
@@ -2551,7 +2551,7 @@ impl CMemory {
         // evidence`). The havoc producers insert their markers directly,
         // but tests and any future caller may write them through this
         // constructor, so the refusal lives here.
-        if block.starts_with("havoc:") || block.starts_with("call-havoc:") {
+        if block.is_havoc_block() || block.is_call_havoc_block() {
             let diagnostic_base = self.clone();
             std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), CBlock::new(size));
             self.record_diagnostic_transform(
@@ -4049,7 +4049,7 @@ impl CMemory {
         }
         let Some((marker, marker_block)) = added_blocks
             .iter()
-            .find(|(block, _)| block.starts_with("call-havoc:"))
+            .find(|(block, _)| block.is_call_havoc_block())
         else {
             return false;
         };
@@ -4216,7 +4216,7 @@ impl CMemory {
         if first >= count {
             return Ok(self);
         }
-        if base.block.starts_with("local:")
+        if base.block.is_local_block()
             || matches!(base.block, PointerBlock::Heap(_))
             || !self.run_can_stand_for_cells_at(&base)
         {
@@ -4250,7 +4250,7 @@ impl CMemory {
         if count == 0 {
             return Ok(self);
         }
-        if base.block.starts_with("local:")
+        if base.block.is_local_block()
             || matches!(base.block, PointerBlock::Heap(_))
             || !self.run_can_stand_for_cells_at(&base)
         {
@@ -4283,7 +4283,7 @@ impl CMemory {
         fields: &[(u32, CType)],
         source: SharedCMemory,
     ) -> Result<Self, Self> {
-        if base.block.starts_with("local:")
+        if base.block.is_local_block()
             || matches!(base.block, PointerBlock::Heap(_))
             || !self.run_can_stand_for_cells_at(base)
             || self.cells.runs_in_block(&base.block).next().is_some()
@@ -4351,7 +4351,7 @@ impl CMemory {
         if count == 0 {
             return Ok(self);
         }
-        if base.block.starts_with("local:")
+        if base.block.is_local_block()
             || matches!(base.block, PointerBlock::Heap(_))
             || value.c_type() != element_type
             || !self.run_can_stand_for_cells_at(&base)
@@ -4473,10 +4473,10 @@ impl CMemory {
             .ok_or(CRuntimeError::TypeMismatch)?;
         let snapshot_copy = copy
             && matches!(&value, CValue::Pointer(source) if
-            !source.pointer().block.starts_with("local:")
+            !source.pointer().block.is_local_block()
             || self.cells.runs_in_block(&source.pointer().block)
                 .any(|run| !matches!(run.value_mode(), RunValueMode::Constant(_))));
-        if !base.block.starts_with("local:") || snapshot_copy {
+        if !base.block.is_local_block() || snapshot_copy {
             return self.write_scalar_array_snapshot(
                 base,
                 element_type,
@@ -4488,7 +4488,7 @@ impl CMemory {
             );
         }
         let valid_region = |pointer: &Pointer| {
-            pointer.block.starts_with("local:")
+            pointer.block.is_local_block()
                 && pointer.offset.as_const().is_some_and(|offset| {
                     offset >= 0
                         && offset % i64::from(element_type.byte_width()) == 0
@@ -4752,7 +4752,7 @@ impl CMemory {
         };
         if !valid(base)
             || (fresh
-                && (!base.block.starts_with("local:")
+                && (!base.block.is_local_block()
                     || base.offset != PointerOffsetTerm::Constant(0)
                     || self
                         .block_size(&base.block)
@@ -4775,7 +4775,7 @@ impl CMemory {
             };
             let pointer = pointer.pointer();
             if !valid(pointer)
-                || (pointer.block.starts_with("local:")
+                || (pointer.block.is_local_block()
                     && !self.has_initialized_bytes_under(pointer, bytes, assumptions))
             {
                 return Err(CRuntimeError::FunctionContract(
@@ -5042,7 +5042,7 @@ impl CMemory {
         }
         // A logical name does not initialize an automatic object either.
         // A real local store has already materialized its cell above.
-        if pointer.block.starts_with("local:") && self.has_block(&pointer.block) {
+        if pointer.block.is_local_block() && self.has_block(&pointer.block) {
             return self;
         }
         // A named load must not turn fresh malloc storage into a value.  The
@@ -5076,6 +5076,11 @@ impl CMemory {
         value: CValue,
         context: &PureFactContext,
     ) -> Self {
+        crate::kernel::debug_assert_widths(
+            "a stored value",
+            || crate::kernel::value_width_mismatch(&value),
+            &value,
+        );
         // Most scalar stores have no union views to displace. When one is
         // present, forget views at every possibly overlapping spelling before
         // recording the new scalar cell.
@@ -5544,7 +5549,7 @@ impl CMemory {
         let mut record = self.heap.initialized.clone();
         let mut changed = false;
         for (pointer, width) in dropped {
-            if pointer.block.starts_with("local:") {
+            if pointer.block.is_local_block() {
                 changed |= record.record(pointer, *width);
             }
         }
@@ -5709,7 +5714,7 @@ impl CMemory {
         let mut record = self.heap.initialized.clone();
         let mut changed = false;
         for DroppedRunSlots { run, elements } in dropped {
-            if !run.base().block.starts_with("local:") {
+            if !run.base().block.is_local_block() {
                 continue;
             }
             let width = run.value_width();
@@ -5878,6 +5883,9 @@ impl CMemory {
             bytes,
             assumptions,
         );
+        // Objects a known address equality ties to the written one may share
+        // the written bytes.
+        let address_connected = assumptions.address_connected_objects(&normalized_pointer);
         let cell_fate = |cell_pointer: &Pointer, cell_value: &CValue| {
             let normalized_cell_pointer = Pointer {
                 block: cell_pointer.block.clone(),
@@ -5898,6 +5906,27 @@ impl CMemory {
                     written.overwrites_completely(&normalized_cell_pointer, cell_value)
                 }) {
                     CachedValueFate::Overwritten
+                } else {
+                    CachedValueFate::Forgotten
+                };
+            }
+            if !address_connected.is_empty()
+                && address_connected.contains(&crate::kernel::assumptions::parameter_alias_bucket(
+                    &normalized_cell_pointer,
+                ))
+            {
+                // Object-wide address aliases are conservative. A same-block
+                // exact byte gap still proves this cell untouched; reuse the
+                // same geometry as read-over-store rather than losing that fact.
+                return if normalized_cell_pointer.block == normalized_pointer.block
+                    && crate::kernel::reasoning::exact_access_byte_overlap(
+                        &normalized_cell_pointer,
+                        crate::kernel::reasoning::cell_access_byte_width(cell_value),
+                        &normalized_pointer,
+                        bytes,
+                    ) == Some(crate::kernel::reasoning::AccessByteOverlap::Separate)
+                {
+                    CachedValueFate::Kept
                 } else {
                     CachedValueFate::Forgotten
                 };
@@ -5983,6 +6012,24 @@ impl CMemory {
                     CachedValueFate::Forgotten
                 };
             }
+            if !address_connected.is_empty()
+                && address_connected.contains(&crate::kernel::assumptions::parameter_alias_bucket(
+                    &normalized_cell_pointer,
+                ))
+            {
+                return if normalized_cell_pointer.block == normalized_pointer.block
+                    && crate::kernel::reasoning::exact_access_byte_overlap(
+                        &normalized_cell_pointer,
+                        cell_type.byte_width().max(1),
+                        &normalized_pointer,
+                        bytes,
+                    ) == Some(crate::kernel::reasoning::AccessByteOverlap::Separate)
+                {
+                    CachedValueFate::Kept
+                } else {
+                    CachedValueFate::Forgotten
+                };
+            }
             if assumptions.access_owned_apart_from_store(
                 &owned_footprint,
                 &normalized_pointer,
@@ -6025,19 +6072,6 @@ impl CMemory {
                 CachedValueFate::Forgotten
             }
         };
-        #[cfg(debug_assertions)]
-        if !gap_kept.is_empty() {
-            crate::instrumentation::uncharged_debug_check(|| {
-                crate::kernel::reasoning::store_gap::check_gap_kept_cells(
-                    &memory.cells,
-                    &gap_kept,
-                    &normalized_pointer,
-                    &mut |pointer: &Pointer, value: &CValue| {
-                        cell_fate(pointer, value) == CachedValueFate::Kept
-                    },
-                );
-            });
-        }
         let ordered = memory
             .cells
             .ordered_store_candidates(&normalized_pointer, bytes, &candidates, assumptions)
@@ -6193,7 +6227,7 @@ impl CMemory {
             || self
                 .blocks
                 .keys()
-                .any(|block| !block.starts_with("local:") && !block.starts_with("havoc:"))
+                .any(|block| !block.is_local_block() && !block.is_havoc_block())
     }
 
     pub(in crate::kernel) fn is_ended_local_block(&self, block: &PointerBlock) -> bool {
@@ -7574,7 +7608,7 @@ impl CState {
         pointer.offset == PointerOffsetTerm::Constant(0)
             && (matches!(&pointer.block, PointerBlock::Heap(_))
                 && self.memory.live_heap_block_size(pointer).is_some()
-                || pointer.block.starts_with("local:") && self.memory.has_block(&pointer.block))
+                || pointer.block.is_local_block() && self.memory.has_block(&pointer.block))
             && self
                 .population_effects
                 .creation
@@ -7631,7 +7665,7 @@ impl CState {
             && (anchor.offset != PointerOffsetTerm::Constant(0)
                 || !(matches!(&anchor.block, PointerBlock::Heap(_))
                     && self.memory.live_heap_block_size(anchor).is_some()
-                    || anchor.block.starts_with("local:") && self.memory.has_block(&anchor.block)))
+                    || anchor.block.is_local_block() && self.memory.has_block(&anchor.block)))
         {
             return Err("Requires live base storage for authority(R(p))".into());
         }
@@ -7763,7 +7797,7 @@ impl CState {
             && (anchor.offset != PointerOffsetTerm::Constant(0)
                 || !(matches!(&anchor.block, PointerBlock::Heap(_))
                     && self.memory.live_heap_block_size(anchor).is_some()
-                    || anchor.block.starts_with("local:") && self.memory.has_block(&anchor.block)))
+                    || anchor.block.is_local_block() && self.memory.has_block(&anchor.block)))
         {
             return Err("Requires live base storage for R(p)".into());
         }
@@ -8849,7 +8883,7 @@ mod union_store_tests {
 }
 
 #[cfg(test)]
-mod hunt_investigation_join_tests {
+mod interface_join_tombstone_tests {
     use super::*;
 
     /// A join retains a tombstone if any incoming arm freed the allocation,
@@ -8857,7 +8891,7 @@ mod hunt_investigation_join_tests {
     /// dereference through the alias must be rejected until the paths are
     /// distinguished.
     #[test]
-    fn hunt_investigation_interface_join_erases_one_arm_deallocation() {
+    fn interface_join_keeps_one_arm_deallocation() {
         let base = Pointer {
             block: PointerBlock::Heap(923_001),
             offset: PointerOffsetTerm::Constant(0),
@@ -9094,7 +9128,7 @@ fn local_block_entries<'a, K: BlockKeyed, V>(
     map: &'a SnapshotMap<K, V>,
 ) -> impl Iterator<Item = (&'a K, &'a V)> + 'a {
     map.range(K::first_key_of(&PointerBlock::from("local:"))..)
-        .take_while(|(key, _)| key.key_block().starts_with("local:"))
+        .take_while(|(key, _)| key.key_block().is_local_block())
 }
 
 #[cfg(test)]

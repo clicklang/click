@@ -18,7 +18,7 @@ void release_other(struct holder *holder, int *data) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_storage_abstract_retirement.c";
 void release_other(struct holder *holder, int32 *data) {

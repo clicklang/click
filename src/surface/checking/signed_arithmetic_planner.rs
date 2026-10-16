@@ -48,8 +48,20 @@ fn plan_signed_arithmetic_certificate_with_mode(
     premises: &[Proposition],
     allow_weakening: bool,
 ) -> Option<SignedArithmeticCertificate> {
-    plan_signed_arithmetic_certificate_in_pass(goal, premises, allow_weakening, false).or_else(
-        || plan_signed_arithmetic_certificate_in_pass(goal, premises, allow_weakening, true),
+    if premises.len() > MAX_SELECTED_PREMISES {
+        return None;
+    }
+    // The kernel checks arithmetic atoms in canonical form. A population
+    // count may still carry a raw memory read here, while another premise
+    // names that same value by its registered load variable.
+    let goal = crate::kernel::canonical_condition_fact(goal);
+    signed_claim(&goal)?;
+    let premises = premises
+        .iter()
+        .map(crate::kernel::canonical_condition_fact)
+        .collect::<Vec<_>>();
+    plan_signed_arithmetic_certificate_in_pass(&goal, &premises, allow_weakening, false).or_else(
+        || plan_signed_arithmetic_certificate_in_pass(&goal, &premises, allow_weakening, true),
     )
 }
 
@@ -336,6 +348,8 @@ fn signed_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
 pub(in crate::surface) fn decomposed_signed_claim(
     proposition: &Proposition,
 ) -> Option<SignedArithmeticClaim> {
+    let canonical = crate::kernel::canonical_condition_fact(proposition);
+    let proposition = &canonical;
     let (condition, value) = match proposition {
         Proposition::ConditionIs(condition, value) => (condition, *value),
         Proposition::Not(body) => match body.as_ref() {

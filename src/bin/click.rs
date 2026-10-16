@@ -49,7 +49,7 @@ fn main() {
 
 fn report_error(message: String) -> ! {
     // A Rust item prints as the path its sidecar writes.
-    let message = click::surface::display_rust_names(&message);
+    let message = click::surface::display_source_names(&message);
     if message.starts_with("proof error:")
         || message.starts_with("proof error in `")
         || message.starts_with("syntax error:")
@@ -557,7 +557,8 @@ mod tests {
         );
         assert!(traced.contains("steps through: return 1"), "{traced}");
         assert!(!traced.contains("error kind:"), "{traced}");
-        assert!(!traced.contains("stage: proof step"), "{traced}");
+        assert!(traced.contains("failed check:"), "{traced}");
+        assert!(traced.contains("stage: proof step"), "{traced}");
         assert!(!traced.contains("To get a trace:"), "{traced}");
 
         fs::write(
@@ -578,7 +579,11 @@ mod tests {
         ])
         .unwrap_err();
         assert!(nested.contains("tactic@2:66:\n  normalize();"), "{nested}");
-        assert!(!nested.contains("have body tactic"), "{nested}");
+        assert!(
+            nested.contains("location: tactic 1 > have body tactic 1"),
+            "{nested}"
+        );
+        assert!(nested.contains("goal: false"), "{nested}");
         assert!(nested.contains("steps through: declare x"), "{nested}");
 
         let wrong = entry([

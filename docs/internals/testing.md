@@ -326,14 +326,12 @@ run. The same workflow has a
 second job, `scripts/check.sh --audit`, which runs `click audit` over the
 whole repository on a release build: every smart tactic in the examples and
 mdtests must expand to a proof that verifies. It takes about twenty minutes.
-Before inventory, this entry point refreshes the native C import lock and
-preprocessed sources for `examples/label-build-flags`, which are not checked
-in. Rust examples retain their checked-in offline imports.
+Every example's import lock and prepared artifacts are checked in, so the
+examples need no compiler or front end; only the C++ mdtests use the pinned
+exporter.
 A proof container with a known audit failure is left out with `--exclude` in
 that script, each beside the issue that tracks it; remove the exclusion with
-the issue. `examples/basic-cpp` is also left out: its import lock and
-compilation database are generated per machine by the test harness, so a
-fresh checkout cannot load it, and `tests/cpp_import.rs` audits the C++ path.
+the issue.
 When a new test would
 push the gate past ten minutes, put it in the nightly gate; do not raise the
 budget. Before 2026-10-06 the local gate had grown to 41 minutes and CI to 23
@@ -686,7 +684,11 @@ statement at different positions (each `drop_box(p#)`, each call) must cost
 the same, so a step whose work moves the same way by more than a small band
 at each of its last positions depends on how many statements ran before it.
 A warm-up, such as the first call or the first store into a block, jumps once
-and then holds, which this does not flag. The proof's `unfold` and `fold`
+and then holds, which this does not flag. A slower drift, too small for the
+band, still never falls and rises at most positions of the second half, which
+the check also flags; a bounded window (a cost that climbs with the statements
+near it, then holds) passes once the shape runs past it. Roles name statements
+with each number replaced by one `#`, so `x9` and `x10` share a role. The proof's `unfold` and `fold`
 tactics are held to the same rule, each tactic name one role in proof order.
 Uncharged costs do not show in work; the script's mean step time is the check
 for those. Shapes whose every step sees the
@@ -923,7 +925,7 @@ the same events per step through `collect_planning_statement_transitions`,
 which records the claim and step of each hidden derivation. The kernel's own
 condition evaluation asks only the difference graph and its keyed rules, so
 it derives nothing hidden
-([`issues/difference-logic.md`](https://github.com/clicklang/click/blob/master/issues/difference-logic.md)).
+([verification efficiency](verification-efficiency.md#condition-decisions-in-simple-checking)).
 The `TacticSearch` route counts a resource, separation or
 loadable-memory obligation a step proves by searching the proof context
 outside its fast path, under a smart tactic's policy. A simple tactic never

@@ -5,349 +5,10 @@ use super::loans::{
 use super::prelude::*;
 
 #[cfg(test)]
-mod empty_loop_rule_tests {
-    use super::*;
-
-    /// A genuinely unannotated loop without a checked rule must retain the
-    /// evaluator's unrolling bound, even though rule dispatch checks all loops.
-    #[test]
-    fn unannotated_loop_without_rule_keeps_unrolling_bound() {
-        let statement = c_while(c_int32_literal(1), Vec::new(), CStatement::Skip);
-        let mut budget = ExecutionBudget::default().with_loop_unrolls(0);
-        let (execution, rule) =
-            prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule_using_budget(
-                CState::new(),
-                statement,
-                PureFactContext::new(),
-                CExecutionEnvironment::new(),
-                CExecutionSemantics::APPLY_VERIFIED_RULES,
-                &mut budget,
-            );
-        assert_eq!(execution.limit, Some(ExecutionLimit::LoopUnrolls));
-        assert!(rule.is_none());
-    }
-}
+mod empty_loop_rule_tests;
 
 #[cfg(test)]
-mod pointee_const_return_tests {
-    use super::*;
-    // Surface planning; only this test reaches it from inside the kernel.
-    use crate::surface::planning::proposition_search::PropositionSearch;
-
-    #[test]
-    fn pointee_const_return_rebinding_is_allowed_but_store_through_pointer_is_not() {
-        let value = CValue::typed_pointer(Pointer::symbolic(Variable(916)), CType::Int32Pointer);
-        let mut state = CState::new().with_local("p", value.clone());
-        state.locals.set_typed_with_all_qualifiers(
-            "q",
-            value,
-            CType::Int32Pointer,
-            false,
-            false,
-            false,
-            true,
-        );
-        let environment = CExecutionEnvironment::new();
-        let paths = execute_c_statement_paths(
-            &state,
-            &c_assign("q", c_variable("p")),
-            &PureFactContext::new(),
-            CExecutionContext::execute_bodies(&environment),
-            &mut ExecutionBudget::default(),
-        )
-        .unwrap();
-        let CStatementOutcome::Normal(state) = &paths[0].outcome else {
-            panic!("const pointee does not prohibit rebinding")
-        };
-        assert!(matches!(
-            state.locals.binding("q"),
-            Some(CLocalBinding::Object {
-                pointee_constant: true,
-                ..
-            })
-        ));
-        let paths = execute_c_statement_paths(
-            state,
-            &c_store(c_variable("q"), c_int32_literal(1)),
-            &PureFactContext::new(),
-            CExecutionContext::execute_bodies(&environment),
-            &mut ExecutionBudget::default(),
-        )
-        .unwrap();
-        assert!(matches!(
-            &paths[0].outcome,
-            CStatementOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory)
-        ));
-    }
-
-    #[test]
-    fn pointee_const_return_inline_call_preserves_pointer_identity() {
-        let function = CFunction::new(
-            CType::Int32Pointer,
-            "view",
-            vec![c_parameter("p", CType::Int32Pointer)],
-            c_return(c_variable("p")),
-        )
-        .with_return_pointee_constant(true)
-        .with_inline_body();
-        let value = CValue::typed_pointer(Pointer::symbolic(Variable(917)), CType::Int32Pointer);
-        let state = CState::new().with_local("p", value.clone());
-        let environment = CExecutionEnvironment::new().with_function(function);
-        let paths = execute_c_call_assign_paths(
-            &state,
-            "temporary",
-            "view",
-            &[c_variable("p")],
-            &PureFactContext::new(),
-            CExecutionContext::apply_verified_rules(&environment),
-            &mut ExecutionBudget::default(),
-        )
-        .unwrap();
-        let CStatementOutcome::Normal(state) = &paths[0].outcome else {
-            panic!("inline call must return")
-        };
-        let result = state.locals.get("temporary").unwrap();
-        assert!(matches!(result, CValue::Pointer(pointer) if pointer.pointee_constant()));
-        let equality =
-            c_value_comparison_proposition(result, CComparisonOperator::Equal, &value).unwrap();
-        assert!(PureFactContext::new().proves(&equality));
-        assert!(paths[0].obligations.is_empty());
-    }
-
-    #[test]
-    fn pointee_const_return_direct_and_callback_calls_preserve_const() {
-        let function = CFunction::new(
-            CType::UInt8Pointer,
-            "text",
-            Vec::new(),
-            c_return(c_int32_literal(0)),
-        )
-        .with_return_pointee_constant(true);
-        let function_type = function.function_pointer_type();
-        let environment = CExecutionEnvironment::new().with_function(function);
-        let paths = execute_c_call_assign_paths(
-            &CState::new(),
-            "temporary",
-            "text",
-            &[],
-            &PureFactContext::new(),
-            CExecutionContext::execute_bodies(&environment),
-            &mut ExecutionBudget::default(),
-        )
-        .unwrap();
-        assert!(matches!(&paths[0].outcome, CStatementOutcome::Normal(state)
-            if matches!(state.locals.binding("temporary"), Some(CLocalBinding::Object { pointee_constant: true, .. }))));
-        let state = CState::new().with_local(
-            "callback",
-            CValue::typed_pointer(
-                Pointer {
-                    block: PointerBlock::Function("text".to_string()),
-                    offset: PointerOffsetTerm::Constant(0),
-                },
-                function_type,
-            ),
-        );
-        let paths = execute_c_call_assign_paths(
-            &state,
-            "temporary",
-            "callback",
-            &[],
-            &PureFactContext::new(),
-            CExecutionContext::execute_bodies(&environment),
-            &mut ExecutionBudget::default(),
-        )
-        .unwrap();
-        assert!(matches!(&paths[0].outcome, CStatementOutcome::Normal(state)
-            if matches!(state.locals.binding("temporary"), Some(CLocalBinding::Object { pointee_constant: true, .. }))));
-
-        let state = state.with_local(
-            "mutable",
-            CValue::typed_pointer(Pointer::null(), CType::UInt8Pointer),
-        );
-        let paths = execute_c_call_assign_paths(
-            &state,
-            "mutable",
-            "callback",
-            &[],
-            &PureFactContext::new(),
-            CExecutionContext::execute_bodies(&environment),
-            &mut ExecutionBudget::default(),
-        )
-        .unwrap();
-        assert!(matches!(
-            &paths[0].outcome,
-            CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch)
-        ));
-
-        let incompatible =
-            CType::FunctionPointer(CType::function_pointer_signature(CType::UInt8Pointer, &[]));
-        let state = CState::new().with_local(
-            "callback",
-            CValue::typed_pointer(
-                Pointer {
-                    block: PointerBlock::Function("text".into()),
-                    offset: PointerOffsetTerm::Constant(0),
-                },
-                incompatible,
-            ),
-        );
-        let paths = execute_c_call_assign_paths(
-            &state,
-            "temporary",
-            "callback",
-            &[],
-            &PureFactContext::new(),
-            CExecutionContext::execute_bodies(&environment),
-            &mut ExecutionBudget::default(),
-        )
-        .unwrap();
-        assert!(matches!(
-            &paths[0].outcome,
-            CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(_))
-        ));
-    }
-
-    #[test]
-    fn pointee_const_return_assignment_preserves_destination_and_temporary_qualifiers() {
-        for source_const in [false, true] {
-            for destination_const in [false, true] {
-                for immutable in [false, true] {
-                    let value = CValue::typed_pointer(
-                        Pointer::symbolic(Variable(912)),
-                        CType::UInt8Pointer,
-                    )
-                    .with_pointer_pointee_constant(source_const);
-                    let mut state = CState::new();
-                    state.locals.set_typed_with_all_qualifiers(
-                        "text",
-                        value.clone(),
-                        CType::UInt8Pointer,
-                        false,
-                        false,
-                        immutable,
-                        destination_const,
-                    );
-                    let result = assign_call_result(
-                        &mut state,
-                        "text",
-                        value,
-                        &mut Vec::new(),
-                        &PureFactContext::new(),
-                    );
-                    assert_eq!(
-                        result.is_ok(),
-                        !immutable && (!source_const || destination_const)
-                    );
-                    if result.is_ok() {
-                        assert!(
-                            matches!(state.locals.binding("text"), Some(CLocalBinding::Object { value: CValue::Pointer(pointer), pointee_constant, .. })
-                            if *pointee_constant == destination_const && pointer.pointee_constant() == destination_const)
-                        );
-                    }
-                }
-            }
-        }
-        let value = CValue::typed_pointer(Pointer::symbolic(Variable(913)), CType::UInt8Pointer)
-            .with_pointer_pointee_constant(true);
-        let mut state = CState::new();
-        assert!(
-            assign_call_result(
-                &mut state,
-                "temporary",
-                value,
-                &mut Vec::new(),
-                &PureFactContext::new()
-            )
-            .is_ok()
-        );
-        assert!(matches!(
-            state.locals.binding("temporary"),
-            Some(CLocalBinding::Object {
-                pointee_constant: true,
-                ..
-            })
-        ));
-    }
-
-    #[test]
-    fn call_result_cannot_overwrite_reserved_mutex_storage() {
-        let state = CState::new().with_local("result", int32(0));
-        let pointer = state.locals.slot("result").unwrap().clone();
-        let mut state = crate::kernel::mutexes::MutexContext::new(state)
-            .initialize_empty(pointer, 40)
-            .unwrap()
-            .into_state();
-        assert!(matches!(
-            assign_call_result(
-                &mut state,
-                "result",
-                int32(1),
-                &mut Vec::new(),
-                &PureFactContext::new()
-            ),
-            Err(CRuntimeError::MutexStorageWrite { .. })
-        ));
-    }
-
-    #[test]
-    fn pointee_const_return_symbolic_callback_checks_signature_and_destination() {
-        let template = CFunction::new(CType::Int32Pointer, "view", vec![], CStatement::Skip)
-            .with_return_pointee_constant(true)
-            .with_contract(vec![], vec![], vec![], vec![], true);
-        let contract = CFunctionContract::new("View", template).unwrap();
-        let qualified = contract.function_pointer_type();
-        let unqualified =
-            CType::FunctionPointer(CType::function_pointer_signature(CType::Int32Pointer, &[]));
-        let pointer = Pointer {
-            block: PointerBlock::FunctionSymbolic(Variable(890)),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let value = CValue::typed_pointer(pointer.clone(), qualified);
-        let assumptions = PureFactContext::new().assume_proposition(Proposition::Predicate {
-            name: contract.predicate_name(),
-            arguments: vec![
-                Term::CState(Box::new(CState::new().with_population_creation_tracking())),
-                Term::CValue(value),
-            ],
-        });
-        let environment = CExecutionEnvironment::new().with_function_contract(contract);
-        for (signature, mutable_destination) in
-            [(qualified, false), (qualified, true), (unqualified, false)]
-        {
-            let mut state = CState::new()
-                .with_population_creation_tracking()
-                .with_local(
-                    "callback",
-                    CValue::typed_pointer(pointer.clone(), signature),
-                );
-            if mutable_destination {
-                state = state.with_local(
-                    "temporary",
-                    CValue::typed_pointer(Pointer::null(), CType::Int32Pointer),
-                );
-            }
-            let paths = execute_c_call_assign_paths(
-                &state,
-                "temporary",
-                "callback",
-                &[],
-                &assumptions,
-                CExecutionContext::execute_bodies(&environment),
-                &mut ExecutionBudget::default(),
-            )
-            .unwrap();
-            if signature == qualified && !mutable_destination {
-                assert!(matches!(&paths[0].outcome, CStatementOutcome::Normal(state)
-                    if matches!(state.locals.binding("temporary"), Some(CLocalBinding::Object { value: CValue::Pointer(pointer), pointee_constant: true, .. }) if pointer.pointee_constant())));
-            } else {
-                assert!(matches!(
-                    &paths[0].outcome,
-                    CStatementOutcome::RuntimeError(_)
-                ));
-            }
-        }
-    }
-}
+mod pointee_const_return_tests;
 
 pub(super) fn assign_call_result(
     state: &mut CState,
@@ -1674,7 +1335,7 @@ fn execute_modeled_pthread_create_paths(
                             let failure = prepared.failure();
                             let (success, handle, _) = prepared.success();
                             let checked_failure_value =
-                                CValue::UInt64(Bitvector32Term::Constant(0));
+                                CValue::UInt64(Bitvector32Term::UInt64Constant(0));
                             let slot = &path.values[0];
                             let checked_success = modeled_pthread_handle_store(
                                 success.parent(),
@@ -3300,339 +2961,13 @@ fn retained_loop_invariant_declarations<'a, T: Ord + 'a>(
 }
 
 #[cfg(test)]
-mod loop_exit_resource_agreement_tests {
-    use super::*;
-
-    fn range(block: &str) -> CMemoryRange {
-        CMemoryRange::new_with_element_width(
-            Pointer {
-                block: PointerBlock::Concrete(block.to_string()),
-                offset: PointerOffsetTerm::Constant(0),
-            },
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
-            4,
-        )
-    }
-
-    fn view(block: &str) -> CResourceFact {
-        CResourceFact::View(CResource::Memory(range(block)))
-    }
-
-    fn own(block: &str) -> CResourceFact {
-        CResourceFact::own(CResource::Memory(range(block)))
-    }
-
-    fn token(quantity: u32) -> CResourceFact {
-        CResourceFact::Own(
-            CResource::Token {
-                name: "ticket".to_string(),
-                arguments: Vec::new().into(),
-            },
-            Box::new(Bitvector32Term::Constant(quantity)),
-        )
-    }
-
-    fn context(facts: impl IntoIterator<Item = CResourceFact>) -> ResourceContext {
-        ResourceContext::new().unchecked_with_facts(facts)
-    }
-
-    /// A view held twice is the view held once, and nothing else about two
-    /// exits' resources is looked through: a permission one exit lacks, a
-    /// view against ownership, another range, and another owned quantity
-    /// each keep the exits apart.
-    #[test]
-    fn exits_agree_on_resources_only_up_to_a_view_held_twice() {
-        let assumptions = PureFactContext::new();
-        let agree = |left: &ResourceContext, right: &ResourceContext| {
-            loop_exit_resources_agree(left, right, &assumptions)
-                && loop_exit_resources_agree(right, left, &assumptions)
-        };
-        let once = context([view("a"), own("b")]);
-        let twice = context([view("a"), view("a"), own("b")]);
-        assert!(once != twice);
-        assert!(agree(&once, &twice));
-
-        // A permission only one exit holds.
-        assert!(!agree(&once, &context([own("b")])));
-        // A view where the other exit owns.
-        assert!(!agree(&once, &context([own("a"), own("b")])));
-        // The same shape over another range.
-        assert!(!agree(&once, &context([view("c"), own("b")])));
-        // Ownership only one exit holds.
-        assert!(!agree(&once, &context([view("a")])));
-        // Different owned quantities of one resource.
-        assert!(!agree(&context([token(1)]), &context([token(2)])));
-        assert!(!agree(&context([token(1)]), &context([token(1), token(1)])));
-    }
-
-    #[test]
-    fn exits_agree_on_a_memory_owner_with_its_own_observation_cache() {
-        let owner = own("a");
-        let plain = context([owner.clone()]);
-        let expanded = plain
-            .clone()
-            .with_cached_supported_expansion(&owner, vec![owner.clone()]);
-        let observed = expanded
-            .clone()
-            .unchecked_with_supported_facts(&owner, vec![view("a")]);
-        let assumptions = PureFactContext::new();
-        for derived in [expanded, observed] {
-            assert_ne!(derived, plain);
-            assert!(loop_exit_resources_agree(&derived, &plain, &assumptions));
-            assert!(loop_exit_resources_agree(&plain, &derived, &assumptions));
-        }
-        let nontrivial = plain
-            .clone()
-            .with_cached_supported_expansion(&owner, vec![own("b")]);
-        assert!(!loop_exit_resources_agree(
-            &nontrivial,
-            &plain,
-            &assumptions
-        ));
-        let other_view = plain
-            .clone()
-            .unchecked_with_supported_facts(&owner, vec![view("b")]);
-        assert!(!loop_exit_resources_agree(
-            &other_view,
-            &plain,
-            &assumptions
-        ));
-    }
-}
+mod loop_exit_resource_agreement_tests;
 
 #[cfg(test)]
-mod loop_exit_shared_fact_tests {
-    use super::*;
-    use std::cell::Cell;
-
-    fn fact(variable: u64, value: i64) -> Proposition {
-        Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(Variable(variable))),
-                Box::new(Bitvector32Term::Constant(value as _)),
-            ),
-            true,
-        )
-    }
-
-    fn exit(restated: Vec<Proposition>) -> LoopExitFacts {
-        LoopExitFacts {
-            stated: Vec::new().into(),
-            disjunct: Vec::new(),
-            restated,
-            successor_equations: Vec::new(),
-            obligations: Vec::new(),
-            loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
-        }
-    }
-
-    fn kept(exits: &[LoopExitFacts]) -> Vec<Proposition> {
-        facts_every_exit_restates(exits, &[])
-            .into_iter()
-            .map(|fact| fact.proposition().clone())
-            .collect()
-    }
-
-    #[test]
-    fn merged_exit_equations_are_available_without_historical_guards() {
-        let fresh = CValue::Int32(Bitvector32Term::Variable(Variable(100)));
-        let make = |value: u32, guard: i64| {
-            let mut restatement = LoopExitRestatement::default();
-            restatement.pin(&fresh, &CValue::Int32(Bitvector32Term::Constant(value)));
-            restatement.restate(
-                vec![ExecutionPureFact::new(fact(1, guard))].into(),
-                Vec::new(),
-                crate::kernel::loans::empty_checked_loan_evidence_sequence(),
-            )
-        };
-        let expected = Proposition::Or(Box::new(fact(100, 7)), Box::new(fact(100, 9)));
-        let (facts, _, _) = join_loop_exit_paths(vec![make(7, 0), make(9, 1)]).unwrap();
-        assert!(facts.iter().any(|fact| fact.proposition() == &expected));
-        assert!(
-            !facts
-                .iter()
-                .any(|entry| entry.proposition() == &fact(100, 7))
-        );
-        assert!(
-            !facts
-                .iter()
-                .any(|entry| entry.proposition() == &fact(100, 9))
-        );
-        // An exit with no equation cannot be silently omitted from the join.
-        let unknown = LoopExitFacts::unabstracted(
-            vec![ExecutionPureFact::new(fact(1, 2))].into(),
-            Vec::new(),
-            crate::kernel::loans::empty_checked_loan_evidence_sequence(),
-        );
-        let (facts, _, _) = join_loop_exit_paths(vec![make(7, 0), unknown]).unwrap();
-        assert!(!facts.iter().any(|entry| entry.proposition() == &expected));
-        assert!(
-            !facts
-                .iter()
-                .any(|entry| entry.proposition() == &fact(100, 7))
-        );
-    }
-
-    /// A fact is kept only when every exit restates that very proposition.
-    #[test]
-    fn only_a_fact_every_exit_restates_is_kept() {
-        let merged = 7_000_001;
-        // Every exit restates it: kept once, in the first exit's order.
-        assert_eq!(
-            kept(&[
-                exit(vec![fact(merged, 1), fact(merged, 2), fact(merged, 1)]),
-                exit(vec![fact(merged, 2), fact(merged, 1)]),
-                exit(vec![fact(merged, 1), fact(merged, 2), fact(merged, 3)]),
-            ]),
-            vec![fact(merged, 1), fact(merged, 2)],
-        );
-        // All but one exit restate it.
-        assert!(
-            kept(&[
-                exit(vec![fact(merged, 1)]),
-                exit(vec![fact(merged, 1)]),
-                exit(vec![fact(merged, 2)]),
-            ])
-            .is_empty()
-        );
-        // An exit that restates nothing keeps nothing, whichever it is.
-        assert!(kept(&[exit(vec![fact(merged, 1)]), exit(Vec::new())]).is_empty());
-        assert!(kept(&[exit(Vec::new()), exit(vec![fact(merged, 1)])]).is_empty());
-        // The same words about different symbols are different facts: each
-        // exit's own name for something (an arm binding, say) is not shared.
-        assert!(
-            kept(&[
-                exit(vec![fact(7_000_010, 1)]),
-                exit(vec![fact(7_000_011, 1)]),
-            ])
-            .is_empty()
-        );
-        // A fact the exits already share as stated is not added again.
-        let shared = [ExecutionPureFact::new(fact(merged, 1))];
-        assert!(
-            facts_every_exit_restates(
-                &[exit(vec![fact(merged, 1)]), exit(vec![fact(merged, 1)])],
-                &shared,
-            )
-            .is_empty()
-        );
-    }
-
-    /// The intersection is one indexing pass per exit and one lookup pass
-    /// over the first exit's facts: its comparisons grow with the exits
-    /// times the facts times a logarithm, along either axis, and never with
-    /// the square of either.
-    #[test]
-    fn facts_in_every_exit_cost_exits_times_facts() {
-        #[derive(Eq)]
-        struct Counted<'a>(usize, &'a Cell<usize>);
-        impl PartialEq for Counted<'_> {
-            fn eq(&self, other: &Self) -> bool {
-                self.cmp(other).is_eq()
-            }
-        }
-        impl PartialOrd for Counted<'_> {
-            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-                Some(self.cmp(other))
-            }
-        }
-        impl Ord for Counted<'_> {
-            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-                self.1.set(self.1.get() + 1);
-                self.0.cmp(&other.0)
-            }
-        }
-        for (exits, facts) in [
-            (4usize, 64usize),
-            (16, 64),
-            (64, 64),
-            (256, 64),
-            (8, 16),
-            (8, 64),
-            (8, 256),
-            (8, 1024),
-        ] {
-            let comparisons = Cell::new(0);
-            let sets = (0..exits)
-                .map(|_| {
-                    (0..facts)
-                        .rev()
-                        .map(|fact| Counted(fact, &comparisons))
-                        .collect::<Vec<_>>()
-                })
-                .collect::<Vec<_>>();
-            let positions =
-                positions_in_every_set(sets[0].iter(), sets[1..].iter().map(|set| set.iter()));
-            assert_eq!(positions.len(), facts);
-            assert!(
-                comparisons.get() <= 4 * exits * facts * (facts.ilog2() as usize + 1),
-                "{exits} exits of {facts} facts: {} comparisons",
-                comparisons.get()
-            );
-        }
-    }
-
-    #[cfg(test)]
-    mod scaling_tests {
-        include!("../scaling_tests/kernel/loops/loop_exit_shared_fact_tests.rs");
-    }
-}
+mod loop_exit_shared_fact_tests;
 
 #[cfg(test)]
-mod loop_invariant_correspondence_tests {
-    use super::*;
-    use std::cell::Cell;
-
-    #[test]
-    fn declaration_identity_survives_duplicates_missing_facts_and_guard_facts() {
-        let declarations = [3, 3, 8, 9, 9];
-        let emitted = [42, 9, 3, 17];
-        assert_eq!(
-            retained_loop_invariant_declarations(declarations.iter(), emitted.iter()),
-            [(0, &3), (1, &3), (3, &9), (4, &9)],
-        );
-    }
-
-    #[test]
-    fn loop_invariant_correspondence_has_output_logarithmic_indexing_cost() {
-        #[derive(Eq)]
-        struct Counted<'a>(usize, &'a Cell<usize>);
-        impl PartialEq for Counted<'_> {
-            fn eq(&self, other: &Self) -> bool {
-                self.cmp(other).is_eq()
-            }
-        }
-        impl PartialOrd for Counted<'_> {
-            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-                Some(self.cmp(other))
-            }
-        }
-        impl Ord for Counted<'_> {
-            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-                self.1.set(self.1.get() + 1);
-                self.0.cmp(&other.0)
-            }
-        }
-        for size in [32usize, 128, 512, 2048] {
-            let comparisons = Cell::new(0);
-            let declarations = (0..size)
-                .flat_map(|i| [Counted(i, &comparisons), Counted(i, &comparisons)])
-                .collect::<Vec<_>>();
-            let facts = (0..size)
-                .rev()
-                .map(|i| Counted(i, &comparisons))
-                .collect::<Vec<_>>();
-            let retained = retained_loop_invariant_declarations(declarations.iter(), facts.iter());
-            assert_eq!(retained.len(), size * 2);
-            assert!(
-                comparisons.get() <= 16 * size * (size.ilog2() as usize + 1),
-                "size {size}: {} comparisons",
-                comparisons.get()
-            );
-        }
-    }
-}
+mod loop_invariant_correspondence_tests;
 
 /// The one post-loop state several exits join into, and the equations each
 /// exit owes about it.
@@ -3904,302 +3239,11 @@ fn indexed_loop_exit_load_equality(
 }
 
 fn is_loop_exit_snapshot_marker(block: &PointerBlock) -> bool {
-    block.starts_with("havoc:")
-        || block.starts_with("call-havoc:")
-        || block.starts_with("call-write-set:")
+    block.is_havoc_block() || block.is_call_havoc_block() || block.starts_with("call-write-set:")
 }
 
 #[cfg(test)]
-mod contract_exit_join_tests {
-    use super::*;
-    use std::sync::Arc;
-
-    #[test]
-    fn exit_disjunct_restates_model_getters_without_replacing_history() {
-        let ty = crate::kernel::AlgebraicType {
-            rigid: false,
-            name: "ExitModel".into(),
-            arguments: vec![],
-            variants: vec![crate::kernel::AlgebraicVariantType {
-                name: "Done".into(),
-                fields: vec![],
-            }]
-            .into(),
-            schemas: Arc::new(crate::kernel::AlgebraicSchemas::new(BTreeMap::new())),
-        };
-        let model = |id| crate::kernel::AlgebraicTerm {
-            algebraic_type: ty.clone(),
-            node: crate::kernel::AlgebraicTermNode::Variable(Variable(id)),
-        };
-        let held = model(986_100);
-        let fresh = model(986_101);
-        let fact = |model| {
-            Proposition::ConditionIs(
-                ConditionTerm::equal(
-                    Bitvector32Term::ClickFunctionApplication {
-                        name: "pending".into(),
-                        arguments: vec![crate::kernel::PureFunctionArgument::Algebraic(model)],
-                    },
-                    Bitvector32Term::Constant(0),
-                ),
-                true,
-            )
-        };
-        let historical = fact(held.clone());
-        let expected = fact(fresh.clone());
-        let mut restatement = LoopExitRestatement::default();
-        restatement.pin_resource_value(
-            &AlgebraicValue::Algebraic(fresh),
-            &AlgebraicValue::Algebraic(held),
-        );
-        let joined = restatement.restate(
-            vec![ExecutionPureFact::new(historical.clone())].into(),
-            vec![],
-            empty_checked_loan_evidence_sequence(),
-        );
-        assert!(joined.disjunct.contains(&expected));
-        assert!(!joined.disjunct.contains(&historical));
-        assert!(joined.restated.contains(&expected));
-        assert!(joined.stated.contains_proposition(&historical));
-    }
-
-    fn marker_exits(count: usize, ambient: usize) -> Vec<CState> {
-        let mut memory = CMemory::new()
-            .with_block("shared", (ambient * 4) as u32)
-            .with_block("havoc:10000000", 0);
-        for index in 0..ambient {
-            memory = memory.store(
-                Pointer {
-                    block: PointerBlock::Concrete("shared".into()),
-                    offset: PointerOffsetTerm::Constant((index * 4) as i64),
-                },
-                int32(index as u32),
-            );
-        }
-        (0..count)
-            .map(|index| {
-                CState::new().with_memory(
-                    memory
-                        .clone()
-                        .with_block(format!("call-havoc:{}", index + 20000000).as_str(), 0),
-                )
-            })
-            .collect()
-    }
-
-    fn measured_join(exits: &[CState]) -> (CState, usize) {
-        let mut successor = exits[0].clone();
-        let mut variables =
-            KernelVariableGenerator::fresh_for_execution(BTreeSet::from([Variable(30000000)]));
-        let mut budget = ExecutionBudget::default();
-        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let bookkeeping = join_loop_exit_storage_bookkeeping(
-                &mut successor,
-                exits,
-                &mut variables,
-                &mut budget,
-            )?;
-            let abstracted = LoopExitAbstraction {
-                locals: &[],
-                uninitialized: &[],
-                cells: &BTreeSet::new(),
-                bookkeeping,
-            };
-            for state in exits {
-                if let Some(difference) = loop_exit_residual_difference(
-                    &successor,
-                    state,
-                    &abstracted,
-                    &[],
-                    &PureFactContext::new(),
-                ) {
-                    return Err(difference);
-                }
-            }
-            Ok(())
-        });
-        result.unwrap();
-        (successor, work)
-    }
-
-    #[test]
-    fn exit_difference_names_call_bindings_and_storage_metadata() {
-        let _session = crate::kernel::VerificationSession::enter();
-        let left = CState::new();
-        let mut right = left.clone();
-        right.resource_bindings = Some(Arc::new(BTreeMap::from([(Variable(1), Variable(2))])));
-        right.next_local_frame = 3;
-        right.enclosing_frame_holds_locals = true;
-        let report = loop_exit_state_difference(&left, &right, &PureFactContext::new()).unwrap();
-        assert!(
-            report.contains("call resource bindings (successor: 0 entries; exit: 1 entries)"),
-            "{report}"
-        );
-        assert!(
-            report.contains("next automatic-storage frame (successor: 0; exit: 3)"),
-            "{report}"
-        );
-        assert!(
-            report
-                .contains("enclosing frame holds automatic objects (successor: false; exit: true)"),
-            "{report}"
-        );
-        assert!(!report.contains("the symbolic state"), "{report}");
-        assert!(loop_exit_state_difference(&left, &left, &PureFactContext::new()).is_none());
-    }
-
-    #[test]
-    fn exit_difference_does_not_blame_equivalent_creation_ledgers() {
-        let _session = crate::kernel::VerificationSession::enter();
-        let left = CState::new().with_population_creation_tracking();
-        let mut right = CState::new().with_population_creation_tracking();
-        right.next_local_frame = 3;
-        let report = loop_exit_state_difference(&left, &right, &PureFactContext::new()).unwrap();
-        assert!(report.contains("next automatic-storage frame"), "{report}");
-        assert!(!report.contains("population effects"), "{report}");
-    }
-
-    #[test]
-    fn exit_difference_names_missing_locals_from_either_side_and_bounds_names() {
-        let _session = crate::kernel::VerificationSession::enter();
-        let left = CState::new();
-        let mut right = left.clone();
-        for index in 0..20 {
-            right = right.with_local(format!("only_exit_{index:02}"), int32(0));
-        }
-        for (first, second) in [(&left, &right), (&right, &left)] {
-            let report =
-                loop_exit_state_difference(first, second, &PureFactContext::new()).unwrap();
-            assert!(
-                report.contains("only_exit_00") && report.contains("only_exit_11"),
-                "{report}"
-            );
-            assert!(!report.contains("only_exit_12"), "{report}");
-            assert!(report.contains("8 additional locals differ"), "{report}");
-        }
-    }
-
-    #[test]
-    fn partial_value_binding_join_cannot_supply_a_missing_read_or_drop_declared_storage() {
-        let _session = crate::kernel::VerificationSession::enter();
-        let empty = CState::new();
-        let value = empty.clone().with_local("temporary", int32(1));
-        let body = c_assign("temporary", c_int32_literal(1));
-        let mut exits = [empty.clone(), value.clone()];
-        discard_loop_exit_partial_value_bindings(&empty, &body, &mut exits);
-        assert!(
-            exits
-                .iter()
-                .all(|state| state.locals.get("temporary").is_none())
-        );
-        assert!(
-            loop_exit_state_difference(&exits[0], &exits[1], &PureFactContext::new()).is_none()
-        );
-
-        let mut exits = [empty.clone(), value.clone()];
-        discard_loop_exit_partial_value_bindings(&value, &body, &mut exits);
-        assert!(
-            exits[1].locals.get("temporary").is_some(),
-            "entry bindings must remain checked"
-        );
-
-        let mut declared = value;
-        if let Some(CLocalBinding::Object {
-            storage_declared, ..
-        }) = Arc::make_mut(&mut declared.locals.bindings).get_mut("temporary")
-        {
-            *storage_declared = true;
-        }
-        let mut exits = [empty.clone(), declared];
-        discard_loop_exit_partial_value_bindings(&empty, &body, &mut exits);
-        assert!(
-            exits[1].locals.get("temporary").is_some(),
-            "declared storage must remain checked"
-        );
-        assert!(
-            loop_exit_state_difference(&exits[0], &exits[1], &PureFactContext::new()).is_some()
-        );
-    }
-
-    #[test]
-    fn numeric_float_equality_does_not_materialize_positive_zero_bits() {
-        let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer {
-            block: PointerBlock::Concrete("shared".into()),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let memory = CMemory::new().with_block("shared", 4);
-        let zero = CValue::Float32(Bitvector32Term::Constant(0));
-        let load = symbolic_storage_cell_value(&memory, &pointer, CType::Float32, true).unwrap();
-        // This equation also permits a negative-zero representation. Filling
-        // the cache with positive-zero bits would make a later bitwise read false.
-        let facts = [ExecutionPureFact::new(
-            c_value_comparison_proposition(&load, CComparisonOperator::Equal, &zero).unwrap(),
-        )];
-        let mut states = vec![
-            CState::new().with_memory(memory.clone().store(pointer.clone(), zero)),
-            CState::new().with_memory(memory),
-        ];
-        retain_proven_loop_exit_cells(
-            &mut states,
-            &[&ExecutionFacts::new(), &facts.clone().into()],
-            &PureFactContext::new(),
-            true,
-        )
-        .unwrap();
-        assert!(states[1].memory().known_value(&pointer).is_none());
-    }
-
-    #[test]
-    fn joined_call_epochs_do_not_transport_uncached_loads_or_hide_real_blocks() {
-        let _session = crate::kernel::VerificationSession::enter();
-        let exits = marker_exits(2, 4);
-        let (successor, _) = measured_join(&exits);
-        let pointer = Pointer {
-            block: PointerBlock::Concrete("unknown".into()),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let old_load =
-            symbolic_storage_cell_value(exits[0].memory(), &pointer, CType::Int32, true).unwrap();
-        let new_load =
-            symbolic_storage_cell_value(successor.memory(), &pointer, CType::Int32, true).unwrap();
-        let zero = int32(0);
-        let old_fact =
-            c_value_comparison_proposition(&old_load, CComparisonOperator::Equal, &zero).unwrap();
-        let new_fact =
-            c_value_comparison_proposition(&new_load, CComparisonOperator::Equal, &zero).unwrap();
-        assert!(
-            !PureFactContext::new()
-                .assume_proposition(old_fact)
-                .proves_atomic_without_search(&new_fact)
-        );
-        let changed = exits[1]
-            .clone()
-            .with_memory(exits[1].memory().clone().with_block("shared", 8));
-        let abstracted = LoopExitAbstraction {
-            locals: &[],
-            uninitialized: &[],
-            cells: &BTreeSet::new(),
-            bookkeeping: true,
-        };
-        assert!(
-            loop_exit_residual_difference(
-                &successor,
-                &changed,
-                &abstracted,
-                &[],
-                &PureFactContext::new()
-            )
-            .unwrap()
-            .contains("memory")
-        );
-    }
-
-    #[cfg(test)]
-    mod scaling_tests {
-        include!("../scaling_tests/kernel/loops/contract_exit_join_tests.rs");
-    }
-}
+mod contract_exit_join_tests;
 
 /// What one loop exit owes about the successor the join exports.
 ///
@@ -4547,185 +3591,7 @@ fn loop_exit_local_arguments(
 }
 
 #[cfg(test)]
-mod exit_local_argument_tests {
-    use super::*;
-
-    fn fixture(snapshot: CResourceSnapshot) -> (CLoopBinder, Vec<ResourceInstance>) {
-        let schema =
-            ResourceFieldSchema::new(vec![("tag".into(), ResourceFieldType::C(CType::Int32))])
-                .unwrap();
-        let spec = CResourceSpec::new(
-            CResourceTerm::Instance {
-                identity: Variable(99),
-                binder: "c".into(),
-                schema: schema.clone(),
-                resource: Box::new(CResourceTerm::Composite {
-                    name: "cursor".into(),
-                    arguments: vec![c_variable("cur")],
-                    argument_snapshots: vec![snapshot],
-                    parameter_types: vec![CType::Int32],
-                }),
-            },
-            CResourceAccessMode::Own,
-            CResourceQuantity::One,
-            CResourceTransferRole::Consume,
-            CResourceSnapshot::Current,
-        )
-        .unwrap();
-        let binder = CLoopBinder {
-            identity: Variable(99),
-            name: "c".into(),
-            spec: Some(spec),
-        };
-        let instances = [1, 2]
-            .into_iter()
-            .map(|value| {
-                ResourceInstance::new(
-                    Variable(99),
-                    "cursor".into(),
-                    vec![AlgebraicValue::C(int32(value))].into(),
-                    schema.clone(),
-                    vec![AlgebraicValue::C(int32(value))].into(),
-                )
-                .unwrap()
-            })
-            .collect();
-        (binder, instances)
-    }
-
-    #[test]
-    fn exit_local_argument_requires_current_snapshot_and_every_exit() {
-        let _session = crate::kernel::VerificationSession::enter();
-        let exits = [
-            CState::new().with_local("cur", int32(1)),
-            CState::new().with_local("cur", int32(2)),
-        ];
-        let successor = CState::new().with_local("cur", int32(3));
-        for snapshot in [CResourceSnapshot::Entry, CResourceSnapshot::Post] {
-            let (binder, instances) = fixture(snapshot);
-            assert_eq!(
-                loop_exit_local_arguments(
-                    &successor,
-                    &exits,
-                    &binder,
-                    &instances,
-                    &[PureFactContext::new(), PureFactContext::new()]
-                ),
-                vec![None]
-            );
-        }
-        let (binder, instances) = fixture(CResourceSnapshot::Current);
-        let mismatched = [
-            exits[0].clone(),
-            exits[1].clone().with_local("cur", int32(4)),
-        ];
-        assert_eq!(
-            loop_exit_local_arguments(
-                &successor,
-                &mismatched,
-                &binder,
-                &instances,
-                &[PureFactContext::new(), PureFactContext::new()]
-            ),
-            vec![None]
-        );
-    }
-
-    #[test]
-    fn exit_address_argument_tracks_only_the_declared_current_local() {
-        let _session = crate::kernel::VerificationSession::enter();
-        let pointers = [1, 2, 3].map(|id| {
-            CValue::typed_pointer(
-                Pointer::symbolic(Variable(880_000 + id)),
-                CType::Int32Pointer,
-            )
-        });
-        let address = |value: &CValue| {
-            let CValue::Pointer(pointer) = value else {
-                unreachable!()
-            };
-            AlgebraicValue::C(CValue::UInt64(Bitvector32Term::pointer_address(
-                pointer.pointer().clone(),
-            )))
-        };
-        let exits = [
-            CState::new().with_local("cur", pointers[0].clone()),
-            CState::new().with_local("cur", pointers[1].clone()),
-        ];
-        let successor = CState::new().with_local("cur", pointers[2].clone());
-        for snapshot in [
-            CResourceSnapshot::Current,
-            CResourceSnapshot::Entry,
-            CResourceSnapshot::Post,
-        ] {
-            let (_, old_instances) = fixture(snapshot);
-            let schema = old_instances[0].schema.clone();
-            let instances = pointers[..2]
-                .iter()
-                .map(|pointer| {
-                    ResourceInstance::new(
-                        Variable(99),
-                        "cursor".into(),
-                        vec![address(pointer)].into(),
-                        schema.clone(),
-                        vec![AlgebraicValue::C(int32(0))].into(),
-                    )
-                    .unwrap()
-                })
-                .collect::<Vec<_>>();
-            let spec = CResourceSpec::new(
-                CResourceTerm::Instance {
-                    identity: Variable(99),
-                    binder: "c".into(),
-                    schema,
-                    resource: Box::new(CResourceTerm::Composite {
-                        name: "cursor".into(),
-                        arguments: vec![CExpression::Cast {
-                            expression: Box::new(c_variable("cur")),
-                            target_type: CType::UInt64,
-                            integer_mode: CIntegerCastMode::Standard,
-                            pointee_struct: None,
-                            pointee_volatile: false,
-                            pointee_constant: false,
-                            explicit_qualification: false,
-                        }],
-                        argument_snapshots: vec![snapshot],
-                        parameter_types: vec![CType::UInt64],
-                    }),
-                },
-                CResourceAccessMode::Own,
-                CResourceQuantity::One,
-                CResourceTransferRole::Consume,
-                CResourceSnapshot::Current,
-            )
-            .unwrap();
-            let binder = CLoopBinder {
-                identity: Variable(99),
-                name: "c".into(),
-                spec: Some(spec),
-            };
-            let contexts = [PureFactContext::new(), PureFactContext::new()];
-            let expected = (snapshot == CResourceSnapshot::Current).then(|| address(&pointers[2]));
-            assert_eq!(
-                loop_exit_local_arguments(&successor, &exits, &binder, &instances, &contexts),
-                vec![expected]
-            );
-            let mismatched = [
-                exits[0].clone(),
-                exits[1].clone().with_local("cur", pointers[0].clone()),
-            ];
-            assert_eq!(
-                loop_exit_local_arguments(&successor, &mismatched, &binder, &instances, &contexts),
-                vec![None]
-            );
-        }
-    }
-
-    #[cfg(test)]
-    mod scaling_tests {
-        include!("../scaling_tests/kernel/loops/exit_local_argument_tests.rs");
-    }
-}
+mod exit_local_argument_tests;
 
 /// A value-only binding introduced by lowering is not an automatic object.
 /// If an exit never produced it, no common value can be read after the loop.
@@ -7323,14 +6189,13 @@ pub(super) fn prepare_loop_top_state(
     // Whole-loop effects are part of the induction hypothesis at the abstract
     // head and are checked independently at every back edge.
     let mut framed_memory = top_state.memory().clone();
+    // Restore the entry's blocks over the havocked ones. Only the blocks
+    // that differ are written, so a table havoc left alone keeps its root,
+    // and the comparison with the top state below stays constant rather
+    // than linear in every block the path has declared.
     if !summaries.is_empty() {
-        std::sync::Arc::make_mut(&mut framed_memory.blocks).extend(
-            entry_state
-                .memory()
-                .blocks
-                .iter()
-                .map(|(key, value)| (key.clone(), value.clone())),
-        );
+        std::sync::Arc::make_mut(&mut framed_memory.blocks)
+            .overwrite_with(&entry_state.memory().blocks);
     }
     // A declaring loop's body holds only its declared resources and views of
     // the rest, and a store needs ownership, so memory the enclosing function
@@ -7358,7 +6223,7 @@ pub(super) fn prepare_loop_top_state(
     let mut runs_by_slot = Vec::new();
     for run in entry_state.memory().cells.runs() {
         crate::instrumentation::record_deterministic_work(1);
-        if run.base().block.starts_with("local:") || run.live_count() == 0 {
+        if run.base().block.is_local_block() || run.live_count() == 0 {
             continue;
         }
         if summaries.is_empty() && withheld.is_none() {
@@ -7432,7 +6297,7 @@ pub(super) fn prepare_loop_top_state(
     {
         let pointer = &pointer;
         let value = &value;
-        if pointer.block.starts_with("local:") {
+        if pointer.block.is_local_block() {
             continue;
         }
         let is_stable = summaries.iter().any(|summary| {
@@ -7450,7 +6315,7 @@ pub(super) fn prepare_loop_top_state(
         }
     }
     for ((pointer, c_type), value) in entry_state.memory().union_cells.iter() {
-        if pointer.block.starts_with("local:") {
+        if pointer.block.is_local_block() {
             continue;
         }
         let is_stable = summaries.iter().any(|summary| {
@@ -8886,7 +7751,7 @@ pub(super) fn evaluate_loop_effect_segment(
     segment: &CMemorySegment,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<EvaluatedMemorySegment, String>> {
+) -> ExecutionResult<Result<EvaluatedMemorySegment, ValueRefusal>> {
     let base = match evaluate_loop_effect_segment_value(
         state,
         &segment.base,
@@ -8896,10 +7761,10 @@ pub(super) fn evaluate_loop_effect_segment(
     )? {
         Ok(CValue::Pointer(pointer)) => pointer,
         Ok(value) => {
-            return Ok(Err(format!(
+            return Ok(Err(ValueRefusal::from(format!(
                 "segment base evaluated to a {} value, not a pointer",
                 super::functions::c_type_spelling(value.c_type())
-            )));
+            ))));
         }
         Err(message) => return Ok(Err(message)),
     };
@@ -8935,7 +7800,7 @@ pub(super) fn evaluate_loop_effect_segment(
             kind: RangeIndexKind::UInt64,
         };
         if let Some(refusal) = segment_extent_refusal(&base_value, &evaluated, assumptions) {
-            return Ok(Err(refusal));
+            return Ok(Err(refusal.into()));
         }
         return Ok(Ok(evaluated));
     }
@@ -8945,10 +7810,10 @@ pub(super) fn evaluate_loop_effect_segment(
             crate::kernel::narrow_range_constant(&value).expect("checked above")
         }
         Ok(value) => {
-            return Ok(Err(format!(
+            return Ok(Err(ValueRefusal::from(format!(
                 "segment start evaluated to a {} value, not an int32",
                 super::functions::c_type_spelling(value.c_type())
-            )));
+            ))));
         }
         Err(message) => return Ok(Err(message)),
     };
@@ -8958,10 +7823,10 @@ pub(super) fn evaluate_loop_effect_segment(
             crate::kernel::narrow_range_constant(&value).expect("checked above")
         }
         Ok(value) => {
-            return Ok(Err(format!(
+            return Ok(Err(ValueRefusal::from(format!(
                 "segment end evaluated to a {} value, not an int32",
                 super::functions::c_type_spelling(value.c_type())
-            )));
+            ))));
         }
         Err(message) => return Ok(Err(message)),
     };
@@ -8978,7 +7843,7 @@ pub(super) fn evaluate_loop_effect_segment(
         kind: RangeIndexKind::Int32,
     };
     if let Some(refusal) = segment_extent_refusal(&base_value, &evaluated, assumptions) {
-        return Ok(Err(refusal));
+        return Ok(Err(refusal.into()));
     }
     Ok(Ok(evaluated))
 }
@@ -8988,7 +7853,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     segment: &CMemorySegment,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<(EvaluatedMemorySegment, ExecutionFacts), String>> {
+) -> ExecutionResult<Result<(EvaluatedMemorySegment, ExecutionFacts), ValueRefusal>> {
     let mut facts = Vec::new();
     let mut evaluate = |expression: &CExpression, label: &str| {
         let local_assumptions = assumptions_with_path_context(assumptions, &facts, &[]);
@@ -9013,10 +7878,10 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     let base = match evaluate(&segment.base, "segment base")? {
         Ok(CValue::Pointer(pointer)) => pointer,
         Ok(value) => {
-            return Ok(Err(format!(
+            return Ok(Err(ValueRefusal::from(format!(
                 "segment base evaluated to a {} value, not a pointer",
                 super::functions::c_type_spelling(value.c_type())
-            )));
+            ))));
         }
         Err(message) => return Ok(Err(message)),
     };
@@ -9041,7 +7906,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         };
         let context = assumptions_with_path_context(assumptions, &facts, &[]);
         if let Some(refusal) = segment_extent_refusal(&base_value, &evaluated, &context) {
-            return Ok(Err(refusal));
+            return Ok(Err(refusal.into()));
         }
         return Ok(Ok((evaluated, facts.into())));
     }
@@ -9051,10 +7916,10 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
             crate::kernel::narrow_range_constant(&value).expect("checked above")
         }
         Ok(value) => {
-            return Ok(Err(format!(
+            return Ok(Err(ValueRefusal::from(format!(
                 "segment start evaluated to a {} value, not an int32",
                 super::functions::c_type_spelling(value.c_type())
-            )));
+            ))));
         }
         Err(message) => return Ok(Err(message)),
     };
@@ -9064,10 +7929,10 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
             crate::kernel::narrow_range_constant(&value).expect("checked above")
         }
         Ok(value) => {
-            return Ok(Err(format!(
+            return Ok(Err(ValueRefusal::from(format!(
                 "segment end evaluated to a {} value, not an int32",
                 super::functions::c_type_spelling(value.c_type())
-            )));
+            ))));
         }
         Err(message) => return Ok(Err(message)),
     };
@@ -9084,7 +7949,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     };
     let context = assumptions_with_path_context(assumptions, &facts, &[]);
     if let Some(refusal) = segment_extent_refusal(&base_value, &evaluated, &context) {
-        return Ok(Err(refusal));
+        return Ok(Err(refusal.into()));
     }
     Ok(Ok((evaluated, facts.into())))
 }
@@ -9095,7 +7960,7 @@ pub(super) fn evaluate_loop_effect_segment_value(
     assumptions: &PureFactContext,
     label: &str,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<CValue, String>> {
+) -> ExecutionResult<Result<CValue, ValueRefusal>> {
     Ok(evaluate_loop_effect_segment_value_with_facts(
         state,
         expression,
@@ -9112,13 +7977,49 @@ pub(super) fn evaluate_loop_effect_segment_value(
 pub(in crate::kernel) const UNRULED_OUT_UNDEFINED_BEHAVIOR: &str =
     "may have undefined behavior the facts do not rule out";
 
+/// Why a resource or loop-effect expression has no single defined value.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::kernel) struct ValueRefusal {
+    message: String,
+    /// The expression may have undefined behavior the facts do not rule
+    /// out: a requirement repairs it, never another clause's cells.
+    undefined_behavior: bool,
+}
+
+impl ValueRefusal {
+    pub(in crate::kernel) fn is_undefined_behavior(&self) -> bool {
+        self.undefined_behavior
+    }
+}
+
+impl From<String> for ValueRefusal {
+    fn from(message: String) -> Self {
+        Self {
+            message,
+            undefined_behavior: false,
+        }
+    }
+}
+
+impl From<ValueRefusal> for String {
+    fn from(refusal: ValueRefusal) -> Self {
+        refusal.message
+    }
+}
+
+impl std::fmt::Display for ValueRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
 fn evaluate_loop_effect_segment_value_with_facts(
     state: &CState,
     expression: &CExpression,
     assumptions: &PureFactContext,
     label: &str,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<(CValue, ExecutionFacts), String>> {
+) -> ExecutionResult<Result<(CValue, ExecutionFacts), ValueRefusal>> {
     evaluate_loop_effect_segment_value_capturing(
         state,
         expression,
@@ -9136,7 +8037,7 @@ pub(super) fn evaluate_resource_argument_value(
     label: &str,
     budget: &mut ExecutionBudget,
     diagnostic: &mut Option<CRuntimeError>,
-) -> ExecutionResult<Result<CValue, String>> {
+) -> ExecutionResult<Result<CValue, ValueRefusal>> {
     Ok(evaluate_loop_effect_segment_value_capturing(
         state,
         expression,
@@ -9155,7 +8056,7 @@ fn evaluate_loop_effect_segment_value_capturing(
     label: &str,
     budget: &mut ExecutionBudget,
     diagnostic: Option<&mut Option<CRuntimeError>>,
-) -> ExecutionResult<Result<(CValue, ExecutionFacts), String>> {
+) -> ExecutionResult<Result<(CValue, ExecutionFacts), ValueRefusal>> {
     let paths = evaluate_c_expression_paths(state, expression, assumptions, budget)?;
     // An endpoint the facts do not keep defined splits into its defined value
     // and the undefined behavior beside it: name that behavior, which a
@@ -9168,19 +8069,24 @@ fn evaluate_loop_effect_segment_value_capturing(
         })
         .collect::<BTreeSet<_>>();
     if paths.len() > 1 && !undefined.is_empty() {
-        return Ok(Err(format!(
-            "{label} {UNRULED_OUT_UNDEFINED_BEHAVIOR}: {}",
-            undefined.into_iter().collect::<Vec<_>>().join("; ")
-        )));
+        return Ok(Err(ValueRefusal {
+            message: format!(
+                "{label} {UNRULED_OUT_UNDEFINED_BEHAVIOR}: {}",
+                undefined.into_iter().collect::<Vec<_>>().join("; ")
+            ),
+            undefined_behavior: true,
+        }));
     }
     if paths.len() != 1 {
-        return Ok(Err(format!(
+        return Ok(Err(ValueRefusal::from(format!(
             "{label} evaluated through {} paths, expected exactly one",
             paths.len()
-        )));
+        ))));
     }
     let Some(path) = paths.into_iter().next() else {
-        return Ok(Err(format!("{label} had no evaluation path")));
+        return Ok(Err(ValueRefusal::from(format!(
+            "{label} had no evaluation path"
+        ))));
     };
     if !path.obligations.is_empty() {
         // Named by the sentences their lowering wrote; the kernel has no
@@ -9195,7 +8101,7 @@ fn evaluate_loop_effect_segment_value_capturing(
         let narrowing = contexts
             .iter()
             .any(|context| context.contains("int32 narrowing"));
-        return Ok(Err(format!(
+        return Ok(Err(ValueRefusal::from(format!(
             "{label} left {} proof obligation(s): {}{}",
             contexts.len(),
             contexts.join("; "),
@@ -9206,7 +8112,7 @@ fn evaluate_loop_effect_segment_value_capturing(
             } else {
                 ""
             }
-        )));
+        ))));
     }
     match path.outcome {
         CExpressionOutcome::Value(value) => {
@@ -9219,14 +8125,16 @@ fn evaluate_loop_effect_segment_value_capturing(
             Ok(Ok((value, path.facts)))
         }
         CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead) => {
-            Ok(Err(format!(
+            Ok(Err(ValueRefusal::from(format!(
                 "{label} could not establish that the memory location contains an initialized value"
-            )))
+            ))))
         }
-        CExpressionOutcome::UndefinedBehavior(undefined_behavior) => Ok(Err(format!(
-            "{label} produced undefined behavior: {}",
-            undefined_behavior.description()
-        ))),
+        CExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
+            Ok(Err(ValueRefusal::from(format!(
+                "{label} produced undefined behavior: {}",
+                undefined_behavior.description()
+            ))))
+        }
         CExpressionOutcome::RuntimeError(error) => {
             if let CRuntimeError::MissingResource { resource } = &error {
                 crate::kernel::functions::record_resource_dependency(*resource.clone());
@@ -9241,10 +8149,10 @@ fn evaluate_loop_effect_segment_value_capturing(
                     });
                 }
             }
-            Ok(Err(format!(
+            Ok(Err(ValueRefusal::from(format!(
                 "{label} produced runtime error: {}",
                 super::api::contract_certification::describe_certification_runtime_error(&error)
-            )))
+            ))))
         }
     }
 }
@@ -9299,7 +8207,7 @@ pub(super) fn loop_effect_segment_contains_range(
 }
 
 pub(super) fn is_loop_effect_relevant_pointer(pointer: &Pointer) -> bool {
-    !pointer.block.starts_with("local:") && !pointer.block.starts_with("havoc:")
+    !pointer.block.is_local_block() && !pointer.block.is_havoc_block()
 }
 
 /// A footprint range for a loop-effect refusal, without the kernel's
@@ -9926,78 +8834,7 @@ pub(super) fn statement_may_write_memory(state: &CState, statement: &CStatement)
 }
 
 #[cfg(test)]
-mod v10_tests {
-    use super::*;
-
-    fn memory_range(base: u32, end: u32) -> CMemoryRange {
-        CMemoryRange::new(
-            Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Constant(0),
-            },
-            Bitvector32Term::Constant(base),
-            Bitvector32Term::Constant(end),
-        )
-    }
-
-    #[test]
-    fn loop_havoc_requires_a_checked_set_disjoint_from_active_loans() {
-        let escrow = CResourceFact::own_memory(memory_range(0, 1));
-        let support = ResourceContext::new()
-            .unchecked_with_fact(escrow.clone())
-            .unique_owned_occurrence_for_fact(&escrow)
-            .expect("the test escrow has one backing occurrence")
-            .0;
-        let ledger = super::super::loans::LoanLedger::new();
-        let owner = ledger.fresh_participant().unwrap();
-        let opening = ledger.lend(owner, owner, support, escrow).unwrap();
-        let ledger = ledger.apply(&opening.transition).unwrap();
-
-        let assumptions = PureFactContext::new();
-        assert!(validate_loop_havoc_stable_loans(&ledger, None, &assumptions).is_err());
-        assert!(
-            validate_loop_havoc_stable_loans(&ledger, Some(&[memory_range(0, 1)]), &assumptions)
-                .is_err()
-        );
-        assert!(
-            validate_loop_havoc_stable_loans(&ledger, Some(&[memory_range(2, 3)]), &assumptions)
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn owned_entry_footprint_names_memory_owners_and_refuses_unnameable_ones() {
-        let empty = ResourceContext::new();
-        assert_eq!(checked_owned_entry_footprint(&empty), Some(Vec::new()));
-
-        let owned = CResourceFact::own_memory(memory_range(2, 3));
-        let viewed = CResourceFact::view_memory(memory_range(0, 1));
-        let memory_only = ResourceContext::new()
-            .unchecked_with_fact(owned)
-            .unchecked_with_fact(viewed);
-        // A view lends no write authority, so it is not part of the footprint.
-        assert_eq!(
-            checked_owned_entry_footprint(&memory_only),
-            Some(vec![memory_range(2, 3)])
-        );
-
-        // An owned resource whose bytes this level cannot enumerate leaves the
-        // write set unknown, so the barrier stays closed rather than shrinking
-        // to the memory owners that happen to be nameable.
-        let folded = ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own_memory(memory_range(2, 3)))
-            .unchecked_with_fact(CResourceFact::own(CResource::Token {
-                name: "tokens".to_string(),
-                arguments: Vec::new().into(),
-            }));
-        assert_eq!(checked_owned_entry_footprint(&folded), None);
-    }
-
-    #[cfg(test)]
-    mod scaling_tests {
-        include!("../scaling_tests/kernel/loops/v10_tests.rs");
-    }
-}
+mod v10_tests;
 
 pub(super) fn collect_loop_modified_locals(statement: &CStatement, names: &mut BTreeSet<String>) {
     match statement {
@@ -10358,124 +9195,10 @@ pub(super) fn collect_variable_names(expression: &CExpression, names: &mut BTree
 }
 
 #[cfg(test)]
-mod wide_range_reader_tests {
-    use super::*;
-    // Validated loop frames and call summaries retain native bounds; the
-    // signed run optimization must fall back when it sees one.
-    #[test]
-    fn wide_loop_frames_cover_native_accesses_and_refuse_cross_width_ranges() {
-        let base = Pointer::symbolic(Variable(984_500));
-        let wide = CMemoryRange::new_wide(
-            base.clone(),
-            Bitvector32Term::UInt64Constant(0),
-            Bitvector32Term::UInt64Constant(1 << 33),
-            4,
-        );
-        let segment = EvaluatedMemorySegment {
-            designation: wide.designation.clone(),
-            opaque_extent: wide.opaque_extent.clone(),
-            extent_known: wide.carrier_extent_known,
-            base: base.clone(),
-            start: wide.bound_terms().0.clone(),
-            end: wide.bound_terms().1.clone(),
-            element_width: 4,
-            kind: RangeIndexKind::UInt64,
-        };
-        let facts = PureFactContext::new();
-        assert!(loop_effect_segment_contains_range(&segment, &wide, &facts));
-        assert!(loop_effect_segment_contains_pointer(
-            &segment, &base, 4, &facts
-        ));
-        let bytes = CMemoryRange::new_wide(
-            base.clone(),
-            Bitvector32Term::UInt64Constant(0),
-            Bitvector32Term::UInt64Constant(1 << 33),
-            1,
-        );
-        assert!(!loop_effect_segment_contains_range(
-            &segment, &bytes, &facts
-        ));
-        let check = CLoopEffectCheck::new(CLoopEffect::Mutable(vec![]), None)
-            .with_validated_ranges(vec![wide.clone()]);
-        let state = CState::new();
-        let mut budget = ExecutionBudget::beside_live_state();
-        assert!(
-            collect_loop_effect_check_obligations(
-                &state,
-                &state,
-                &[check],
-                &ExecutionFacts::new(),
-                &[],
-                &facts,
-                &mut budget
-            )
-            .unwrap()
-            .is_empty()
-        );
-        let summary = Proposition::CMemoryEffectSummary {
-            before: state.memory().clone(),
-            after: state.memory().clone(),
-            mutable_ranges: vec![wide],
-        };
-        let run = crate::kernel::primitives::CellRun::new(
-            base,
-            4,
-            CType::Int32,
-            4,
-            state.memory().clone().into(),
-            crate::kernel::primitives::IndexIntervals::default(),
-        );
-        assert!(run_slots_clear_of_loop_summaries(&run, &[summary], &facts).is_none());
-    }
-}
+mod wide_range_reader_tests;
 
 #[cfg(test)]
-mod resource_argument_diagnostic_tests {
-    use super::*;
-
-    #[test]
-    fn missing_argument_read_retains_the_actual_snapshot_and_permission() {
-        let state =
-            CState::new().with_local("p", CValue::pointer(Pointer::symbolic(Variable(985_910))));
-        let expression = c_load(c_variable("p"));
-        let assumptions = PureFactContext::new();
-        let mut budget = ExecutionBudget::default();
-        let mut diagnostic = None;
-        let captured = evaluate_resource_argument_value(
-            &state,
-            &expression,
-            &assumptions,
-            "resource `cell` argument 1",
-            &mut budget,
-            &mut diagnostic,
-        )
-        .unwrap();
-        let ordinary = evaluate_loop_effect_segment_value(
-            &state,
-            &expression,
-            &assumptions,
-            "resource `cell` argument 1",
-            &mut budget,
-        )
-        .unwrap();
-        assert_eq!(captured, ordinary);
-        assert!(captured.is_err());
-        let Some(CRuntimeError::ContractResourceDiagnostic {
-            memory: Some(memory),
-            required,
-            held: None,
-            ..
-        }) = diagnostic
-        else {
-            panic!("the failed read must retain its operands")
-        };
-        assert_eq!(*memory, *state.memory());
-        assert!(matches!(
-            *required,
-            CResourceFact::View(CResource::Memory(_))
-        ));
-    }
-}
+mod resource_argument_diagnostic_tests;
 
 fn c_value_subobject_extent(value: &CValue) -> Option<&SubobjectExtent> {
     match value {

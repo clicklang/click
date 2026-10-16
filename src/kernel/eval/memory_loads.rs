@@ -1282,7 +1282,7 @@ fn evaluate_c_memory_load_case(
     // keeps as a premise: a read that may leave the object is refused for
     // its bound first, and only a read inside it for unwritten bytes.
     if purpose != LoadPurpose::Logical
-        && ((pointer.block.starts_with("local:") && memory.has_block(&pointer.block))
+        && ((pointer.block.is_local_block() && memory.has_block(&pointer.block))
             || memory.may_read_uninitialized_object(&pointer, value_type.byte_width()))
         && !written.has_initialized_bytes_under(&pointer, value_type.byte_width(), assumptions)
         && !assumptions.has_memory_read_defined_evidence(&memory, &pointer, value_type)
@@ -1440,7 +1440,7 @@ fn canonicalized_pointer_value_from_int_cell(
     let loaded = if matches!(
         defining_block,
         PointerBlock::Heap(_) | PointerBlock::Temporary(_)
-    ) || defining_block.starts_with("local:")
+    ) || defining_block.is_local_block()
     {
         Pointer::symbolic(fresh)
     } else {
@@ -1497,7 +1497,7 @@ fn should_use_symbolic_pointer_identity(
     (matches!(
         pointer.block,
         PointerBlock::Heap(_) | PointerBlock::Temporary(_)
-    ) || pointer.block.starts_with("local:")
+    ) || pointer.block.is_local_block()
         || (memory.has_call_memory_havoc() && pointer_sized_load))
         && value_type.is_pointer()
         && memory.known_union_value(pointer, value_type).is_none()
@@ -2535,7 +2535,7 @@ pub(crate) fn registered_load_origin_term_for_variable(
 /// are not judged, because a heap identity can come from a contract's
 /// allocation claim rather than from a snapshot's own blocks.
 pub(crate) fn loaded_pointer_predates_block(variable: &Variable, block: &PointerBlock) -> bool {
-    if !block.starts_with("local:") {
+    if !block.is_local_block() {
         return false;
     }
     let Some((origin, _)) = registered_load_origin_for_variable(variable) else {
@@ -3979,7 +3979,7 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
     record_width: bool,
 ) -> Option<CValue> {
     if c_type.is_object_pointer() {
-        if record_width && pointer.block.starts_with("local:") {
+        if record_width && pointer.block.is_local_block() {
             record_load_access_width(memory, pointer, c_type.byte_width());
         }
         let load = Bitvector32Term::MemoryLoad(

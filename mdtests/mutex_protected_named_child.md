@@ -15,7 +15,7 @@ void copy_across(struct pair *p) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_protected_named_child.c";
 resource cell(p: struct pair*) {

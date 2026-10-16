@@ -815,7 +815,7 @@ impl PureFactContext {
         let premises_id = id_scope.id;
         if let Some(result) = ATOMIC_DERIVATION_MEMO.with(|memo| {
             memo.borrow()
-                .get(&(premises_id, for_simp))
+                .get(&atomic_derivation_memo_key(premises_id, for_simp))
                 .and_then(|entries| entries.get(proposition))
                 .cloned()
         }) {
@@ -1454,7 +1454,9 @@ impl PureFactContext {
                 if memo.len() >= ASSUMPTIONS_MEMO_ID_LIMIT {
                     memo.clear();
                 }
-                let entries = memo.entry((premises_id, for_simp)).or_default();
+                let entries = memo
+                    .entry(atomic_derivation_memo_key(premises_id, for_simp))
+                    .or_default();
                 if entries.len() >= DECIDE_MEMO_LIMIT {
                     entries.clear();
                 }
@@ -2168,7 +2170,7 @@ impl PureFactContext {
         }
         if let Some(result) = ATOMIC_DERIVATION_MEMO.with(|memo| {
             memo.borrow()
-                .get(&(premises_id, for_simp))
+                .get(&atomic_derivation_memo_key(premises_id, for_simp))
                 .and_then(|entries| entries.get(proposition))
                 .cloned()
         }) {
@@ -4200,4 +4202,33 @@ mod constant_prefix_certificate_tests {
         let withdrawn = context.without_exact_fact(&Proposition::ConditionIs(premise, true));
         assert!(!withdrawn.checks_exact_signed_order_path(&path, &1u32.into(), &upper, true));
     }
+}
+
+/// The atomic derivation memo's key. The derivation matches order-path
+/// terms through memory derivations only while the extended DAG bridging is
+/// active (`order_paths.rs`), and the DAG modes are scoped so that answers
+/// outside them stay unchanged, so an answer is reused only in the modes it
+/// was computed in.
+fn atomic_derivation_memo_key(premises_id: u64, for_simp: bool) -> (u64, bool, bool, bool) {
+    (
+        premises_id,
+        for_simp,
+        crate::kernel::api::extended_dag_bridging_active(),
+        crate::kernel::api::explicit_dag_check_active(),
+    )
+}
+
+/// Whether an atomic derivation of `proposition` is memoized for these
+/// premises in the current DAG modes.
+#[cfg(test)]
+pub(crate) fn atomic_derivation_is_memoized(
+    premises_id: u64,
+    proposition: &Proposition,
+    for_simp: bool,
+) -> bool {
+    ATOMIC_DERIVATION_MEMO.with(|memo| {
+        memo.borrow()
+            .get(&atomic_derivation_memo_key(premises_id, for_simp))
+            .is_some_and(|entries| entries.contains_key(proposition))
+    })
 }

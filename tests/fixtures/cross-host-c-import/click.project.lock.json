@@ -4,11 +4,12 @@
     "main": {
       "language": "c",
       "lock": {
-        "click_header_catalog_sha256": "008dc5a49ab534ad6969d4426dd52674ed498f07cf887b756b7cae21f0308bf0",
+        "click_header_catalog_sha256": "1eb5c9764e83c5a13e4d4fb5274581350b8dd3b03a35ab1038ebc30d1be51108",
         "compiler_path": "/usr/bin/x86_64-linux-gnu-gcc-13",
-        "config_directory": "/home/user/click-p/tests/fixtures/cross-host-c-import",
-        "config_sha256": "d8e4f372b9cd7ad0e8419f5cefe5b02324861b600ccfb789efd7f0816ec4d1e3",
-        "invocation_sha256": "8fb6f7631dae0f5aaa9f6dcce4b3ce3de2929081d7b44455887be993a7a6f599",
+        "config_directory": "/home/user/click-b/tests/fixtures/cross-host-c-import",
+        "config_sha256": "07aeca10b65a8a20e4cce6dde7eeaeb966e44c52dcfff8f1964516f521a5ffe0",
+        "invocation_sha256": "da72dc40e8a02400f1c61a4cefc940ac0115ede8e4d3278068f2023537ff4e3a",
+        "mode": "userspace",
         "schema": 3,
         "sources": [
           {
@@ -17,10 +18,10 @@
             "artifact_bytes": 162,
             "artifact_sha256": "2cbb6c3a850babf82686b7f9b91a4471d5e3971d21a5cc39d1433aa2ff928881",
             "dependencies": {
-              "/home/user/click-p/tests/fixtures/cross-host-c-import/bits.h": "e407af23fc10c5000afa7f7c712697b080d37ddbcf8ca0e979a46439388bd374",
-              "/home/user/click-p/tests/fixtures/cross-host-c-import/local.h": "afd7473f8201458ca657e5c17efb468cf809139b9f8ca2256ee77d9ec5efa52a"
+              "/home/user/click-b/tests/fixtures/cross-host-c-import/bits.h": "e407af23fc10c5000afa7f7c712697b080d37ddbcf8ca0e979a46439388bd374",
+              "/home/user/click-b/tests/fixtures/cross-host-c-import/local.h": "afd7473f8201458ca657e5c17efb468cf809139b9f8ca2256ee77d9ec5efa52a"
             },
-            "identity": "9ecac6fc44b053b8e778ab529c610fab9bed05ec23cf39181060e1e8fc2be162",
+            "identity": "91a3e635ea8d6600e74c67e2671b83aef6b5e61c44f03258f074fa4e8c027e2f",
             "local_dependencies": {
               "bits.h": "e407af23fc10c5000afa7f7c712697b080d37ddbcf8ca0e979a46439388bd374",
               "local.h": "afd7473f8201458ca657e5c17efb468cf809139b9f8ca2256ee77d9ec5efa52a"
@@ -30,7 +31,7 @@
             "source_sha256": "fd3792ec8ac9d968bdd918fae9fdd12d14222bd420c828a55a613186c3787cef"
           }
         ],
-        "target": "x86_64-linux-userspace",
+        "target": "x86_64-unknown-linux-gnu",
         "toolchain": {
           "abi_probe_sha256": "5e7789053c4ff4b5cc64e011d8b266f733d5db1ed80e79d65713ab53b39571ed",
           "cc1_path": "/usr/libexec/gcc/x86_64-linux-gnu/13/cc1",
@@ -184,7 +185,7 @@
           "specs_path": null,
           "specs_sha256": null
         },
-        "working_directory": "/home/user/click-p/tests/fixtures/cross-host-c-import/."
+        "working_directory": "/home/user/click-b/tests/fixtures/cross-host-c-import/."
       }
     }
   }

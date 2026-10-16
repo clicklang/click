@@ -8,7 +8,7 @@ void prefix(const unsigned char *p, unsigned long held) {}
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "prefix.c";
 void prefix(const uint8* p, uint64 held) {
  requires 1u64 <= held;

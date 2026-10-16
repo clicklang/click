@@ -2692,6 +2692,7 @@ fn have_sorry_admits_one_fact_while_the_rest_checks() {
 }
 
 #[test]
+#[ignore = "nightly: 3.5s in the parallel gate"]
 fn nested_loop_retains_inferred_unchanged_counter_invariants() {
     let c = r#"uint64 nested(uint64 total) {
  uint64 remaining = total;

@@ -4,11 +4,12 @@
     "label": {
       "language": "c",
       "lock": {
-        "click_header_catalog_sha256": "008dc5a49ab534ad6969d4426dd52674ed498f07cf887b756b7cae21f0308bf0",
+        "click_header_catalog_sha256": "1eb5c9764e83c5a13e4d4fb5274581350b8dd3b03a35ab1038ebc30d1be51108",
         "compiler_path": "/usr/bin/x86_64-linux-gnu-gcc-13",
-        "config_directory": "/home/user/click-p/examples/label-build-flags",
-        "config_sha256": "7e6905ec427001773cf32602a466bb7a8c9552b26e8a2c61e1d37921d4b7cedb",
-        "invocation_sha256": "256c56579e47c8a28abde889a1896fbea46a694b089e4e3e152bf305e0c688e2",
+        "config_directory": "/home/user/click-b/examples/label-build-flags",
+        "config_sha256": "d5a4b9eaf8591ca8fbfdcc398fa6f764092b17ee2a8bf76c68e88d0233d511e6",
+        "invocation_sha256": "aa25c8ea4e32314443f43db39eef11019ee14ee6902a4cd237aa36b5a20fc939",
+        "mode": "userspace",
         "schema": 3,
         "sources": [
           {
@@ -23,9 +24,9 @@
               "string.h": "53f7dee80b866def12ac723e6d36c36f0e2bbed343afbb4de40b0a8d85b489fd"
             },
             "dependencies": {
-              "/home/user/click-p/examples/label-build-flags/label.h": "6c588c7e8f6e1180c63f8a38a72de5ee0ae7bfc8d2d5574752fab41d5b2e8c91"
+              "/home/user/click-b/examples/label-build-flags/label.h": "6c588c7e8f6e1180c63f8a38a72de5ee0ae7bfc8d2d5574752fab41d5b2e8c91"
             },
-            "identity": "a47056fa95b168c253cbb5f1f387b256a42989aea1bdfb9552e0faf3031555be",
+            "identity": "492c53339597ce205834d279c3b6151ef8ac83d956cf48da350c965fa9b3ccdb",
             "local_dependencies": {
               "label.h": "6c588c7e8f6e1180c63f8a38a72de5ee0ae7bfc8d2d5574752fab41d5b2e8c91"
             },
@@ -42,10 +43,10 @@
             "artifact_bytes": 415,
             "artifact_sha256": "94dbb747ca3f57be0cbb7a5d715e8f5803a163c3189a58274a2dd7901b828485",
             "dependencies": {
-              "/home/user/click-p/examples/label-build-flags/include/label_config.h": "0df31092d5991f82d9d0dd156449f5932420fd74b247881d717bff19542fc3b8",
-              "/home/user/click-p/examples/label-build-flags/label.h": "6c588c7e8f6e1180c63f8a38a72de5ee0ae7bfc8d2d5574752fab41d5b2e8c91"
+              "/home/user/click-b/examples/label-build-flags/include/label_config.h": "0df31092d5991f82d9d0dd156449f5932420fd74b247881d717bff19542fc3b8",
+              "/home/user/click-b/examples/label-build-flags/label.h": "6c588c7e8f6e1180c63f8a38a72de5ee0ae7bfc8d2d5574752fab41d5b2e8c91"
             },
-            "identity": "5421206b3dce00b433dd8f7babe56adfeecba6b1ff21b2802285a00a460fa337",
+            "identity": "20f38f273db9380df3c5445a630e285806efe9bc36016d497c3b2195e572024f",
             "local_dependencies": {
               "include/label_config.h": "0df31092d5991f82d9d0dd156449f5932420fd74b247881d717bff19542fc3b8",
               "label.h": "6c588c7e8f6e1180c63f8a38a72de5ee0ae7bfc8d2d5574752fab41d5b2e8c91"
@@ -55,7 +56,7 @@
             "source_sha256": "2be6f6c06fc5aedb639a16263cc12dad836cf44f23d930092d5093124068f28d"
           }
         ],
-        "target": "x86_64-linux-userspace",
+        "target": "x86_64-unknown-linux-gnu",
         "toolchain": {
           "abi_probe_sha256": "5e7789053c4ff4b5cc64e011d8b266f733d5db1ed80e79d65713ab53b39571ed",
           "cc1_path": "/usr/libexec/gcc/x86_64-linux-gnu/13/cc1",
@@ -209,7 +210,7 @@
           "specs_path": null,
           "specs_sha256": null
         },
-        "working_directory": "/home/user/click-p/examples/label-build-flags/."
+        "working_directory": "/home/user/click-b/examples/label-build-flags/."
       }
     }
   }

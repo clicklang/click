@@ -235,6 +235,8 @@ mod tests {
         CppRecord {
             byte_template_arguments: vec![],
             base: None,
+            polymorphic: false,
+            path: Vec::new(),
             declaration_id: "Guard".into(),
             name: "Guard".into(),
             size_bytes: 4,

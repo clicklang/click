@@ -452,6 +452,7 @@ impl<'a> Proof<'a> {
             &[ProofTactic::Both(both.clone())],
             std::slice::from_ref(self.site()),
             &mut None,
+            None,
         )?
         .ok_or_else(|| self.step_error("`both` requires complete proofs of both conjuncts"))
     }
@@ -1187,14 +1188,10 @@ impl<'a> Proof<'a> {
                 ProofContext::Execution(context) => context.spec_definitions.predicates,
             };
             let active_unfolds = self.focused_branch_unfolds().to_vec();
-            unfold_structural_invariant_proposition(
-                predicate_environment,
-                &proposition,
-                &active_unfolds,
-            )
-            .map_err(|message| {
-                self.step_error(format!("could not unfold `have` goal: {message}"))
-            })?
+            self.unfold_goal_surface(predicate_environment, &proposition, &active_unfolds)
+                .map_err(|message| {
+                    self.step_error(format!("could not unfold `have` goal: {message}"))
+                })?
         } else {
             proposition.clone()
         };
@@ -1265,10 +1262,13 @@ impl<'a> Proof<'a> {
             // across a call is proved only by the explicit preservation equality a
             // callee's postcondition states. The indexed load-variable chain is
             // the checked bridge for that; integer goals keep the exact rule above.
+            // A same-block pointer equality is that offset equality under its
+            // complete addresses (`ConditionTerm::pointer_offset_sides`).
             if at_frontier
                 && matches!(
                     &body_kernel,
-                    Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(_, _), true)
+                    Proposition::ConditionIs(condition, true)
+                        if condition.pointer_offset_sides().is_some()
                 )
             {
                 body_facts = body_facts.with_selected_load_equality_bridge(&body_kernel);

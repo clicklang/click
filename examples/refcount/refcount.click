@@ -120,6 +120,7 @@ int32 refcount_pipeline(int32 amount) {
         arithmetic() using {
             0 <= amount;
             amount <= 2147483646;
+            defined(1 + amount);
         }
     }
     step();

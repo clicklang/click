@@ -35,6 +35,12 @@ it. A lossless cast back preserves the selected bounds, including when the
 target is `void*` or a character pointer. It does not apply the widening rule
 for a direct pointer-to-pointer byte/void cast.
 
+C pointer comparisons state only numeric address equality. Equal addresses do
+not make equal pointer values or transfer bounds: one object's one-past address
+can coincide with another object's first element. Comparison with null is exact;
+null converts to integer zero, and a 64-bit word proven zero converts to the
+canonical null pointer, including after clearing tag bits.
+
 Incoming C words, opaque modular results and complete typed word reads have
 independent opaque carrier identities. Numeric equality never identifies those
 carriers or supplies pointer bounds. A complete word can name an opaque pointer
@@ -74,7 +80,11 @@ for the proposition.
 For `int32**` and `uint8**`, pointer arithmetic advances by the eight-byte
 ABI width of each pointer-valued cell.
 
-Memory diagnostics use these same source units. A struct range covering whole
+Memory diagnostics use these same source units. A refused scalar store names
+the ownership for its actual width: a one-byte store to `uint8* s` at index
+zero requires `owns s[0]`, not four bytes. See the
+[byte-store refusal fixture](https://github.com/clicklang/click/blob/master/mdtests/viewed_byte_store_at_index_0.md).
+A struct range covering whole
 fields names them, for example `{p->left, p->right}`; an embedded field keeps
 its dotted path. A range that cannot be expressed as whole source elements
 uses an explicit byte cast, such as `((char *)p)[4..12]`. A coverage note that
@@ -427,6 +437,17 @@ permissions and bounds justified that load; the corresponding current-state
 load is still rejected as use-after-free.
 
 ## Write footprints and frames
+
+Caller-owned ranges retained across a checked call use the shared address-class
+owner selector. A transitive equality between native model pointers can select
+a retained field even when the pointer spellings have different symbolic
+blocks. Coverage still checks the complete byte extent; borrowed views do not
+become owned frames, and withdrawing an alias removes its lookup support.
+Recorded call snapshots can outlive the equality-input lineage that first
+prepared their frame index. During recheck that index may identify a candidate
+owner, but the current equality graph must establish the candidate's address;
+the earlier graph supplies no equality evidence. This uses only the selected
+owner, without republishing the frame or rechecking unrelated equality inputs.
 
 A function's write footprint is the memory its contract owns:
 

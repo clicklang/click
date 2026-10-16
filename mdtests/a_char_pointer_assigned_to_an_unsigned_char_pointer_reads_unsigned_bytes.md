@@ -4,7 +4,7 @@ GCC and Clang accept initializing an `unsigned char *` or a `signed char *`
 from a `char *`, and comparing a `char *` with an `unsigned char *`, with only
 a warning (`-Wpointer-sign`, `-Wcompare-distinct-pointer-types`). Click lowers
 each uncast conversion exactly as the explicit cast to the destination type.
-Under the default x86_64-linux-userspace target the byte stored as the plain
+Under the default user-space target the byte stored as the plain
 `char` `-56` reads as `200` through the `unsigned char *` and as `-56` through
 the `signed char *`.
 

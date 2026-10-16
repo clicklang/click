@@ -974,7 +974,7 @@ fn add_condition_path_fact_with_visibility(
         return (known == value).then_some(());
     }
     // Only the fast decisions settle a path fact; one they leave open is
-    // added (`issues/difference-logic.md`).
+    // added (`docs/internals/verification-efficiency.md`).
     let known = assumptions.difference_decision(&condition, &[]);
     if let Some(known) = known {
         if known == value && !certified_after_effect {

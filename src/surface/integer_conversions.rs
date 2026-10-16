@@ -964,9 +964,17 @@ mod tests {
             let expanded =
                 expand_c0_claim_source_by_label(&source, &[("op.c", &c)], "op.ensures_0").unwrap();
             verify_c0_sources(&expanded, &[("op.c", &c)]).unwrap();
+            // `to_integer(right) != 0` files the native `right != 0` it is
+            // equivalent to, so the native premise alone is redundant. The
+            // Integer premise is not: the native fact files no Integer one.
+            verify_c0_sources(
+                &source.replace("requires right != 0u32;", ""),
+                &[("op.c", &c)],
+            )
+            .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
             for missing in [
-                "requires right != 0u32;",
                 "requires to_integer(right) != 0;",
+                "requires right != 0u32; requires to_integer(right) != 0;",
             ] {
                 assert!(verify_c0_sources(&source.replace(missing, ""), &[("op.c", &c)]).is_err());
             }
@@ -981,7 +989,7 @@ mod tests {
     }
 
     #[test]
-    fn uint64_division_bridges_require_both_evaluation_domains() {
+    fn uint64_division_bridges_need_the_integer_domain() {
         for (name, op, mathematical) in [
             (
                 "click::integer::uint64_divide_to_integer",
@@ -998,9 +1006,12 @@ mod tests {
                 "import click::integer; theorem exact(left: uint64, right: uint64) {{ requires right != 0u64; requires to_integer(right) != 0; ensures to_integer(left {op} right) == {mathematical}(to_integer(left), to_integer(right)) by {{ apply({name}(left, right)); }} }}"
             );
             verify_c0_sources(&source, &[]).unwrap();
+            // The Integer disequality files the native one, so only the
+            // native premise may be dropped.
+            verify_c0_sources(&source.replace("requires right != 0u64;", ""), &[]).unwrap();
             for missing in [
-                "requires right != 0u64;",
                 "requires to_integer(right) != 0;",
+                "requires right != 0u64; requires to_integer(right) != 0;",
             ] {
                 assert!(verify_c0_sources(&source.replace(missing, ""), &[]).is_err());
             }

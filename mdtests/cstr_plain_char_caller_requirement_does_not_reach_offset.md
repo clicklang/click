@@ -1,5 +1,8 @@
 # Plain char cstr forwarding
 
+`outer` views the string at `src`, not at `src + 1`, so the call
+`measure(src + 1)` finds no `cstr_at` instance at its argument.
+
 ```c filename=measure.c
 #include <string.h>
 
@@ -19,7 +22,8 @@ unsigned long outer(const char *src)
 verifying "measure.c";
 
 uint64 measure(const char* src) {
-    requires click::cstr::readable(src);
+    views str: click::cstr::cstr_at(src, _);
+    ensures result == str.len;
     ensures src[result] == '\0';
 } by {
     execute();
@@ -27,7 +31,8 @@ uint64 measure(const char* src) {
 }
 
 uint64 outer(const char* src) {
-    requires click::cstr::readable(src);
+    views str: click::cstr::cstr_at(src, _);
+    ensures result == str.len;
     ensures src[result] == '\0';
 } by {
     execute();
@@ -38,5 +43,5 @@ uint64 outer(const char* src) {
 `measure` verifies; `outer` is refused at the call:
 
 ```expect
-fail: precondition clause 1 of `measure`
+fail: call to `measure` needs a held `cstr_at` instance to give `str.len` its value
 ```

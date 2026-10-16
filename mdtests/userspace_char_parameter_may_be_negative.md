@@ -12,7 +12,7 @@ int is_negative(char c) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "userspace_char_parameter.c";
 
 int32 is_negative(char c) {

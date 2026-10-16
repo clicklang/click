@@ -32,7 +32,7 @@ int run(void) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "modeled_pthread_shared_local_reader_scope_exit.c";
 

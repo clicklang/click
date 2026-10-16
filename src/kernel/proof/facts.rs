@@ -223,6 +223,11 @@ pub(crate) struct ProofFacts {
         PersistentMap<QuantifiedEquivalenceKey, PersistentSequence<ImplicationCandidate>>,
     assumptions: PureFactContext,
     implicit_transport_assumptions: PureFactContext,
+    /// The context of the facts' direct-transport premises
+    /// (`fact_reasoning::direct_fact_transport_premises`), once a caller has
+    /// asked for it: from then on every fact added extends it, so a proof
+    /// that asks again later pays only for the facts added since.
+    direct_transport_assumptions: Option<Arc<PureFactContext>>,
     by_predicate: PersistentMap<String, PersistentSequence<Arc<Proposition>>>,
 }
 
@@ -295,6 +300,11 @@ pub(crate) trait PropositionSource {
     fn exact_available(&self, required: &Proposition) -> bool {
         self.propositions()
             .any(|fact| exact_fact_contains_conjunct(fact, required))
+    }
+    /// Fresh proof facts indexing these propositions in order. A source
+    /// that keeps indexed facts for them extends those instead.
+    fn indexed_proof_facts(&self) -> ProofFacts {
+        ProofFacts::from_source(self)
     }
 }
 impl PropositionSource for [Proposition] {
@@ -705,6 +715,7 @@ impl ProofFacts {
             implications_by_quantified_consequent,
             assumptions,
             implicit_transport_assumptions,
+            direct_transport_assumptions: None,
             by_predicate,
         }
     }
@@ -845,8 +856,38 @@ impl ProofFacts {
                 .clone()
                 .assume_proposition(fact.as_ref().clone()),
             implicit_transport_assumptions,
+            direct_transport_assumptions: self.direct_transport_assumptions.as_deref().map(
+                |context| {
+                    Arc::new(assume_direct_transport_premises(
+                        context.clone(),
+                        fact.as_ref(),
+                    ))
+                },
+            ),
             by_predicate: index_predicate_fact(self.by_predicate.clone(), &fact),
         }
+    }
+
+    /// These facts with the context of their direct-transport premises kept
+    /// beside them, built here from every fact the first time and extended by
+    /// each fact added afterwards. Like a fact list's own transport context,
+    /// it is charged nothing; see `PureFactList::direct_transport_context`.
+    pub(crate) fn with_direct_transport_assumptions(&self) -> Self {
+        let mut facts = self.clone();
+        if facts.direct_transport_assumptions.is_none() {
+            facts.direct_transport_assumptions = Some(Arc::new(
+                self.propositions()
+                    .fold(PureFactContext::new(), |context, fact| {
+                        assume_direct_transport_premises(context, fact)
+                    }),
+            ));
+        }
+        facts
+    }
+
+    /// The direct-transport premises' context, when it is kept.
+    pub(crate) fn direct_transport_assumptions(&self) -> Option<&PureFactContext> {
+        self.direct_transport_assumptions.as_deref()
     }
 
     /// A free logical-witness identity, from the range
@@ -987,10 +1028,11 @@ impl ProofFacts {
                     if self.contains(&Proposition::ConditionIs(condition.clone(), !value)))
             // `i < 0` and `i >= 0` are different conditions, not one
             // condition at both polarities, so the negation is recognized
-            // through the same bounded list of equivalent spellings a
-            // disjunct side already uses in `apply_assumption`. This
-            // is a fixed-size set of exact lookups, not a fact-set search.
-            || super::fact_reasoning::condition_polarity_forms(&negated)
+            // through the bounded list of equivalent spellings the other
+            // explicit closers use, in every order family (`x >= 32u64`
+            // beside `x < 32u64` as well as the `int32` pair). This is a
+            // fixed-size set of exact lookups, not a fact-set search.
+            || super::fact_reasoning::order_claim_forms(&negated)
                 .iter()
                 .any(|form| self.contains(form))
             || super::fact_reasoning::normalizes_context_free_leaf(&negated))
@@ -1698,8 +1740,29 @@ impl ProofFacts {
         // identity drops the repeat without comparing payloads.
         let mut seen = BTreeSet::new();
         let mut equalities = Vec::new();
-        for atom in atoms {
-            if let Some(bucket) = self.bitvector_equalities_by_atom.get(&atom) {
+        // Exact pointer operands select their own equalities before a
+        // shared base nominates every older pointer into that object.
+        // Literals never nominate aliases: automatic rewriting reduces
+        // symbolic operands to literals, not a literal to an unrelated
+        // symbolic value which happens to equal it.
+        let mut exact_pointers = atoms
+            .iter()
+            .filter(|atom| matches!(atom, BitvectorEqualityAtomKey::PointerReadSource(_)))
+            .collect::<Vec<_>>();
+        exact_pointers.sort_by_key(|atom| {
+            self.bitvector_equalities_by_atom
+                .get(*atom)
+                .map_or(0, PersistentSequence::len)
+        });
+        let other_operands = atoms.iter().filter(|atom| {
+            !matches!(
+                atom,
+                BitvectorEqualityAtomKey::PointerReadSource(_)
+                    | BitvectorEqualityAtomKey::Constant(_)
+            )
+        });
+        for atom in exact_pointers.into_iter().chain(other_operands) {
+            if let Some(bucket) = self.bitvector_equalities_by_atom.get(atom) {
                 for equality in bucket.iter() {
                     if seen.insert(Arc::as_ptr(equality) as usize) {
                         equalities.push(equality.clone());
@@ -2612,6 +2675,18 @@ fn index_proper_conjuncts(
         }
     }
     index
+}
+
+fn assume_direct_transport_premises(
+    context: PureFactContext,
+    fact: &Proposition,
+) -> PureFactContext {
+    let mut premises = Vec::new();
+    crate::kernel::proof::fact_reasoning::direct_fact_transport_premises(fact, &mut premises);
+    crate::kernel::reasoning::path_facts::count_uncharged_context_entries(premises.len());
+    premises
+        .into_iter()
+        .fold(context, PureFactContext::assume_proposition_uncharged)
 }
 
 fn index_implicit_transport_context(
@@ -3695,6 +3770,61 @@ mod held_separation_tests {
             Bitvector32Term::Constant(end),
             width,
         ))
+    }
+
+    #[test]
+    fn held_separation_uses_transitive_address_classes_without_leaking_scope() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = |index| {
+            let CResource::Memory(range) = cell(index) else {
+                unreachable!()
+            };
+            range.base().clone()
+        };
+        let link = |a, b| {
+            Proposition::ConditionIs(ConditionTerm::pointer_equal(pointer(a), pointer(b)), true)
+        };
+        let first = link(0, 2);
+        let second = link(2, 3);
+        let facts = ProofFacts::from_ordered(&[first.clone(), second]);
+        assert!(
+            facts
+                .assumptions()
+                .pointers_known_equal(&pointer(0), &pointer(3))
+        );
+        let resources = ResourceContext::new_with_equalities(facts.assumptions())
+            .unchecked_with_facts([
+                CResourceFact::own(range(0, 0, 6, 4)),
+                CResourceFact::own(range(1, 0, 3, 8)),
+            ]);
+        let state = CState::new().with_resource_context(resources);
+        let goal = separation(range(3, 1, 2, 8), range(1, 0, 1, 8));
+        assert!(
+            facts
+                .with_selected_held_resource_separation(&goal, &state)
+                .contains(&goal)
+        );
+        let withdrawn = ProofFacts::from_ordered(&[first]);
+        assert!(
+            !withdrawn
+                .with_selected_held_resource_separation(&goal, &state)
+                .contains(&goal)
+        );
+        assert!(
+            facts
+                .with_selected_held_resource_separation(&goal, &state)
+                .contains(&goal)
+        );
+        for refused in [
+            separation(range(3, 0, 1, 8), range(0, 1, 2, 8)),
+            separation(range(3, 2, 4, 8), range(1, 0, 1, 8)),
+        ] {
+            assert!(
+                !facts
+                    .with_selected_held_resource_separation(&refused, &state)
+                    .contains(&refused)
+            );
+        }
     }
 
     #[test]

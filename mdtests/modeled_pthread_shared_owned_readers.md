@@ -33,7 +33,7 @@ int run(struct cell *task) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "modeled_pthread_shared_owned_readers.c";
 

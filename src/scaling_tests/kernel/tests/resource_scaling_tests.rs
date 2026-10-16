@@ -1192,6 +1192,105 @@ fn one_parameter_separation_query_is_linear_in_the_owned_objects() {
     assert_at_most_linear_growth("a refused parameter separation", &refused, 64);
 }
 
+/// A separation the composition law proves costs the same work however many
+/// other parameter objects share the block: the members filed under the two
+/// sides' roots are asked first, and they hold the pair. This is the query a
+/// verified call's separation requirement asks (`proves_resource_separate`),
+/// in both the pointer and the range form. A query no pair satisfies is
+/// still refused, by asking the whole block.
+#[test]
+fn a_proved_parameter_separation_reads_only_the_nominated_members() {
+    let mut pointer_work = Vec::new();
+    let mut range_work = Vec::new();
+    for size in PARAMETER_SIZES {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (_, assumptions) = parameter_frame(size);
+        let field = |identity: u64| {
+            parameter_base(identity).offset_by_elements(Bitvector32Term::Constant(1), 4)
+        };
+        let range = |identity: u64| {
+            CResource::Memory(CMemoryRange::new_with_element_width(
+                parameter_base(identity),
+                Bitvector32Term::Constant(1),
+                Bitvector32Term::Constant(2),
+                4,
+            ))
+        };
+        let (left, right) = (
+            FIRST_PARAMETER + size as u64 - 2,
+            FIRST_PARAMETER + size as u64 - 1,
+        );
+        let (separate, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assumptions.pointers_proven_disjoint_by_explicit_range_for_memory_resolution(
+                &field(left),
+                &field(right),
+            )
+        });
+        assert!(separate, "two owned members hold the two fields");
+        pointer_work.push(work);
+        let (separate, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assumptions.proves_resource_separate(&range(left), &range(right))
+        });
+        assert!(separate, "two owned members hold the two ranges");
+        range_work.push(work);
+        // A refusal asks the whole block, through every route; once is
+        // enough to see the nomination grants nothing.
+        if size == PARAMETER_SIZES[0] {
+            assert!(
+                !assumptions.proves_resource_separate(&range(left), &range(3 * FIRST_PARAMETER)),
+                "no member holds the second range"
+            );
+            assert!(
+                !assumptions.proves_resource_separate(&range(left), &range(left)),
+                "one member holds both sides"
+            );
+        }
+    }
+    eprintln!("proved parameter separation units, pointer {pointer_work:?}, range {range_work:?}");
+    assert!(
+        pointer_work.iter().all(|work| *work == pointer_work[0]),
+        "a proved pointer separation read unrelated members: {pointer_work:?}"
+    );
+    assert!(
+        range_work.iter().all(|work| *work == range_work[0]),
+        "a proved range separation read unrelated members: {range_work:?}"
+    );
+}
+
+/// Refusing a missing or overlapping field must be as local as proving a
+/// separation: the frame's other independent parameters are not candidates.
+#[test]
+fn refused_parameter_separation_ignores_unrelated_owned_objects() {
+    let mut samples = Vec::new();
+    for size in PARAMETER_SIZES {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (_, assumptions) = parameter_frame(size);
+        let range = |id| {
+            CResource::Memory(CMemoryRange::new_with_element_width(
+                parameter_base(id),
+                1u32.into(),
+                2u32.into(),
+                4,
+            ))
+        };
+        let left = range(FIRST_PARAMETER);
+        let outside = range(3 * FIRST_PARAMETER);
+        let (refused, work) = crate::instrumentation::measure_deterministic_work(|| {
+            !assumptions.proves_resource_separate(&left, &outside)
+                && !assumptions.proves_resource_separate(&left, &left)
+        });
+        assert!(
+            refused,
+            "unowned or overlapping fields must not be separated"
+        );
+        samples.push((size, work));
+    }
+    assert!(
+        samples.iter().all(|(_, work)| *work == samples[0].1),
+        "{samples:?}"
+    );
+}
+
 #[test]
 fn normalizing_external_ranges_compares_only_related_bases() {
     let mut samples = Vec::new();
@@ -2345,4 +2444,114 @@ fn a_view_lending_call_and_its_observation_ignore_unrelated_allocations() {
         samples.push((size, work));
     }
     assert_constant_plus_log_growth("a view-lending call and its observation", &samples, 4.0);
+}
+
+/// Decided-arm read authority selects its definition by name and evaluates
+/// only that body's cells, even with unrelated definitions and caller owners.
+#[test]
+fn matched_input_argument_views_ignore_unrelated_definitions_and_owners() {
+    use crate::kernel::{
+        AlgebraicSchemas, AlgebraicTerm, AlgebraicTermNode, AlgebraicType, AlgebraicValue,
+        AlgebraicValueType, AlgebraicVariantType, CResourceMatchArm, CResourceMatchBody,
+    };
+    use std::sync::Arc;
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let variants: Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
+        name: "Held".into(),
+        fields: vec![],
+    }]
+    .into();
+    let ty = AlgebraicType {
+        rigid: false,
+        name: "ArgumentModel".into(),
+        arguments: vec![],
+        variants: variants.clone(),
+        schemas: Arc::new(AlgebraicSchemas::new(std::collections::BTreeMap::from([(
+            AlgebraicValueType::Algebraic {
+                name: "ArgumentModel".into(),
+                arguments: vec![],
+            },
+            variants,
+        )]))),
+    };
+    let model = AlgebraicTerm {
+        algebraic_type: ty.clone(),
+        node: AlgebraicTermNode::Constructor {
+            variant: "Held".into(),
+            fields: vec![],
+        },
+    };
+    let schema = ResourceFieldSchema::new(vec![(
+        "model".into(),
+        ResourceFieldType::Algebraic(ty.clone()),
+    )])
+    .unwrap();
+    let target = ResourceInstance::new(
+        Variable(TARGET_HEAP),
+        "zz_target".into(),
+        vec![].into(),
+        schema.clone(),
+        vec![AlgebraicValue::Algebraic(model)].into(),
+    )
+    .unwrap();
+    let mut definition =
+        CCompositeResourceDefinition::new("zz_target", vec![], None, false, vec![], vec![])
+            .with_instance_schema(Some(schema));
+    definition.matched = Some(CResourceMatchBody {
+        field_index: 0,
+        algebraic_type: ty,
+        arms: vec![CResourceMatchArm {
+            variant: "Held".into(),
+            bindings: vec![],
+            binding_types: vec![],
+            binding_variables: vec![],
+            contains: vec![CResourceSpec::owned_memory(CMemorySegment::new(
+                CExpression::Value(CValue::pointer(heap_base(TARGET_HEAP))),
+                c_int32_literal(0),
+                c_int32_literal(2),
+            ))],
+            facts: vec![],
+            children: vec![],
+        }],
+    });
+    let mut samples = Vec::new();
+    for size in SIZES {
+        let mut definitions = (0..size)
+            .map(|index| {
+                CCompositeResourceDefinition::new(
+                    format!("a{index:04}"),
+                    vec![],
+                    None,
+                    false,
+                    vec![],
+                    vec![],
+                )
+            })
+            .collect::<Vec<_>>();
+        definitions.push(definition.clone());
+        let state =
+            CState::new().with_resource_context(ResourceContext::new().unchecked_with_facts(
+                (0..size).map(|index| owned_range(heap_base(index as u64 + 1), 0, 1)),
+            ));
+        let (views, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::functions::instance_arm_read_authority(
+                &target,
+                &definitions,
+                &state,
+                &PureFactContext::new(),
+            )
+        });
+        assert_eq!(views.len(), 1);
+        assert_eq!(
+            views[0],
+            CResourceFact::view_memory(CMemoryRange::new(
+                heap_base(TARGET_HEAP),
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(2),
+            )),
+        );
+        samples.push((size, work));
+    }
+    assert_constant_plus_log_growth("matched input argument views", &samples, 4.0);
 }

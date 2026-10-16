@@ -21,7 +21,7 @@ int as_char(void) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "literal_bytes.c";
 
 int32 first_byte(const uint8* bytes) {

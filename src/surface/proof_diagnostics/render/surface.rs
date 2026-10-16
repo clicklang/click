@@ -173,6 +173,25 @@ pub(super) fn source_resource_fact(fact: &CResourceFact, labels: &mut SnapshotLa
     bounded(printer(labels, Mode::Source).resource_fact(fact))
 }
 
+/// Whether `names` is a hidden record's schema: a resource that declares no
+/// field keeps one field per field of each named child, `first.v`, and the
+/// parser gives no declared field a dotted name.
+pub(super) fn hidden_record_fields(names: &[&str]) -> Option<()> {
+    (!names.is_empty() && names.iter().all(|name| name.contains('.'))).then_some(())
+}
+
+/// The source spelling of an instance's hidden record, `record { first.v: … }`,
+/// or `None` when the instance declares its own fields.
+pub(super) fn source_hidden_record(
+    schema: &[(String, crate::kernel::ResourceFieldType)],
+    fields: &[AlgebraicValue],
+    labels: &mut SnapshotLabels,
+) -> Option<String> {
+    printer(labels, Mode::Source)
+        .hidden_record(schema, fields)
+        .map(bounded)
+}
+
 pub(super) fn source_resource(resource: &CResource, labels: &mut SnapshotLabels) -> String {
     bounded(printer(labels, Mode::Source).resource(resource))
 }
@@ -1799,6 +1818,37 @@ impl Printer<'_> {
         format!("{name}({})", spelled.join(", "))
     }
 
+    /// The hidden record of a resource that declares no fields: the fields
+    /// it keeps for its named children, `record { first.v: <unnamed A> }`,
+    /// spelled as a fold's field map is. `None` for an instance with a
+    /// declared field, whose fields the reader names.
+    fn hidden_record(
+        &mut self,
+        schema: &[(String, crate::kernel::ResourceFieldType)],
+        fields: &[AlgebraicValue],
+    ) -> Option<String> {
+        let names = schema
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect::<Vec<_>>();
+        hidden_record_fields(&names)?;
+        let mut entries = Vec::new();
+        for (index, (name, value)) in names.iter().zip(fields).enumerate() {
+            if self.remaining == 0 {
+                entries.push(format!("… {} more fields omitted", names.len() - index));
+                break;
+            }
+            let value = match value {
+                AlgebraicValue::C(value) => self.cvalue(value, 0),
+                AlgebraicValue::Integer(value) => self.integer(value, 0),
+                AlgebraicValue::Algebraic(value) => self.algebraic(value, 0),
+            }
+            .map_or_else(|| "…".into(), |value| value.text);
+            entries.push(format!("{name}: {value}"));
+        }
+        Some(format!("record {{ {} }}", entries.join(", ")))
+    }
+
     fn resource(&mut self, resource: &CResource) -> String {
         if !self.source_mode() {
             let text = super::render_resource_fact_labeled(
@@ -1817,7 +1867,11 @@ impl Printer<'_> {
                 crate::surface::diagnostics::describe_memory_range(range, binding)
             }
             CResource::Instance(instance) => {
-                self.resource_arguments(instance.name(), instance.arguments())
+                let application = self.resource_arguments(instance.name(), instance.arguments());
+                match self.hidden_record(instance.schema().fields(), instance.fields()) {
+                    Some(record) => format!("{application} {record}"),
+                    None => application,
+                }
             }
             CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
                 self.resource_arguments(name, arguments)

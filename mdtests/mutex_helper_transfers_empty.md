@@ -19,7 +19,7 @@ void run(pthread_mutex_t *mu) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_helper_transfers_empty.c";
 
@@ -62,5 +62,5 @@ void run(pthread_mutex_t *mu) {
 ```
 
 ```expect
-fail: unknown C type `pthread_mutex_t`
+fail: the typedef `pthread_mutex_t` stands for an array, function pointer, union, or volatile or aligned type
 ```

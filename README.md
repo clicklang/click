@@ -146,6 +146,8 @@ Click and is maintained by agents. The rendered reference also serves
 
 - [What Click proves](docs/concepts/what-click-proves.md): what a verified
   claim means and what it assumes.
+- [Frequently asked questions](docs/faq.md): setup, guarantees, coverage,
+  proof failures, and contributions.
 - [Your first proof](docs/concepts/first-proof.md): a guided first sidecar.
 - [Language reference](docs/reference/language/index.md): complete `.click`
   syntax.

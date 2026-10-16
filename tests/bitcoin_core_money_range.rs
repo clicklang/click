@@ -7,12 +7,15 @@ use std::process::Command;
 
 use click::cli::read_click_project;
 use click::instrumentation::{self, VerificationEvent};
-use click::languages::cpp::{PreparedCppImport, load_import, refresh_import};
+use click::languages::cpp::PreparedCppImport;
+#[path = "support/cpp_description.rs"]
+mod cpp_description;
 use click::surface::{
-    C0VerificationSession, expand_project_claim_source_by_label, expand_project_tactic_source_at,
-    project_smart_tactic_source_sites, project_tactic_source_position,
-    verify_program_prepared_project,
+    C0VerificationSession, display_source_names, expand_project_claim_source_by_label,
+    expand_project_tactic_source_at, project_smart_tactic_source_sites,
+    project_tactic_source_position, verify_program_prepared_project,
 };
+use cpp_description::{load_import, lock_entry_mut, refresh_import};
 #[path = "support/pinned_clang.rs"]
 mod pinned_clang;
 use pinned_clang::{output, pinned_clang, sha256};
@@ -24,6 +27,43 @@ const PROVENANCE: &str =
 const COMMAND: &str =
     include_str!("../integrations/bitcoin-core-money-range/feerate-command.json.in");
 const SIDECAR: &str = include_str!("../integrations/bitcoin-core-money-range/MoneyRange.click");
+const PROJECT: &str = include_str!("../integrations/bitcoin-core-money-range/click.project.json");
+
+/// The project's `bitcoin` unit is the selected CMake command itself: every
+/// argument in order, relocated to the unit root, except those Click
+/// supplies (the driver, target, standard, resource directory, `-c` and `-o`).
+#[test]
+fn bitcoin_unit_arguments_are_the_cmake_command() {
+    let command: serde_json::Value = serde_json::from_str(COMMAND).unwrap();
+    let mut words = command[0]["command"].as_str().unwrap().split_whitespace();
+    assert_eq!(words.next(), Some("@CLANGXX@"));
+    let mut expected = Vec::new();
+    while let Some(word) = words.next() {
+        if word == "-o" || word == "-c" {
+            words.next();
+        } else if !(word.starts_with("--target=")
+            || word == "-std=c++20"
+            || word.starts_with("-resource-dir="))
+        {
+            expected.push(word.replace("@ROOT@/", ""));
+        }
+    }
+    let project: serde_json::Value = serde_json::from_str(PROJECT).unwrap();
+    let unit = &project["units"]["bitcoin"];
+    assert_eq!(unit["language"], "c++");
+    assert_eq!(
+        (&unit["exceptions"], &unit["rtti"]),
+        (&true.into(), &true.into())
+    );
+    let actual = unit["args"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|argument| argument.as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(actual, expected);
+    assert!(actual.iter().any(|argument| argument == "-O2"));
+}
 
 fn check_upstream_fee_frac(selected: &str, name: &str, source: &str) {
     check_upstream_cpp(
@@ -200,7 +240,7 @@ fn check_upstream_cpp_rounding_phase(
             config["exporter"] = exporter.to_str().unwrap().into();
         }
     }
-    let config_path = root.join(format!("{name}.click.import.json"));
+    let config_path = root.join(format!("{name}.import-description.json"));
     fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
     let sidecar = root.join(format!("{name}.click"));
     fs::write(&sidecar, source).unwrap();
@@ -218,7 +258,7 @@ fn check_upstream_cpp_rounding_phase(
         );
         click::languages::cpp::lower_import(&import).unwrap();
         let artifact: serde_json::Value =
-            serde_json::from_slice(&fs::read(root.join(format!("{name}.click-cpp.json"))).unwrap())
+            serde_json::from_slice(&fs::read(cpp_description::artifact(&config_path)).unwrap())
                 .unwrap();
         let initializer = &artifact["functions"][0]["body"]
             .as_array()
@@ -229,8 +269,8 @@ fn check_upstream_cpp_rounding_phase(
         assert_eq!(initializer["kind"], "call");
         assert_eq!(initializer["conversions"][0]["cast_kind"], "no_op");
         assert_eq!(initializer["conversions"][0]["value_type"]["bits"], 64);
-        assert!(root.join(format!("{name}.click-cpp.json")).exists());
-        assert!(root.join(format!("{name}.click.import.json.lock")).exists());
+        assert!(cpp_description::artifact(&config_path).exists());
+        assert!(root.join(click::project::LOCK_NAME).exists());
         fs::remove_dir_all(root).unwrap();
         return;
     }
@@ -243,8 +283,8 @@ fn check_upstream_cpp_rounding_phase(
                 "the real template, Boolean temporary, and source_location must reach the string_view boundary: {error}"
             );
         }
-        assert!(!root.join(format!("{name}.click-cpp.json")).exists());
-        assert!(!root.join(format!("{name}.click.import.json.lock")).exists());
+        assert!(!cpp_description::artifact(&config_path).exists());
+        assert!(!root.join(click::project::LOCK_NAME).exists());
         fs::remove_dir_all(root).unwrap();
         return;
     }
@@ -311,7 +351,7 @@ fn check_upstream_cpp_rounding_phase(
         // correction; no wide guard is assumed in the contract.
         let guard_proof = r#"import click::integer;
 verifying "bitcoin-src/src/util/feefrac.h";
-int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
+static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
     requires d > 0;
     ensures 0 == 0;
 } by {
@@ -350,9 +390,9 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         verify_program_prepared_project(&project, &import)
             .unwrap_or_else(|error| panic!("{selected}: {}", error.message()));
         let root_name = if fee_rate_per_k {
-            "CFeeRate_GetFeePerK"
+            "CFeeRate::GetFeePerK"
         } else {
-            "CFeeRate_GetFee"
+            "CFeeRate::GetFee"
         };
         if matches!(
             phase,
@@ -521,7 +561,7 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
     }
 
     if evaluation_caller && phase == Some(RoundingPhase::Tools) {
-        let label = format!("{}.ensures_0", selected.replace("::", "_"));
+        let label = format!("{selected}.ensures_0");
         let expanded = expand_project_claim_source_by_label(
             &project,
             &ProgramInputs::program(&import),
@@ -545,7 +585,7 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         let expanded = expand_project_claim_source_by_label(
             &project,
             &ProgramInputs::program(&import),
-            &format!("FeeFrac_EvaluateFee__bool_{instance}.ensures_0"),
+            &format!("FeeFrac::EvaluateFee<{instance}>.ensures_0"),
         )
         .unwrap();
         let rewritten = project.with_entry_source(expanded.clone());
@@ -555,7 +595,7 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         let position = project_tactic_source_position(
             &rewritten,
             &ProgramInputs::program(&import),
-            &format!("FeeFrac_EvaluateFee__bool_{instance}.contract"),
+            &format!("FeeFrac::EvaluateFee<{instance}>.contract"),
             0,
         )
         .unwrap();
@@ -617,9 +657,13 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
                 }
                 cases
             } else if phase == Some(RoundingPhase::TransportRejections) {
+                // The fee bound is stated twice, as an `int64` comparison and
+                // as an integer one; either follows from the other, so the
+                // hostile edit removes both.
                 vec![
-                    source.replace("requires this->fee < 8589934592i64;", ""),
-                    source.replace("requires to_integer(this->fee) <= 8589934591;", ""),
+                    source
+                        .replace("requires this->fee < 8589934592i64;", "")
+                        .replace("requires to_integer(this->fee) <= 8589934591;", ""),
                     source.replace("requires 0 <= to_integer(this->fee);", ""),
                 ]
             } else {
@@ -773,9 +817,12 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
                     source.replace("requires at_size <= this->size;", ""),
                 ]
             } else {
+                // As above, the two statements of the fee bound are removed
+                // together.
                 vec![
-                    source.replace("requires this->fee < 8589934592i64;", ""),
-                    source.replace("requires to_integer(this->fee) <= 8589934591;", ""),
+                    source
+                        .replace("requires this->fee < 8589934592i64;", "")
+                        .replace("requires to_integer(this->fee) <= 8589934591;", ""),
                     source.replace("requires 0 <= to_integer(this->fee);", ""),
                     source.replace(
                         "ensures to_integer(result) == truncating_quotient(",
@@ -854,7 +901,7 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         let expanded = expand_project_claim_source_by_label(
             &project,
             &ProgramInputs::program(&import),
-            "FeeFrac_Div.ensures_0",
+            "FeeFrac::Div.ensures_0",
         )
         .unwrap();
         verify_program_prepared_project(&project.with_entry_source(expanded), &import).unwrap();
@@ -1145,7 +1192,7 @@ fn pinned_span_fixture_with_exact_dependencies(
     let dependencies = config["dependencies"].as_array_mut().unwrap();
     dependencies.extend(declaration_dependencies.iter().map(|path| (*path).into()));
     dependencies.sort_by(|a, b| a.as_str().cmp(&b.as_str()));
-    let config_path = root.join("span.click.import.json");
+    let config_path = root.join("span.import-description.json");
     fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
     refresh_import(&config_path).unwrap();
     fs::remove_file(exporter).unwrap();
@@ -1248,7 +1295,7 @@ fn pinned_writable_byte_span_reference_preserves_view_offline() {
             "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
         ],
     );
-    let source = "verifying \"span-probe.cpp\"; struct span__std_byte__value_unsigned_long_18446744073709551615 probe(const struct span__int__value_unsigned_long_18446744073709551615& span) { views std_span_data(span); views std_span_size(span); ensures std_span_data(result) == (uint8*)std_span_data(span); ensures std_span_size(result) == std_span_size(span) * 4u64; ensures std_span_data(span) == old(std_span_data(span)); ensures std_span_size(span) == old(std_span_size(span)); } by { execute(); simp(); }";
+    let source = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(const std::span<int>& span) { views std_span_data(span); views std_span_size(span); ensures std_span_data(result) == (uint8*)std_span_data(span); ensures std_span_size(result) == std_span_size(span) * 4u64; ensures std_span_data(span) == old(std_span_data(span)); ensures std_span_size(span) == old(std_span_size(span)); } by { execute(); simp(); }";
     check_pinned_byte_proof(&root, &import, source);
 }
 
@@ -1266,7 +1313,7 @@ fn pinned_writable_byte_span_by_value_preserves_pointer_snapshot() {
             "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
         ],
     );
-    let source = "verifying \"span-probe.cpp\"; struct span__std_byte__value_unsigned_long_18446744073709551615 probe(struct span__int__value_unsigned_long_18446744073709551615 span) { ensures std_span_data(result) == old((uint8*)std_span_data(span)); ensures std_span_size(result) == old(std_span_size(span)) * 4u64; } by { execute(); simp(); }";
+    let source = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(std::span<int> span) { ensures std_span_data(result) == old((uint8*)std_span_data(span)); ensures std_span_size(result) == old(std_span_size(span)) * 4u64; } by { execute(); simp(); }";
     check_pinned_byte_proof(&root, &import, source);
     fs::remove_dir_all(root).unwrap();
 }
@@ -1279,8 +1326,8 @@ fn pinned_byte_template_metadata_and_span_authority_are_checked() {
         "#include <span.h>\ntemplate<class T> struct Holder { int value; };\nint probe(const Holder<std::byte>& h) noexcept { return h.value; }\n",
         &["sysroot/usr/include/c++/12/cstddef"],
     );
-    let artifact_path = root.join("span.click-cpp.json");
-    let lock_path = root.join("span.click.import.json.lock");
+    let artifact_path = cpp_description::artifact(&root.join("span.import-description.json"));
+    let lock_path = root.join(click::project::LOCK_NAME);
     let artifact: serde_json::Value =
         serde_json::from_slice(&fs::read(&artifact_path).unwrap()).unwrap();
     let lock: serde_json::Value = serde_json::from_slice(&fs::read(&lock_path).unwrap()).unwrap();
@@ -1327,12 +1374,12 @@ fn pinned_byte_template_metadata_and_span_authority_are_checked() {
         }
         let bytes = serde_json::to_vec_pretty(&forged).unwrap();
         let mut forged_lock = lock.clone();
-        forged_lock["artifact_sha256"] = sha256(&bytes).into();
-        forged_lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut forged_lock)["artifact_sha256"] = sha256(&bytes).into();
+        lock_entry_mut(&mut forged_lock)["artifact_bytes"] = bytes.len().into();
         fs::write(&artifact_path, bytes).unwrap();
         fs::write(&lock_path, serde_json::to_vec_pretty(&forged_lock).unwrap()).unwrap();
         assert!(
-            load_import(&root.join("span.click.import.json")).is_err(),
+            load_import(&root.join("span.import-description.json")).is_err(),
             "mutation {change}"
         );
     }
@@ -1347,7 +1394,7 @@ fn pinned_byte_template_metadata_and_span_authority_are_checked() {
             "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
         ],
     );
-    let base = "verifying \"span-probe.cpp\"; struct span__std_byte__value_unsigned_long_18446744073709551615 probe(struct span__int__value_unsigned_long_18446744073709551615 span) { ensures std_span_size(result) == std_span_size(span) * 4u64; } by { execute(); simp(); }";
+    let base = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(std::span<int> span) { ensures std_span_size(result) == std_span_size(span) * 4u64; } by { execute(); simp(); }";
     for bad in [
         base.replace(" * 4u64", " * 3u64"),
         base.replace("ensures std_span_size(result)", "ensures std_span_data(result) == (uint8*)std_span_data(span) + 1; ensures std_span_size(result)"),
@@ -1370,7 +1417,7 @@ fn pinned_byte_template_metadata_and_span_authority_are_checked() {
             "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
         ],
     );
-    let source = "verifying \"span-probe.cpp\"; struct span__std_byte__value_unsigned_long_18446744073709551615 probe(const struct span__int__value_unsigned_long_18446744073709551615& span) { views std_span_data(span); views std_span_size(span); ensures std_span_data(result) == (uint8*)std_span_data(span); ensures std_span_size(result) == std_span_size(span) * 4u64; ensures std_span_data(span) == old(std_span_data(span)); ensures std_span_size(span) == old(std_span_size(span)); } by { execute(); simp(); }";
+    let source = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(const std::span<int>& span) { views std_span_data(span); views std_span_size(span); ensures std_span_data(result) == (uint8*)std_span_data(span); ensures std_span_size(result) == std_span_size(span) * 4u64; ensures std_span_data(span) == old(std_span_data(span)); ensures std_span_size(span) == old(std_span_size(span)); } by { execute(); simp(); }";
     check_pinned_byte_proof(&root, &import, source);
     for field in ["std_span_data", "std_span_size"] {
         let bad = source.replace(&format!("views {field}(span);"), "");
@@ -1440,7 +1487,7 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
     fs::write(root.join("compile_commands.json"), database).unwrap();
     let exporter = std::env::var("CLICK_CPP_EXPORTER")
         .expect("scripts/check.sh supplies the pinned C++ exporter");
-    let config_path = root.join("MoneyRange.click.import.json");
+    let config_path = root.join("MoneyRange.import-description.json");
     let config = serde_json::json!({
         "schema": 6,
         "language": "c++",
@@ -1663,9 +1710,11 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
     let mut changed_transitive = transitive_bytes.clone();
     changed_transitive.push(b'\n');
     fs::write(&transitive, changed_transitive).unwrap();
+    // A project unit re-reads each rooted input and names the one whose
+    // bytes changed.
     let changed_dependency = load_import(&config_path).unwrap_err();
     assert!(
-        changed_dependency.contains("C++ preprocessor input inventory differs"),
+        changed_dependency.contains("c++/12/limits` differs from its import lock"),
         "{changed_dependency}"
     );
     fs::write(&transitive, transitive_bytes).unwrap();
@@ -1673,12 +1722,14 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
 
     let database_path = root.join("compile_commands.json");
     let database_bytes = fs::read_to_string(&database_path).unwrap();
-    let changed_database = database_bytes.replace("-std=c++20", "-std=c++17");
+    // The unit states the command's arguments, so changing one changes the
+    // unit's description, which the lock no longer matches.
+    let changed_database = database_bytes.replace(" -O2 ", " -O1 ");
     assert_ne!(changed_database, database_bytes);
     fs::write(&database_path, changed_database).unwrap();
     let changed_command = load_import(&config_path).unwrap_err();
     assert!(
-        changed_command.contains("C++ compilation database differs"),
+        changed_command.contains("does not match its description"),
         "{changed_command}"
     );
     fs::write(&database_path, database_bytes).unwrap();
@@ -1694,7 +1745,7 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
     .unwrap();
     let changed_profile = load_import(&config_path).unwrap_err();
     assert!(
-        changed_profile.contains("C++ import lock does not match the import config"),
+        changed_profile.contains("does not match its description"),
         "{changed_profile}"
     );
     fs::write(&config_path, &config_bytes).unwrap();
@@ -1715,7 +1766,7 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
     let stale_selector = load_import(&config_path)
         .expect_err("a rejected selector must not load the old semantic artifact");
     assert!(
-        stale_selector.contains("C++ import lock does not match the import config"),
+        stale_selector.contains("has no source `bitcoin-src/src/policy/feerate.h`"),
         "{stale_selector}"
     );
     fs::write(&config_path, config_bytes).unwrap();
@@ -2323,7 +2374,7 @@ fn unified_fee_evaluation_source_with_profile(mode: &str, result_fit: bool) -> S
             "let { result: negative_product } =",
         )
         .replace("to_integer(product)", "to_integer(negative_product)")
-        .replace("FeeFrac_Div(product,", "FeeFrac_Div(negative_product,")
+        .replace("FeeFrac::Div(product,", "FeeFrac::Div(negative_product,")
         .replace("rounded", "negative_rounded");
     let fast = match (mode, result_fit) {
         ("Down", false) => include_str!(
@@ -2773,7 +2824,7 @@ fn upstream_getfee_modular_callers_cover_empty_negative_and_oversize_inputs() {
             &format!("{requirements}\n    views this->m_feerate.base.fee;"),
             1,
         );
-        callers.push_str(&format!("\ncontract int64 {name}({contract} {conclusion} }}\ntheorem {name}_application() executes CFeeRate_GetFee(const struct CFeeRate* this, int32 virtual_bytes) {{ ensures {name}(&CFeeRate_GetFee) by {{ {proof} }} }}\n"));
+        callers.push_str(&format!("\ncontract int64 {name}({contract} {conclusion} }}\ntheorem {name}_application() executes CFeeRate::GetFee(const struct CFeeRate* this, int32 virtual_bytes) {{ ensures {name}(&CFeeRate::GetFee) by {{ {proof} }} }}\n"));
     }
     callers.push_str(r#"
 contract int64 EmptyRate(const struct CFeeRate* this, int32 virtual_bytes) {
@@ -2784,8 +2835,8 @@ contract int64 EmptyRate(const struct CFeeRate* this, int32 virtual_bytes) {
     ensures this->m_feerate.base.fee == old(this->m_feerate.base.fee);
     ensures this->m_feerate.base.size == old(this->m_feerate.base.size);
 }
-theorem empty_rate_application() executes CFeeRate_GetFee(const struct CFeeRate* this, int32 virtual_bytes) {
-    ensures EmptyRate(&CFeeRate_GetFee) by {
+theorem empty_rate_application() executes CFeeRate::GetFee(const struct CFeeRate* this, int32 virtual_bytes) {
+    ensures EmptyRate(&CFeeRate::GetFee) by {
         have this->m_feerate.base.size >= 0 by { arithmetic() using { this->m_feerate.base.size == 0; } }
         have this->m_feerate.base.size <= 2147483647 by { arithmetic() using { this->m_feerate.base.size == 0; } }
         have this->m_feerate.base.size != 0 implies -9223372036854775808 <= to_integer(this->m_feerate.base.fee) by { simp(); }
@@ -3014,7 +3065,7 @@ fn upstream_getfee_per_k_modular_callers_cover_signed_and_oversize_rates() {
         ("WidePerK", 8589934592, 1000),
     ] {
         let contract = root_contract.replacen("views this->m_feerate.base.fee;", &format!("requires this->m_feerate.base.fee == {fee}i64; requires this->m_feerate.base.size == {size}; views this->m_feerate.base.fee;"), 1);
-        callers.push_str(&format!("\ncontract int64 {name}({contract} }}\ntheorem {name}_application() executes CFeeRate_GetFeePerK(const struct CFeeRate* this) {{ ensures {name}(&CFeeRate_GetFeePerK) by {{ execute(); simp(); }} }}\n"));
+        callers.push_str(&format!("\ncontract int64 {name}({contract} }}\ntheorem {name}_application() executes CFeeRate::GetFeePerK(const struct CFeeRate* this) {{ ensures {name}(&CFeeRate::GetFeePerK) by {{ execute(); simp(); }} }}\n"));
     }
     check_upstream_cpp_rounding_phase(
         "CFeeRate::GetFeePerK",
@@ -3043,7 +3094,7 @@ fn axiomatic_span_refused_precondition_names_model_accessors_after_execution() {
         SPAN_DEPENDENCIES,
     );
     let source = r#"verifying "span-probe.cpp";
-struct span__int__value_unsigned_long_18446744073709551615 probe(struct span__int__value_unsigned_long_18446744073709551615& s) {
+std::span<int> probe(std::span<int>& s) {
     views std_span_data(s);
     views std_span_size(s);
     ensures std_span_data(result) == std_span_data(s);
@@ -3071,7 +3122,7 @@ fn axiomatic_span_dynamic_extent_requirement_is_proved_before_view_recovery() {
         BYTE_SPAN_DEPENDENCIES,
     );
     let source = r#"verifying "span-probe.cpp";
-struct span__std_byte__value_unsigned_long_18446744073709551615 probe(struct span__std_byte__value_unsigned_long_18446744073709551615& s) {
+std::span<std::byte> probe(std::span<std::byte>& s) {
     views std_span_data(s);
     views std_span_size(s);
     requires 1u64 <= std_span_size(s);
@@ -3140,8 +3191,8 @@ fn axiomatic_span_pop_back_verifies_against_catalog_contracts() {
         .iter()
         .find(|function| function.name.starts_with("SpanPopBack"))
         .unwrap()
-        .name
-        .clone();
+        .path
+        .join("::");
     let source = format!(
         r#"import click::integer;
 verifying "span-probe.cpp";
@@ -3156,7 +3207,7 @@ theorem uint64_predecessor_below(n: uint64) {{
         apply(uint64_to_integer_less_equal_implies_less_equal(n - 1u64, n));
     }}
 }}
-int32& {pop_back}(struct span__int__value_unsigned_long_18446744073709551615& span) {{
+int32& {pop_back}(std::span<int>& span) {{
     owns std_span_data(span);
     owns std_span_size(span);
     requires 1u64 <= std_span_size(span);
@@ -3172,7 +3223,7 @@ int32& {pop_back}(struct span__int__value_unsigned_long_18446744073709551615& sp
     execute();
     simp();
 }}
-int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {{
+int32& probe(std::span<int>& span) {{
     owns std_span_data(span);
     owns std_span_size(span);
     requires 1u64 <= std_span_size(span);
@@ -3209,7 +3260,7 @@ int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
         let error = verify_program_prepared_project(&parsed, &import)
             .expect_err("an unsupported claim must not verify");
         assert!(
-            error.message().contains(expected),
+            display_source_names(error.message()).contains(expected),
             "{}\n{edited}",
             error.message()
         );
@@ -3255,7 +3306,7 @@ fn axiomatic_span_refuses_an_uncatalogued_standard_function() {
         "std::span<int>::empty"
     );
     let source = r#"verifying "span-probe.cpp";
-bool probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
+bool probe(std::span<int>& span) {
     views std_span_size(span);
     ensures result == result;
 } by {
@@ -3267,7 +3318,12 @@ bool probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
     fs::write(&sidecar, source).unwrap();
     let parsed = read_click_project(&sidecar, source).unwrap();
     let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
-    assert!(error.message().contains(&axiom.name), "{}", error.message());
+    let spelling = axiom.path.join("::");
+    assert!(
+        display_source_names(error.message()).contains(&spelling),
+        "{}",
+        error.message()
+    );
 }
 
 const SPAN_DEPENDENCIES: &[&str] = &[
@@ -3279,7 +3335,7 @@ const BYTE_SPAN_DEPENDENCIES: &[&str] = &[
     "sysroot/usr/include/c++/12/span",
     "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
 ];
-const UCHAR_SPAN: &str = "struct span__unsigned_char__value_unsigned_long_18446744073709551615";
+const UCHAR_SPAN: &str = "std::span<unsigned char>";
 
 /// One caller of a generic `std::span` catalog entry: the C++ harness, the
 /// sidecar that proves it, and edits of that sidecar that must be refused,
@@ -3333,7 +3389,7 @@ fn check_generic_span_cases(cases: Vec<GenericSpanCase>) {
             let error = verify_program_prepared_project(&parsed, &import)
                 .expect_err("an unsupported claim must not verify");
             assert!(
-                error.message().contains(expected),
+                display_source_names(error.message()).contains(expected),
                 "{}: {}\n{edited}",
                 case.name,
                 error.message()
@@ -3389,15 +3445,14 @@ theorem uint64_window_bounds(n: uint64) {{
     simp();
 }}"#
     );
-    let size_bytes =
-        r#"uint64 probe(struct span__unsigned_int__value_unsigned_long_18446744073709551615& s) {
+    let size_bytes = r#"uint64 probe(std::span<unsigned int>& s) {
     views std_span_size(s);
     ensures result == std_span_size(s) * 4u64;
 } by {
     execute();
     simp();
 }"#
-        .to_string();
+    .to_string();
     check_generic_span_cases(vec![
         GenericSpanCase {
             name: "generic-subspan",
@@ -3410,7 +3465,7 @@ theorem uint64_window_bounds(n: uint64) {{
                     window
                         .replace("    requires 3u64 <= std_span_size(s);\n", "")
                         .replace("    apply(uint64_window_bounds(std_span_size(s)));\n", ""),
-                    "precondition clause 3 of `span__unsigned_char__value_unsigned_long_18446744073709551615_subspan`",
+                    "precondition clause 3 of `std::span<unsigned char>::subspan`",
                 ),
                 // The window starts at the offset, not at the view's start.
                 (
@@ -3429,7 +3484,7 @@ theorem uint64_window_bounds(n: uint64) {{
             harness: "std::span<unsigned char> probe(std::span<unsigned char>& s) noexcept { return s.last(1); }",
             refusals: vec![(
                 last.replace("    requires 1u64 <= std_span_size(s);\n", ""),
-                "precondition clause 3 of `span__unsigned_char__value_unsigned_long_18446744073709551615_last`",
+                "precondition clause 3 of `std::span<unsigned char>::last`",
             )],
             sidecar: last,
         },
@@ -3449,7 +3504,7 @@ theorem uint64_window_bounds(n: uint64) {{
 #[test]
 #[ignore = "nightly: three more pinned C++ exports"]
 fn axiomatic_span_byte_element_entries_verify() {
-    let byte_span = "struct span__std_byte__value_unsigned_long_18446744073709551615";
+    let byte_span = "std::span<std::byte>";
     check_generic_span_cases(vec![
         GenericSpanCase {
             name: "generic-data",
@@ -3487,7 +3542,7 @@ fn axiomatic_span_byte_element_entries_verify() {
     ]);
 }
 
-const UINT_SPAN: &str = "struct span__unsigned_int__value_unsigned_long_18446744073709551615";
+const UINT_SPAN: &str = "std::span<unsigned int>";
 
 // A returned element reference is read and written directly, as in
 // `return s[0];` and `s[0] = v;`, for element types other than `int`. The
@@ -3575,7 +3630,7 @@ fn axiomatic_span_element_references_read_and_write() {
             harness: "unsigned int probe(std::span<unsigned int>& s) noexcept { return s.back(); }",
             refusals: vec![(
                 back.replace("    requires 1u64 <= std_span_size(s);\n", ""),
-                "precondition clause 3 of `span__unsigned_int__value_unsigned_long_18446744073709551615_back`",
+                "precondition clause 3 of `std::span<unsigned int>::back`",
             )],
             sidecar: back,
         },
@@ -3587,7 +3642,7 @@ fn axiomatic_span_element_references_read_and_write() {
 #[test]
 #[ignore = "nightly: three more pinned C++ exports"]
 fn axiomatic_span_element_reference_returns_and_int_access() {
-    let int_span = "struct span__int__value_unsigned_long_18446744073709551615";
+    let int_span = "std::span<int>";
     check_generic_span_cases(vec![
         GenericSpanCase {
             name: "element-reference",
@@ -3623,9 +3678,9 @@ const ARRAY_DEPENDENCIES: &[&str] = &[
     "sysroot/usr/include/c++/12/array",
     "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
 ];
-const CONST_INT_SPAN: &str = "struct span__const_int__value_unsigned_long_18446744073709551615";
-const STATIC_INT_SPAN: &str = "struct span__int__value_unsigned_long_4";
-const INT_ARRAY: &str = "struct array__int__value_unsigned_long_4";
+const CONST_INT_SPAN: &str = "std::span<const int>";
+const STATIC_INT_SPAN: &str = "std::span<int, 4>";
+const INT_ARRAY: &str = "std::array<int, 4>";
 
 /// Imports `harness` and checks that `sidecar` is refused with `expected`:
 /// the claim is about a program the catalog contracts do not admit.
@@ -3644,7 +3699,7 @@ fn check_refused_span_case(
     let error = verify_program_prepared_project(&parsed, &import)
         .expect_err("an unsupported claim must not verify");
     assert!(
-        error.message().contains(expected),
+        display_source_names(error.message()).contains(expected),
         "{name}: {}\n{source}",
         error.message()
     );
@@ -3656,7 +3711,7 @@ fn check_refused_span_case(
 #[test]
 #[ignore = "nightly: 6.2s in the parallel gate"]
 fn axiomatic_const_element_spans_verify() {
-    let read = r#"uint8 probe(struct span__const_unsigned_char__value_unsigned_long_18446744073709551615& s) {
+    let read = r#"uint8 probe(std::span<const unsigned char>& s) {
     views std_span_data(s);
     views std_span_size(s);
     views std_span_data(s)[0];
@@ -3744,9 +3799,9 @@ fn axiomatic_static_extent_spans_verify() {
             name: "static-extent-size-bytes",
             dependencies: &["sysroot/usr/include/c++/12/span"],
             harness: "unsigned long probe(std::span<const unsigned char, 32>& s) noexcept { return s.size_bytes(); }",
-            sidecar: "uint64 probe(struct span__const_unsigned_char__value_unsigned_long_32& s) { ensures result == 32u64; } by { execute(); simp(); }".into(),
+            sidecar: "uint64 probe(std::span<const unsigned char, 32>& s) { ensures result == 32u64; } by { execute(); simp(); }".into(),
             refusals: vec![(
-                "uint64 probe(struct span__const_unsigned_char__value_unsigned_long_32& s) { ensures result == 33u64; } by { execute(); simp(); }".into(),
+                "uint64 probe(std::span<const unsigned char, 32>& s) { ensures result == 33u64; } by { execute(); simp(); }".into(),
                 "ensures",
             )],
         },
@@ -3759,7 +3814,7 @@ fn axiomatic_static_extent_spans_verify() {
         &format!(
             "int32 probe({STATIC_INT_SPAN}& s) {{ views std_span_data(s); views std_span_data(s)[4]; ensures result == std_span_data(s)[4]; }} by {{ execute(); simp(); }}"
         ),
-        "operator_index",
+        "::operator[]",
     );
 }
 
@@ -3772,7 +3827,7 @@ fn axiomatic_static_extent_span_subviews_verify() {
         harness: "std::span<int> probe(std::span<int, 4>& s) noexcept { return s.first(2); }",
         sidecar: format!(
             "{} probe({STATIC_INT_SPAN}& s) {{ views std_span_data(s); ensures std_span_data(result) == std_span_data(s); ensures std_span_size(result) == 2u64; }} by {{ execute(); simp(); }}",
-            "struct span__int__value_unsigned_long_18446744073709551615"
+            "std::span<int>"
         ),
         refusals: vec![],
     }]);
@@ -3797,7 +3852,7 @@ fn defaulted_span_arguments_import_as_compiler_constants() {
         "{body}"
     );
     // The defaulted count runs to the end of the view.
-    let span = "struct span__int__value_unsigned_long_18446744073709551615";
+    let span = "std::span<int>";
     let source = format!(
         "verifying \"span-probe.cpp\";\n{span} probe({span}& s) {{ views std_span_data(s); views std_span_size(s); requires 1u64 <= std_span_size(s); ensures std_span_data(result) == std_span_data(s) + 1u64; ensures std_span_size(result) == std_span_size(s) - 1u64; }} by {{ execute(); simp(); }}\n"
     );
@@ -3859,7 +3914,7 @@ fn axiomatic_std_array_element_access_verifies() {
         &format!(
             "int32 probe({INT_ARRAY}& a) {{ views a; ensures result == 0; }} by {{ execute(); simp(); }}"
         ),
-        "operator_index",
+        "::operator[]",
     );
 }
 
@@ -3888,7 +3943,7 @@ fn axiomatic_std_array_reference_element_resources_verify() {
             "array-reference-byte-element-write",
             "#include <array>\nunsigned char probe(std::array<unsigned char, 4>& a, unsigned char v) noexcept { a[1] = v; return a[1]; }\n",
             "uint8",
-            "struct array__unsigned_char__value_unsigned_long_4& a, uint8 v".into(),
+            "std::array<unsigned char, 4>& a, uint8 v".into(),
             "result == v and std_array_data(a)[1] == v",
             vec!["owns std_array_data(a)[1];"],
             vec!["views std_array_data(a)[1];", "owns std_array_data(a)[0];"],
@@ -3949,7 +4004,7 @@ fn axiomatic_std_array_size_and_data_verify() {
             name: "array-size",
             dependencies: &["sysroot/usr/include/c++/12/array"],
             harness: "#include <array>\nunsigned long probe(std::array<unsigned char, 32>& a) noexcept { return a.size(); }",
-            sidecar: "uint64 probe(struct array__unsigned_char__value_unsigned_long_32& a) { ensures result == 32u64; } by { execute(); simp(); }".into(),
+            sidecar: "uint64 probe(std::array<unsigned char, 32>& a) { ensures result == 32u64; } by { execute(); simp(); }".into(),
             refusals: vec![],
         },
         GenericSpanCase {
@@ -3985,8 +4040,8 @@ fn axiomatic_span_pop_back_write_needs_backing_ownership() {
         .iter()
         .find(|function| function.name.starts_with("SpanPopBack"))
         .unwrap()
-        .name
-        .clone();
+        .path
+        .join("::");
     let source = format!(
         r#"import click::integer;
 verifying "span-probe.cpp";
@@ -4001,7 +4056,7 @@ theorem uint64_predecessor_below(n: uint64) {{
         apply(uint64_to_integer_less_equal_implies_less_equal(n - 1u64, n));
     }}
 }}
-int32& {pop_back}(struct span__int__value_unsigned_long_18446744073709551615& span) {{
+int32& {pop_back}(std::span<int>& span) {{
     owns std_span_data(span);
     owns std_span_size(span);
     requires 1u64 <= std_span_size(span);
@@ -4017,7 +4072,7 @@ int32& {pop_back}(struct span__int__value_unsigned_long_18446744073709551615& sp
     execute();
     simp();
 }}
-int32 probe(struct span__int__value_unsigned_long_18446744073709551615& span, int32 input) {{
+int32 probe(std::span<int>& span, int32 input) {{
     owns std_span_data(span);
     owns std_span_size(span);
     owns std_span_data(span)[std_span_size(span) - 1u64];
@@ -4121,8 +4176,8 @@ fn pinned_std_byte_pointer_artifacts_reject_forged_declarations_offline() {
         "#include <span.h>\nstd::byte probe(std::byte* p) noexcept { return *p; }\n",
         &["sysroot/usr/include/c++/12/cstddef"],
     );
-    let artifact_path = root.join("span.click-cpp.json");
-    let lock_path = root.join("span.click.import.json.lock");
+    let artifact_path = cpp_description::artifact(&root.join("span.import-description.json"));
+    let lock_path = root.join(click::project::LOCK_NAME);
     let artifact: serde_json::Value =
         serde_json::from_slice(&fs::read(&artifact_path).unwrap()).unwrap();
     let lock: serde_json::Value = serde_json::from_slice(&fs::read(&lock_path).unwrap()).unwrap();
@@ -4176,12 +4231,12 @@ fn pinned_std_byte_pointer_artifacts_reject_forged_declarations_offline() {
         }
         let bytes = serde_json::to_vec_pretty(&forged).unwrap();
         let mut forged_lock = lock.clone();
-        forged_lock["artifact_sha256"] = sha256(&bytes).into();
-        forged_lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut forged_lock)["artifact_sha256"] = sha256(&bytes).into();
+        lock_entry_mut(&mut forged_lock)["artifact_bytes"] = bytes.len().into();
         fs::write(&artifact_path, bytes).unwrap();
         fs::write(&lock_path, serde_json::to_vec_pretty(&forged_lock).unwrap()).unwrap();
         assert!(
-            load_import(&root.join("span.click.import.json")).is_err(),
+            load_import(&root.join("span.import-description.json")).is_err(),
             "mutation {change}"
         );
     }
@@ -4192,7 +4247,7 @@ fn pinned_std_byte_pointer_artifacts_reject_forged_declarations_offline() {
     header_bytes.extend_from_slice(b"\n// substituted standard header\n");
     fs::write(root.join(header), &header_bytes).unwrap();
     let mut forged_lock = lock;
-    forged_lock["dependencies"][header] = sha256(&header_bytes).into();
+    lock_entry_mut(&mut forged_lock)["dependencies"][header] = sha256(&header_bytes).into();
     fs::write(
         &artifact_path,
         serde_json::to_vec_pretty(&artifact).unwrap(),
@@ -4201,10 +4256,10 @@ fn pinned_std_byte_pointer_artifacts_reject_forged_declarations_offline() {
     // Preserve the original artifact bytes hashed by the lock, rather than
     // relying on JSON formatting to round-trip byte-for-byte.
     let restored = fs::read(&artifact_path).unwrap();
-    forged_lock["artifact_sha256"] = sha256(&restored).into();
-    forged_lock["artifact_bytes"] = restored.len().into();
+    lock_entry_mut(&mut forged_lock)["artifact_sha256"] = sha256(&restored).into();
+    lock_entry_mut(&mut forged_lock)["artifact_bytes"] = restored.len().into();
     fs::write(&lock_path, serde_json::to_vec_pretty(&forged_lock).unwrap()).unwrap();
-    let error = load_import(&root.join("span.click.import.json")).unwrap_err();
+    let error = load_import(&root.join("span.import-description.json")).unwrap_err();
     assert!(
         error.contains("std::byte declaration header differs"),
         "{error}"
@@ -4261,8 +4316,8 @@ fn pinned_std_byte_reinterpreted_call_result_preserves_pointer_identity_offline(
         &import,
         "verifying \"span-probe.cpp\"; uint32* echo(uint32* p) { ensures result == p; } by { execute(); simp(); } uint8* probe(uint32* p) { ensures result == (uint8*)p; } by { execute(); simp(); }",
     );
-    let artifact_path = root.join("span.click-cpp.json");
-    let lock_path = root.join("span.click.import.json.lock");
+    let artifact_path = cpp_description::artifact(&root.join("span.import-description.json"));
+    let lock_path = root.join(click::project::LOCK_NAME);
     let artifact: serde_json::Value =
         serde_json::from_slice(&fs::read(&artifact_path).unwrap()).unwrap();
     let lock: serde_json::Value = serde_json::from_slice(&fs::read(&lock_path).unwrap()).unwrap();
@@ -4281,12 +4336,12 @@ fn pinned_std_byte_reinterpreted_call_result_preserves_pointer_identity_offline(
         }
         let bytes = serde_json::to_vec_pretty(&forged).unwrap();
         let mut forged_lock = lock.clone();
-        forged_lock["artifact_sha256"] = sha256(&bytes).into();
-        forged_lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut forged_lock)["artifact_sha256"] = sha256(&bytes).into();
+        lock_entry_mut(&mut forged_lock)["artifact_bytes"] = bytes.len().into();
         fs::write(&artifact_path, bytes).unwrap();
         fs::write(&lock_path, serde_json::to_vec_pretty(&forged_lock).unwrap()).unwrap();
         assert!(
-            load_import(&root.join("span.click.import.json")).is_err(),
+            load_import(&root.join("span.import-description.json")).is_err(),
             "mutation {change}"
         );
     }

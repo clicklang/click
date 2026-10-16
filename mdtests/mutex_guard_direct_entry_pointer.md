@@ -9,7 +9,7 @@ void change_local(struct counter *counter, struct counter *other) { counter = ot
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "guard_parameter.c";
 

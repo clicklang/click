@@ -1,6 +1,239 @@
 use super::*;
 
 #[test]
+fn unclosed_have_script_retains_its_remaining_goal_and_introduced_premise() {
+    let source = r#"verifying "f.c";
+        int32 f(int32 x) { ensures result == x; } by {
+            have x == 42 implies x == 43 by { intro(); }
+            execute(); simp();
+        }"#;
+    with_proof_trace("f", || {
+        let error =
+            verify_c0_sources(source, &[("f.c", "int f(int x) { return x; }")]).unwrap_err();
+        let trace = error.trace_context_report().unwrap();
+        assert!(trace.contains("intro"), "{trace}");
+        let failed = trace.split("failed check:").nth(1).unwrap();
+        assert!(failed.contains("proposition proof"), "{trace}");
+        assert!(failed.contains("goal: x == 43"), "{trace}");
+        assert!(failed.contains("x == 42"), "{trace}");
+        assert!(!failed.contains("goal: x == 42 implies"), "{trace}");
+    });
+    let corrected = source
+        .replace("x == 43", "x == 42")
+        .replace("intro();", "intro(); assumption();");
+    verify_c0_sources(&corrected, &[("f.c", "int f(int x) { return x; }")]).unwrap();
+}
+
+#[test]
+fn unclosed_theorem_script_retains_its_remaining_goal_and_introduced_premise() {
+    let source = r#"theorem unfinished(x: int32) {
+        ensures x == 42 implies x == 43 by { intro(); }
+    }"#;
+    with_proof_trace("unfinished", || {
+        let error = verify_c0_sources(source, &[]).unwrap_err();
+        let trace = error.trace_context_report().unwrap();
+        assert!(trace.contains("intro"), "{trace}");
+        let failed = trace.split("failed check:").nth(1).unwrap();
+        assert!(failed.contains("goal: x == 43"), "{trace}");
+        assert!(failed.contains("x == 42"), "{trace}");
+        assert!(!failed.contains("goal: x == 42 implies"), "{trace}");
+    });
+    let corrected = source
+        .replace("x == 43", "x == 42")
+        .replace("intro();", "intro(); assumption();");
+    verify_c0_sources(&corrected, &[]).unwrap();
+}
+
+#[test]
+fn missing_write_permission_explains_the_available_view_and_failed_check() {
+    let c = "void write(int *p) { p[0] = 7; }";
+    let source =
+        r#"verifying "write.c"; void write(int32* p) { views p[0..1]; } by { execute(); }"#;
+    let error = verify_c0_sources(source, &[("write.c", c)]).unwrap_err();
+    let report = error.concise_report();
+    assert!(
+        report.contains("missing resource fact `owns p[0]`"),
+        "{report}"
+    );
+    assert!(report.contains("available `views p[0]`"), "{report}");
+    assert!(report.contains("permits reading only"), "{report}");
+    with_proof_trace("write", || {
+        let error = verify_c0_sources(source, &[("write.c", c)]).unwrap_err();
+        let trace = error.trace_context_report().unwrap();
+        assert!(trace.contains("failed check:"), "{trace}");
+        assert!(trace.contains("resources at the failed check"), "{trace}");
+        assert!(trace.contains("views"), "{trace}");
+        assert!(trace.contains("permits reading only"), "{trace}");
+        assert!(trace.contains("C operation:"), "{trace}");
+    });
+}
+
+#[test]
+fn first_operation_failure_retains_the_required_access_and_empty_resources() {
+    let c = "int read(int *p) { return *p; }";
+    let source = r#"verifying "read.c"; int32 read(int32* p) { ensures result == 7; } by { execute(); simp(); }"#;
+    with_proof_trace("read", || {
+        let error = verify_c0_sources(source, &[("read.c", c)]).unwrap_err();
+        let trace = error.trace_context_report().unwrap();
+        assert!(trace.contains("failed check:"), "{trace}");
+        assert!(trace.contains("missing resource fact `views"), "{trace}");
+        assert!(
+            trace.contains("resources at the failed check (showing 0 of 0)"),
+            "{trace}"
+        );
+        assert!(trace.contains("return *p"), "{trace}");
+        // The failed check is not presented as an accepted execution step.
+        assert!(!trace.contains("steps through:"), "{trace}");
+    });
+}
+
+#[test]
+fn execution_tactic_in_a_have_names_the_proposition_context() {
+    let c = "int f(void) { return 7; }";
+    let source = r#"verifying "f.c"; int32 f() { ensures result == 7; } by { have 1 == 1 by { execute(); } execute(); simp(); }"#;
+    let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
+    let report = error.concise_report();
+    assert!(
+        report.contains("unsupported proof operation `execute`"),
+        "{report}"
+    );
+    assert!(report.contains("proposition proof"), "{report}");
+    assert!(
+        report.contains("C execution cannot advance inside it"),
+        "{report}"
+    );
+    with_proof_trace("f", || {
+        let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
+        let trace = error.trace_context_report().unwrap();
+        assert!(trace.contains("failed check:"), "{trace}");
+        assert!(trace.contains("proof context:"), "{trace}");
+        assert!(
+            trace.contains("C execution cannot advance inside it"),
+            "{trace}"
+        );
+    });
+}
+
+#[test]
+fn failed_simp_reports_actual_cell_queries_separately_from_history_explanations() {
+    let c = "void f(int *p, int i) { p[i] = 9; }";
+    let source = r#"verifying "f.c"; void f(int32* p, int32 i) {
+        owns p[0..2]; requires 0 <= i; requires i < 2;
+        ensures p[0] == old(p[0]);
+    } by { execute(); simp(); }"#;
+    with_proof_trace("f", || {
+        let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
+        let trace = error.trace_context_report().unwrap();
+        assert!(
+            trace.contains("checks observed during the failed attempt"),
+            "{trace}"
+        );
+        assert!(trace.contains("cell walk:"), "{trace}");
+        assert!(trace.contains("width: 4 bytes"), "{trace}");
+        assert!(
+            trace.contains("pointer=p") || trace.contains(" = p"),
+            "{trace}"
+        );
+        assert!(
+            trace.contains("step not proved separate") || trace.contains("step affects"),
+            "{trace}"
+        );
+        assert!(trace.contains("queries, not established facts"), "{trace}");
+        assert!(
+            trace.contains("supplemental history explanation"),
+            "{trace}"
+        );
+    });
+    let separated = source.replace("requires i < 2;", "requires i < 2; requires i == 1;");
+    verify_c0_sources(&separated, &[("f.c", c)]).unwrap();
+}
+
+#[test]
+fn failed_written_have_keeps_its_goal_and_actual_queries_for_simp_and_auto() {
+    let c = "void f(int *p, int i) { p[i] = 9; }";
+    for closer in ["simp", "auto"] {
+        let source = format!(
+            r#"verifying "f.c"; void f(int32* p, int32 i) {{
+            owns p[0..2]; requires 0 <= i; requires i < 2;
+        }} by {{ step(); have p[0] == old(p[0]) by {closer}; execute(); }}"#
+        );
+        let ordinary = verify_c0_sources(&source, &[("f.c", c)])
+            .unwrap_err()
+            .concise_report();
+        assert!(
+            ordinary.contains("available premises at the failed check"),
+            "{ordinary}"
+        );
+        with_proof_trace("f", || {
+            let error = verify_c0_sources(&source, &[("f.c", c)]).unwrap_err();
+            let trace = error.trace_context_report().unwrap();
+            assert!(
+                trace.contains("checks observed during the failed attempt"),
+                "{trace}"
+            );
+            assert!(
+                trace.contains("available premises at the failed check"),
+                "{trace}"
+            );
+            assert!(trace.contains("goal:"), "{trace}");
+            assert!(trace.contains("cell walk:"), "{trace}");
+            assert!(trace.contains("failed check:"), "{trace}");
+        });
+    }
+}
+
+#[test]
+fn failed_outcome_reports_post_call_resources_not_the_execution_entry() {
+    let c = "void drop(int *p) {} void f(int *p) { drop(p); }";
+    let source = r#"verifying "f.c";
+        void drop(int32* p) { consumes p[0..1]; } by { execute(); simp(); }
+        void f(int32* p) { consumes p[0..1]; ensures 1 == 2; } by { execute(); simp(); }"#;
+    with_proof_trace("f", || {
+        let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
+        let trace = error.trace_context_report().unwrap();
+        assert!(trace.contains("resource lost: owns"), "{trace}");
+        assert!(
+            trace.contains("resources at the failed check (showing 0 of 0)"),
+            "{trace}"
+        );
+        let failed = trace.split("failed check:").nth(1).unwrap();
+        assert!(!failed.contains("owns memory(p["), "{trace}");
+    });
+}
+
+#[test]
+fn callback_sources_keep_field_names_through_subobject_lowering() {
+    let functions = syntax::parse_functions_for_source(
+        r#"
+        struct callbacks {
+            void (*propagate)(int32* p);
+            void (*copy)(int32* p);
+        };
+        struct owner { struct callbacks* callbacks; };
+        void first(struct callbacks* cb, int32* p) { cb->propagate(p); }
+        void later(struct callbacks* cb, int32* p) { cb->copy(p); }
+        void nested(struct owner* owner, int32* p) { owner->callbacks->copy(p); }
+        "#,
+        "callback-names.c",
+    )
+    .unwrap();
+    for (function, expected) in
+        functions
+            .iter()
+            .zip(["cb->propagate", "cb->copy", "owner->callbacks->copy"])
+    {
+        let sources = function.callback_statement_sources();
+        assert_eq!(sources.len(), 1, "{}", function.name());
+        let source = sources.values().next().unwrap();
+        assert_eq!(
+            crate::surface::diagnostics::describe_callback_source(source),
+            expected
+        );
+    }
+    assert_eq!(functions.len(), 3);
+}
+
+#[test]
 fn implicit_loop_closure_is_smart_while_written_closure_is_simple() {
     use crate::instrumentation::{VerificationEvent, collect};
     let c = "int f(int n) { while (n > 0) { n = n - 1; } return n; }";
@@ -182,7 +415,7 @@ fn uninitialized_mutex_is_a_named_proof_prerequisite() {
         void use_mutex(struct cell *cell) { pthread_mutex_lock(&cell->mu); }
     "#;
     let click_source = r#"
-        target "x86_64-linux-userspace";
+        target "x86_64-unknown-linux-gnu";
         runtime "modeled-pthread";
         verifying "mutex.c";
         void use_mutex(struct cell *cell) { ensures 0 == 0; } by { step(); }
@@ -217,7 +450,7 @@ fn worker_without_protocol_contract_is_a_proof_error() {
         }
     "#;
     let click_source = r#"
-        target "x86_64-linux-userspace";
+        target "x86_64-unknown-linux-gnu";
         runtime "modeled-pthread";
         resource box_state(box: struct box*) {
             field value: int32;
@@ -2732,6 +2965,7 @@ fn ordinary_legacy_diagnostics_bound_late_context_but_traces_remain_full() {
     let error = ClickError::with_diagnostic(
         "required fact unavailable",
         proof_diagnostics::ProofFailureDiagnostic {
+            checks: None,
             origin: proof_diagnostics::ProofDiagnosticOrigin {
                 stage: "simple checking".into(),
                 location: "資源".repeat(DEFAULT_DIAGNOSTIC_BYTE_LIMIT),
@@ -2758,7 +2992,7 @@ const CLOSURE_TRACE_C: &str = r#"unsigned long drain(unsigned long len) {
 }
 "#;
 
-const CLOSURE_TRACE_CLICK: &str = r#"target "x86_64-linux-userspace";
+const CLOSURE_TRACE_CLICK: &str = r#"target "x86_64-unknown-linux-gnu";
 verifying "loop.c";
 uint64 drain(uint64 len) {
  requires len == 16u64;
@@ -2886,7 +3120,7 @@ fn failed_invariant_closure_trace_prefix_is_lazy_and_scales() {
 #[test]
 fn failed_invariant_closure_trace_keeps_its_branch_guard() {
     let c = "unsigned long branch_drain(unsigned long len, int flag) { while (len >= 16) { if (flag == 0) { len -= 16; } else { len -= 8; } } return len; }";
-    let source = r#"target "x86_64-linux-userspace";
+    let source = r#"target "x86_64-unknown-linux-gnu";
         verifying "loop.c";
         uint64 branch_drain(uint64 len, int32 flag) {
             requires len == 16u64;
@@ -2928,7 +3162,7 @@ fn failed_invariant_closure_trace_keeps_its_branch_guard() {
 fn native_view_simp_reports_the_actual_premise_spelling_limit() {
     let source = |extra_bounds: usize, body: &str| {
         let mut source = String::from(
-            "target \"x86_64-linux-userspace\"; theorem broad_view(p: uint8[], n: uint64) { views p[0u64..n]; requires 1u64 <= n;",
+            "target \"x86_64-unknown-linux-gnu\"; theorem broad_view(p: uint8[], n: uint64) { views p[0u64..n]; requires 1u64 <= n;",
         );
         for bound in 2..2 + extra_bounds {
             source.push_str(&format!(" requires n <= {bound}u64;"));
@@ -2990,7 +3224,7 @@ fn native_view_simp_reports_the_actual_premise_spelling_limit() {
 
 #[test]
 fn native_view_simp_distinguishes_a_rejected_kernel_query() {
-    let source = "target \"x86_64-linux-userspace\"; theorem false_view(p: uint8[], n: uint64) { views p[0u64..n]; requires n == 0u64; ensures viewable(p[0u64..1u64]) by { simp(); } }";
+    let source = "target \"x86_64-unknown-linux-gnu\"; theorem false_view(p: uint8[], n: uint64) { views p[0u64..n]; requires n == 0u64; ensures viewable(p[0u64..1u64]) by { simp(); } }";
     let error = verify_c0_sources(source, &[]).expect_err("an empty view cannot cover one byte");
     let report = error.concise_report();
     assert!(
@@ -3381,7 +3615,135 @@ fn rejected_loop_transport_premise_uses_shared_exact_diagnostic() {
     });
 }
 
+#[test]
+fn rejected_wide_transport_shows_actual_walk_stop_and_prefix() {
+    let c = "void f(uint64 *p) { p[0] = 9; int32 y = 0; return; }";
+    let source = r#"verifying "f.c";
+        void f(uint64 *p) {
+            owns p[0]; requires p[0] == 7u64; ensures true;
+        } by {
+            mark before_write; step();
+            transport(at(before_write, p[0] == 7u64), p[0] == 7u64) using {
+                at(before_write, p[0] == 7u64);
+            };
+            execute(); normalize();
+        }
+    "#;
+    with_proof_trace("f", || {
+        let error = verify_c0_sources(source, &[("f.c", c)])
+            .expect_err("a real write invalidates the old word");
+        let message = error.message();
+        for expected in [
+            "cell walks performed while checking transport",
+            "address: value#",
+            "width: 8 bytes",
+            "start: snapshot#",
+            "stop: snapshot#",
+            "oldest recorded snapshot reached",
+            "step affects the queried bytes",
+            "transport label definitions",
+            "store",
+            "read<Bits64>",
+        ] {
+            assert!(message.contains(expected), "missing {expected}: {message}");
+        }
+        assert!(!message.contains("information unavailable"), "{message}");
+        let trace = error
+            .trace_context_report()
+            .expect("retain the failed written check's prefix");
+        assert!(trace.contains("steps through: p[0] = 9"), "{trace}");
+    });
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/surface/tests/diagnostic_tests.rs");
+}
+
+#[test]
+#[ignore = "nightly: repeated-retain source diagnostic took 0.63s in parallel"]
+fn a_failed_retain_names_the_population_count_requirement() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/repeated_child_retains_require_enough_count_capacity.md");
+    let markdown = std::fs::read_to_string(&path).unwrap();
+    let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let error = verify_c0_sources(fixture.click_source.as_deref().unwrap(), &sources)
+        .expect_err("the caller does not establish the helper's stricter count bound");
+    let (report, _) = error.concise_report_parts();
+    assert!(report.contains("count(child_ref(obj)) < 8"), "{report}");
+    assert!(!report.contains("*obj"), "{report}");
+}
+
+/// A written auto miss keeps the same checked prefix as other have failures.
+/// The failed smart candidates must not become facts in that prefix.
+#[test]
+fn auto_have_failure_trace_retains_checked_call_prefix() {
+    let c = "int helper(void) { return 1; } int f(void) { int x; x = helper(); return x; }";
+    let source = "verifying \"f.c\"; int32 helper() { ensures result == 1; } by { execute(); simp(); } \
+                  int32 f() { ensures result == 1; } by { step(); step(); have x == 2 by auto; execute(); simp(); }";
+    with_proof_trace("f", || {
+        let error =
+            verify_c0_sources(source, &[("f.c", c)]).expect_err("the false have must still fail");
+        assert!(
+            error
+                .raw_summary()
+                .contains("`auto` could not prove `x == 2`")
+        );
+        assert_eq!(error.proof_claim_label(), Some("f.contract"));
+        let trace = error.trace_context_report().expect("checked prefix trace");
+        assert!(trace.contains("step(helper("), "{trace}");
+        assert!(
+            trace.contains("== 1") || trace.contains(", 1) is true"),
+            "{trace}"
+        );
+        assert!(!trace.contains("adds: x == 2"), "{trace}");
+        assert!(!trace.contains("<no checked simple steps"), "{trace}");
+    });
+}
+
+#[test]
+fn budget_stopped_transport_retains_its_checked_loop_prefix() {
+    use crate::instrumentation::{TacticWorkLimits, with_tactic_work_limits};
+    let source = r#"verifying "f.c";
+        void f(int32 *p) { owns p[0]; requires p[0] == 7; ensures true; } by {
+            loop {
+                owns p[0];
+                invariant p[0] == 7;
+                decreases 0;
+                initialize by { assumption(); }
+                preserve by {
+                    mark before;
+                    step();
+                    transport(at(before, p[0] == 7), p[0] == 7);
+                    step();
+                }
+            }
+            execute(); normalize();
+        }
+    "#;
+    with_proof_trace("f", || {
+        let error = with_tactic_work_limits(
+            TacticWorkLimits {
+                smart: 0,
+                ..TacticWorkLimits::default()
+            },
+            || {
+                verify_c0_sources(
+                    source,
+                    &[("f.c", "void f(int32 *p) { while (1) { *p = 9; break; } }")],
+                )
+            },
+        )
+        .expect_err("the written smart transport has no work allowance");
+        assert!(error.message().contains("budget"), "{}", error.message());
+        let trace = error
+            .trace_context_report()
+            .expect("attach the checked predecessor even on a budget error");
+        assert!(trace.contains("steps through: *p = 9"), "{trace}");
+    });
 }

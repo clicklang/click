@@ -20,7 +20,7 @@ use click::cli::{
 use click::instrumentation::VerificationPhase;
 use click::languages::c::source as c_source;
 use click::languages::c::target::CTarget;
-use click::surface::rust_display_name;
+use click::surface::source_display_name;
 #[cfg(test)]
 use click::surface::verify_c0_sources;
 use click::surface::{
@@ -834,12 +834,12 @@ fn trace_unit(
 ) -> Result<TraceUnit, String> {
     let names =
         project_selected_proof_names(project, &inputs.program_inputs()).map_err(click_message)?;
-    // A Rust item is named by its path, `quad::walk`, or by the name the
-    // importer gives it.
+    // A Rust item or a C++ declaration is named by its path, `quad::walk` or
+    // `Square::area`, or by the name the importer gives it.
     let selects = |kind: &str, name: &str| {
         names.iter().find_map(|selected| {
             let selected = selected.strip_prefix(kind)?.strip_prefix(':')?;
-            (selected == name || rust_display_name(selected).as_deref() == Some(name))
+            (selected == name || source_display_name(selected).as_deref() == Some(name))
                 .then(|| selected.to_owned())
         })
     };
@@ -2067,15 +2067,15 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
         let (_, trace) = report
             .split_once("proof trace (checked tactics and branch facts):")
             .unwrap_or_else(|| panic!("missing proof trace: {report}"));
-        for line in [48, 49, 59] {
+        for line in [51, 52, 62] {
             assert!(trace.contains(&format!("tactic@{line}: step\n")), "{trace}");
         }
-        assert!(!trace.contains("tactic@57:"), "{trace}");
+        assert!(!trace.contains("tactic@60:"), "{trace}");
     }
 
     #[test]
     fn loop_frontier_trace_to_selects_checked_tactics() {
-        for target in [48, 57, 59] {
+        for target in [51, 60, 62] {
             let report = loop_frontier_trace_report(Some(target));
             let (_, trace) = report
                 .split_once("proof trace (checked tactics and branch facts):")
@@ -2084,24 +2084,24 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
                 trace.contains(&format!("tactic@{target}: step\n")),
                 "{trace}"
             );
-            if target == 48 {
-                assert!(!trace.contains("tactic@49:"), "{trace}");
-            } else if target == 57 {
-                assert!(!trace.contains("tactic@59:"), "{trace}");
+            if target == 51 {
+                assert!(!trace.contains("tactic@52:"), "{trace}");
+            } else if target == 60 {
+                assert!(!trace.contains("tactic@62:"), "{trace}");
             } else {
-                assert!(!trace.contains("tactic@57:"), "{trace}");
+                assert!(!trace.contains("tactic@60:"), "{trace}");
             }
         }
     }
 
     #[test]
     fn loop_frontier_trace_to_an_unreached_tactic_explains_the_missing_step() {
-        let report = loop_frontier_trace_report(Some(63));
+        let report = loop_frontier_trace_report(Some(66));
         assert!(
             report.contains("target tactic has no recorded checked step on a retained path"),
             "{report}"
         );
-        assert!(!report.contains("tactic@63: step\n"), "{report}");
+        assert!(!report.contains("tactic@66: step\n"), "{report}");
     }
 
     #[test]
@@ -2122,7 +2122,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
             &loaded.click_source,
             line_offset,
             &TraceTo {
-                line: 59,
+                line: 62,
                 column: None,
             },
         )
@@ -2147,7 +2147,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
                 Some(&target),
             )
         });
-        assert!(report.contains("tactic@59: step\n"), "{report}");
+        assert!(report.contains("tactic@62: step\n"), "{report}");
         assert!(
             !report.contains("target tactic has no recorded checked step"),
             "{report}"
@@ -2372,7 +2372,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
     fn marker_contents_include_environment_switches() {
         let relative = Path::new("examples/tiny/tiny.click");
         let plain = marker_contents("abc", relative, "fp", "", CTarget::SUPPORTED);
-        assert!(plain.contains("\ntarget=x86_64-linux-userspace\n"));
+        assert!(plain.contains("\ntarget=x86_64-unknown-linux-gnu (userspace)\n"));
         let switches = environment_switches_from([(
             "CLICK_DISABLE_TACTIC_BUDGETS".to_string(),
             "1".to_string(),
@@ -2777,7 +2777,10 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
             "verifier-a",
             CTarget::SUPPORTED
         ));
-        let other_target = valid.replace("target=x86_64-linux-userspace", "target=another-target");
+        let other_target = valid.replace(
+            "target=x86_64-unknown-linux-gnu (userspace)",
+            "target=another-target",
+        );
         assert!(!valid_marker(
             &other_target,
             "abc123",

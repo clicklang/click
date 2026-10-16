@@ -43,7 +43,8 @@ int32 read_literal() {
 ```
 
 ```click
-target "x86_64-linux-kernel";
+target "x86_64-unknown-linux-gnu";
+mode "kernel";
 verifying "a_local_addressed_in_another_function_is_not_framed.c";
 
 int32* echo(int32* p) {

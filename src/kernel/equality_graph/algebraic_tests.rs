@@ -381,3 +381,68 @@ fn scalar_read_conflicts_require_the_same_snapshot() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/equality_graph/algebraic_tests.rs");
 }
+
+#[test]
+fn model_constructor_lookup_uses_shared_classes_and_scoped_evidence() {
+    let ty = model_type("ConstructorLookup", AlgebraicValueType::C(CType::Int32));
+    let (a, b, c) = (variable(&ty, 71), variable(&ty, 72), variable(&ty, 73));
+    let ctor = constructor(&ty, "Node", vec![scalar(17)]);
+    for reverse in [false, true] {
+        let base = PureFactContext::new().assume_proposition(eq(&a, &b));
+        let joined = if reverse {
+            base.clone()
+                .assume_proposition(eq(&c, &ctor))
+                .assume_proposition(eq(&b, &c))
+        } else {
+            base.clone()
+                .assume_proposition(eq(&b, &c))
+                .assume_proposition(eq(&c, &ctor))
+        };
+        assert_eq!(joined.known_algebraic_constructor(&a), Some(ctor.clone()));
+        assert_eq!(base.known_algebraic_constructor(&a), None);
+        let mut withdrawn = joined.clone();
+        withdrawn.remove_proposition_fact(&eq(&b, &c));
+        assert_eq!(withdrawn.known_algebraic_constructor(&a), None);
+        assert_eq!(
+            withdrawn.known_algebraic_constructor(&c),
+            Some(ctor.clone())
+        );
+        assert_eq!(joined.known_algebraic_constructor(&a), Some(ctor.clone()));
+    }
+    let other_ty = model_type(
+        "OtherConstructorLookup",
+        AlgebraicValueType::C(CType::Int32),
+    );
+    let other = variable(&other_ty, 71);
+    let joined = PureFactContext::new().assume_proposition(eq(&a, &ctor));
+    assert_eq!(joined.known_algebraic_constructor(&other), None);
+}
+
+#[test]
+fn model_constructor_lookup_prefers_a_stated_constructor_on_an_infeasible_path() {
+    // `__rb_insert` matches `c.model` as `Left` on a path where `c.model` is
+    // also derived to be `Top`. The class keeps one witness, so the stated
+    // constructor must win whichever reached the class first.
+    let ty = model_type("StatedConstructor", AlgebraicValueType::C(CType::Int32));
+    let (model, alias) = (variable(&ty, 81), variable(&ty, 82));
+    let empty = constructor(&ty, "Empty", vec![]);
+    let node = constructor(&ty, "Node", vec![scalar(18)]);
+    for derived_first in [false, true] {
+        let base = PureFactContext::new().assume_proposition(eq(&model, &alias));
+        let joined = if derived_first {
+            base.assume_proposition(eq(&alias, &empty))
+                .assume_proposition(eq(&model, &node))
+        } else {
+            base.assume_proposition(eq(&model, &node))
+                .assume_proposition(eq(&alias, &empty))
+        };
+        assert_eq!(
+            joined.known_algebraic_constructor(&model),
+            Some(node.clone())
+        );
+        assert_eq!(
+            joined.known_algebraic_constructor(&alias),
+            Some(empty.clone())
+        );
+    }
+}

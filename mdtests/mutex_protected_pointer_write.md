@@ -16,7 +16,7 @@ void set_one(struct box *b) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_protected_pointer_write.c";
 resource target(q: int32*) {

@@ -39,6 +39,109 @@ pub(crate) fn capture_read_resolutions<T>(
     (result, diagnostics)
 }
 
+/// A walk actually performed during an explicit transport check. These records
+/// describe queries, not additional premises or a guess at a missing fact.
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub(crate) struct TransportCellWalkDiagnostic {
+    pub start: SharedCMemory,
+    pub pointer: Pointer,
+    pub bytes: u32,
+    pub stopped_at: SharedCMemory,
+    pub reason: &'static str,
+    pub crossed: usize,
+    pub extended: bool,
+    pub explicit: bool,
+}
+
+#[derive(Default)]
+struct TransportCellWalkDiagnostics {
+    seen: std::collections::HashSet<TransportCellWalkDiagnostic>,
+    walks: Vec<TransportCellWalkDiagnostic>,
+    limit: Option<usize>,
+}
+
+thread_local! {
+    static TRANSPORT_CELL_WALKS: std::cell::RefCell<Option<TransportCellWalkDiagnostics>> = const { std::cell::RefCell::new(None) };
+}
+
+pub(crate) fn with_transport_cell_walk_diagnostics<T>(run: impl FnOnce() -> T) -> T {
+    struct Restore(Option<TransportCellWalkDiagnostics>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            TRANSPORT_CELL_WALKS.with(|slot| *slot.borrow_mut() = self.0.take());
+        }
+    }
+    let _restore =
+        Restore(TRANSPORT_CELL_WALKS.with(|slot| slot.replace(Some(Default::default()))));
+    run()
+}
+
+/// Written smart checks retain a bounded sample without changing query behavior.
+pub(crate) fn with_bounded_cell_walk_diagnostics<T>(run: impl FnOnce() -> T) -> T {
+    with_transport_cell_walk_diagnostics(|| {
+        TRANSPORT_CELL_WALKS.with(|slot| slot.borrow_mut().as_mut().unwrap().limit = Some(16));
+        run()
+    })
+}
+
+pub(crate) fn take_transport_cell_walk_diagnostics() -> Vec<TransportCellWalkDiagnostic> {
+    TRANSPORT_CELL_WALKS.with(|slot| {
+        slot.borrow_mut()
+            .take()
+            .map(|capture| capture.walks)
+            .unwrap_or_default()
+    })
+}
+
+pub(in crate::kernel) fn record_transport_cell_walk(
+    memory: &SharedCMemory,
+    pointer: &Pointer,
+    bytes: u32,
+    cell: &MemoryDagCell,
+    stop: CellWalkStop,
+    max_hops: Option<usize>,
+) {
+    TRANSPORT_CELL_WALKS.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let Some(capture) = slot.as_mut() else {
+            return;
+        };
+        if capture
+            .limit
+            .is_some_and(|limit| capture.walks.len() >= limit)
+        {
+            return;
+        }
+        let crossed = match cell {
+            MemoryDagCell::Stored { path, .. } | MemoryDagCell::Unwritten { path, .. } => {
+                path.len()
+            }
+        };
+        let reason = if max_hops.is_some_and(|limit| crossed >= limit) {
+            "hop limit reached"
+        } else {
+            match stop {
+                CellWalkStop::OldestRecorded => "oldest recorded snapshot reached",
+                CellWalkStop::Affected => "step affects the queried bytes",
+                CellWalkStop::NotShownSeparate => "step not proved separate from the queried bytes",
+            }
+        };
+        let diagnostic = TransportCellWalkDiagnostic {
+            start: memory.clone(),
+            pointer: pointer.clone(),
+            bytes,
+            stopped_at: cell.node().clone(),
+            reason,
+            crossed,
+            extended: extended_dag_bridging_active(),
+            explicit: explicit_dag_check_active(),
+        };
+        if capture.seen.insert(diagnostic.clone()) {
+            capture.walks.push(diagnostic);
+        }
+    });
+}
+
 /// Resource indices are logical values. ADT indices can only be exchanged
 /// using equality evidence of the same algebraic type; they are never cast
 /// to C scalars or interpreted as memory authority.
@@ -2322,8 +2425,8 @@ pub(in crate::kernel) fn typed_store_separated_ranges_evidence(
     // The composition law asked on demand: an owned member holding the
     // written address and a different one holding the read.
     let (resources, left, right) = assumptions.composition_separated_members(
-        &write.block,
-        &pointer.block,
+        write,
+        pointer,
         |range| AccessInRangeEvidence::for_access(write, write_bytes, range, assumptions).is_some(),
         |range| {
             AccessInRangeEvidence::for_access(pointer, load_bytes, range, assumptions).is_some()
@@ -3778,7 +3881,7 @@ pub(in crate::kernel) fn memories_directly_match_for_pointer_load(
     // assumptions) to miss the cell. This is how a fact carried unchanged
     // through earlier steps, and so still named at its mint epoch, meets an
     // effect summary whose `before` is the later live snapshot.
-    if !pointer.block.starts_with("local:")
+    if !pointer.block.is_local_block()
         && let (Some(left_epoch), Some(right_epoch)) = (
             cell_version_point(
                 &crate::kernel::intern_c_memory(left.clone()),
@@ -3801,14 +3904,15 @@ pub(in crate::kernel) fn memories_directly_match_for_pointer_load(
     {
         return true;
     }
-    if pointer.block.starts_with("local:")
+    if pointer.block.is_local_block()
         || !left
             .blocks
             .iter()
-            .filter(|(block, _)| block.starts_with("havoc:") || block.starts_with("call-havoc:"))
-            .eq(right.blocks.iter().filter(|(block, _)| {
-                block.starts_with("havoc:") || block.starts_with("call-havoc:")
-            }))
+            .filter(|(block, _)| block.is_havoc_block() || block.is_call_havoc_block())
+            .eq(right
+                .blocks
+                .iter()
+                .filter(|(block, _)| block.is_havoc_block() || block.is_call_havoc_block()))
         || left.blocks.get(&pointer.block) != right.blocks.get(&pointer.block)
     {
         return false;
@@ -4600,6 +4704,9 @@ fn wide_read_observations_have_value(
         };
         READ_RESOLUTION_DIAGNOSTICS.with(|slot| {
             if let Some(diagnostics) = slot.borrow_mut().as_mut() {
+                if diagnostics.len() >= 16 {
+                    return;
+                }
                 let (stopped_at, reason) = match &resolution {
                     None => (None, "recursive read query already active"),
                     Some((cell, stop)) => {

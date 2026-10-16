@@ -16,7 +16,7 @@ int clear(unsigned char *d) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "a_string_function_call_brings_the_c_string_contracts.c";
 
 int32 clear(uint8 d[]) {

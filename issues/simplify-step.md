@@ -173,8 +173,8 @@ re-run record none. Still uncounted: the kernel's own condition evaluation
 under `Retained`, which does not defer non-exact condition reasoning
 (`certified_condition_transitions`), and the spellability and work of each
 derivation. Add those before cutting over the routes they affect. The fast
-path that condition evaluation needs is
-[difference-logic.md](difference-logic.md).
+path that condition evaluation needs has landed: see
+[condition decisions in simple checking](../docs/internals/verification-efficiency.md#condition-decisions-in-simple-checking).
 
 ### 2. Requirement driver and syntax
 
@@ -236,8 +236,8 @@ over retained `have`s is gone. Both census pins are empty.
 Still uncounted, and so not yet shown search-free: the kernel's own
 condition evaluation, which `certified_condition_transitions` runs over the
 whole context under every policy but `Exact`. Count it before claiming a
-step decides conditions without search; its fast path is
-[difference-logic.md](difference-logic.md).
+step decides conditions without search; its fast path is described in
+[condition decisions in simple checking](../docs/internals/verification-efficiency.md#condition-decisions-in-simple-checking).
 
 ### 4. Check expansion cold (landed)
 
@@ -441,8 +441,8 @@ site of its own (`a_claim_proved_only_by_the_implicit_auto_is_audited`).
 - Production C is unchanged. `scripts/check.sh` passes, and both fixture
   harnesses count no `TacticSearch` in the hidden-derivation census. The
   `KernelCondition` counts are the kernel's own condition decision, which a
-  simple tactic may consult; [difference-logic.md](difference-logic.md)
-  drives them to zero.
+  simple tactic may consult. The difference-graph fast path drove them to
+  zero, and that census route is gone.
 
 ## Not in scope
 

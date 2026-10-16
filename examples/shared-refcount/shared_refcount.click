@@ -1,4 +1,4 @@
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "shared_refcount.c";
 authorized resource reference(obj: struct object*) {}

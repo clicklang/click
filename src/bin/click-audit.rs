@@ -10,8 +10,8 @@ use std::time::{Duration, Instant};
 use crate::git::{git_commit_id, git_repo_root, git_show};
 use click::cli::{
     self, CInput, MdTestExpectation, TargetSelection, containing_directory, find_mdtests,
-    format_duration, looks_like_mdtest, parse_duration, prepare_mdtest_inputs, read_c_inputs,
-    read_lone_sidecar_project, read_mdtest_project_if_needed, select_targets, shell_quote,
+    format_duration, looks_like_mdtest, parse_duration, prepare_mdtest_inputs,
+    read_lone_sidecar_inputs, read_mdtest_project_if_needed, select_targets, shell_quote,
     source_refs,
 };
 use click::surface::{
@@ -24,7 +24,7 @@ use click::surface::{
     project_smart_tactic_source_sites, project_tactic_source_position, smart_tactic_source_sites,
     tactic_source_position, verify_project_at, verify_sources_at, verifying_source_paths,
 };
-use click::surface::{claim_label_matches, display_rust_names};
+use click::surface::{claim_label_matches, display_source_names};
 
 /// Each phase's wall-clock bound is crash containment only: a phase is judged
 /// by its deterministic work, so machine load cannot change a verdict.
@@ -1247,8 +1247,7 @@ fn load_audit_source_from_text(
             mdtest: Some(mdtest),
         });
     }
-    let inputs = read_c_inputs(path, &container_source)?;
-    let project = read_lone_sidecar_project(path, &container_source)?;
+    let (project, inputs) = read_lone_sidecar_inputs(path, &container_source)?;
     let c_sources = match &inputs {
         CInput::Bundle(sources) => sources.clone(),
         CInput::Prepared(_) | CInput::PreparedProgram(_) => Vec::new(),
@@ -1499,7 +1498,7 @@ fn select_claim_sites(
                 return Err(format!(
                     "`{}` names claim `{}`, which has no smart tactic to audit",
                     claim.requested,
-                    display_rust_names(&claim.label)
+                    display_source_names(&claim.label)
                 ));
             }
             let known = sites

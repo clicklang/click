@@ -25,8 +25,8 @@ P1 does not require more examples or broader C++ coverage.
 
 The P1 work is the front-end pipeline. Getting from a C++ project to a
 verified sidecar should be well designed, not ad hoc. The
-[Rust front end](rust-support.md) has the same scope; the two share the
-design in [Shared front-end design](#shared-front-end-design) below.
+[completed Linux Rust front end](../design/rust-charon-assessment.md#completed-linux-frontend-delivery)
+uses the [shared front-end design](#shared-front-end-design) below.
 
 ## Goal
 
@@ -54,8 +54,9 @@ Audit of the current path, from a user's point of view:
    names the exporter by a path relative to the config. Every checked-in
    config points into the repository's build output:
    `../../target/cpp-exporter/click-cpp-exporter` in
-   `examples/basic-cpp/*.click.import.json` and
    `integrations/bitcoin-core-money-range/MoneyRange.click.import.json`.
+   Project units, such as `examples/basic-cpp`, take the exporter from
+   `CLICK_CPP_EXPORTER` at lock time only.
    C++ mdtests take a different route: they read `CLICK_CPP_EXPORTER`. If it
    is unset they fall back to `CARGO_MANIFEST_DIR/target/cpp-exporter/...`,
    a path compiled into the binary (`prepare_mdtest_inputs` in
@@ -142,9 +143,10 @@ this lands.
 ## Shared front-end design
 
 This section is the shared design for the C++ and
-[Rust](rust-support.md) front ends. Rust's file references it rather than
-repeating it. [project-config.md](project-config.md) covers project
-configuration and the lock format for all three languages.
+[Rust](../design/rust-charon-assessment.md#completed-linux-frontend-delivery) front ends.
+Rust delivery is complete for Linux; its installed workflow uses this design.
+[project-config.md](project-config.md) covers project configuration and the lock
+format for all three languages.
 
 - **Install layout and versioning.** Each Click version pins exactly one
   version of each front end. Front ends install beside that version of
@@ -402,7 +404,10 @@ them. Concurrency belongs to
 [concurrency-and-atomics.md](concurrency-and-atomics.md). These are deferred
 until a selected proof needs a precise slice of them:
 
-- virtual dispatch;
+- virtual dispatch beyond the reference-only slice of
+  [contract-declaration-syntax.md](contract-declaration-syntax.md), step 4:
+  mutable object state, nested overrides, polymorphic construction and
+  destruction;
 - general inheritance and subobject identity;
 - RTTI;
 - arbitrary standard-library verification;

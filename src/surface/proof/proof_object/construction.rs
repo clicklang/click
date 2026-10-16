@@ -68,6 +68,7 @@ impl<'a> Proof<'a> {
             &[],
             &[],
             &[],
+            None,
         )
     }
     /// Reattributes subsequent execution-structure diagnostics to the source
@@ -368,6 +369,7 @@ impl<'a> Proof<'a> {
             unfolded_predicates,
             effect_facts,
             &[],
+            None,
         )
     }
 
@@ -403,6 +405,7 @@ impl<'a> Proof<'a> {
             unfolded_predicates,
             effect_facts,
             &[],
+            None,
         )
     }
 
@@ -470,9 +473,11 @@ impl<'a> Proof<'a> {
             unfolded_predicates,
             effect_facts,
             original_requirements,
+            None,
         )
     }
 
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     pub(in crate::surface::proof) fn for_fixed_state_frontier(
         claim_label: &'a str,
@@ -500,6 +505,41 @@ impl<'a> Proof<'a> {
             unfolded_predicates,
             effect_facts,
             &[],
+            None,
+        )
+    }
+
+    /// A frontier proof over a planning path's facts. The proof facts the
+    /// list was copied from are extended by the facts it gained since,
+    /// rather than every fact being indexed again.
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::surface::proof) fn for_fixed_state_frontier_of_list(
+        claim_label: &'a str,
+        tactic_index: usize,
+        available: &'a PureFactList,
+        parameter_binding: ParameterBinding<'a>,
+        fixed_state: FixedStateFrame<'a>,
+        surface_propositions: &'a SurfacePropositionMap,
+        spec_definitions: SpecDefinitions<'a>,
+        theorem_environment: &'a TheoremEnvironment,
+        unfolded_predicates: &'a [String],
+        effect_facts: &(impl ExecutionFactSource + ?Sized),
+    ) -> Self {
+        Self::for_fixed_state(
+            claim_label,
+            tactic_index,
+            available,
+            OpenBranch::frontier,
+            parameter_binding,
+            fixed_state,
+            None,
+            surface_propositions,
+            spec_definitions,
+            theorem_environment,
+            unfolded_predicates,
+            effect_facts,
+            &[],
+            Some(available.proof_facts()),
         )
     }
 
@@ -517,8 +557,9 @@ impl<'a> Proof<'a> {
         unfolded_predicates: &'a [String],
         effect_facts: &(impl ExecutionFactSource + ?Sized),
         original_requirements: &'a [Requirement],
+        indexed: Option<ProofFacts>,
     ) -> Self {
-        let facts = ProofFacts::from_ordered(available);
+        let facts = indexed.unwrap_or_else(|| ProofFacts::from_ordered(available));
         let lowering_context = resource_context_observable_facts_for_proof(
             fixed_state.state.resources(),
             facts.clone(),

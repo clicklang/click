@@ -7,7 +7,10 @@ Click specs.
 
 - `src/kernel/`: proof terms, C semantics, assumptions, symbolic execution,
   and theorem-producing functions.
-- `src/languages/c/syntax.rs`: C parser and lowering to kernel C terms.
+- `src/languages/c/syntax.rs`: C parser and lowering to kernel C terms. The
+  parser's global declarations, type declarations and initializers are in
+  `syntax/global_declarations.rs`, `syntax/type_declarations.rs` and
+  `syntax/initializers.rs`.
 - `src/surface.rs` and `src/surface/`: Click parser (`parser.rs`, `parser/`),
   validation (`validation/`), lowering (`lowering/`), tactics, and proof
   orchestration.
@@ -98,6 +101,16 @@ Kernel files:
   `facts.rs` owns that persistent store, its indexes, and its output-sensitive
   ancestry/delta operations.
 - `functions.rs`: C function execution, argument binding, and call results.
+  Its children hold self-contained parts: `authority_contracts.rs` (calls
+  whose contracts touch populations, mutexes and authority resources),
+  `contract_refinement.rs` (whether an interface refines a named contract),
+  `named_contract_refinement.rs` and `refinement_side_conditions.rs` (checking
+  a function against a named contract), `call_arguments.rs` (binding and
+  coercing a call's arguments and result), `globals_and_aggregates.rs` (entry
+  storage and aggregate values), `composite_expansion.rs` (composite resources
+  and their member facts), `instance_case_selection.rs` (which case of a
+  matched resource instance applies) and `resource_clause_worklist.rs` (the
+  indexes that order resource clauses).
 - `tests.rs`: kernel unit tests.
 
 ## Trusted shape
@@ -478,8 +491,22 @@ overlap. The composite definition supplies the checked `contains` and
 
 In `src/kernel/`:
 
-- `Bitvector32Term`: symbolic 32-bit integer terms, including arithmetic,
-  `If`, `RangeFold`, and memory loads.
+- `Bitvector32Term`: the one term arena for every C integer and float value,
+  including arithmetic, `If`, `RangeFold`, and memory loads. Despite its
+  name it holds every width, and records none: the width is implied by the
+  operator family (`Add` is 32-bit, `Int64Add` and `UInt64Add` 64-bit), the
+  constant's shape (`Constant`, `Int64Constant`, `UInt64Constant`, a 128-bit
+  `MachineIntegerConstant`), a load's kind, or a cast's destination. Values of
+  8 and 16 bits and `_Bool` ride in the 32-bit carrier, and floats in the
+  carrier of their bit width. `term_width.rs` infers that carrier width.
+  Debug builds refuse a condition assumed into a fact context, a value an
+  expression evaluates to, or a value stored to memory whose widths disagree:
+  an operand of the wrong width, arms of different widths, a `CValue` tag
+  whose term has another width, or a comparison whose operands are not the
+  width it names. The one exception is a load equation (a store fact or a
+  load variable's defining fact), written with the 32-bit equality at any
+  width, whose sides need only agree with each other. Making the width part of
+  the term is the open issue `issues/one-integer-term-type.md`.
 - `PointerOffsetTerm`: pointer-offset expressions.
 - `ConditionTerm`: proof-level truth-valued conditions such as signed and
   unsigned order, equality, overflow, pointer-offset equality, and typed
@@ -570,6 +597,13 @@ conditional, which no order fact is ever written about, gets the bounds its
 arms already state. The hull is a bound, not a case split: a claim that holds
 on one arm and fails on the other stays undecided.
 
+Scalar specification guards containing `and`, `or`, and `not` are encoded with
+existing 0/1 conditional terms, visiting each guard node once. The selected
+value's arms occur once around that guard, rather than being duplicated
+through the logical tree. Lowering remains context independent; explicit
+normalization uses the stated premises to select an arm. Unknown guards keep
+both possibilities (`mdtests/pure_conditional_compound_guards*.md`).
+
 ## C ABI and memory layout
 
 The C front end models one explicit ABI: LP64. In that ABI, `int8` has size and alignment 1, `int16` and
@@ -617,8 +651,12 @@ Copyable by-value structs are the first exception to that address-first
 boundary. Click retains each leaf field name, byte offset, and kernel type in a
 flattened `CAggregateLayout`; embedded fields use qualified names such as
 `inner.value`. The kernel binds a value to an `AggregateObject` with its own
-local block. Parameter binding, local assignment, and aggregate return
-materialization allocate fresh blocks and recursively copy the modeled scalar,
+local block. Each automatic aggregate declaration owns its complete byte range,
+including ordinary C record locals as well as construction destinations. This
+lets a modular pointer result use the existing address equality and resource
+coverage rules to access the caller's record; ownership alone does not
+initialize its fields or establish an alias. Parameter binding, local
+assignment, and aggregate return materialization allocate fresh blocks and recursively copy the modeled scalar,
 array, fixed-dimensional embedded-struct-array leaf, and data-pointer fields.
 Multidimensional embedded-struct arrays are expanded in declared row-major
 order, so each nested leaf retains its complete element stride. Pointer fields are

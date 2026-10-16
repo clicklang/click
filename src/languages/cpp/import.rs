@@ -1,8 +1,8 @@
 //! Locked semantic imports produced by the pinned C++ frontend.
 //!
-//! `refresh_import` is the only operation in this module that executes the
-//! Clang-based exporter. `load_import` validates the source, lock, and stored
-//! semantic artifact without consulting or executing the exporter.
+//! `prepare_unit` is the only operation in this module that executes the
+//! Clang-based exporter. `load_unit` validates a project unit's sources, lock,
+//! and stored semantic artifacts without consulting or executing the exporter.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -21,7 +21,6 @@ use crate::cli::write_file_atomically;
 use crate::languages::compiler_process::{CompilerLimits, run_compiler};
 
 const CONFIG_SCHEMA: u32 = 6;
-const MAX_CONFIG_BYTES: usize = 1 << 20;
 const MAX_COMPILATION_DATABASE_BYTES: usize = 16 << 20;
 const MAX_SOURCE_BYTES: usize = 1 << 20;
 const MAX_DEPENDENCIES: usize = 64;
@@ -139,45 +138,6 @@ struct Lock {
 struct LockedPreprocessorFile {
     canonical_path: String,
     sha256: String,
-}
-
-pub fn refresh_import(config_path: &Path) -> Result<(), String> {
-    refresh_import_inner(config_path).map_err(bounded_error)
-}
-
-fn refresh_import_inner(config_path: &Path) -> Result<(), String> {
-    let (config, config_bytes) = read_config(config_path)?;
-    let exporter = resolve_input(&config.directory, &config.exporter, "C++ exporter")?;
-    let compilation_database = resolve_input(
-        &config.directory,
-        &config.compilation_database,
-        "C++ compilation database",
-    )?;
-    let working_directory = resolve_input(
-        &config.directory,
-        &config.working_directory,
-        "C++ working directory",
-    )?;
-    let outputs = [artifact_path(&config)?, lock_path(config_path)?];
-    let (lock, artifact) = export(
-        &config,
-        hex_digest(&config_bytes),
-        &ExportInputs {
-            config_path: Some(&absolute_path(config_path)?),
-            exporter: &exporter,
-            compilation_database: &compilation_database,
-            working_directory: &working_directory,
-            outputs: &outputs,
-        },
-    )?;
-    let mut lock_bytes =
-        serde_json::to_vec_pretty(&lock).map_err(|error| format!("encode C++ lock: {error}"))?;
-    lock_bytes.push(b'\n');
-    if lock_bytes.len() > MAX_CONFIG_BYTES {
-        return Err("C++ import lock exceeds its size limit".into());
-    }
-    write_file_atomically(&outputs[0], &artifact)?;
-    write_file_atomically(&outputs[1], &lock_bytes)
 }
 
 /// The resolved inputs and outputs of one export.
@@ -361,49 +321,6 @@ fn run_cpp_exporter(
     Ok(output.stdout)
 }
 
-pub fn load_import(config_path: &Path) -> Result<PreparedCppImport, String> {
-    load_import_inner(config_path).map_err(bounded_error)
-}
-
-fn load_import_inner(config_path: &Path) -> Result<PreparedCppImport, String> {
-    let (config, config_bytes) = read_config(config_path)?;
-    let lock_bytes = read_stable(
-        &lock_path(config_path)?,
-        MAX_CONFIG_BYTES,
-        "C++ import lock",
-    )?;
-    let lock: Lock = serde_json::from_slice(&lock_bytes)
-        .map_err(|error| format!("parse C++ import lock: {error}"))?;
-    if lock.config_sha256 != hex_digest(&config_bytes) {
-        return Err("C++ import lock does not match the import config; refresh it".into());
-    }
-    let compilation_database = resolve_input(
-        &config.directory,
-        &config.compilation_database,
-        "C++ compilation database",
-    )?;
-    let compilation_database_bytes = read_stable(
-        &compilation_database,
-        MAX_COMPILATION_DATABASE_BYTES,
-        "C++ compilation database",
-    )?;
-    if lock.compilation_database_sha256 != hex_digest(&compilation_database_bytes) {
-        return Err("C++ compilation database differs from the import lock; refresh it".into());
-    }
-    let working_directory = resolve_input(
-        &config.directory,
-        &config.working_directory,
-        "C++ working directory",
-    )?;
-    load_locked(
-        &config,
-        lock,
-        &working_directory,
-        &artifact_path(&config)?,
-        &[],
-    )
-}
-
 /// Checks a lock against `config`'s current inputs and loads its artifact.
 /// `current_roots` are the current locations of a project unit's
 /// `prepared_roots`; without them, every preprocessor input is re-read at its
@@ -528,16 +445,30 @@ fn check_rooted_preprocessor_files(
             .get(&file.accessed_path)
             .filter(|entry| entry.canonical_path == file.canonical_path)
             .ok_or("C++ preprocessor input inventory differs from the import lock; refresh it")?;
-        let canonical = Path::new(&file.canonical_path);
-        let Some(path) = roots.iter().find_map(|(prepared, now)| {
-            canonical
-                .strip_prefix(prepared)
-                .ok()
-                .map(|relative| now.join(relative))
-        }) else {
+        let relocate = |recorded: &str| {
+            roots.iter().find_map(|(prepared, now)| {
+                Path::new(recorded)
+                    .strip_prefix(prepared)
+                    .ok()
+                    .map(|relative| now.join(relative))
+            })
+        };
+        let Some(path) = relocate(&file.canonical_path) else {
             current.insert(file.accessed_path.clone(), entry.clone());
             continue;
         };
+        // The compiler opens the accessed path, so a retargeted symlink must
+        // still resolve to the locked file.
+        if let Some(accessed) = relocate(&file.accessed_path) {
+            let resolved = fs::canonicalize(&accessed)
+                .map_err(|error| format!("resolve C++ input `{}`: {error}", accessed.display()))?;
+            if resolved != fs::canonicalize(&path).unwrap_or_else(|_| path.clone()) {
+                return Err(format!(
+                    "C++ input `{}` changed its resolved target since the import lock; run `click import lock`",
+                    accessed.display()
+                ));
+            }
+        }
         let bytes = read_stable(&path, MAX_PREPROCESSOR_FILE_BYTES, "C++ preprocessor input")?;
         total_bytes = total_bytes
             .checked_add(bytes.len())
@@ -845,20 +776,6 @@ fn semantic_identity(
     hex_digest(&encoded)
 }
 
-fn read_config(path: &Path) -> Result<(Config, Vec<u8>), String> {
-    let absolute = absolute_path(path)?;
-    let bytes = read_stable(&absolute, MAX_CONFIG_BYTES, "C++ import config")?;
-    let mut config: Config = serde_json::from_slice(&bytes)
-        .map_err(|error| format!("parse C++ import config: {error}"))?;
-    config.directory = absolute
-        .parent()
-        .ok_or("C++ import config has no parent directory")?
-        .to_path_buf();
-    config.functions = vec![config.function.clone()];
-    validate_config(&config)?;
-    Ok((config, bytes))
-}
-
 fn validate_config(config: &Config) -> Result<(), String> {
     if config.schema != CONFIG_SCHEMA
         || config.language != LANGUAGE
@@ -986,19 +903,6 @@ fn validate_relative_path(path: &str, label: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn absolute_path(path: &Path) -> Result<PathBuf, String> {
-    let joined = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        std::env::current_dir()
-            .map_err(|error| format!("read current directory: {error}"))?
-            .join(path)
-    };
-    joined
-        .canonicalize()
-        .map_err(|error| format!("resolve `{}`: {error}", joined.display()))
-}
-
 fn resolve_input(base: &Path, path: &str, label: &str) -> Result<PathBuf, String> {
     let path = Path::new(path);
     let joined = if path.is_absolute() {
@@ -1112,21 +1016,6 @@ fn read_preprocessor_files(
 fn artifact_path(config: &Config) -> Result<PathBuf, String> {
     validate_relative_path(&config.artifact, "artifact")?;
     Ok(config.directory.join(&config.artifact))
-}
-
-fn lock_path(config_path: &Path) -> Result<PathBuf, String> {
-    let absolute = if config_path.is_absolute() {
-        config_path.to_path_buf()
-    } else {
-        std::env::current_dir()
-            .map_err(|error| format!("read current directory: {error}"))?
-            .join(config_path)
-    };
-    let name = absolute
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or("C++ import config path has no UTF-8 filename")?;
-    Ok(absolute.with_file_name(format!("{name}.lock")))
 }
 
 fn reject_output_collisions(

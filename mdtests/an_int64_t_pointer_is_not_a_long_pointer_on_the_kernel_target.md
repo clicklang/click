@@ -1,6 +1,6 @@
 # An `int64_t *` is not a `long *` on the kernel target
 
-The kernel's `int64_t` is `long long`, so on the `x86_64-linux-kernel` target
+The kernel's `int64_t` is `long long`, so in `kernel` mode
 a pointer to it does not convert to `long *` without a cast, as GCC 14 and
 Clang refuse when building the kernel. The same program is accepted for user
 space, where glibc's `int64_t` is `long`.
@@ -12,7 +12,8 @@ long *values(int64_t *p) {
 ```
 
 ```click
-target "x86_64-linux-kernel";
+target "x86_64-unknown-linux-gnu";
+mode "kernel";
 verifying "main.c";
 
 int64 *values(int64 *p) {

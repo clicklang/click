@@ -2792,7 +2792,7 @@ an arbitrary write to the string. See
 
 ```click
 resource cstr_at(p: const uint8*, len: uint64) {
-    views p[0..len + 1u64];
+    owns p[0..len + 1u64];
     fact len < 18446744073709551615u64;
     fact forall (k: uint64) { 0u64 <= k and k < len implies p[k] != '\0' };
     fact p[len] == '\0';
@@ -2800,20 +2800,34 @@ resource cstr_at(p: const uint8*, len: uint64) {
 }
 ```
 
-**Meaning:** A borrowed C string: a view of the `len + 1` bytes of `p`
-through its first terminator, with the facts that make them the C string of
-length `len`. The bytes determine `len`, so `fold(cstr_at(p, m))` at any other
-length fails. A contract holds it with `views cstr_at(p, len);` and lends it
-to a callee that views the same instance without opening it; `open(cstr_at(p,
-len)) { ... }` exposes the view and the facts. A `char`, `signed char`, or
-`unsigned char` pointer may be passed for `p`, as for the C-string predicates;
-a signed character pointer is read through its byte view `(uint8*)p`.
+**Meaning:** A C string: the `len + 1` bytes of `p` through its first
+terminator, with the facts that make them the C string of length `len`. The
+body owns the bytes, and a contract chooses how it holds them. `views
+cstr_at(p, len);` borrows the string read-only: the callee cannot write it,
+and an opened view exposes the bytes as views. `owns cstr_at(p, len);` holds
+it exclusively and returns the same instance, so `len` is unchanged at exit.
+A function that changes the length, such as one that writes an earlier
+terminator, states `consumes cstr_at(p, len);` and `produces` the new
+instance with the bytes it no longer covers. The bytes determine `len`, so
+`fold(cstr_at(p, m))` at any other length fails. An owner lends its instance
+to a callee that views it, and a caller that owns the bytes and holds the
+facts but no instance has the call assemble the view; the caller keeps its
+bytes. `open(cstr_at(p, len)) { ... }` exposes the body and the facts. A
+`char`, `signed char`, or `unsigned char` pointer may be passed for `p`, as
+for the C-string predicates; a signed character pointer is read through its
+byte view `(uint8*)p`.
 
 **Kind:** composite resource. Parameter types, memory clause, and facts are normative in the declaration above.
 
 **Verified use:** [`cstr_at_view_passes_through_a_call.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_view_passes_through_a_call.md),
 [`cstr_at_opens_and_lends_a_prefix_to_a_copy.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_opens_and_lends_a_prefix_to_a_copy.md),
 [`cstr_at_fold_refuses_a_wrong_length.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_fold_refuses_a_wrong_length.md),
+[`cstr_at_viewed_string_cannot_be_written.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_viewed_string_cannot_be_written.md),
+[`cstr_at_owner_rewrites_a_byte_and_refolds_the_same_length.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_owner_rewrites_a_byte_and_refolds_the_same_length.md),
+[`cstr_at_owns_clause_cannot_shorten_the_string.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_owns_clause_cannot_shorten_the_string.md),
+[`cstr_at_consumes_and_produces_a_shorter_string.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_consumes_and_produces_a_shorter_string.md),
+[`cstr_at_owner_lends_its_string_to_a_viewing_callee.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_owner_lends_its_string_to_a_viewing_callee.md),
+[`cstr_at_call_assembles_a_view_from_owned_bytes.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_call_assembles_a_view_from_owned_bytes.md),
 and, through character pointers,
 [`cstr_at_borrows_a_char_string_from_the_library.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_borrows_a_char_string_from_the_library.md).
 
@@ -2916,16 +2930,22 @@ about the result beyond its being 0 or 1, and a proof covers both.
 
 ```click
 extern uint8* memcpy(uint8 destination[], const uint8 source[], uint64 bytes) {
-    requires viewable(source[0..bytes]);
+    views source[0..bytes];
     owns destination[0..bytes];
-    requires separate(memory(destination[0..bytes]), memory(source[0..bytes]));
     ensures result == destination;
     ensures bytes::equal(destination, 0u64, old(source), 0u64, bytes);
 }
 ```
 
-**Meaning:** Copies `bytes` bytes, a `size_t` count as in C, from a readable, non-overlapping source to
-an owned destination and returns the destination pointer. This exact
+**Meaning:** Copies `bytes` bytes, a `size_t` count as in C, from a viewed source to
+an owned destination and returns the destination pointer. The caller lends
+the source for the call from bytes it views or owns. The `owns` and `views`
+clauses of one contract are disjoint, so a call whose source overlaps its
+destination is refused
+([`mdtests/byte_representation_overlapping_copy_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/byte_representation_overlapping_copy_rejected.md)),
+and `viewable` alone, which grants no read authority, does not lend the
+source
+([`mdtests/memcpy_source_needs_a_covering_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/memcpy_source_needs_a_covering_resource.md)). This exact
 standard-library declaration also carries the checked representation-copy
 effect: after the call, each initialized typed cell whose complete byte
 representation lies in the copied range is established at the mapped
@@ -2935,26 +2955,27 @@ effect is bound to this declaration, not to the name `memcpy`.
 
 **Kind:** external C contract. The declaration is an explicit verification assumption.
 
-**Verified use:** [`mdtests/byte_representation_scalar_copy.md`](https://github.com/clicklang/click/blob/master/mdtests/byte_representation_scalar_copy.md) checks its typed-copy effect.
+**Verified use:** [`mdtests/byte_representation_scalar_copy.md`](https://github.com/clicklang/click/blob/master/mdtests/byte_representation_scalar_copy.md) checks its typed-copy effect, and [`mdtests/memcpy_reads_a_viewed_or_borrowed_source.md`](https://github.com/clicklang/click/blob/master/mdtests/memcpy_reads_a_viewed_or_borrowed_source.md) copies from a viewed source and from an owned one lent for the call.
 
 ### `memcmp`
 
 ```click
 extern int32 memcmp(const uint8 left[], const uint8 right[], uint64 bytes) {
-    requires viewable(left[0..bytes]);
-    requires viewable(right[0..bytes]);
+    views left[0..bytes];
+    views right[0..bytes];
     requires forall (k: uint64) { k < bytes implies defined(left[k]) and defined(right[k]) };
     ensures result == 0 implies bytes::equal(left, 0u64, right, 0u64, bytes);
     ensures result != 0 implies not bytes::equal(left, 0u64, right, 0u64, bytes);
 }
 ```
 
-**Meaning:** Reads both `bytes`-long byte ranges (a `size_t` count, as in C) without mutation and distinguishes equal
-from unequal prefixes by whether the result is zero.
+**Meaning:** Reads both `bytes`-long byte ranges (a `size_t` count, as in C) under views, without mutation, and distinguishes equal
+from unequal prefixes by whether the result is zero. Views are shared, so
+one viewed or owned range can be both operands.
 
 **Kind:** external C contract. The declaration is an explicit verification assumption.
 
-**Verified use:** [`mdtests/strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md`](https://github.com/clicklang/click/blob/master/mdtests/strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md) checks its range and definedness preconditions at a call.
+**Verified use:** [`mdtests/strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md`](https://github.com/clicklang/click/blob/master/mdtests/strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md) checks its range and definedness preconditions at a call, and [`mdtests/memcmp_reads_two_viewed_buffers.md`](https://github.com/clicklang/click/blob/master/mdtests/memcmp_reads_two_viewed_buffers.md) compares two viewed buffers and one buffer with itself.
 
 ### `memset`
 
@@ -2984,25 +3005,30 @@ one.
 
 ```click
 extern uint64 strlen(const uint8* bytes) {
-    requires cstr::readable(bytes);
-    ensures result < 18446744073709551615u64;
-    ensures viewable(bytes[0..result + 1u64]);
-    ensures forall (k: uint64) { k < result implies bytes[k] != '\0' };
-    ensures bytes[result] == '\0';
-    ensures cstr::readable_len(bytes, result);
-    ensures old(bytes[0]) == '\0' implies result == 0u64;
+    views s: cstr_at(bytes, _);
+    ensures result == s.len;
 }
 ```
 
-**Meaning:** Returns the `size_t` length of a dynamically viewable,
-null-terminated byte string without mutation, as C's `strlen` does. The result satisfies the readable-length relation and
-points at its null terminator; `cstr::readable_len_unique` can connect it to an
-independently framed witness. The separate `old(bytes[0])` consequence retains
-the concrete empty-string guarantee.
+**Meaning:** Returns the `size_t` length of the C string `cstr_at(bytes, len)`
+the caller holds, without mutation, as C's `strlen` does. The value binder
+`s` names the viewed string, and `s.len` its length, which the C signature
+does not carry. A call takes it from the one held `cstr_at` at `bytes`
+(`views`, `owns`, or an owner lending it), or from a call map:
+`{ s: str }` names the caller's own binder and `{ s: cstr_at(bytes, n) }`
+names the instance, which the call assembles from owned bytes and the
+string's facts when the caller holds none. The string's facts (the length is
+below `SIZE_MAX`, no earlier terminator, the terminator at `len`, every byte
+defined) come with the instance, so the result points at its terminator.
+`cstr::readable` alone grants no resource and does not satisfy the call.
 
 **Kind:** external C contract. The declaration is an explicit verification assumption.
 
-**Verified use:** [`mdtests/strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md`](https://github.com/clicklang/click/blob/master/mdtests/strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md) checks its empty-string length consequence.
+**Verified use:** [`mdtests/strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md`](https://github.com/clicklang/click/blob/master/mdtests/strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md) returns zero for `cstr_at(text, 0u64)`;
+[`mdtests/cstr_readable_witness_stated_before_call.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_readable_witness_stated_before_call.md)
+names the string a call assembles; and
+[`mdtests/cstr_dynamic_indexed_read_requires_permission.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_dynamic_indexed_read_requires_permission.md)
+refuses a caller that holds only `cstr::readable`.
 
 ## Namespace and extension rules
 

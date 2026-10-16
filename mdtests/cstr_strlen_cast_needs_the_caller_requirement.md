@@ -1,7 +1,7 @@
 # An identity cast does not invent a C-string requirement
 
-Looking through a cast finds the caller's own requirement; without one,
-`strlen`'s precondition is still missing.
+Looking through a cast finds the caller's own string; without one, `strlen`
+has no `cstr_at` instance to view.
 
 ```c filename=strlen_cast_unproved.c
 uint64 unproved(uint8 bytes[]) {
@@ -23,5 +23,5 @@ uint64 unproved(uint8 bytes[]) {
 ```
 
 ```expect
-fail: precondition clause 1 of `strlen`
+fail: call to `strlen` needs a held `cstr_at` instance to give `s.len` its value
 ```

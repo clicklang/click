@@ -3,8 +3,8 @@
 Priority: P1.
 
 Soundness: soundness-adjacent. This file is a tracker. Items M1 (no
-independent checker), M2 (no written semantics) and M3 (`memcpy` reading under
-`viewable`) are trust questions without a known false acceptance. Each item that becomes a reproduced false acceptance is filed in
+independent checker) and M2 (no written semantics) are trust questions
+without a known false acceptance. Each item that becomes a reproduced false acceptance is filed in
 `bugs/` with its own label.
 
 Items P1–P4, W4 and W5 waited on the SMT-backed `auto`
@@ -75,13 +75,16 @@ lines; `examples/modeled-binary-tree` proves the 12-line `tree_contains` in
 about 100. `examples/arena/arena_cells.click` is 5,537 lines for 279 lines
 of C.
 
-Proposed fix: items P2 and P6, plus a published proof-to-code budget per
-example that the gate reports.
+Proposed fix: item P2 and the landed P6 (loop facts carry across steps
+and the back edge closes implicitly), plus a published proof-to-code budget
+per example that the gate reports.
 
 Done when: the examples meet a stated budget, or the budget and the reason
 for exceeding it are published.
 
-Decision: open.
+Decision: fix (maintainer, 2026-10-15). The gate reports each example's
+proof-to-code ratio against the 20x budget, report-only at first; P2 is the
+main remaining lever for meeting it.
 
 ### P2. Spec arithmetic is machine arithmetic
 
@@ -98,7 +101,42 @@ semantics are written explicitly where a spec means them.
 
 Done when: decided, and if fixed, the examples shrink accordingly.
 
-Decision: open.
+Decision: fix (maintainer, 2026-10-15). Specification arithmetic is over
+`Integer` by default, with these rules:
+
+- In a specification, `+`, `-`, `*`, unary minus and the comparisons on
+  machine integers are Integer operations. A machine operand widens
+  implicitly, since that loses nothing; narrowing stays explicit
+  (`to_int32(z)` with its bound obligations).
+- Unsigned wraparound is written explicitly, with a wrapping operation or
+  `% 2^N`. The migration rewrites each unsigned specification operation into
+  that form, and a proof that no wrap occurs removes it.
+- Integer `/` and `%` truncate toward zero, as C and ACSL do.
+- Bitwise operators and shifts stay machine-typed; their results widen when
+  combined with Integer arithmetic.
+- `defined(e)` remains the way a specification states C evaluation.
+- One switch-over by scripted migration, not a per-file mode. A prototype
+  on `examples/bounded-pool` and one unsigned-heavy example comes first, to
+  measure the proof that disappears and check timing against the
+  [verification efficiency contract](../docs/internals/verification-efficiency.md).
+
+Progress: a prototype on `examples/bounded-pool` written in Integer form
+shrinks the sidecar from 437 to 284 lines, and showed that built-in checks
+read only machine facts. Step 1 is done: an Integer comparison of exact
+machine observations also files its native comparison, so resource
+quantities and count definedness accept Integer premises. Step 2 has
+started: `arithmetic "integer";` opts a file into the rule, as a migration
+switch removed when the default flips, and the kernel decides Integer
+comparisons of machine observations through their native comparisons.
+Under the directive, `bounded-pool`'s `pool_init` verifies with its bridge
+lemmas removed; the next blocker is population counts, which are still
+`int32` machine sums. Next: Integer-valued population counts, then the
+migration file by file and the flip.
+
+Afterwards, delete the `machine_integer` and `integer` lemmas Integer
+arithmetic makes unnecessary, complete the families that remain, and give
+those modules qualified names
+([standard-library.md](standard-library.md)).
 
 ### P5. Copy-paste across case files and sidecars
 
@@ -122,20 +160,6 @@ R2 is done (2026-10-14): general `__rb_erase_augmented` and `rb_erase`
 contracts replace 16 per-case sidecars of `examples/rbtree-erase`; see
 [design/proof-reuse.md](../design/proof-reuse.md#r2-one-general-contract-per-function).
 R3, R4 and R5 remain.
-
-### P6. Loop proofs restate facts
-
-Today: invariants restate immutable facts and held views
-(`examples/rust-byte-sum/sum.click`), iterations end with explicit
-`step(); step(); step(); close_invariants();`, and identical facts are
-re-`have`d after steps (the deeper-successor arms of
-`examples/rbtree-erase/rbtree_erase_augmented.click`).
-
-Proposed fix: facts about values a step cannot change carry across steps
-automatically; the back edge closes implicitly.
-
-Decision: fix (maintainer, 2026-10-14), after the SMT-backed `auto`, which has
-landed.
 
 ## W. Proof workflow and tooling
 
@@ -252,37 +276,6 @@ Decision: fix, after performance and completeness (maintainer,
 it would slow the priorities, which are performance at the scale of large
 real-world projects and then completeness, both measured in practice. A
 false acceptance, once found, is still fixed first, as a bug.
-
-### M3. Several read-permission notions and no fractions
-
-Today: `views` (call-scoped loans), `viewable` (bounds only), reads granted
-by a folded composite, and reads from match-arm selection. The trusted
-`memcpy` contract reads its source under `viewable` alone
-(`docs/internals/byte-representation.md`), against "external loads require a
-covering viewed or owned memory resource". No fractional permissions, so no
-reader-writer pattern.
-
-Proposed fix: fractional or counted read permissions; fold `viewable` into
-them; reconcile `memcpy`.
-
-Decision: split (maintainer, 2026-10-14). Fix now: the trusted `memcpy`
-contract reads its source under `views`, as every other external load does.
-Fractional and counted read permissions are deferred until a program needs a
-reader-writer pattern.
-
-### M4. Field-less resources hide a record
-
-Today: a field-less `pair(p)` keeps its child's fields "in a record the
-author does not write" (`docs/reference/language/index.md`); the alternative
-was dropped because the kernel treats a field-less body as a function of its
-arguments in about thirty places (`design/proof-language-rulings.md`).
-
-Proposed fix: require explicit fields, or show the record in diagnostics and
-expansion. This revisits a recorded ruling.
-
-Decision: fix (maintainer, 2026-10-14): show the record in diagnostics and
-expansion output. Explicit fields are not required; the recorded ruling
-stands.
 
 ## Strengths the review credited
 

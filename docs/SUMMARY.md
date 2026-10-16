@@ -3,6 +3,7 @@
 # Using Click
 
 - [Start here](index.md)
+- [Frequently asked questions](faq.md)
 - [What Click proves](concepts/what-click-proves.md)
 - [What Click trusts](concepts/trust.md)
 - [Language coverage](reference/coverage.md)
@@ -59,6 +60,7 @@
 - [Contributing](internals/contributing.md)
 - [Testing](internals/testing.md)
 - [Feature playbook](internals/feature-playbook.md)
+- [Polish mode workflow](internals/polish-mode.md)
 - [Rbtree launch roadmap](internals/roadmap.md)
 - [Architecture](internals/architecture.md)
 - [The verification pipeline](concepts/verification-pipeline.md)

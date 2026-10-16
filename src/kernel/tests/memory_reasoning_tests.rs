@@ -7189,3 +7189,172 @@ fn store_separation_reads_the_store_owners_and_not_earlier_compositions() {
         "a composition the store opened from what it holds now separates"
     );
 }
+
+#[test]
+fn stated_separation_decides_pointer_forms_with_scoped_nonempty_evidence() {
+    for other_block in [
+        PointerBlock::ExternalArgument,
+        PointerBlock::Symbolic(Variable(940_001)),
+    ] {
+        let left = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Variable(Variable(940_002)),
+        };
+        let right = Pointer {
+            block: other_block,
+            offset: PointerOffsetTerm::Variable(Variable(940_003)),
+        };
+        let separation = |end: Bitvector32Term| Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(memory_range(
+                left.clone(),
+                0,
+                end.clone(),
+            ))),
+            right: Box::new(CResource::Memory(memory_range(right.clone(), 0, end))),
+        };
+        let comparison = ConditionTerm::pointer_equal(left.clone(), right.clone());
+        assert!(matches!(comparison, ConditionTerm::PointerEqual(_, _)));
+        let bare = PureFactContext::new();
+        let fact = separation(1u32.into());
+        let branch = bare.clone().assume_proposition(fact.clone());
+        assert_eq!(branch.decide(&comparison), Some(false));
+        let unequal = Proposition::ConditionIs(comparison.clone(), false);
+        let equal = Proposition::ConditionIs(comparison.clone(), true);
+        let (known, premises) = crate::kernel::assumptions::collect_reasoning_provenance(|| {
+            crate::kernel::assumptions::capture_implicit_reasoning_provenance(|| {
+                branch.contains_known(&unequal)
+            })
+        });
+        assert!(known);
+        assert_eq!(premises, vec![fact.clone()]);
+        assert!(branch.contains_known(&Proposition::Not(Box::new(equal.clone()))));
+        assert!(!branch.contains_known(&equal));
+        assert!(!bare.contains_known(&unequal));
+        assert!(!branch.without_exact_fact(&fact).contains_known(&unequal));
+        assert_eq!(
+            branch.decide(&ConditionTerm::pointer_equal(right.clone(), left.clone())),
+            Some(false)
+        );
+        assert_eq!(bare.decide(&comparison), None);
+        assert_eq!(branch.without_exact_fact(&fact).decide(&comparison), None);
+        let rebuilt = {
+            let mut branch = branch.clone();
+            branch.rebuild_separated_anchor_offsets();
+            branch
+        };
+        assert_eq!(rebuilt.decide_pointer_disequality(&comparison), Some(false));
+        for end in [0u32.into(), Bitvector32Term::Variable(Variable(940_004))] {
+            let unresolved = bare.clone().assume_proposition(separation(end));
+            assert_eq!(unresolved.decide(&comparison), None);
+            assert!(!unresolved.contains_known(&unequal));
+        }
+        if left.block != right.block {
+            assert_eq!(
+                branch.decide(&ConditionTerm::pointer_offset_equal(
+                    left.offset.clone(),
+                    right.offset.clone()
+                )),
+                None,
+                "cross-block separation does not distinguish numerical offsets"
+            );
+        }
+    }
+}
+
+#[test]
+fn kept_call_frame_uses_transitive_model_pointer_classes() {
+    let pointer = |id| Pointer {
+        block: PointerBlock::Symbolic(Variable(id)),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let first = pointer(950_001);
+    let middle = pointer(950_002);
+    let owner = pointer(950_003);
+    let assumptions = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::pointer_equal(first.clone(), middle.clone()),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::pointer_equal(middle.clone(), owner.clone()),
+            true,
+        );
+    assert!(assumptions.pointers_known_equal(&first, &owner));
+    let ranges = ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(
+        CResourceFact::own_memory(CMemoryRange::new(owner.clone(), 2u32.into(), 4u32.into())),
+    );
+    let access = first.offset_by_bytes(8);
+    assert!(
+        ranges
+            .memory_write_range(&access, 8, &assumptions)
+            .is_some()
+    );
+    let kept = crate::kernel::primitives::CallKeptRanges::new(ranges, Vec::new(), None);
+    assert!(kept.holds_access(&access, 8, &assumptions));
+    assert!(!kept.holds_access(&access, 16, &assumptions));
+    for offset in [4, 12] {
+        assert!(!kept.holds_access(&first.offset_by_bytes(offset), 8, &assumptions));
+    }
+    let withdrawn = assumptions.without_exact_fact(&Proposition::ConditionIs(
+        ConditionTerm::pointer_equal(middle, owner.clone()),
+        true,
+    ));
+    assert!(!kept.holds_access(&access, 8, &withdrawn));
+    let views = ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(
+        CResourceFact::view_memory(CMemoryRange::new(owner, 2u32.into(), 4u32.into())),
+    );
+    let borrowed = crate::kernel::primitives::CallKeptRanges::new(views, Vec::new(), None);
+    assert!(!borrowed.holds_access(&access, 8, &assumptions));
+}
+
+#[test]
+fn kept_call_frame_with_loaded_owner_survives_equivalent_input_lineages() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let address = Pointer::symbolic(Variable(953_001));
+    let memory = CMemory::new();
+    let CValue::Pointer(value) = memory.symbolic_pointer_load(&address, 4, CType::Int32Pointer)
+    else {
+        panic!("a typed pointer read");
+    };
+    let owner = value.pointer().clone();
+    let queried = Pointer::symbolic(Variable(953_002));
+    let middle = Pointer::symbolic(Variable(953_003));
+    let inputs = || {
+        PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::pointer_equal(queried.clone(), middle.clone()),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::pointer_equal(middle.clone(), owner.clone()),
+                true,
+            )
+    };
+    let first = inputs();
+    let recheck = inputs();
+    let frame = |facts: &PureFactContext| {
+        crate::kernel::primitives::CallKeptRanges::new(
+            ResourceContext::new_with_equalities(facts).unchecked_with_fact(
+                CResourceFact::own_memory(CMemoryRange::new(
+                    owner.clone(),
+                    4u32.into(),
+                    6u32.into(),
+                )),
+            ),
+            Vec::new(),
+            None,
+        )
+    };
+    let access = queried.offset_by_bytes(16);
+    let kept = frame(&first);
+    assert!(kept.holds_access(&access, 8, &first));
+    assert!(frame(&recheck).holds_access(&access, 8, &recheck));
+    assert!(
+        kept.holds_access(&access, 8, &recheck),
+        "equivalent stated inputs must not lose the recorded owner"
+    );
+    assert!(
+        !kept.holds_access(&access, 8, &PureFactContext::new()),
+        "retained class membership is not evidence in a weaker context"
+    );
+}

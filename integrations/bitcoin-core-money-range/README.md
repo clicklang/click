@@ -3,8 +3,8 @@
 This opt-in integration example imports the unchanged inline `MoneyRange` from
 Bitcoin Core v31.1 through a real `src/policy/feerate.cpp` CMake compilation
 command. The host can be Apple Silicon macOS: Clang targets x86-64 Linux using
-Linux headers in `inputs/sysroot`. The setup generates a compilation database;
-it does not claim to link or run Bitcoin Core binaries.
+Linux headers from a pinned Debian sysroot. It does not claim to link or run
+Bitcoin Core binaries.
 
 The upstream tag is pinned to commit
 `9be056a8a72b624dae9623b2f7bded92c2a21c91`. The expected SHA-256 values
@@ -25,9 +25,53 @@ Debian Bookworm x86-64 development packages extracted into `inputs/sysroot`:
 | `libgcc-12-dev` | `12.2.0-14+deb12u1` | `d720259380a84f2ffc6fe516eff5cbe9c8a005138e8d6a5748747ba4b3404a82` |
 | `libboost1.74-dev` | `1.74.0+ds1-21` | `ba14fe04d7f138f874bd3ab3a20c4fd1e9f654e271449b8f3e48d20f942dbb93` |
 
-Put the unmodified checkout at `inputs/bitcoin-src`, the extracted development
-packages at `inputs/sysroot`, and use `inputs/bitcoin-build` for the CMake
-build directory. From the repository root, generate the compilation database:
+## Project
+
+[`click.project.json`](click.project.json) declares one C++ unit, `bitcoin`,
+with exceptions and RTTI on as Bitcoin Core builds. Its `args` are the selected
+`src/policy/feerate.cpp` command from Bitcoin Core's CMake-generated
+compilation database, every argument in order with its paths relative to this
+directory, `-O2` and the hardening flags included; Click supplies only the
+driver, `--target=x86_64-unknown-linux-gnu`, `-std=c++20`, `-c` and `-o`. A
+gate test checks that the arguments are exactly that command. Each source is a
+Bitcoin header verified through `feerate.cpp`: `consensus/amount.h`
+(`MoneyRange`), `serialize.h` (`GetSizeOfCompactSize`) and `util/feefrac.h`
+(the `FeeFrac` operations, with `check.h`'s assertion admitted as a checked
+library boundary).
+
+The committed `click.project.lock.json` and `.click/bitcoin/` artifacts verify
+offline. The lock rechecks the Bitcoin and sysroot files in this directory, so
+extract the hermetic closure here first:
+
+```sh
+tar -xzf integrations/bitcoin-core-money-range/input-closure.tar.gz \
+  -C integrations/bitcoin-core-money-range
+cargo run --bin click -- verify integrations/bitcoin-core-money-range/MoneyRange.click
+cargo run --bin click -- profile integrations/bitcoin-core-money-range/MoneyRange.click
+cargo run --bin click -- audit integrations/bitcoin-core-money-range/MoneyRange.click
+cargo run --bin click -- expand --claim MoneyRange.contract integrations/bitcoin-core-money-range/MoneyRange.click
+```
+
+Every sidecar here verifies the same way. To refresh the lock, build the pinned
+exporter and lock the project:
+
+```sh
+CLICK_CPP_EXPORTER="$(scripts/build-cpp-exporter.sh)" \
+  cargo run --bin click -- import lock integrations/bitcoin-core-money-range
+```
+
+The lock binds the unit's arguments, exact source and header bytes, all
+textual headers Clang opened (the Clang resource headers by digest), exporter,
+and observed semantic profile. The exporter supplies the pinned Clang's
+resource directory itself, so the project names no machine-specific path. Once
+locked, verification loads the artifacts offline without invoking Clang.
+
+## Full checkout
+
+The hermetic closure was cut from a full checkout. Put the unmodified checkout
+at `inputs/bitcoin-src`, the extracted development packages at
+`inputs/sysroot`, and use `inputs/bitcoin-build` for the CMake build directory.
+From the repository root, generate the compilation database:
 
 ```sh
 cmake -S integrations/bitcoin-core-money-range/inputs/bitcoin-src \
@@ -46,7 +90,7 @@ The generated `compile_commands.json` must contain one
 `src/policy/feerate.cpp` command with `--target=x86_64-unknown-linux-gnu`,
 `-std=c++20`, and no verifier-specific exception or RTTI overrides. The
 toolchain file supplies the Linux sysroot, standard-library include paths, and
-Clang resource directory needed by both the compiler driver and LibTooling.
+Clang resource directory needed by the compiler driver.
 The sysroot is parse-only input: Clang needs it to type-check Bitcoin Core,
 but a function declared in its headers is never exported or verified. Calls
 into it are checked against Click's standard-library contracts; see
@@ -54,26 +98,6 @@ into it are checked against Click's standard-library contracts; see
 Some CMake link probes warn because this header-only setup does not install a
 Linux runtime; successful configuration and the selected compile command, not
 a binary build, are the setup requirements.
-
-Then build the pinned exporter and explicitly refresh the local lock:
-
-```sh
-scripts/build-cpp-exporter.sh
-cargo run --bin click -- import lock integrations/bitcoin-core-money-range/MoneyRange.click
-cargo run --bin click -- verify integrations/bitcoin-core-money-range/MoneyRange.click
-cargo run --bin click -- profile integrations/bitcoin-core-money-range/MoneyRange.click
-cargo run --bin click -- audit integrations/bitcoin-core-money-range/MoneyRange.click
-cargo run --bin click -- expand --claim MoneyRange.contract integrations/bitcoin-core-money-range/MoneyRange.click
-```
-
-`MoneyRange.click.import.json` and the sidecar are versioned; this full-checkout
-workflow's checkout, sysroot, compilation database, semantic artifact, and lock
-remain local. The lock binds the selected command, exact source and header
-bytes, all textual headers Clang opened (including sysroot and Clang resource
-headers), the resolved target of each path, exporter, and observed semantic
-profile. Once locked, verification loads the artifact offline without invoking
-Clang. A different checkout location or toolchain command requires an explicit
-refresh.
 
 ## Hermetic gate fixture
 
@@ -97,22 +121,25 @@ archive digest, and source, package, and originating Clang executable hashes.
 The gate does not rerun Bitcoin's whole CMake configuration; that remains the
 opt-in full-checkout workflow above. It also does not build or run Bitcoin.
 
-To regenerate the hermetic fixture after creating the local lock above, put
-the five downloaded `.deb` archives in `inputs/packages` under the short names
-shown in the table (for example `libc6-dev.deb`), then run:
+To regenerate the hermetic fixture, put the full checkout at `bitcoin-src/` and
+the extracted packages at `sysroot/` beside the sidecars, in place of the
+closure, and lock the project as above. Put the five downloaded `.deb`
+archives in `inputs/packages` under the short names shown in the table (for
+example `libc6-dev.deb`), then run:
 
 ```sh
 python3 integrations/bitcoin-core-money-range/make-fixture.py \
-  --bitcoin-src integrations/bitcoin-core-money-range/inputs/bitcoin-src \
-  --sysroot integrations/bitcoin-core-money-range/inputs/sysroot \
+  --bitcoin-src integrations/bitcoin-core-money-range/bitcoin-src \
+  --sysroot integrations/bitcoin-core-money-range/sysroot \
   --packages integrations/bitcoin-core-money-range/inputs/packages \
-  --lock integrations/bitcoin-core-money-range/MoneyRange.click.import.json.lock \
+  --lock integrations/bitcoin-core-money-range/click.project.lock.json \
   --compilation-database integrations/bitcoin-core-money-range/inputs/bitcoin-build/compile_commands.json
 ```
 
 Regeneration checks the Git tree, local source bytes, Debian archives and
-extracted header bytes, originating Clang executable, and selected compile
-flags before changing the checked-in closure. A changed archive also requires
+extracted header bytes, originating Clang executable, the selected compile
+flags, and that the `bitcoin` unit states exactly that command, before
+changing the checked-in closure. A changed archive also requires
 deliberately updating the pinned digest in the gate test after review.
 
 The sidecar also contains four one-call, modular `executes MoneyRange`

@@ -1,7 +1,7 @@
 //! Explicit, guarded mathematical truncation, separate from Integer `/` policy.
 use super::*;
 
-pub(super) fn is_integer_truncation(name: &str) -> bool {
+pub(in crate::surface) fn is_integer_truncation(name: &str) -> bool {
     matches!(name, "truncating_quotient" | "truncating_remainder")
 }
 

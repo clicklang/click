@@ -14,7 +14,7 @@ void copy_across(struct pair *p) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_unlock_wrong_state_type_rejected.c";
 resource cell(p: struct pair*) {

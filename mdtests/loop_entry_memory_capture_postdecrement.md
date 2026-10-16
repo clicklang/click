@@ -13,7 +13,7 @@ unsigned long post(const unsigned char *p, unsigned long n) { while (n--) {} ret
 import click::integer;
 import click::machine_integer;
 
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "post.c";
 uint64 post(const uint8* p, uint64 n) {
  requires n <= 15u64;

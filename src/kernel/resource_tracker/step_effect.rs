@@ -387,7 +387,7 @@ fn cell_effect(
             } else if pointer.block == *block {
                 StepEffect::Affected
             } else if extended_dag_bridging_active()
-                && block.starts_with("local:")
+                && block.is_local_block()
                 && let Some(extent) = step
                     .base()
                     .block_size(block)
@@ -764,10 +764,11 @@ pub(in crate::kernel) fn seeded_cell_effect(
         unreachable!("seeded_cell_effect is asked about a CellsSeeded edge");
     };
     crate::instrumentation::record_deterministic_work(1);
-    // A wider read can overlap several cached scalar slots. None supplies
-    // its whole value, but materializing unchanged predecessor bytes still
-    // writes nothing; do not misclassify the last slot as a partial write.
-    if bytes > run.value_width() && seeded_loads_preserve_base(step) {
+    // Caching unchanged predecessor bytes writes nothing, whether the
+    // query selects one exact slot, overlaps several, or cannot place its
+    // address in the run. Decide this before treating a selected slot as a
+    // write; otherwise even a cached read becomes a different cell version.
+    if seeded_loads_preserve_base(step) {
         return SeededCellEffect::Separate(vec![MemoryDagHopJustification::SeededLoadsOfBase]);
     }
     match crate::kernel::reasoning::memory_resolution::run_access(run, pointer) {
@@ -798,14 +799,7 @@ pub(in crate::kernel) fn seeded_cell_effect(
         crate::kernel::reasoning::memory_resolution::RunAccess::Scaled { .. }
         | crate::kernel::reasoning::memory_resolution::RunAccess::ScaledWide { .. }
         | crate::kernel::reasoning::memory_resolution::RunAccess::Other => {
-            // Prove a cache-only edge unchanged before asking any separation
-            // search. Each of its loads already denotes the predecessor's
-            // bytes, even when this address cannot be placed in the run.
-            if seeded_loads_preserve_base(step) {
-                SeededCellEffect::Separate(vec![MemoryDagHopJustification::SeededLoadsOfBase])
-            } else {
-                seeded_cell_effect_store_by_store(step, run, pointer, bytes, evidence)
-            }
+            seeded_cell_effect_store_by_store(step, run, pointer, bytes, evidence)
         }
     }
 }

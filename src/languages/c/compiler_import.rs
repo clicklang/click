@@ -133,7 +133,8 @@ impl PreparedCImport {
 #[serde(deny_unknown_fields)]
 struct Config {
     schema: u32,
-    target: String,
+    #[serde(skip, default = "default_target")]
+    target: CTarget,
     compiler: PathBuf,
     working_directory: String,
     environment: Environment,
@@ -168,10 +169,13 @@ enum ConfigOrigin {
     ProjectUnit(String),
 }
 
+fn default_target() -> CTarget {
+    CTarget::SUPPORTED
+}
+
 impl Config {
-    // Configs enter the compiler path only after validate_config.
     fn c_target(&self) -> CTarget {
-        CTarget::from_name(&self.target).expect("validated compiler target")
+        self.target
     }
 
     // Likewise, a configured profile name was resolved by validate_config.
@@ -208,6 +212,10 @@ struct Lock {
     schema: u32,
     config_sha256: String,
     target: String,
+    /// The target's mode; absent from a lock prepared before targets were
+    /// spelled as a triple and a mode.
+    #[serde(default)]
+    mode: String,
     compiler_path: String,
     working_directory: String,
     config_directory: String,
@@ -323,20 +331,6 @@ struct RootSnapshot {
     bytes: u64,
 }
 
-pub fn load_imports(config_path: &Path) -> Result<Vec<PreparedCImport>, String> {
-    load_imports_inner(config_path).map_err(bounded_error)
-}
-
-fn load_imports_inner(config_path: &Path) -> Result<Vec<PreparedCImport>, String> {
-    let (config, _) = read_config(config_path, ConfigUse::Load)?;
-    let lock_path = lock_path(config_path);
-    let lock_bytes = read_bounded(&lock_path, MAX_CONFIG_BYTES, "import lock")?;
-    reject_duplicate_json_keys(&lock_bytes)?;
-    let lock: Lock =
-        serde_json::from_slice(&lock_bytes).map_err(|e| format!("parse import lock: {e}"))?;
-    load_locked(&config, &lock)
-}
-
 /// A C unit of a Click project, as `click.project.json` describes it.
 #[derive(Clone, Debug)]
 pub(crate) struct UnitConfig {
@@ -347,7 +341,7 @@ pub(crate) struct UnitConfig {
     pub unit_name: String,
     /// The digest of the unit's description, which its lock records.
     pub unit_digest: String,
-    pub target: String,
+    pub target: CTarget,
     pub compiler: PathBuf,
     /// The unit's source root, relative to the project root.
     pub root: String,
@@ -394,7 +388,7 @@ fn unit_config(unit: &UnitConfig, use_for: ConfigUse) -> Result<Config, String> 
         .to_path_buf();
     let mut config = Config {
         schema: SCHEMA,
-        target: unit.target.clone(),
+        target: unit.target,
         compiler: unit.compiler.clone(),
         working_directory: unit.root.clone(),
         environment: Environment {
@@ -453,7 +447,7 @@ fn load_locked(config: &Config, lock: &Lock) -> Result<Vec<PreparedCImport>, Str
     }
     if lock.invocation_sha256
         != invocation_digest_parts(
-            &config.target,
+            config.target,
             &lock.compiler_path,
             &lock.working_directory,
             &config.environment.allow,
@@ -467,7 +461,7 @@ fn load_locked(config: &Config, lock: &Lock) -> Result<Vec<PreparedCImport>, Str
     {
         return Err(format!(
             "Click's system headers for {} changed since this import lock was prepared; run `click import lock` to prepare the import against them",
-            config.target
+            config.target.name()
         ));
     }
     let locked_by_name = lock
@@ -524,25 +518,6 @@ fn load_locked(config: &Config, lock: &Lock) -> Result<Vec<PreparedCImport>, Str
     Ok(prepared)
 }
 
-pub fn create_lock(config_path: &Path) -> Result<(), String> {
-    create_lock_inner(config_path).map_err(bounded_error)
-}
-
-fn create_lock_inner(config_path: &Path) -> Result<(), String> {
-    let (config, _) = read_config(config_path, ConfigUse::Prepare)?;
-    let (lock, artifacts) = build_lock(&config)?;
-    let mut encoded =
-        serde_json::to_vec_pretty(&lock).map_err(|e| format!("encode import lock: {e}"))?;
-    encoded.push(b'\n');
-    if encoded.len() > MAX_CONFIG_BYTES {
-        return Err("import lock exceeds the supported size bound".into());
-    }
-    for (path, bytes) in &artifacts {
-        write_file_atomically(path, bytes)?;
-    }
-    write_file_atomically(&lock_path(config_path), &encoded)
-}
-
 /// Runs the compiler for every source and returns the lock with the
 /// artifacts it describes, without writing either.
 fn build_lock(config: &Config) -> Result<(Lock, Vec<(PathBuf, Vec<u8>)>), String> {
@@ -576,7 +551,8 @@ fn build_lock(config: &Config) -> Result<(Lock, Vec<(PathBuf, Vec<u8>)>), String
     let lock = Lock {
         schema: LOCK_SCHEMA,
         config_sha256: config.config_bytes_sha256.clone(),
-        target: config.target.clone(),
+        target: CTarget::TRIPLE.to_string(),
+        mode: config.target.mode().to_string(),
         compiler_path: config.compiler.to_string_lossy().into_owned(),
         working_directory: config.working_directory.clone(),
         config_directory: fs::canonicalize(&config.config_directory)
@@ -598,25 +574,6 @@ fn build_lock(config: &Config) -> Result<(Lock, Vec<(PathBuf, Vec<u8>)>), String
         artifacts.push((resolve_artifact(config, &source.artifact)?, result.artifact));
     }
     Ok((lock, artifacts))
-}
-
-fn read_config(config_path: &Path, use_for: ConfigUse) -> Result<(Config, Vec<u8>), String> {
-    let absolute = absolute_path(config_path, Path::new("."))?;
-    reject_symlink_components(&absolute)?;
-    let bytes = read_stable(&absolute, MAX_CONFIG_BYTES, "import config")?;
-    reject_duplicate_json_keys(&bytes)?;
-    let mut config: Config =
-        serde_json::from_slice(&bytes).map_err(|e| format!("parse import config: {e}"))?;
-    config.config_directory = absolute
-        .parent()
-        .ok_or("import config has no parent")?
-        .to_path_buf();
-    config.lock_path = lock_path(&absolute);
-    config.config_path = absolute.clone();
-    config.config_bytes_sha256 = hex_digest(&bytes);
-    normalize_config(&mut config, use_for)?;
-    validate_config(&config, use_for)?;
-    Ok((config, bytes))
 }
 
 fn make_context<'a>(
@@ -893,7 +850,7 @@ fn validate_locked_source(
     }
     let identity = source_identity_parts(
         lock.schema,
-        &config.target,
+        config.target.name(),
         &lock.invocation_sha256,
         source,
         &SourceDigests {
@@ -922,7 +879,7 @@ fn source_identity(
 ) -> String {
     source_identity_parts(
         LOCK_SCHEMA,
-        &config.target,
+        config.target.name(),
         &context.invocation_sha256,
         source,
         &SourceDigests {
@@ -1272,9 +1229,6 @@ fn dep_tokens(text: &str) -> Result<Vec<String>, String> {
 fn validate_config(config: &Config, use_for: ConfigUse) -> Result<(), String> {
     if config.schema != SCHEMA {
         return Err(format!("unsupported import schema {}", config.schema));
-    }
-    if CTarget::from_name(&config.target).is_none() {
-        return Err(format!("unsupported compiler target `{}`", config.target));
     }
     if matches!(use_for, ConfigUse::Prepare) {
         let meta = fs::metadata(&config.compiler)
@@ -1870,14 +1824,6 @@ fn abi_probe(config: &Config) -> Result<String, String> {
     Ok(hex_digest(macros.as_bytes()))
 }
 
-fn lock_path(config_path: &Path) -> PathBuf {
-    let name = config_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("import.json")
-        .trim_end_matches(".json");
-    config_path.with_file_name(format!("{name}.lock.json"))
-}
 fn lock_path_from_config(config: &Config) -> PathBuf {
     config.lock_path.clone()
 }
@@ -1956,7 +1902,7 @@ fn limits() -> CompilerLimits {
 }
 fn invocation_digest(config: &Config, toolchain: &ToolchainIdentity) -> String {
     invocation_digest_parts(
-        &config.target,
+        config.target,
         &config.compiler.to_string_lossy(),
         &config.working_directory,
         &config.environment.allow,
@@ -1965,21 +1911,20 @@ fn invocation_digest(config: &Config, toolchain: &ToolchainIdentity) -> String {
 }
 
 fn invocation_digest_parts(
-    target: &str,
+    target: CTarget,
     compiler_path: &str,
     working_directory: &str,
     environment: &BTreeMap<String, String>,
     toolchain: &ToolchainIdentity,
 ) -> String {
     let mut bytes = serde_json::to_vec(&(
-        target,
+        target.name(),
         compiler_path,
         working_directory,
         environment,
         toolchain,
     ))
     .expect("identity serializes");
-    let target = CTarget::from_name(target).expect("validated compiler target");
     bytes.extend_from_slice(fixed_args(target).join("\0").as_bytes());
     hex_digest(&bytes)
 }
@@ -2045,8 +1990,11 @@ fn metadata_signature(metadata: &fs::Metadata) -> (u64, u128, u128, u64) {
     }
 }
 fn validate_lock_shape(lock: &Lock, config: &Config) -> Result<(), String> {
-    if lock.target != config.target {
-        return Err("import lock schema or target does not match config".into());
+    if lock.target != CTarget::TRIPLE || lock.mode != config.target.mode() {
+        return Err(format!(
+            "the import lock was not prepared for target {}; run `click import lock` to prepare it again",
+            config.target.name()
+        ));
     }
     let current = lock.schema == LOCK_SCHEMA && lock.click_header_catalog_sha256.is_some();
     let legacy = lock.schema == LEGACY_LOCK_SCHEMA
@@ -2068,151 +2016,6 @@ fn validate_lock_shape(lock: &Lock, config: &Config) -> Result<(), String> {
         }
     }
     Ok(())
-}
-fn reject_duplicate_json_keys(bytes: &[u8]) -> Result<(), String> {
-    let text = std::str::from_utf8(bytes).map_err(|e| format!("JSON is not UTF-8: {e}"))?;
-    let mut parser = JsonKeys {
-        text,
-        pos: 0,
-        depth: 0,
-    };
-    parser.value()?;
-    parser.ws();
-    if parser.pos != text.len() {
-        return Err("trailing data after JSON value".into());
-    }
-    Ok(())
-}
-struct JsonKeys<'a> {
-    text: &'a str,
-    pos: usize,
-    depth: usize,
-}
-impl<'a> JsonKeys<'a> {
-    fn ws(&mut self) {
-        while self.pos < self.text.len() {
-            let c = self.text.as_bytes()[self.pos];
-            if !matches!(c, b' ' | b'\n' | b'\r' | b'\t') {
-                break;
-            }
-            self.pos += 1;
-        }
-    }
-    fn value(&mut self) -> Result<(), String> {
-        self.ws();
-        let c = *self
-            .text
-            .as_bytes()
-            .get(self.pos)
-            .ok_or("unexpected end of JSON")?;
-        if self.depth >= 64 {
-            return Err("import JSON exceeds nesting bound".into());
-        }
-        match c {
-            b'{' | b'[' => {
-                self.depth += 1;
-                let result = if c == b'{' {
-                    self.object()
-                } else {
-                    self.array()
-                };
-                self.depth -= 1;
-                result
-            }
-            b'"' => {
-                self.string()?;
-                Ok(())
-            }
-            b't' | b'f' | b'n' | b'-' | b'0'..=b'9' => {
-                while self.pos < self.text.len()
-                    && !matches!(
-                        self.text.as_bytes()[self.pos],
-                        b',' | b']' | b'}' | b' ' | b'\n' | b'\r' | b'\t'
-                    )
-                {
-                    self.pos += 1;
-                }
-                Ok(())
-            }
-            _ => Err(format!("invalid JSON at byte {}", self.pos)),
-        }
-    }
-    fn string(&mut self) -> Result<String, String> {
-        if self.text.as_bytes().get(self.pos) != Some(&b'"') {
-            return Err("expected JSON string".into());
-        }
-        self.pos += 1;
-        let start = self.pos;
-        let mut escaped = false;
-        while self.pos < self.text.len() {
-            let c = self.text.as_bytes()[self.pos] as char;
-            self.pos += 1;
-            if escaped {
-                escaped = false;
-                continue;
-            }
-            if c == '\\' {
-                escaped = true;
-                continue;
-            }
-            if c == '"' {
-                return serde_json::from_str(&format!("\"{}\"", &self.text[start..self.pos - 1]))
-                    .map_err(|e| format!("invalid JSON string: {e}"));
-            }
-        }
-        Err("unterminated JSON string".into())
-    }
-    fn object(&mut self) -> Result<(), String> {
-        self.pos += 1;
-        self.ws();
-        let mut keys = HashSet::new();
-        if self.text.as_bytes().get(self.pos) == Some(&b'}') {
-            self.pos += 1;
-            return Ok(());
-        }
-        loop {
-            self.ws();
-            let key = self.string()?;
-            if !keys.insert(key) {
-                return Err("duplicate JSON object key".into());
-            }
-            self.ws();
-            if self.text.as_bytes().get(self.pos) != Some(&b':') {
-                return Err("expected ':' in JSON object".into());
-            }
-            self.pos += 1;
-            self.value()?;
-            self.ws();
-            match self.text.as_bytes().get(self.pos) {
-                Some(b',') => self.pos += 1,
-                Some(b'}') => {
-                    self.pos += 1;
-                    return Ok(());
-                }
-                _ => return Err("expected ',' or '}' in JSON object".into()),
-            }
-        }
-    }
-    fn array(&mut self) -> Result<(), String> {
-        self.pos += 1;
-        self.ws();
-        if self.text.as_bytes().get(self.pos) == Some(&b']') {
-            self.pos += 1;
-            return Ok(());
-        }
-        loop {
-            self.value()?;
-            self.ws();
-            match self.text.as_bytes().get(self.pos) {
-                Some(b',') => self.pos += 1,
-                Some(b']') => {
-                    self.pos += 1;
-                    return Ok(());
-                }
-                _ => return Err("expected ',' or ']' in JSON array".into()),
-            }
-        }
-    }
 }
 fn file_digest(path: &Path) -> Result<String, String> {
     let mut file = open_regular(path, "input")?;
@@ -2325,132 +2128,6 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    struct OfflineFixture {
-        root: PathBuf,
-    }
-
-    impl OfflineFixture {
-        fn new() -> Self {
-            static NEXT: AtomicUsize = AtomicUsize::new(0);
-            let root = fs::canonicalize(std::env::temp_dir())
-                .unwrap()
-                .join(format!(
-                    "click-c-offline-{}-{}",
-                    std::process::id(),
-                    NEXT.fetch_add(1, Ordering::Relaxed)
-                ));
-            fs::create_dir(&root).unwrap();
-            let source = b"#include \"local.h\"\nint answer(void) { return VALUE; }\n";
-            let header = b"#define VALUE 42\n";
-            let artifact = b"int answer(void) { return 42; }\n";
-            fs::write(root.join("main.c"), source).unwrap();
-            fs::write(root.join("local.h"), header).unwrap();
-            fs::write(root.join("main.i"), artifact).unwrap();
-            fs::write(
-                root.join("main.click"),
-                "target \"x86_64-linux-kernel\"; verifying \"main.c\"; int answer() { ensures result == 42; } by { execute(); simp(); }",
-            )
-            .unwrap();
-            let config = serde_json::json!({
-                "schema": SCHEMA,
-                "target": "x86_64-linux-kernel",
-                "compiler": "/toolchain/not-installed/gcc",
-                "working_directory": ".",
-                "environment": {"allow": {}},
-                "sources": [{
-                    "logical_source": "main.c",
-                    "path": "main.c",
-                    "args": [],
-                    "artifact": "main.i"
-                }]
-            });
-            let config_path = root.join("main.click.import.json");
-            let config_bytes = serde_json::to_vec(&config).unwrap();
-            fs::write(&config_path, &config_bytes).unwrap();
-            let (parsed, _) = read_config(&config_path, ConfigUse::Load).unwrap();
-            let toolchain = ToolchainIdentity {
-                driver_sha256: hex_digest(b"gcc"),
-                cc1_path: "/toolchain/not-installed/cc1".to_string(),
-                cc1_sha256: hex_digest(b"cc1"),
-                resource_files: BTreeMap::new(),
-                specs_path: None,
-                specs_sha256: None,
-                abi_probe_sha256: hex_digest(b"abi"),
-            };
-            let compiler_path = "/toolchain/not-installed/gcc".to_string();
-            let working_directory = root.to_string_lossy().into_owned();
-            let invocation_sha256 = invocation_digest_parts(
-                &parsed.target,
-                &compiler_path,
-                &working_directory,
-                &parsed.environment.allow,
-                &toolchain,
-            );
-            let source_sha256 = hex_digest(source);
-            let artifact_sha256 = hex_digest(artifact);
-            let dependencies =
-                BTreeMap::from([("/toolchain/include/local.h".to_string(), hex_digest(header))]);
-            let source_config = &parsed.sources[0];
-            let catalog = system_headers::catalog_digest(CTarget::X86_64LinuxKernel);
-            let locked = LockedSource {
-                logical_source: source_config.logical_source.clone(),
-                path: source_config.path.clone(),
-                args: source_config.args.clone(),
-                artifact: source_config.artifact.clone(),
-                source_sha256: source_sha256.clone(),
-                artifact_sha256: artifact_sha256.clone(),
-                artifact_bytes: artifact.len(),
-                dependencies: dependencies.clone(),
-                local_dependencies: BTreeMap::from([("local.h".to_string(), hex_digest(header))]),
-                unit_dependencies: BTreeMap::new(),
-                click_headers: BTreeMap::new(),
-                identity: source_identity_parts(
-                    LOCK_SCHEMA,
-                    &parsed.target,
-                    &invocation_sha256,
-                    source_config,
-                    &SourceDigests {
-                        source_sha256: &source_sha256,
-                        dependencies: &dependencies,
-                        local_dependencies: &BTreeMap::from([(
-                            "local.h".to_string(),
-                            hex_digest(header),
-                        )]),
-                        click_header_catalog_sha256: Some(&catalog),
-                        click_headers: &BTreeMap::new(),
-                        artifact_sha256: &artifact_sha256,
-                    },
-                ),
-            };
-            let lock = Lock {
-                schema: LOCK_SCHEMA,
-                config_sha256: hex_digest(&config_bytes),
-                target: parsed.target,
-                compiler_path,
-                working_directory,
-                config_directory: "/toolchain/include".to_string(),
-                invocation_sha256,
-                option_profile: None,
-                click_header_catalog_sha256: Some(catalog),
-                unit_directory: None,
-                toolchain,
-                sources: vec![locked],
-            };
-            fs::write(lock_path(&config_path), serde_json::to_vec(&lock).unwrap()).unwrap();
-            Self { root }
-        }
-
-        fn config(&self) -> PathBuf {
-            self.root.join("main.click.import.json")
-        }
-    }
-
-    impl Drop for OfflineFixture {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.root);
-        }
-    }
-
     /// A project unit whose root is an external tree beside the project,
     /// locked by hand as the offline fixture is: its files are rechecked
     /// relative to the unit root, and the sidecar names the source by its own
@@ -2477,11 +2154,12 @@ mod tests {
         fs::write(upstream.join("local.h"), header).unwrap();
         fs::write(proofs.join(".click/up/main.c.i"), artifact).unwrap();
         let sidecar = proofs.join("checks/main.click");
-        let proof = "target \"x86_64-linux-kernel\"; verifying \"../../upstream/main.c\"; int answer() { ensures result == 42; } by { execute(); simp(); }";
+        let proof = "target \"x86_64-unknown-linux-gnu\"; mode \"kernel\"; verifying \"../../upstream/main.c\"; int answer() { ensures result == 42; } by { execute(); simp(); }";
         fs::write(&sidecar, proof).unwrap();
         let describe = |args: &[&str]| {
             serde_json::json!({
-                "target": "x86_64-linux-kernel",
+                "target": "x86_64-unknown-linux-gnu",
+                "mode": "kernel",
                 "units": {"up": {
                     "language": "c",
                     "root": "../upstream",
@@ -2512,7 +2190,7 @@ mod tests {
         };
         let compiler_path = "/toolchain/not-installed/gcc".to_string();
         let invocation_sha256 = invocation_digest_parts(
-            &config.target,
+            config.target,
             &compiler_path,
             &config.working_directory,
             &config.environment.allow,
@@ -2539,7 +2217,7 @@ mod tests {
             click_headers: BTreeMap::new(),
             identity: source_identity_parts(
                 LOCK_SCHEMA,
-                &config.target,
+                config.target.name(),
                 &invocation_sha256,
                 source_config,
                 &SourceDigests {
@@ -2555,7 +2233,8 @@ mod tests {
         let lock = Lock {
             schema: LOCK_SCHEMA,
             config_sha256: config.config_bytes_sha256.clone(),
-            target: config.target.clone(),
+            target: CTarget::TRIPLE.to_string(),
+            mode: config.target.mode().to_string(),
             compiler_path,
             working_directory: config.working_directory.clone(),
             config_directory: proofs.to_string_lossy().into_owned(),
@@ -2594,67 +2273,54 @@ mod tests {
         fs::write(upstream.join("local.h"), header).unwrap();
         load().unwrap();
 
-        fs::write(&project_file, describe(&["-DVALUE=42"])).unwrap();
-        let error = load().unwrap_err();
-        assert!(error.contains("does not match its description"), "{error}");
-        let _ = fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn locked_c_import_verifies_without_the_target_compiler_or_headers() {
-        let fixture = OfflineFixture::new();
-        let proof = fs::read_to_string(fixture.root.join("main.click")).unwrap();
-        let crate::cli::CInput::Prepared(imports) =
-            crate::cli::read_c_inputs(&fixture.root.join("main.click"), &proof).unwrap()
-        else {
-            panic!("the ordinary CLI input path must load the prepared C artifact");
-        };
-        assert_eq!(imports[0].source(), "int answer(void) { return 42; }\n");
-        crate::surface::verify_c0_prepared_sources(&proof, &imports).unwrap();
-
-        let relocated = OfflineFixture::new();
-        fs::copy(lock_path(&fixture.config()), lock_path(&relocated.config())).unwrap();
-        let same = load_imports(&relocated.config()).unwrap();
-        assert_eq!(same[0].identity(), imports[0].identity());
-        crate::surface::verify_c0_prepared_sources(&proof, &same).unwrap();
-    }
-
-    #[test]
-    fn locked_c_import_rejects_changed_source_artifact_and_local_header() {
-        let fixture = OfflineFixture::new();
-        let source = fixture.root.join("main.c");
-        let artifact = fixture.root.join("main.i");
-        let header = fixture.root.join("local.h");
-        for (path, replacement) in [
-            (&source, "int answer(void) { return 43; }\n"),
-            (&artifact, "int answer(void) { return 43; }\n"),
-            (&header, "#define VALUE 43\n"),
+        // A changed source or artifact cannot reuse the lock.
+        for (path, original, replacement) in [
+            (
+                upstream.join("main.c"),
+                &source[..],
+                &b"int answer(void) { return 43; }\n"[..],
+            ),
+            (
+                proofs.join(".click/up/main.c.i"),
+                &artifact[..],
+                &b"int answer(void) { return 43; }\n"[..],
+            ),
         ] {
-            let original = fs::read(path).unwrap();
-            fs::write(path, replacement).unwrap();
-            assert!(load_imports(&fixture.config()).is_err());
-            fs::write(path, original).unwrap();
+            fs::write(&path, replacement).unwrap();
+            assert!(load().is_err(), "{}", path.display());
+            fs::write(&path, original).unwrap();
         }
-        assert!(load_imports(&fixture.config()).is_ok());
-        let lock_file = lock_path(&fixture.config());
+        load().unwrap();
+
+        // Neither can a lock whose recorded toolchain, unit dependencies or
+        // option profile differ from what was prepared.
+        let lock_file = proofs.join(crate::project::LOCK_NAME);
         let original_lock = fs::read(&lock_file).unwrap();
-        for field in ["toolchain", "local_dependencies", "option_profile"] {
+        for field in ["toolchain", "unit_dependencies", "option_profile"] {
             let mut altered: serde_json::Value = serde_json::from_slice(&original_lock).unwrap();
-            if field == "toolchain" {
-                altered["toolchain"]["driver_sha256"] = serde_json::json!(hex_digest(b"other"));
-            } else if field == "option_profile" {
-                altered["option_profile"] = serde_json::json!("linux-6.8-x86_64-kbuild");
-            } else {
-                altered["sources"][0]["local_dependencies"] = serde_json::json!({});
+            let entry = &mut altered["units"]["up"]["lock"];
+            match field {
+                "toolchain" => {
+                    entry["toolchain"]["driver_sha256"] = serde_json::json!(hex_digest(b"other"))
+                }
+                "option_profile" => {
+                    entry["option_profile"] = serde_json::json!("linux-6.8-x86_64-kbuild")
+                }
+                _ => entry["sources"][0]["unit_dependencies"] = serde_json::json!({}),
             }
             fs::write(&lock_file, serde_json::to_vec(&altered).unwrap()).unwrap();
-            let error = load_imports(&fixture.config()).expect_err(field);
+            let error = load().expect_err(field);
             if field == "option_profile" {
                 assert!(error.contains("option profile does not match"), "{error}");
             }
         }
         fs::write(&lock_file, original_lock).unwrap();
-        assert!(load_imports(&fixture.config()).is_ok());
+        load().unwrap();
+
+        fs::write(&project_file, describe(&["-DVALUE=42"])).unwrap();
+        let error = load().unwrap_err();
+        assert!(error.contains("does not match its description"), "{error}");
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -3049,12 +2715,6 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_json_keys_are_rejected() {
-        assert!(reject_duplicate_json_keys(br#"{"a":1,"a":2}"#).is_err());
-        assert!(reject_duplicate_json_keys(br#"{"a":[{"b":1,"b":2}]}"#).is_err());
-    }
-
-    #[test]
     fn relative_paths_are_anchored_to_the_process_directory() {
         let resolved = absolute_path(Path::new("Cargo.toml"), Path::new(".")).unwrap();
         assert!(resolved.is_absolute());
@@ -3104,15 +2764,26 @@ mod tests {
             b"#define VALUE 7\nint imported = VALUE;\nconst char *source_file = __FILE__;\n",
         )
         .unwrap();
-        let config = format!(
-            r#"{{"schema":1,"target":"x86_64-linux-kernel","compiler":"{}","working_directory":".","environment":{{"allow":{{"PATH":"{}"}}}},"sources":[{{"logical_source":"x","path":"x.c","args":[],"artifact":"x.i"}}]}}"#,
-            "/usr/bin/gcc",
-            std::env::var("PATH").unwrap_or_default()
-        );
-        let config_path = root.join("sidecar.click.import.json");
-        fs::write(&config_path, config).unwrap();
-        create_lock(&config_path).unwrap();
-        let imports = load_imports(&config_path).unwrap();
+        let project_file = root.join(crate::project::FILE_NAME);
+        fs::write(
+            &project_file,
+            serde_json::json!({"target": "x86_64-unknown-linux-gnu", "mode": "kernel", "units": {"x": {
+                "language": "c",
+                "compiler": "/usr/bin/gcc",
+                "env": {"PATH": std::env::var("PATH").unwrap_or_default()},
+                "sources": {"x.c": {}}
+            }}})
+            .to_string(),
+        )
+        .unwrap();
+        let project = crate::project::Project::load(&project_file).unwrap();
+        project.lock().unwrap();
+        let Some(crate::project::UnitSelection::C(imports)) = project
+            .prepared_sources(&[("x.c".into(), fs::canonicalize(root.join("x.c")).ok())])
+            .unwrap()
+        else {
+            panic!("the unit prepares its C source");
+        };
         assert!(imports[0].source().contains("imported = 7"));
         assert!(imports[0].source().contains("source_file = \"x.c\""));
         let _ = fs::remove_dir_all(&root);
@@ -3120,12 +2791,6 @@ mod tests {
 
     #[test]
     fn malformed_inputs_and_diagnostics_remain_bounded() {
-        let nested = format!("{}0{}", "[".repeat(1000), "]".repeat(1000));
-        assert!(
-            reject_duplicate_json_keys(nested.as_bytes())
-                .unwrap_err()
-                .contains("nesting")
-        );
         assert!(bounded_error("é".repeat(20000)).len() <= 16 * 1024);
         assert_eq!(
             dep_tokens("x.o: dollar$$.h\n").unwrap(),
@@ -3183,13 +2848,5 @@ mod tests {
             assert!(!root_contains(&roots, &root.join("outside.h")));
         }
         fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn lock_name_preserves_import_suffix() {
-        assert_eq!(
-            lock_path(Path::new("demo.click.import.json")),
-            PathBuf::from("demo.click.import.lock.json")
-        );
     }
 }

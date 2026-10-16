@@ -912,7 +912,7 @@ fn call_with_unrelated_facts(fact_count: usize) -> (String, String) {
         "int32 call_target(uint8 bytes[], int32 n) {\n    return memcmp(bytes, bytes, 2);\n}\n"
             .to_string();
     let mut click_source = String::from(
-        "verifying \"call_target.c\";\n\nint32 call_target(uint8 bytes[], int32 n) {\n    requires viewable(bytes[0..2]);\n",
+        "verifying \"call_target.c\";\n\nint32 call_target(uint8 bytes[], int32 n) {\n    views bytes[0..2];\n",
     );
     for index in 0..fact_count {
         click_source.push_str(&format!("    requires n != {};\n", index + 100));
@@ -920,28 +920,6 @@ fn call_with_unrelated_facts(fact_count: usize) -> (String, String) {
     click_source.push_str(
         "    ensures 1 == 1 by {
         step() by {
-            have defined(bytes[0]) and defined(bytes[0]) by {
-                both {
-                    transport(at(function.entry, viewable(bytes[0..2])), defined(bytes[0])) using {
-                        at(function.entry, viewable(bytes[0..2]));
-                    }
-                } and {
-                    transport(at(function.entry, viewable(bytes[0..2])), defined(bytes[0])) using {
-                        at(function.entry, viewable(bytes[0..2]));
-                    }
-                }
-            }
-            have defined(bytes[1]) and defined(bytes[1]) by {
-                both {
-                    transport(at(function.entry, viewable(bytes[0..2])), defined(bytes[1])) using {
-                        at(function.entry, viewable(bytes[0..2]));
-                    }
-                } and {
-                    transport(at(function.entry, viewable(bytes[0..2])), defined(bytes[1])) using {
-                        at(function.entry, viewable(bytes[0..2]));
-                    }
-                }
-            }
             enumerate();
         }
         step();
@@ -4364,6 +4342,103 @@ fn call_requirement_checking_is_linear_in_the_requirement_count() {
     assert_near_linear_scaling("call requirement count", &samples);
 }
 
+/// A call's separation requirements cost the same work beside 2, 4, 8 and
+/// 16 unrelated owned objects. Every object a pointer parameter reaches
+/// shares one block, so the composition-law route used to ask every owned
+/// member of that block whether it held each side. The null-guarded shape
+/// of `examples/rbtree-augmented`'s `sized_rotate`, `p == 0 or
+/// separate(memory(p), memory(p->f))` with `p == 0` known, also asked its
+/// right disjunct, a separation nothing can establish, which every route
+/// then refused only after visiting the whole frame. Measured on
+/// 2026-10-15 before the fix, release build: 1,037, 1,857, 3,497 and 6,777
+/// units of requirement checking for the separated call, and 9,454,
+/// 15,914, 28,834 and 54,674 for the guarded requirements beyond the cost
+/// of the bare guard; after it, 46 and 171 at every size.
+///
+/// The bare guard `a->left == 0` is measured on its own and subtracted: its
+/// first lookup keys the caller's stated facts, one per owned field, into
+/// the context's deferred stated index, which each fact pays once
+/// (`docs/internals/verification-efficiency.md`, "Representation
+/// requirements"). A separation the caller cannot show is still refused.
+#[test]
+#[ignore = "nightly: 13.9s in the parallel gate"]
+fn call_separation_requirements_ignore_unrelated_owned_objects() {
+    const SPAN: &str = "operation `verified call requirement checking`";
+    let separated = "requires separate(memory(a->left), memory(b->size));";
+    let guard = "requires a->left == 0;";
+    let guarded = "requires a->left == 0 or separate(memory(a->left), memory(a->left->size));\n    \
+                   requires separate(memory(a->left), memory(b->size));";
+    let unproved = "requires separate(memory(a->left), memory(b->left));";
+    let mut separated_work = Vec::new();
+    let mut guarded_work = Vec::new();
+    let mut refused_work = Vec::new();
+    for size in [2, 4, 8, 16] {
+        let parameters = (0..size)
+            .map(|i| format!(", struct node* q{i}"))
+            .collect::<String>();
+        let owners = (0..size)
+            .map(|i| format!("    owns q{i}->left;\n    owns q{i}->size;\n"))
+            .collect::<String>();
+        let c_source = format!(
+            "struct node {{ struct node* left; struct node* right; int32 size; }};\n\
+             void callee(struct node* a, struct node* b);\n\
+             void caller(struct node* a, struct node* b{parameters}) {{ callee(a, b); }}\n"
+        );
+        let checking = |requirement: &str, caller_requirement: &str| {
+            let click_source = format!(
+                "verifying \"owners.c\";\n\
+                 extern void callee(struct node* a, struct node* b) {{\n    \
+                 views a->left;\n    owns b->size;\n    {requirement}\n}}\n\
+                 void caller(struct node* a, struct node* b{parameters}) {{\n    \
+                 owns a->left;\n    owns b->size;\n    {caller_requirement}\n{owners}\
+                 }} by {{\n    step();\n    step();\n}}\n"
+            );
+            let (verified, sample) = scaling_sample(size, || {
+                verify_c0_sources(&click_source, &[("owners.c", &c_source)])
+            });
+            (verified, sample.named_work.get(SPAN).copied().unwrap_or(0))
+        };
+        let run = |requirement: &str, caller_requirement: &str| {
+            let (verified, work) = checking(requirement, caller_requirement);
+            verified.unwrap_or_else(|error| {
+                panic!(
+                    "`{requirement}` beside {size} owned objects: {}",
+                    error.message()
+                )
+            });
+            assert!(work > 0, "`{requirement}` was never checked");
+            work
+        };
+        separated_work.push(run(separated, ""));
+        guarded_work.push(run(guarded, guard) - run(guard, guard));
+        // `b->left` is neither owned nor separated from `a->left` by
+        // anything the caller knows: the requirement stays unproved.
+        let (refused, work) = checking(unproved, "");
+        refused_work.push(work);
+        assert!(
+            refused.is_err(),
+            "an unestablished separation passed beside {size} owned objects"
+        );
+    }
+    eprintln!(
+        "call separation work: proved {separated_work:?}, guarded {guarded_work:?}, refused {refused_work:?}"
+    );
+    assert!(
+        refused_work
+            .iter()
+            .all(|work| *work > 0 && *work == refused_work[0]),
+        "refused requirement checking grows with unrelated owners: {refused_work:?}"
+    );
+    assert!(
+        separated_work.iter().all(|work| *work == separated_work[0]),
+        "separation requirement checking grows with unrelated owned objects: {separated_work:?}"
+    );
+    assert!(
+        guarded_work.iter().all(|work| *work == guarded_work[0]),
+        "null-guarded requirement checking grows with unrelated owned objects: {guarded_work:?}"
+    );
+}
+
 /// `execute()` runs an early-return fan-out on the checked `Proof` in work
 /// near linear in its length.
 ///
@@ -5267,10 +5342,15 @@ fn bounded_size_t_index_stores(stores: usize) -> (String, String) {
 /// lookups, and drops the earlier cells it may alias, none of which is
 /// ordered against it. Neither may scan the other indices' bounds.
 #[test]
-#[ignore = "nightly: 1.1s in the parallel gate"]
+#[ignore = "nightly: wide-index store scaling through 256 indices"]
 fn stores_to_bounded_unordered_size_t_indices_are_near_linear() {
     const STORE_WORK: &str = "operation `verification statement: store`";
-    let samples = [4, 8, 16, 32, 64]
+    // Like the int32 companion, separate the bounded graph's fixed
+    // propagation overhead at EDGE_LIMIT from growth within each regime.
+    // Include the first index beyond the cap and several larger sizes.
+    const REGIMES: [&[usize]; 2] = [&[4, 8, 16, 32], &[33, 64, 128, 256]];
+    let samples = REGIMES
+        .concat()
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = bounded_size_t_index_stores(size);
@@ -5296,23 +5376,23 @@ fn stores_to_bounded_unordered_size_t_indices_are_near_linear() {
         .collect::<Vec<_>>();
     // A linear curve doubles per doubling; a quadratic one quadruples.
     let within = |low: usize, high: usize| high.saturating_mul(4) <= low.saturating_mul(9);
-    assert!(
-        store_work
-            .windows(2)
-            .skip(1)
-            .all(|pair| within(pair[0], pair[1])),
-        "the store rule's work over bounded unordered size_t indices is not near linear: {store_work:?}; named work: {}",
-        named_growth_diagnostic(&samples)
-    );
-    assert!(
-        samples
-            .windows(2)
-            .skip(1)
-            .all(|pair| within(pair[0].work, pair[1].work)),
-        "stores to bounded unordered size_t indices are not near linear: {:?}; named work: {}",
-        samples.iter().map(|sample| sample.work).collect::<Vec<_>>(),
-        named_growth_diagnostic(&samples)
-    );
+    for range in [1..REGIMES[0].len(), REGIMES[0].len()..samples.len()] {
+        assert!(
+            store_work[range.clone()]
+                .windows(2)
+                .all(|pair| within(pair[0], pair[1])),
+            "the store rule's work over bounded unordered size_t indices is not near linear: {store_work:?}; named work: {}",
+            named_growth_diagnostic(&samples)
+        );
+        assert!(
+            samples[range]
+                .windows(2)
+                .all(|pair| within(pair[0].work, pair[1].work)),
+            "stores to bounded unordered size_t indices are not near linear: {:?}; named work: {}",
+            samples.iter().map(|sample| sample.work).collect::<Vec<_>>(),
+            named_growth_diagnostic(&samples)
+        );
+    }
 }
 
 /// `N` calls that each hand the callee the owned window `bytes + index` of
@@ -6772,9 +6852,8 @@ fn failing_simp_work_is_flat_along_a_variable_chain() {
 /// the search costs each path the same, so its total is linear in the
 /// returns.
 ///
-/// The whole verification is not yet linear in the returns
-/// (`bugs/early-return-paths-store-facts-whole.md` lists what remains), so
-/// only this search's own work is asserted.
+/// This regression asserts only the transport search's own work, rather
+/// than the cost of the whole verification.
 #[test]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn simp_snapshot_transport_search_is_linear_in_early_returns() {
@@ -7956,7 +8035,13 @@ resource callbacks0(cb: const struct callbacks*) {
 
 /// Guarded preparation visits one body; the complete rewrite also pays the
 /// existing linear validation cost for surrounding owners.
+///
+/// Nightly: each of the four verifications costs over half a second in a
+/// debug build at any size, and the proof's `execute` grows faster than
+/// the owners (3,561, 6,045, 13,413 and 37,749 units at 4 to 32 owners in a
+/// release build on 2026-10-15), so the largest size dominates.
 #[test]
+#[ignore = "nightly: 7.2s in the parallel gate"]
 fn guarded_unfold_cell_preparation_scales_linearly_with_surrounding_owners() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/c_guarded_resource_disjoint_store.md");
@@ -8363,4 +8448,54 @@ fn source_only_transport_does_not_reconstruct_unrelated_integer_facts() {
         work.windows(2).all(|pair| pair[1] <= pair[0] * 2),
         "source-only transport must not reconstruct an ambient fact per input: {work:?}"
     );
+}
+
+/// Branches that call through a pointer-field resource retain their statement
+/// effect records beside unrelated caller facts, rather than reconstructing
+/// the call's internal memory chain at the join.
+#[test]
+#[ignore = "nightly: four modular pointer-field branch joins"]
+fn pointer_field_call_branch_join_scales_with_unrelated_caller_facts() {
+    let path = std::path::Path::new("c_pointer_field_preserving_calls_join_branches.md");
+    let fixture = crate::cli::parse_mdtest(
+        path,
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/mdtests/c_pointer_field_preserving_calls_join_branches.md"
+        )),
+    )
+    .unwrap();
+    let source = fixture.click_source.unwrap();
+    let c_source = &fixture.c_sources[0].1;
+    let mut samples = Vec::new();
+    for size in [64, 128, 256, 512] {
+        let parameters = (0..size)
+            .map(|index| format!(", int32 noise_{index}"))
+            .collect::<String>();
+        let requirements = (0..size)
+            .map(|index| format!("    requires 0 <= noise_{index};\n"))
+            .collect::<String>();
+        let signature = "int32 replace\n)";
+        assert_eq!(source.matches(signature).count(), 1);
+        assert_eq!(c_source.matches(signature).count(), 1);
+        let signature = format!("int32 replace{parameters}\n)");
+        let c_source = c_source.replace("int32 replace\n)", &signature);
+        let source = source.replace("int32 replace\n)", &signature);
+        let start = source.find("int32 vector_replace_if(").unwrap();
+        let source = format!(
+            "{}{}",
+            &source[..start],
+            source[start..].replacen(
+                "    requires 0 <= index;",
+                &format!("{requirements}    requires 0 <= index;"),
+                1,
+            )
+        );
+        let (result, sample) = scaling_sample(size, || {
+            verify_c0_sources(&source, &[("vector.c", c_source.as_str())])
+        });
+        result.unwrap_or_else(|error| panic!("size {size}: {}", error.message()));
+        samples.push(sample);
+    }
+    assert_near_linear_scaling("pointer-field call branch join", &samples);
 }

@@ -31,7 +31,7 @@ program's desired behavior, fixes actual C undefined behavior, or performs a
 documented semantics-preserving C desugaring. State which exception applies in
 the change description. Otherwise, preserve the C and fix the proof boundary.
 
-## Where A feature belongs
+## Where a feature belongs
 
 Prefer this order:
 

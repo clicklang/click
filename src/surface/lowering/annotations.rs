@@ -977,6 +977,8 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
     // lowering reads every clause through that scope.
     let resolved_block = resolved_function_block(function_block)?;
     let function_block: &FunctionBlock = &resolved_block;
+    let parsed_function =
+        &*crate::surface::verification::witnessed_function(parsed_function, function_block);
     let (resource_requires, resource_ensures) = function_resource_summary(
         function_block,
         parsed_function,
@@ -1234,6 +1236,14 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
             .with_int32_exceptional_outcome()
             .with_exceptional_ensures(exceptional_ensures);
     }
+    let function = function
+        .with_trailing_value_parameters(function_block.witness_count())
+        .ok_or_else(|| {
+            ClickError::new(format!(
+                "`{}` has more contract value parameters than parameters",
+                function_block.signature().name()
+            ))
+        })?;
     let function = if resource_derived_mutable_frame {
         let function = function.with_resource_derived_mutable_frame();
         if !function_block.is_external()
@@ -6609,9 +6619,7 @@ impl AnnotationLowerer<'_> {
                     .entry_state
                     .locals()
                     .aggregate_object_pointer(name)
-                    .is_some_and(|pointer| {
-                        pointer.block.starts_with("global:") || pointer.block.starts_with("static:")
-                    }) =>
+                    .is_some_and(|pointer| pointer.block.is_static_storage_block()) =>
             {
                 let pointer = self
                     .entry_state

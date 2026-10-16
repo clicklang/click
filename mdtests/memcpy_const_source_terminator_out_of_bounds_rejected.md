@@ -12,7 +12,7 @@ void copy_prefix(char *dst, const char *src, unsigned long n) {
 verifying "memcpy_const_source_terminator_out_of_bounds_rejected.c";
 void copy_prefix(char* dst, const char* src, uint64 n) {
     requires n <= 32u64;
-    requires viewable(src[0u64..n]);
+    views src[0u64..n];
     owns dst[0u64..32u64];
     requires separate(memory(dst[0u64..32u64]), memory(src[0u64..n]));
     ensures dst[n] == '\0';

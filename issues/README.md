@@ -47,7 +47,7 @@ reproduced. To move a file off `unsound`, the reproduction must stop
 verifying. Narrowing the documented claim does not count. Re-check the label
 whenever the file's reproduction or scope changes.
 
-## P1: before launch (9)
+## P1: before launch (13)
 
 The launch strategy is to complete P1, deliver the minimum viable rbtree
 (MVR), and launch publicly with rbtree as the key demo. MVR is the smallest
@@ -83,16 +83,17 @@ prioritized by launch need, not by label. A gap that only a different program
 would hit is normally P2. The
 selected control-flow, byte-representation, arena, and basic C++ milestones
 have landed with bounded support claims. By user direction (2026-10-14),
-C++ and Rust support are P1: the delivered Bitcoin Core slices and the
-adler2 Adler-32 checksum are sufficient demonstrations, and the P1 work is
-a well-designed front-end pipeline from an installed Click, not more
-examples. Broader language, synchronization, and graph coverage remain P2.
+C++ and Rust front-end delivery were made P1: the delivered Bitcoin Core
+slices and adler2 Adler-32 checksum are sufficient demonstrations. The
+[Rust frontend milestone](../design/rust-charon-assessment.md#completed-linux-frontend-delivery)
+is complete for the agreed Linux x86-64 GNU launch scope. The remaining C++
+front-end work concerns the installed pipeline, not more examples. Broader
+language, synchronization, and graph coverage remain P2.
 
 Program import and execution:
 
 - [Project configuration: one root file for units, targets, toolchains and locks](project-config.md)
 - [A well-designed C++ front end](cpp-support.md)
-- [A well-designed Rust front end](rust-support.md)
 
 The completed [basic C++ example](../examples/basic-cpp/README.md) verifies
 references, checked scoped cleanup, and a modular caller. Unchanged Bitcoin
@@ -124,9 +125,16 @@ Specification and proof:
 - [Verify the Linux rbtree example on the recursive structure models](rbtree-example.md)
 - [Make simple tactics fast: exact requirements, expandable `auto` for the rest](simplify-step.md)
 - [Scaling: stamp out quadratic work in simple checking](scaling.md)
-- [Difference logic: the fast path for arithmetic requirements and conditions](difference-logic.md)
 - [Launch design review: open critiques, each to be fixed or ruled wontfix](design-review.md) (depends on simplify-step.md)
 - [Finish place-based resource clauses](resource-place-syntax.md)
+
+Architecture:
+
+- [One source-tactic interpreter for every proof context](one-tactic-interpreter.md)
+- [One kernel statement executor for both execution judgments](one-statement-executor.md)
+- [One name resolver and one printer for surface syntax](one-name-resolver-and-printer.md)
+- [Finish the equality service: delete the overlapping equality stores](one-equality-service.md)
+- [One integer term type that carries its width](one-integer-term-type.md)
 
 ## P2: after launch (14)
 

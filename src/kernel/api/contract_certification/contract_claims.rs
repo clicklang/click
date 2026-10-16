@@ -60,7 +60,10 @@ pub(crate) fn c_checked_function_proposition_with_reason(
         CFunctionOutcome::UndefinedBehavior(_) => {
             return Err("the checked path outcome is undefined behavior".to_string());
         }
-        CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message)) => {
+        CFunctionOutcome::RuntimeError(
+            CRuntimeError::FunctionContract(message)
+            | CRuntimeError::UnsuppliedResourceValue(message),
+        ) => {
             return Err(format!(
                 "the checked path outcome is a function-contract runtime error: {message}"
             ));
@@ -477,12 +480,12 @@ pub(crate) fn matching_recomputed_call_havoc_views(
                 pointer,
                 value,
                 ..
-            } if pointer.block.starts_with("local:")
+            } if pointer.block.is_local_block()
                 || store_is_self_materialization(base, pointer, value) =>
             {
                 Some(base)
             }
-            CMemoryDerivation::BlockDeclared { base, block } if block.starts_with("local:") => {
+            CMemoryDerivation::BlockDeclared { base, block } if block.is_local_block() => {
                 Some(base)
             }
             CMemoryDerivation::ContractAllocationClaimsChanged { base } => Some(base),
@@ -880,19 +883,22 @@ fn materialized_load_is_unchanged(
     };
     let load = match value {
         crate::kernel::integer64_c_value!(bits) => load_of(bits),
-        // A pointer-typed cell materialized from a load scales the load (or
-        // its load variable) by the pointee width, as the kernel's own
-        // symbolic pointer loads do.
-        CValue::Pointer(pointer_value) => {
-            let Pointer {
+        // Object-pointer loads scale their read by the pointee width.
+        // Function-pointer loads instead name the exact registered read as
+        // a symbolic function at offset zero; neither form is a new write.
+        CValue::Pointer(pointer_value) => match pointer_value.pointer() {
+            Pointer {
+                block: PointerBlock::FunctionSymbolic(variable),
+                offset: PointerOffsetTerm::Constant(0),
+            } if matches!(pointer_value.c_type(), CType::FunctionPointer(_)) => {
+                load_of(&Bitvector32Term::Variable(*variable))
+            }
+            Pointer {
                 offset: PointerOffsetTerm::Int32Scaled { value: bits, .. },
                 ..
-            } = pointer_value.pointer()
-            else {
-                return false;
-            };
-            load_of(bits)
-        }
+            } => load_of(bits),
+            _ => return false,
+        },
         _ => return false,
     };
     // The cell is the read only when it is a read of the cell's own kind: a
@@ -1889,7 +1895,7 @@ fn function_claim_holds_on_prepared_path(
                     }
                     writes
                         .iter()
-                        .filter(|(pointer, _)| !pointer.block.starts_with("local:"))
+                        .filter(|(pointer, _)| !pointer.block.is_local_block())
                         .all(|(pointer, bytes)| {
                             covers_everything
                                 || is_function_fresh_heap_pointer(pointer, before)
@@ -2005,10 +2011,9 @@ pub(in crate::kernel) fn c_effect_memories_definitionally_equal(
 ) -> bool {
     let without_locals = |memory: &CMemory| {
         let mut external = memory.clone();
-        std::sync::Arc::make_mut(&mut external.blocks)
-            .retain(|block, _| !block.starts_with("local:"));
+        std::sync::Arc::make_mut(&mut external.blocks).retain(|block, _| !block.is_local_block());
         std::sync::Arc::make_mut(&mut external.cells)
-            .retain(|pointer, _| !pointer.block.starts_with("local:"));
+            .retain(|pointer, _| !pointer.block.is_local_block());
         std::sync::Arc::make_mut(&mut external.forgotten)
             .ended_local_blocks
             .clear();
@@ -2165,21 +2170,151 @@ fn contract_view_of_entry(
     entry_state
 }
 
-/// Certifies every exact contract claim in one pass over a kernel-produced,
-/// complete execution frontier.
-///
-/// Path validity, resource expansion, and verification conditions are checked
-/// once per path and then shared by the individual claim checks.
-/// Lowers proposition ensure `contract_index` of `function` at the
-/// post-state `outcome` reaches from `caller_state` with `arguments`: the
-/// one lowering a claim proof closes and claim certification matches, so a
-/// completion matches by construction. Each path pairs the ensure's
-/// proposition with the facts its loads introduced. An ensure stated as a
-/// registered predicate is closed as that predicate identity, the form the
-/// proof states and unfolds on the goal, unless `unfolded_predicates` names
-/// the predicate, in which case it is closed as the body the contract
-/// stores. `None` when the outcome does not return or the states cannot be
-/// reconstructed.
+/// Entry and exit views prepared for lowering return claims at one fixed
+/// frontier. The producer owns the states and facts; callers discard the
+/// context when the outcome, ambient facts, or resource representation changes.
+/// Predicate unfold choices affect individual goals, not these prepared views.
+pub(crate) struct CFunctionEnsureGoalContext<'a> {
+    function: &'a CFunction,
+    entry_state: CState,
+    post_state: CState,
+    assumptions: PureFactContext,
+}
+
+impl<'a> CFunctionEnsureGoalContext<'a> {
+    pub(crate) fn new(
+        function: &'a CFunction,
+        caller_state: &CState,
+        arguments: &[CExpression],
+        outcome: &CFunctionOutcome,
+        assumptions: &PureFactContext,
+    ) -> Option<Self> {
+        let CFunctionOutcome::Return {
+            value,
+            state: return_state,
+        } = outcome
+        else {
+            return None;
+        };
+        let mut entry_state = contract_view_of_entry(
+            c_function_entry_state(caller_state, function, arguments)?,
+            function,
+            arguments,
+        );
+        let expanded_entry_resources =
+            crate::kernel::functions::expand_all_composite_resource_facts_at_state(
+                entry_state.resources(),
+                function.composite_resource_definitions(),
+                &entry_state,
+                assumptions,
+            )?;
+        entry_state = entry_state.with_resource_context(expanded_entry_resources);
+        let exit_memory = crate::kernel::functions::function_exit_memory(
+            caller_state,
+            return_state,
+            value,
+            function,
+        );
+        let claim_return_state = return_state.clone().with_memory(exit_memory.clone());
+        let post_resources =
+            crate::kernel::functions::expand_all_composite_resource_facts_at_state(
+                claim_return_state.resources(),
+                function.composite_resource_definitions(),
+                &claim_return_state,
+                assumptions,
+            )?;
+        let mut post_state = entry_state.clone().with_memory(exit_memory);
+        post_state = post_state.with_resource_context(post_resources);
+        post_state.observed_population_families = return_state.observed_population_families.clone();
+        // Preserve checked body consumption evidence when reconstructing the exit.
+        post_state.population_effects = return_state.population_effects.clone();
+        if function.return_type() != CType::Void {
+            post_state.locals.set_typed(
+                C_CONTRACT_RESULT_NAME.to_string(),
+                value.clone(),
+                function.return_type(),
+            );
+        }
+        Some(Self {
+            function,
+            entry_state,
+            post_state,
+            assumptions: assumptions.clone(),
+        })
+    }
+
+    pub(crate) fn goals(
+        &self,
+        contract_index: usize,
+        unfolded_predicates: &[String],
+    ) -> Option<Vec<CClaimGoal>> {
+        let function = self.function;
+        let entry_state = &self.entry_state;
+        let post_state = &self.post_state;
+        let assumptions = &self.assumptions;
+        let ensure = function.contract_ensures().get(contract_index)?;
+        let ensure = function
+            .predicate_unfoldings()
+            .iter()
+            .find(|unfolding| unfolding.body() == ensure)
+            .filter(|unfolding| match unfolding.predicate() {
+                SpecProposition::Predicate { name, .. } => !unfolded_predicates.contains(name),
+                _ => false,
+            })
+            .map_or(ensure, CPredicateUnfolding::predicate);
+        let lowering_assumptions = assumptions
+            .clone()
+            .allow_symbolic_contract_loads()
+            .defer_non_exact_loadability_obligations();
+        let mut budget = ExecutionBudget::beside_live_state();
+        let paths = lower_spec_proposition_at_state_with_loop_entry(
+            post_state,
+            ensure,
+            Some(entry_state),
+            &lowering_assumptions,
+            &mut budget,
+        )
+        .ok()?;
+        // An ensure that reads memory the outcome shows freed is not stated at
+        // this outcome: no goal, so the claim's own lowering reports the load.
+        if paths.iter().any(|path| {
+            path.obligations.iter().any(|obligation| {
+                super::c_loadability_obligation_impossible_with_assumptions(
+                    obligation.proposition(),
+                    assumptions,
+                )
+            })
+        }) {
+            return None;
+        }
+        let selected = exactly_selected_spec_proposition_path(&paths, assumptions);
+        let paths = match selected {
+            Some(path) if paths.len() > 1 => std::slice::from_ref(path),
+            _ => paths.as_slice(),
+        };
+        Some(
+            paths
+                .iter()
+                .map(|path| CClaimGoal {
+                    target: CFunctionContractClaimTarget::EnsureProposition(contract_index),
+                    proposition: path.proposition.clone(),
+                    facts: path
+                        .facts
+                        .iter()
+                        .map(|fact| fact.proposition().clone())
+                        .collect(),
+                })
+                .collect(),
+        )
+    }
+}
+
+/// Lower one return ensure, including the facts its loads introduce. Callers
+/// lowering several claims at an unchanged frontier prepare one
+/// `CFunctionEnsureGoalContext` instead of reconstructing the views per claim.
+/// With a registered predicate, retain its identity unless the proof has
+/// explicitly unfolded it. `None` means a non-returning outcome or a view/goal
+/// that cannot be reconstructed.
 pub fn c_function_ensure_goals(
     function: &CFunction,
     contract_index: usize,
@@ -2189,101 +2324,8 @@ pub fn c_function_ensure_goals(
     assumptions: &PureFactContext,
     unfolded_predicates: &[String],
 ) -> Option<Vec<CClaimGoal>> {
-    let ensure = function.contract_ensures().get(contract_index)?;
-    let ensure = function
-        .predicate_unfoldings()
-        .iter()
-        .find(|unfolding| unfolding.body() == ensure)
-        .filter(|unfolding| match unfolding.predicate() {
-            SpecProposition::Predicate { name, .. } => !unfolded_predicates.contains(name),
-            _ => false,
-        })
-        .map_or(ensure, CPredicateUnfolding::predicate);
-    let CFunctionOutcome::Return {
-        value,
-        state: return_state,
-    } = outcome
-    else {
-        return None;
-    };
-    let mut entry_state = contract_view_of_entry(
-        c_function_entry_state(caller_state, function, arguments)?,
-        function,
-        arguments,
-    );
-    let expanded_entry_resources =
-        crate::kernel::functions::expand_all_composite_resource_facts_at_state(
-            entry_state.resources(),
-            function.composite_resource_definitions(),
-            &entry_state,
-            assumptions,
-        )?;
-    entry_state = entry_state.with_resource_context(expanded_entry_resources);
-    let exit_memory =
-        crate::kernel::functions::function_exit_memory(caller_state, return_state, value, function);
-    let claim_return_state = return_state.clone().with_memory(exit_memory.clone());
-    let post_resources = crate::kernel::functions::expand_all_composite_resource_facts_at_state(
-        claim_return_state.resources(),
-        function.composite_resource_definitions(),
-        &claim_return_state,
-        assumptions,
-    )?;
-    let mut post_state = entry_state.clone().with_memory(exit_memory);
-    post_state = post_state.with_resource_context(post_resources);
-    post_state.observed_population_families = return_state.observed_population_families.clone();
-    // Preserve checked body consumption evidence when reconstructing the exit.
-    post_state.population_effects = return_state.population_effects.clone();
-    if function.return_type() != CType::Void {
-        post_state.locals.set_typed(
-            C_CONTRACT_RESULT_NAME.to_string(),
-            value.clone(),
-            function.return_type(),
-        );
-    }
-    let lowering_assumptions = assumptions
-        .clone()
-        .allow_symbolic_contract_loads()
-        .defer_non_exact_loadability_obligations();
-    let mut budget = ExecutionBudget::beside_live_state();
-    let paths = lower_spec_proposition_at_state_with_loop_entry(
-        &post_state,
-        ensure,
-        Some(&entry_state),
-        &lowering_assumptions,
-        &mut budget,
-    )
-    .ok()?;
-    // An ensure that reads memory the outcome shows freed is not stated at
-    // this outcome: no goal, so the claim's own lowering reports the load.
-    if paths.iter().any(|path| {
-        path.obligations.iter().any(|obligation| {
-            super::c_loadability_obligation_impossible_with_assumptions(
-                obligation.proposition(),
-                assumptions,
-            )
-        })
-    }) {
-        return None;
-    }
-    let selected = exactly_selected_spec_proposition_path(&paths, assumptions);
-    let paths = match selected {
-        Some(path) if paths.len() > 1 => std::slice::from_ref(path),
-        _ => paths.as_slice(),
-    };
-    Some(
-        paths
-            .iter()
-            .map(|path| CClaimGoal {
-                target: CFunctionContractClaimTarget::EnsureProposition(contract_index),
-                proposition: path.proposition.clone(),
-                facts: path
-                    .facts
-                    .iter()
-                    .map(|fact| fact.proposition().clone())
-                    .collect(),
-            })
-            .collect(),
-    )
+    CFunctionEnsureGoalContext::new(function, caller_state, arguments, outcome, assumptions)?
+        .goals(contract_index, unfolded_predicates)
 }
 
 /// Lowers one exceptional postcondition at a checked throwing outcome. The
@@ -3425,6 +3467,96 @@ mod wide_range_reader_tests {
             &[wide],
             &[narrow],
             &facts
+        ));
+    }
+}
+
+#[cfg(test)]
+mod materialized_function_load_tests {
+    use super::*;
+
+    fn callback_load(memory: &CMemory, address: &Pointer, kind: LoadKind) -> CValue {
+        let load = Bitvector32Term::MemoryLoad(
+            crate::kernel::intern_c_memory(memory.clone()),
+            Box::new(address.clone()),
+            kind,
+        );
+        let (variable, _) = crate::kernel::load_variable_for_term(&load).unwrap();
+        CValue::typed_pointer(
+            Pointer::symbolic_function(variable),
+            CType::FunctionPointer(CallbackSignature::UNSPECIFIED),
+        )
+    }
+
+    #[test]
+    fn canonical_function_pointer_cache_preserves_memory() {
+        let address = Pointer {
+            block: "callback-cache".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let memory = CMemory::new().with_block("callback-cache", 16);
+        let value = callback_load(
+            &memory,
+            &address,
+            LoadKind::of_type(CType::FunctionPointer(CallbackSignature::UNSPECIFIED)).unwrap(),
+        );
+        let facts = PureFactContext::new();
+        assert!(materialized_load_is_unchanged(
+            &value, &memory, &address, &facts
+        ));
+        let cached = memory.clone().store(address.clone(), value);
+        assert!(c_memories_definitionally_equal(&memory, &cached, &facts));
+        assert!(c_memories_definitionally_equal(&cached, &memory, &facts));
+    }
+
+    #[test]
+    fn function_pointer_cache_requires_the_exact_cell_and_pointer_load() {
+        let address = Pointer {
+            block: "callback-cache-controls".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let memory = CMemory::new().with_block("callback-cache-controls", 16);
+        let facts = PureFactContext::new();
+        let value = callback_load(
+            &memory,
+            &address,
+            LoadKind::of_type(CType::FunctionPointer(CallbackSignature::UNSPECIFIED)).unwrap(),
+        );
+        assert!(!materialized_load_is_unchanged(
+            &value,
+            &memory,
+            &address.offset_by_bytes(8),
+            &facts
+        ));
+        let narrow = callback_load(&memory, &address, LoadKind::UInt8);
+        assert!(!materialized_load_is_unchanged(
+            &narrow, &memory, &address, &facts
+        ));
+        let arbitrary = CValue::typed_pointer(
+            Pointer::symbolic_function(Variable(97_555_001)),
+            CType::FunctionPointer(CallbackSignature::UNSPECIFIED),
+        );
+        assert!(!materialized_load_is_unchanged(
+            &arbitrary, &memory, &address, &facts
+        ));
+        let CValue::Pointer(pointer_value) = value else {
+            unreachable!()
+        };
+        let displaced = CValue::typed_pointer(
+            pointer_value.pointer().offset_by_bytes(1),
+            pointer_value.c_type(),
+        );
+        assert!(!materialized_load_is_unchanged(
+            &displaced, &memory, &address, &facts
+        ));
+        let changed = memory.clone().store(address.clone(), arbitrary);
+        let original = callback_load(
+            &memory,
+            &address,
+            LoadKind::of_type(CType::FunctionPointer(CallbackSignature::UNSPECIFIED)).unwrap(),
+        );
+        assert!(!materialized_load_is_unchanged(
+            &original, &changed, &address, &facts
         ));
     }
 }

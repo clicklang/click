@@ -19,7 +19,7 @@ void *producer(void *argument) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "publication_producer_cannot_write_after_release.c";
 resource ready_payload(channel: struct channel*) {

@@ -7,7 +7,7 @@ warning, and give it the value reduced modulo 2^N into the type's range: C11
 implementation-defined signed conversion the same way. Click converts such a
 constant the same way in an automatic or static initializer, an array
 initializer, an assignment, a store, an explicit cast, a `return`, and a call
-argument. Under the default x86_64-linux-userspace target plain `char` is
+argument. Under the default user-space target plain `char` is
 signed, so `char c = 200` holds `-56`.
 
 ```c filename=an_out_of_range_integer_constant_converts_modulo_its_destination_width.c

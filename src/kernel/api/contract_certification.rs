@@ -796,7 +796,9 @@ fn certification_proves_exists_obligation_from_facts(
 /// than dumped as internal state.
 pub(in crate::kernel) fn describe_certification_runtime_error(error: &CRuntimeError) -> String {
     match error {
-        CRuntimeError::PointerConversion(message) | CRuntimeError::FunctionContract(message) => {
+        CRuntimeError::PointerConversion(message)
+        | CRuntimeError::FunctionContract(message)
+        | CRuntimeError::UnsuppliedResourceValue(message) => {
             message.clone()
         }
         CRuntimeError::PendingCallObligations(pending) => format!(
@@ -842,6 +844,9 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &CRuntimeEr
             "the protected resource selected at mutex initialization must be restored".to_string()
         }
         CRuntimeError::MissingResource { .. } => "a required resource is not available".to_string(),
+        CRuntimeError::UnestablishedAssemblyFact { .. } => {
+            "assembling a required view from owned pieces requires an exact body fact".to_string()
+        }
         CRuntimeError::UnbackedReturnedView { .. } => {
             CRuntimeError::UNBACKED_RETURNED_VIEW.to_string()
         }
@@ -2359,7 +2364,7 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
         "resource context equality",
         "resource equality: expand left",
         || {
-            expand_all_composite_resource_facts(
+            crate::kernel::functions::expand_all_composite_resource_facts_with_composites(
                 left,
                 composite_resource_definitions,
                 left_memory,
@@ -2372,7 +2377,7 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
         "resource context equality",
         "resource equality: expand right",
         || {
-            expand_all_composite_resource_facts(
+            crate::kernel::functions::expand_all_composite_resource_facts_with_composites(
                 right,
                 composite_resource_definitions,
                 right_memory,
@@ -2380,18 +2385,53 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
             )
         },
     );
-    let Some(left) = expanded_left else {
+    let Some((expanded_left, left_composites)) = expanded_left else {
         return false;
     };
-    let Some(right) = expanded_right else {
+    let Some((expanded_right, right_composites)) = expanded_right else {
         return false;
     };
-
+    // Comparing the fully opened contexts equates a composite on one side
+    // with its pieces on the other. Holding a composite asserts its body
+    // facts, so reading one side as the other reassembles every composite
+    // the other side does not also hold, and each such composite's body
+    // facts must hold in the memory of the side that has only its pieces.
+    // A loop back edge otherwise returned `owns c(p)` from a body whose C
+    // store had falsified a fact of `c` and never refolded it.
+    let reassembly_holds = |composites: &[CResourceFact],
+                            other: &ResourceContext,
+                            other_composites: &[CResourceFact],
+                            other_expanded: &ResourceContext,
+                            other_memory: &CMemory| {
+        composites.iter().all(|composite| {
+            other_composites.contains(composite)
+                || other.satisfies_fact(composite, assumptions)
+                || crate::kernel::functions::assembled_composite_body_facts_hold(
+                    composite,
+                    composite_resource_definitions,
+                    other_memory,
+                    other_expanded,
+                    assumptions,
+                )
+        })
+    };
     crate::instrumentation::measure_operation(
         "kernel",
         "resource context equality",
         "resource equality: expanded direct",
-        || directly_equal(&left, &right),
+        || directly_equal(&expanded_left, &expanded_right),
+    ) && reassembly_holds(
+        &left_composites,
+        right,
+        &right_composites,
+        &expanded_right,
+        right_memory,
+    ) && reassembly_holds(
+        &right_composites,
+        left,
+        &left_composites,
+        &expanded_left,
+        left_memory,
     )
 }
 

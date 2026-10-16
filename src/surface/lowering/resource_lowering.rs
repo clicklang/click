@@ -1658,6 +1658,27 @@ pub(in crate::surface) fn lower_resource_clause_at_current_locals_with_assumptio
     result: Option<&CValue>,
     assumptions: &PureFactContext,
 ) -> Result<CResourceFact, ClickError> {
+    lower_resource_clause_at_current_locals_with_entry_and_assumptions(
+        resource,
+        parameter_binding,
+        state,
+        state,
+        result,
+        assumptions,
+    )
+}
+
+/// Explicit snapshot arguments keep their function-entry state while ordinary
+/// arguments use the current C bindings. Both states reach the existing typed
+/// resource-argument evaluator; no argument is rewritten to a different cursor.
+pub(in crate::surface) fn lower_resource_clause_at_current_locals_with_entry_and_assumptions(
+    resource: &ResourceClause,
+    parameter_binding: ParameterBinding<'_>,
+    entry_state: &CState,
+    state: &CState,
+    result: Option<&CValue>,
+    assumptions: &PureFactContext,
+) -> Result<CResourceFact, ClickError> {
     let values =
         parameter_values(parameter_binding).map_err(|error| ClickError::new(error.message))?;
     let array_refs =
@@ -1668,7 +1689,7 @@ pub(in crate::surface) fn lower_resource_clause_at_current_locals_with_assumptio
             resource,
             parameter_binding.parameters,
             &values,
-            state,
+            entry_state,
             state,
             result,
             false,
@@ -1686,7 +1707,7 @@ pub(in crate::surface) fn lower_resource_clause_at_current_locals_with_assumptio
         resource,
         parameter_binding.parameters,
         &values,
-        state,
+        entry_state,
         state,
         result,
         false,

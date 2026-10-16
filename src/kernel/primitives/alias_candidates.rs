@@ -230,7 +230,7 @@ impl AliasCandidates {
             PointerBlock::Heap(_) | PointerBlock::Temporary(_) => vec![symbolic(), own()],
             // Distinct concrete names are distinct; a `local:` block is also
             // distinct from the external variants.
-            PointerBlock::Concrete(_) if block.starts_with("local:") => vec![
+            PointerBlock::Concrete(_) if block.is_local_block() => vec![
                 own(),
                 BlockInterval {
                     start: Some(first_string_literal()),

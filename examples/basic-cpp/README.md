@@ -10,27 +10,24 @@ the original RAII source as an exact prefix, then adds a direct caller whose
 precondition starts the referenced cell at 41. Its proof uses the helper's
 checked contract to show a result of 7 or 9 and a post-call cell still at 41.
 
-From the repository root, build the pinned Clang exporter and materialize a
-compilation database with the absolute path to this checkout:
+[`click.project.json`](click.project.json) declares one C++ unit, `basic`:
+the Clang arguments of the build and, for each source, the functions its
+sidecar verifies. The committed `click.project.lock.json` and `.click/basic/`
+artifacts verify offline, on any machine and after the checkout moves:
 
 ```sh
-scripts/build-cpp-exporter.sh
-python3 examples/basic-cpp/prepare.py
-```
-
-Then lock and verify each sidecar:
-
-```sh
-cargo run --bin click -- import lock examples/basic-cpp/increment.click
 cargo run --bin click -- verify examples/basic-cpp/increment.click
-cargo run --bin click -- import lock examples/basic-cpp/with_restore.click
 cargo run --bin click -- verify examples/basic-cpp/with_restore.click
-cargo run --bin click -- import lock examples/basic-cpp/with_restore_caller.click
 cargo run --bin click -- verify examples/basic-cpp/with_restore_caller.click
 ```
 
-The checked-in `compile_commands.json.in` fixes the C++20 target and flags;
-`prepare.py` fills only the machine-specific compilation directory. The
-generated compilation database, import artifacts, and lockfiles are local
-outputs, not checked-in proof inputs. The examples gate performs the same
-preparation, import refresh, and verification automatically.
+To refresh the lock after changing a source, build the pinned Clang exporter
+and lock the project:
+
+```sh
+CLICK_CPP_EXPORTER="$(scripts/build-cpp-exporter.sh)" \
+  cargo run --bin click -- import lock examples/basic-cpp
+```
+
+Click writes the compilation database it hands the exporter itself, from the
+unit's arguments; there is no `compile_commands.json` to maintain.

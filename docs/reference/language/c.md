@@ -10,12 +10,14 @@ Click, this documentation calls that syntax a **C fragment**.
 
 ## C implementation target
 
-The default concrete target is `x86_64-linux-userspace`: the LP64 data layout
-of the x86-64 System V ABI, as GCC and Clang build it by default, with
-eight-bit, signed plain `char`. The `x86_64-linux-kernel` target has the same
-layout with unsigned plain `char`, following the Linux kernel's explicit
-`-funsigned-char` build setting; select it with `target "x86_64-linux-kernel";`
-or a `click.project.json` for kernel code. The settings are centralized in `CTarget`; LP64 alone
+A C target is a target triple and a mode. The one supported triple is
+`x86_64-unknown-linux-gnu`, which C++ and Rust imports also use. Its default
+mode, `userspace`, has the LP64 data layout of the x86-64 System V ABI,
+as GCC and Clang build it by default, with eight-bit, signed plain `char`. The
+`kernel` mode has the same layout with unsigned plain `char`, following
+the Linux kernel's explicit `-funsigned-char` build setting; select it with
+`mode "kernel";` or `"mode": "kernel"` in a
+`click.project.json` for kernel code. The settings are centralized in `CTarget`; LP64 alone
 does not imply char signedness. Under either target `char` remains a distinct
 C type from both `signed char` and `unsigned char`; only its values and its
 one-byte representation are those of `unsigned char` (kernel) or `signed
@@ -26,7 +28,7 @@ same C verified under the two targets can have different results
 
 <!-- verified-example: mdtests/userspace_plain_char_is_signed.md -->
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "userspace_plain_char.c";
 
 int32 negative_byte() {
@@ -58,9 +60,10 @@ incremental verification markers include its name.
 
 A project can select its C implementation target in a `click.project.json` file
 beside its sidecars. For example, the JSON object
-`{"target":"x86_64-linux-userspace","runtime":"modeled-pthread"}` selects
+`{"target":"x86_64-unknown-linux-gnu","runtime":"modeled-pthread"}` selects
 the user-space target and Click's conditional pthread model for every sidecar
-in that directory. The two fields are optional. When a command is given an
+in that directory; `"mode": "kernel"` selects kernel mode.
+The fields are optional. When a command is given an
 explicit project root and the sidecar directory has no config, it looks for
 the config at that root, and otherwise in the nearest directory above the
 sidecar that has one. Conflicting sidecar directives are rejected. The same
@@ -72,7 +75,7 @@ alongside `verifying`:
 
 <!-- verified-example: mdtests/userspace_target_directive.md -->
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "null_pointer.c";
 
 int32 is_null(int32* p) {
@@ -84,17 +87,24 @@ int32 is_null(int32* p) {
 }
 ```
 
-The accepted names are `x86_64-linux-kernel` and `x86_64-linux-userspace`; any
-other name is a parse error. A file declares at most one `target`, and every
-module of one project must agree on it, since a project is preprocessed once.
-Place the directive in the module that declares `verifying`. Without a
-directive the default target, `x86_64-linux-userspace`, is selected.
+The accepted target is `x86_64-unknown-linux-gnu`, and the accepted
+modes are `userspace` and `kernel`, selected with
+`mode "kernel";`; any other name is a parse error. The retired
+single-name spellings `x86_64-linux-userspace` and `x86_64-linux-kernel` are
+refused with their replacement
+(`mdtests/target_directive_refuses_retired_name.md`). A file declares at most
+one `target` and one `mode`, and every module of one project must agree
+on the pair, since a project is preprocessed once. Place the directives in the
+module that declares `verifying`. Without either directive the default,
+`x86_64-unknown-linux-gnu` in `userspace` mode, is selected; a
+`mode` without a `target` selects the same triple. Diagnostics name the
+pair as `x86_64-unknown-linux-gnu (kernel)`.
 
 The selected target and project configuration participate in the proof-artifact identity, so the same C
 and Click sources verified under different targets are different artifacts:
 certificates and incremental caches are never reused across them.
 
-`x86_64-linux-userspace` is C11/POSIX user space with the same LP64 layout,
+The `userspace` mode is C11/POSIX user space with the same LP64 layout,
 signed plain `char` (no `__CHAR_UNSIGNED__`), and no `__KERNEL__` predefine. Its
 modeled `<stddef.h>` supplies `NULL`, and its declaration-only `<pthread.h>`
 declares `pthread_create`, `pthread_join`, and `pthread_mutex_init`, `_lock`,
@@ -114,7 +124,7 @@ behavior.
 
 For the portable pthread probe, the project config explicitly selects Click's
 trusted create/join model with `"runtime":"modeled-pthread"` alongside
-`"target":"x86_64-linux-userspace"`. Existing sidecars may use the
+`"target":"x86_64-unknown-linux-gnu"`. Existing sidecars may use the
 `runtime "modeled-pthread";` directive with the corresponding target.
 
 This selection requires Click's built-in `<pthread.h>` declarations. They are
@@ -186,6 +196,8 @@ does. Verifying plain C needs no compiler or system headers; see the
 | `<stddef.h>` | user space | `NULL` |
 | `<string.h>` | user space | `memcpy`, `memcmp`, `memset`, `strlen`, and `NULL` |
 | `<stdlib.h>` | user space | `malloc`, `calloc`, `realloc`, `free`, and `NULL` |
+| `<stdarg.h>` | user space | the `va_list` type only, so prototypes that take one parse; `va_start`, `va_arg`, `va_copy` and `va_end` are not provided, since variadic bodies are not modeled |
+| `<sys/types.h>` | user space | `ssize_t` and `off_t`, both `long` on LP64 |
 | `<pthread.h>` | user space | the modeled pthread subset; see [the modeled binding](#conditional-modeled-pthread-binding) |
 | `<stdatomic.h>` | user space | the one-shot publication subset; see [publication](#one-shot-releaseacquire-publication) |
 
@@ -387,6 +399,24 @@ Click accepts top-level aliases for modeled scalar and struct types, such as
 be used as `item_t*` or as a copyable struct value under the field restrictions
 below.
 
+A function head, verified or `extern`, may write a typedef name of a verified
+source for the type it stands for: `u32 twice(u32 n)`, `int node_value(node_t
+*node)`, or an anonymous struct's alias, `const point_t *point`. The head
+still has exactly the declaration's types, so an alias of `long long` does not
+restate a `long`. A pointer alias, `typedef struct node *node_ptr;` or
+`typedef const int *int_view;`, stands for its pointer type, and a `const`
+written before it qualifies the pointer itself, as in C: `const node_ptr` is
+`struct node *const`. A head writes the C type of an array, function-pointer,
+union, volatile or aligned alias, and of a name two verified sources alias to
+different types. A standard spelling such as `size_t` or `uint32_t` keeps its
+meaning even when a source typedefs it. A specification position writes
+Click's type, not a typedef name. See
+`mdtests/a_function_head_writes_the_source_typedef_names.md`,
+`mdtests/a_head_typedef_keeps_its_long_long_rank.md`,
+`mdtests/a_function_head_writes_pointer_typedef_names.md`,
+`mdtests/a_function_pointer_typedef_is_written_as_its_type_in_a_head.md` and
+`mdtests/a_specification_writes_click_types_not_typedef_names.md`.
+
 The GNU `__extension__` marker before a file-scope declaration suppresses a
 compiler diagnostic. It does not change the declaration's type, layout, or
 supported semantics.
@@ -414,8 +444,8 @@ preserves the identity and does not introduce a `struct pair` tag. Separate
 anonymous declarations are not interchangeable. Anonymous unions and inline
 tagged definitions in typedefs also retain their nominal identity and ABI
 layout. Compound union member operations and whole-union values are not
-supported. Multiple typedef declarators and automatic
-typedef-name lookup in Click sidecars remain unsupported.
+supported. Multiple typedef declarators remain unsupported, and Click
+sidecars read typedef names only in function heads.
 See `mdtests/c_anonymous_struct_typedef.md`.
 
 GNU integer typedef attributes `mode(word)` and `__mode__(__word__)` select
@@ -511,8 +541,8 @@ for an unsigned type, and GCC defines the implementation-defined signed
 conversion the same way. Click converts such a constant identically in a
 static, automatic, or array initializer, an assignment, a store, an explicit
 cast, a `return`, and a call argument: `unsigned char c = -56` holds 200,
-`short s = 40000` holds -25536, and plain `char c = -56` holds 200 under
-`x86_64-linux-kernel`
+`short s = 40000` holds -25536, and plain `char c = -56` holds 200 in the
+`kernel` mode
 (`mdtests/an_out_of_range_integer_constant_converts_modulo_its_destination_width.md`,
 `mdtests/a_negative_char_constant_is_unsigned_on_the_kernel_target.md`).
 A narrowing of a value that is not an integer constant expression keeps the
@@ -991,7 +1021,8 @@ Supported C surface includes:
   `extern` contract, and even when it passes no variable arguments) and a
   function-address use are rejected at their own source line. A
   redeclaration must agree on being variadic. Variadic definitions,
-  variadic function-pointer signatures, and `<stdarg.h>` remain unsupported.
+  variadic function-pointer signatures, and the `<stdarg.h>` access macros
+  remain unsupported; `<stdarg.h>` supplies only the `va_list` type.
   See `mdtests/c_variadic_prototype_declared.md` and
   `mdtests/c_variadic_call_rejected.md`.
 - project-local quoted `#include "header.h"` declarations supplied in the

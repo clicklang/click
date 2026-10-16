@@ -10352,3 +10352,41 @@ fn pointer_fact_payloads_are_not_revisited_when_fresh_aliases_join_a_large_class
 mod scaling_tests {
     include!("../../scaling_tests/kernel/tests/proof_reasoning_tests.rs");
 }
+
+/// An atomic derivation computed inside the extended DAG bridging may match
+/// order-path terms through memory derivations, which is only valid inside
+/// that scope. Its memo entry is therefore keyed by the DAG modes, so neither
+/// mode reuses the other's answer.
+#[test]
+fn atomic_derivation_memo_is_keyed_by_the_dag_modes() {
+    crate::kernel::assumptions::clear_assumption_memos();
+    let value = Bitvector32Term::Variable(Variable(9_101));
+    let goal = Proposition::ConditionIs(
+        ConditionTerm::signed_less_than(value, Bitvector32Term::Constant(5)),
+        true,
+    );
+    let assumptions = PureFactContext::new().assume_proposition(goal.clone());
+    let memoized = |id| {
+        crate::kernel::assumptions::proposition_reasoning::atomic_derivation_is_memoized(
+            id, &goal, false,
+        )
+    };
+
+    let (outside, id) = assumptions.proves_atomic_for_derivation_with_id(&goal, false);
+    assert!(outside.is_some());
+    assert!(memoized(id));
+    crate::kernel::api::with_extended_dag_bridging(|| {
+        assert!(
+            !memoized(id),
+            "an answer from outside the scope is not reused inside it"
+        );
+        let (inside, inside_id) = assumptions.proves_atomic_for_derivation_with_id(&goal, false);
+        assert!(inside.is_some());
+        assert_eq!(inside_id, id);
+        assert!(memoized(id));
+    });
+    assert!(
+        memoized(id),
+        "the answer from outside the scope is still served outside it"
+    );
+}

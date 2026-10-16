@@ -1,8 +1,11 @@
 # Pointer reads before an address equality
 
 Two nonvolatile pointer fields are read before the C branch establishes a
-three-link chain between their source addresses. The already-read values then
-have one `simp()` proof of equality through the trusted equality graph.
+three-link chain between their source addresses. A C pointer comparison
+states only that the addresses are equal (`(uint64)a == (uint64)b`), not that
+the pointers are. The trusted equality graph keys a read by its snapshot and
+numeric address, so the already-read values still have one `simp()` proof of
+equality: two reads of one snapshot at equal addresses read the same bytes.
 
 ```c filename=late_pointer_load_equality.c
 struct node { struct node *next; };

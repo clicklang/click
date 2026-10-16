@@ -1,0 +1,13 @@
+{
+  "units": {
+    "basic": {
+      "language": "c++",
+      "args": ["-funsigned-char", "-ffreestanding", "-nostdinc", "-nostdinc++"],
+      "sources": {
+        "increment.cpp": {"functions": ["increment"]},
+        "with_restore.cpp": {"functions": ["with_restore"], "args": ["-Wno-reorder-ctor"]},
+        "with_restore_caller.cpp": {"functions": ["call_with_restore"], "args": ["-Wno-reorder-ctor"]}
+      }
+    }
+  }
+}

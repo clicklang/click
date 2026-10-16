@@ -1756,6 +1756,15 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
         }
     }
     budget.check_path_width(paths.len())?;
+    for path in &paths {
+        if let CExpressionOutcome::Value(value) = &path.outcome {
+            crate::kernel::debug_assert_widths(
+                "an evaluated expression",
+                || crate::kernel::value_width_mismatch(value),
+                value,
+            );
+        }
+    }
     Ok(paths)
 }
 
@@ -2825,11 +2834,11 @@ pub(in crate::kernel) fn address_of_lvalue_paths(
 }
 
 pub(in crate::kernel) fn is_external_memory_pointer(pointer: &Pointer) -> bool {
-    !pointer.block.starts_with("local:")
-        && !pointer.block.starts_with("global:")
-        && !pointer.block.starts_with("static:")
+    !pointer.block.is_local_block()
+        && !pointer.block.is_global_block()
+        && !pointer.block.is_static_block()
         && !pointer.block.starts_with("string:")
-        && !pointer.block.starts_with("havoc:")
+        && !pointer.block.is_havoc_block()
 }
 
 pub(in crate::kernel) fn resolve_local_pointer_alias(

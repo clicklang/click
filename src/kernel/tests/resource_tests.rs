@@ -18,6 +18,125 @@ fn folded_without_read_views(state: CState) -> CState {
 }
 
 #[test]
+fn separation_candidates_preserve_derived_aliases_and_loaded_bases() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let scalar = |id: u64| Bitvector32Term::Variable(Variable(989_700 + id));
+    let base = |value| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(value, 4),
+    };
+    let owner = |pointer| {
+        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            pointer,
+            0u32.into(),
+            3u32.into(),
+            4,
+        ))
+    };
+    let query = |pointer| {
+        CResource::Memory(CMemoryRange::new_with_element_width(
+            pointer,
+            1u32.into(),
+            2u32.into(),
+            4,
+        ))
+    };
+    let a = scalar(0);
+    let b = scalar(1);
+    let alias = scalar(2);
+    let middle = scalar(3);
+    let frame = ResourceContext::new()
+        .unchecked_with_fact(owner(base(a.clone())))
+        .unchecked_with_fact(owner(base(b.clone())));
+    let holds = |context: PureFactContext| {
+        context.assume_proposition(Proposition::CResourceComposition(frame.clone()))
+    };
+    let separated = |context: &PureFactContext| {
+        context.proves_resource_separate(&query(base(alias.clone())), &query(base(b.clone())))
+    };
+    assert!(!separated(&holds(PureFactContext::new())));
+    let one_order = PureFactContext::new().assume_condition(
+        ConditionTerm::signed_less_equal(a.clone(), alias.clone()),
+        true,
+    );
+    assert!(
+        !separated(&holds(one_order.clone())),
+        "one bound is not an alias"
+    );
+    let both_orders = one_order.assume_condition(
+        ConditionTerm::signed_less_equal(alias.clone(), a.clone()),
+        true,
+    );
+    assert!(separated(&holds(both_orders)));
+    let pinned = PureFactContext::new()
+        .assume_condition(ConditionTerm::equal(a.clone(), 7u32.into()), true)
+        .assume_condition(ConditionTerm::equal(alias.clone(), 7u32.into()), true);
+    assert!(separated(&holds(pinned)));
+    let transitive = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::pointer_equal(base(alias.clone()), base(middle.clone())),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::pointer_equal(base(middle), base(a.clone())),
+            true,
+        );
+    assert!(separated(&holds(transitive)));
+
+    // No condition names `a`: the owner's loaded base must remain a
+    // candidate because the memory edge itself resolves it to `a`.
+    let slot = Pointer::symbolic(Variable(989_799));
+    let snapshot = CMemory::new().store(slot.clone(), CValue::Int32(a.clone()));
+    let loaded = Bitvector32Term::MemoryLoad(
+        crate::kernel::intern_c_memory(snapshot),
+        Box::new(slot),
+        LoadKind::Bits32,
+    );
+    let loaded_frame = ResourceContext::new()
+        .unchecked_with_fact(owner(base(loaded)))
+        .unchecked_with_fact(owner(base(b.clone())));
+    let facts =
+        PureFactContext::new().assume_proposition(Proposition::CResourceComposition(loaded_frame));
+    assert!(facts.proves_resource_separate(&query(base(a.clone())), &query(base(b.clone()))));
+    assert!(!facts.proves_resource_separate(&query(base(a.clone())), &query(base(a))));
+}
+
+#[test]
+fn separation_candidates_follow_a_block_alias_to_the_owner() {
+    // `__rb_insert` in the sized double rotations: the queried range sits in
+    // a fresh symbolic block that a pointer equality identifies with a
+    // parameter's address, so its owner lives in another block.
+    let _session = crate::kernel::VerificationSession::enter();
+    let a = Bitvector32Term::Variable(Variable(989_800));
+    let parameter = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(a, 4),
+    };
+    let loaded = Pointer::symbolic(Variable(989_801));
+    let target = Pointer::symbolic(Variable(989_802));
+    let range = |pointer: Pointer, start: u32, end: u32| {
+        CMemoryRange::new_with_element_width(pointer, start.into(), end.into(), 4)
+    };
+    let frame = ResourceContext::new()
+        .unchecked_with_fact(CResourceFact::own_memory(range(parameter.clone(), 1, 2)))
+        .unchecked_with_fact(CResourceFact::own_memory(range(target.clone(), 1, 2)));
+    let query = |context: &PureFactContext| {
+        context.proves_resource_separate(
+            &CResource::Memory(range(target.clone(), 1, 2)),
+            &CResource::Memory(range(loaded.clone(), 1, 2)),
+        )
+    };
+    let unrelated =
+        PureFactContext::new().assume_proposition(Proposition::CResourceComposition(frame.clone()));
+    assert!(!query(&unrelated), "an unowned range proves nothing");
+    let aliased = unrelated.assume_condition(
+        ConditionTerm::pointer_equal(loaded.clone(), parameter.clone()),
+        true,
+    );
+    assert!(query(&aliased));
+}
+
+#[test]
 fn normalized_resource_specs_validate_families_and_preserve_transfer_metadata() {
     let segment = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(2));
     let memory_view = CResourceSpec::new(
@@ -3042,6 +3161,61 @@ fn declared_resource_quantities_are_part_of_context_equality() {
     ));
 }
 
+/// Definitional equality equates a folded composite with its opened pieces
+/// only where the composite's body facts hold over those pieces. A loop back
+/// edge used this comparison to return a folded `owns zero_cell(p)` from a
+/// body that had stored 9 into the cell and never refolded it.
+#[test]
+fn definitional_equality_reassembles_a_composite_only_where_its_facts_hold() {
+    let pointer = Pointer {
+        block: "reassembled-cell".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let definition = CCompositeResourceDefinition::new(
+        "zero_cell",
+        vec![c_parameter("p", CType::Int32Pointer)],
+        None,
+        false,
+        vec![CResourceSpec::owned_memory(CMemorySegment::new(
+            c_variable("p"),
+            c_int32_literal(0),
+            c_int32_literal(1),
+        ))],
+        vec![SpecProposition::Comparison {
+            left: SpecExpression::CExpression(c_index(c_variable("p"), c_int32_literal(0))),
+            operator: CComparisonOperator::Equal,
+            right: SpecExpression::Value(int32(0)),
+        }],
+    );
+    let folded = ResourceContext::new().unchecked_with_fact(CResourceFact::own_composite(
+        "zero_cell".into(),
+        vec![CValue::typed_pointer(pointer.clone(), CType::Int32Pointer)],
+    ));
+    let pieces = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
+        CMemoryRange::new(pointer.clone(), 0.into(), 1.into()),
+    ));
+    let memory = |value: u32| {
+        CMemory::new()
+            .with_block(pointer.block.clone(), 4)
+            .store(pointer.clone(), int32(value))
+    };
+    let equal = |stored: u32| {
+        resource_contexts_definitionally_equal_with_definitions(
+            std::slice::from_ref(&definition),
+            &memory(0),
+            &folded,
+            &memory(stored),
+            &pieces,
+            &PureFactContext::new(),
+        )
+    };
+    assert!(
+        !equal(9),
+        "a cell holding 9 is not a `zero_cell`, so it is not the folded head"
+    );
+    assert!(equal(0), "a cell holding 0 reassembles the folded head");
+}
+
 #[test]
 fn missing_composite_query_ignores_ambient_memory_splits() {
     let base = Pointer {
@@ -3821,20 +3995,19 @@ fn resource_clauses_with_no_evaluable_order_name_two_positions() {
         })
     };
     let evaluate = |clauses: &[CResourceSpec]| {
-        let CRuntimeError::FunctionContract(message) =
-            crate::kernel::functions::evaluate_function_resource_context(
-                &CState::new(),
-                clauses,
-                &[],
-                &PureFactContext::new(),
-                &mut ExecutionBudget::default(),
-            )
-            .expect("clause evaluation stays inside its budget")
-            .expect_err("no clause has read authority for its base")
-        else {
-            panic!("an unevaluable segment is a contract error");
-        };
-        message
+        let error = crate::kernel::functions::evaluate_function_resource_context(
+            &CState::new(),
+            clauses,
+            &[],
+            &PureFactContext::new(),
+            &mut ExecutionBudget::default(),
+        )
+        .expect("clause evaluation stays inside its budget")
+        .expect_err("no clause has read authority for its base");
+        error
+            .function_contract_message()
+            .expect("an unevaluable segment is a contract error")
+            .to_string()
     };
     assert_eq!(
         evaluate(&[unowned(100), unowned(101)]),
@@ -4076,23 +4249,22 @@ fn expanded_resource_clause_diagnostics_keep_source_positions() {
             guard: None,
         })
     };
-    let CRuntimeError::FunctionContract(message) =
-        crate::kernel::functions::evaluate_function_resource_context(
-            &CState::new(),
-            &[
-                unowned(100).with_clause_position(0, 2),
-                unowned(101).with_clause_position(0, 2),
-                unowned(102).with_clause_position(1, 2),
-            ],
-            &[],
-            &PureFactContext::new(),
-            &mut ExecutionBudget::default(),
-        )
-        .expect("clause evaluation stays inside its budget")
-        .expect_err("no clause has read authority for its base")
-    else {
-        panic!("an unevaluable segment is a contract error");
-    };
+    let error = crate::kernel::functions::evaluate_function_resource_context(
+        &CState::new(),
+        &[
+            unowned(100).with_clause_position(0, 2),
+            unowned(101).with_clause_position(0, 2),
+            unowned(102).with_clause_position(1, 2),
+        ],
+        &[],
+        &PureFactContext::new(),
+        &mut ExecutionBudget::default(),
+    )
+    .expect("clause evaluation stays inside its budget")
+    .expect_err("no clause has read authority for its base");
+    let message = error
+        .function_contract_message()
+        .expect("an unevaluable segment is a contract error");
     assert!(message.contains("resource clauses 1 and 2 cannot be evaluated in any order"));
 }
 

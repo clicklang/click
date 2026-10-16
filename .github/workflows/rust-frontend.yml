@@ -11,11 +11,14 @@ on:
       - 'src/languages/rust/runtime.rs'
       - 'src/languages/rust/charon-profile.json'
       - 'src/bin/click/version*.rs'
+      - 'scripts/prepare-adler32-demo.py'
       - 'tests/rust_release_install.rs'
       - 'tests/support/rust_frontend.rs'
       - 'tests/support/release_assets.rs'
       - 'examples/basic-rust/**'
       - 'design/charon-trial/adler2/**'
+      - 'design/charon-trial/zlib/**'
+      - 'design/adler32-spec.click'
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+*']
   workflow_dispatch:
@@ -65,7 +68,7 @@ jobs:
         run: |
           source scripts/charon-toolchain.sh
           scripts/package-rust-frontend-archive.sh target/rust-release target/charon/release "$CHARON_SYSROOT"
-      - name: Install the release archive and verify external Rust projects
+      - name: Install the release archive and verify Rust and C/Rust demonstrations
         env:
           CLICK_RUST_FRONTEND_ARCHIVE: ${{ github.workspace }}/target/rust-release/click-rust-frontend-x86_64-unknown-linux-gnu.tar.gz
           RUST_MIN_STACK: '8388608'

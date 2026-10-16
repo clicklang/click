@@ -3,6 +3,7 @@ use crate::kernel::CStatementStoreSource;
 use crate::kernel::loans::empty_checked_loan_evidence_sequence;
 mod scalar_arrays;
 
+#[cfg(test)]
 pub(in crate::kernel) fn execute_c_statement(
     state: &CState,
     statement: &CStatement,
@@ -805,10 +806,11 @@ fn write_c_lvalue_paths_without_local_reference(
                 .unwrap_or(pointer);
 
             if is_external && !has_external_write_resource {
-                let missing = CMemoryRange::new(
+                let missing = CMemoryRange::new_with_element_width(
                     pointer.clone(),
                     Bitvector32Term::Constant(0),
                     Bitvector32Term::Constant(1),
+                    value.byte_width(),
                 );
                 // A live mutex holds storage its initialization consumed;
                 // name it rather than the missing ownership.
@@ -2774,7 +2776,7 @@ pub(in crate::kernel) fn end_scope_automatic_lifetimes(
         let Some(slot) = state.locals.slot(name).cloned() else {
             continue;
         };
-        if slot.block.starts_with("local:") && memory.has_block(&slot.block) {
+        if slot.block.is_local_block() && memory.has_block(&slot.block) {
             if let Some(error) = state.population_storage_retirement_refusal(&slot.block) {
                 return Err(error);
             }
@@ -3320,12 +3322,12 @@ fn execute_c_statement_leaf_paths(
         }
         CStatement::DeclareAggregate { name, layout, kind } => {
             let declared = match kind {
-                CAggregateDeclarationKind::Local => declare_aggregate_local(state, name, layout),
+                CAggregateDeclarationKind::Local
+                | CAggregateDeclarationKind::ConstructionDestination => {
+                    declare_aggregate_local(state, name, layout)
+                }
                 CAggregateDeclarationKind::Constructor => {
                     begin_aggregate_construction(state, name, layout, budget)?
-                }
-                CAggregateDeclarationKind::ConstructionDestination => {
-                    allocate_aggregate_destination(state, name, layout)
                 }
             };
             let outcome = match declared {
@@ -4241,7 +4243,7 @@ pub(in crate::kernel) fn execute_c_while_paths(
 fn local_declaration_pointer(state: &mut CState, name: &str) -> Result<Pointer, CRuntimeError> {
     let previous = state.locals.slot(name).cloned();
     if let Some(previous) = previous
-        && previous.block.starts_with("local:")
+        && previous.block.is_local_block()
     {
         if let Some(error) =
             crate::kernel::mutexes::automatic_storage_refusal(state, name, &previous.block)
@@ -4334,7 +4336,7 @@ fn fresh_local_object_identity(state: &mut CState, name: &str) -> Pointer {
 /// the trusted creation event for an automatic object.
 fn note_declared_population_storage(mut state: CState, name: &str) -> CState {
     if let Some(slot) = state.locals.slot(name).cloned()
-        && slot.block.starts_with("local:")
+        && slot.block.is_local_block()
         && state.memory.has_block(&slot.block)
     {
         state.record_population_storage_creation(slot.block);
@@ -4360,7 +4362,7 @@ fn zero_fill_declared_array(
         .locals
         .slot(name)
         .cloned()
-        .filter(|slot| slot.block.starts_with("local:") && state.memory.has_block(&slot.block))
+        .filter(|slot| slot.block.is_local_block() && state.memory.has_block(&slot.block))
         .ok_or(CRuntimeError::TypeMismatch)?;
     let object_bytes = zero_fill
         .stride
@@ -4739,21 +4741,11 @@ pub(in crate::kernel) fn declare_aggregate_local(
     );
     state
         .locals
-        .set_aggregate_object_at(name.to_string(), layout.clone(), pointer);
-    Ok(state)
-}
-
-fn allocate_aggregate_destination(
-    state: &CState,
-    name: &str,
-    layout: &CAggregateLayout,
-) -> Result<CState, CRuntimeError> {
-    let mut state = declare_aggregate_local(state, name, layout)?;
-    let pointer = state
-        .locals
-        .slot(name)
-        .expect("aggregate destination has a declared stack slot")
-        .clone();
+        .set_aggregate_object_at(name.to_string(), layout.clone(), pointer.clone());
+    // Every automatic record owns its complete storage, just like a scalar
+    // local or a construction destination. A modular pointer result can name
+    // this storage through a symbolic address, where implicit local access
+    // alone cannot provide the caller's field-read permission.
     state.resources = state
         .resources
         .clone()
@@ -4774,7 +4766,7 @@ fn begin_aggregate_construction(
     layout: &CAggregateLayout,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<CState, CRuntimeError>> {
-    let mut state = match allocate_aggregate_destination(state, name, layout) {
+    let mut state = match declare_aggregate_local(state, name, layout) {
         Ok(state) => state,
         Err(refusal) => return Ok(Err(refusal)),
     };

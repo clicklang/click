@@ -111,7 +111,7 @@ pub(super) fn link_c_units(
             }
         }
     }
-    let mut globals = BTreeMap::<String, syntax::C0Global>::new();
+    let mut globals = syntax::DeclarationMap::<syntax::C0Global>::new();
     for source_globals in globals_by_source.values() {
         for (name, global) in source_globals {
             if global.is_file_static() {
@@ -212,7 +212,7 @@ pub(super) fn link_c_units(
             )));
         }
     }
-    let mut global_arrays = BTreeMap::<String, syntax::C0GlobalArray>::new();
+    let mut global_arrays = syntax::DeclarationMap::<syntax::C0GlobalArray>::new();
     for source_arrays in global_arrays_by_source.values() {
         for (name, array) in source_arrays {
             if array.is_file_static() {
@@ -323,7 +323,7 @@ pub(super) fn link_c_units(
             }
         }
     }
-    let mut global_aggregates = BTreeMap::<String, syntax::C0GlobalAggregate>::new();
+    let mut global_aggregates = syntax::DeclarationMap::<syntax::C0GlobalAggregate>::new();
     for source_aggregates in global_aggregates_by_source.values() {
         for (name, aggregate) in source_aggregates {
             if aggregate.is_file_static() {
@@ -443,7 +443,8 @@ pub(super) fn link_c_units(
             }
         }
     }
-    let mut global_aggregate_arrays = BTreeMap::<String, syntax::C0GlobalAggregateArray>::new();
+    let mut global_aggregate_arrays =
+        syntax::DeclarationMap::<syntax::C0GlobalAggregateArray>::new();
     for source_aggregate_arrays in global_aggregate_arrays_by_source.values() {
         for (name, aggregate) in source_aggregate_arrays {
             if aggregate.is_file_static() {
@@ -570,6 +571,8 @@ pub(super) fn link_c_units(
             }
         }
     }
+    // Each function receives its own view of the linked objects; persistent
+    // maps make that view O(1) to take and O(log n) per private object.
     parsed = parsed
         .into_iter()
         .map(|(name, (source_path, function))| {
@@ -697,22 +700,22 @@ pub(super) fn link_c_units(
 fn unit_storage_context(
     source_path: &str,
     globals_by_source: &BTreeMap<String, BTreeMap<String, syntax::C0Global>>,
-    globals: &BTreeMap<String, syntax::C0Global>,
+    globals: &syntax::DeclarationMap<syntax::C0Global>,
     global_arrays_by_source: &BTreeMap<String, BTreeMap<String, syntax::C0GlobalArray>>,
-    global_arrays: &BTreeMap<String, syntax::C0GlobalArray>,
+    global_arrays: &syntax::DeclarationMap<syntax::C0GlobalArray>,
     global_aggregates_by_source: &BTreeMap<String, BTreeMap<String, syntax::C0GlobalAggregate>>,
-    global_aggregates: &BTreeMap<String, syntax::C0GlobalAggregate>,
+    global_aggregates: &syntax::DeclarationMap<syntax::C0GlobalAggregate>,
     global_aggregate_arrays_by_source: &BTreeMap<
         String,
         BTreeMap<String, syntax::C0GlobalAggregateArray>,
     >,
-    global_aggregate_arrays: &BTreeMap<String, syntax::C0GlobalAggregateArray>,
+    global_aggregate_arrays: &syntax::DeclarationMap<syntax::C0GlobalAggregateArray>,
 ) -> syntax::C0Function {
     fn visible<T: Clone>(
         own: &BTreeMap<String, T>,
-        linked: &BTreeMap<String, T>,
+        linked: &syntax::DeclarationMap<T>,
         is_file_static: impl Fn(&T) -> bool,
-    ) -> BTreeMap<String, T> {
+    ) -> syntax::DeclarationMap<T> {
         own.iter()
             .map(|(name, object)| {
                 let object = if is_file_static(object) {
@@ -800,6 +803,17 @@ pub(super) fn c_layouts(
                 )));
             }
         }
+        // A name two verified sources alias to different types is not one a
+        // head can write.
+        for (name, typedef) in &unit.head_typedefs {
+            let entry = tables
+                .c_typedefs
+                .entry(name.clone())
+                .or_insert_with(|| typedef.clone());
+            if entry != typedef {
+                *entry = syntax::C0HeadTypedef::Other;
+            }
+        }
         for (name, layout) in &unit.unions {
             if let Some(previous) = tables.union_layouts.insert(name.clone(), layout.clone())
                 && previous != *layout
@@ -815,6 +829,10 @@ pub(super) fn c_layouts(
                 .filter_map(syntax::library_contract_module),
         );
         for function in unit.functions {
+            tables.qualified_functions.insert(
+                (source_path.clone(), function.source_name().to_string()),
+                function.name().to_string(),
+            );
             calls
                 .entry(function.source_name().to_string())
                 .or_default()
@@ -1234,10 +1252,13 @@ pub(super) fn record_function_tables(
             _ => {}
         }
     }
-    tables.c_object_names.insert(
-        function.source_name().to_string(),
-        std::sync::Arc::new(names),
-    );
+    let names = std::sync::Arc::new(names);
+    tables
+        .c_object_names
+        .insert(function.source_name().to_string(), names.clone());
+    tables
+        .c_object_names
+        .insert(function.name().to_string(), names);
     let mut function_aggregate_objects = BTreeMap::new();
     for aggregate in function.global_aggregates().values() {
         function_aggregate_objects.insert(
@@ -1318,6 +1339,11 @@ pub(super) fn record_function_tables(
         struct_pointers: function.local_struct_pointers().clone(),
         references: function.local_references().clone(),
     };
+    if function.name() != function.source_name() {
+        tables
+            .local_struct_pointers
+            .insert(function.name().to_string(), locals.clone());
+    }
     match tables
         .local_struct_pointers
         .entry(function.source_name().to_string())
@@ -1362,14 +1388,7 @@ pub(super) fn validate_modeled_pthread_binding(
 
     let mut found_pthread = BTreeSet::new();
     for (source_path, unit) in units {
-        for name in [
-            "pthread_create",
-            "pthread_join",
-            "pthread_mutex_init",
-            "pthread_mutex_lock",
-            "pthread_mutex_unlock",
-            "pthread_mutex_destroy",
-        ] {
+        for name in crate::languages::c::thread_runtime::MODELED_PTHREAD_FUNCTIONS {
             if unit.shadowed_pthread_names.contains(name) {
                 return Err(ClickError::new(format!(
                     "modeled-pthread binding refuses local shadowing of `{name}` in `{source_path}`"

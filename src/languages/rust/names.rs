@@ -75,6 +75,11 @@ pub(crate) fn trait_method_name(type_name: &str, trait_name: &str, method: &str)
     encoded
 }
 
+/// Whether `name` is a Rust importer name.
+pub(crate) fn is_rust_name(name: &str) -> bool {
+    name.starts_with(PREFIX)
+}
+
 /// Whether `name` is a function the importer places where a crate struct
 /// reference becomes a crate trait's object, or back:
 /// `<S as Trait>::__pack` or `<S as Trait>::__unpack`.
@@ -327,15 +332,10 @@ pub fn display_rust_names(text: &str) -> Cow<'_, str> {
     Cow::Owned(output)
 }
 
-/// Whether the claim label `label` is the one `requested` names, as the
-/// importer spells it or as its Rust path.
-pub fn claim_label_matches(label: &str, requested: &str) -> bool {
-    label == requested || (requested.contains("::") && display_rust_names(label) == requested)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::languages::claim_label_matches;
 
     #[test]
     fn importer_names_read_as_their_paths() {

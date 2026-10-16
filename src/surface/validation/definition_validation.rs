@@ -2036,7 +2036,12 @@ fn collect_resource_fact_reads_from_proposition(
                 resource_name,
             )
         }
-        ClickProposition::ForAll { name, body, .. } => {
+        ClickProposition::ForAll {
+            click_type,
+            name,
+            body,
+            ..
+        } => {
             if let ClickProposition::Implies(antecedent, consequent) = body.as_ref() {
                 collect_resource_fact_reads_from_proposition(
                     antecedent,
@@ -2057,7 +2062,7 @@ fn collect_resource_fact_reads_from_proposition(
                     reads,
                     resource_name,
                 )?;
-                if let Some((start, end)) = quantified_index_interval(body, name) {
+                if let Some((start, end)) = quantified_index_interval(body, name, click_type) {
                     for read in &mut reads[first_consequent_read..] {
                         if read.index == CExpression::Variable(name.clone()) {
                             read.enclosing_range = Some((start.clone(), end.clone()));
@@ -2203,9 +2208,14 @@ fn collect_resource_fact_reads_from_proposition(
     }
 }
 
+/// The index interval a quantified fact's guard confines its binder to. An
+/// unsigned binder's lower bound is its type's zero when the guard states
+/// none: `k < len` over `k: uint64` confines `k` to `0u64..len`. The upper
+/// bound must still come from the guard.
 fn quantified_index_interval(
     body: &ClickProposition,
     name: &str,
+    binder_type: &ClickType,
 ) -> Option<(CExpression, CExpression)> {
     let ClickProposition::Implies(antecedent, _) = body else {
         return None;
@@ -2250,7 +2260,20 @@ fn quantified_index_interval(
     let mut lower = None;
     let mut upper = None;
     visit(antecedent, name, &mut lower, &mut upper);
-    Some((lower?, upper?))
+    let lower = lower.or_else(|| unsigned_binder_zero(binder_type))?;
+    Some((lower, upper?))
+}
+
+/// The zero of an unsigned binder's type, spelled as the matching typed
+/// literal, or `None` for a type whose values may be negative.
+fn unsigned_binder_zero(binder_type: &ClickType) -> Option<CExpression> {
+    let value = match binder_type.c_type()? {
+        C0Type::UInt8 => CValue::UInt8(Bitvector32Term::Constant(0)),
+        C0Type::UInt32 => CValue::UInt32(Bitvector32Term::Constant(0)),
+        C0Type::UInt64(_) => CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
+        _ => return None,
+    };
+    Some(CExpression::Value(value))
 }
 
 fn collect_resource_fact_reads_from_contract_segment(

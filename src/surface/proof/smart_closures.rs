@@ -228,7 +228,9 @@ fn signed_surface_terms_equal(
     left: &crate::kernel::Bitvector32Term,
     right: &crate::kernel::Bitvector32Term,
 ) -> bool {
-    let mut pending = vec![(left, right)];
+    let left = crate::kernel::canonical_term(left);
+    let right = crate::kernel::canonical_term(right);
+    let mut pending = vec![(&left, &right)];
     let mut visited = 0usize;
     while let Some((left, right)) = pending.pop() {
         visited += 1;
@@ -2147,6 +2149,31 @@ impl<'a> Proof<'a> {
         if let Some(proof) = self.try_unsigned_order_lemma() {
             return Ok(Some(proof));
         }
+        // Population bounds are arithmetic on the authority's count, even
+        // when that count shares a carrier with a C field. Try its indexed
+        // bounds before searching memory equalities and recorded snapshots.
+        let population_count_comparison = matches!(
+            self.surface_goal(),
+            Some(
+                ClickProposition::Comparison {
+                    left: ContractExpression::ResourceCount(_),
+                    ..
+                } | ClickProposition::Comparison {
+                    right: ContractExpression::ResourceCount(_),
+                    ..
+                }
+            )
+        );
+        if population_count_comparison
+            && let Some(proof) = crate::instrumentation::measure_operation(
+                "surface",
+                "simp closure",
+                "simp closure: indexed bounds",
+                || self.try_execution_signed_arithmetic(),
+            )
+        {
+            return Ok(Some(proof));
+        }
         // Integer arithmetic has its own compact, locally checked evidence
         // path. Keep it ahead of the legacy signed arithmetic derivation so
         // a mathematical Integer goal cannot accidentally enter the machine
@@ -2499,10 +2526,9 @@ impl<'a> Proof<'a> {
         // Signed arithmetic over the selected premises is the final
         // fallback. All established equality, transport, quantifier,
         // structural, and function-unfold routes must get first choice so
-        // their selected proof steps remain visible in expansion. Only the
-        // pure form above, which selects its own bounds from the goal's
-        // buckets, runs earlier, and only ahead of the case split it would
-        // otherwise be hidden behind.
+        // their selected proof steps remain visible in expansion. Population
+        // comparisons already tried indexed bounds before memory rewriting;
+        // pure arithmetic ran ahead of the case split it would hide behind.
         if let Some(surface_goal) = self.surface_goal()
             && let Some(goal) = self.goal()
             && !anchored_pairs.is_empty()
@@ -2522,12 +2548,14 @@ impl<'a> Proof<'a> {
         {
             return Ok(Some(proof));
         }
-        if let Some(arithmetic) = crate::instrumentation::measure_operation(
-            "surface",
-            "simp closure",
-            "simp closure: indexed bounds",
-            || self.try_execution_signed_arithmetic(),
-        ) {
+        if !population_count_comparison
+            && let Some(arithmetic) = crate::instrumentation::measure_operation(
+                "surface",
+                "simp closure",
+                "simp closure: indexed bounds",
+                || self.try_execution_signed_arithmetic(),
+            )
+        {
             return Ok(Some(arithmetic));
         }
         // The pure signed certificate already ran above on this same proof
@@ -2599,7 +2627,11 @@ impl<'a> Proof<'a> {
         let is_pure = matches!(self.context.as_ref(), ProofContext::Pure(_));
         let mut available = BTreeSet::new();
         let mut visited = BTreeSet::new();
-        let mut pending = crate::kernel::proposition_variables(goal)
+        // Count lowering can leave a read expression where the bounds index
+        // names its registered load variable. Seed from that canonical value,
+        // not from variables in the read's address or memory snapshot.
+        let canonical_goal = crate::kernel::canonical_condition_fact(goal);
+        let mut pending = crate::kernel::proposition_variables(&canonical_goal)
             .into_iter()
             .collect::<std::collections::VecDeque<_>>();
         while let Some(variable) = pending.pop_front() {
@@ -2634,9 +2666,11 @@ impl<'a> Proof<'a> {
                 }
                 if found {
                     pending.extend(
-                        crate::kernel::proposition_variables(&fact)
-                            .into_iter()
-                            .filter(|next| !visited.contains(next)),
+                        crate::kernel::proposition_variables(
+                            &crate::kernel::canonical_condition_fact(&fact),
+                        )
+                        .into_iter()
+                        .filter(|next| !visited.contains(next)),
                     );
                 }
             }
@@ -4396,6 +4430,31 @@ impl<'a> Proof<'a> {
         }) {
             return Some(surface.clone());
         }
+        // A selected fact can instead name a fresh loop-head value in the
+        // current state. Recover it there before searching older snapshots
+        // which cannot name that value at all.
+        let pointer_goal = matches!(
+            self.goal(),
+            Some(Proposition::ConditionIs(ConditionTerm::PointerEqual(..), _))
+        );
+        if pointer_goal
+            && let Some(surface) = surface_facts
+                .surfaces(kernel)
+                .find(|surface| matches_kernel(surface).is_some())
+        {
+            return Some(surface.clone());
+        }
+        if pointer_goal
+            && let Some(view) = self.premise_fixed_state_view()
+            && let Some(surface) = synthesize_surface_proposition(
+                kernel,
+                view.parameter_binding,
+                view.fixed_state.state,
+            )
+            && matches_kernel(&surface).is_some()
+        {
+            return Some(surface);
+        }
         // Function requirements retain their original unanchored Surface
         // form while their kernel fact is entry-relative. Probe that one
         // canonical source form before the moving statement-entry anchor;
@@ -4825,6 +4884,11 @@ impl<'a> Proof<'a> {
         // transport path; probing their snapshot aliases first repeats costly
         // premise spelling and changes the intended transport certificate.
         let scalar_goal = match self.goal()? {
+            Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), _)
+                if left.block == right.block =>
+            {
+                true
+            }
             Proposition::ConditionIs(
                 ConditionTerm::Bitvector32SignedLessThan(..)
                 | ConditionTerm::Bitvector32SignedLessEqual(..)
@@ -4933,7 +4997,14 @@ impl<'a> Proof<'a> {
         ) {
             return None;
         }
-        let _scope = SimpFallbackScope::enter(SimpFallback::EqualityRewrite)?;
+        // The direct-only chain never enters typed or function-unfold
+        // search. It can finish a pointer-offset rewrite inside the outer
+        // equality search without restarting that speculative fallback.
+        let _scope = if direct_only {
+            None
+        } else {
+            Some(SimpFallbackScope::enter(SimpFallback::EqualityRewrite)?)
+        };
         // A judgment stated at an execution frontier (a `have` inside an
         // `open` scope, before the outcome) reads its spellings from the
         // execution's surface map, anchored at the current statement entry.
@@ -4982,7 +5053,47 @@ impl<'a> Proof<'a> {
             // Pointer equalities between scaled offsets are candidates too:
             // `rewrite` carries one through the address of a load, so a
             // goal over `p->q->x` reaches `r->x` under `p->q == r`.
-            let equality_candidates = proof.facts().load_equalities_mentioning(&goal);
+            // Once both pointers have the same base, only their offsets
+            // need rewriting. Selecting on the shared base also nominates
+            // every historical pointer fact about that object, even when
+            // none mentions an offset operand of this comparison.
+            let equality_candidates = match &goal {
+                Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), value)
+                    if left.block == right.block =>
+                {
+                    // External arguments share a block and carry the
+                    // actual base as an offset prefix: `(base + i) == base`
+                    // needs facts about `i`, not old reads through `base`.
+                    let zero = crate::kernel::PointerOffsetTerm::Constant(0);
+                    let (left, right) = match (&left.offset, &right.offset) {
+                        (crate::kernel::PointerOffsetTerm::Add(base, index), right)
+                            if base.as_ref() == right =>
+                        {
+                            (index.as_ref(), &zero)
+                        }
+                        (left, crate::kernel::PointerOffsetTerm::Add(base, index))
+                            if left == base.as_ref() =>
+                        {
+                            (&zero, index.as_ref())
+                        }
+                        (
+                            crate::kernel::PointerOffsetTerm::Add(left_base, left_index),
+                            crate::kernel::PointerOffsetTerm::Add(right_base, right_index),
+                        ) if left_base == right_base => (left_index.as_ref(), right_index.as_ref()),
+                        (left, right) => (left, right),
+                    };
+                    proof
+                        .facts()
+                        .load_equalities_mentioning(&Proposition::ConditionIs(
+                            ConditionTerm::PointerOffsetEqual(
+                                Box::new(left.clone()),
+                                Box::new(right.clone()),
+                            ),
+                            *value,
+                        ))
+                }
+                _ => proof.facts().load_equalities_mentioning(&goal),
+            };
             let equalities = equality_candidates
                 .into_iter()
                 .chain(proof.facts().algebraic_equalities_mentioning(&goal));
@@ -5067,6 +5178,22 @@ impl<'a> Proof<'a> {
                         .try_direct_logical_closure()
                         .ok()
                         .flatten()
+                        .or_else(|| {
+                            (!direct_only
+                                && matches!(
+                                    rewritten.goal(),
+                                    Some(Proposition::ConditionIs(
+                                        ConditionTerm::PointerEqual(..),
+                                        _
+                                    ))
+                                ))
+                            .then(|| {
+                                rewritten.try_indexed_goal_equality_rewrite_direct_closure(
+                                    exclude_goal_fact,
+                                )
+                            })
+                            .flatten()
+                        })
                         .or_else(|| {
                             (!direct_only)
                                 .then(|| rewritten.try_typed_atomic_simp_closure())
@@ -7576,7 +7703,7 @@ impl<'a> Proof<'a> {
         &self,
         tactics: &[ProofTactic],
     ) -> Result<Option<Self>, ClickError> {
-        self.try_authoritative_linear_script_reporting(tactics, &mut None)
+        self.try_authoritative_linear_script_reporting(tactics, &mut None, None)
     }
 
     /// [`Self::try_authoritative_linear_script`], also reporting why the body
@@ -7586,6 +7713,7 @@ impl<'a> Proof<'a> {
         &self,
         tactics: &[ProofTactic],
         declined: &mut Option<LinearScriptDecline>,
+        unfinished: Option<&mut Option<Self>>,
     ) -> Result<Option<Self>, ClickError> {
         // Address each tactic's diagnostics by its position in the block the
         // user wrote, so a failure inside one `have` body is distinguishable
@@ -7593,7 +7721,7 @@ impl<'a> Proof<'a> {
         let sites = (0..tactics.len())
             .map(|index| self.site().at_block_position(index))
             .collect::<Vec<_>>();
-        self.try_addressed_linear_script(tactics, &sites, declined)
+        self.try_addressed_linear_script(tactics, &sites, declined, unfinished)
     }
 
     /// Checks an explicit planner candidate without attributing its block
@@ -7618,8 +7746,9 @@ impl<'a> Proof<'a> {
         tactics: &[ProofTactic],
         sites: &[ProofStepSite],
         declined: &mut Option<LinearScriptDecline>,
+        unfinished: Option<&mut Option<Self>>,
     ) -> Result<Option<Self>, ClickError> {
-        self.run_addressed_linear_script(tactics, sites, declined, None)
+        self.run_addressed_linear_script(tactics, sites, declined, unfinished)
     }
 
     /// [`Self::try_authoritative_linear_script`], also keeping the proof a
@@ -7632,10 +7761,7 @@ impl<'a> Proof<'a> {
         tactics: &[ProofTactic],
         unfinished: &mut Option<Self>,
     ) -> Result<Option<Self>, ClickError> {
-        let sites = (0..tactics.len())
-            .map(|index| self.site().at_block_position(index))
-            .collect::<Vec<_>>();
-        self.run_addressed_linear_script(tactics, &sites, &mut None, Some(unfinished))
+        self.try_authoritative_linear_script_reporting(tactics, &mut None, Some(unfinished))
     }
 
     /// Runs the arms of one `cases` to completion. The kernel splits a
@@ -7889,10 +8015,17 @@ impl<'a> Proof<'a> {
                 }
                 ProofTactic::Simp => {
                     let mut search = attempt::search_scope("written simp");
-                    let selected = proof.try_simp_closure();
+                    let (selected, checks) =
+                        crate::surface::proof_diagnostics::capture_check_observations(|| {
+                            proof.try_simp_closure()
+                        });
                     let selected = match selected {
                         Ok(selected) => selected,
-                        Err(error) => return Err(error.with_search_failures(search.finish())),
+                        Err(error) => {
+                            return Err(error
+                                .with_check_observations(checks)
+                                .with_search_failures(search.finish()));
+                        }
                     };
                     let Some(closed) = selected else {
                         if tactics[..index].iter().any(|previous| {
@@ -7902,13 +8035,19 @@ impl<'a> Proof<'a> {
                                 "checked `simp` after witness/choose could not close the remaining witness obligations; split conjunctions and discharge each definedness condition explicitly",
                             ).with_search_failures(search.finish()));
                         }
-                        return Err(proof.simp_failure().with_search_failures(search.finish()));
+                        return Err(proof
+                            .simp_failure()
+                            .with_check_observations(checks)
+                            .with_search_failures(search.finish()));
                     };
                     search.succeed();
                     proof = closed;
                 }
                 ProofTactic::SimpUsing(simp) => {
-                    let selected = proof.try_restricted_simp_closure(&simp.premises);
+                    let (selected, checks) =
+                        crate::surface::proof_diagnostics::capture_check_observations(|| {
+                            proof.try_restricted_simp_closure(&simp.premises)
+                        });
                     check_verification_deadline()?;
                     let Some(closed) = selected else {
                         if tactics[..index].iter().any(|previous| {
@@ -7918,7 +8057,7 @@ impl<'a> Proof<'a> {
                                 "checked `simp` after witness/choose could not close the remaining witness obligations; split conjunctions and discharge each definedness condition explicitly",
                             ));
                         }
-                        return Err(proof.step_error("`simp() using` could not prove the current goal from only its listed premises"));
+                        return Err(proof.step_error("`simp() using` could not prove the current goal from only its listed premises").with_check_observations(checks));
                     };
                     proof = closed;
                 }
@@ -8095,6 +8234,22 @@ impl<'a> Proof<'a> {
                         .note_trace_join_continuation_arm((index + 1 < tactics.len()).then_some(0));
                     return Ok(finish(proof, unfinished));
                 }
+                ProofTactic::Transport { source, target } => {
+                    // The bare form selects its frame evidence at the
+                    // execution frontier this `have` was opened on, exactly
+                    // as between top-level steps: the source-local candidates
+                    // first, then the premise planner, whose refusal is the
+                    // answer. A pure theorem has no frontier to select from.
+                    if !matches!(proof.context.as_ref(), ProofContext::Execution(_)) {
+                        return Err(proof.step_error(
+                            "bare `transport` selects its premises at a C execution frontier, and this proof has none; write `transport(P, Q) using { ... }` with the premises it needs",
+                        ));
+                    }
+                    proof = match proof.try_execution_fact_transport(source, target)? {
+                        Some(transported) => transported,
+                        None => proof.apply_planned_fact_transport(source, target, index)?,
+                    };
+                }
                 tactic => {
                     if matches!(tactic, ProofTactic::Sorry) {
                         // Admitted only as a complete body (a `have` body
@@ -8121,12 +8276,8 @@ impl<'a> Proof<'a> {
                         proof = proof.admit_focused_goal_for_sorry()?;
                         continue;
                     }
-                    let step = explicit_linear_step(tactic).ok_or_else(|| {
-                        proof.step_error(format!(
-                            "unsupported proof operation `{}`",
-                            tactic_name(tactic)
-                        ))
-                    })?;
+                    let step = explicit_linear_step(tactic)
+                        .ok_or_else(|| proof.unsupported_operation_error(tactic_name(tactic)))?;
                     proof = proof.apply_step(step)?;
                 }
             }

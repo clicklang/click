@@ -1016,8 +1016,8 @@ struct ParameterPartitionIndex {
     bases: SnapshotMap<Pointer, Pointer>,
 }
 
-/// The concrete cells a pointer value can reach: every cell outside the
-/// slot of a local whose address is never taken
+/// The concrete cells a pointer value can reach, with their values: every
+/// cell outside the slot of a local whose address is never taken
 /// ([`super::block_is_never_address_taken_local`]). Kept beside the store and
 /// caught up by diffing the concrete map it was taken from, so a store only
 /// pays for the cells changed since; a change to the addressability registry
@@ -1026,7 +1026,7 @@ struct ParameterPartitionIndex {
 struct PointerReachableIndex {
     cells: SnapshotMap<Pointer, CValue>,
     generation: u64,
-    keys: SnapshotMap<Pointer, ()>,
+    reachable: SnapshotMap<Pointer, CValue>,
 }
 
 #[derive(Clone)]
@@ -1394,6 +1394,17 @@ impl CellStore {
     /// which no pointer value designates. Costs the cells changed since this
     /// store's lineage last asked, plus the cells returned.
     pub(in crate::kernel) fn pointer_reachable_cells(&self) -> Vec<Pointer> {
+        self.caught_up_pointer_reachable()
+            .keys()
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+            .cloned()
+            .collect()
+    }
+
+    /// The pointer-reachable concrete cells with their values, a persistent
+    /// map sharing structure with every earlier answer on this store's
+    /// lineage. Costs the cells changed since that lineage last asked.
+    pub(in crate::kernel) fn caught_up_pointer_reachable(&self) -> SnapshotMap<Pointer, CValue> {
         let generation = super::memory_state::never_address_taken_generation();
         let mut guard = self.pointer_reachable_index.lock().unwrap();
         let mut index = guard
@@ -1402,38 +1413,84 @@ impl CellStore {
             .unwrap_or_else(|| PointerReachableIndex {
                 cells: SnapshotMap::new(),
                 generation,
-                keys: SnapshotMap::new(),
+                reachable: SnapshotMap::new(),
             });
         let changes = index
             .cells
             .diff(&self.concrete)
-            .filter_map(|change| match change {
-                super::persistent_map::SnapshotMapChange::Added(key) => Some((key.clone(), true)),
-                super::persistent_map::SnapshotMapChange::Removed(key) => {
-                    Some((key.clone(), false))
-                }
-                super::persistent_map::SnapshotMapChange::Changed(_) => None,
+            .map(|change| match change {
+                super::persistent_map::SnapshotMapChange::Added(key)
+                | super::persistent_map::SnapshotMapChange::Changed(key) => key.clone(),
+                super::persistent_map::SnapshotMapChange::Removed(key) => key.clone(),
             })
             .collect::<Vec<_>>();
-        for (key, added) in changes {
+        for key in changes {
             if super::block_is_never_address_taken_local(&key.block) {
                 continue;
             }
-            if added {
-                index.keys.insert(key, ());
-            } else {
-                index.keys.remove(&key);
+            match self.concrete.get(&key) {
+                Some(value) => {
+                    index.reachable.insert(key, value.clone());
+                }
+                None => {
+                    index.reachable.remove(&key);
+                }
             }
         }
         index.cells = self.concrete.clone();
-        let cells = index
-            .keys
-            .keys()
-            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
-            .cloned()
-            .collect();
+        let reachable = index.reachable.clone();
         *guard = Some(index);
-        cells
+        reachable
+    }
+
+    /// Projects the concrete cells onto what a load through an unresolved
+    /// pointer (`load`, in a `Symbolic` or `LoadedPointer` block) can observe,
+    /// keeping a cell when `keep` holds. Such a block may alias every block
+    /// except the slot of a local whose address is never taken and, for a
+    /// loaded pointer, locals that did not exist when it was read; so `keep`
+    /// can only reject a cell of a `local:` block or of the load's own block
+    /// (a constant offset shown disjoint). The projection therefore starts
+    /// from the pointer-reachable map, shared and caught up by its own
+    /// changes, and asks `keep` about those two key ranges alone: its cost is
+    /// those cells and the changes since, not the cells of other objects.
+    /// `None` when the store holds runs, which the general projection handles.
+    pub(in crate::kernel) fn retain_for_unresolved_load(
+        &mut self,
+        load: &Pointer,
+        mut keep: impl FnMut(&Pointer, &CValue) -> bool,
+    ) -> Option<usize> {
+        if !self.runs.is_empty() {
+            return None;
+        }
+        let mut reachable = self.caught_up_pointer_reachable();
+        let locals = PointerBlock::Concrete("local:".to_string());
+        let own_block = reachable
+            .range::<_, Pointer>((
+                Bound::Included(Pointer::first_key_of(&load.block)),
+                Bound::Unbounded,
+            ))
+            .take_while(|(key, _)| key.block == load.block);
+        let local_cells = reachable
+            .range::<_, Pointer>((
+                Bound::Included(Pointer::first_key_of(&locals)),
+                Bound::Unbounded,
+            ))
+            .take_while(|(key, _)| key.block.starts_with("local:"));
+        let mut visited = 0usize;
+        let rejected = local_cells
+            .chain(own_block)
+            .filter(|(pointer, value)| {
+                visited += 1;
+                !keep(pointer, value)
+            })
+            .map(|(pointer, _)| pointer.clone())
+            .collect::<Vec<_>>();
+        for pointer in rejected {
+            reachable.remove(&pointer);
+        }
+        self.reset();
+        self.concrete = reachable;
+        Some(visited)
     }
 
     pub(in crate::kernel) fn ordered_store_candidates(

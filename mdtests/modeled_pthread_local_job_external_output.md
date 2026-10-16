@@ -28,7 +28,7 @@ int run(int output[1]) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "modeled_pthread_local_job_external_output.c";
 

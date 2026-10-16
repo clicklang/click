@@ -115,7 +115,7 @@ explicit folds reconstruct the lower node and the returned pivot. No named open
 handles are used, and the proof checks memory ownership as well as the model
 transformation.
 
-`heap_inorder` derives a `List<uint64>` of numeric addresses from the model, visiting left
+`heap_inorder` derives a `List<struct tree_node*>` from the model, visiting left
 subtree, node, then right subtree. `heap_rotate_left_preserves_inorder` and
 `heap_rotate_right_preserves_inorder` prove that rotation preserves that exact
 list, each through a per-node helper and the standard library's
@@ -127,7 +127,7 @@ their order, and their multiplicities are unchanged.
 
 The unchanged recursive `tree_contains` is verified against
 `owns t: tree_at(root);` with `ensures t.model == old(t.model);` and the
-unguarded `ensures result == heap_member(old(t.model), address(target));`.
+unguarded `ensures result == heap_member(old(t.model), target);`.
 The proof matches the entry model, unfolds the root in the nonempty case,
 spells the two C `if` statements with `branch`, hands each recursive call the
 matching child instance through the call binder map, and refolds the root from
@@ -135,9 +135,11 @@ the returned children on every path. Recursion therefore descends through a
 matched, modeled resource without losing or duplicating any subtree.
 
 The membership guarantee is where the model's identity payload earns its place.
-`heap_member` takes a numeric target address and tests `address(node) == target` against the payload, while the C tests the
-address `root == target`; `tree_at` states `fact p == identity`, and the proof
-turns that into `address(node) == address(target)` in the branch where the C test held with
+The C tests the address `root == target`, so `heap_member` tests
+`address(node) == address(target)` against the payload: equal addresses are
+all the C comparison establishes, and a pointer one past one node could share
+another node's address. `tree_at` states `fact p == identity`, and the proof
+turns the C test into the model's in the branch where it held with
 
 ```click
 have address(node) == address(target) by auto;
@@ -163,7 +165,7 @@ let { result: found_left } = step(tree_contains(root->left, target), { t: l });
 to the call's scalar result instead of to a produced instance. The name is then
 usable on either side of the `branch` that spells the C `if`: the then arm
 combines `found_left != 0` with the callee's
-`found_left == heap_member(left_model, address(target))`, an `int` compared with a
+`found_left == heap_member(left_model, target)`, an `int` compared with a
 `bool`, and the else arm combines `found_left == 0` with the same guarantee. The final
 `return tree_contains(root->right, target);` is named the same way, and `result`
 is that value.
@@ -262,13 +264,14 @@ cite.
   standard library's `list::append_associative`.
 - `heap_member` is the recursive `bool` membership test, searching the
   node, then the left subtree, then the right one, in the order the C search
-  uses. `heap_member_is_inorder_membership` proves
-  `heap_member(tree, target) == list::contains(heap_inorder(tree), target)` by
-  structural induction from `list::contains_append` and `list::contains_cons`, so
-  membership in the model is exactly membership in the sequence the rotations
-  preserve. The C search only learns that a recursive call returned nonzero;
+  uses. `heap_addresses` lists the node addresses in order, and
+  `heap_member_is_address_membership` proves
+  `heap_member(tree, target) == list::contains(heap_addresses(tree), address(target))`
+  by structural induction from `list::contains_append` and
+  `list::contains_cons`, so membership in the model is exactly membership of
+  the address in the in-order address sequence. The C search only learns that a recursive call returned nonzero;
   since a `bool` is exactly `false` or `true`, that `heap_member(l.model,
-  address(target)) != false` is already the `heap_member(left_model, address(target))` the
+  target) != false` is already the `heap_member(left_model, target)` the
   model's left test needs, with no range lemma.
 - `plug_top_frame`, `plug_left_frame`, and `plug_right_frame` each state one
   step of `plug`: taking one frame off the stack rebuilds one node. The walk

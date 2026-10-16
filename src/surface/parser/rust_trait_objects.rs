@@ -20,7 +20,7 @@
 
 use super::*;
 
-type Spanned = (Token, SourcePosition);
+pub(super) type Spanned = (Token, SourcePosition);
 
 /// A crate trait whose object carries state.
 struct ObjectTrait {
@@ -52,7 +52,7 @@ pub(crate) fn object_family(trait_name: &str) -> String {
 }
 
 /// The handle a function's contract gives the object a parameter holds.
-fn handle(parameter: &str) -> String {
+pub(super) fn handle(parameter: &str) -> String {
     format!("__object_{parameter}")
 }
 
@@ -84,16 +84,16 @@ pub(super) fn rewrite_trait_objects(
     Ok((tokens, positions, names))
 }
 
-fn is_ident(token: Option<&Spanned>, word: &str) -> bool {
+pub(super) fn is_ident(token: Option<&Spanned>, word: &str) -> bool {
     matches!(token, Some((Token::Ident(found), _)) if found == word)
 }
 
-fn error_at(position: &SourcePosition, message: impl Into<String>) -> ClickError {
+pub(super) fn error_at(position: &SourcePosition, message: impl Into<String>) -> ClickError {
     ClickError::new(format!("{position}: {}", message.into())).with_kind(ClickErrorKind::Syntax)
 }
 
 /// The index of the token closing the bracket opened at `open`.
-fn matching(source: &[Spanned], open: usize) -> Option<usize> {
+pub(super) fn matching(source: &[Spanned], open: usize) -> Option<usize> {
     let (opening, closing) = match source.get(open)?.0 {
         Token::LBrace => (Token::LBrace, Token::RBrace),
         Token::LParen => (Token::LParen, Token::RParen),
@@ -140,7 +140,7 @@ fn path_name(segments: &[String]) -> String {
 
 /// Splits `body` into its clauses at the semicolons outside brackets,
 /// without the semicolons.
-fn split_clauses(body: &[Spanned]) -> Vec<Vec<Spanned>> {
+pub(super) fn split_clauses(body: &[Spanned]) -> Vec<Vec<Spanned>> {
     let mut clauses = Vec::new();
     let mut clause = Vec::new();
     let mut depth = 0i32;
@@ -260,7 +260,7 @@ fn object_parameter(
 /// an `old(...)` already written, when `kept` says a shared reference keeps
 /// the object's functions through an `ensures`: the same value, which a
 /// proof need not carry across the call.
-fn rewrite_calls(
+pub(super) fn rewrite_calls(
     clause: &[Spanned],
     parameter: &str,
     functions: &[(String, Vec<Spanned>)],
@@ -333,7 +333,7 @@ fn rewrite_calls(
 }
 
 /// Each identifier of `map` not after a `.`, renamed.
-fn rename(clause: &[Spanned], map: &BTreeMap<String, String>) -> Vec<Spanned> {
+pub(super) fn rename(clause: &[Spanned], map: &BTreeMap<String, String>) -> Vec<Spanned> {
     clause
         .iter()
         .enumerate()
@@ -352,7 +352,7 @@ fn rename(clause: &[Spanned], map: &BTreeMap<String, String>) -> Vec<Spanned> {
         .collect()
 }
 
-fn same_tokens(left: &[Spanned], right: &[Spanned]) -> bool {
+pub(super) fn same_tokens(left: &[Spanned], right: &[Spanned]) -> bool {
     left.len() == right.len()
         && left
             .iter()
@@ -360,19 +360,23 @@ fn same_tokens(left: &[Spanned], right: &[Spanned]) -> bool {
             .all(|(left, right)| left.0 == right.0)
 }
 
-fn at(position: &SourcePosition, tokens: Vec<Token>) -> Vec<Spanned> {
+pub(super) fn at(position: &SourcePosition, tokens: Vec<Token>) -> Vec<Spanned> {
     tokens
         .into_iter()
         .map(|token| (token, position.clone()))
         .collect()
 }
 
-fn ident(word: &str) -> Token {
+pub(super) fn ident(word: &str) -> Token {
     Token::Ident(word.to_string())
 }
 
 /// The handle read `__object_x.f`.
-fn field_read(parameter: &str, function: &str, position: &SourcePosition) -> Vec<Spanned> {
+pub(super) fn field_read(
+    parameter: &str,
+    function: &str,
+    position: &SourcePosition,
+) -> Vec<Spanned> {
     at(
         position,
         vec![ident(&handle(parameter)), Token::Dot, ident(function)],

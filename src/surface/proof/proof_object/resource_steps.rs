@@ -430,9 +430,10 @@ impl<'a> Proof<'a> {
             // arguments, so `fold(cell_at(id), ...)` names the pointer a
             // `have` goal spelling `id` does.
             let resource = &self.substitute_fixed_state_locals_in_resource_arguments(resource)?;
-            let lowered = lower_resource_clause_at_current_locals_with_assumptions(
+            let lowered = lower_resource_clause_at_current_locals_with_entry_and_assumptions(
                 resource,
                 context.parameter_binding(),
+                pre_state,
                 before,
                 outcome.map(|goal| &*goal.data.core.result),
                 self.facts().assumptions(),
@@ -665,7 +666,21 @@ impl<'a> Proof<'a> {
                 } => Some(("unproved prerequisite", proposition.clone(), declaration)),
                 _ => None,
             };
-            self.step_error_with_requirement(refusal.describe(), comparison, requirement)
+            // A fold of a resource that declares no field proposes the
+            // hidden record its body facts read; the refusal shows it.
+            let proposed = (!unfold
+                && instance
+                    .schema()
+                    .fields()
+                    .iter()
+                    .all(|(name, _)| name.contains('.')))
+            .then(|| Arc::new(instance.clone()));
+            self.step_error_with_proposed_record(
+                refusal.describe(),
+                comparison,
+                requirement,
+                proposed,
+            )
         })?;
         crate::kernel::model_fields::register_instance_spelling(instance.identity(), &binding.name);
         let clause_presentations = if unfold {
@@ -1816,6 +1831,39 @@ impl<'a> Proof<'a> {
         }
     }
 
+    /// Unfolds `names` in a goal's surface form. A signed character
+    /// parameter passed to a predicate's `uint8` bytes first takes its
+    /// explicit byte view, as contract lowering and call steps give it: the
+    /// goal's kernel instance already reads those bytes as `uint8`, and a
+    /// textual substitution would read them through the parameter's signed
+    /// type, so the unfolded goal would differ from the same instance's
+    /// unfolding anywhere else.
+    pub(in crate::surface::proof) fn unfold_goal_surface(
+        &self,
+        predicates: &PredicateEnvironment,
+        surface: &ClickProposition,
+        names: &[String],
+    ) -> Result<ClickProposition, String> {
+        let parameters = match self.context.as_ref() {
+            ProofContext::FixedState(context) => Some(context.parameter_binding.parameters),
+            ProofContext::Execution(context) => Some(context.parameter_binding().parameters),
+            ProofContext::Pure(_) => None,
+        };
+        let elaborated = parameters.and_then(|parameters| {
+            crate::surface::lowering::elaborate_character_byte_views(surface, predicates, &|name| {
+                parameters
+                    .iter()
+                    .find(|parameter| parameter.name() == name)
+                    .map(syntax::C0Parameter::c_type)
+            })
+        });
+        unfold_structural_invariant_proposition(
+            predicates,
+            elaborated.as_ref().unwrap_or(surface),
+            names,
+        )
+    }
+
     pub(super) fn apply_proposition_predicate_unfold(
         &self,
         name: &String,
@@ -1834,7 +1882,7 @@ impl<'a> Proof<'a> {
             Some(Obligation::Proposition(goal)) => {
                 let surface = match &goal.surface {
                     Some(surface) => Some(
-                        unfold_structural_invariant_proposition(
+                        self.unfold_goal_surface(
                             spec_definitions.predicates,
                             surface,
                             std::slice::from_ref(name),
@@ -1944,7 +1992,7 @@ impl<'a> Proof<'a> {
                     .surface
                     .as_deref()
                     .map(|surface| {
-                        unfold_structural_invariant_proposition(
+                        self.unfold_goal_surface(
                             context.spec_definitions.predicates,
                             surface,
                             std::slice::from_ref(name),
@@ -2603,6 +2651,31 @@ impl<'a> Proof<'a> {
                 }),
             _ => false,
         };
+        // Certification reads an ordinary fold's composite back from the
+        // exit's pieces by its definition law, which assembles a composite
+        // only where its body facts hold under the path's own premises. A
+        // fact this proof established after execution (a predicate it
+        // unfolded, say) is not among them. When the entry premises alone do
+        // not give the law this fold's facts, the fold is also offered as a
+        // checked return exchange, which carries the proof's post-return
+        // facts into the certified trace. The exchange is kept only when the
+        // path still certifies with it; otherwise the fold stays with the
+        // definition law, which checks its facts itself.
+        let fact_bearing_exchange = match checked.selected.resource() {
+            CResource::Composite { name, .. } => {
+                context
+                    .function
+                    .composite_resource_definition(name)
+                    .is_some_and(|definition| !definition.facts().is_empty())
+                    && !crate::kernel::c_resource_definitionally_established(
+                        &goal.data.core.state,
+                        &checked.selected,
+                        context.function.composite_resource_definitions(),
+                        &execution.core.entry_assumptions(),
+                    )
+            }
+            _ => false,
+        };
         // The checked contract transition has its own resource evidence and
         // may bind outputs to their interface identities. A later scope close
         // still checks its body law, but does not exchange that final contract
@@ -2646,6 +2719,27 @@ impl<'a> Proof<'a> {
                     &checked.facts,
                 )
                 .map_err(|message| self.step_error(message))?;
+        } else if retain_return_exchange && fact_bearing_exchange && *state != *goal.data.core.state
+        {
+            let mut offered = execution.clone();
+            if offered
+                .core
+                .record_return_composite_resource_rewrite(
+                    context.function,
+                    goal.path_index,
+                    self.facts(),
+                    &checked.selected,
+                    &goal.data.core.state,
+                    &state,
+                    &checked.facts,
+                )
+                .is_ok()
+                && offered
+                    .core
+                    .return_path_certifies(context.function, goal.path_index)
+            {
+                execution = offered;
+            }
         }
         let mut data = (*goal.data).clone();
         data.core.result = Arc::new(value);

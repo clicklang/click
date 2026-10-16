@@ -193,7 +193,7 @@ representation carrier. A resource that needs one names the actual C word
 observation and the pointer model, rather than inferring it from an ordinary
 integer argument.
 
-The representation predicate uses its own full-value origin index, with
+The cast relationship uses its own full-value origin index, with
 exact support and scoped withdrawal, independently of the numeric equality
 graph. Reading through equal storage addresses may identify a complete word
 read; equating the loaded numbers may not. Carry producer-issued full-value

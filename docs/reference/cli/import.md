@@ -13,8 +13,9 @@ usage: click import lock [<project-dir> | <sidecar.click>]
 
 With no path, or a directory or `click.project.json`, the command prepares the
 units of the nearest project file at or above that directory (see
-[Project units](#project-units)). With a sidecar, it refreshes the sidecar's own
-import config when one exists, and otherwise its project's units.
+[Project units](#project-units)). With a sidecar, it prepares the sidecar's
+project. A sidecar's own `<sidecar>.import.json`, the configuration of earlier
+releases, is refused with a diagnostic naming its replacement.
 
 ## Interface boundary
 
@@ -60,13 +61,13 @@ requires no layout or file names in it, and never writes into it.
 
 ```json
 {
-  "target": "x86_64-linux-userspace",
+  "target": "x86_64-unknown-linux-gnu",
   "units": {
     "label": {
       "language": "c",
       "root": "../vendor/label-1.0",
       "compiler": "/usr/bin/gcc",
-      "environment": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+      "env": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
       "args": ["-Isrc/include", "-DLABEL_CAPACITY=32"],
       "sources": {
         "src/label_fit.c": {},
@@ -84,15 +85,23 @@ requires no layout or file names in it, and never writes into it.
   it. Source keys are relative paths inside the root, without `..`.
 - `compiler` is required, relative to the project directory or absolute. Plain
   C that Click preprocesses itself needs no unit.
-- `environment` holds the allowlisted variables of a per-sidecar config's
-  `environment.allow`. `option_profile` and per-source `projection` are as in a
-  per-sidecar config.
+- `env` holds the only variables the compiler runs with; every other
+  variable is cleared. `option_profile` names an
+  [option profile](#option-profile-linux-68-x86_64-kbuild) that admits more
+  than the preprocessor flags, and a source's `projection` selects the
+  [dependency-closure projection](#dependency-closure-projection).
 - Unit `args` precede each source's own `args`; together they are validated
-  exactly as a per-sidecar config's `args`. The target is the project's
-  `target`, or the default target.
+  as [Validation and supported profile](#validation-and-supported-profile)
+  describes.
+- The project's top-level `target` and `mode` select the C target for
+  every C unit: `x86_64-unknown-linux-gnu`, the only target, in the
+  `userspace` (default) or `kernel` mode; see
+  [Selecting a target](../language/c.md#selecting-a-target). A unit that still names its variables `environment` is refused with the
+  new name, `env`. A retired single-name target such as `x86_64-linux-kernel` is
+  refused with its replacement.
 
 A Rust unit is one crate or one single-file program; it takes no `compiler`,
-`environment`, `option_profile` or `args`, and `sources` lists exactly one
+`env`, `option_profile` or `args`, and `sources` lists exactly one
 source with no arguments. Without a `crate` object the source is a lone Rust
 2024 file read from its own directory, as `examples/basic-rust` does. With
 one, the source is the crate root and `crate` gives the crate description (see
@@ -119,12 +128,12 @@ Verification needs neither Charon nor `CLICK_CHARON`.
 A C++ unit gives `exceptions` and `rtti` (both default `false`) and `args`, the
 Clang arguments of its build, which Click writes into a compilation database of
 its own at lock time; the standard is C++20 and the target
-`x86_64-unknown-linux-gnu`. It takes no `compiler`, `environment` or
+`x86_64-unknown-linux-gnu`. It takes no `compiler`, `env` or
 `option_profile`. Each source is a logical source, a `.cpp` file or a header,
 and lists the `functions` its sidecars verify; it may also give the
 `translation_unit` that includes a header (by default the source itself), its
-own `args`, `dependencies`, `library_assertions` and `exception_behavior`, as a
-per-sidecar config does:
+own `args`, `dependencies`, `library_assertions` and `exception_behavior`
+(described [below](#preliminary-c-semantic-artifact)):
 
 ```json
 "basic": {
@@ -136,7 +145,10 @@ per-sidecar config does:
 ```
 
 `click import lock` runs the pinned exporter named by `CLICK_CPP_EXPORTER`,
-which exports every listed function of a source into one artifact,
+which supplies its pinned Clang's resource directory (the builtin headers such
+as `<stddef.h>`) to a command that names none, so `args` never states a
+machine-specific `-resource-dir`. It exports every listed function of a
+source into one artifact,
 `.click/<unit>/<source>.click-cpp.json`; a sidecar that verifies the source
 sees all of them, and verifies no other source. Preprocessor inputs under the
 unit root or the project directory are rechecked relative to those roots;
@@ -148,8 +160,9 @@ A sidecar selects a unit source with an ordinary `verifying` path, relative to
 the sidecar, that resolves to a file the unit lists; for example a sidecar in
 `proofs/checks/` above writes `verifying "../../vendor/label-1.0/src/label_fit.c";`.
 Either every `verifying` source of a sidecar is a unit source or none is. A
-sidecar with its own `<sidecar>.import.json` whose sources a unit also lists is
-refused.
+sidecar's own `<sidecar>.import.json`, the configuration of earlier releases,
+is refused with a diagnostic naming its replacement: declare its sources as a
+unit, remove the config and its lock, and run `click import lock`.
 
 `click import lock` prepares every unit into `click.project.lock.json` beside
 the project file, with one entry per unit, and writes the artifacts to
@@ -160,58 +173,15 @@ Loading rechecks the unit's sources and every header the compiler opened under
 the project directory or the unit root, so the lock still loads after the whole
 checkout moves, and a changed input is refused with the file named.
 
-## Configure and lock an import
+## The prepared snapshot
 
-For `main.click`, create `main.click.import.json`. The configuration lists the
-logical C sources named by the sidecar's `verifying` declarations, their compiler
-inputs, and the output artifacts. For example:
-
-```json
-{
-  "schema": 1,
-  "target": "x86_64-linux-kernel",
-  "compiler": "/usr/bin/gcc",
-  "working_directory": ".",
-  "environment": {
-    "allow": {
-      "PATH": "/usr/bin:/bin",
-      "LC_ALL": "C",
-      "SOURCE_DATE_EPOCH": "0"
-    }
-  },
-  "sources": [
-    {
-      "logical_source": "main.c",
-      "path": "main.c",
-      "args": ["-DVARIANT=1", "-isystem", "configured"],
-      "artifact": "main.i"
-    }
-  ]
-}
-```
-
-The working directory is relative to the configuration file. Source and include
-paths are interpreted in that working directory; artifact paths are relative
-to the configuration file. Logical source paths identify translation units and
-must match the sidecar, independently of the original header filenames used by
-diagnostics.
-
-Run `click import lock main.click` to create or explicitly refresh the configured
-artifacts and `main.click.import.lock.json`. Then run `click verify main.click`.
-The configuration's presence selects compiler mode for verification and its
-associated proof tools. An invalid configuration or missing lock is an error;
-it does not fall back to source-bundle mode.
-
-Verification loads the recorded C artifact without executing or locating the
-configured compiler. The artifact and version-3 lock can move to another host
-with the same config bytes, C source, and project-local included headers. Loading
+Verification loads a unit's recorded artifacts without executing or locating
+its compiler or front end. The artifacts and lock move with the project: loading
 checks their hashes, the artifact bytes and size, the target, the recorded
-toolchain/invocation identity, and the source projection identity. System
+toolchain and invocation identity, and the source projection identity. System
 headers used during preparation are identified in the lock but need not be
-installed on the verification host. A version-1 C lock must be refreshed. A
-version-2 lock, written before compiler imports searched Click's system
-headers, still loads under its recorded identity: its preparation opened none
-of them. Refreshing it writes version 3.
+installed on the verification host. A C unit's sources and project-local
+headers are rechecked in the unit root, so a changed one is refused by name.
 
 This verifies the **prepared snapshot**. A change to the C source or an opened
 project-local header is rejected during loading. A change to external headers,
@@ -250,14 +220,13 @@ int increment(int& value) noexcept {
 }
 ```
 
-Its baseline import configuration explicitly sets `"language": "c++"`, the
-standard to `c++20`, target to `x86_64-unknown-linux-gnu`, exceptions and RTTI to false,
-and paths for the pinned exporter, compilation database, working directory,
-`.cpp` translation unit, logical source, selected function, and semantic
-artifact. These booleans may also be true for a supported normal-only
-reachable graph; the observed Clang profile must match the configuration.
+A C++ unit's baseline profile is C++20 for `x86_64-unknown-linux-gnu` with
+exceptions and RTTI off; each source names its logical source, its `.cpp`
+translation unit when that differs, and the functions to export. `exceptions`
+and `rtti` may also be true for a supported normal-only reachable graph; the
+observed Clang profile must match the unit.
 `click import lock` executes the repository-owned Clang 19.1.7
-LibTooling exporter with that entry and records the database bytes, exact parsed
+LibTooling exporter with the command Click synthesizes and records the database bytes, exact parsed
 command and directory, source, explicitly declared reachable-declaration
 dependencies, every file Clang lexes while preprocessing the translation unit,
 exporter, semantic profile, artifact, and configuration identities. Reachable
@@ -267,35 +236,13 @@ declarations are not lowered. For each opened file the lock records its
 accessed path, resolved target, and content hash. Refresh repeats the export
 across a bounded inventory snapshot; offline loading rejects changed contents
 or symlink targets without running Clang.
-The configured working directory is also the dependency root: it may contain
-the project source tree and a Linux sysroot while the selected CMake
-compilation command runs in a separate build directory. Dependencies retain
-paths relative to that root, not to the build directory. The Bitcoin Core
-`MoneyRange` integration in `integrations/bitcoin-core-money-range/` uses this
-arrangement on macOS.
+The unit root is also the dependency root: it may contain the project source
+tree and a Linux sysroot. Dependencies retain paths relative to that root. The
+Bitcoin Core integration in `integrations/bitcoin-core-money-range/` uses this
+arrangement, with the real CMake command's arguments as the unit's `args`.
 
-```json
-{
-  "schema": 6,
-  "language": "c++",
-  "standard": "c++20",
-  "target": "x86_64-unknown-linux-gnu",
-  "exceptions": false,
-  "rtti": false,
-  "exporter": "target/cpp-exporter/click-cpp-exporter",
-  "compilation_database": "compile_commands.json",
-  "working_directory": ".",
-  "source": "increment.cpp",
-  "logical_source": "increment.cpp",
-  "dependencies": [],
-  "function": "increment",
-  "artifact": "increment.cpp.click-cpp.json"
-}
-```
-
-The database must resolve the configured translation unit to exactly one
-command using the pinned Clang driver and the configured C++20, target,
-exception, and RTTI profile. Missing or ambiguous entries and mismatched driver
+The synthesized command uses the pinned Clang driver and the unit's C++20,
+target, exception, and RTTI profile. Missing or ambiguous entries and mismatched driver
 or semantic profiles fail refresh locally. When `logical_source` names a
 header, the importer resolves and hashes that file separately from the `.cpp`
 translation unit. Offline loading rejects a missing or modified selected
@@ -304,7 +251,7 @@ inventoried even when they lie outside the configured dependency root.
 Response files, PCH, modules, VFS overlays, and arbitrary Clang pass-through
 options are rejected because their hidden inputs are not inventoried.
 
-For a compilation command with exceptions enabled, the config instead sets
+For a compilation command with exceptions enabled, the unit instead sets
 `"exceptions": true`; the observed Clang profile must agree. The semantic
 artifact records `exception_behavior: "normal_only"` independently from each
 function's `declared_noexcept` value. This is not exception handling support:
@@ -314,9 +261,9 @@ record may use its checked fields and ordinary methods. Because the artifact con
 direct-call closure and has no throwing operation, ordinary verification may
 check its normal behavior without inventing an exceptional proof outcome.
 An RTTI-enabled profile also permits those borrowed records; this does not add
-virtual dispatch, `typeid`, or `dynamic_cast` semantics.
+`typeid` or `dynamic_cast` semantics.
 
-The separate `"exception_behavior": "scalar_int32"` config requires
+A source's separate `"exception_behavior": "scalar_int32"` requires
 `"exceptions": true`. Its locked artifact may contain a source `throw` of a
 typed `int` payload in an object-free function; the importer lowers that node
 to Click's checked exceptional statement outcome. A Click `throws int32`
@@ -585,8 +532,7 @@ address: the importer reads Clang's conversion of the closure to the pointer
 type as a `function_address` of the call operator, which it exports as a free
 function of the lambda's parameters. The sidecar names it by its enclosing
 function and its index among the lambdas written in that function's body, in
-source order: `int caller::(lambda#0)(int y) { ... } by { ... }`, the
-importer's `caller__lambda_0`. A lambda in a member function, a capturing or
+source order: `int caller::(lambda#0)(int y) { ... } by { ... }`. A lambda in a member function, a capturing or
 generic lambda, and a lambda used other than converted to a function pointer
 are refused (`mdtests/cpp_lambda_named_contract.md`,
 `tests/cpp_import.rs`, `cpp_lambdas_*`).
@@ -862,13 +808,25 @@ name, without `struct`. A member function's receiver `this` is implicit, and
 the head's trailing `const` makes it `const FeeFrac* this`; a contract clause
 names it `this`. Const record reference parameters retain the same
 qualification. This restricts writes through that parameter without
-forbidding an alias through a mutable parameter. Diagnostics and proof steps
-name the function by the importer's name: `FeeFrac_IsEmpty`,
-`FeeFrac_operator_add_assign`, `Restore_constructor`, `choose__bool_true`. A
-member of a class template instance, such as `Stored<long long>`, is still
-written with that name and an explicit receiver,
-`void Stored__long_long_constructor(struct Stored__long_long* this, int64 next)`,
-as are `extern` and named-contract heads. Direct nonvirtual `operator[]`
+forbidding an alias through a mutable parameter. Diagnostics, claim labels and proof steps name the function as the head
+does: `FeeFrac::IsEmpty`, `FeeFrac::operator+=`, `Restore::Restore`,
+`choose<true>`. A member of a class template instance is written with the
+instance as Clang prints it against its template's parameters, which
+leaves out trailing arguments equal to their defaults and integer
+suffixes: `Stored<long long>::Stored(int64 next)`,
+`int32 Box<SizeTag, true>::Read() const`, `std::span<int>::size`,
+`std::span<int, 4>::size`;
+so are `extern` and named-contract heads, a proof step's callee,
+`step(FeeFrac::IsEmpty(&this->m_feerate.base), { })`, the target of an
+`executes` theorem, and a function's address, `&FeeFrac::EvaluateFeeDown`.
+The importer names each function by its C++ path, which the artifact
+records, as the Rust importer names an item by its path: `__cpp_q` and each
+segment with its length, an identifier as written and any other segment,
+such as `operator+=`, `~Restore` or `Stored<long long>`, as its bytes in hex.
+The encoding is self-delimiting, so a diagnostic decodes it without the
+import; a claim argument may name a label either way. A free function with
+a one-word path keeps that name. An artifact locked before paths were
+exported is refused with a request to run `click import lock` again. Direct nonvirtual `operator[]`
 methods also use this method-call path, with `Class::operator[]` both as the
 selector and as the head's declarator. The receiver must be a live record lvalue; argument and result types,
 const qualification and reference authority follow the ordinary method rules.
@@ -882,7 +840,7 @@ reachable unsupported bodies fail import.
 Direct `object.method(...)`, explicit `operator+=`/`operator-=`, and
 `object += other`/`object -= other` calls bind that receiver to the selected declaration identity. Call arguments
 must be direct supported references or the existing value arguments; pointer
-receivers, virtual dispatch, other overloaded operators, and call results
+receivers other than `this`, other overloaded operators, and call results
 outside the scalar-local initializer and direct scalar return-call slices remain unsupported.
 Same-width signed field `+=` and `-=` use checked loads, arithmetic, and
 stores. Compound updates with side effects or mixed-width conversions remain
@@ -938,13 +896,12 @@ across sibling scopes. Equal local names in disjoint scopes remain distinct
 when their declaration IDs differ. Separate lexical and lifetime validation
 checks visibility, construction, and cleanup order.
 
-C++ calls and contracts bind through Clang declaration IDs. Unique readable
-names are preserved; free namespace names replace `::` with `_`. If reachable
-declarations share a readable name, each contract name is `__click_cpp_decl_`
-plus the full lowercase hexadecimal UTF-8 declaration ID from the artifact.
-This prefix is reserved: source declarations beginning with it also receive
-encoded names, as do spellings that are not valid sidecar identifiers
-(such as anonymous namespace members). The lowered-import API exposes
+C++ calls and contracts bind through Clang declaration IDs, named by their
+C++ paths, `A::Nested::echo` or `(anonymous namespace)::same`. If reachable
+declarations share a path, as overloads do, each contract name is
+`__click_cpp_decl_` plus the full lowercase hexadecimal UTF-8 declaration ID
+from the artifact. This prefix is reserved: a source declaration beginning
+with it also receives an encoded name. The lowered-import API exposes
 `contract_name(declaration_id)`.
 Reachable overloads are supported; selecting an overloaded declaration directly
 still fails until a signature selector is available.
@@ -1181,16 +1138,20 @@ ordinary selected caller and their instantiated operations fit the existing
 profile. Boolean value arguments and unqualified builtin `bool`, `int`,
 `unsigned int`, `long`, `unsigned long`, `long long`, and `unsigned long long`
 type arguments are accepted. Each instance keeps its distinct Clang USR.
-Sidecar names append argument tokens in order, such as `choose__bool_true`,
-`identity__unsigned_long`, or `Value_select__bool_false`. Type aliases use the
-canonical builtin token; equal-width types such as `long` and `long long`
-retain different names. Callable name collisions use the existing injective
+A sidecar names an instance as Clang prints it, `choose<true>`,
+`identity<unsigned long>` or `Value::select<false>`; type aliases print as
+their canonical type, and equal-width types such as `long` and `long long`
+remain distinct. Callable name collisions use the existing injective
 Clang-declaration identity names.
 
 Concrete class-template instances reached through ordinary selected callers
-use the same ordered builtin/Boolean argument tokens, plus `__tag_Name` for
-named empty trivial tag types declared in the locked import root. For example, `Box<int, false>` exports as `Box__int__bool_false`,
-while `Box<SizeTag, true>` exports as `Box__tag_SizeTag__bool_true`.
+are written as Clang prints them, including
+named empty trivial tag types declared in the locked import root:
+`Box<int, false>` and `Box<SizeTag, true>`. A type in a head or clause
+writes a record by its C++ path, `Box<int, false>&`, `ns::Rec*` or
+`std::span<int>&`, or by the layout name the importer records,
+`struct Box__int__bool_false`, from ordered builtin/Boolean argument tokens
+and `__tag_Name` for a tag type. Diagnostics still print the layout name.
 Qualified tag names include their namespace components. Clang's canonical USR
 keeps each record, field and method nominally distinct even when layouts match;
 aliases share the canonical instance. Method, constructor and destructor names
@@ -1460,7 +1421,106 @@ recomputed artifacts reject wrong nominal targets even with equal layouts,
 reordered/incomplete paths, forged spans and mutable binding through const roots.
 Explicit casts, automatic derived objects and base constructor/destructor
 execution remain unsupported. Multiple or virtual bases, empty bases, own
-derived fields and tail-padding reuse remain outside this profile.
+derived fields and tail-padding reuse remain outside this profile; polymorphic
+classes have their own, below.
+
+A virtual method's contract is its interface. A call through it, on a
+reference or through `this`, is checked against the contract of the method
+the receiver's static type names, whichever override the dynamic type
+selects. A pure virtual method has no body; its contract is written `extern`,
+`extern int Shape::area(int scale) const { ... }`. Each override inherits the interface of the
+method it overrides, as a Rust trait implementation does
+([Rust reference](../rust.md#trait-method-interfaces)): the interface's
+`ensures` join its own, labeled `Square::area.interface_ensures_0`, and its
+proof establishes them; an override that writes no `requires` takes the
+interface's, and written ones must follow from the interface's, each clause
+read exactly or decided as a bare comparison. It names its parameters as the
+interface does. An override whose `requires` do not follow, or that the
+sidecar does not state, is refused naming both methods:
+
+<!-- verified-example: mdtests/cpp_virtual_method_interface.md -->
+```click
+extern int Shape::area(int scale) const {
+    requires 0 <= scale and scale <= 1000;
+    ensures scale < result and result <= 2000;
+}
+int Square::area(int scale) const {
+    ensures result == scale + 1;
+} by { execute(); simp(); }
+```
+
+Without object state the interface reads nothing through `this` and holds
+none of its resources, so an override whose contract needs its fields does
+not refine it. A
+reachable virtual method brings every method of the translation unit that
+overrides it into the artifact, each checked, and refuses one outside the
+selected and dependency sources; a call through a virtual
+method reaches its overrides, so a call back through the interface from an
+override is refused as recursion. Overrides in other translation units are
+not seen, and are trusted to keep the interface, as any unverified code is.
+A qualified call, `shape.Shape::area(scale)`, does not dispatch, and is
+refused for a pure virtual method. A polymorphic class has at most one
+public, non-virtual, polymorphic base at offset zero, whose whole layout its
+own fields follow; its leading vtable pointer is named by no field and read
+by no contract. It has a trivial non-virtual destructor and is reached only
+by reference: constructing a polymorphic object, virtual destructors,
+covariant results and a pure virtual method with a definition remain
+unsupported
+(`mdtests/cpp_virtual_override_rejects_narrower_requires.md`,
+`mdtests/cpp_virtual_override_keeps_the_inherited_guarantee.md`,
+`tests/cpp_import.rs::virtual_dispatch_refuses_construction_recursion_and_other_class_shapes`).
+
+A polymorphic class's object may carry state, as a Rust trait's does
+([Rust reference](../rust.md#trait-object-state)). A `class` block declares
+model functions of the object, and each direct subclass passed as one
+defines them on its own memory:
+
+<!-- verified-example: mdtests/cpp_class_object_state.md -->
+```click
+class Shape {
+    function size(this) -> int32;
+}
+extern int Shape::area(int scale) const {
+    requires 0 <= scale and scale <= 100;
+    requires 0 <= size(this) and size(this) <= 100;
+    ensures result == size(this) + scale;
+}
+class Square : Shape {
+    function size(this) -> int32 { this->side }
+}
+int Square::area(int scale) const {
+} by { execute(); simp(); }
+```
+
+The object is the sealed abstract resource `Shape__object`, with a field for
+each function. A `const` method of `Shape`, and a function's `const Shape&`
+parameter, hold it with no clause written, read `size(this)` or `size(shape)`
+as its field, and keep it, so an `ensures` reads it as it was at entry. A
+method of `Square` is stated on `Square`'s memory, `owns *this`, with
+`size(this)` read as the definition. An override of a `Shape` method
+inherits that method's clauses read the same way, labeled
+`Square::area.interface_ensures_0`. Its refinement is checked against the
+`contract` named for it with `_iface` that states them on that memory. Where a
+call converts a `Square` reference to a `Shape` one, as an argument or a
+receiver, the importer places `Square__click_pack__Shape` before the call
+and `Square__click_unpack__Shape` after it. The pack consumes the memory
+and produces the object, with the definitions as its fields; the unpack
+returns the memory with the definitions equal to the fields. A caller
+passing a `Square` therefore knows the object's `size` is its `side`.
+
+Limits:
+- An override in a class without a defining `class` block is refused.
+- A `class` block naming a base other than the object class is refused,
+  since a further subclass would run its base's methods on an object its own
+  definitions describe.
+- Overriding a defining class's method is refused.
+- A non-`const` method of the object class, or a non-`const` reference to
+  it, is refused.
+- A call through the interface inside a larger expression is an expression
+  observer, whose contract must be read-only, so the object's call is
+  written as its own statement
+  (`mdtests/cpp_class_object_state_override_keeps_the_interface.md`,
+  `tests/cpp_import.rs::class_object_state_refuses_undefined_and_nested_overrides`).
 
 Discarded-result trivial copy assignment between live lvalues of the same
 nominal record lowers to shared C aggregate field copies. Clang must resolve a
@@ -1474,7 +1534,7 @@ the fields. User-defined assignment bodies and move assignment remain refused.
 
 Copy construction and moves, default or partial aggregate initialization, multiple
 non-destructible aggregate locals, broader nested lifetime combinations,
-virtual dispatch, general inheritance, bit-fields, nested record construction,
+general inheritance, bit-fields, nested record construction,
 and same-named record layouts remain explicit errors.
 Nested scalar locals, references to scalar locals, shadowing,
 broader address-taking, pointer locals, pointer arithmetic outside the supported
@@ -1498,15 +1558,17 @@ toolchain and header changes require a new explicit refresh to produce a proof
 about that new environment. A supplied digest alone does not authenticate who
 prepared a native-platform artifact.
 
-Compiler-backed C imports accept two explicit targets. The config target must
-match the sidecar's target, from its `target` directive or `click.project.json`;
-without either the sidecar selects the default `x86_64-linux-userspace`, so a
-kernel-target config needs one of them. Prepared imports retain their target through verification and expansion.
+Compiler-backed C imports accept the target `x86_64-unknown-linux-gnu` in two
+modes. A C unit is prepared for the project's `target` and
+`mode`, which a sidecar's `target` and `mode` directives must
+match; without them the project uses the default mode, `userspace`. A
+lock records both, so changing either requires `click import lock` again.
+Prepared imports retain their target through verification and expansion.
 
-| Target | Fixed compiler profile |
+| Mode | Fixed compiler profile |
 | --- | --- |
-| `x86_64-linux-kernel` | GCC, `-x c`, `-std=gnu11`, `-m64`, `-funsigned-char`, `-nostdinc`. |
-| `x86_64-linux-userspace` | GCC, `-x c`, `-std=c11`, `-m64`, `-fsigned-char`, `-nostdinc`, `-pthread`, `-D_POSIX_C_SOURCE=200809L`. |
+| `kernel` | GCC, `-x c`, `-std=gnu11`, `-m64`, `-funsigned-char`, `-nostdinc`. |
+| `userspace` | GCC, `-x c`, `-std=c11`, `-m64`, `-fsigned-char`, `-nostdinc`, `-pthread`, `-D_POSIX_C_SOURCE=200809L`. |
 
 The user-space profile checks C11, POSIX and pthread feature macros as well as
 the LP64, eight-bit-byte, signed-char ABI: the probe requires that `__CHAR_UNSIGNED__` is not defined. It does not define `__KERNEL__`.
@@ -1574,11 +1636,10 @@ an include or `__has_include` finds. Loading refuses a lock when either no
 longer matches the running Click, so a change to Click's headers requires a
 refresh.
 
-Existing configurations that pin a C library's include directories with
-`-isystem`, as `design/charon-trial/zlib/` does with GCC 14's and glibc's,
-keep them: those directories precede Click's, so every header they supply is
-read from them, a locked input like any other. Refreshing those configs
-reproduces their committed artifacts byte for byte.
+A unit that names a C library's include directories with `-isystem` puts them
+before Click's, so every header they supply is read from them, a locked input
+like any other, and the proof then assumes that library's declarations. None of
+the repository's fixtures does; `design/charon-trial/zlib/` uses Click's headers.
 
 Configured forced includes and ordered `-D` and `-U` options select additional
 preprocessing inputs. Other compiler options are rejected unless a named option
@@ -1610,15 +1671,15 @@ engine used for ordinary verification, profiling, audit, and expansion.
 
 ### Option profile `linux-6.8-x86_64-kbuild`
 
-A configuration may set `"option_profile"` to a named option profile. The
+A C unit may set `"option_profile"` to a named option profile. The
 profile admits further options beside the preprocessing options above, and
 only for its target. The lock records the profile name beside each source's
 complete argument vector, and loading refuses a lock whose profile differs
-from the configuration's.
+from the unit's.
 
 The one profile, `linux-6.8-x86_64-kbuild`, is the option set of the recorded
 Linux v6.8.12 `x86_64_defconfig` Kbuild compilation of `lib/rbtree.c` with
-GCC 13, for the `x86_64-linux-kernel` target. It exists for that in-repository
+GCC 13, for the `kernel` mode. It exists for that in-repository
 import. An option is accepted only where ignoring it cannot make Click accept
 a program the compiler treats differently: the option affects only
 preprocessing, whose result is the locked artifact, or only diagnostics, or
@@ -1805,6 +1866,9 @@ contract:
 - A standard function must be `noexcept`; throwing contracts are not modeled.
   One returning a record by value constructs it in the caller's destination.
 
+A sidecar writes a standard type as C++ does,
+`int32 probe(std::span<int>& s)`, `uint64 probe(std::span<const unsigned char, 32>& s)`
+or `std::array<int, 4>& a`.
 Contracts state a standard type's state through model accessors, never
 through a library's private fields. `std_span_data(s)` and `std_span_size(s)`
 name the data pointer and size of a `std::span`, the view of
@@ -1958,7 +2022,7 @@ with a diagnostic. Ordinary verification never rewrites a lock or artifact.
 
 
 C++ imports may explicitly assume a narrow external library assertion contract
-with the optional `library_assertions` config field. For example (replace the
+with the optional `library_assertions` field of a unit source. For example (replace the
 hash with the SHA-256 of the actual header bytes):
 
 ```json
@@ -1976,8 +2040,8 @@ the inventory is limited to 64. Header hashes are checked during refresh and
 offline loading. The resolved callee declaration, and its definition when
 present, must belong to that header. Definitions in the selected logical
 source still require ordinary verified contracts, including recursive calls.
-Config, artifact, compiler command, and input closure are part of the import identity. A changed pin requires an
-explicit config edit and lock refresh.
+The unit description, artifact, compiler command, and input closure are part of the import identity. A changed pin requires an
+explicit edit of the project file and a lock refresh.
 
 This is an **assumed library contract**, not verification of its implementation.
 It states that, when its Boolean argument is true, the call returns normally with defined behavior

@@ -20,7 +20,7 @@ version is 4352 and that the returned string has five readable bytes containing
 `0`, `.`, `1`, `7`, and NUL. The source-integrity manifest is checked before
 ordinary verification in the examples gate.
 
-The proof is for Click's default `x86_64-linux-userspace` target, where json-c
+The proof is for Click's default `x86_64-unknown-linux-gnu` user-space target, where json-c
 runs: LP64 with eight-bit signed plain `char`, as GCC and Clang build x86-64
 Linux user space. This is a proof of these two unchanged json-c functions under that
 configuration, not a proof of the whole library or portability to every target.

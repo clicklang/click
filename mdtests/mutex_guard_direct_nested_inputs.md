@@ -14,7 +14,7 @@ void outer(struct holder *left, struct holder *right) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "guard_inputs.c";
 

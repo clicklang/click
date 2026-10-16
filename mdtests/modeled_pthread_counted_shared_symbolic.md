@@ -19,7 +19,7 @@ int run(void *p, void *q, int n) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "modeled_pthread_counted_shared_symbolic.c";
 authorized resource ticket(p: void*) {}

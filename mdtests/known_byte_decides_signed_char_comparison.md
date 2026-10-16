@@ -7,7 +7,7 @@ int first_is_nul(char *p) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "first_is_nul.c";
 int32 first_is_nul(char* p) {
     views p[0..1];

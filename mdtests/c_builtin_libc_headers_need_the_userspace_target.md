@@ -12,7 +12,8 @@ int f(void) {
 ```
 
 ```click
-target "x86_64-linux-kernel";
+target "x86_64-unknown-linux-gnu";
+mode "kernel";
 verifying "kernel_stdlib.c";
 
 int f() {
@@ -24,5 +25,5 @@ int f() {
 ```
 
 ```expect
-fail: system header `<stdlib.h>` is not supported for x86_64-linux-kernel
+fail: system header `<stdlib.h>` is not supported for x86_64-unknown-linux-gnu (kernel)
 ```

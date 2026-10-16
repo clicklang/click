@@ -2,10 +2,10 @@
 
 The representation-copy rule only transfers a source cell whose complete byte
 representation lies inside the copied range. A copy of 2 bytes into the first
-half of a fresh `unsigned int` splits the destination ownership into byte
-ranges and leaves no typed `dst->x` authority at all, so the load is refused
-at the read-permission check before initialization is even reached. This guards
-the rule against establishing an observation from a split cell.
+half of a fresh `unsigned int` would split the source cell, so nothing is
+planted: the destination keeps its fresh allocation's uninitialized bytes with
+no `unsigned int` value, and the `dst->x` load is refused as uninitialized.
+This guards the rule against establishing an observation from a split cell.
 
 ```c filename=scalar_partial_memcpy.c
 void *malloc(unsigned long size);
@@ -38,5 +38,5 @@ int h() {
 ```
 
 ```expect
-fail: missing resource fact
+fail: read of uninitialized storage
 ```

@@ -292,7 +292,7 @@ impl PureFactContext {
         }
         // The difference graph is read first: what it decides follows from
         // these facts, including a fact it showed implied and so was never
-        // added (`issues/difference-logic.md`). Only a graph already built
+        // added (`docs/internals/verification-efficiency.md`). Only a graph already built
         // is read, so a context that withdrew a fact does not rebuild one.
         if let Some(value) = self
             .difference_graph
@@ -391,6 +391,16 @@ impl PureFactContext {
         // (`proposition_holds_without_facts`).
         if let Some(value) = condition.reflexive_value() {
             return Some(value);
+        }
+        // An Integer comparison of exact observations of one machine type
+        // has the truth of its native comparison, which the machine
+        // reasoning below decides (`native_comparison_of_integer_observation`).
+        if let Some((native, truth)) =
+            crate::kernel::assumptions::native_comparison_of_integer_observation(condition, true)
+            && &native != condition
+            && let Some(value) = self.decide(&native)
+        {
+            return Some(value == truth);
         }
         if let Some(value) = self.decide_uint64_constant_order_bounds(condition) {
             return Some(value);
@@ -625,6 +635,7 @@ impl PureFactContext {
         match condition {
             ConditionTerm::PointerEqual(left, right) => self
                 .pointers_distinct_by_nullness(left, right)
+                .or_else(|| self.pointers_distinct_by_stated_separation(left, right))
                 .or_else(|| self.pointers_distinct_by_owned_anchors(left, right)),
             ConditionTerm::PointerOffsetEqual(left, right) => self
                 .offsets_distinct_by_nullness(left, right)
@@ -632,6 +643,59 @@ impl PureFactContext {
                 .or_else(|| self.offsets_distinct_by_owned_anchors(left, right)),
             _ => None,
         }
+    }
+
+    /// The explicitly stated separation consequence shared by C conditions
+    /// and proof-side known-fact lookup. It only reads the selected anchor
+    /// index and records the exact separation premise; it never searches
+    /// owned compositions or resolves aliases.
+    pub(in crate::kernel) fn stated_pointer_disequality(
+        &self,
+        condition: &ConditionTerm,
+    ) -> Option<bool> {
+        match condition {
+            ConditionTerm::PointerEqual(left, right) => {
+                self.pointers_distinct_by_stated_separation(left, right)
+            }
+            ConditionTerm::PointerOffsetEqual(left, right) => {
+                self.offsets_distinct_by_stated_separation(left, right)
+            }
+            _ => None,
+        }
+    }
+
+    /// Explicit separation uses exactly the comparison's two anchors. Do not
+    /// route a missing pointer query through the offset consumer's legacy
+    /// composition scan: unrelated ownership is not a candidate for this index.
+    fn pointers_distinct_by_stated_separation(
+        &self,
+        left: &Pointer,
+        right: &Pointer,
+    ) -> Option<bool> {
+        if left == right {
+            return None;
+        }
+        if left.block == right.block {
+            return self.offsets_distinct_by_stated_separation(&left.offset, &right.offset);
+        }
+        let key = Self::separated_pointer_key(left.clone(), right.clone());
+        let separation = self.separated_anchor_pointers.get(&key)?.iter().next()?;
+        record_implicit_reasoning_provenance(self, separation);
+        Some(false)
+    }
+
+    fn offsets_distinct_by_stated_separation(
+        &self,
+        left: &PointerOffsetTerm,
+        right: &PointerOffsetTerm,
+    ) -> Option<bool> {
+        if left == right {
+            return None;
+        }
+        let key = Self::separated_anchor_key(left.clone(), right.clone());
+        let separation = self.separated_anchor_offsets.get(&key)?.iter().next()?;
+        record_implicit_reasoning_provenance(self, separation);
+        Some(false)
     }
 
     fn pointers_distinct_by_nullness(&self, left: &Pointer, right: &Pointer) -> Option<bool> {
@@ -863,14 +927,8 @@ impl PureFactContext {
         if left == right {
             return None;
         }
-        let key = Self::separated_anchor_key(left.clone(), right.clone());
-        if let Some(separation) = self
-            .separated_anchor_offsets
-            .get(&key)
-            .and_then(|facts| facts.iter().next())
-        {
-            record_implicit_reasoning_provenance(self, separation);
-            return Some(false);
+        if let Some(value) = self.offsets_distinct_by_stated_separation(left, right) {
+            return Some(value);
         }
         // Two owned members of one composition, anchored at these offsets.
         let resources = self

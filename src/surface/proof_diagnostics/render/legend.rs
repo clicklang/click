@@ -156,7 +156,7 @@ impl SnapshotLabels {
         // A temporary holding a callback is a source alias, not its definition.
         // Keep the function target or symbolic identity visible in the legend.
         match &pointer.block {
-            PointerBlock::Concrete(name) if name.starts_with("global:") => {
+            PointerBlock::Concrete(name) if PointerBlock::is_global_name(name) => {
                 return format!(
                     "object `{}` + {}",
                     short(name),

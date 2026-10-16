@@ -1,6 +1,109 @@
 use super::*;
 
 #[test]
+fn record_pointer_identity_preserves_local_storage_in_all_proof_modes() {
+    let (source, sources) =
+        mdtest_sources("mdtests/c_record_pointer_identity_preserves_local_storage.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded =
+        expand_c0_claim_source(&source, &sources, "caller", CProofClaim::Grouped).unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+    let caller = source.find("int32 caller()").unwrap();
+    let step = caller + source[caller..].find("execute();").unwrap();
+    let at = expansion::position_at_offset(&source, step);
+    let rewritten = expand_c0_tactic_source_at(&source, &sources, at.line, at.column).unwrap();
+    verify_c0_sources(&rewritten, &sources).unwrap();
+    let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+    for checked in [&expanded, &rewritten] {
+        let caller = checked.find("int32 caller()").unwrap();
+        let proof = caller + checked[caller..].find("by").unwrap();
+        let body = proof + checked[proof..].find('{').unwrap() + 1;
+        let first_step = body + checked[body..].find(|c: char| !c.is_whitespace()).unwrap();
+        let at = expansion::position_at_offset(checked, first_step);
+        session.verify_at(checked, at.line, at.column).unwrap();
+    }
+}
+
+#[test]
+fn record_pointer_identity_local_storage_keeps_values_and_alias_requirements() {
+    let (source, sources) =
+        mdtest_sources("mdtests/c_record_pointer_identity_preserves_local_storage.md");
+    let c = &sources[0].1;
+    let original = [("identity.c", c.as_str())];
+    assert!(
+        verify_c0_sources(
+            &source.replace("ensures result == 7;", "ensures result == 8;"),
+            &original
+        )
+        .is_err()
+    );
+    // A checked helper body does not export address equality unless its
+    // contract states it. Mere existence of a local record grants no alias.
+    assert!(verify_c0_sources(&source.replace("ensures result == pair;", ""), &original).is_err());
+    // Ownership grants storage access, not initialization of an unwritten field.
+    let uninitialized = c.replace(
+        "struct Pair pair = { 7, 9 };",
+        "struct Pair pair; pair.second = 9;",
+    );
+    assert!(verify_c0_sources(&source, &[("identity.c", uninitialized.as_str())]).is_err());
+    // Nonzero member offsets use the same complete-object owner.
+    let second = c.replace("return q->first;", "return q->second;");
+    verify_c0_sources(
+        &source.replace("ensures result == 7;", "ensures result == 9;"),
+        &[("identity.c", second.as_str())],
+    )
+    .unwrap();
+    let written = c.replace("return q->first;", "q->second = 11; return q->second;");
+    verify_c0_sources(
+        &source.replace("ensures result == 7;", "ensures result == 11;"),
+        &[("identity.c", written.as_str())],
+    )
+    .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: pointer equality expansion and retained checks took 0.95s in parallel"]
+fn shifted_pointer_equality_rewrites_expand_and_recheck() {
+    let sources = [(
+        "pointer.c",
+        "int32 same_block(int32* base, int32* cursor, uint64 remaining) { return 0; }",
+    )];
+    let source = r#"
+        verifying "pointer.c";
+        int32 same_block(int32* base, int32* cursor, uint64 remaining) {
+            requires ((int32)(uint32)remaining) == 4;
+            requires cursor == base + (4 - ((int32)(uint32)remaining));
+            ensures result == 0;
+        } by {
+            have cursor == base;
+            execute(); simp();
+        }
+    "#;
+    verify_c0_sources(source, &sources).unwrap();
+    let expanded =
+        expand_c0_claim_source(source, &sources, "same_block", CProofClaim::Grouped).unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+    let at = expansion::position_at_offset(source, source.find("have cursor == base;").unwrap());
+    let selected = expand_c0_tactic_source_at(source, &sources, at.line, at.column).unwrap();
+    verify_c0_sources(&selected, &sources).unwrap();
+    let (session, _) = C0VerificationSession::new(source, &sources).unwrap();
+    for rewritten in [&expanded, &selected] {
+        let proof = rewritten.find("by").unwrap();
+        let body = proof + rewritten[proof..].find('{').unwrap() + 1;
+        let first_step = body
+            + rewritten[body..]
+                .find(|c: char| !c.is_whitespace())
+                .unwrap();
+        let at = expansion::position_at_offset(rewritten, first_step);
+        session.verify_at(rewritten, at.line, at.column).unwrap();
+    }
+}
+
+#[test]
 #[ignore = "nightly: static refold expansion and retained-session checks take 0.9s"]
 fn static_return_refold_before_named_resource_rechecks_in_all_proof_modes() {
     let (source, sources) = mdtest_sources("mdtests/static_return_refold_before_named_resource.md");
@@ -256,6 +359,28 @@ fn hidden_record_resource_expansion_round_trips() {
             .unwrap_or_else(|error| panic!("{name}: {error:?}"));
         verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| panic!("{name}: {error:?}"));
     }
+}
+
+// A fold of a resource without fields sets a hidden record that has no
+// source syntax; expansion shows it as a trailing comment, and the output
+// still parses and verifies.
+#[test]
+fn expansion_shows_a_folds_hidden_record_as_a_comment() {
+    let c = "struct cell { int32 value; }; struct pair { struct cell* a; int32 n; }; \
+             int32 get(struct pair* p) { return p->n; }";
+    let source = "resource counted(c: struct cell*) { field v: int32; owns c->value; fact c->value == v; } \
+                  resource pair(p: struct pair*) { owns p->a; owns p->n; owns first: counted(p->a); \
+                  fact p->n == first.v; fact first.v >= 0; } \
+                  verifying \"f.c\"; int32 get(struct pair* p) { owns pair(p); ensures result >= 0; } by { \
+                  let { first: c } = unfold(pair(p)); execute(); fold(pair(p), { first: c }); simp(); }";
+    let sources = [("f.c", c)];
+    let expanded = expand_c0_claim_source(source, &sources, "get", CProofClaim::Grouped)
+        .expect("the hidden-record proof expands");
+    assert!(
+        expanded.contains("fold(pair(p), { first: c }); // record { first.v: c.v }"),
+        "{expanded}"
+    );
+    verify_c0_sources(&expanded, &sources).expect("the commented expansion verifies");
 }
 
 // The reconstruction rule must survive checked tactic expansion and retained
@@ -652,7 +777,7 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
             requires known_len < 18446744073709551615u64;
             requires defined(known_len + 1u64);
             requires viewable(haystack[0..known_len + 1u64]);
-            requires cstr::readable(haystack);
+            views str: cstr_at(haystack, _);
             views haystack[0..known_len + 1u64];
             ensures result < 18446744073709551615u64;
         } by {
@@ -664,7 +789,7 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
 
     let (verified, planning_transitions) =
         count_planning_statement_transitions(|| verify_c0_sources(click_source, &sources));
-    let verified = verified.expect("the exact reordered caller requirement should verify");
+    let verified = verified.expect("the reordered borrowed string should verify");
     assert_eq!(
         planning_transitions, 0,
         "the source-identity retry must not enter hidden statement planning"
@@ -688,12 +813,8 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
     )
     .expect("the source-identity retry should expand into source");
     assert!(
-        expanded_source.contains("obtain (len: uint64) { at(function.entry,"),
-        "the expansion should state the established entry existential: {expanded_source}"
-    );
-    assert!(
-        expanded_source.contains("extract(at(function.entry, viewable(haystack[0.."),
-        "the expansion should consume a retained source projection: {expanded_source}"
+        expanded_source.contains("views str: cstr_at(haystack, _);"),
+        "the expansion should keep the reordered string clause: {expanded_source}"
     );
     assert!(!expanded_source.contains("execute();"));
     assert!(!expanded_source.contains("simp();"));
@@ -17183,11 +17304,25 @@ fn loaded_struct_field_loop_expansion_names_fields_and_reverifies() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
+    // The old whole-prefix search exhausted the ordinary 2,000,000-unit
+    // allowance. Keep the repaired proof comfortably below it.
+    crate::instrumentation::with_tactic_work_limits(
+        crate::instrumentation::TacticWorkLimits {
+            smart: 100_000,
+            ..Default::default()
+        },
+        || verify_c0_sources(&source, &sources),
+    )
+    .unwrap();
     let expanded =
         expand_c0_claim_source_by_label(&source, &sources, "probe_contract.contract").unwrap();
-    assert!(expanded.contains("viewable(j->lo)"), "{expanded}");
-    assert!(!expanded.contains("viewable(j[2..3])"), "{expanded}");
-    verify_c0_sources(&expanded, &sources).unwrap();
+    assert!(
+        expanded.contains("at(statement(3).entry, j->lo)"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("j[2..3]"), "{expanded}");
+    crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .unwrap();
 }
 
 #[test]
@@ -17199,9 +17334,20 @@ fn padded_struct_field_loop_expansion_reverifies() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
+    // The old whole-prefix search exhausted the ordinary 2,000,000-unit
+    // allowance. Keep the repaired proof comfortably below it.
+    crate::instrumentation::with_tactic_work_limits(
+        crate::instrumentation::TacticWorkLimits {
+            smart: 100_000,
+            ..Default::default()
+        },
+        || verify_c0_sources(&source, &sources),
+    )
+    .unwrap();
     let expanded =
         expand_c0_claim_source_by_label(&source, &sources, "probe_contract.contract").unwrap();
-    verify_c0_sources(&expanded, &sources).unwrap();
+    crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .unwrap();
 }
 
 #[test]
@@ -18367,5 +18513,30 @@ fn modular_buffer_ranges_rejoin_in_all_proof_modes() {
         session
             .verify_at(&expanded, position.line, position.column)
             .unwrap_or_else(|error| panic!("retained {function}: {}", error.report()));
+    }
+}
+
+#[test]
+#[ignore = "nightly: repeated-retain whole-proof and four selected-call expansions took 11.4s in parallel"]
+fn repeated_retains_expand_with_checked_count_bounds() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/repeated_child_retains_keep_the_entry_count_bound.md");
+    let markdown = std::fs::read_to_string(&path).unwrap();
+    let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(source, &sources).expect("the four original retain calls verify");
+    let expanded = expand_c0_claim_source(source, &sources, "retain_many", CProofClaim::Grouped)
+        .expect("retain bounds should expand as checked obligation proofs");
+    verify_c0_sources(&expanded, &sources).expect("the expanded retain proof rechecks");
+    for (offset, _) in source.match_indices("step(child_retain(obj), {});") {
+        let position = expansion::position_at_offset(source, offset);
+        let expanded = expand_c0_tactic_source_at(source, &sources, position.line, position.column)
+            .expect("each retained call's implicit proof should expand");
+        verify_c0_sources(&expanded, &sources).expect("the selected call expansion rechecks");
     }
 }

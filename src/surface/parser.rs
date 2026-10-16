@@ -1,3 +1,4 @@
+mod cpp_class_objects;
 mod cpp_model;
 mod cpp_syntax;
 mod library_paths;
@@ -132,6 +133,8 @@ pub(in crate::surface) struct FunctionLocals {
 /// that are memory-backed.
 #[derive(Clone, Default)]
 pub(in crate::surface) struct ProgramLayouts {
+    /// A C definition's execution name, indexed by translation unit and source spelling.
+    pub(in crate::surface) qualified_functions: BTreeMap<(String, String), String>,
     pub(in crate::surface) c_object_names: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
     /// The other members of each function's recursive C component, for the
     /// functions in a component of two or more. An expression `decreases`
@@ -170,6 +173,15 @@ pub(in crate::surface) struct ProgramLayouts {
     /// A sidecar head names only the closure's own parameters; the captures
     /// lead its signature, so its contract reads them by name.
     pub(in crate::surface) closure_captures: BTreeMap<String, Vec<FunctionParameter>>,
+    /// Each C++ override with the virtual method it overrides, by their
+    /// sidecar names: the override inherits that method's interface.
+    pub(in crate::surface) virtual_overrides: Vec<(String, String)>,
+    /// The layout name of each C++ record a head spells otherwise, by that
+    /// spelling: `Stored<long long>` is `Stored__long_long`.
+    pub(in crate::surface) record_spellings: BTreeMap<String, String>,
+    /// The typedef names of the verified C sources a function head may
+    /// write, with their types.
+    pub(in crate::surface) c_typedefs: BTreeMap<String, syntax::C0HeadTypedef>,
 }
 
 /// Whether the library declaration `name` of module `identity` is known by
@@ -619,10 +631,14 @@ struct Parser {
     recursion_peers_by_function: BTreeMap<String, Vec<String>>,
     /// Click library modules the program's C declarations bring.
     implied_library_modules: BTreeSet<&'static str>,
+    /// Whether this parser reads a Click library module, which never looks
+    /// up the library's own declarations while the library is loading.
+    library_module: bool,
     /// The theorems the file declares, which a citation by bare name names
     /// before any library theorem of that name. Empty in a library module.
     local_theorems: BTreeSet<String>,
     source_aliases: BTreeMap<String, String>,
+    qualified_functions: BTreeMap<(String, String), String>,
     qualified_objects: Option<BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>>,
     /// Set while a `tactic` declaration's signature is parsed: the name
     /// follows directly, the parameters use Click's `name: type` spelling,
@@ -641,6 +657,10 @@ struct Parser {
     child_slot_identities: BTreeSet<Variable>,
     current_resource_fields: BTreeMap<String, ResourceFieldAccess>,
     current_resource_targets: BTreeMap<String, ResourceClause>,
+    /// The current function block's value binders, `views s: R(a, _);`.
+    current_value_binders: BTreeMap<String, ValueBinder>,
+    /// Their declaration order, for the function block.
+    current_value_binder_order: Vec<String>,
     in_resource_definition: bool,
     /// The fields of each resource declared so far, hidden ones included.
     declared_resource_fields: BTreeMap<String, Vec<ResourceFieldDefinition>>,
@@ -693,6 +713,13 @@ struct Parser {
     /// The crate traits whose objects carry state, by importer name: the
     /// token rewrite already gave their implementations their interfaces.
     rust_object_traits: BTreeSet<String>,
+    /// The importer names of the methods of C++ classes whose objects carry
+    /// state: an override of one is stated on its own memory.
+    cpp_object_methods: cpp_class_objects::ObjectMethods,
+    /// See [`ProgramLayouts::record_spellings`].
+    record_spellings: BTreeMap<String, String>,
+    /// See [`ProgramLayouts::c_typedefs`].
+    c_typedefs: BTreeMap<String, syntax::C0HeadTypedef>,
     match_nesting: usize,
     proposition_nesting: usize,
     proof_nesting: usize,
@@ -758,6 +785,9 @@ struct Parser {
     current_arm_binding_types: BTreeMap<String, AlgebraicFieldType>,
     current_integer_params: BTreeSet<String>,
     current_integer_lets: BTreeSet<String>,
+    /// Whether specification comparisons with arithmetic are Integer
+    /// comparisons (`arithmetic "integer";`).
+    integer_arithmetic: bool,
     /// Every parameter of the theorem being parsed, of any type, so a
     /// `have name: P` cannot take a parameter's name.
     current_theorem_param_names: BTreeSet<String>,
@@ -772,6 +802,14 @@ struct Parser {
     fact_names: BTreeMap<String, ClickProposition>,
     /// The bindings each name shadowed, undone when its block ends.
     fact_name_restores: Vec<(String, Option<ClickProposition>)>,
+    /// Names whose `have` proof is being parsed, and names whose block has
+    /// ended inside the current proof, so citing one is refused by name
+    /// rather than read as an unbound variable.
+    fact_names_being_proved: BTreeSet<String>,
+    ended_fact_names: BTreeSet<String>,
+    /// Quantifier variables open at the cursor, innermost last. Each hides
+    /// a fact of the same name inside its body.
+    quantifier_binders: Vec<String>,
     integer_literal_context: bool,
     /// Instance binders declared by each C function block already parsed,
     /// keyed by function name. A call step reads exactly the entry for its
@@ -828,6 +866,10 @@ enum CalleeResourceBinderKind {
     /// A runtime binder that names a resource type, not an instance:
     /// `atomic_init`'s `payload`.
     Type,
+    /// A value binder, `views s: R(a, _);`: the caller may name the instance
+    /// it selects with a resource term or one of its own value binders, or
+    /// leave it to the call.
+    Value,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -990,6 +1032,15 @@ enum ContractLetBindingKind {
 }
 
 impl ContractLetBinding {
+    /// `let name = value;`, as a value binder's parameter names its argument.
+    pub(in crate::surface) fn value_binding(name: String, value: ContractExpression) -> Self {
+        Self {
+            name,
+            click_type: None,
+            kind: ContractLetBindingKind::Value(value),
+        }
+    }
+
     pub(super) fn value(&self) -> Option<&ContractExpression> {
         match &self.kind {
             ContractLetBindingKind::Value(value) => Some(value),
@@ -1048,12 +1099,31 @@ impl Parser {
             .implied_library_modules
             .extend(layouts.library_modules);
         parser.qualified_objects = Some(layouts.qualified_objects);
+        parser.qualified_functions = layouts.qualified_functions;
         parser.local_struct_pointers_by_function = layouts.local_struct_pointers;
         parser.closure_captures = layouts.closure_captures;
         parser.plain_char = layouts.plain_char;
         parser.int64_t_rank = layouts.int64_t_rank.unwrap_or(LongRank::Long);
+        parser.c_typedefs = layouts.c_typedefs;
         if layouts.language == Some(SourceLanguage::Cpp) {
+            // A sidecar verifying a C++ header is C++ by its import, which
+            // its `verifying` path does not say: its class object state is
+            // rewritten here.
+            if parser.language != SourceLanguage::Cpp {
+                let (tokens, positions) = cpp_syntax::rewrite_function_references(
+                    std::mem::take(&mut parser.tokens),
+                    std::mem::take(&mut parser.positions),
+                );
+                let (tokens, positions, methods) =
+                    cpp_class_objects::rewrite_class_objects(tokens, positions)?;
+                parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
+                parser.tokens = tokens;
+                parser.positions = positions;
+                parser.cpp_object_methods = methods;
+            }
             parser.language = SourceLanguage::Cpp;
+            parser.rust_trait_implementations = layouts.virtual_overrides;
+            parser.record_spellings = layouts.record_spellings;
         }
         Ok(parser)
     }
@@ -1084,6 +1154,12 @@ impl Parser {
         } else {
             library_paths::top_level_theorem_names(&tokens)
         };
+        // `arithmetic "integer";` decides how every specification comparison
+        // in the file reads, wherever the directive appears.
+        let integer_arithmetic = tokens.windows(2).any(|pair| {
+            matches!(pair, [Token::Ident(keyword), Token::String(value)]
+                if keyword == "arithmetic" && value == "integer")
+        });
         // Source clauses may follow declarations. Choose the spelling for the
         // whole file so moving the clause cannot bypass a Rust syntax check.
         let language =
@@ -1100,10 +1176,25 @@ impl Parser {
         } else {
             (tokens, positions, BTreeSet::new())
         };
+        // So is a C++ sidecar's class object state.
+        let (tokens, positions, cpp_object_methods) = if language == SourceLanguage::Cpp {
+            let (tokens, positions) = cpp_syntax::rewrite_function_references(tokens, positions);
+            cpp_class_objects::rewrite_class_objects(tokens, positions)?
+        } else {
+            (
+                tokens,
+                positions,
+                cpp_class_objects::ObjectMethods::default(),
+            )
+        };
         let matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
         Ok(Self {
             rust_object_traits,
+            cpp_object_methods,
+            record_spellings: BTreeMap::new(),
+            c_typedefs: BTreeMap::new(),
             source_aliases: BTreeMap::new(),
+            qualified_functions: BTreeMap::new(),
             qualified_objects: None,
             pending_tactic_signature: false,
             tactic_names: BTreeSet::new(),
@@ -1113,6 +1204,8 @@ impl Parser {
             child_slot_identities: BTreeSet::new(),
             current_resource_fields: BTreeMap::new(),
             current_resource_targets: BTreeMap::new(),
+            current_value_binders: BTreeMap::new(),
+            current_value_binder_order: Vec::new(),
             in_resource_definition: false,
             declared_resource_fields: BTreeMap::new(),
             declared_resource_child_slots: BTreeMap::new(),
@@ -1146,6 +1239,7 @@ impl Parser {
             c_object_names_by_function: BTreeMap::new(),
             recursion_peers_by_function: BTreeMap::new(),
             implied_library_modules: path_library_modules,
+            library_module,
             local_theorems,
             current_c_parameter_types: BTreeMap::new(),
             current_parameter_struct_casts: BTreeMap::new(),
@@ -1168,11 +1262,15 @@ impl Parser {
             current_arm_binding_types: BTreeMap::new(),
             current_integer_params: BTreeSet::new(),
             current_integer_lets: BTreeSet::new(),
+            integer_arithmetic,
             current_theorem_param_names: BTreeSet::new(),
             current_proof_let_names: BTreeSet::new(),
             proof_let_restores: Vec::new(),
             fact_names: BTreeMap::new(),
             fact_name_restores: Vec::new(),
+            fact_names_being_proved: BTreeSet::new(),
+            ended_fact_names: BTreeSet::new(),
+            quantifier_binders: Vec::new(),
             callee_resource_binders: BTreeMap::new(),
             contract_resource_binders: BTreeMap::new(),
             in_contract_definition: false,
@@ -1276,7 +1374,9 @@ impl Parser {
         self.index_algebraic_variant_fields();
         let mut imports = Vec::new();
         let mut verifying_sources = Vec::new();
-        let mut c_target = None;
+        let mut c_target_name = None;
+        let mut c_mode = None;
+        let mut integer_arithmetic = false;
         let mut thread_runtime = None;
         let mut algebraic_type_definitions = Vec::new();
         let mut predicate_definitions = Vec::new();
@@ -1305,14 +1405,38 @@ impl Parser {
                 imports.push(self.parse_import()?);
             } else if self.peek_ident() == Some("verifying") {
                 verifying_sources.push(self.parse_verifying_source()?);
-            } else if self.peek_ident() == Some("target")
+            } else if let Some(directive @ ("target" | "mode")) =
+                self.peek_ident().map(str::to_owned).as_deref()
                 && matches!(self.peek_next(), Some(Token::String(_)))
             {
-                let target = self.parse_c_target()?;
-                if c_target.is_some() {
-                    return Err(self.error("a Click file declares more than one `target`"));
+                let slot = if directive == "target" {
+                    &mut c_target_name
+                } else {
+                    &mut c_mode
+                };
+                if slot.is_some() {
+                    return Err(
+                        self.error(format!("a Click file declares more than one `{directive}`"))
+                    );
                 }
-                c_target = Some(target);
+                *slot = Some(self.parse_c_target_directive(directive)?);
+            } else if self.peek_ident() == Some("arithmetic")
+                && matches!(self.peek_next(), Some(Token::String(_)))
+            {
+                self.expect_ident_spelling("arithmetic")?;
+                let at = self.error_context();
+                let name = self.expect_string("specification arithmetic")?;
+                self.expect(Token::Semicolon)?;
+                if name != "integer" {
+                    return Err(self.error_at(
+                        at,
+                        format!("unknown specification arithmetic `{name}`; the accepted value is `integer`"),
+                    ));
+                }
+                if integer_arithmetic {
+                    return Err(self.error("a Click file declares `arithmetic` more than once"));
+                }
+                integer_arithmetic = true;
             } else if self.peek_ident() == Some("runtime")
                 && matches!(self.peek_next(), Some(Token::String(_)))
             {
@@ -1389,12 +1513,38 @@ impl Parser {
                 )));
             }
         }
-        // A crate trait method's implementation inherits its interface,
-        // which the sidecar may declare before or after it.
+        // A crate trait method's implementation, or a C++ override, inherits
+        // its interface, which the sidecar may declare before or after it: a
+        // trait's `extern` method, or the virtual method overridden, whose
+        // contract a call through it assumes.
+        let cpp = self.language == SourceLanguage::Cpp;
         for (implementation, interface) in std::mem::take(&mut self.rust_trait_implementations) {
+            // A defining class's method is stated on that class's memory, which
+            // an override's class lays out differently.
+            if cpp && self.cpp_object_methods.on_memory.contains(&interface) {
+                return Err(ClickError::new(format!(
+                    "`{implementation}` overrides `{interface}`, which is stated on its class's \
+                     memory by that class's definitions of its object's state; overriding it \
+                     remains unsupported"
+                ))
+                .at_declaration(&implementation));
+            }
+            // An override of a method of a class whose object carries state is
+            // stated on its own memory, by its class's definitions.
+            if cpp && self.cpp_object_methods.interfaces.contains(&interface) {
+                if !self.cpp_object_methods.on_memory.contains(&implementation) {
+                    return Err(ClickError::new(format!(
+                        "`{implementation}` overrides `{interface}`, whose class's object \
+                         carries state: its class defines that state on its own memory, \
+                         `class Derived : Base {{ function f(this) -> T {{ ... }} }}`"
+                    ))
+                    .at_declaration(&implementation));
+                }
+                continue;
+            }
             let Some(interface) = function_blocks
                 .iter()
-                .find(|block| block.is_external() && block.signature().name() == interface)
+                .find(|block| (cpp || block.is_external()) && block.signature().name() == interface)
                 .cloned()
             else {
                 continue;
@@ -1403,13 +1553,25 @@ impl Parser {
                 .iter_mut()
                 .find(|block| !block.is_external() && block.signature().name() == implementation)
             {
-                block.inherit_interface(&interface).map_err(|message| {
-                    ClickError::new(format!(
-                        "`{}` cannot inherit its trait's interface: {message}",
-                        crate::languages::rust::names::display_rust_names(&implementation)
-                    ))
-                    .at_declaration(&implementation)
-                })?;
+                let source = if cpp {
+                    "the method it overrides"
+                } else {
+                    "the trait's interface"
+                };
+                block
+                    .inherit_interface(&interface, source)
+                    .map_err(|message| {
+                        let what = if cpp {
+                            "the interface of the virtual method it overrides"
+                        } else {
+                            "its trait's interface"
+                        };
+                        ClickError::new(format!(
+                            "`{}` cannot inherit {what}: {message}",
+                            crate::languages::display_source_names(&implementation)
+                        ))
+                        .at_declaration(&implementation)
+                    })?;
             }
         }
         let end = self.position;
@@ -1418,22 +1580,39 @@ impl Parser {
             theorem_definitions.push(self.parse_theorem_definition()?);
         }
         self.position = end;
+        let mut c_function_names = self
+            .local_struct_pointers_by_function
+            .iter()
+            .filter_map(|(source, info)| {
+                info.execution_name
+                    .as_ref()
+                    .map(|target| (source.clone(), target.clone()))
+            })
+            .collect::<BTreeMap<_, _>>();
+        for block in &function_blocks {
+            let signature = block.signature();
+            if let Some(source) = &signature.c_source {
+                let (_, name) = signature
+                    .name()
+                    .rsplit_once("::")
+                    .expect("qualified C head");
+                if let Some(target) = self
+                    .qualified_functions
+                    .get(&(source.clone(), name.to_string()))
+                {
+                    c_function_names.insert(signature.name().to_string(), target.clone());
+                }
+            }
+        }
+        let c_target = self.resolve_c_target(c_target_name, c_mode)?;
         let file = ClickFile {
-            c_function_names: std::sync::Arc::new(
-                self.local_struct_pointers_by_function
-                    .iter()
-                    .filter_map(|(source, info)| {
-                        info.execution_name
-                            .as_ref()
-                            .map(|target| (source.clone(), target.clone()))
-                    })
-                    .collect(),
-            ),
+            c_function_names: std::sync::Arc::new(c_function_names),
             imports,
             library_imports,
             verifying_sources,
             c_target,
             thread_runtime: thread_runtime.unwrap_or_default(),
+            integer_arithmetic,
             algebraic_type_definitions,
             predicate_definitions,
             click_function_definitions,
@@ -1857,24 +2036,48 @@ impl Parser {
         Ok(source_path)
     }
 
-    /// Parses `target "x86_64-linux-kernel";`, the C implementation target
-    /// this file's C sources are preprocessed and verified under. The
-    /// accepted spellings come from `CTarget` itself, so this and the
-    /// pre-parse scan in `expansion` never drift apart.
-    fn parse_c_target(&mut self) -> Result<crate::languages::c::target::CTarget, ClickError> {
-        self.expect_ident_spelling("target")?;
+    /// Parses `target "x86_64-unknown-linux-gnu";` or
+    /// `mode "kernel";`, which together select the C implementation
+    /// target this file's C sources are preprocessed and verified under. The
+    /// pair resolves through `CTarget::from_parts` once the file is parsed,
+    /// as the pre-parse scan in `expansion` resolves it, so the two never
+    /// drift apart.
+    fn parse_c_target_directive(
+        &mut self,
+        directive: &str,
+    ) -> Result<(String, Option<SourcePosition>), ClickError> {
+        self.expect_ident_spelling(directive)?;
         let at = self.error_context();
-        let name = self.expect_string("C target name")?;
+        let name = self.expect_string(if directive == "target" {
+            "C target name"
+        } else {
+            "C mode name"
+        })?;
         self.expect(Token::Semicolon)?;
-        crate::languages::c::target::CTarget::from_name(&name).ok_or_else(|| {
-            self.error_at(
-                at,
-                format!(
-                    "unknown C target `{name}`; accepted targets are {}",
-                    crate::languages::c::target::CTarget::accepted_names()
-                ),
-            )
-        })
+        Ok((name, at))
+    }
+
+    /// Resolves the file's `target` and `mode` directives, each with
+    /// where it was written, so a refused name points at its own directive.
+    fn resolve_c_target(
+        &self,
+        target: Option<(String, Option<SourcePosition>)>,
+        mode: Option<(String, Option<SourcePosition>)>,
+    ) -> Result<Option<crate::languages::c::target::CTarget>, ClickError> {
+        use crate::languages::c::target::CTarget;
+        if target.is_none() && mode.is_none() {
+            return Ok(None);
+        }
+        if let Some((name, at)) = &target {
+            CTarget::from_parts(Some(name), None)
+                .map_err(|error| self.error_at(at.clone(), error))?;
+        }
+        CTarget::from_parts(
+            target.as_ref().map(|(name, _)| name.as_str()),
+            mode.as_ref().map(|(name, _)| name.as_str()),
+        )
+        .map(Some)
+        .map_err(|error| self.error_at(mode.and_then(|(_, at)| at), error))
     }
 
     fn parse_thread_runtime(
@@ -3138,6 +3341,8 @@ impl Parser {
         let previous_function_block = std::mem::replace(&mut self.in_function_block, true);
         let previous_resource_targets = std::mem::take(&mut self.current_resource_targets);
         let previous_resource_bindings = std::mem::take(&mut self.current_resource_bindings);
+        let previous_value_binders = std::mem::take(&mut self.current_value_binders);
+        let previous_value_binder_order = std::mem::take(&mut self.current_value_binder_order);
         // A crate trait's method is declared without `extern`, as Rust
         // writes it in the `trait` block.
         if external && self.rust_trait_interface.is_none() {
@@ -3155,6 +3360,17 @@ impl Parser {
             self.exact_long_rank = previous;
             signature?
         };
+        let table_name = signature
+            .c_source
+            .as_ref()
+            .and_then(|path| {
+                let (_, name) = signature.name().rsplit_once("::")?;
+                self.qualified_functions
+                    .get(&(path.clone(), name.to_string()))
+            })
+            .map(String::as_str)
+            .unwrap_or_else(|| signature.name())
+            .to_string();
         if let Some(struct_name) = return_struct_name {
             struct_params.insert("result".to_string(), struct_name);
         }
@@ -3164,7 +3380,7 @@ impl Parser {
         // its own reading.
         for name in self
             .local_struct_pointers_by_function
-            .get(signature.name())
+            .get(&table_name)
             .into_iter()
             .flat_map(|locals| &locals.references)
         {
@@ -3206,7 +3422,7 @@ impl Parser {
         // proof just as a parameter is. The signature wins a shared spelling.
         for (name, struct_name) in self
             .local_struct_pointers_by_function
-            .get(signature.name())
+            .get(&table_name)
             .into_iter()
             .flat_map(|locals| &locals.struct_pointers)
         {
@@ -3227,9 +3443,7 @@ impl Parser {
         );
         let previous_c_object_names = std::mem::replace(
             &mut self.current_c_object_names,
-            self.c_object_names_by_function
-                .get(signature.name())
-                .cloned(),
+            self.c_object_names_by_function.get(&table_name).cloned(),
         );
         let previous_c_parameter_types = std::mem::replace(
             &mut self.current_c_parameter_types,
@@ -3243,7 +3457,7 @@ impl Parser {
             std::mem::take(&mut self.current_parameter_struct_casts);
         let aggregate_objects = self
             .aggregate_objects_by_function
-            .get(signature.name())
+            .get(&table_name)
             .cloned()
             .unwrap_or_default();
         let previous_aggregate_objects =
@@ -3252,7 +3466,7 @@ impl Parser {
         // function, for indexing shapes and element widths alike.
         let global_array_shapes = self
             .global_array_shapes_by_function
-            .get(signature.name())
+            .get(&table_name)
             .cloned()
             .unwrap_or_default()
             .into_iter()
@@ -3261,9 +3475,8 @@ impl Parser {
         let previous_global_array_shapes =
             std::mem::replace(&mut self.current_global_array_shapes, global_array_shapes);
         let mut visible_struct_array_params = struct_array_params;
-        if let Some(aggregate_array_objects) = self
-            .aggregate_array_objects_by_function
-            .get(signature.name())
+        if let Some(aggregate_array_objects) =
+            self.aggregate_array_objects_by_function.get(&table_name)
         {
             visible_struct_array_params.extend(
                 aggregate_array_objects
@@ -3453,7 +3666,16 @@ impl Parser {
                 }
                 Some("owns") => {
                     self.position += 1;
-                    let resource = self.parse_owned_resource_binding()?;
+                    let resource = if self.value_binder_follows(false) {
+                        self.parse_value_binder(
+                            ResourceAccessMode::Own,
+                            signature.name(),
+                            &parameter_names,
+                            requires.len(),
+                        )?
+                    } else {
+                        self.parse_owned_resource_binding()?
+                    };
                     let proof = self.parse_proof_clause_or_default()?;
                     let binder_resource =
                         apply_contract_lets_to_resource_clause(resource.clone(), &contract_lets)
@@ -3489,7 +3711,16 @@ impl Parser {
                 }
                 Some("views") => {
                     self.position += 1;
-                    let resource = self.parse_resource_target(ResourceAccessMode::View)?;
+                    let resource = if self.value_binder_follows(true) {
+                        self.parse_value_binder(
+                            ResourceAccessMode::View,
+                            signature.name(),
+                            &parameter_names,
+                            requires.len(),
+                        )?
+                    } else {
+                        self.parse_resource_target(ResourceAccessMode::View)?
+                    };
                     self.expect(Token::Semicolon)?;
                     requires.push(
                         apply_contract_lets_to_requirement(
@@ -3501,7 +3732,16 @@ impl Parser {
                 }
                 Some("consumes") => {
                     self.position += 1;
-                    let resource = self.parse_owned_resource_binding()?;
+                    let resource = if self.value_binder_follows(false) {
+                        self.parse_value_binder(
+                            ResourceAccessMode::Own,
+                            signature.name(),
+                            &parameter_names,
+                            requires.len(),
+                        )?
+                    } else {
+                        self.parse_owned_resource_binding()?
+                    };
                     self.expect(Token::Semicolon)?;
                     let binder_resource =
                         apply_contract_lets_to_resource_clause(resource.clone(), &contract_lets)
@@ -3688,7 +3928,7 @@ impl Parser {
         }
         let c_object_names = self
             .c_object_names_by_function
-            .get(signature.name())
+            .get(&table_name)
             .cloned()
             .unwrap_or_else(|| {
                 std::sync::Arc::new(
@@ -3710,6 +3950,15 @@ impl Parser {
         self.in_function_block = previous_function_block;
         self.current_resource_bindings = previous_resource_bindings;
         self.current_resource_targets = previous_resource_targets;
+        let mut value_binders_by_name =
+            std::mem::replace(&mut self.current_value_binders, previous_value_binders);
+        let value_binders = std::mem::replace(
+            &mut self.current_value_binder_order,
+            previous_value_binder_order,
+        )
+        .into_iter()
+        .filter_map(|name| value_binders_by_name.remove(&name))
+        .collect::<Vec<_>>();
         self.current_aggregate_objects = previous_aggregate_objects;
         self.current_global_array_shapes = previous_global_array_shapes;
         self.current_struct_array_params = previous_struct_array_params;
@@ -3777,7 +4026,7 @@ impl Parser {
         // signature wins a shared spelling.
         for (name, struct_name) in self
             .local_struct_pointers_by_function
-            .get(signature.name())
+            .get(&table_name)
             .into_iter()
             .flat_map(|locals| &locals.struct_pointers)
         {
@@ -3797,7 +4046,7 @@ impl Parser {
             super::pointee_field_places(parameter_field_places.values(), &self.struct_layouts);
         let recursion_peers = self
             .recursion_peers_by_function
-            .get(signature.name())
+            .get(&table_name)
             .cloned()
             .unwrap_or_default();
         // A named contract's value parameters follow its C parameters, so its
@@ -3809,7 +4058,7 @@ impl Parser {
                 .extend(self.contract_value_parameters.iter().cloned());
         }
         // A closure's captures lead its signature, as they lead its function.
-        if !external && let Some(captures) = self.closure_captures.get(signature.name()) {
+        if !external && let Some(captures) = self.closure_captures.get(&table_name) {
             let mut parameters = captures.clone();
             parameters.append(&mut signature.parameters);
             signature.parameters = parameters;
@@ -3830,10 +4079,12 @@ impl Parser {
             exceptional_ensures,
             ensure_source_clauses,
             ensure_claim_ids,
-            grouped_proof,
+            grouped_proof: grouped_proof.map(std::sync::Arc::new),
             parameter_struct_casts,
             parameter_field_places,
             pointee_field_places,
+            value_binders,
+            witness_count: 0,
         })
     }
 
@@ -3910,6 +4161,7 @@ impl Parser {
             }
             return Ok(ParsedFunctionSignature {
                 signature: FunctionSignature {
+                    c_source: None,
                     return_type: C0Type::Void,
                     return_pointee_constant: false,
                     return_reference: false,
@@ -3963,6 +4215,7 @@ impl Parser {
         } else {
             parsed_return_type.c_type
         };
+        let mut c_source = None;
         let (name, receiver) = if self.verifies_cpp() {
             let declarator = self.parse_cpp_declarator(is_static)?;
             if declarator.returnless != returnless {
@@ -3974,7 +4227,20 @@ impl Parser {
             }
             (declarator.name, declarator.receiver)
         } else {
-            (self.expect_ident("function name")?, None)
+            let alias = self.expect_ident("function name")?;
+            let name =
+                if self.peek() == Some(&Token::ColonColon) {
+                    self.position += 1;
+                    let name = self.expect_ident("C function name")?;
+                    c_source =
+                        Some(self.source_aliases.get(&alias).cloned().ok_or_else(|| {
+                            self.error(format!("unknown C source alias `{alias}`"))
+                        })?);
+                    format!("{alias}::{name}")
+                } else {
+                    alias
+                };
+            (name, None)
         };
         self.expect(Token::LParen)?;
         let mut parsed_parameters = self.parse_parameters()?;
@@ -4052,6 +4318,7 @@ impl Parser {
 
         let parsed = ParsedFunctionSignature {
             signature: FunctionSignature {
+                c_source,
                 return_type,
                 return_pointee_constant: parsed_return_type.pointee_constant,
                 return_reference: parsed_return_type.reference,
@@ -4252,18 +4519,64 @@ impl Parser {
         }
     }
 
+    /// A typedef name of the verified source is written only in a function
+    /// head, which restates the declaration.
+    fn check_head_typedef(&self, spelling: &str) -> Result<(), ClickError> {
+        if self.exact_long_rank {
+            return Ok(());
+        }
+        Err(self.error(format!(
+            "`{spelling}` is a typedef name of the verified source, which a function head \
+             may write; a specification writes Click's type, such as `int32`"
+        )))
+    }
+
     fn parse_type(&mut self) -> Result<ParsedType, ClickError> {
-        let is_constant = if self.peek_ident() == Some("const") {
+        let mut is_constant = if self.peek_ident() == Some("const") {
             self.position += 1;
             true
         } else {
             false
         };
-        let spelling = self.expect_ident("type")?;
-        // C++ names a record by its own name; C writes `struct name`.
-        let cpp_record = self.verifies_cpp() && self.struct_layouts.contains_key(&spelling);
-        if spelling == "struct" || cpp_record {
-            let struct_name = if cpp_record {
+        // C++ names a record by its own name or path, `std::span<int>`; C
+        // writes `struct name`.
+        let qualified_record = if self.verifies_cpp() {
+            self.parse_cpp_record_type()
+        } else {
+            None
+        };
+        let spelling = match &qualified_record {
+            Some(record) => record.clone(),
+            None => self.expect_ident("type")?,
+        };
+        let cpp_record = qualified_record.is_some()
+            || (self.verifies_cpp() && self.struct_layouts.contains_key(&spelling));
+        // A function head may write a typedef name of the verified C source
+        // for the type it stands for, where the name is not a standard
+        // spelling; a specification writes Click's type.
+        let typedef_struct = match self.c_typedefs.get(&spelling) {
+            Some(syntax::C0HeadTypedef::Struct {
+                name,
+                c_type,
+                constant,
+                pointee_constant,
+            }) => {
+                self.check_head_typedef(&spelling)?;
+                is_constant |= constant;
+                Some((name.clone(), *c_type, *pointee_constant))
+            }
+            _ => None,
+        };
+        // A pointer alias has already supplied its `*`s: a `const` written
+        // before it qualifies the pointer, as in C.
+        let alias_pointer = typedef_struct
+            .as_ref()
+            .filter(|(_, c_type, _)| *c_type != C0Type::Int32)
+            .map(|(_, c_type, pointee_constant)| (*c_type, *pointee_constant));
+        if spelling == "struct" || cpp_record || typedef_struct.is_some() {
+            let struct_name = if let Some((name, _, _)) = typedef_struct {
+                name
+            } else if cpp_record {
                 spelling
             } else {
                 self.expect_ident("struct name")?
@@ -4273,7 +4586,7 @@ impl Parser {
                 self.position += 1;
                 object_constant = true;
             }
-            if self.peek() == Some(&Token::Amp) {
+            if self.peek() == Some(&Token::Amp) && alias_pointer.is_none() {
                 self.position += 1;
                 return Ok(ParsedType {
                     c_type: C0Type::Int32Pointer,
@@ -4284,10 +4597,10 @@ impl Parser {
                     reference: true,
                 });
             }
-            if self.peek() == Some(&Token::Star) {
-                let mut c_type = C0Type::Int32;
-                let mut pointee_constant = false;
-                let mut saw_pointer = false;
+            if self.peek() == Some(&Token::Star) || alias_pointer.is_some() {
+                let (mut c_type, mut pointee_constant) =
+                    alias_pointer.unwrap_or((C0Type::Int32, false));
+                let mut saw_pointer = alias_pointer.is_some();
                 while self.peek() == Some(&Token::Star) {
                     if saw_pointer && pointee_constant {
                         return Err(self.error(
@@ -4355,6 +4668,8 @@ impl Parser {
         } else {
             LongRank::Long
         };
+        // A scalar pointer alias's pointee qualification, as for a struct one.
+        let mut alias_scalar_pointer = None;
         let scalar_type = if let Some((c_type, count)) = integer {
             self.position += count - 1;
             c_type
@@ -4379,6 +4694,26 @@ impl Parser {
                 "volatile" => {
                     return Err(self.error("the `volatile` qualifier is not supported by Click"));
                 }
+                _ if let Some(typedef) = self.c_typedefs.get(&spelling) => {
+                    self.check_head_typedef(&spelling)?;
+                    let syntax::C0HeadTypedef::Scalar {
+                        c_type,
+                        constant,
+                        pointee_constant,
+                    } = *typedef
+                    else {
+                        return Err(self.error(format!(
+                            "the typedef `{spelling}` stands for an array, function pointer, \
+                             union, or volatile or aligned type, or for different types in two \
+                             verified sources; a head writes its C type"
+                        )));
+                    };
+                    is_constant |= constant;
+                    if c_type.is_pointer() {
+                        alias_scalar_pointer = Some(pointee_constant);
+                    }
+                    c_type
+                }
                 _ => {
                     return Err(self.error(format!(
                     "unknown C type `{spelling}`; expected a supported standard spelling or `struct`"
@@ -4388,12 +4723,12 @@ impl Parser {
         };
         let mut c_type = scalar_type;
         let mut object_constant = is_constant;
-        let mut pointee_constant = false;
+        let mut pointee_constant = alias_scalar_pointer.unwrap_or(false);
         if self.peek_ident() == Some("const") {
             self.position += 1;
             object_constant = true;
         }
-        let mut saw_pointer = false;
+        let mut saw_pointer = alias_scalar_pointer.is_some();
         // `T&` is carried by a pointer to `T`. A reference to a pointer is
         // not supported.
         let mut reference = false;
@@ -4965,16 +5300,21 @@ impl Parser {
     /// The closing parenthesis comes from the precomputed nesting table, so
     /// the decision costs one lookup rather than a scan.
     fn call_binder_transport_follows(&self) -> bool {
-        if !matches!(self.peek(), Some(Token::Ident(_))) || self.peek_next() != Some(&Token::LParen)
-        {
+        if !matches!(self.peek(), Some(Token::Ident(_))) {
             return false;
         }
-        let Some(close) = self
-            .matching_parentheses
-            .get(self.position + 1)
-            .cloned()
-            .flatten()
-        else {
+        let open = if self.peek_next() == Some(&Token::ColonColon) {
+            if !matches!(self.tokens.get(self.position + 2), Some(Token::Ident(_))) {
+                return false;
+            }
+            self.position + 3
+        } else {
+            self.position + 1
+        };
+        if self.tokens.get(open) != Some(&Token::LParen) {
+            return false;
+        }
+        let Some(close) = self.matching_parentheses.get(open).cloned().flatten() else {
             return false;
         };
         self.tokens.get(close + 1) == Some(&Token::Comma)
@@ -4988,11 +5328,16 @@ impl Parser {
         output: Option<CallOutputPattern>,
         tactic: bool,
     ) -> Result<CallBinderTransport, ClickError> {
-        let callee = self.expect_ident(if tactic {
+        let mut callee = self.expect_ident(if tactic {
             "tactic name"
         } else {
             "call step callee"
         })?;
+        if !tactic && self.peek() == Some(&Token::ColonColon) {
+            self.position += 1;
+            callee.push_str("::");
+            callee.push_str(&self.expect_ident("C function name")?);
+        }
         // The binder map is the last argument in both forms, as a fold's
         // field map is: a call step writes `step(callee(...), { ... })` and a
         // tactic application writes `name(..., { ... })`, where the map is
@@ -5032,6 +5377,9 @@ impl Parser {
         .get(&callee)
         .cloned()
         .unwrap_or_default();
+        if has_map && !named_contract && declared.is_empty() {
+            declared = self.library_callee_value_binders(&callee)?;
+        }
         if has_map {
             self.expect(Token::LBrace)?;
         }
@@ -5039,9 +5387,53 @@ impl Parser {
         let mut bound = BTreeSet::new();
         let mut instances = BTreeSet::new();
         let mut type_arguments = Vec::new();
+        let mut value_arguments = Vec::new();
         while has_map && self.peek() != Some(&Token::RBrace) {
             let binder = self.expect_ident("callee resource binder")?;
             self.expect(Token::Colon)?;
+            if let Some(declaration) = declared.get(&binder)
+                && declaration.kind == CalleeResourceBinderKind::Value
+            {
+                if !bound.insert(binder.clone()) {
+                    return Err(self.error(format!("duplicate binder `{binder}` in the call map")));
+                }
+                let argument = if matches!(self.peek(), Some(Token::Ident(_)))
+                    && self.peek_next() == Some(&Token::LParen)
+                {
+                    let term = self.parse_declared_resource_call()?;
+                    if let (ResourceClause::Declared { name, .. }, Some(expected)) =
+                        (&term, &declaration.family)
+                        && name != expected
+                    {
+                        return Err(self.error(format!(
+                            "binder `{binder}` selects a `{expected}`, not a `{name}`"
+                        )));
+                    }
+                    ValueBinderArgument::Term(term)
+                } else {
+                    let caller = self.expect_ident("resource term or value binder")?;
+                    let Some(caller_binder) = self.current_value_binders.get(&caller) else {
+                        return Err(self.error(format!(
+                            "`{caller}` is not a value binder of this function; name the instance with a resource term such as `{binder}: {}(...)`",
+                            declaration.family.as_deref().unwrap_or("resource")
+                        )));
+                    };
+                    if Some(&caller_binder.resource) != declaration.family.as_ref() {
+                        return Err(self.error(format!(
+                            "binder `{binder}` selects a `{}`, but `{caller}` names a `{}`",
+                            declaration.family.as_deref().unwrap_or("resource"),
+                            caller_binder.resource
+                        )));
+                    }
+                    ValueBinderArgument::Binder(caller)
+                };
+                value_arguments.push((binder, argument));
+                if self.peek() != Some(&Token::Comma) {
+                    break;
+                }
+                self.position += 1;
+                continue;
+            }
             if let Some(declaration) = declared.get(&binder)
                 && declaration.kind == CalleeResourceBinderKind::Type
             {
@@ -5267,6 +5659,7 @@ impl Parser {
             binders,
             produced,
             type_arguments,
+            value_arguments,
             result,
         })
     }
@@ -5436,8 +5829,148 @@ impl Parser {
             );
     }
 
+    /// The value binders of the C library function `callee`, such as
+    /// `strlen`'s `s`, for a call map in a program's sidecar. The library's
+    /// declarations are parsed apart from the sidecar, so its binders are
+    /// not in the sidecar's registry. A library module itself never asks:
+    /// the library is not loaded while it is being parsed.
+    fn library_callee_value_binders(
+        &self,
+        callee: &str,
+    ) -> Result<BTreeMap<String, CalleeResourceBinder>, ClickError> {
+        if self.library_module
+            || crate::languages::c::syntax::library_contract_module_named(callee).is_none()
+        {
+            return Ok(BTreeMap::new());
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        Ok(super::validation::library_c_function_value_binders(callee)?
+            .into_iter()
+            .map(|(name, family)| (name, Self::value_callee_binder(family)))
+            .collect())
+    }
+
+    /// A call map's entry for a value binder of family `family`.
+    fn value_callee_binder(family: String) -> CalleeResourceBinder {
+        CalleeResourceBinder {
+            identity: Variable(0),
+            family: Some(family),
+            resource: None,
+            parameter_names: Vec::new(),
+            kind: CalleeResourceBinderKind::Value,
+        }
+    }
+
     /// Records an instance binder in the selected function/interface registry.
     /// Call maps name those declarations, including produced identities.
+    /// Whether a value binder follows: `name: R(...)` where the clause is a
+    /// `views` clause, or one of `R`'s arguments is `_`. An `owns` or
+    /// `consumes` binder without `_` keeps naming an instance.
+    fn value_binder_follows(&self, view: bool) -> bool {
+        let open = self.position + 3;
+        if !matches!(self.peek(), Some(Token::Ident(_)))
+            || self.peek_next() != Some(&Token::Colon)
+            || !matches!(self.tokens.get(self.position + 2), Some(Token::Ident(_)))
+            || self.tokens.get(open) != Some(&Token::LParen)
+        {
+            return false;
+        }
+        if view {
+            return true;
+        }
+        let Some(close) = self.matching_parentheses.get(open).cloned().flatten() else {
+            return false;
+        };
+        self.tokens[open + 1..close]
+            .iter()
+            .any(|token| matches!(token, Token::Ident(name) if name == "_"))
+    }
+
+    /// `name: R(a, _)`: the clause `R(a, s.#1)` with a placeholder at each
+    /// `_`, which declaration expansion names after `R`'s parameter. The
+    /// binder is recorded for `s.<parameter>` and for callers' call maps.
+    fn parse_value_binder(
+        &mut self,
+        access: ResourceAccessMode,
+        function: &str,
+        parameter_names: &BTreeSet<String>,
+        requirement_index: usize,
+    ) -> Result<ResourceClause, ClickError> {
+        if self.in_contract_definition {
+            return Err(self.error(
+                "a value binder `name: resource(..., _)` is supported only in a C function contract",
+            ));
+        }
+        let name = self.expect_ident("binder name")?;
+        self.expect(Token::Colon)?;
+        if self.current_value_binders.contains_key(&name)
+            || self.current_resource_bindings.contains_key(&name)
+            || self.current_contract_bindings.contains(&name)
+            || parameter_names.contains(&name)
+        {
+            return Err(self.error(format!("duplicate binder `{name}`")));
+        }
+        let resource = self.expect_ident("resource name")?;
+        if matches!(
+            resource.as_str(),
+            "authority" | "mutex_live" | "mutex_guard" | "mutex_use" | "publisher" | "subscriber"
+        ) {
+            return Err(self.error(format!("`{resource}` cannot be named by a value binder")));
+        }
+        self.expect(Token::LParen)?;
+        let mut written = Vec::new();
+        if self.peek() != Some(&Token::RParen) {
+            loop {
+                if self.peek_ident() == Some("_") {
+                    self.position += 1;
+                    written.push(None);
+                } else {
+                    written.push(Some(self.parse_contract_expression()?));
+                }
+                match self.peek() {
+                    Some(Token::Comma) => self.position += 1,
+                    Some(Token::RParen) => break,
+                    _ => return Err(self.error("expected `,` or `)` after resource argument")),
+                }
+            }
+        }
+        self.expect(Token::RParen)?;
+        let arguments = written
+            .iter()
+            .enumerate()
+            .map(|(index, argument)| {
+                argument.clone().unwrap_or_else(|| {
+                    ContractExpression::CFragment(CExpression::Variable(ValueBinder::placeholder(
+                        &name, index,
+                    )))
+                })
+            })
+            .collect();
+        let binder = ValueBinder {
+            name: name.clone(),
+            resource: resource.clone(),
+            arguments: written,
+            requirement_index,
+        };
+        self.current_value_binders.insert(name.clone(), binder);
+        self.current_value_binder_order.push(name.clone());
+        crate::instrumentation::record_deterministic_work(1);
+        self.callee_resource_binders
+            .entry(function.to_string())
+            .or_default()
+            .insert(name, Self::value_callee_binder(resource.clone()));
+        Ok(ResourceClause::Declared {
+            type_schema: None,
+            resource_type_arguments: Vec::new(),
+            resource_arguments: Vec::new(),
+            access,
+            kind: ResourceKind::Token,
+            name: resource,
+            arguments,
+            parameter_types: Vec::new(),
+        })
+    }
+
     fn record_callee_resource_binder(
         &mut self,
         function: &str,
@@ -5946,20 +6479,43 @@ impl Parser {
         Ok(proposition)
     }
 
+    /// The name at the cursor when it stands alone as a proposition, as a
+    /// cited fact name does.
+    fn standalone_proposition_name(&self) -> Option<&str> {
+        let Some(Token::Ident(name)) = self.peek() else {
+            return None;
+        };
+        let standalone = matches!(
+            self.peek_next(),
+            None | Some(Token::Semicolon | Token::RParen | Token::RBrace | Token::Comma)
+        ) || matches!(
+            self.tokens.get(self.position + 1),
+            Some(Token::Ident(next)) if matches!(next.as_str(), "and" | "or" | "implies" | "by")
+        );
+        standalone.then_some(name.as_str())
+    }
+
     fn parse_proposition_atom(&mut self) -> Result<ClickProposition, ClickError> {
-        if let Some(Token::Ident(name)) = self.peek()
-            && let Some(proposition) = self.fact_names.get(name)
-            && (matches!(
-                self.peek_next(),
-                None | Some(Token::Semicolon | Token::RParen | Token::RBrace | Token::Comma)
-            ) || matches!(
-                self.tokens.get(self.position + 1),
-                Some(Token::Ident(next)) if matches!(next.as_str(), "and" | "or" | "implies" | "by")
-            ))
+        if let Some(name) = self.standalone_proposition_name()
+            && !self.quantifier_binders.iter().any(|binder| binder == name)
         {
-            let proposition = proposition.clone();
-            self.position += 1;
-            return Ok(proposition);
+            if let Some(proposition) = self.fact_names.get(name) {
+                let proposition = proposition.clone();
+                self.position += 1;
+                return Ok(proposition);
+            }
+            if !self.name_bound_in_scope(name) {
+                if self.fact_names_being_proved.contains(name) {
+                    return Err(self.error(format!(
+                        "`{name}` names the fact this `have` is proving, so it cannot be cited inside its own proof; restate the proposition"
+                    )));
+                }
+                if self.ended_fact_names.contains(name) {
+                    return Err(self.error(format!(
+                        "the fact name `{name}` is out of scope here: `have {name}: ...` names its fact only to the end of the block that holds it"
+                    )));
+                }
+            }
         }
         if self.peek_ident() == Some("let") {
             let start = self.position;
@@ -6147,11 +6703,11 @@ impl Parser {
                 ) => {
                     let operator = self.parse_comparison_operator("proposition")?;
                     let right = self.parse_comparison_operand()?;
-                    return Ok(ClickProposition::Comparison {
-                        left: ContractExpression::Call { name, arguments },
+                    return Ok(self.specification_comparison(
+                        ContractExpression::Call { name, arguments },
                         operator,
                         right,
-                    });
+                    ));
                 }
                 Some(
                     Token::Plus
@@ -6344,6 +6900,7 @@ impl Parser {
                                 ));
                             }
                         }
+                        self.quantifier_binders.push(name.clone());
                         scopes.push(Scope {
                             forall,
                             click_type,
@@ -6415,6 +6972,7 @@ impl Parser {
                         reduce(operator, &mut operands);
                     }
                     let scope = scopes.pop().expect("quantifier scope marker has a scope");
+                    self.quantifier_binders.pop();
                     self.integer_literal_context = scope.previous_integer_context;
                     if scope.integer_was_bound {
                         self.current_integer_params.insert(scope.name.clone());
@@ -6548,11 +7106,128 @@ impl Parser {
         let operator = self.parse_comparison_operator("proposition")?;
         let right = self.parse_comparison_operand()?;
 
-        Ok(ClickProposition::Comparison {
+        Ok(self.specification_comparison(left, operator, right))
+    }
+
+    /// A comparison as the file's specification arithmetic reads it. Under
+    /// `arithmetic "integer";` a comparison that does arithmetic, or that
+    /// compares an Integer with a machine value, compares exact Integers:
+    /// each machine operand of its arithmetic is observed with
+    /// `to_integer`, so `x + 1 > x` reads
+    /// `to_integer(x) + 1 > to_integer(x)`. A comparison with a pointer
+    /// operand keeps its C meaning.
+    fn specification_comparison(
+        &self,
+        left: ContractExpression,
+        operator: ComparisonOperator,
+        right: ContractExpression,
+    ) -> ClickProposition {
+        if self.integer_arithmetic && operator != ComparisonOperator::In {
+            let left_integer = self.integer_operand(&left);
+            let right_integer = self.integer_operand(&right);
+            let mixed = left_integer != right_integer;
+            let arithmetic = has_arithmetic_spine(&left) || has_arithmetic_spine(&right);
+            if !(left_integer && right_integer)
+                && (mixed || arithmetic)
+                && !self.has_pointer_operand(&left)
+                && !self.has_pointer_operand(&right)
+            {
+                return ClickProposition::Comparison {
+                    left: self.observe_machine_operands(left),
+                    operator,
+                    right: self.observe_machine_operands(right),
+                };
+            }
+        }
+        ClickProposition::Comparison {
             left,
             operator,
             right,
-        })
+        }
+    }
+
+    /// Whether `expression` is already an exact Integer: an Integer
+    /// binding, a `to_integer` observation, or arithmetic over them.
+    fn integer_operand(&self, expression: &ContractExpression) -> bool {
+        match expression {
+            ContractExpression::Add(left, right)
+            | ContractExpression::Subtract(left, right)
+            | ContractExpression::Multiply(left, right) => {
+                self.integer_operand(left) || self.integer_operand(right)
+            }
+            ContractExpression::Negate(inner) | ContractExpression::Old(inner) => {
+                self.integer_operand(inner)
+            }
+            leaf => self.integer_leaf(leaf),
+        }
+    }
+
+    fn integer_leaf(&self, expression: &ContractExpression) -> bool {
+        match expression {
+            ContractExpression::Call { name, .. } => {
+                name == "to_integer"
+                    || crate::surface::integer_truncation::is_integer_truncation(name)
+            }
+            ContractExpression::Binding(name)
+            | ContractExpression::CBinding(name)
+            | ContractExpression::CFragment(CExpression::Variable(name)) => {
+                self.current_integer_params.contains(name)
+                    || self.current_integer_lets.contains(name)
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether an arithmetic operand of `expression` is a pointer parameter.
+    fn has_pointer_operand(&self, expression: &ContractExpression) -> bool {
+        match expression {
+            ContractExpression::Add(left, right)
+            | ContractExpression::Subtract(left, right)
+            | ContractExpression::Multiply(left, right) => {
+                self.has_pointer_operand(left) || self.has_pointer_operand(right)
+            }
+            ContractExpression::Negate(inner) | ContractExpression::Old(inner) => {
+                self.has_pointer_operand(inner)
+            }
+            ContractExpression::CBinding(name)
+            | ContractExpression::CFragment(CExpression::Variable(name)) => self
+                .current_c_parameter_types
+                .get(name)
+                .is_some_and(|c_type| c_type.is_pointer()),
+            _ => false,
+        }
+    }
+
+    /// `expression` with each machine operand of its arithmetic observed
+    /// with `to_integer`. Unsuffixed literals take the Integer type from
+    /// context, and Integer operands are left as they are.
+    fn observe_machine_operands(&self, expression: ContractExpression) -> ContractExpression {
+        match expression {
+            ContractExpression::Add(left, right) => ContractExpression::Add(
+                Box::new(self.observe_machine_operands(*left)),
+                Box::new(self.observe_machine_operands(*right)),
+            ),
+            ContractExpression::Subtract(left, right) => ContractExpression::Subtract(
+                Box::new(self.observe_machine_operands(*left)),
+                Box::new(self.observe_machine_operands(*right)),
+            ),
+            ContractExpression::Multiply(left, right) => ContractExpression::Multiply(
+                Box::new(self.observe_machine_operands(*left)),
+                Box::new(self.observe_machine_operands(*right)),
+            ),
+            ContractExpression::Negate(inner) => {
+                ContractExpression::Negate(Box::new(self.observe_machine_operands(*inner)))
+            }
+            ContractExpression::Old(inner) if has_arithmetic_spine(&inner) => {
+                ContractExpression::Old(Box::new(self.observe_machine_operands(*inner)))
+            }
+            ContractExpression::IntegerLiteral(value) => ContractExpression::IntegerLiteral(value),
+            leaf if self.integer_leaf(&leaf) => leaf,
+            leaf => ContractExpression::Call {
+                name: "to_integer".to_string(),
+                arguments: vec![leaf],
+            },
+        }
     }
 
     /// A comparison operand whose outermost operator is `&`, `|` or `^` must
@@ -6640,6 +7315,7 @@ impl Parser {
                 }
                 None => {
                     self.fact_names.remove(&name);
+                    self.ended_fact_names.insert(name);
                 }
             }
         }
@@ -6779,7 +7455,8 @@ impl Parser {
                 result.push((slot, name, identity));
                 continue;
             }
-            let identity = if let Some((identity, _)) = self.current_resource_bindings.get(&name) {
+            let existing = self.current_resource_bindings.get(&name).cloned();
+            let identity = if let Some((identity, _)) = &existing {
                 // A child slot's resource comes from the parent's matched
                 // arm, which the parser cannot resolve; declaration
                 // expansion checks the supplied instance against it.
@@ -6793,8 +7470,15 @@ impl Parser {
             };
             if introduce {
                 self.child_slot_identities.insert(identity);
+                // A name already bound, such as the contract's `produces
+                // whole: ...` that the unfold's child becomes, keeps the
+                // resource it was declared with: its fields are that
+                // resource's, not the parent's, when a later `have` reads
+                // `whole.model`. Only a new binder records the parent, which
+                // declaration expansion replaces with the slot's resource.
+                let recorded = existing.map_or_else(|| family.clone(), |(_, family)| family);
                 self.current_resource_bindings
-                    .insert(name.clone(), (identity, family.clone()));
+                    .insert(name.clone(), (identity, recorded));
                 self.current_resource_targets.insert(
                     name.clone(),
                     ResourceClause::Named {
@@ -7330,8 +8014,16 @@ impl Parser {
         } else {
             None
         };
-        let have = self.parse_have_after_name()?;
+        if let Some(name) = &name {
+            self.fact_names_being_proved.insert(name.clone());
+        }
+        let have = self.parse_have_after_name();
+        if let Some(name) = &name {
+            self.fact_names_being_proved.remove(name);
+        }
+        let have = have?;
         if let (Some(name), ProofTactic::Have(have)) = (name, &have) {
+            self.ended_fact_names.remove(&name);
             let previous = self
                 .fact_names
                 .insert(name.clone(), have.proposition.clone());
@@ -7345,8 +8037,20 @@ impl Parser {
     /// a name that already binds anything visible is refused.
     fn refuse_fact_name_in_scope(&self, name: &str) -> Result<(), ClickError> {
         self.refuse_bool_literal_binder(name)?;
-        let bound = self.fact_names.contains_key(name)
-            || self.current_proof_let_names.contains(name)
+        if self.fact_names.contains_key(name)
+            || self.fact_names_being_proved.contains(name)
+            || self.name_bound_in_scope(name)
+        {
+            return Err(self.error(format!(
+                "`have {name}: ...` names a fact `{name}`, but `{name}` already names something in scope; choose another name"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Whether `name` binds a parameter, binding or C object visible here.
+    fn name_bound_in_scope(&self, name: &str) -> bool {
+        self.current_proof_let_names.contains(name)
             || self.current_contract_bindings.contains(name)
             || self.current_integer_params.contains(name)
             || self.current_theorem_param_names.contains(name)
@@ -7357,13 +8061,7 @@ impl Parser {
             || self
                 .current_c_object_names
                 .as_ref()
-                .is_some_and(|names| names.contains(name));
-        if bound {
-            return Err(self.error(format!(
-                "`have {name}: ...` names a fact `{name}`, but `{name}` already names something in scope; choose another name"
-            )));
-        }
-        Ok(())
+                .is_some_and(|names| names.contains(name))
     }
 
     /// `have P ...` after any `name:`.
@@ -8075,7 +8773,14 @@ impl Parser {
                 self.expect_empty_tactic_args(&name)?;
                 if self.peek_ident() == Some("as") {
                     self.position += 1;
-                    ProofTactic::IntroAs(self.expect_ident("name for the introduced variable")?)
+                    let name = self.expect_ident("name for the introduced variable")?;
+                    if self.fact_names.contains_key(&name) {
+                        return Err(self.error(format!(
+                            "`intro() as {name}` would hide the fact named `{name}` by `have {name}: ...`; choose another name"
+                        )));
+                    }
+                    self.ended_fact_names.remove(&name);
+                    ProofTactic::IntroAs(name)
                 } else {
                     ProofTactic::Intro
                 }
@@ -8461,6 +9166,13 @@ impl Parser {
         if self.peek_ident() == Some("simp") && self.peek_next() == Some(&Token::Semicolon) {
             self.position += 2;
             return Ok(vec![ProofTactic::Simp]);
+        }
+        // `auto` has no script spelling, and the bare closer is already the
+        // smart one; say so rather than suggest the `by auto;` just written.
+        if self.peek_ident() == Some("auto") {
+            return Err(self.error(
+                "`close_invariants by auto` is not a form: write `close_invariants();`, whose closer is already smart, or end the `preserve` script and let the back edge close implicitly",
+            ));
         }
         match self.peek() {
             Some(Token::Ident(_)) => Ok(vec![self.parse_proof_tactic()?]),
@@ -11674,6 +12386,20 @@ impl Parser {
                         continue;
                     }
                     if let ContractExpression::CFragment(CExpression::Variable(owner)) = &expression
+                        && self.current_value_binders.contains_key(owner)
+                    {
+                        if self.peek() != Some(&Token::Dot) {
+                            return Err(self.error("binder parameters use `.`, not `->`"));
+                        }
+                        let owner = owner.clone();
+                        self.position += 1;
+                        let parameter = self.expect_ident("resource parameter name")?;
+                        expression = ContractExpression::CFragment(CExpression::Variable(format!(
+                            "{owner}.{parameter}"
+                        )));
+                        continue;
+                    }
+                    if let ContractExpression::CFragment(CExpression::Variable(owner)) = &expression
                         && let Some((identity, resource_name)) =
                             self.current_resource_bindings.get(owner).cloned()
                     {
@@ -13821,4 +14547,17 @@ fn composite_body_child_slots(body: &CompositeResourceBody) -> BTreeSet<String> 
             _ => None,
         })
         .collect()
+}
+
+/// Whether `expression` does `+`, `-`, `*` or negation at its top, looking
+/// through `old`.
+fn has_arithmetic_spine(expression: &ContractExpression) -> bool {
+    match expression {
+        ContractExpression::Add(..)
+        | ContractExpression::Subtract(..)
+        | ContractExpression::Multiply(..)
+        | ContractExpression::Negate(_) => true,
+        ContractExpression::Old(inner) => has_arithmetic_spine(inner),
+        _ => false,
+    }
 }

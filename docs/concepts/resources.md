@@ -25,8 +25,9 @@ memory accesses must be covered by the current resource context:
 - a store requires an owned memory resource,
 - automatic scalar declarations create ownership of their exact byte extent;
   ordinary local access uses it without additional proof annotations,
-- legacy automatic array and ordinary aggregate declarations retain implicit
-  local access; construction destinations have explicit allocation ownership.
+- ordinary record declarations and construction destinations create ownership
+  of their complete byte extent, including padding, without initializing fields;
+- legacy automatic arrays retain implicit local access.
 
 Scalar allocation ownership is independent of initialization. It can be lent to
 an ordinary helper contract and is retired when storage leaves its scope or is
@@ -262,6 +263,17 @@ under [Modeled bodies and arm selection](#modeled-bodies-and-arm-selection);
 and a body with existential witnesses publishes nothing. Only the section's
 own clauses publish; the rest of the frame the section is evaluated against
 is never opened for this purpose.
+
+Named produced-resource arguments use this same read authority from the call's
+own input instances, including the arms the entry premises already select.
+For `produces root->node; produces leaf: cell(root->node);`, a matched input
+bundle owning `root->node` supplies the index read just as an unmatched bundle
+does. Current arguments read post-call memory; `old(...)` arguments retain
+entry authority and memory. This temporary argument frame does not export a
+view of a consumed field to the caller. Regressions are
+`mdtests/produced_resource_index_reads_matched_input_field.md`,
+`mdtests/produced_resource_index_uses_post_call_pointer.md`, and
+`mdtests/produced_resource_index_does_not_export_input_views.md`.
 
 The publication is read authority and nothing more. The instance stays folded,
 so a store to a cell it owns is refused until an explicit `unfold` moves the
@@ -757,11 +769,12 @@ under explicitly borrowed authorities, with different families at the same
 anchor. It does not admit arbitrary batches or authority replacement.
 
 Private external memory can use its checked `viewable(...)` facts together with
-owned body resources. A local struct's implicit storage access currently does
-not supply a transferable `owns *p`; the preserved
-`authority_family_exchange_stack_object_unavailable` regression records that
-separate limitation. The positive caller fixture receives explicit object
-ownership on entry.
+owned body resources. Ordinary local records also supply transferable storage
+ownership: `authority_family_exchange_stack_object` packages the caller's two
+records into checked resource members. A modular helper must separately export
+any payload-value guarantee the caller needs. The paired
+`authority_family_exchange_stack_payload_unavailable` control retains the same
+C and count guarantees but omits that value guarantee; its final sum is refused.
 
 An ordinary control resource can own both authorities and the C fields that
 record their totals. A checkout helper borrows that control as one resource:
@@ -1049,6 +1062,18 @@ These steps are bounded by design. A proof that needs facts inside a nested
 composite resource should name the path with repeated `observe(...)` steps
 instead of relying on `auto` to search through every possible nested body.
 
+A function that returns a composite (`produces` it, or keeps it under `owns`)
+may reach its exit holding the body's pieces instead of the folded head, and
+a loop that keeps one may reach its back edge that way. Reading the pieces as
+the composite there is a fold: the kernel accepts it only where every body
+fact holds over those pieces, by the same exact check `fold` makes, and
+otherwise reports the composite missing. A C store that falsifies a body fact
+therefore needs the proof to restore the fact and fold, or the contract to
+return something weaker
+(`mdtests/an_ordinary_exit_does_not_produce_a_composite_whose_body_fact_a_store_falsified.md`,
+`mdtests/a_loop_back_edge_does_not_return_a_composite_whose_body_fact_a_store_falsified.md`,
+`mdtests/an_ordinary_exit_produces_a_composite_whose_body_facts_hold.md`).
+
 ### Borrowing a composite
 
 `views` of a composite covers its checked one-level frontier. Lending one puts
@@ -1179,7 +1204,14 @@ they name the state the execution has reached. After `root = root->left` a
 and a body fact such as `fact parent->left == child` instantiates to the link
 the body just walked. The fold's field values are read the same way, so one
 tactic never straddles two states
-(`mdtests/fold_argument_reads_current_cursor.md`).
+(`mdtests/fold_argument_reads_current_cursor.md`). An explicit `old(...)`
+argument selects function entry even in a fold with explicit fields: after
+`p = q`, `fold(saved_at(old(p)), { model: old(saved.model) })` keeps the
+entry-indexed instance, while `fold(saved_at(p), ...)` selects the current
+pointer. The argument and field initializer retain their own snapshot selectors
+(`mdtests/fielded_resource_fold_keeps_entry_arguments.md`); a current-pointer
+model cannot establish the old instance's body
+(`mdtests/fielded_resource_fold_rejects_current_model_for_entry_argument.md`).
 A resource argument may also read an owned field through a proved model-pointer
 alias. Named folds retain the facts already checked at that point when
 evaluating those arguments; a model pointer without read authority is refused

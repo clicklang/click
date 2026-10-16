@@ -350,6 +350,7 @@ fn merge_modules(
         verifying_sources: Vec::new(),
         c_target: None,
         thread_runtime: Default::default(),
+        integer_arithmetic: false,
         algebraic_type_definitions: Vec::new(),
         predicate_definitions: Vec::new(),
         click_function_definitions: Vec::new(),
@@ -376,6 +377,12 @@ fn merge_modules(
                 )));
             }
         }
+        std::sync::Arc::make_mut(&mut merged.c_function_names).extend(
+            local
+                .c_function_names
+                .iter()
+                .map(|(name, target)| (name.clone(), target.clone())),
+        );
         // One project selects exactly one C implementation target: its
         // sources are preprocessed once, and its proofs carry one target in
         // their artifact identity. A module may restate the project's target
@@ -647,12 +654,12 @@ void f(int32* p) {
             [
                 ClickModuleSource::new(
                     "library.click",
-                    "target \"x86_64-linux-userspace\";\npredicate positive(x: int32) { x > 0 }\n",
+                    "target \"x86_64-unknown-linux-gnu\";\npredicate positive(x: int32) { x > 0 }\n",
                     [],
                 ),
                 ClickModuleSource::new(
                     "entry.click",
-                    "import \"library.click\";\ntarget \"x86_64-linux-userspace\";\n",
+                    "import \"library.click\";\ntarget \"x86_64-unknown-linux-gnu\";\n",
                     ["library.click".to_string()],
                 ),
             ],
@@ -672,12 +679,12 @@ void f(int32* p) {
             [
                 ClickModuleSource::new(
                     "library.click",
-                    "target \"x86_64-linux-userspace\";\npredicate positive(x: int32) { x > 0 }\n",
+                    "target \"x86_64-unknown-linux-gnu\";\npredicate positive(x: int32) { x > 0 }\n",
                     [],
                 ),
                 ClickModuleSource::new(
                     "entry.click",
-                    "import \"library.click\";\ntarget \"x86_64-linux-kernel\";\n",
+                    "import \"library.click\";\ntarget \"x86_64-unknown-linux-gnu\";\nmode \"kernel\";\n",
                     ["library.click".to_string()],
                 ),
             ],

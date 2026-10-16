@@ -313,10 +313,10 @@ fn rewrite_with_admitted_equality(
                 }
                 atomic => match rewrite_atomic_proposition_by_exact_equality(atomic, equality) {
                     Ok(rewritten) => results.push((rewritten, true)),
-                    Err(message) if message.contains("does not occur in") => {
+                    Err(AtomicRewriteRefusal::Absent(_)) => {
                         results.push((atomic.clone(), false));
                     }
-                    Err(message) => return Err(message),
+                    Err(refusal) => return Err(refusal.into()),
                 },
             },
             RewriteTask::BuildAnd | RewriteTask::BuildOr | RewriteTask::BuildImplies => {
@@ -605,16 +605,50 @@ fn pointer_offset_congruence_rewrite(
     (rewrite.refusal().is_none() && &rewritten != goal).then_some(rewritten)
 }
 
+/// Why one atomic proposition was not rewritten by an equality.
+#[derive(Debug)]
+enum AtomicRewriteRefusal {
+    /// The equality's side does not occur in the proposition: it is left as
+    /// it is, and a compound goal may still rewrite elsewhere.
+    Absent(String),
+    /// The rewrite is not admitted here.
+    Refused(String),
+}
+
+impl From<String> for AtomicRewriteRefusal {
+    fn from(message: String) -> Self {
+        Self::Refused(message)
+    }
+}
+
+impl From<&str> for AtomicRewriteRefusal {
+    fn from(message: &str) -> Self {
+        Self::Refused(message.to_string())
+    }
+}
+
+impl From<AtomicRewriteRefusal> for String {
+    fn from(refusal: AtomicRewriteRefusal) -> Self {
+        match refusal {
+            AtomicRewriteRefusal::Absent(message) | AtomicRewriteRefusal::Refused(message) => {
+                message
+            }
+        }
+    }
+}
+
 fn rewrite_atomic_proposition_by_exact_equality(
     goal: &Proposition,
     equality: &Proposition,
-) -> Result<Proposition, String> {
+) -> Result<Proposition, AtomicRewriteRefusal> {
     if let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) = equality
     {
         let mut rewrite = super::term_rewrite::TermRewrite::for_pointer_value_exact(left, right);
         let rewritten = rewrite.proposition(goal);
         if rewrite.refusal().is_some() {
-            return Err("pointer value rewrite exceeded its supported scope".into());
+            return Err(AtomicRewriteRefusal::Refused(
+                "pointer value rewrite exceeded its supported scope".into(),
+            ));
         }
         if rewritten != *goal {
             return Ok(rewritten);
@@ -775,7 +809,9 @@ fn rewrite_atomic_proposition_by_exact_equality(
             None => {}
         }
         if !rewrite.changed {
-            return Err("`rewrite` equality does not occur in the current goal".into());
+            return Err(AtomicRewriteRefusal::Absent(
+                "`rewrite` equality does not occur in the current goal".to_string(),
+            ));
         }
         return Ok(rewritten);
     }
@@ -788,7 +824,9 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 Proposition::ConditionIs(rewrite.condition(c), *expected)
             }
             _ => {
-                return Err("`rewrite` algebraic equality does not occur in this goal".to_string());
+                return Err(AtomicRewriteRefusal::Absent(
+                    "`rewrite` algebraic equality does not occur in this goal".to_string(),
+                ));
             }
         };
         if rewrite.refusal().is_some() {
@@ -796,11 +834,13 @@ fn rewrite_atomic_proposition_by_exact_equality(
             // walker's result; it is not a rewritten goal.
             return Err(
                 "`rewrite` cannot substitute this equality through a binder in the current goal"
-                    .to_string(),
+                    .into(),
             );
         }
         if !rewrite.changed {
-            return Err("`rewrite` equality does not occur in the current goal".to_string());
+            return Err(AtomicRewriteRefusal::Absent(
+                "`rewrite` equality does not occur in the current goal".to_string(),
+            ));
         }
         return Ok(rewritten);
     }
@@ -1022,8 +1062,10 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     _ => {
                         return pointer_offset_congruence_rewrite(goal, left, right).ok_or_else(
                             || {
-                                "`rewrite` pointer-offset equality does not occur in this goal"
-                                    .to_string()
+                                AtomicRewriteRefusal::Absent(
+                                    "`rewrite` pointer-offset equality does not occur in this goal"
+                                        .to_string(),
+                                )
                             },
                         );
                     }
@@ -1062,13 +1104,17 @@ fn rewrite_atomic_proposition_by_exact_equality(
             }
             _ => {
                 return pointer_offset_congruence_rewrite(goal, left, right).ok_or_else(|| {
-                    "`rewrite` pointer-offset equality does not occur in this goal".to_string()
+                    AtomicRewriteRefusal::Absent(
+                        "`rewrite` pointer-offset equality does not occur in this goal".to_string(),
+                    )
                 });
             }
         };
         if &rewritten == goal {
             return pointer_offset_congruence_rewrite(goal, left, right).ok_or_else(|| {
-                "`rewrite` equality does not occur in the current goal".to_string()
+                AtomicRewriteRefusal::Absent(
+                    "`rewrite` equality does not occur in the current goal".to_string(),
+                )
             });
         }
         return Ok(rewritten);
@@ -1323,7 +1369,10 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     }
                     _ => {
                         return pointer_congruence_rewrite(goal, left, right).ok_or_else(|| {
-                            "`rewrite` pointer equality does not occur in this goal".to_string()
+                            AtomicRewriteRefusal::Absent(
+                                "`rewrite` pointer equality does not occur in this goal"
+                                    .to_string(),
+                            )
                         });
                     }
                 };
@@ -1346,14 +1395,15 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 )
             }
             _ => {
-                return pointer_congruence_rewrite(goal, left, right).ok_or_else(|| {
-                    "`rewrite` pointer equality expects a condition goal".to_string()
-                });
+                return pointer_congruence_rewrite(goal, left, right)
+                    .ok_or_else(|| "`rewrite` pointer equality expects a condition goal".into());
             }
         };
         if &rewritten == goal {
             return pointer_congruence_rewrite(goal, left, right).ok_or_else(|| {
-                "`rewrite` equality does not occur in the current goal".to_string()
+                AtomicRewriteRefusal::Absent(
+                    "`rewrite` equality does not occur in the current goal".to_string(),
+                )
             });
         }
         return Ok(rewritten);
@@ -1365,7 +1415,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
         Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(left, right), true) => {
             (left, right)
         }
-        _ => return Err("`rewrite` expects a mathematical Integer, native 32-bit/64-bit, pointer, or algebraic equality".to_string()),
+        _ => return Err("`rewrite` expects a mathematical Integer, native 32-bit/64-bit, pointer, or algebraic equality".into()),
 
     };
     fn rewrite_term(
@@ -1773,7 +1823,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         )
                     }
                     _ => {
-                        return Err("`rewrite` cannot substitute this native equality in the selected condition".to_string());
+                        return Err("`rewrite` cannot substitute this native equality in the selected condition".into());
                     }
                 }
             };
@@ -1835,10 +1885,16 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 )),
             )
         }
-        _ => return Err("`rewrite` int32 equality does not occur in this goal".to_string()),
+        _ => {
+            return Err(AtomicRewriteRefusal::Absent(
+                "`rewrite` int32 equality does not occur in this goal".to_string(),
+            ));
+        }
     };
     if &rewritten == goal {
-        return Err("`rewrite` equality does not occur in the current goal".to_string());
+        return Err(AtomicRewriteRefusal::Absent(
+            "`rewrite` equality does not occur in the current goal".to_string(),
+        ));
     }
     Ok(rewritten)
 }
