@@ -850,6 +850,18 @@ known constructors. Symbolic Integer-valued datatype matches are supported when
 the matched result has one consistent carrier; contextual Integer literals in
 their arms inherit that result type. Mixed C and Integer arithmetic remains
 rejected unless an explicit conversion is present.
+
+An Integer comparison of exact observations of one machine type, such as
+`0 <= to_integer(capacity)` or `to_integer(x) != to_integer(y)`, also
+establishes the native comparison it is equivalent to, `0 <= capacity` or
+`x != y`, because `to_integer` is injective and preserves order. Built-in
+checks that read machine facts, such as resource quantities and the
+definedness of a population count, therefore accept the Integer premise
+(`mdtests/an_integer_bound_supplies_a_member_quantity.md`). The native
+comparison is exactly as strong as the Integer one
+(`mdtests/an_integer_premise_files_no_stronger_machine_fact.md`); a constant
+outside the type's range, or observations of two different types, establish
+no native fact.
 Resources may declare `field total: Integer;`: folding checks the resource's
 facts, and `old(model.total)` retains the entry value across updates.
 Checked resource pattern bindings retain each field's declared carrier, name,

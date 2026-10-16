@@ -7168,6 +7168,40 @@ pub(super) fn symbolic_spec_range_fold_value(
     )))
 }
 
+/// Turn a compound scalar guard into one existing condition without changing
+/// its meaning under ambient facts. Each logical node owns its children once;
+/// the selected value's arms are not copied through the guard tree.
+fn compound_spec_value_condition(proposition: &Proposition) -> Option<(ConditionTerm, bool)> {
+    crate::instrumentation::record_deterministic_work(1);
+    let (left, right, conjunction) = match proposition {
+        Proposition::And(left, right) => (left.as_ref(), right.as_ref(), true),
+        Proposition::Or(left, right) => (left.as_ref(), right.as_ref(), false),
+        Proposition::Not(body) => {
+            let (condition, expected) = compound_spec_value_condition(body)?;
+            return Some((condition, !expected));
+        }
+        _ => return proposition_as_single_condition(proposition),
+    };
+    let (left, left_expected) = compound_spec_value_condition(left)?;
+    let (right, right_expected) = compound_spec_value_condition(right)?;
+    let right_value = Bitvector32Term::if_then_else(
+        right,
+        Bitvector32Term::Constant(u32::from(right_expected)),
+        Bitvector32Term::Constant(u32::from(!right_expected)),
+    );
+    let constant = Bitvector32Term::Constant(u32::from(!conjunction));
+    let (then_term, else_term) = if conjunction == left_expected {
+        (right_value, constant)
+    } else {
+        (constant, right_value)
+    };
+    let value = Bitvector32Term::if_then_else(left, then_term, else_term);
+    Some((
+        ConditionTerm::equal(value, Bitvector32Term::Constant(1)),
+        true,
+    ))
+}
+
 pub(super) fn conditional_spec_value(
     proposition: &Proposition,
     then_value: CValue,
@@ -7176,7 +7210,8 @@ pub(super) fn conditional_spec_value(
     if then_value == else_value {
         return Some(then_value);
     }
-    let (condition, expected) = proposition_as_single_condition(proposition)?;
+    let (condition, expected) = proposition_as_single_condition(proposition)
+        .or_else(|| compound_spec_value_condition(proposition))?;
     // A `bool` conditional of two `bool` values selects one of them, so its
     // leaves stay exactly `0` or `1`.
     let (then_term, else_term, rebuild): (_, _, fn(Bitvector32Term) -> CValue) =
@@ -7628,3 +7663,6 @@ mod wide_scalar_conversion_tests;
 
 #[cfg(test)]
 mod integer_truncation_tests;
+
+#[cfg(test)]
+mod compound_conditional_tests;

@@ -4445,6 +4445,17 @@ fn declaration_source_index(
                 .iter()
                 .any(|extension| pair[1].text.ends_with(extension))
     });
+    let c_aliases = tokens
+        .windows(4)
+        .filter_map(|items| {
+            (items[0].text == "verifying"
+                && items[2].text == "as"
+                && crate::languages::SourceLanguage::of_source_path(
+                    items[1].text.trim_matches('"'),
+                ) == crate::languages::SourceLanguage::C)
+                .then_some(items[3].text.as_str())
+        })
+        .collect::<BTreeSet<_>>();
     // Inside a Rust `impl` block a method `name` is the function `Type_name`.
     // The block's type, its module when it is an inherent block for a type
     // named by a path, its trait argument's suffix, and where it closes.
@@ -4544,6 +4555,9 @@ fn declaration_source_index(
                             return cpp_declarator_name_ending_at(tokens, before);
                         }
                         let path = rust_path_ending_at(tokens, before);
+                        if path.len() == 2 && c_aliases.contains(path[0]) {
+                            return path.join("::");
+                        }
                         match &impl_block {
                             // A method's own name, and an item inside it.
                             Some(_) => crate::languages::rust::names::method_path_name(&path),
@@ -5225,7 +5239,12 @@ pub fn click_declaration_source_position(click_source: &str, name: &str) -> Opti
         match token.text.as_str() {
             "{" => depth += 1,
             "}" => depth = depth.saturating_sub(1),
-            text if depth == 0 && text == name => {
+            text if depth == 0
+                && (text == name
+                    || (name.contains("::")
+                        && name.rsplit("::").next() == Some(text)
+                        && rust_path_ending_at(&tokens, index).join("::") == name)) =>
+            {
                 // A generic declaration lists its type parameters between
                 // the name and the parameter list.
                 let mut next = index + 1;

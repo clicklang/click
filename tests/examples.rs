@@ -2508,3 +2508,63 @@ fn pointer_field_call_branch_rejects_wrong_result_and_missing_backing_authority(
     )
     .unwrap();
 }
+
+/// A borrowed quantified fact must survive an unrelated write in every proof mode.
+#[test]
+#[ignore = "nightly: borrowed-composite expansion, retained checks, and rejection mutations"]
+fn borrowed_composite_fact_after_write_expands_and_rechecks() {
+    limits::spawn(
+        "borrowed composite after a write",
+        "click-borrowed-composite-after-write".into(),
+        || {
+            let path = Path::new(
+                "mdtests/a_borrowed_composite_quantified_fact_opens_after_an_unrelated_write.md",
+            );
+            let fixture = click::cli::parse_mdtest(
+                path,
+                include_str!(
+                    "../mdtests/a_borrowed_composite_quantified_fact_opens_after_an_unrelated_write.md"
+                ),
+            )
+            .unwrap();
+            let source = fixture.click_source.as_deref().unwrap();
+            let sources = source_refs(&fixture.c_sources);
+            verify_c0_sources(source, &sources).unwrap();
+            let expanded = click::surface::expand_c0_claim_source(
+                source,
+                &sources,
+                "first",
+                click::surface::CProofClaim::Grouped,
+            )
+            .expect("opening the borrowed fact after a write must expand");
+            verify_c0_sources(&expanded, &sources)
+                .expect("the expanded borrowed fact must check fresh");
+            let offset = expanded.find("ensures result != 0;").unwrap();
+            let line = expanded[..offset].bytes().filter(|byte| *byte == b'\n').count() + 1;
+            let column = expanded[..offset].rsplit('\n').next().unwrap().len() + 1;
+            let (session, _) = click::surface::C0VerificationSession::new(source, &sources).unwrap();
+            session
+                .verify_at(&expanded, line, column)
+                .expect("the expanded borrowed fact must check retained");
+            drop(session);
+
+            for (before, after) in [
+                ("ensures result != 0;", "ensures result == 0;"),
+                ("owns q[0..1];", ""),
+                (
+                    "fact forall (k: int32) { 0 <= k and k < n implies p[k] != 0 };",
+                    "",
+                ),
+            ] {
+                assert_eq!(source.matches(before).count(), 1);
+                let changed = source.replace(before, after);
+                assert!(verify_c0_sources(&changed, &sources).is_err(), "{before}");
+            }
+            let original = &fixture.c_sources[0].1;
+            let borrowed_write = original.replace("q[0] = 1;", "p[0] = 0;");
+            assert_ne!(borrowed_write, *original);
+            assert!(verify_c0_sources(source, &[("probe.c", &borrowed_write)]).is_err());
+        },
+    )
+    .unwrap();
+}

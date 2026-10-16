@@ -27,5 +27,5 @@ void poke(uint8* s, uint64 n) {
 ```
 
 ```expect
-fail: could not verify C operation: missing resource fact `owns s[
+fail: could not verify C operation: missing resource fact `owns s[0]`
 ```

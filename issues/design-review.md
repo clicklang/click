@@ -119,6 +119,13 @@ Decision: fix (maintainer, 2026-10-15). Specification arithmetic is over
   measure the proof that disappears and check timing against the
   [verification efficiency contract](../docs/internals/verification-efficiency.md).
 
+Progress: a prototype on `examples/bounded-pool` written in Integer form
+shrinks the sidecar from 437 to 284 lines, and showed that built-in checks
+read only machine facts. Step 1 is done: an Integer comparison of exact
+machine observations also files its native comparison, so resource
+quantities and count definedness accept Integer premises. Next: the
+switch-over itself, then Integer-valued population counts.
+
 Afterwards, delete the `machine_integer` and `integer` lemmas Integer
 arithmetic makes unnecessary, complete the families that remain, and give
 those modules qualified names

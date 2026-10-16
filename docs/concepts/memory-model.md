@@ -67,7 +67,11 @@ for the proposition.
 For `int32**` and `uint8**`, pointer arithmetic advances by the eight-byte
 ABI width of each pointer-valued cell.
 
-Memory diagnostics use these same source units. A struct range covering whole
+Memory diagnostics use these same source units. A refused scalar store names
+the ownership for its actual width: a one-byte store to `uint8* s` at index
+zero requires `owns s[0]`, not four bytes. See the
+[byte-store refusal fixture](https://github.com/clicklang/click/blob/master/mdtests/viewed_byte_store_at_index_0.md).
+A struct range covering whole
 fields names them, for example `{p->left, p->right}`; an embedded field keeps
 its dotted path. A range that cannot be expressed as whole source elements
 uses an explicit byte cast, such as `((char *)p)[4..12]`. A coverage note that
