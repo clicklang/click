@@ -2869,6 +2869,11 @@ impl<'a> Proof<'a> {
                         _,
                         Some(ClickProposition::ForAll { name, .. }),
                     ) => Some(name),
+                    (
+                        PropositionIntroduction::Universal { .. },
+                        None,
+                        Some(ClickProposition::RangeAll { item, .. }),
+                    ) => Some(item),
                     _ => None,
                 };
                 if let Some(name) = introduced_name {
@@ -3035,6 +3040,54 @@ impl<'a> Proof<'a> {
                             );
                         }
                         Some(Arc::new(body.as_ref().clone()))
+                    }
+                    // A range quantifier stated where no lowering provenance
+                    // was recorded (a `have` at an execution frontier) names
+                    // its variable like a written `forall`. Its range guard
+                    // is the next introduction, so the remaining written goal
+                    // is that guard implying the body, which the
+                    // implication arm above then refines to the body.
+                    (
+                        None,
+                        PropositionIntroduction::Universal {
+                            variable,
+                            algebraic: None,
+                            ..
+                        },
+                        Some(ClickProposition::RangeAll {
+                            start,
+                            end,
+                            item,
+                            body,
+                            ..
+                        }),
+                    ) => {
+                        surface_bindings = surface_bindings.with_inserted(
+                            item.clone(),
+                            ContractExpression::CFragment(CExpression::Value(
+                                match self.proposition_goal("`intro` requires a proposition goal").expect("intro checked its goal") {
+                                    Proposition::ForAll { sort, .. } if sort.machine_integer_type().is_some() => sort.machine_integer_type().unwrap().symbolic_value(variable),
+                                    _ => CValue::Int32(Bitvector32Term::Variable(variable)),
+                                },
+                            )),
+                        );
+                        let bound = ContractExpression::Binding(item.clone());
+                        let guard = ClickProposition::And(
+                            Box::new(ClickProposition::Comparison {
+                                left: start.clone(),
+                                operator: ComparisonOperator::LessEqual,
+                                right: bound.clone(),
+                            }),
+                            Box::new(ClickProposition::Comparison {
+                                left: bound,
+                                operator: ComparisonOperator::LessThan,
+                                right: end.clone(),
+                            }),
+                        );
+                        Some(Arc::new(ClickProposition::Implies(
+                            Box::new(guard),
+                            body.clone(),
+                        )))
                     }
                     _ => None,
                 };
