@@ -804,9 +804,12 @@ pub(super) fn describe_missing_pure_fact(
         crate::surface::proof_diagnostics::render::render_proposition_labeled(required, &mut labels)
     };
     let available = describe_context_facts_labeled(pure_facts, execution_pure_facts, &mut labels);
+    let resources = crate::surface::proof_diagnostics::render::render_resource_facts_labeled(
+        resource_facts,
+        &mut labels,
+    );
     format!(
-        "missing pure fact: {requirement}\n  available pure facts: {available}\n  available resource facts: {}{}",
-        render_resource_facts_diagnostic(resource_facts, parameter_binding),
+        "missing pure fact: {requirement}\n  available pure facts: {available}\n  available resource facts: {resources}{}",
         labels.trace_legend()
     )
 }
@@ -1005,7 +1008,6 @@ pub(super) fn describe_goal_proof_context(
     pure_facts: &[Proposition],
     case_facts: &[Proposition],
     resource_facts: &[CResourceFact],
-    parameter_binding: ParameterBinding<'_>,
     result: Option<&CValue>,
     labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
 ) -> String {
@@ -1033,9 +1035,12 @@ pub(super) fn describe_goal_proof_context(
     // One label set for the whole context, so a `<state A>` on the case
     // line is the same memory as one among the pure facts.
     let pure = describe_context_facts_labeled(&relevant, &[], labels);
+    let resources = crate::surface::proof_diagnostics::render::render_resource_facts_labeled(
+        resource_facts,
+        labels,
+    );
     format!(
-        "{GOAL_PROOF_CONTEXT_HEADER}{case}\n  pure facts: {pure}\n  resource facts: {}{}",
-        render_resource_facts_diagnostic(resource_facts, parameter_binding),
+        "{GOAL_PROOF_CONTEXT_HEADER}{case}\n  pure facts: {pure}\n  resource facts: {resources}{}",
         labels.trace_legend()
     )
 }
@@ -1046,14 +1051,18 @@ pub(super) fn describe_proof_context(
     parameter_binding: ParameterBinding<'_>,
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
 ) -> String {
+    // One label set, so a placeholder in a resource's hidden record is the
+    // value the pure facts give the same name.
+    let mut labels =
+        crate::surface::proof_diagnostics::render::SnapshotLabels::naming(parameter_binding);
+    let pure = describe_context_facts_labeled(pure_facts, execution_pure_facts, &mut labels);
+    let resources = crate::surface::proof_diagnostics::render::render_resource_facts_labeled(
+        resource_facts,
+        &mut labels,
+    );
     format!(
-        "proof context:\n  pure facts: {}\n  resource facts: {}",
-        describe_context_pure_and_execution_facts(
-            pure_facts,
-            execution_pure_facts,
-            parameter_binding
-        ),
-        render_resource_facts_diagnostic(resource_facts, parameter_binding)
+        "proof context:\n  pure facts: {pure}\n  resource facts: {resources}{}",
+        labels.trace_legend()
     )
 }
 

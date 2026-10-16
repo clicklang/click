@@ -842,6 +842,40 @@ pub(in crate::surface) fn render_resource_facts_diagnostic(
     text
 }
 
+/// A resource list spelled with the report's own label set and no legend, so
+/// a placeholder in a hidden record (`record { first.v: <unnamed A> }`) is the
+/// same value the report's pure facts call `<unnamed A>`. The caller appends
+/// the shared legend once.
+pub(in crate::surface) fn render_resource_facts_labeled(
+    facts: &[CResourceFact],
+    labels: &mut SnapshotLabels,
+) -> String {
+    crate::surface::diagnostics::describe_bounded_list(facts, |fact| {
+        render_resource_fact_spelled(fact, labels)
+    })
+}
+
+/// One instance of `name` with its hidden record in the source spelling a
+/// resource list uses, `pair(p) record { first.v: <unnamed A> }`; `None` when
+/// the schema is a resource's own declared fields.
+pub(in crate::surface) fn render_hidden_record_instance_labeled(
+    name: &str,
+    arguments: &[crate::kernel::AlgebraicValue],
+    schema: &[(String, crate::kernel::ResourceFieldType)],
+    fields: &[crate::kernel::AlgebraicValue],
+    labels: &mut SnapshotLabels,
+) -> Option<String> {
+    let record = surface::source_hidden_record(schema, fields, labels)?;
+    let application = surface::source_resource(
+        &crate::kernel::CResource::Composite {
+            name: name.to_owned(),
+            arguments: arguments.into(),
+        },
+        labels,
+    );
+    Some(format!("{application} {record}"))
+}
+
 pub(in crate::surface) fn render_resource_diagnostic(
     resource: &CResource,
     binding: ParameterBinding<'_>,

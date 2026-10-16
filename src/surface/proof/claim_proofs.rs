@@ -1467,7 +1467,6 @@ fn close_claim_directly_from_outcome<'a>(
         &path_facts,
         &path_case_facts(entry_facts, execution_paths, path_index),
         resource_facts,
-        parameter_binding,
         match outcome {
             CFunctionOutcome::Return { value, .. } => Some(value),
             _ => None,

@@ -666,7 +666,21 @@ impl<'a> Proof<'a> {
                 } => Some(("unproved prerequisite", proposition.clone(), declaration)),
                 _ => None,
             };
-            self.step_error_with_requirement(refusal.describe(), comparison, requirement)
+            // A fold of a resource that declares no field proposes the
+            // hidden record its body facts read; the refusal shows it.
+            let proposed = (!unfold
+                && instance
+                    .schema()
+                    .fields()
+                    .iter()
+                    .all(|(name, _)| name.contains('.')))
+            .then(|| Arc::new(instance.clone()));
+            self.step_error_with_proposed_record(
+                refusal.describe(),
+                comparison,
+                requirement,
+                proposed,
+            )
         })?;
         crate::kernel::model_fields::register_instance_spelling(instance.identity(), &binding.name);
         let clause_presentations = if unfold {
