@@ -2395,10 +2395,14 @@ impl ConditionTerm {
         }
     }
 
-    /// Two pointer addresses are equal exactly when their pointers are, and
-    /// an address is zero exactly when its pointer is null. Any other
-    /// address-versus-integer comparison stays undecided: an integer with no
-    /// pointer origin never proves or refutes identity with an allocation.
+    /// The pointer condition that decides an address comparison. Equal
+    /// pointers have equal addresses, and an address is zero exactly when its
+    /// pointer is null. Equal addresses do not make equal pointers (a pointer
+    /// one past an object may have the next object's address), so this only
+    /// decides the comparison and never replaces it as a fact
+    /// (`ConditionTerm::int64_equal`). Any other address-versus-integer
+    /// comparison stays undecided: an integer with no pointer origin never
+    /// proves or refutes identity with an allocation.
     pub(crate) fn address_equality_as_pointer_equality(
         left: &Bitvector32Term,
         right: &Bitvector32Term,
@@ -2488,8 +2492,13 @@ impl ConditionTerm {
         if left == right {
             return Self::Constant(true);
         }
-        if let Some(condition) = Self::address_equality_as_pointer_equality(&left, &right) {
-            return condition;
+        // An address is zero exactly when its pointer is null. Two addresses
+        // stay an address equality: equal addresses are not equal pointers.
+        if let (Bitvector32Term::PointerAddress(pointer), other)
+        | (other, Bitvector32Term::PointerAddress(pointer)) = (&left, &right)
+            && other.uint64_as_const() == Some(0)
+        {
+            return Self::pointer_equal(pointer.as_ref().clone(), Pointer::null());
         }
         match (left.bitvector64_as_const(), right.bitvector64_as_const()) {
             (Some(left), Some(right)) => Self::Constant(left == right),

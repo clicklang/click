@@ -30,10 +30,16 @@ object pointer to `unsigned long` (or another 64-bit integer type) yields its
 address, a kernel term that records the exact source pointer rather than an
 arbitrary number; `address(p)` is the spec spelling. Only such an address, or
 zero, converts back through an explicit pointer cast, and it restores the
-original block, offset, and provenance. Two addresses are equal exactly when
-their pointers are equal, an address is zero exactly when its pointer is null,
-and an address compared with an integer that has no pointer origin is not
-decided either way. Integer coincidence therefore never manufactures an
+original block, offset, and provenance. Equal pointers have equal addresses,
+but equal addresses do not make equal pointers: a pointer one past an object
+may have the address of the next object, and only the latter may be read
+through it. So a C comparison `p == q` between pointers states
+`address(p) == address(q)`, and a pointer equality, which carries read and
+write permission, never follows from it
+(`mdtests/address_equality_does_not_grant_access_to_a_one_past_pointer.md`).
+A comparison with the null pointer constant is exact. An address is zero
+exactly when its pointer is null, and an address compared with an integer
+that has no pointer origin is not decided either way. Integer coincidence therefore never manufactures an
 allocation identity. Null converts to the integer zero. An explicit cast of a
 64-bit integer proven zero also yields null, including a loaded word whose
 cleared tag bits leave zero; it requires no allocation provenance.

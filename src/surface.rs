@@ -6861,6 +6861,34 @@ fn contract_expression_reads_memory(
         | ContractExpression::Binding(_)
         | ContractExpression::CBinding(_)
         | ContractExpression::CFragment(CExpression::Variable(_) | CExpression::Value(_)) => false,
+        // `address(p)` of a name is that pointer value's integer
+        // representation: it reads nothing its operand does not.
+        ContractExpression::CUnary {
+            operand,
+            lowered:
+                CExpression::Cast {
+                    expression,
+                    target_type: CType::UInt64,
+                    ..
+                },
+        } if matches!(
+            expression.as_ref(),
+            CExpression::Variable(_) | CExpression::Value(_)
+        ) =>
+        {
+            contract_expression_reads_memory(operand, callees)
+        }
+        ContractExpression::CFragment(CExpression::Cast {
+            expression,
+            target_type: CType::UInt64,
+            ..
+        }) if matches!(
+            expression.as_ref(),
+            CExpression::Variable(_) | CExpression::Value(_)
+        ) =>
+        {
+            false
+        }
         // A memory read, a snapshot selector, a resource observation, or any
         // C fragment richer than a name is conservatively memory-dependent.
         ContractExpression::QualifiedC { .. }

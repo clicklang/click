@@ -4438,7 +4438,7 @@ fn apply_c_equality(
                     assumptions,
                     move |facts, obligations| {
                         condition_as_c_int32_paths_valued(
-                            pointer_equality_condition(left, right),
+                            c_pointer_comparison_condition(left, right),
                             facts,
                             obligations,
                             assumptions,
@@ -4864,6 +4864,26 @@ pub(in crate::kernel) fn pointer_equality_condition(
     right: Pointer,
 ) -> ConditionTerm {
     ConditionTerm::pointer_equal(left, right)
+}
+
+/// What a C `==` between two pointers establishes: their addresses are
+/// equal. C compares addresses only, so `&pair.first + 1 == &pair.second`
+/// holds although only the second may be read through. The comparison is
+/// therefore an equality of the two `uint64` addresses, not the kernel's
+/// pointer equality, and grants no permission from one pointer to the other
+/// (`design/pointer-subobject-extents.md`, Phase B). Equal pointers still
+/// decide it true. A null operand is a null test, which C makes exact.
+pub(in crate::kernel) fn c_pointer_comparison_condition(
+    left: Pointer,
+    right: Pointer,
+) -> ConditionTerm {
+    if left == Pointer::null() || right == Pointer::null() {
+        return pointer_equality_condition(left, right);
+    }
+    ConditionTerm::uint64_equal(
+        Bitvector32Term::pointer_address(left),
+        Bitvector32Term::pointer_address(right),
+    )
 }
 
 pub(in crate::kernel) fn pointer_is_null_condition(pointer: Pointer) -> ConditionTerm {

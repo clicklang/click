@@ -5867,6 +5867,9 @@ impl CMemory {
             bytes,
             assumptions,
         );
+        // Objects a known address equality ties to the written one may share
+        // the written bytes.
+        let address_connected = assumptions.address_connected_objects(&normalized_pointer);
         let cell_fate = |cell_pointer: &Pointer, cell_value: &CValue| {
             let normalized_cell_pointer = Pointer {
                 block: cell_pointer.block.clone(),
@@ -5890,6 +5893,13 @@ impl CMemory {
                 } else {
                     CachedValueFate::Forgotten
                 };
+            }
+            if !address_connected.is_empty()
+                && address_connected.contains(&crate::kernel::assumptions::parameter_alias_bucket(
+                    &normalized_cell_pointer,
+                ))
+            {
+                return CachedValueFate::Forgotten;
             }
             if assumptions.access_owned_apart_from_store(
                 &owned_footprint,
@@ -5971,6 +5981,13 @@ impl CMemory {
                 } else {
                     CachedValueFate::Forgotten
                 };
+            }
+            if !address_connected.is_empty()
+                && address_connected.contains(&crate::kernel::assumptions::parameter_alias_bucket(
+                    &normalized_cell_pointer,
+                ))
+            {
+                return CachedValueFate::Forgotten;
             }
             if assumptions.access_owned_apart_from_store(
                 &owned_footprint,

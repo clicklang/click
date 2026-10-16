@@ -592,8 +592,8 @@ sequence:
   `mdtests/rotation_model_rejects_swapped_order.md` keeps every node and
   subtree but breaks the in-order sequence, so it fails only at the model
   equation the example's own rotations prove.
-  `tree_contains` also relates the C test `root == target` to the model's
-  identity payload; `mdtests/model_identity_pointer_payload.md` is the minimal
+  `tree_contains` also relates the C test `root == target`, an address
+  comparison, to the model's identity payload through `address(...)`; `mdtests/model_identity_pointer_payload.md` is the minimal
   form of that bridge, `mdtests/model_identity_pointer_payload_rejects_other_cell.md`
   its negative, and `mdtests/match_bindings_in_branch_arm.md` pins that a
   match arm's payload bindings stay in scope inside a nested `branch` arm.
