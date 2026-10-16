@@ -1733,14 +1733,6 @@ impl PureFactContext {
     /// object returned here: separation keeps none of their cached cells.
     /// Computed once per store; the walk follows only the equalities filed
     /// under the objects it reaches.
-    ///
-    /// The written object itself is never returned, even when a cycle of
-    /// equalities leads back to it. Its own cells share the store's block and
-    /// offset stem, so whether the store reaches their bytes is the offset
-    /// question the store's ordinary rules already decide: an equality of
-    /// addresses within one object is an equality of offsets. Forgetting them
-    /// here would drop `p->rb_right` at a store to `p->rb_left` merely because
-    /// some pointer compared equal to `p`.
     pub(in crate::kernel) fn address_connected_objects(
         &self,
         pointer: &Pointer,
@@ -1749,8 +1741,7 @@ impl PureFactContext {
         if self.wide_pointer_alias_endpoints_by_object.is_empty() {
             return reached_objects;
         }
-        let written_object = parameter_alias_bucket(pointer);
-        let mut pending = vec![written_object.clone()];
+        let mut pending = vec![parameter_alias_bucket(pointer)];
         let mut seen = BTreeSet::new();
         let mut visited_terms = BTreeSet::new();
         while let Some(bucket) = pending.pop() {
@@ -1779,7 +1770,6 @@ impl PureFactContext {
                 }
             }
         }
-        reached_objects.remove(&written_object);
         reached_objects
     }
 
