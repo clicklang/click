@@ -405,6 +405,14 @@ the observed resource at the loop back edge. Resource-consuming or mutating
 transitions across that back edge remain a separate hard-bucket recursion
 boundary.
 
+A loop back edge must also preserve any object class retained for a pointer
+local at the head. A class mismatch names the first failing local and prints
+the head and back-edge classes. A missing back-edge class is reported as
+`unknown (no retained object class)`, distinct from an unbound local. Class
+printing uses nominal struct tags, pointer base/depth, and member/scalar classes,
+without dumping struct layouts. The diagnostic retains the comparison already
+made by the join checker; it does not scan locals a second time.
+
 A loop ranking component is not restricted to a C expression. The loop head
 carries a `CRankingComponent`: a current-state C expression, a pure
 specification expression lowered exactly as a loop invariant's expression is,

@@ -3305,3 +3305,30 @@ fn deferred_execution_reservations_skip_unused_scans_and_avoid_collisions() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/tests/execution_tests.rs");
 }
+
+#[test]
+fn loop_join_reports_the_local_and_both_object_classes() {
+    use crate::kernel::effective_type::{CAccessClass, CStructClass};
+    let pointer = |class| {
+        CValue::Pointer(
+            CPointerValue::new(Pointer::symbolic(Variable(987_001)), CType::Int32Pointer)
+                .with_object_class(class),
+        )
+    };
+    let node = CAccessClass::Struct(CStructClass::opaque("node"));
+    let other = CAccessClass::Struct(CStructClass::opaque("other"));
+    let head = CState::new().with_local("parent", pointer(Some(node.clone())));
+    let assumptions = PureFactContext::new();
+    for (class, expected) in [
+        (Some(other), "struct other"),
+        (None, "unknown (no retained object class)"),
+    ] {
+        let back = CState::new().with_local("parent", pointer(class));
+        let error = c_loop_state_components_match_at_back_edge(&head, &back, &assumptions, &[])
+            .unwrap_err();
+        assert!(error.contains("pointer local `parent`: loop-head object class: struct node; back-edge object class: "), "{error}");
+        assert!(error.ends_with(expected), "{error}");
+    }
+    let back = CState::new().with_local("parent", pointer(Some(node)));
+    assert!(c_loop_state_components_match_at_back_edge(&head, &back, &assumptions, &[]).is_ok());
+}
