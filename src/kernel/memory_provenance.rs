@@ -2880,18 +2880,36 @@ pub(in crate::kernel) fn complete_pointer_read_value(
     origin: &Pointer,
     assumptions: &PureFactContext,
 ) -> Option<CPointerValue> {
+    let CValue::Pointer(value) = complete_pointer_carrier_read_value(origin, assumptions)? else {
+        return None;
+    };
+    Some(value)
+}
+
+/// Recover an actual complete pointer or pointer-carrying integer store.
+/// Numeric scalar bytes never manufacture a representation record.
+pub(in crate::kernel) fn complete_pointer_carrier_read_value(
+    origin: &Pointer,
+    assumptions: &PureFactContext,
+) -> Option<CValue> {
     let read = origin.as_loaded_value()?;
-    let cell = memory_dag_cell_source(
-        &complete_pointer_read_source(&read),
-        &read.defining_address,
-        crate::kernel::C_POINTER_BYTE_WIDTH,
-        assumptions,
-        true,
-    )?;
+    // A copied value uses the same whole-byte frame premises as a read
+    // retained in place. In particular, an explicit separation of the
+    // enclosing header can protect this complete pointer field.
+    let _scope = ExplicitReadScope(EXPLICIT_DAG_CHECK.with(|flag| flag.replace(true)));
+    let cell = with_extended_dag_bridging(|| {
+        memory_dag_cell_source(
+            &complete_pointer_read_source(&read),
+            &read.defining_address,
+            crate::kernel::C_POINTER_BYTE_WIDTH,
+            assumptions,
+            true,
+        )
+    })?;
     // A walk stopped by an affecting edge can retain a scalar-prefix cache.
     // Only a reached whole-pointer store supplies the complete value.
     let MemoryDagCell::Stored {
-        value: CValue::Pointer(value),
+        value: value @ (CValue::Pointer(_) | CValue::PointerInteger(_)),
         ..
     } = cell
     else {
@@ -6797,6 +6815,62 @@ mod opaque_pointer_frame_tests {
             &read(&overwritten),
             &context
         ));
+    }
+
+    #[test]
+    fn copied_pointer_value_uses_explicit_whole_header_separation() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let header = Pointer::symbolic(Variable(9_880_420));
+        let field = header.clone().offset_by_bytes(8);
+        let buffer = Pointer::symbolic(Variable(9_880_421));
+        let target = Pointer::symbolic(Variable(9_880_422));
+        let stored = CPointerValue::new(target.clone(), CType::Int32Pointer).with_extent(Some(
+            SubobjectExtent {
+                start: target,
+                width: 4,
+            },
+        ));
+        let memory = intern_c_memory(
+            CMemory::new()
+                .store(field.clone(), CValue::Pointer(stored.clone()))
+                .store(
+                    buffer.clone().offset_by_bytes(4),
+                    CValue::Int32(7u32.into()),
+                ),
+        );
+        let read = |memory: &SharedCMemory| {
+            CPointerValue::from_read(
+                stored.pointer().clone(),
+                CType::Int32Pointer,
+                memory,
+                &field,
+            )
+        };
+        let separation = |words: u32| Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(CMemoryRange::new(
+                header.clone(),
+                0u32.into(),
+                words.into(),
+            ))),
+            right: Box::new(CResource::Memory(CMemoryRange::new(
+                buffer.clone(),
+                0u32.into(),
+                8u32.into(),
+            ))),
+        };
+        let empty = PureFactContext::new();
+        assert!(!empty.pointer_designations_match(&read(&memory), &stored));
+        let context = empty.clone().assume_proposition(separation(4));
+        assert!(context.pointer_designations_match(&read(&memory), &stored));
+        let too_short = empty.assume_proposition(separation(1));
+        assert!(!too_short.pointer_designations_match(&read(&memory), &stored));
+        let partial = intern_c_memory(
+            memory
+                .memory()
+                .clone()
+                .store(field.clone().offset_by_bytes(4), CValue::Int32(0u32.into())),
+        );
+        assert!(!context.pointer_designations_match(&read(&partial), &stored));
     }
 
     fn setup() -> (Pointer, Pointer, Pointer, Proposition, Proposition) {

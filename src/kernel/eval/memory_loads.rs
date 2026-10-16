@@ -1662,6 +1662,16 @@ fn canonicalized_symbolic_load_value_with_identity(
     {
         return Some(value);
     }
+    if matches!(value_type, CType::Int64 | CType::UInt64)
+        && let Some(value @ CValue::PointerInteger(_)) =
+            crate::kernel::memory_provenance::complete_pointer_carrier_read_value(
+                &Pointer::loaded_value(&crate::kernel::intern_c_memory_ref(memory), &address),
+                assumptions,
+            )
+        && value_type.accepts(&value)
+    {
+        return Some(value);
+    }
     // Canonical address selection can expose a materialized pointer cell that
     // the original spelling did not name. Reuse its complete stored value;
     // manufacturing another read here would discard the selected designation.
@@ -5214,6 +5224,76 @@ mod tests {
         );
         let partial = memory.store(field.offset_by_bytes(4), CValue::UInt32(0u32.into()));
         assert!(!context.pointer_designations_match(&read(&partial).0, &stored));
+    }
+
+    #[test]
+    fn a_symbolic_word_read_recovers_only_a_complete_stored_pointer_record() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer {
+            block: "global:symbolic-word".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let target = Pointer::symbolic(Variable(210_192));
+        let pointer = CPointerValue::new(target.clone(), CType::Int32Pointer).with_extent(Some(
+            SubobjectExtent {
+                start: target.clone(),
+                width: 4,
+            },
+        ));
+        let context = PureFactContext::new();
+        let read = |memory: &CMemory| {
+            canonicalized_symbolic_load_value_with_identity(
+                memory,
+                &field,
+                CType::UInt64,
+                &mut ExecutionFacts::new(),
+                &context,
+                false,
+                None,
+                LoadPurpose::Logical,
+            )
+            .unwrap()
+        };
+        for kind in [PointerIntegerKind::Exact, PointerIntegerKind::Tagged] {
+            let bits = Bitvector32Term::pointer_address(target.clone());
+            let bits = if kind == PointerIntegerKind::Tagged {
+                Bitvector32Term::UInt64BitwiseOr(
+                    Box::new(bits),
+                    Box::new(Bitvector32Term::UInt64Constant(1)),
+                )
+            } else {
+                bits
+            };
+            let stored = CValue::PointerInteger(PointerIntegerValue {
+                numeric: Box::new(CValue::UInt64(bits)),
+                pointer: Box::new(pointer.clone()),
+                kind,
+            });
+            let memory = CMemory::new()
+                .store(field.clone(), stored.clone())
+                .without_possible_aliasing_cells(
+                    &Pointer::symbolic(Variable(210_193)),
+                    8,
+                    &context,
+                );
+            assert!(memory.known_value(&field).is_none());
+            assert_eq!(read(&memory), stored);
+            let partial = memory.store(
+                field.clone().offset_by_bytes(4),
+                CValue::UInt32(0u32.into()),
+            );
+            assert_ne!(read(&partial), stored);
+            let numeric = CMemory::new().store(field.clone(), stored.numeric_value().clone());
+            let CValue::PointerInteger(fresh) = read(&numeric) else {
+                panic!("word read")
+            };
+            assert!(matches!(
+                fresh.kind,
+                PointerIntegerKind::Word { changed_bits: 0 }
+            ));
+            assert!(fresh.pointer.extent().is_none());
+        }
+        assert!(context.pure_facts().is_empty());
     }
 
     #[test]

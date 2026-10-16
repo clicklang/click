@@ -135,3 +135,44 @@ fn complete_read_domains_use_numeric_storage_classes_without_scanning_other_clas
         "{costs:?}"
     );
 }
+
+#[test]
+fn copied_pointer_frames_ignore_unrelated_separations() {
+    let costs = [16u64, 64, 256, 1024].map(|size| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let separation = |a: Pointer, a_words: u32, b: Pointer| Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(CMemoryRange::new(
+                a, 0u32.into(), a_words.into(),
+            ))),
+            right: Box::new(CResource::Memory(CMemoryRange::new(
+                b, 0u32.into(), 8u32.into(),
+            ))),
+        };
+        let mut facts = PureFactContext::new();
+        for index in 0..size {
+            facts = facts.assume_proposition(separation(
+                Pointer::symbolic(Variable(9_910_000 + index * 2)), 4,
+                Pointer::symbolic(Variable(9_910_001 + index * 2)),
+            ));
+        }
+        let header = Pointer::symbolic(Variable(9_909_000));
+        let field = header.clone().offset_by_bytes(8);
+        let buffer = Pointer::symbolic(Variable(9_909_001));
+        let target = Pointer::symbolic(Variable(9_909_002));
+        let stored = CPointerValue::new(target.clone(), CType::Int32Pointer)
+            .with_extent(Some(SubobjectExtent { start: target, width: 4 }));
+        let memory = intern_c_memory(CMemory::new()
+            .store(field.clone(), CValue::Pointer(stored.clone()))
+            .store(buffer.clone().offset_by_bytes(4), CValue::Int32(7u32.into())));
+        facts = facts.assume_proposition(separation(header, 4, buffer));
+        let read = CPointerValue::from_read(
+            stored.pointer().clone(), CType::Int32Pointer, &memory, &field,
+        );
+        let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
+            facts.pointer_designations_match(&read, &stored)
+        });
+        assert!(holds);
+        work
+    });
+    assert!(costs[0] > 0 && costs.iter().all(|work| *work <= costs[0] + 128), "{costs:?}");
+}
