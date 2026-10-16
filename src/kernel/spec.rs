@@ -3762,12 +3762,13 @@ fn symbolic_algebraic_fields(
     variant
         .fields
         .iter()
-        .map(|value_type| {
+        .enumerate()
+        .map(|(index, value_type)| {
             let variable = allocate()?;
             match value_type {
-                AlgebraicValueType::C(c_type) => {
-                    Ok(AlgebraicValue::C(symbolic_call_result(*c_type, variable)))
-                }
+                AlgebraicValueType::C(c_type) => Ok(AlgebraicValue::C(
+                    algebraic_type.symbolic_c_field_value(&variant.name, index, *c_type, variable),
+                )),
                 AlgebraicValueType::Integer => {
                     Ok(AlgebraicValue::Integer(IntegerTerm::var(variable)))
                 }

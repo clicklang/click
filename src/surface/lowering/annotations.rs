@@ -7476,8 +7476,10 @@ fn algebraic_kernel_type_from_parts(
         arguments: arguments.to_vec(),
     };
     let mut schemas = BTreeMap::new();
-    collect_algebraic_kernel_schemas(environment, &root_type, &mut schemas)?;
-    let schemas = std::sync::Arc::new(AlgebraicSchemas::new(schemas));
+    let mut object_classes = BTreeMap::new();
+    collect_algebraic_kernel_schemas(environment, &root_type, &mut schemas, &mut object_classes)?;
+    let schemas =
+        std::sync::Arc::new(AlgebraicSchemas::new(schemas).with_object_classes(object_classes));
     let variants = schemas
         .get(&root_type)
         .cloned()
@@ -7491,10 +7493,15 @@ fn algebraic_kernel_type_from_parts(
     })
 }
 
+/// Collects the schema of `value_type` and of every algebraic type its
+/// fields name, with the declared object classes of their pointer fields
+/// (`AlgebraicSchemas::with_object_classes`). A type whose fields declare no
+/// class records none.
 fn collect_algebraic_kernel_schemas(
     environment: &ClickFunctionEnvironment,
     value_type: &AlgebraicValueType,
     schemas: &mut BTreeMap<AlgebraicValueType, std::sync::Arc<[AlgebraicVariantType]>>,
+    object_classes: &mut BTreeMap<AlgebraicValueType, crate::kernel::AlgebraicFieldObjectClasses>,
 ) -> Result<(), String> {
     if schemas.contains_key(value_type) {
         return Ok(());
@@ -7523,12 +7530,33 @@ fn collect_algebraic_kernel_schemas(
         })
         .collect::<Result<Vec<_>, String>>()?;
     schemas.insert(value_type.clone(), variants.clone().into());
+    let classes = definition
+        .variants()
+        .iter()
+        .filter_map(|variant| {
+            let fields = variant
+                .fields()
+                .iter()
+                .map(|field| match field {
+                    AlgebraicFieldType::C { object_class, .. } => object_class.clone(),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            fields
+                .iter()
+                .any(Option::is_some)
+                .then(|| (variant.name().to_string(), fields.into()))
+        })
+        .collect::<crate::kernel::AlgebraicFieldObjectClasses>();
+    if !classes.is_empty() {
+        object_classes.insert(value_type.clone(), classes);
+    }
     for nested in variants
         .iter()
         .flat_map(|variant| variant.fields.iter())
         .filter(|field| matches!(field, AlgebraicValueType::Algebraic { .. }))
     {
-        collect_algebraic_kernel_schemas(environment, nested, schemas)?;
+        collect_algebraic_kernel_schemas(environment, nested, schemas, object_classes)?;
     }
     Ok(())
 }

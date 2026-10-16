@@ -533,6 +533,40 @@ mod exact_word_address_tests {
     }
 
     #[test]
+    fn an_alignment_premise_over_a_classed_address_is_cited_as_admitted() {
+        use crate::kernel::effective_type::{CAccessClass, CStructClass};
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer::symbolic(Variable(980110));
+        let class = CAccessClass::Struct(CStructClass::opaque("node"));
+        let premise = ConditionTerm::uint64_equal(
+            Bitvector32Term::uint64_bitwise_and(
+                Bitvector32Term::object_pointer_address(pointer.clone(), Some(class.clone())),
+                Bitvector32Term::UInt64Constant(7),
+            ),
+            Bitvector32Term::UInt64Constant(0),
+        );
+        let assumptions = PureFactContext::new().assume_condition(premise.clone(), true);
+        let (aligned, cited) = assumptions
+            .pointer_alignment_certificate_decision(&pointer, 8)
+            .unwrap();
+        assert!(aligned);
+        assert_eq!(cited, Some(Proposition::ConditionIs(premise, true)));
+        for address in [
+            Bitvector32Term::pointer_address(pointer.clone()),
+            Bitvector32Term::object_pointer_address(pointer.clone(), Some(class.clone())),
+        ] {
+            let tagged = ConditionTerm::uint64_equal(
+                Bitvector32Term::uint64_bitwise_or(
+                    address.clone(),
+                    Bitvector32Term::UInt64Constant(1),
+                ),
+                Bitvector32Term::uint64_add(address, Bitvector32Term::UInt64Constant(1)),
+            );
+            assert_eq!(assumptions.decide(&tagged), Some(true));
+        }
+    }
+
+    #[test]
     fn encoded_object_class_survives_tags_and_a_different_cast_type() {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         let _session = crate::kernel::VerificationSession::enter();

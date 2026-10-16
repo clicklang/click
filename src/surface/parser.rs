@@ -1991,6 +1991,17 @@ impl Parser {
             // `struct tag` is not a pointer to a laid-out object and a
             // `struct tag**` does not point at one either, so neither is a
             // memory base in a match arm.
+            // The designated object's class follows the declaration at
+            // every pointer depth, as a parameter's does; a bare `struct
+            // tag` designates nothing.
+            let object_class = match (&parsed.struct_name, parsed.struct_pointer) {
+                (Some(_), false) => None,
+                (struct_name, _) => syntax::declared_pointee_class(
+                    parsed.c_type,
+                    struct_name.as_deref(),
+                    &self.struct_layouts,
+                ),
+            };
             let struct_name = if parsed.struct_pointer && parsed.c_type == C0Type::Int32Pointer {
                 parsed.struct_name
             } else {
@@ -1999,6 +2010,7 @@ impl Parser {
             return Ok(AlgebraicFieldType::C {
                 c_type: parsed.c_type,
                 struct_name,
+                object_class,
             });
         }
         if name == "Integer" {

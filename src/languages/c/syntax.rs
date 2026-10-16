@@ -7542,6 +7542,36 @@ fn add_member_class(
     }
 }
 
+/// The class of the object a pointer of declared type `c_type` designates
+/// (`design/effective-types.md`), as a pointer parameter's declaration gives
+/// it: through `struct_name` for a struct pointer, otherwise the pointee
+/// type's class, with `int *` and `int **` told apart from struct pointers
+/// by the absence of a struct. A struct whose layout `structs` does not hold
+/// is identified by its tag alone. Click declarations of model fields use it
+/// so a pointer read from a model designates what its declaration promises.
+pub fn declared_pointee_class(
+    c_type: C0Type,
+    struct_name: Option<&str>,
+    structs: &BTreeMap<String, C0StructLayout>,
+) -> Option<crate::kernel::effective_type::CAccessClass> {
+    use crate::kernel::effective_type::{CPointeeBase, CStructClass};
+    match struct_name {
+        Some(name) => {
+            let class = structs
+                .get(name)
+                .and_then(|layout| layout.class.clone())
+                .unwrap_or_else(|| CStructClass::opaque(name));
+            struct_pointer_class(c_type, CPointeeBase::Struct(class))?.pointee()
+        }
+        None => {
+            let pointee = c_type.pointee_type()?;
+            pointee
+                .access_class()
+                .or_else(|| int_pointer_class(pointee))
+        }
+    }
+}
+
 /// The class of an `int *` or `int **` of type `c_type`, which the frontend
 /// spells as it spells struct pointers; callers know there is no struct.
 fn int_pointer_class(c_type: C0Type) -> Option<crate::kernel::effective_type::CAccessClass> {

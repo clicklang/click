@@ -737,9 +737,16 @@ pub enum AlgebraicFieldType {
     /// field is declared `struct tag*`; every C pointer shares one kernel
     /// type, so the tag is the only record of which layout a matched
     /// constructor binding of this field denotes.
+    ///
+    /// `object_class` is the class of the object a pointer field designates
+    /// (`design/effective-types.md`), from the declared pointee exactly as a
+    /// pointer parameter's declaration gives it. A symbolic value of the
+    /// field carries it, so a pointer read from a model keeps its
+    /// strict-aliasing and loop object-class checks.
     C {
         c_type: C0Type,
         struct_name: Option<String>,
+        object_class: Option<crate::kernel::effective_type::CAccessClass>,
     },
     Algebraic {
         name: String,
@@ -755,6 +762,7 @@ impl AlgebraicFieldType {
             Self::C {
                 c_type,
                 struct_name,
+                ..
             } if c_type.is_pointer() => struct_name.as_deref(),
             _ => None,
         }
