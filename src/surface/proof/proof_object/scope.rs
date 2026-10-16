@@ -45,7 +45,9 @@ impl<'a> ProofScope<'a> {
         self.body.goal()
     }
 
-    #[cfg(test)]
+    /// The selected nested proof, also retained when a written check fails.
+    /// Borrowing its persistent handle preserves the exact goal and context
+    /// without rebuilding them from the enclosing execution frontier.
     pub(in crate::surface::proof) fn body(&self) -> &Proof<'a> {
         &self.body
     }

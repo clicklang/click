@@ -60,6 +60,14 @@ pub(crate) trait ProofDiagnosticState: Send + Sync {
         &[]
     }
 
+    fn proof_context_kind(&self) -> Option<&str> {
+        None
+    }
+
+    fn resources(&self) -> &[crate::kernel::CResourceFact] {
+        &[]
+    }
+
     fn kernel_goal(&self) -> Option<&Proposition>;
     fn premises(&self, limit: usize) -> Vec<&Proposition>;
     fn premise_count(&self) -> usize;
@@ -89,7 +97,75 @@ pub(crate) struct ProofFailureDiagnostic {
     pub origin: ProofDiagnosticOrigin,
     pub claim_label: String,
     pub reason: String,
+    pub checks: Option<Arc<CheckObservations>>,
     pub state: Option<Arc<dyn ProofDiagnosticState>>,
+}
+
+/// Bounded observations of queries actually executed by one written check.
+/// They are diagnostic records, including speculative search, never premises.
+#[derive(Clone)]
+pub(crate) struct CheckObservations {
+    pub reads: Vec<crate::kernel::ReadResolutionDiagnostic>,
+    pub walks: Vec<crate::kernel::TransportCellWalkDiagnostic>,
+}
+
+pub(crate) fn capture_check_observations<T>(run: impl FnOnce() -> T) -> (T, CheckObservations) {
+    crate::kernel::with_bounded_cell_walk_diagnostics(|| {
+        let (result, reads) = crate::kernel::capture_read_resolutions(run);
+        let walks = crate::kernel::take_transport_cell_walk_diagnostics();
+        (result, CheckObservations { reads, walks })
+    })
+}
+
+pub(crate) fn render_check_observations(
+    checks: &CheckObservations,
+    labels: &mut render::SnapshotLabels,
+    traced: bool,
+) -> String {
+    let limit = if traced { 16 } else { 2 };
+    let mut result =
+        String::from("checks observed during the failed attempt (queries, not established facts):");
+    for read in checks.reads.iter().take(limit) {
+        result.push_str("\n  ");
+        if traced {
+            result.push_str(&render::render_read_resolution(read, labels));
+        } else {
+            result.push_str(&format!(
+                "read-value check: {}; recovered value {}; comparison {}",
+                read.reason,
+                if read.recovered.is_some() {
+                    "available"
+                } else {
+                    "not recovered"
+                },
+                if read.equal { "proved" } else { "not proved" }
+            ));
+        }
+    }
+    for walk in checks.walks.iter().take(limit) {
+        result.push_str("\n  cell walk: ");
+        if traced {
+            result.push_str(&render::render_transport_cell_walk(walk, labels));
+        } else {
+            result.push_str(&format!(
+                "{}-byte read; {}; from {} to {}",
+                walk.bytes,
+                walk.reason,
+                labels.state_phrase(walk.start.memory()),
+                labels.state_phrase(walk.stopped_at.memory())
+            ));
+        }
+    }
+    if checks.reads.is_empty() && checks.walks.is_empty() {
+        result.push_str("\n  no instrumented memory query was recorded; the failure may precede a cell walk or use another rule");
+    }
+    if checks.reads.len() > limit || checks.walks.len() > limit {
+        result.push_str("\n  … additional observations omitted");
+    }
+    if checks.reads.len() >= 16 || checks.walks.len() >= 16 {
+        result.push_str("\n  capture limited to 16 distinct cell walks and 16 read queries");
+    }
+    result
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -132,6 +208,11 @@ impl PartialEq for ProofFailureDiagnostic {
         self.origin == other.origin
             && self.claim_label == other.claim_label
             && self.reason == other.reason
+            && match (&self.checks, &other.checks) {
+                (None, None) => true,
+                (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+                _ => false,
+            }
             && match (&self.state, &other.state) {
                 (None, None) => true,
                 (Some(left), Some(right)) => Arc::ptr_eq(left, right),
@@ -224,6 +305,40 @@ fn render_diagnostic_labeled(
     // Keep the established summary as the first line. The richer context is
     // deliberately bounded and rendered only at this terminal boundary.
     let mut rendered = summary.unwrap_or_default().to_owned();
+    if summary.is_none() {
+        rendered.push_str("failed check:\n  ");
+        rendered.push_str(&diagnostic.reason);
+        rendered.push_str("\n  stage: ");
+        rendered.push_str(&diagnostic.origin.stage);
+        rendered.push_str("\n  location: ");
+        rendered.push_str(&diagnostic.origin.location);
+    }
+    if summary.is_none()
+        && let Some(kind) = diagnostic
+            .state
+            .as_ref()
+            .and_then(|state| state.proof_context_kind())
+    {
+        rendered.push_str("\n  proof context: ");
+        rendered.push_str(kind);
+    }
+    if summary.is_none()
+        && let Some(state) = &diagnostic.state
+    {
+        let resources = state.resources();
+        rendered.push_str(&format!(
+            "\n  resources at the failed check (showing {} of {}):",
+            resources.len().min(12),
+            resources.len()
+        ));
+        for fact in resources.iter().take(12) {
+            rendered.push_str("\n    ");
+            rendered.push_str(&render::render_resource_fact_labeled(fact, labels));
+        }
+        if resources.len() > 12 {
+            rendered.push_str("\n    … additional resources omitted");
+        }
+    }
     if summary.is_some() {
         rendered.push_str("\n  stage: ");
         rendered.push_str(&diagnostic.origin.stage);
@@ -261,22 +376,35 @@ fn render_diagnostic_labeled(
             rendered.push_str(&render::render_read_resolution(resolution, labels));
         }
     }
-    if summary.is_some() {
-        let premises = diagnostic.premises(8);
-        if !premises.is_empty() {
-            rendered.push_str(&format!(
-                "\n  recent premises (showing {} of {}):",
-                premises.len(),
-                diagnostic.premise_count()
-            ));
-            for premise in &premises {
-                rendered.push_str("\n    ");
-                rendered.push_str(&render::render_proposition_labeled(premise, labels));
-            }
+    let premises = diagnostic.premises(if summary.is_some() { 8 } else { 16 });
+    if !premises.is_empty() {
+        let heading = if summary.is_some() {
+            "recent premises"
+        } else {
+            "available premises at the failed check"
+        };
+        rendered.push_str(&format!(
+            "\n  {heading} (showing {} of {}):",
+            premises.len(),
+            diagnostic.premise_count()
+        ));
+        for premise in &premises {
+            rendered.push_str("\n    ");
+            rendered.push_str(&render::render_proposition_labeled(premise, labels));
         }
-        if diagnostic.premise_count() > premises.len() {
-            rendered.push_str("\n    … <additional premises omitted>");
-        }
+    }
+    if diagnostic.premise_count() > premises.len() {
+        rendered.push_str("\n    … <additional premises omitted>");
+    }
+    if let Some(checks) = &diagnostic.checks
+        && (summary.is_none() || !checks.reads.is_empty() || !checks.walks.is_empty())
+    {
+        rendered.push_str("\n  ");
+        rendered.push_str(&render_check_observations(
+            checks,
+            labels,
+            summary.is_none(),
+        ));
     }
     if !search_failures.is_empty() {
         rendered.push_str("\n  search candidates:");
@@ -486,6 +614,7 @@ mod tests {
             calls: AtomicUsize::new(0),
         });
         let diagnostic = ProofFailureDiagnostic {
+            checks: None,
             origin: ProofDiagnosticOrigin {
                 stage: "proof step".into(),
                 location: "source tactic 4".into(),
@@ -523,6 +652,7 @@ mod tests {
             calls: AtomicUsize::new(0),
         });
         let diagnostic = ProofFailureDiagnostic {
+            checks: None,
             origin: ProofDiagnosticOrigin {
                 stage: "proof step".into(),
                 location: "source tactic 4".into(),
@@ -541,7 +671,19 @@ mod tests {
             assert!(report.contains("machine-integer<Int32>"), "{report}");
             assert_eq!(
                 report.matches("machine-integer<Int32>").count(),
+                2,
+                "{report}"
+            );
+            assert_eq!(
+                report
+                    .lines()
+                    .filter(|line| line.starts_with("goal:"))
+                    .count(),
                 1,
+                "{report}"
+            );
+            assert!(
+                report.contains("available premises at the failed check"),
                 "{report}"
             );
             assert!(report.len() < 2048, "{report}");
@@ -555,6 +697,7 @@ mod tests {
             calls: AtomicUsize::new(0),
         });
         let diagnostic = ProofFailureDiagnostic {
+            checks: None,
             origin: ProofDiagnosticOrigin {
                 stage: "step".into(),
                 location: "source tactic 44".into(),
@@ -646,6 +789,7 @@ mod tests {
                 },
             );
             let diagnostic = ProofFailureDiagnostic {
+                checks: None,
                 origin: ProofDiagnosticOrigin {
                     stage: "proof step".into(),
                     location: "source tactic 1".into(),
@@ -690,6 +834,7 @@ mod tests {
             calls: AtomicUsize::new(0),
         });
         let diagnostic = Arc::new(ProofFailureDiagnostic {
+            checks: None,
             origin: ProofDiagnosticOrigin {
                 stage: "proof step".into(),
                 location: "loop closure".into(),
@@ -702,6 +847,7 @@ mod tests {
         let report = render_terminal_message(
             "closure failed",
             &ProofFailureDiagnostic {
+                checks: None,
                 origin: ProofDiagnosticOrigin {
                     stage: "proof step".into(),
                     location: "loop closure".into(),

@@ -3403,6 +3403,7 @@ fn verify_c0_sources_in_context(
                         proof_trace::CertificationTraceState::from_failure(&failure)
                 {
                     let diagnostic = proof_diagnostics::ProofFailureDiagnostic {
+                        checks: None,
                         origin: proof_diagnostics::ProofDiagnosticOrigin {
                             stage: "contract certification".to_string(),
                             location: failure

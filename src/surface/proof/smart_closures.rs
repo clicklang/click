@@ -8014,10 +8014,17 @@ impl<'a> Proof<'a> {
                 }
                 ProofTactic::Simp => {
                     let mut search = attempt::search_scope("written simp");
-                    let selected = proof.try_simp_closure();
+                    let (selected, checks) =
+                        crate::surface::proof_diagnostics::capture_check_observations(|| {
+                            proof.try_simp_closure()
+                        });
                     let selected = match selected {
                         Ok(selected) => selected,
-                        Err(error) => return Err(error.with_search_failures(search.finish())),
+                        Err(error) => {
+                            return Err(error
+                                .with_check_observations(checks)
+                                .with_search_failures(search.finish()));
+                        }
                     };
                     let Some(closed) = selected else {
                         if tactics[..index].iter().any(|previous| {
@@ -8027,13 +8034,19 @@ impl<'a> Proof<'a> {
                                 "checked `simp` after witness/choose could not close the remaining witness obligations; split conjunctions and discharge each definedness condition explicitly",
                             ).with_search_failures(search.finish()));
                         }
-                        return Err(proof.simp_failure().with_search_failures(search.finish()));
+                        return Err(proof
+                            .simp_failure()
+                            .with_check_observations(checks)
+                            .with_search_failures(search.finish()));
                     };
                     search.succeed();
                     proof = closed;
                 }
                 ProofTactic::SimpUsing(simp) => {
-                    let selected = proof.try_restricted_simp_closure(&simp.premises);
+                    let (selected, checks) =
+                        crate::surface::proof_diagnostics::capture_check_observations(|| {
+                            proof.try_restricted_simp_closure(&simp.premises)
+                        });
                     check_verification_deadline()?;
                     let Some(closed) = selected else {
                         if tactics[..index].iter().any(|previous| {
@@ -8043,7 +8056,7 @@ impl<'a> Proof<'a> {
                                 "checked `simp` after witness/choose could not close the remaining witness obligations; split conjunctions and discharge each definedness condition explicitly",
                             ));
                         }
-                        return Err(proof.step_error("`simp() using` could not prove the current goal from only its listed premises"));
+                        return Err(proof.step_error("`simp() using` could not prove the current goal from only its listed premises").with_check_observations(checks));
                     };
                     proof = closed;
                 }
@@ -8246,12 +8259,8 @@ impl<'a> Proof<'a> {
                         proof = proof.admit_focused_goal_for_sorry()?;
                         continue;
                     }
-                    let step = explicit_linear_step(tactic).ok_or_else(|| {
-                        proof.step_error(format!(
-                            "unsupported proof operation `{}`",
-                            tactic_name(tactic)
-                        ))
-                    })?;
+                    let step = explicit_linear_step(tactic)
+                        .ok_or_else(|| proof.unsupported_operation_error(tactic_name(tactic)))?;
                     proof = proof.apply_step(step)?;
                 }
             }

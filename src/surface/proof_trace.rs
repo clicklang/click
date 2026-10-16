@@ -1435,6 +1435,7 @@ mod tests {
         let earlier = fact(first);
         let later = fact(second);
         let diagnostic = ProofFailureDiagnostic {
+            checks: None,
             origin: ProofDiagnosticOrigin {
                 stage: "proof step".into(),
                 location: "test".into(),

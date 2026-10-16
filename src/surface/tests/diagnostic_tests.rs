@@ -1,6 +1,163 @@
 use super::*;
 
 #[test]
+fn missing_write_permission_explains_the_available_view_and_failed_check() {
+    let c = "void write(int *p) { p[0] = 7; }";
+    let source =
+        r#"verifying "write.c"; void write(int32* p) { views p[0..1]; } by { execute(); }"#;
+    let error = verify_c0_sources(source, &[("write.c", c)]).unwrap_err();
+    let report = error.concise_report();
+    assert!(
+        report.contains("missing resource fact `owns p[0]`"),
+        "{report}"
+    );
+    assert!(report.contains("available `views p[0]`"), "{report}");
+    assert!(report.contains("permits reading only"), "{report}");
+    with_proof_trace("write", || {
+        let error = verify_c0_sources(source, &[("write.c", c)]).unwrap_err();
+        let trace = error.trace_context_report().unwrap();
+        assert!(trace.contains("failed check:"), "{trace}");
+        assert!(trace.contains("resources at the failed check"), "{trace}");
+        assert!(trace.contains("views"), "{trace}");
+        assert!(trace.contains("permits reading only"), "{trace}");
+        assert!(trace.contains("C operation:"), "{trace}");
+    });
+}
+
+#[test]
+fn first_operation_failure_retains_the_required_access_and_empty_resources() {
+    let c = "int read(int *p) { return *p; }";
+    let source = r#"verifying "read.c"; int32 read(int32* p) { ensures result == 7; } by { execute(); simp(); }"#;
+    with_proof_trace("read", || {
+        let error = verify_c0_sources(source, &[("read.c", c)]).unwrap_err();
+        let trace = error.trace_context_report().unwrap();
+        assert!(trace.contains("failed check:"), "{trace}");
+        assert!(trace.contains("missing resource fact `views"), "{trace}");
+        assert!(
+            trace.contains("resources at the failed check (showing 0 of 0)"),
+            "{trace}"
+        );
+        assert!(trace.contains("return *p"), "{trace}");
+        // The failed check is not presented as an accepted execution step.
+        assert!(!trace.contains("steps through:"), "{trace}");
+    });
+}
+
+#[test]
+fn execution_tactic_in_a_have_names_the_proposition_context() {
+    let c = "int f(void) { return 7; }";
+    let source = r#"verifying "f.c"; int32 f() { ensures result == 7; } by { have 1 == 1 by { execute(); } execute(); simp(); }"#;
+    let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
+    let report = error.concise_report();
+    assert!(
+        report.contains("unsupported proof operation `execute`"),
+        "{report}"
+    );
+    assert!(report.contains("proposition proof"), "{report}");
+    assert!(
+        report.contains("C execution cannot advance inside it"),
+        "{report}"
+    );
+    with_proof_trace("f", || {
+        let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
+        let trace = error.trace_context_report().unwrap();
+        assert!(trace.contains("failed check:"), "{trace}");
+        assert!(trace.contains("proof context:"), "{trace}");
+        assert!(
+            trace.contains("C execution cannot advance inside it"),
+            "{trace}"
+        );
+    });
+}
+
+#[test]
+fn failed_simp_reports_actual_cell_queries_separately_from_history_explanations() {
+    let c = "void f(int *p, int i) { p[i] = 9; }";
+    let source = r#"verifying "f.c"; void f(int32* p, int32 i) {
+        owns p[0..2]; requires 0 <= i; requires i < 2;
+        ensures p[0] == old(p[0]);
+    } by { execute(); simp(); }"#;
+    with_proof_trace("f", || {
+        let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
+        let trace = error.trace_context_report().unwrap();
+        assert!(
+            trace.contains("checks observed during the failed attempt"),
+            "{trace}"
+        );
+        assert!(trace.contains("cell walk:"), "{trace}");
+        assert!(trace.contains("width: 4 bytes"), "{trace}");
+        assert!(
+            trace.contains("pointer=p") || trace.contains(" = p"),
+            "{trace}"
+        );
+        assert!(
+            trace.contains("step not proved separate") || trace.contains("step affects"),
+            "{trace}"
+        );
+        assert!(trace.contains("queries, not established facts"), "{trace}");
+        assert!(
+            trace.contains("supplemental history explanation"),
+            "{trace}"
+        );
+    });
+    let separated = source.replace("requires i < 2;", "requires i < 2; requires i == 1;");
+    verify_c0_sources(&separated, &[("f.c", c)]).unwrap();
+}
+
+#[test]
+fn failed_written_have_keeps_its_goal_and_actual_queries_for_simp_and_auto() {
+    let c = "void f(int *p, int i) { p[i] = 9; }";
+    for closer in ["simp", "auto"] {
+        let source = format!(
+            r#"verifying "f.c"; void f(int32* p, int32 i) {{
+            owns p[0..2]; requires 0 <= i; requires i < 2;
+        }} by {{ step(); have p[0] == old(p[0]) by {closer}; execute(); }}"#
+        );
+        let ordinary = verify_c0_sources(&source, &[("f.c", c)])
+            .unwrap_err()
+            .concise_report();
+        assert!(
+            ordinary.contains("available premises at the failed check"),
+            "{ordinary}"
+        );
+        with_proof_trace("f", || {
+            let error = verify_c0_sources(&source, &[("f.c", c)]).unwrap_err();
+            let trace = error.trace_context_report().unwrap();
+            assert!(
+                trace.contains("checks observed during the failed attempt"),
+                "{trace}"
+            );
+            assert!(
+                trace.contains("available premises at the failed check"),
+                "{trace}"
+            );
+            assert!(trace.contains("goal:"), "{trace}");
+            assert!(trace.contains("cell walk:"), "{trace}");
+            assert!(trace.contains("failed check:"), "{trace}");
+        });
+    }
+}
+
+#[test]
+fn failed_outcome_reports_post_call_resources_not_the_execution_entry() {
+    let c = "void drop(int *p) {} void f(int *p) { drop(p); }";
+    let source = r#"verifying "f.c";
+        void drop(int32* p) { consumes p[0..1]; } by { execute(); simp(); }
+        void f(int32* p) { consumes p[0..1]; ensures 1 == 2; } by { execute(); simp(); }"#;
+    with_proof_trace("f", || {
+        let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
+        let trace = error.trace_context_report().unwrap();
+        assert!(trace.contains("resource lost: owns"), "{trace}");
+        assert!(
+            trace.contains("resources at the failed check (showing 0 of 0)"),
+            "{trace}"
+        );
+        let failed = trace.split("failed check:").nth(1).unwrap();
+        assert!(!failed.contains("owns memory(p["), "{trace}");
+    });
+}
+
+#[test]
 fn callback_sources_keep_field_names_through_subobject_lowering() {
     let functions = syntax::parse_functions_for_source(
         r#"
@@ -2764,6 +2921,7 @@ fn ordinary_legacy_diagnostics_bound_late_context_but_traces_remain_full() {
     let error = ClickError::with_diagnostic(
         "required fact unavailable",
         proof_diagnostics::ProofFailureDiagnostic {
+            checks: None,
             origin: proof_diagnostics::ProofDiagnosticOrigin {
                 stage: "simple checking".into(),
                 location: "資源".repeat(DEFAULT_DIAGNOSTIC_BYTE_LIMIT),

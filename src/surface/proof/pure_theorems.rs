@@ -2368,17 +2368,26 @@ fn check_direct_pure_goal_with_proof(
             TacticTiming::new(claim_label, 0, 0, &ProofTactic::Simp, 0),
         )
     };
-    let result = if auto {
-        root.try_auto_proof_closure()
-    } else {
-        root.try_simp_closure()
-    };
+    let (result, checks) = crate::surface::proof_diagnostics::capture_check_observations(|| {
+        if auto {
+            root.try_auto_proof_closure()
+        } else {
+            root.try_simp_closure()
+        }
+    });
     let result = match result {
         Ok(result) => result,
-        Err(error) => return Err(error.with_search_failures(search.finish())),
+        Err(error) => {
+            return Err(error
+                .with_check_observations(checks)
+                .with_search_failures(search.finish()));
+        }
     };
     let Some(proof) = result else {
-        return Err(root.simp_failure().with_search_failures(search.finish()));
+        return Err(root
+            .simp_failure()
+            .with_check_observations(checks)
+            .with_search_failures(search.finish()));
     };
     search.succeed();
     // A traced theorem keeps its accepted path, as a traced function does.

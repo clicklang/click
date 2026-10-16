@@ -250,6 +250,19 @@ impl SnapshotLabels {
         labels
     }
 
+    /// Restore the selected proof's source bindings after the verifier thread
+    /// has unwound. Current-state registration below still distinguishes a
+    /// reassigned parameter from its entry value.
+    pub(crate) fn register_naming(&mut self, binding: ParameterBinding<'_>) {
+        let names = Self::naming(binding);
+        self.pointer_sources.extend(names.pointer_sources);
+        self.source_names.extend(names.source_names);
+        self.source_types.extend(names.source_types);
+        if self.naming.is_none() {
+            self.naming = names.naming;
+        }
+    }
+
     pub(crate) fn register_current_state(&mut self, state: &CState) {
         let (names, values) = crate::surface::diagnostics::local_naming_tables(state);
         let current = Self::naming(ParameterBinding::new(&names, &values));
@@ -656,7 +669,7 @@ pub(crate) fn render_memory_history_check(
         labels.state_phrase(memory)
     };
     Some(format!(
-        "memory-history check stops at {snapshot}:\n    store: {} bytes at {written}\n    read range checked: {bytes} bytes at {read}",
+        "memory-history check stops at {snapshot}:\n    store: {} bytes at {written}\n    read range checked: {bytes} bytes at {read}\n    supplemental history explanation: equality and ownership facts from the failed check are not used by this walk",
         written_bytes,
     ))
 }
