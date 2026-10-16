@@ -63,7 +63,21 @@ jobs:
           key: rust-frontend-release
           cache-directories: target/charon/release
       - name: Build pinned release frontend
-        run: scripts/build-charon.sh --install-toolchain --release
+        run: |
+          set +e
+          scripts/build-charon.sh --install-toolchain --release 2>&1 | tee "$RUNNER_TEMP/charon-build.log"
+          build_status=${PIPESTATUS[0]}
+          set -e
+          if (( build_status != 0 )); then
+            python3 - <<'PY'
+          import os, pathlib
+          log = pathlib.Path(os.environ['RUNNER_TEMP'], 'charon-build.log')
+          tail = '\n'.join(log.read_text(errors='replace').splitlines()[-40:])
+          tail = tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print(f'::error title=Rust frontend build failed::{tail}')
+          PY
+          fi
+          exit "$build_status"
       - name: Assemble frontend and compiler runtime
         run: |
           source scripts/charon-toolchain.sh
