@@ -7,10 +7,11 @@
 //! this->side } }`. The class's object is then a sealed abstract resource
 //! whose fields are those functions, `Shape__object`:
 //!
-//! - A `const` method of the class, and a parameter `const Shape& x`, holds
-//!   the object: its contract owns `__object_this: Shape__object(this)` or
-//!   `__object_x: Shape__object(&x)`, keeps its fields, and reads `size(x)`
-//!   as its field `size`.
+//! - A method of the class, and a parameter `Shape& x`, holds the object:
+//!   its contract owns `__object_this: Shape__object(this)` or `__object_x:
+//!   Shape__object(&x)` and reads `size(x)` as its field `size`. A `const`
+//!   method or reference keeps the fields; a mutable one may change them,
+//!   which its `ensures` read as new and `old(size(x))` as at entry.
 //! - A method of a defining class is verified on its object's memory: it owns
 //!   `*this`, `size(this)` is the class's definition, and an override of the
 //!   object class's method inherits that method's clauses read the same way.
@@ -464,13 +465,13 @@ fn parameters(list: &[Spanned]) -> Vec<Parameter> {
     parameters
 }
 
-/// The object class a parameter `const Shape& x` refers to.
+/// The object class a parameter `const Shape& x` or `Shape& x` refers to,
+/// and whether the reference is `const`, which keeps the object's state.
 fn object_parameter<'a>(
     parameter: &Parameter,
     objects: &'a BTreeMap<String, ObjectClass>,
-) -> Result<Option<&'a ObjectClass>, ClickError> {
-    let tokens = &parameter.tokens;
-    let (constant, class) = match tokens.as_slice() {
+) -> Option<(&'a ObjectClass, bool)> {
+    let (constant, class) = match parameter.tokens.as_slice() {
         [
             (Token::Ident(word), _),
             (Token::Ident(class), _),
@@ -478,29 +479,18 @@ fn object_parameter<'a>(
             _,
         ] if word == "const" => (true, class),
         [(Token::Ident(class), _), (Token::Amp, _), _] => (false, class),
-        _ => return Ok(None),
+        _ => return None,
     };
-    let Some(object) = objects.get(class) else {
-        return Ok(None);
-    };
-    if !constant {
-        return Err(error_at(
-            &tokens[0].1,
-            format!(
-                "a reference to `{class}`, whose object carries state, is `const`: state through \
-                 a mutable reference remains unsupported"
-            ),
-        ));
-    }
-    Ok(Some(object))
+    objects.get(class).map(|object| (object, constant))
 }
 
 /// The handle owned for a holder's object: `__object_this:
-/// Shape__object(this)` or `__object_x: Shape__object(&x)`, and that it
-/// keeps its fields.
+/// Shape__object(this)` or `__object_x: Shape__object(&x)`, and, when
+/// `kept`, that it keeps its fields.
 fn object_clauses(
     holder: &str,
     object: &ObjectClass,
+    kept: bool,
     position: &SourcePosition,
 ) -> (Vec<Spanned>, Vec<Spanned>) {
     let mut owns = at(
@@ -521,7 +511,7 @@ fn object_clauses(
         vec![ident(holder), Token::RParen, Token::Semicolon],
     ));
     let mut keeps = Vec::new();
-    for (function, _) in &object.functions {
+    for (function, _) in object.functions.iter().filter(|_| kept) {
         keeps.extend(at(position, vec![ident("ensures")]));
         keeps.extend(field_read(holder, function, position));
         keeps.extend(at(
@@ -590,23 +580,15 @@ fn rewrite_function(
     let own = parameters(&source[head.list_open + 1..head.list_close]);
     let receiver_object = head.class.as_ref().and_then(|class| objects.get(class));
     let definer = head.class.as_ref().and_then(|class| defining.get(class));
+    // Each holder of an object, and whether it keeps the object's state: a
+    // `const` receiver or reference does, and a mutable one may change it.
     let mut holders = Vec::new();
     if let Some(object) = receiver_object {
-        if !head.is_const {
-            return Err(error_at(
-                &source[head.body_open].1,
-                format!(
-                    "a method of `{}`, whose object carries state, is `const`: state through a \
-                     mutable receiver remains unsupported",
-                    head.class.as_deref().unwrap_or_default()
-                ),
-            ));
-        }
-        holders.push(("this".to_string(), object));
+        holders.push(("this".to_string(), object, head.is_const));
     }
     for parameter in &own {
-        if let Some(object) = object_parameter(parameter, objects)? {
-            holders.push((parameter.name.clone(), object));
+        if let Some((object, kept)) = object_parameter(parameter, objects) {
+            holders.push((parameter.name.clone(), object, kept));
         }
     }
     if holders.is_empty() && definer.is_none() {
@@ -615,20 +597,20 @@ fn rewrite_function(
     }
     let position = source[head.body_open].1.clone();
     let read_objects = |clause: Vec<Spanned>| {
-        holders.iter().fold(clause, |clause, (holder, object)| {
+        holders.iter().fold(clause, |clause, (holder, object, kept)| {
             rewrite_calls(
                 &clause,
                 holder,
                 &object.functions,
-                true,
+                *kept,
                 &|function, position| field_read(holder, function, position),
             )
         })
     };
     let mut clauses = Vec::new();
     let mut keeps = Vec::new();
-    for (holder, object) in &holders {
-        let (owns, keep) = object_clauses(holder, object, &position);
+    for (holder, object, kept) in &holders {
+        let (owns, keep) = object_clauses(holder, object, *kept, &position);
         clauses.push(owns[..owns.len() - 1].to_vec());
         keeps.extend(split_clauses(&keep));
     }
