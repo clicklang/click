@@ -124,3 +124,18 @@ fn unfolding_the_declaring_resource_is_constant_in_the_range_size() {
     }
     assert_constant_plus_log("unfolding the declaring resource", &samples, 4.0);
 }
+
+#[test]
+fn giving_one_element_is_constant_in_the_range_size() {
+    let mut samples = Vec::new();
+    for size in SIZES {
+        let state = cells_state(size, size);
+        let taken = take(&state, size / 2).expect("the middle cell is free");
+        let (returned, work) =
+            crate::instrumentation::measure_deterministic_work(|| give(&taken, size / 2));
+        let returned = returned.expect("the taken cell can be returned");
+        assert!(held_fact(&returned).holes().is_empty());
+        samples.push((size, work));
+    }
+    assert_constant_plus_log("giving one element", &samples, 4.0);
+}
