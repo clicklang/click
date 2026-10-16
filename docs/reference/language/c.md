@@ -403,15 +403,18 @@ A function head, verified or `extern`, may write a typedef name of a verified
 source for the type it stands for: `u32 twice(u32 n)`, `int node_value(node_t
 *node)`, or an anonymous struct's alias, `const point_t *point`. The head
 still has exactly the declaration's types, so an alias of `long long` does not
-restate a `long`. Only an alias of a scalar or struct type is written this
-way; a head writes the C type of a pointer, array, function-pointer, union,
-volatile or aligned alias, and of a name two verified sources alias to
+restate a `long`. A pointer alias, `typedef struct node *node_ptr;` or
+`typedef const int *int_view;`, stands for its pointer type, and a `const`
+written before it qualifies the pointer itself, as in C: `const node_ptr` is
+`struct node *const`. A head writes the C type of an array, function-pointer,
+union, volatile or aligned alias, and of a name two verified sources alias to
 different types. A standard spelling such as `size_t` or `uint32_t` keeps its
 meaning even when a source typedefs it. A specification position writes
 Click's type, not a typedef name. See
 `mdtests/a_function_head_writes_the_source_typedef_names.md`,
 `mdtests/a_head_typedef_keeps_its_long_long_rank.md`,
-`mdtests/a_pointer_typedef_is_written_as_its_type_in_a_head.md` and
+`mdtests/a_function_head_writes_pointer_typedef_names.md`,
+`mdtests/a_function_pointer_typedef_is_written_as_its_type_in_a_head.md` and
 `mdtests/a_specification_writes_click_types_not_typedef_names.md`.
 
 The GNU `__extension__` marker before a file-scope declaration suppresses a
