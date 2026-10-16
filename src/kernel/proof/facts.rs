@@ -210,6 +210,13 @@ pub(crate) struct ProofFacts {
         PersistentMap<AlgebraicTerm, PersistentSequence<Arc<Proposition>>>,
     by_quantified_equivalence:
         PersistentMap<QuantifiedEquivalenceKey, PersistentSequence<Arc<Proposition>>>,
+    /// Guarded universals whose conclusion is a conjunction, keyed by the
+    /// alpha form of each proper sub-conjunction restated under the same
+    /// binder and guards: `forall k { G implies A and B }` is found under
+    /// `forall k { G implies A }`. A goal of that shape selects its source
+    /// with one probe; unrelated universals are never visited.
+    quantified_conjunct_projections:
+        PersistentMap<QuantifiedEquivalenceKey, PersistentSequence<Arc<Proposition>>>,
     /// Selected load identities checked while presenting a rewritten goal.
     rewritten_load_evidence: PersistentSequence<CheckedLoadEquality>,
     /// Universal facts introduced specifically by a checked predicate unfold.
@@ -631,6 +638,7 @@ impl ProofFacts {
         let mut finite_classifications_by_key = PersistentMap::default();
         let mut algebraic_equalities_by_term = PersistentMap::default();
         let mut by_quantified_equivalence = PersistentMap::default();
+        let mut quantified_conjunct_projections = PersistentMap::default();
         let mut implications_by_consequent = PersistentMap::default();
         let mut implications_by_quantified_consequent = PersistentMap::default();
         let assumptions = facts.pure_context();
@@ -650,6 +658,8 @@ impl ProofFacts {
             ordered.push(Arc::clone(fact));
             top_level_exact = top_level_exact.with_value(Arc::clone(fact));
             by_quantified_equivalence = index_quantified_fact(by_quantified_equivalence, fact);
+            quantified_conjunct_projections =
+                index_quantified_conjunct_projections(quantified_conjunct_projections, fact);
             (
                 implications_by_consequent,
                 implications_by_quantified_consequent,
@@ -667,6 +677,10 @@ impl ProofFacts {
                     let conjunct = Arc::new(conjunct);
                     quantified_proper_conjuncts =
                         index_quantified_fact(quantified_proper_conjuncts, &conjunct);
+                    quantified_conjunct_projections = index_quantified_conjunct_projections(
+                        quantified_conjunct_projections,
+                        &conjunct,
+                    );
                     by_snapshot_blind = index_snapshot_fact(by_snapshot_blind, &conjunct);
                     by_integer_condition_alpha =
                         index_integer_condition_fact(by_integer_condition_alpha, conjunct.as_ref());
@@ -709,6 +723,7 @@ impl ProofFacts {
             finite_classifications_by_key,
             algebraic_equalities_by_term,
             by_quantified_equivalence,
+            quantified_conjunct_projections,
             predicate_unfolded_universal_facts: PersistentSequence::default(),
             rewritten_load_evidence: PersistentSequence::default(),
             implications_by_consequent,
@@ -784,6 +799,10 @@ impl ProofFacts {
         let mut algebraic_equalities_by_term = self.algebraic_equalities_by_term.clone();
         let by_quantified_equivalence =
             index_quantified_fact(self.by_quantified_equivalence.clone(), &fact);
+        let mut quantified_conjunct_projections = index_quantified_conjunct_projections(
+            self.quantified_conjunct_projections.clone(),
+            &fact,
+        );
         let (implications_by_consequent, implications_by_quantified_consequent) =
             index_implication_consequents(
                 self.implications_by_consequent.clone(),
@@ -798,6 +817,10 @@ impl ProofFacts {
                 let conjunct = Arc::new(conjunct);
                 quantified_proper_conjuncts =
                     index_quantified_fact(quantified_proper_conjuncts, &conjunct);
+                quantified_conjunct_projections = index_quantified_conjunct_projections(
+                    quantified_conjunct_projections,
+                    &conjunct,
+                );
                 by_snapshot_blind = index_snapshot_fact(by_snapshot_blind, &conjunct);
                 by_integer_condition_alpha =
                     index_integer_condition_fact(by_integer_condition_alpha, conjunct.as_ref());
@@ -847,6 +870,7 @@ impl ProofFacts {
             finite_classifications_by_key,
             algebraic_equalities_by_term,
             by_quantified_equivalence,
+            quantified_conjunct_projections,
             predicate_unfolded_universal_facts: self.predicate_unfolded_universal_facts.clone(),
             rewritten_load_evidence: self.rewritten_load_evidence.clone(),
             implications_by_consequent,
@@ -1449,6 +1473,35 @@ impl ProofFacts {
 
     pub(crate) fn quantified_fact_available(&self, required: &Proposition) -> bool {
         self.matching_quantified_fact(required).is_some()
+    }
+
+    /// An available guarded universal that entails `required` by dropping
+    /// conjuncts of its conclusion under identical binder and guards:
+    /// `forall k { G implies A and B }` for `forall k { G implies A }`.
+    ///
+    /// One probe of the projection index selects the candidates, and each is
+    /// accepted only when one of its own projections is binder-equivalent to
+    /// `required` by the same check `assumption` applies to quantified facts.
+    /// A different guard, binder sort, or conjunct has a different key or
+    /// fails that check. The returned fact is not itself `required`; the
+    /// caller must still establish the weakening with checked steps.
+    pub(crate) fn quantified_conjunct_projection_source(
+        &self,
+        required: &Proposition,
+    ) -> Option<&Proposition> {
+        if !matches!(required, Proposition::ForAll { .. }) {
+            return None;
+        }
+        let key = quantified_equivalence_index_key(required)?;
+        self.quantified_conjunct_projections
+            .get(&key)?
+            .iter()
+            .map(Arc::as_ref)
+            .find(|source| {
+                guarded_universal_conjunct_projections(source)
+                    .iter()
+                    .any(|projection| quantified_binder_equivalent(required, projection))
+            })
     }
 
     /// Returns a stored true Integer comparison whose typed alpha form matches
@@ -2551,6 +2604,84 @@ fn index_quantified_fact(
     if !bucket.iter().any(|candidate| candidate == fact) {
         bucket.push(fact.clone());
         index = index.with_inserted(key, bucket);
+    }
+    index
+}
+
+/// The most guards and sub-conjunctions a guarded universal contributes to
+/// the projection index. A fact past either bound is indexed only up to it:
+/// the index is a bounded selector, and a miss leaves the goal to the
+/// explicit `intro`/`instantiate` proof.
+const MAX_PROJECTED_UNIVERSAL_GUARDS: usize = 8;
+const MAX_PROJECTED_UNIVERSAL_CONJUNCTS: usize = 16;
+
+/// Each proper sub-conjunction of a guarded universal's conclusion, restated
+/// under the same binder and guards. `forall k { G implies (A and B) and C }`
+/// yields the universals concluding `A and B`, `A`, `B`, and `C`, in that
+/// order. Anything other than a universal whose guard chain ends in a
+/// conjunction yields nothing.
+pub(crate) fn guarded_universal_conjunct_projections(fact: &Proposition) -> Vec<Proposition> {
+    let Proposition::ForAll { var, sort, body } = fact else {
+        return Vec::new();
+    };
+    let mut guards = Vec::new();
+    let mut conclusion = body.as_ref();
+    while let Proposition::Implies(guard, consequent) = conclusion {
+        if guards.len() == MAX_PROJECTED_UNIVERSAL_GUARDS {
+            return Vec::new();
+        }
+        guards.push(guard.as_ref());
+        conclusion = consequent;
+    }
+    let Proposition::And(left, right) = conclusion else {
+        return Vec::new();
+    };
+    let mut parts = Vec::new();
+    let mut pending = vec![right.as_ref(), left.as_ref()];
+    while let Some(part) = pending.pop() {
+        if parts.len() == MAX_PROJECTED_UNIVERSAL_CONJUNCTS {
+            break;
+        }
+        parts.push(part);
+        if let Proposition::And(left, right) = part {
+            pending.push(right);
+            pending.push(left);
+        }
+    }
+    parts
+        .into_iter()
+        .map(|part| {
+            let body = guards.iter().rev().fold(
+                crate::kernel::clone_proposition_iteratively(part),
+                |body, guard| {
+                    Proposition::Implies(
+                        Box::new(crate::kernel::clone_proposition_iteratively(guard)),
+                        Box::new(body),
+                    )
+                },
+            );
+            Proposition::ForAll {
+                var: *var,
+                sort: sort.clone(),
+                body: Box::new(body),
+            }
+        })
+        .collect()
+}
+
+fn index_quantified_conjunct_projections(
+    mut index: PersistentMap<QuantifiedEquivalenceKey, PersistentSequence<Arc<Proposition>>>,
+    fact: &Arc<Proposition>,
+) -> PersistentMap<QuantifiedEquivalenceKey, PersistentSequence<Arc<Proposition>>> {
+    for projection in guarded_universal_conjunct_projections(fact) {
+        let Some(key) = quantified_equivalence_index_key(&projection) else {
+            continue;
+        };
+        let mut bucket = index.get(&key).cloned().unwrap_or_default();
+        if !bucket.iter().any(|candidate| Arc::ptr_eq(candidate, fact)) {
+            bucket.push(fact.clone());
+            index = index.with_inserted(key, bucket);
+        }
     }
     index
 }

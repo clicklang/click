@@ -1586,6 +1586,10 @@ impl<'a> Proof<'a> {
                 scope.succeed();
                 return Ok(Some(closed));
             }
+            if let Some(closed) = proof.try_quantified_conjunct_projection_closure()? {
+                scope.succeed();
+                return Ok(Some(closed));
+            }
             match attempt::candidate_outcome(proof.apply_step(ProofStep::Intro))? {
                 Some(introduced) => proof = introduced,
                 None => return Ok(None),
@@ -1614,6 +1618,71 @@ impl<'a> Proof<'a> {
             attempt::candidate_outcome(self.apply_step(ProofStep::Extract(surface.clone())))?
                 .filter(Self::focused_discharged),
         )
+    }
+
+    /// Weakening a guarded universal by dropping conjuncts of its conclusion:
+    /// the goal `forall k { G implies A }` follows from an available
+    /// `forall k { G implies A and B }` with the same binder and guards.
+    /// The source is selected by one probe of the indexed conjunct
+    /// projections (`ProofFacts::quantified_conjunct_projection_source`), so
+    /// a universal goal no such fact concludes costs one lookup and no
+    /// unrelated fact is visited. The proof is the explicit sequence
+    /// `intro()` for the binder and each guard, `instantiate(F, k)` at the
+    /// introduced binder, and `assumption()`; each step is checked as written
+    /// and expansion prints it.
+    fn try_quantified_conjunct_projection_closure(&self) -> Result<Option<Self>, ClickError> {
+        let Some(goal @ Proposition::ForAll { body, .. }) = self.goal() else {
+            return Ok(None);
+        };
+        let Some(source) = self.facts().quantified_conjunct_projection_source(goal) else {
+            return Ok(None);
+        };
+        let binder = match self.surface_goal() {
+            Some(ClickProposition::ForAll { name, .. }) => name.clone(),
+            Some(ClickProposition::RangeAll { item, .. }) => item.clone(),
+            _ => return Ok(None),
+        };
+        let source = source.clone();
+        let mut guards = 0usize;
+        let mut conclusion = body.as_ref();
+        while let Proposition::Implies(_, consequent) = conclusion {
+            guards += 1;
+            conclusion = consequent;
+        }
+        let Some(quantified) = self
+            .resolve_simp_premises(std::slice::from_ref(&source), &[])
+            .and_then(|pairs| pairs.into_iter().next())
+            .map(|(_, surface)| surface)
+        else {
+            return Ok(None);
+        };
+        let mut scope = attempt::search_scope("quantified conjunct projection");
+        let steps = std::iter::repeat_n(ProofStep::Intro, guards + 1).chain([
+            ProofStep::InstantiateUsing {
+                quantified,
+                argument: ContractExpression::CFragment(CExpression::Variable(binder)),
+                premises: None,
+            },
+        ]);
+        let mut proof = self.clone();
+        for step in steps {
+            let Some(next) = attempt::candidate_outcome(proof.apply_step(step))? else {
+                return Ok(None);
+            };
+            proof = next;
+        }
+        if !proof.focused_discharged() {
+            let Some(closed) = attempt::candidate_outcome(proof.apply_step(ProofStep::Assumption))?
+            else {
+                return Ok(None);
+            };
+            proof = closed;
+        }
+        if !proof.focused_discharged() {
+            return Ok(None);
+        }
+        scope.succeed();
+        Ok(Some(proof))
     }
 
     /// Extends [`Self::try_direct_logical_closure`] through the goal's
