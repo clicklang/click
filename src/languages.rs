@@ -1,4 +1,4 @@
-//! Program languages supported by Surface Click.
+//! Target languages supported by Surface Click.
 
 pub mod c;
 pub(crate) mod compiler_process;

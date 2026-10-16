@@ -3363,9 +3363,14 @@ held as `int32` cells, so a struct whose size is not a multiple of four bytes
 has no `*p` form and is refused by name
 (`mdtests/whole_struct_needs_a_whole_number_of_int32_cells.md`); own its
 fields one by one. A struct with a flexible array member is outside the
-supported C subset. Holding every field separately does not yet stand in for
-`*p` at a call when a field is narrower than an `int32` cell
-(`bugs/whole-struct-ownership-does-not-reassemble-from-a-byte-field.md`).
+supported C subset. A call can assemble `owns *p` from adjacent owned fields,
+including byte fields, when their combined footprint covers every byte of
+the object and the required alignment is established. A scalar field clause
+covers its ABI slot up to the next field or the end of the struct, including
+tail padding after the final field. Viewed fields cannot complete an owned
+footprint; explicit byte fragments must cover padding too. See the
+[byte-field regression](https://github.com/clicklang/click/blob/master/mdtests/whole_struct_reassembles_from_byte_fields.md)
+and [tail-padding regression](https://github.com/clicklang/click/blob/master/mdtests/whole_struct_reassembles_from_padded_byte_field.md).
 A file-scope struct named in `owns g` or `views g` covers that complete
 object, with the same extent and declared field types as `*p` when `p == &g`.
 The same rule applies to a qualified name such as `unit::g`; a pointer-valued

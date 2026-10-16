@@ -6874,9 +6874,8 @@ fn failing_simp_work_is_flat_along_a_variable_chain() {
 /// the search costs each path the same, so its total is linear in the
 /// returns.
 ///
-/// The whole verification is not yet linear in the returns
-/// (`bugs/early-return-paths-store-facts-whole.md` lists what remains), so
-/// only this search's own work is asserted.
+/// This regression asserts only the transport search's own work, rather
+/// than the cost of the whole verification.
 #[test]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn simp_snapshot_transport_search_is_linear_in_early_returns() {

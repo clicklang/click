@@ -1,8 +1,8 @@
-//! Surface Click proof-language syntax, checking, and proof orchestration.
+//! Surface Click specification syntax, checking, and proof orchestration.
 //!
-//! Surface Click is the single proof language. Its current program-language
-//! binding targets C0; additional program languages belong under
-//! `crate::languages` rather than beside this module.
+//! Surface Click is the shared specification language for C, C++, and Rust.
+//! Target-language frontends belong under `crate::languages`; proof checking
+//! uses the shared kernel.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -2699,7 +2699,7 @@ pub enum ContractExpression {
     /// Persistent sequence concatenation. This is specification syntax only;
     /// it does not denote C pointer arithmetic or allocate C memory.
     SequenceConcat(Box<ContractExpression>, Box<ContractExpression>),
-    /// A C0 expression fragment appearing inside Surface Click.
+    /// A C expression fragment appearing inside Surface Click.
     CFragment(CExpression),
     /// A C unary operation whose operand retains explicit binding syntax.
     /// Scalar casts and typed loads may also wrap a pure or historical expression. `operand` is authoritative;
