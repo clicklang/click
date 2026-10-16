@@ -32,8 +32,8 @@ The generated proof first completes a `have valid_capacity(owner)` scope,
 then fails at path 0, tactic 9: `assumption` cannot establish
 `valid_capacity(owner)`. The diagnostic's lowered goal is
 `amount == <unnamed A> + amount`, even though the recent-premise list includes
-`valid_capacity(owner)`. The trace includes the entry counter's zero equality, so this is not evidence
-that the entry-zero premise disappeared. The retained proof must preserve the
+`valid_capacity(owner)`. The trace includes the entry counter's zero equality,
+so this is not evidence that the entry-zero premise disappeared. The retained proof must preserve the
 predicate's state arguments as well as its spelling. Moving the generated
 `unfold(valid_capacity)` inside the `have` scope still fails at the following
 `assumption`, now with the opaque predicate as the goal; unfold scope alone
@@ -41,7 +41,8 @@ does not reduce this mismatch.
 
 This failure also appears in the October 16 nightly expansion audit at
 `d86757df2` and reproduces while repairing the audit on the `0dd554178` base.
-It is independent of the pointer-comparison certificate repairs.
+It also reproduces after updating those repairs to `358eb9747`; the ordinary
+proof still passes. It is independent of the pointer-comparison repairs.
 
 ## Acceptance
 
