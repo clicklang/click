@@ -43,6 +43,12 @@ fi
 if [[ ! -d "$source_dir" ]]; then
     git clone https://github.com/AeneasVerif/charon.git "$source_dir" >&2
 fi
+# A restored build cache can contain the source files without their Git
+# metadata. Do not let Git discover the enclosing Click checkout in that case.
+if [[ "$(git -C "$source_dir" rev-parse --show-toplevel 2>/dev/null)" != "$(cd "$source_dir" && pwd -P)" ]]; then
+    echo "error: $source_dir is not a standalone Git checkout; remove the stale source directory and rerun scripts/build-charon.sh" >&2
+    exit 1
+fi
 if [[ -n "$(git -C "$source_dir" status --porcelain)" ]]; then
     echo "error: Charon dependency checkout has local changes" >&2
     exit 1

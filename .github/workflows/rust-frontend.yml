@@ -60,7 +60,11 @@ jobs:
           PY
       - uses: Swatinem/rust-cache@v2
         with:
+          # The workspace target also contains a Git checkout. Rust's cache
+          # strips its metadata; cache only the frontend build output instead.
+          prefix-key: v1-rust-frontend
           key: rust-frontend-release
+          cache-targets: false
           cache-directories: target/charon/release
       - name: Build pinned release frontend
         run: |
