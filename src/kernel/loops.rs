@@ -2118,11 +2118,17 @@ fn c_loop_state_components_match_at_back_edge_inner(
         changed.push("pointer subobject extents");
     }
     // Likewise the class of the object a pointer local designates
-    // (`design/effective-types.md`).
+    // (`design/effective-types.md`). A back edge that returns the local
+    // unclassed, as an integer-to-pointer conversion does, keeps it: the
+    // class only adds refusals, so the iteration checked against it covers
+    // the unchecked pointer. Another class is a change.
     if top_state.locals().object_values().any(|(name, value)| {
-        c_value_object_class(value).is_some()
-            && next_state.locals().get(name).map(c_value_object_class)
-                != Some(c_value_object_class(value))
+        c_value_object_class(value).is_some_and(|class| {
+            next_state
+                .locals()
+                .get(name)
+                .is_none_or(|next| c_value_object_class(next).is_some_and(|next| next != class))
+        })
     }) {
         changed.push("pointer object classes");
     }

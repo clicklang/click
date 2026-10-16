@@ -154,7 +154,9 @@ allowed cases:
     one.
   - Declared locals and local arrays record their class on their block.
   - Loops keep a pointer local's class across the abstract iteration, and
-    refuse a back edge that changes it.
+    refuse a back edge that returns it designating another class. A back
+    edge that returns it unclassed, as `rb_parent`'s integer-to-pointer
+    conversion does, keeps the head's class: the class only adds refusals.
   - `int *` and `int **` carried no class, because the frontend spells
     struct pointers with them; step 2b separates them.
   - Globals are not covered yet. Local `int8` and `uint8` arrays, which the

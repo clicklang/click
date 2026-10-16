@@ -78,6 +78,13 @@ state); about 100,000 units.
   a store forgot cells of its own object whenever a C pointer comparison
   named that object's address. `098f48f35` fixed that; the sidecar again
   stops only at the loop budget.
+- Since `215e2c358` the loop's back edge refused `parent`, which
+  `rb_parent` returns unclassed while the head keeps the parameter's
+  `struct rb_node` class ("loop state join changes pointer object classes"
+  at the `close_invariants()` on line 1553). The back edge now keeps the
+  head's class for an unclassed pointer
+  (`a_loop_may_return_a_struct_pointer_unclassed_from_its_tag_bits.md`);
+  the sidecar again stops only at the loop budget.
 
 ## Proposed remaining work (needs a design decision)
 

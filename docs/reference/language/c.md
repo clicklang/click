@@ -2057,7 +2057,13 @@ names both types
 `mdtests/a_byte_buffer_read_through_a_uint32_pointer_is_refused.md`,
 `mdtests/a_pointer_cell_read_through_a_pointer_of_other_signedness_is_refused.md`,
 `mdtests/an_unsigned_read_of_a_signed_object_is_allowed.md`,
-`mdtests/a_character_view_of_an_int_is_allowed.md`). Stores are checked
+`mdtests/a_character_view_of_an_int_is_allowed.md`). A loop keeps the type a
+pointer local designates across iterations; an iteration that leaves it
+designating another type is refused, while one that leaves it unclassed, as
+an integer-to-pointer conversion does, keeps the loop's type
+(`mdtests/a_loop_returning_a_pointer_to_another_struct_is_refused.md`,
+`mdtests/a_loop_may_return_a_struct_pointer_unclassed_from_its_tag_bits.md`).
+Stores are checked
 the same way
 (`mdtests/a_store_through_a_pointer_of_another_rank_is_refused.md`,
 `mdtests/an_indexed_store_through_a_pointer_of_another_rank_is_refused.md`,
