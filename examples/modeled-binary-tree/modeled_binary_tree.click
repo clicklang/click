@@ -530,8 +530,6 @@ struct tree_node* tree_leftmost(struct tree_node* root) {
                     let frame = fold(ctx_at(root->left), {
                         model: Context::Left(root, value, right_model, ctx.model)
                     }, { sibling: rt, up: ctx });
-                    step();
-                    close_invariants();
                 },
             }
         }
@@ -598,8 +596,6 @@ struct tree_node* tree_rightmost(struct tree_node* root) {
                     let frame = fold(ctx_at(root->right), {
                         model: Context::Right(root, value, left_model, ctx.model)
                     }, { sibling: l, up: ctx });
-                    step();
-                    close_invariants();
                 },
             }
         }
