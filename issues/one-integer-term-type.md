@@ -75,6 +75,7 @@ The next phases:
 4. The type is renamed, and narrow values are range-checked where they are
    built. Floats get their own type afterwards; they are not integers.
 
+## Intended regression
 
 Add kernel tests that build the same arithmetic and comparisons at each
 width, and check they decide alike where the values fit. Add tests showing

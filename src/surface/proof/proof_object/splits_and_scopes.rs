@@ -1188,14 +1188,10 @@ impl<'a> Proof<'a> {
                 ProofContext::Execution(context) => context.spec_definitions.predicates,
             };
             let active_unfolds = self.focused_branch_unfolds().to_vec();
-            unfold_structural_invariant_proposition(
-                predicate_environment,
-                &proposition,
-                &active_unfolds,
-            )
-            .map_err(|message| {
-                self.step_error(format!("could not unfold `have` goal: {message}"))
-            })?
+            self.unfold_goal_surface(predicate_environment, &proposition, &active_unfolds)
+                .map_err(|message| {
+                    self.step_error(format!("could not unfold `have` goal: {message}"))
+                })?
         } else {
             proposition.clone()
         };
