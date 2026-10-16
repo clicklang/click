@@ -1331,7 +1331,9 @@ pub struct FunctionBlock {
     /// aggregate clause share their clause's id. Empty when the block was
     /// built without a source; labels then read the kind off each clause.
     ensure_claim_ids: Vec<claim_labels::ClaimClauseId>,
-    grouped_proof: Option<SourceProof>,
+    /// Shared: every frontier `loop` binds its clause into a copy of this
+    /// block, and the grouped proof is the whole claim's script.
+    grouped_proof: Option<std::sync::Arc<SourceProof>>,
     /// The struct each opaque `void *` parameter is cast to in this block's
     /// clauses and proof, by parameter name. A block casts a parameter to at
     /// most one struct; proof synthesis reads memory through the parameter
@@ -8063,7 +8065,7 @@ impl FunctionBlock {
 
     /// The written grouped proof after the contract block, if any.
     pub fn grouped_proof(&self) -> Option<&SourceProof> {
-        self.grouped_proof.as_ref()
+        self.grouped_proof.as_deref()
     }
 
     /// The one proof of every claim without its own `by`: the written

@@ -944,7 +944,11 @@ fn with_tactic_procedures(
         }
         let mut block = tactic.function_block().clone();
         block.tactic_procedure = true;
-        let Some(SourceProof::Script(mut script)) = block.grouped_proof.take() else {
+        let Some(SourceProof::Script(mut script)) = block
+            .grouped_proof
+            .take()
+            .map(std::sync::Arc::unwrap_or_clone)
+        else {
             return Err(ClickError::new(format!(
                 "tactic `{name}` must be proved by an explicit `by {{ ... }}` script"
             )));
@@ -961,7 +965,7 @@ fn with_tactic_procedures(
             block.ensures.len(),
         ));
         append_on_every_path(&mut script, &suffix);
-        block.grouped_proof = Some(SourceProof::Script(script));
+        block.grouped_proof = Some(std::sync::Arc::new(SourceProof::Script(script)));
         let procedure = external_c0_function(&block).with_proof_body(syntax::C0Statement::Return(
             syntax::C0Expression::Void,
             syntax::C0Site::NONE,

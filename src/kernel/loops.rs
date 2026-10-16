@@ -6152,14 +6152,13 @@ pub(super) fn prepare_loop_top_state(
     // Whole-loop effects are part of the induction hypothesis at the abstract
     // head and are checked independently at every back edge.
     let mut framed_memory = top_state.memory().clone();
+    // Restore the entry's blocks over the havocked ones. Only the blocks
+    // that differ are written, so a table havoc left alone keeps its root,
+    // and the comparison with the top state below stays constant rather
+    // than linear in every block the path has declared.
     if !summaries.is_empty() {
-        std::sync::Arc::make_mut(&mut framed_memory.blocks).extend(
-            entry_state
-                .memory()
-                .blocks
-                .iter()
-                .map(|(key, value)| (key.clone(), value.clone())),
-        );
+        std::sync::Arc::make_mut(&mut framed_memory.blocks)
+            .overwrite_with(&entry_state.memory().blocks);
     }
     // A declaring loop's body holds only its declared resources and views of
     // the rest, and a store needs ownership, so memory the enclosing function
