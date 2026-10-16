@@ -11,7 +11,8 @@ uint8* concatenated_string() {
 ```
 
 ```click
-target "x86_64-linux-kernel";
+target "x86_64-unknown-linux-gnu";
+mode "kernel";
 verifying "concatenated_string_literals.c";
 
 uint8* concatenated_string() {

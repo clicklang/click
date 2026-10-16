@@ -165,11 +165,6 @@ fn authority_count_observation_rejects_unchecked_deltas_and_scales() {
             )
             .unwrap();
             assert!(observation.definition().is_none());
-            assert!(
-                observation
-                    .advance_checked(&state, &facts, &CheckedCallEvents::default(),)
-                    .is_some()
-            );
         });
         let forged_facts = after_facts.with_fact(Proposition::Predicate {
             name: "unproved_body_fact".into(),

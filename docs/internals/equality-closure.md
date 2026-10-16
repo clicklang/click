@@ -29,6 +29,13 @@ one predicate, not an additional premise. Later pointer aliases can therefore
 reuse the original address comparison without reconstructing a cancelled
 base from an arbitrary class representative.
 
+A consumer that accepts an offset equality reads a same-block pointer
+equality through `ConditionTerm::pointer_offset_sides`, not by matching
+`PointerOffsetEqual` alone. In particular, a `have` at an execution frontier
+whose goal compares two loads of one pointer-valued field takes the
+load-equality bridge in either form
+(`mdtests/loop_node_link_frames_across_parent_link_store.md`).
+
 The bridge registers only the selected addresses and offsets. It neither
 enumerates pointer aliases nor derives equal blocks from equal offsets.
 Truth remains scoped to its admitted premise; withdrawing either that premise
@@ -228,6 +235,22 @@ applications and offset terms register on demand during insertion and queries.
 equalities, addition congruence, and registered same-snapshot int32 load congruence. The uint64 interface above extends the same closure to wide reads and selected
 wide expressions. Further sorts and consumers remain separate work. `pointer_is_classed` and `pointer_spellings` are explicitly
 pointer-specific compatibility helpers for legacy consumers.
+
+Every read application (pointer, int32 and uint64) takes the read's
+*numeric* address, `UInt64Address(address class)`, as its operand, not the
+pointer's address class. Memory is addressed, so two reads of one snapshot at
+equal addresses read the same bytes. A C pointer comparison states only a
+uint64 address equality (`c_pointer_comparison_condition`), which merges the
+two numeric addresses and so the reads, but never the address classes that
+pointer equality and read authority use. Equal pointers still have equal
+numeric addresses by congruence. The first read at a displaced address
+`AddressShift(base, k)` also defines its numeric address as
+`UInt64Address(base) + k`, so address equalities of two bases relate reads of
+one field of each; an address that is never read, such as a resource's, adds
+no numeric nodes. Regressions:
+`reads_at_equal_addresses_are_equal_without_equal_pointers`,
+`mdtests/pointer_loads_equal_after_late_address_equality.md` and
+`mdtests/pointer_field_loads_equal_after_late_address_equality.md`.
 
 Term interning and affine decomposition run under the graph mutex and do not
 canonicalize memory or traverse its history. Public scalar and offset equality

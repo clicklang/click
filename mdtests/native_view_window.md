@@ -9,7 +9,7 @@ void window(const unsigned char *p, unsigned long held, unsigned long start, uns
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "window.c";
 void window(const uint8* p, uint64 held, uint64 start, uint64 requested) {
  requires start <= 9223372036854775807u64;

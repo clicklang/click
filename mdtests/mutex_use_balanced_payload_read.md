@@ -13,7 +13,7 @@ int helper(struct holder *holder) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_use_balanced_payload_read.c";
 

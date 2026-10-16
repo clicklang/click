@@ -317,3 +317,38 @@ model, and uses the shared indexed separation rule through `assumption()`.
 The sized parent-update helper now calls this proof internally, so its callers
 no longer need an explicit parent-disequality premise. Full non-root insertion
 still needs the writable callback and whole-context restoration.
+
+
+`rbtree_size_insert_context_rotation.click` composes the checked parent-update
+helper and writable size callback for a left-left insertion rotation under an
+arbitrary owned ancestor context. The unchanged C and both augmented insertion
+wrappers return ownership of the whole root tree after refolding the repaired
+three-node subtree through the preserved ancestor context. The postcondition
+identifies its model with `sized_plug` and retains the subtree's exact rotated
+shape. Its retained-session expansion is a nightly regression for call-frame
+address matching. The other non-root rotation shapes remain.
+
+
+`rbtree_size_insert_mirrored_context_rotation.click` proves the right-right case
+with the same whole-root ownership result and unchanged ancestor caches. Both
+augmented insertion wrappers check the mirrored writable callback. The two
+context cases share the packed black-parent-word lemma in the parent-update
+helper, and each has a retained expansion regression.
+
+
+`rbtree_size_insert_context_double_rotation.click` and its mirrored counterpart
+check the left-right and right-left three-node insertion rotations under an
+arbitrary owned ancestor context. Each composes two writable size callbacks,
+identifies the intermediate repaired model by uniqueness, updates the incoming
+link, and restores ownership of the whole root tree. The postcondition relates
+that model to `sized_plug` of the original context and repaired subtree. Both
+augmented insertion wrappers preserve the same result. Repeated color flips
+through red ancestors, general insertion subtrees, and writable erase integration
+remain unfinished.
+
+
+`rbtree_size_recolor.click` supplies shared model operations for root recoloring
+and insertion color flips. Its explicit lemmas preserve cached values and
+recursive count validity for arbitrary subtrees and identify their shapes with
+the existing `rb_recolor` and `rb_insert_fix_recolor` operations. The root-only
+insertion proof imports this shared recoloring definition.

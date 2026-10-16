@@ -16,7 +16,8 @@ int32 read_literal() {
 ```
 
 ```click
-target "x86_64-linux-kernel";
+target "x86_64-unknown-linux-gnu";
+mode "kernel";
 verifying "string_literals_call.c";
 
 uint8* literal_source() {

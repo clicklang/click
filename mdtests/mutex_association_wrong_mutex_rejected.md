@@ -21,7 +21,7 @@ void run(struct cell *cell) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 resource cell_state(cell: struct cell*) {
     field value: int32;

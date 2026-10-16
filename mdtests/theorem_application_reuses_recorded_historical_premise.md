@@ -3,7 +3,7 @@
 void f(const unsigned char *p, int index) {}
 ```
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "recorded.c";
 theorem same_byte(left: uint8, right: uint8) {
  requires (int32)left == (int32)right;

@@ -72,7 +72,7 @@ additional separately proved interfaces.
 
 A directory can set the C target and modeled runtime once for its sidecars in
 `click.project.json`, with optional `target` and `runtime` string fields. For
-example, `{"target":"x86_64-linux-userspace","runtime":"modeled-pthread"}`
+example, `{"target":"x86_64-unknown-linux-gnu","runtime":"modeled-pthread"}`
 selects the conditional pthread model. A sidecar in a subdirectory without
 its own file uses the nearest one above it. The file can also declare the
 project's compiler-import units ([Project units](../reference/cli/import.md#project-units)).

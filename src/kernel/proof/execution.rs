@@ -201,7 +201,6 @@ pub(crate) struct CheckedTacticApplication {
     name: String,
     before_state: CState,
     pub(crate) after_state: CState,
-    before_facts: ProofFacts,
     pub(crate) after_facts: ProofFacts,
 }
 
@@ -233,7 +232,6 @@ impl CheckedTacticApplication {
                 name: name.to_string(),
                 before_state: before_state.clone(),
                 after_state: transition.state,
-                before_facts: before_facts.clone(),
                 after_facts,
             },
             transition.next_kernel_variable,
@@ -242,24 +240,6 @@ impl CheckedTacticApplication {
 
     pub(crate) fn before_state(&self) -> &CState {
         &self.before_state
-    }
-
-    fn advance_checked(&self, state: &CState, facts: &ProofFacts) -> Option<ProofFacts> {
-        if state != &self.before_state || facts.introduced_since(&self.before_facts).is_none() {
-            return None;
-        }
-        Some(
-            self.after_facts
-                .introduced_since(&self.before_facts)?
-                .into_iter()
-                .fold(facts.clone(), |facts, fact| {
-                    if facts.contains_top_level(&fact) {
-                        facts
-                    } else {
-                        facts.with_fact(fact)
-                    }
-                }),
-        )
     }
 }
 
@@ -571,7 +551,6 @@ pub(crate) struct CheckedResourceRewrite {
     return_context: Option<Arc<CheckedReturnContext>>,
     instance: Option<crate::kernel::ResourceInstance>,
     selected_children: Option<Arc<[(String, Variable)]>>,
-    load_equalities: Vec<crate::kernel::CheckedLoadEquality>,
     return_observation: Option<Arc<ReturnResourceObservation>>,
     return_presentation: Option<Arc<CheckedReturnPresentation>>,
 }
@@ -617,7 +596,6 @@ pub(crate) struct CheckedPopulationMemberRewrite {
     after_facts: ProofFacts,
     selected: CResourceFact,
     produce: bool,
-    witness: CheckedPopulationMemberExchange,
     definition: CCompositeResourceDefinition,
 }
 
@@ -983,7 +961,6 @@ impl CheckedPopulationMemberRewrite {
             after_facts: after_facts.clone(),
             selected: selected.clone(),
             produce,
-            witness: witness.clone(),
             definition: definition.clone(),
         };
         rewrite
@@ -1013,30 +990,6 @@ impl CheckedPopulationMemberRewrite {
             .iter()
             .all(|fact| allowed.contains(fact))
             .then_some(introduced)
-    }
-
-    fn advance_checked(&self, state: &CState, facts: &ProofFacts) -> Option<ProofFacts> {
-        if state.memory.diagnostic_identity() != self.before_state.memory.diagnostic_identity()
-            || !state.shares_non_memory_storage_with(&self.before_state)
-            || facts.introduced_since(&self.before_facts).is_none()
-            || checks_population_member_exchange(
-                &self.definition,
-                state,
-                &self.after_state,
-                &self.selected,
-                self.produce,
-                &self.witness,
-                self.before_facts.assumptions(),
-            )
-            .is_err()
-        {
-            return None;
-        }
-        let mut advanced = facts.clone();
-        for fact in self.checked_introductions()? {
-            advanced = advanced.with_kernel_checked_fact(fact);
-        }
-        Some(advanced)
     }
 }
 
@@ -1383,7 +1336,6 @@ impl CheckedResourceRewrite {
         selected: &CResourceFact,
         after_state: &CState,
         after_facts: &ProofFacts,
-        call_events: &CheckedCallEvents,
         definition: &CCompositeResourceDefinition,
         selected_children: Option<Arc<[(String, Variable)]>>,
     ) -> Result<Self, String> {
@@ -1695,10 +1647,6 @@ impl CheckedResourceRewrite {
             return_context: None,
             instance: None,
             selected_children: None,
-            load_equalities: crate::kernel::CheckedLoadEqualityCapture::start_with_call_events(
-                call_events,
-            )
-            .finish(),
             return_presentation: None,
             return_observation: None,
         })
@@ -1711,7 +1659,6 @@ impl CheckedResourceRewrite {
         selected: &CResourceFact,
         after_state: &CState,
         after_facts: &ProofFacts,
-        call_events: &CheckedCallEvents,
         definition: &CCompositeResourceDefinition,
         selected_children: Option<Arc<[(String, Variable)]>>,
     ) -> Result<Self, String> {
@@ -1890,10 +1837,6 @@ impl CheckedResourceRewrite {
             return_context: None,
             instance: None,
             selected_children: None,
-            load_equalities: crate::kernel::CheckedLoadEqualityCapture::start_with_call_events(
-                call_events,
-            )
-            .finish(),
             return_presentation: None,
             return_observation: None,
         })
@@ -2049,7 +1992,6 @@ impl CheckedResourceRewrite {
                     selected,
                     after_state,
                     after_facts,
-                    call_events,
                     definition,
                     selected_children,
                 );
@@ -2074,7 +2016,6 @@ impl CheckedResourceRewrite {
                     selected,
                     after_state,
                     after_facts,
-                    call_events,
                     definition,
                     selected_children.clone(),
                 );
@@ -2363,11 +2304,6 @@ impl CheckedResourceRewrite {
                     return_context: None,
                     instance: None,
                     selected_children: None,
-                    load_equalities:
-                        crate::kernel::CheckedLoadEqualityCapture::start_with_call_events(
-                            call_events,
-                        )
-                        .finish(),
                     return_presentation: None,
                     return_observation: None,
                 });
@@ -2553,7 +2489,6 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
                 return_context: None,
                 instance: Some(instance.clone()),
                 selected_children,
-                load_equalities: load_equality_capture.finish(),
                 return_presentation: None,
                 return_observation,
             });
@@ -2573,7 +2508,8 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
         // valid proofs). Re-deriving the expansion and normalizing both whole
         // resource contexts to compare them cost work in every resource the
         // state holds at every fold and unfold (`issues/scaling.md`).
-        let load_equalities = load_equality_capture.finish();
+        // The capture lent its call events to the checks above.
+        load_equality_capture.finish();
         Ok(Self {
             before_state: before_state.clone(),
             after_state: after_state.clone(),
@@ -2584,38 +2520,9 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             return_context: None,
             instance: None,
             selected_children: None,
-            load_equalities,
             return_presentation: None,
             return_observation: None,
         })
-    }
-
-    fn advance_checked(
-        &self,
-        state: &CState,
-        facts: &ProofFacts,
-        call_events: &CheckedCallEvents,
-    ) -> Option<ProofFacts> {
-        if state != &self.before_state
-            || facts.introduced_since(&self.before_facts).is_none()
-            || self.load_equalities.iter().any(|equality| {
-                !equality.checks_with_call_events(self.before_facts.assumptions(), call_events)
-            })
-        {
-            return None;
-        }
-        Some(
-            self.after_facts
-                .introduced_since(&self.before_facts)?
-                .into_iter()
-                .fold(facts.clone(), |facts, fact| {
-                    if facts.contains_top_level(&fact) {
-                        facts
-                    } else {
-                        facts.with_fact(fact)
-                    }
-                }),
-        )
     }
 
     /// The registered composite definition the event applied.
@@ -2774,10 +2681,7 @@ impl CheckedIteratedStep {
 pub(crate) struct CheckedResourceObservation {
     before_state: CState,
     pub(crate) after_state: CState,
-    pub(crate) before_facts: ProofFacts,
-    pub(crate) after_facts: ProofFacts,
     definition: Option<CCompositeResourceDefinition>,
-    load_equalities: Vec<crate::kernel::CheckedLoadEquality>,
 }
 
 impl CheckedResourceObservation {
@@ -2864,10 +2768,7 @@ impl CheckedResourceObservation {
             return Ok(Self {
                 before_state: before_state.clone(),
                 after_state: after_state.clone(),
-                before_facts: before_facts.clone(),
-                after_facts: after_facts.clone(),
                 definition: None,
-                load_equalities: Vec::new(),
             });
         }
         if !before_state.loan_bindings_are_consistent()
@@ -3040,51 +2941,13 @@ impl CheckedResourceObservation {
             return Err("resource observation produced an unchecked pure-fact delta");
         }
 
-        let load_equalities = load_equality_capture.finish();
+        // The capture lent its call events to the checks above.
+        load_equality_capture.finish();
         Ok(Self {
             before_state: before_state.clone(),
             after_state: after_state.clone(),
-            before_facts: before_facts.clone(),
-            after_facts: after_facts.clone(),
             definition: Some(definition),
-            load_equalities,
         })
-    }
-
-    fn advance_checked(
-        &self,
-        state: &CState,
-        facts: &ProofFacts,
-        call_events: &CheckedCallEvents,
-    ) -> Option<ProofFacts> {
-        let same_state = {
-            state.memory.diagnostic_identity() == self.before_state.memory.diagnostic_identity()
-                && state.shares_non_memory_storage_with(&self.before_state)
-                && Arc::ptr_eq(
-                    &state.population_effects,
-                    &self.before_state.population_effects,
-                )
-        };
-        if !same_state
-            || facts.introduced_since(&self.before_facts).is_none()
-            || self.load_equalities.iter().any(|equality| {
-                !equality.checks_with_call_events(self.before_facts.assumptions(), call_events)
-            })
-        {
-            return None;
-        }
-        Some(
-            self.after_facts
-                .introduced_since(&self.before_facts)?
-                .into_iter()
-                .fold(facts.clone(), |facts, fact| {
-                    if facts.contains_top_level(&fact) {
-                        facts
-                    } else {
-                        facts.with_fact(fact)
-                    }
-                }),
-        )
     }
 
     /// The registered composite definition the event applied.
@@ -3436,6 +3299,11 @@ pub(crate) struct CheckedProofCaseJoin {
     partition: Arc<CheckedProofCasePartition>,
     arms: Vec<CheckedProofCaseJoinArm>,
     start_state: CState,
+    /// The source the arms were walked over from the split, and the source
+    /// they all leave: a later walk reaching the join over the same source
+    /// takes this result instead of walking the arms again.
+    start_source: Option<CStatement>,
+    end_source: Option<CStatement>,
     joined_state: CState,
     /// The facts the proof holds after the join: the partition's root facts,
     /// and what every arm established or the interface admits.
@@ -3498,6 +3366,8 @@ struct WalkedCaseArms {
     partition: Arc<CheckedProofCasePartition>,
     arms: Vec<CheckedProofCaseJoinArm>,
     start_state: CState,
+    start_source: Option<CStatement>,
+    end_source: Option<CStatement>,
     /// Each arm's memory changes, as its walk met them.
     memory_steps: Vec<Vec<CheckedMemoryStep>>,
 }
@@ -3564,13 +3434,9 @@ impl CheckedProofCaseJoin {
                 facts: (*facts).clone(),
                 events,
             };
-            let progress = check_evidence_events(
-                walked.walked_events(),
-                facts,
-                start_state.clone(),
-                source.clone(),
-            )
-            .ok_or("a case-join arm trace does not follow its C source from the split")?;
+            let progress =
+                check_evidence_events(walked.walked_events(), start_state.clone(), source.clone())
+                    .ok_or("a case-join arm trace does not follow its C source from the split")?;
             if progress.completed.is_some() {
                 return Err("a case-join arm has already completed its trace");
             }
@@ -3594,10 +3460,13 @@ impl CheckedProofCaseJoin {
             memory_steps.push(progress.memory_steps);
             checked.push(walked);
         }
+        let (_, end_source) = joined.expect("a join of two arms walked them");
         Ok(WalkedCaseArms {
             partition: partition.expect("a join of two arms found their partition"),
             arms: checked,
             start_state,
+            start_source: source,
+            end_source,
             memory_steps,
         })
     }
@@ -3615,6 +3484,8 @@ impl CheckedProofCaseJoin {
             partition,
             arms: checked,
             start_state,
+            start_source,
+            end_source,
             ..
         } = Self::walk_arms(parent, arms, function, arguments, true)?;
         // A fact every arm established holds whichever of their cases does.
@@ -3632,6 +3503,8 @@ impl CheckedProofCaseJoin {
             partition,
             arms: checked,
             start_state,
+            start_source,
+            end_source,
             joined_state: arms[0].0.reached_state().clone(),
             joined_facts: successor_facts.clone(),
             interface: None,
@@ -3662,6 +3535,8 @@ impl CheckedProofCaseJoin {
             partition,
             arms: checked,
             start_state,
+            start_source,
+            end_source,
             memory_steps,
         } = Self::walk_arms(parent, &arms, function, arguments, false)?;
         let exact_root = partition
@@ -3723,6 +3598,8 @@ impl CheckedProofCaseJoin {
             partition,
             arms: checked,
             start_state,
+            start_source,
+            end_source,
             joined_state: joined_state.clone(),
             joined_facts: successor_facts.clone(),
             interface: Some(CheckedProofCaseJoinInterface {
@@ -3749,11 +3626,6 @@ impl CheckedProofCaseJoin {
             },
             |interface| &interface.execution_facts,
         )
-    }
-
-    /// The facts the proof holds after an interface join, when this is one.
-    pub(crate) fn interface_successor_facts(&self) -> Option<&ProofFacts> {
-        self.interface.as_ref().map(|_| &self.joined_facts)
     }
 
     /// Whether an interface join was checked under this function's resource
@@ -3819,31 +3691,34 @@ impl CheckedProofCaseJoin {
         self.arms.iter().map(|arm| arm.events.as_slice())
     }
 
-    /// Re-walks every arm from `state` over `source` and returns the source
-    /// they all leave, or `None` if any arm fails to reach that one program
-    /// point, or without an interface the joined state.
+    /// The source the arms leave when a walk reaches the join at `state`
+    /// over `source`: the recorded result when that is the source they were
+    /// checked over, and otherwise their walk over it, which fails if any
+    /// arm misses that one program point or, without an interface, the
+    /// joined state.
     fn advance_checked(
         &self,
         state: &CState,
         source: &Option<CStatement>,
-        call_events: &CheckedCallEvents,
     ) -> Option<Option<CStatement>> {
         if state != &self.start_state {
             return None;
         }
+        // The check that built this join walked every arm from this state
+        // over this source; walking them again would only repeat it.
+        if source == &self.start_source {
+            return Some(self.end_source.clone());
+        }
+        // A walk over a different source, such as one that continues past
+        // the program point the arms reached, walks the arms over it.
         let mut remaining: Option<Option<CStatement>> = None;
         for arm in &self.arms {
             let (entered, cases, _) = case_join_arm_entry(&arm.events)?;
             if !Arc::ptr_eq(entered, &self.partition) || cases != arm.cases {
                 return None;
             }
-            let progress = check_evidence_events_with_call_events(
-                arm.walked_events(),
-                &arm.facts,
-                state.clone(),
-                source.clone(),
-                call_events.clone(),
-            )?;
+            let progress =
+                check_evidence_events(arm.walked_events(), state.clone(), source.clone())?;
             if progress.completed.is_some()
                 || (self.interface.is_none() && progress.state != self.joined_state)
             {
@@ -4319,13 +4194,9 @@ impl CheckedExecutionBranch {
             ) {
                 return Err("a branch arm does not begin with its checked condition theorem");
             }
-            let progress = check_evidence_events(
-                &events,
-                arm_facts[index],
-                split.state.clone(),
-                Some(full_source.clone()),
-            )
-            .ok_or("a branch arm theorem trace does not follow its exact C source")?;
+            let progress =
+                check_evidence_events(&events, split.state.clone(), Some(full_source.clone()))
+                    .ok_or("a branch arm theorem trace does not follow its exact C source")?;
             if progress.completed.is_some() || progress.remaining != split.continuation {
                 return Err("a branch arm theorem trace does not reach the shared continuation");
             }
@@ -4441,13 +4312,9 @@ impl CheckedExecutionBranch {
             ) {
                 return Err("an interface arm does not begin with its checked condition theorem");
             }
-            let progress = check_evidence_events(
-                &events,
-                arm_facts[index],
-                split.state.clone(),
-                Some(full_source.clone()),
-            )
-            .ok_or("an interface arm trace does not follow its exact C source")?;
+            let progress =
+                check_evidence_events(&events, split.state.clone(), Some(full_source.clone()))
+                    .ok_or("an interface arm trace does not follow its exact C source")?;
             if progress.completed.is_some() || progress.remaining != split.continuation {
                 return Err("an interface arm trace does not reach the shared continuation");
             }
@@ -4541,10 +4408,6 @@ impl CheckedExecutionBranch {
 
     pub(crate) fn start_state(&self) -> &CState {
         &self.split.state
-    }
-
-    pub(crate) fn arm_facts(&self, index: usize) -> &ProofFacts {
-        &self.arms[index].facts
     }
 
     pub(crate) fn arm_events(&self, index: usize) -> &[CheckedExecutionEvent] {
@@ -6224,46 +6087,6 @@ fn checked_evidence_premises_hold_in(theorem: &Theorem, context: &PureFactContex
     true
 }
 
-/// Whether a retained theorem's premises hold where it stands in a trace.
-///
-/// A premise holds under the facts the stretch ended with, or under the fact
-/// context recorded right after the theorem, which is the context it was
-/// proved under. Facts are not only added along a path: folding and
-/// unfolding replace facts a later state no longer has, so a premise that
-/// held at the theorem can be gone from the stretch's final facts.
-///
-/// One kind of premise comes from neither: comparing two pointers records
-/// that the state holds both of their owners, as a resource composition
-/// read off the state the comparison ran in. That premise holds when the
-/// state the walk has reached holds every resource it names.
-fn checked_evidence_premises_hold_at(
-    theorem: &Theorem,
-    recorded: Option<&PureFactContext>,
-    facts: &ProofFacts,
-    state: &CState,
-) -> bool {
-    let mut proposition = theorem.proposition();
-    while let Proposition::Implies(premise, body) = proposition {
-        let held = facts.assumptions().proves_exact(premise)
-            || recorded.is_some_and(|context| context.proves_exact(premise))
-            || ground_comparison_premise_holds(premise)
-            || matches!(
-                premise.as_ref(),
-                Proposition::CResourceComposition(resources)
-                    if resources.facts().iter().all(|fact| {
-                        state
-                            .resources()
-                            .satisfies_fact(fact, recorded.unwrap_or(facts.assumptions()))
-                    })
-            );
-        if !held {
-            return false;
-        }
-        proposition = body;
-    }
-    true
-}
-
 fn split_checked_evidence_statement(statement: CStatement) -> (CStatement, Option<CStatement>) {
     match statement {
         CStatement::Seq(first, second) => {
@@ -6507,14 +6330,9 @@ fn checked_source_statement_matches(proved: &CStatement, source: &CStatement) ->
 
 fn checked_statement_event(
     theorem: &Theorem,
-    recorded: Option<&PureFactContext>,
-    facts: &ProofFacts,
     state: &CState,
     statement: &CStatement,
 ) -> Option<CStatementOutcome> {
-    if !checked_evidence_premises_hold_at(theorem, recorded, facts, state) {
-        return None;
-    }
     let (proved_state, proved_statement, outcome) = match checked_evidence_conclusion(theorem) {
         Proposition::CStatementExecutes {
             state,
@@ -6534,15 +6352,10 @@ fn checked_statement_event(
 
 fn checked_condition_event(
     theorem: &Theorem,
-    recorded: Option<&PureFactContext>,
-    facts: &ProofFacts,
     state: &CState,
     statement: CStatement,
     tail: Option<CStatement>,
 ) -> Option<Option<CStatement>> {
-    if !checked_evidence_premises_hold_at(theorem, recorded, facts, state) {
-        return None;
-    }
     let (proved_state, proved_condition, value) = match checked_evidence_conclusion(theorem) {
         Proposition::CConditionEvaluates {
             state,
@@ -6629,39 +6442,23 @@ struct CheckedMemoryStep {
     statement_effects: Option<usize>,
 }
 
-/// Checks a retained event tree by following kernel theorem conclusions
-/// through an exact source tree. This does not evaluate a C operation.
+/// Follows a retained event tree, which the recorder checked event by event,
+/// through an exact source tree: each event's recorded result gives the next
+/// state, and nothing it was checked against is checked again. This does not
+/// evaluate a C operation.
 fn check_evidence_events(
     events: &[CheckedExecutionEvent],
-    facts: &ProofFacts,
-    state: CState,
-    remaining: Option<CStatement>,
-) -> Option<CheckedEvidenceProgress> {
-    check_evidence_events_with_call_events(
-        events,
-        facts,
-        state,
-        remaining,
-        CheckedCallEvents::default(),
-    )
-}
-
-fn check_evidence_events_with_call_events(
-    events: &[CheckedExecutionEvent],
-    facts: &ProofFacts,
     mut state: CState,
     mut remaining: Option<CStatement>,
-    mut call_events: CheckedCallEvents,
 ) -> Option<CheckedEvidenceProgress> {
     let mut completed = None;
-    let mut current_facts = facts.clone();
     let mut memory_steps = Vec::new();
     let mut step_memory = state.memory().clone();
     let mut step_may_write = false;
     // The step of the statement last walked, for its effect count to land on.
     let mut statement_step: Option<usize> = None;
     let mut after_statement = false;
-    for (position, event) in events.iter().enumerate() {
+    for event in events {
         if state.memory() != &step_memory {
             if after_statement {
                 statement_step = Some(memory_steps.len());
@@ -6705,18 +6502,11 @@ fn check_evidence_events_with_call_events(
                 | CheckedExecutionEvent::Branch(_)
                 | CheckedExecutionEvent::ProofCaseJoin(_)
         );
-        // The fact context recorded right after a theorem is the one it was
-        // proved under.
-        let recorded = match events.get(position + 1) {
-            Some(CheckedExecutionEvent::Context(context)) => Some(context),
-            _ => None,
-        };
         if let Some(CStatementOutcome::Return {
             state: returned, ..
         }) = &mut completed
             && let CheckedExecutionEvent::ResourceRewrite(rewrite) = event
         {
-            current_facts = rewrite.advance_checked(returned, &current_facts, &call_events)?;
             **returned = rewrite.after_state.clone();
             continue;
         }
@@ -6725,7 +6515,6 @@ fn check_evidence_events_with_call_events(
         }) = &mut completed
             && let CheckedExecutionEvent::PopulationAuthorityRewrite(rewrite) = event
         {
-            current_facts = rewrite.advance_checked(returned, &current_facts)?;
             **returned = rewrite.after_state.clone();
             continue;
         }
@@ -6739,9 +6528,9 @@ fn check_evidence_events_with_call_events(
                     | CStatementOutcome::Throw { state, .. } => state,
                     _ => return None,
                 };
-                **returned = end.advance_checked(returned)?;
+                **returned = end.after_state.clone();
             } else {
-                state = end.advance_checked(&state)?;
+                state = end.after_state.clone();
             }
             continue;
         }
@@ -6750,44 +6539,25 @@ fn check_evidence_events_with_call_events(
         }
         match event {
             CheckedExecutionEvent::ReturnProposition(_) => return None,
-            CheckedExecutionEvent::ProofCase(arm) => {
-                if !arm.is_valid() {
-                    return None;
-                }
-                current_facts = arm.facts.clone();
-                continue;
-            }
+            CheckedExecutionEvent::ProofCase(_) => continue,
             CheckedExecutionEvent::ProofCaseJoin(join) => {
-                remaining = join.advance_checked(&state, &remaining, &call_events)?;
+                remaining = join.advance_checked(&state, &remaining)?;
                 state = join.joined_state().clone();
-                // The walk runs under the facts its own path ends with, which
-                // extend whatever the join left. Only a walk that began
-                // before those facts existed takes the join's.
-                if let Some(successor_facts) = join.interface_successor_facts()
-                    && current_facts.introduced_since(successor_facts).is_none()
-                {
-                    current_facts = successor_facts.clone();
-                }
                 continue;
             }
             CheckedExecutionEvent::ResourceObservation(observation) => {
-                current_facts =
-                    observation.advance_checked(&state, &current_facts, &call_events)?;
                 state = observation.after_state.clone();
                 continue;
             }
             CheckedExecutionEvent::ResourceRewrite(rewrite) => {
-                current_facts = rewrite.advance_checked(&state, &current_facts, &call_events)?;
                 state = rewrite.after_state.clone();
                 continue;
             }
             CheckedExecutionEvent::PopulationAuthorityRewrite(rewrite) => {
-                current_facts = rewrite.advance_checked(&state, &current_facts)?;
                 state = rewrite.after_state.clone();
                 continue;
             }
             CheckedExecutionEvent::PopulationMemberRewrite(rewrite) => {
-                current_facts = rewrite.advance_checked(&state, &current_facts)?;
                 state = rewrite.after_state.clone();
                 continue;
             }
@@ -6796,19 +6566,12 @@ fn check_evidence_events_with_call_events(
             // again from the start.
             CheckedExecutionEvent::IteratedStep(_) => return None,
             CheckedExecutionEvent::TacticApplication(application) => {
-                current_facts = application.advance_checked(&state, &current_facts)?;
                 state = application.after_state.clone();
                 continue;
             }
-            // The retained context of the preceding theorem; the arm check
-            // above already holds the arm's own facts.
-            CheckedExecutionEvent::Context(_) | CheckedExecutionEvent::StatementEffects(_) => {
-                continue;
-            }
-            CheckedExecutionEvent::Call(call) => {
-                call_events.insert(call);
-                continue;
-            }
+            CheckedExecutionEvent::Context(_)
+            | CheckedExecutionEvent::StatementEffects(_)
+            | CheckedExecutionEvent::Call(_) => continue,
             CheckedExecutionEvent::AutomaticLifetimeEnd(_) => {
                 unreachable!("handled before source advance")
             }
@@ -6831,13 +6594,8 @@ fn check_evidence_events_with_call_events(
                 .as_ref()
                 .is_some_and(|source| matches!(*split_shared_source(source).0, CStatement::Skip))
         {
-            let CStatementOutcome::Normal(next_state) = checked_statement_event(
-                theorem,
-                recorded,
-                &current_facts,
-                &state,
-                &CStatement::Skip,
-            )?
+            let CStatementOutcome::Normal(next_state) =
+                checked_statement_event(theorem, &state, &CStatement::Skip)?
             else {
                 return None;
             };
@@ -6848,13 +6606,7 @@ fn check_evidence_events_with_call_events(
         let (next_statement, tail) = split_checked_evidence_statement(source);
         match event {
             CheckedExecutionEvent::Statement(theorem) => {
-                match checked_statement_event(
-                    theorem,
-                    recorded,
-                    &current_facts,
-                    &state,
-                    &next_statement,
-                )? {
+                match checked_statement_event(theorem, &state, &next_statement)? {
                     CStatementOutcome::Normal(next_state) => {
                         state = *next_state;
                         remaining = tail;
@@ -6875,44 +6627,20 @@ fn check_evidence_events_with_call_events(
                 }
             }
             CheckedExecutionEvent::Condition(theorem) => {
-                remaining = checked_condition_event(
-                    theorem,
-                    recorded,
-                    &current_facts,
-                    &state,
-                    next_statement,
-                    tail,
-                )?;
+                remaining = checked_condition_event(theorem, &state, next_statement, tail)?;
             }
             CheckedExecutionEvent::Branch(branch) => {
                 let CStatement::If { .. } = &next_statement else {
                     return None;
                 };
+                // The check that built `branch` walked both arms from this
+                // state over this `if`; they consume it alone, so they leave
+                // `tail` here as they left the branch's own continuation.
                 if !branch.matches_source(&state, &next_statement, &tail) {
                     return None;
                 }
-                let full_source = prepend_checked_evidence_statement(next_statement, tail.clone());
-                for arm_index in 0..2 {
-                    let arm = check_evidence_events_with_call_events(
-                        branch.arm_events(arm_index),
-                        branch.arm_facts(arm_index),
-                        state.clone(),
-                        Some(full_source.clone()),
-                        call_events.clone(),
-                    )?;
-                    if arm.completed.is_some()
-                        || arm.remaining != tail
-                        || (branch.interface_successor_facts().is_none()
-                            && arm.state != *branch.joined_state())
-                    {
-                        return None;
-                    }
-                }
                 state = branch.joined_state().clone();
                 remaining = tail;
-                if let Some(successor_facts) = branch.interface_successor_facts() {
-                    current_facts = successor_facts.clone();
-                }
             }
             CheckedExecutionEvent::ProofCase(_)
             | CheckedExecutionEvent::ProofCaseJoin(_)

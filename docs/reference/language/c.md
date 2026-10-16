@@ -10,12 +10,14 @@ Click, this documentation calls that syntax a **C fragment**.
 
 ## C implementation target
 
-The default concrete target is `x86_64-linux-userspace`: the LP64 data layout
-of the x86-64 System V ABI, as GCC and Clang build it by default, with
-eight-bit, signed plain `char`. The `x86_64-linux-kernel` target has the same
-layout with unsigned plain `char`, following the Linux kernel's explicit
-`-funsigned-char` build setting; select it with `target "x86_64-linux-kernel";`
-or a `click.project.json` for kernel code. The settings are centralized in `CTarget`; LP64 alone
+A C target is a target triple and a mode. The one supported triple is
+`x86_64-unknown-linux-gnu`, which C++ and Rust imports also use. Its default
+mode, `userspace`, has the LP64 data layout of the x86-64 System V ABI,
+as GCC and Clang build it by default, with eight-bit, signed plain `char`. The
+`kernel` mode has the same layout with unsigned plain `char`, following
+the Linux kernel's explicit `-funsigned-char` build setting; select it with
+`mode "kernel";` or `"mode": "kernel"` in a
+`click.project.json` for kernel code. The settings are centralized in `CTarget`; LP64 alone
 does not imply char signedness. Under either target `char` remains a distinct
 C type from both `signed char` and `unsigned char`; only its values and its
 one-byte representation are those of `unsigned char` (kernel) or `signed
@@ -26,7 +28,7 @@ same C verified under the two targets can have different results
 
 <!-- verified-example: mdtests/userspace_plain_char_is_signed.md -->
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "userspace_plain_char.c";
 
 int32 negative_byte() {
@@ -58,9 +60,10 @@ incremental verification markers include its name.
 
 A project can select its C implementation target in a `click.project.json` file
 beside its sidecars. For example, the JSON object
-`{"target":"x86_64-linux-userspace","runtime":"modeled-pthread"}` selects
+`{"target":"x86_64-unknown-linux-gnu","runtime":"modeled-pthread"}` selects
 the user-space target and Click's conditional pthread model for every sidecar
-in that directory. The two fields are optional. When a command is given an
+in that directory; `"mode": "kernel"` selects kernel mode.
+The fields are optional. When a command is given an
 explicit project root and the sidecar directory has no config, it looks for
 the config at that root, and otherwise in the nearest directory above the
 sidecar that has one. Conflicting sidecar directives are rejected. The same
@@ -72,7 +75,7 @@ alongside `verifying`:
 
 <!-- verified-example: mdtests/userspace_target_directive.md -->
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "null_pointer.c";
 
 int32 is_null(int32* p) {
@@ -84,17 +87,24 @@ int32 is_null(int32* p) {
 }
 ```
 
-The accepted names are `x86_64-linux-kernel` and `x86_64-linux-userspace`; any
-other name is a parse error. A file declares at most one `target`, and every
-module of one project must agree on it, since a project is preprocessed once.
-Place the directive in the module that declares `verifying`. Without a
-directive the default target, `x86_64-linux-userspace`, is selected.
+The accepted target is `x86_64-unknown-linux-gnu`, and the accepted
+modes are `userspace` and `kernel`, selected with
+`mode "kernel";`; any other name is a parse error. The retired
+single-name spellings `x86_64-linux-userspace` and `x86_64-linux-kernel` are
+refused with their replacement
+(`mdtests/target_directive_refuses_retired_name.md`). A file declares at most
+one `target` and one `mode`, and every module of one project must agree
+on the pair, since a project is preprocessed once. Place the directives in the
+module that declares `verifying`. Without either directive the default,
+`x86_64-unknown-linux-gnu` in `userspace` mode, is selected; a
+`mode` without a `target` selects the same triple. Diagnostics name the
+pair as `x86_64-unknown-linux-gnu (kernel)`.
 
 The selected target and project configuration participate in the proof-artifact identity, so the same C
 and Click sources verified under different targets are different artifacts:
 certificates and incremental caches are never reused across them.
 
-`x86_64-linux-userspace` is C11/POSIX user space with the same LP64 layout,
+The `userspace` mode is C11/POSIX user space with the same LP64 layout,
 signed plain `char` (no `__CHAR_UNSIGNED__`), and no `__KERNEL__` predefine. Its
 modeled `<stddef.h>` supplies `NULL`, and its declaration-only `<pthread.h>`
 declares `pthread_create`, `pthread_join`, and `pthread_mutex_init`, `_lock`,
@@ -114,7 +124,7 @@ behavior.
 
 For the portable pthread probe, the project config explicitly selects Click's
 trusted create/join model with `"runtime":"modeled-pthread"` alongside
-`"target":"x86_64-linux-userspace"`. Existing sidecars may use the
+`"target":"x86_64-unknown-linux-gnu"`. Existing sidecars may use the
 `runtime "modeled-pthread";` directive with the corresponding target.
 
 This selection requires Click's built-in `<pthread.h>` declarations. They are
@@ -528,8 +538,8 @@ for an unsigned type, and GCC defines the implementation-defined signed
 conversion the same way. Click converts such a constant identically in a
 static, automatic, or array initializer, an assignment, a store, an explicit
 cast, a `return`, and a call argument: `unsigned char c = -56` holds 200,
-`short s = 40000` holds -25536, and plain `char c = -56` holds 200 under
-`x86_64-linux-kernel`
+`short s = 40000` holds -25536, and plain `char c = -56` holds 200 in the
+`kernel` mode
 (`mdtests/an_out_of_range_integer_constant_converts_modulo_its_destination_width.md`,
 `mdtests/a_negative_char_constant_is_unsigned_on_the_kernel_target.md`).
 A narrowing of a value that is not an integer constant expression keeps the

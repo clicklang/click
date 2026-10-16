@@ -24,7 +24,7 @@ size_t last_index(const char *s) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "builtin_strlen.c";
 
 uint64 last_index(const char* s) {

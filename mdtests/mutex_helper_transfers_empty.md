@@ -19,7 +19,7 @@ void run(pthread_mutex_t *mu) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_helper_transfers_empty.c";
 

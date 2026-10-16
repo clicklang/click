@@ -2,7 +2,7 @@
 
 The negative form of
 `a_uint8_pointer_passed_as_a_char_pointer_reads_signed_bytes.md`. Under the
-default x86_64-linux-userspace target, a `uint8 *` passed uncast to a `char *`
+default user-space target, a `uint8 *` passed uncast to a `char *`
 parameter is read as signed bytes, so the byte `0xC8` reads as `-56`, and a
 claim that the callee sees its unsigned value `200` is refused.
 

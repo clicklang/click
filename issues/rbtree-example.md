@@ -1680,3 +1680,33 @@ while preserving the incoming-link model. The sized parent-update helper now
 calls it internally and no longer requires callers to supply this disequality.
 C comparisons and `assumption()` share the indexed nonempty separation rule;
 full non-root insertion still needs callback composition and context restoration.
+
+
+The sized left-left insertion rotation now composes the parent-update helper
+with its writable callback under an arbitrary owned outer context, and both
+augmented insertion wrappers verify. The result refolds the repaired subtree
+through its preserved ancestor context and owns the whole root tree, with its
+model identified by `sized_plug`. Its eighteen-site expansion audit passes; the
+other non-root rotation shapes remain.
+
+
+The mirrored sized right-right context rotation also verifies through both
+wrappers and restores the whole root model. Its eighteen-site audit passes.
+Both context cases use the shared black-parent-word lemma; non-root double
+rotations remain.
+
+
+Both sized non-root double rotations now compose their two writable callbacks
+with the checked incoming-link helper and whole-context restoration. The
+left-right and right-left entries and their augmented wrappers retain the exact
+outer context and return whole-root ownership, with the model related by
+`sized_plug`. All four three-node rotation shapes are now covered under arbitrary
+owned ancestor contexts. Repeated flips through red ancestors, general insertion
+subtrees, and writable erase integration remain unfinished.
+
+
+Shared sized recoloring and color-flip model operations now preserve cached
+values and recursive count validity for arbitrary subtrees, with checked bridges
+to the existing structural model operations. Root-only insertion uses the shared
+recoloring definition. These lemmas prepare general color-flip propagation;
+the existing C flip sidecars still cover their documented finite cases.

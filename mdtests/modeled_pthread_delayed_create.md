@@ -28,7 +28,7 @@ int run(struct cell *p) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "modeled_pthread_delayed_create.c";
 

@@ -214,15 +214,17 @@ null.
    Each either states the address claim with `address(...)`, or relies on a
    value-level source. Add the two address-equality rows of the hole table as
    regressions.
-3. Follow-up: load congruence over address equality. Reads of one memory at
-   equal addresses read one cell, so they are equal values; that grants no
-   permission. Until then
-   `mdtests/pointer_loads_equal_after_late_address_equality.md` is refused.
+3. Load congruence over address equality. Reads of one memory at equal
+   addresses read one cell, so they are equal values; that grants no
+   permission. Done: the equality graph keys every read by its snapshot and
+   numeric address (see `docs/internals/equality-closure.md`), and
+   `mdtests/pointer_loads_equal_after_late_address_equality.md` passes again,
+   with a displaced-field variant beside it.
 
 Measured with steps 1 and 2 on master `979df5bbd`: three mdtests and one
 example needed changes. `model_identity_pointer_payload`,
 `loop_old_parameter_resource_argument` and `examples/modeled-binary-tree` now
-compare addresses where their C does; the reads fixture waits on step 3.
+compare addresses where their C does; the reads fixture waited on step 3.
 
 ### Abandoned approach
 

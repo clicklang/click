@@ -23,7 +23,7 @@ int read_twice(struct box *b) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_protected_pointer_footprint_stale_read_rejected.c";
 resource target(q: int32*) {

@@ -8,7 +8,7 @@ void outer(struct counter *counter) { inner(counter); inner(counter); }
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "named_guard.c";
 void inner(struct counter *counter) {

@@ -13,7 +13,8 @@ int negative_byte(void) {
 ```
 
 ```click
-target "x86_64-linux-kernel";
+target "x86_64-unknown-linux-gnu";
+mode "kernel";
 verifying "kernel_plain_char.c";
 
 int32 negative_byte() {

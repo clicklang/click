@@ -31,7 +31,7 @@ int run(struct cell *first_task, struct cell *second_task) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "modeled_pthread_second_failure_requires_join.c";
 

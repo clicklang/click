@@ -10,7 +10,7 @@ void helper(struct holder *holder) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 
 resource holding(holder: struct holder*) {
