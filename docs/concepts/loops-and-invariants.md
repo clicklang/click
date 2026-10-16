@@ -1196,6 +1196,24 @@ Click appends the closer implicitly after the last written tactic. The
 expanded proof contains an explicit `close_invariants` leaf either way, so it
 always appears in an expanded proof.
 
+Stepping to the back edge is optional too. A path whose tactics run out
+inside the body runs the rest of it as an omitted `preserve` runs a whole
+body: straight-line statements are stepped, a C `if` with more of the body
+after it whose arms both fall through is run and joined, and any other `if`
+splits into separate paths. Each path that reaches the body's end, a
+`continue` or a `break` closes as a written one does, so a script holds only
+the steps that need proof work and ends where that work ends
+(`mdtests/preserve_runs_the_rest_of_the_body.md`). Expansion writes the steps
+that ran.
+
+Each member the closer cannot plan otherwise is tried with one
+`normalize() using` step over the loop's named premises: the declared
+invariants and guard at iteration entry, the written preconditions, and the
+C branch conditions the path took, trimmed to the ones the step needs. That
+is what closes an unsigned or 64-bit bound such as `i <= n` after `i += 1`
+from the guard `i < n`, without a `have` restating it
+(`mdtests/back_edge_closes_an_unsigned_bound_from_the_guard.md`).
+
 The bundle is a conjunction with one member per declared clause, in
 declaration order. A clause that reads memory is preceded by members for what
 its reads owe: the viewability of each cell it reads at the back edge, and at
@@ -1226,10 +1244,13 @@ the loop summary is the central part of the proof.
 
 ### The frontier of an unfinished `preserve`
 
-A long body is written a few tactics at a time, and until its last path reaches
-one of the body's ends the script is unfinished rather than wrong. Answering
-that with the bare one-iteration rule hides how far the body actually got, so
-an unfinished script is refused with the frontier it reached instead:
+A long body is written a few tactics at a time. A path whose tactics stop
+inside the body runs the rest of it implicitly, as above; when that rest
+does not run, for instance because a statement ahead needs a fact the path
+does not have, the script is unfinished rather than wrong. Answering that
+with the bare one-iteration rule hides how far the body actually got, so an
+unfinished script is refused with the frontier it reached instead, followed
+by why the rest did not run:
 
 - the statement the path stands before, and its statement index — leading block
   ends are stepped over, so this is the next statement the C would run;

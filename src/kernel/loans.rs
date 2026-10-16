@@ -929,7 +929,7 @@ fn update_indexed_memory_range(
     }
     let index = update_active_memory_index(&data.active_memory_index, range, loan, insert)?;
     let subtree = update_active_memory_subtree(&data.active_memory_subtree, range, loan, insert)?;
-    let nonlocal = if range.base().block.starts_with("local:") {
+    let nonlocal = if range.base().block.is_local_block() {
         data.active_nonlocal_indexed_ranges
     } else if insert {
         data.active_nonlocal_indexed_ranges
@@ -1730,7 +1730,7 @@ impl LocalViewBacking {
     ) -> Option<Self> {
         let range = viewed.memory_range()?;
         if !viewed.is_view()
-            || !range.base().block.starts_with("local:")
+            || !range.base().block.is_local_block()
             || !memory.has_block(&range.base().block)
             || memory.is_ended_local_address(range.base())
         {
@@ -6941,7 +6941,7 @@ impl LoanLedger {
             })
             .flat_map(|(_, loan)| &loan.memory_backing)
             .filter(|range| {
-                !range.base().block.starts_with("local:") && memory_interval_nodes(range).is_some()
+                !range.base().block.is_local_block() && memory_interval_nodes(range).is_some()
             })
             .count();
         if data.active_nonlocal_indexed_ranges != expected_nonlocal_indexed_ranges {

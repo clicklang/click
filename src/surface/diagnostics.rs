@@ -1570,7 +1570,8 @@ pub(super) fn describe_runtime_error(
             message.push_str(&labels.trace_legend());
             message
         }
-        crate::kernel::CRuntimeError::FunctionContract(message) => {
+        crate::kernel::CRuntimeError::FunctionContract(message)
+        | crate::kernel::CRuntimeError::UnsuppliedResourceValue(message) => {
             format!(
                 "function contract could not be applied: {}",
                 name_string_literal_storage(message)
@@ -1902,6 +1903,23 @@ fn describe_layout_place_range(
                 || (field.c_type().is_pointer() && low < high && high <= slot_high))
         {
             return Some(member(field_name));
+        }
+        // A single scalar array element keeps its field/index spelling even
+        // when the range base has folded the index into a byte offset.
+        if !field.c_type().is_pointer()
+            && field.struct_name().is_none()
+            && field.array_shape().is_none_or(|shape| shape.len() == 1)
+            && let Some(width) = scalar_element_width(field.c_type()).map(|width| width as u64)
+            && low >= field_low
+            && high <= field_low + u64::from(field.byte_width())
+            && high - low == width
+            && (low - field_low).is_multiple_of(width)
+        {
+            return Some(format!(
+                "{}[{}]",
+                member(field_name),
+                (low - field_low) / width
+            ));
         }
     }
     // Leaf slots preserve dotted names for a partial embedded aggregate.
@@ -3952,7 +3970,7 @@ fn describe_source_cell_of_width(
         // loses its index this way, which costs an index-inequality repair the
         // reader could not have used anyway -- the array is one object, so the
         // two spellings name the same storage either way.
-        PointerOffsetTerm::Constant(0) if pointer.block.starts_with("local:") => Some(SourceCell {
+        PointerOffsetTerm::Constant(0) if pointer.block.is_local_block() => Some(SourceCell {
             object: declared,
             index: CellIndex::Whole,
             element_bytes: None,
@@ -4073,9 +4091,9 @@ pub(super) fn describe_memory_block(
         PointerBlock::Concrete(name) => Some(
             name.strip_prefix("global:")
                 .or_else(|| {
-                    name.rsplit(':')
-                        .next()
-                        .filter(|_| name.starts_with("static:") || name.starts_with("local:"))
+                    name.rsplit(':').next().filter(|_| {
+                        PointerBlock::is_static_name(name) || PointerBlock::is_local_name(name)
+                    })
                 })
                 .unwrap_or(name)
                 .to_string(),

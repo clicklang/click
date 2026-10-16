@@ -2,13 +2,11 @@
 
 A `preserve` body may open a proof `match` on the loop binder's model and
 finish each arm's path separately. An arm with no tactics reaches the
-region's end at once, with the body's statements still ahead, so that path
-is unfinished. The frontier report names the arm's emptiness rather than
-saying "after tactic 0 `match`", which reads as if the `match` itself were
-the last thing that ran. The `Tree::Empty` arm here is refutable (the
-invariant fixes the model at `Tree::Node`), and the proof that refutes it is
-a `contradiction`; leaving the arm empty instead is the shape this fixture
-pins.
+region's end at once, with the body's statements still ahead, so the rest of
+the body runs from there. Here it does not run, because `10 / (i - 1)` may
+divide by zero, so that path is unfinished. The frontier report names the
+arm's emptiness rather than saying "after tactic 0 `match`", which reads as
+if the `match` itself were the last thing that ran.
 
 ```c filename=loop_clause_reads_arm_bindings.c
 struct node { int value; struct node *left; };
@@ -18,6 +16,7 @@ int spin(struct node *p, int n) {
     i = 0;
     while (i < n) {
         i = i + 1;
+        i = i + 10 / (i - 1);
     }
     return p->value;
 }
@@ -68,10 +67,7 @@ int spin(struct node* p, int n) {
                 preserve by {
                     match t.model {
                         Tree::Empty => { },
-                        Tree::Node(id2, value2, left2) => {
-                            step();
-                            close_invariants();
-                        },
+                        Tree::Node(id2, value2, left2) => { },
                     }
                 }
             }
@@ -83,5 +79,5 @@ int spin(struct node* p, int n) {
 ```
 
 ```expect
-fail: after tactic 0 `match, inside an arm with no tactics`; still ahead on this path: the body's end. Already complete: 1 at the body's end
+fail: after tactic 0 `match, inside an arm with no tactics`; still ahead on this path: the body's end. No path of this `preserve` is complete yet
 ```

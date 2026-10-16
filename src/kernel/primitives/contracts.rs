@@ -1433,6 +1433,19 @@ impl CFunction {
         self.contract_interface.parameters.pop()
     }
 
+    /// This function with its last `count` parameters as contract value
+    /// parameters: values its contract names that are not C arguments. A
+    /// call binds them per call; the body is proved for every value.
+    pub(crate) fn with_trailing_value_parameters(mut self, count: usize) -> Option<Self> {
+        if count == 0 {
+            return Some(self);
+        }
+        self.contract_interface = self
+            .contract_interface
+            .with_trailing_value_parameters(count)?;
+        Some(self)
+    }
+
     pub fn global_variables(&self) -> &[CGlobal] {
         &self.global_variables
     }
@@ -3316,6 +3329,18 @@ impl CExecutionEnvironment {
         arguments: Vec<Variable>,
     ) -> Self {
         self.selected_call_resource_arguments = Some(arguments.into());
+        self
+    }
+
+    /// Selects the instances, as resource terms, that give one ordinary C
+    /// call to `function` its contract value parameters.
+    pub(crate) fn with_selected_call_value_instances(
+        mut self,
+        function: &str,
+        instances: Vec<CResourceFact>,
+    ) -> Self {
+        self.selected_call_value_arguments =
+            Some(std::sync::Arc::new((function.to_string(), instances)));
         self
     }
 

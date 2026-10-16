@@ -60,7 +60,10 @@ pub(crate) fn c_checked_function_proposition_with_reason(
         CFunctionOutcome::UndefinedBehavior(_) => {
             return Err("the checked path outcome is undefined behavior".to_string());
         }
-        CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message)) => {
+        CFunctionOutcome::RuntimeError(
+            CRuntimeError::FunctionContract(message)
+            | CRuntimeError::UnsuppliedResourceValue(message),
+        ) => {
             return Err(format!(
                 "the checked path outcome is a function-contract runtime error: {message}"
             ));
@@ -477,12 +480,12 @@ pub(crate) fn matching_recomputed_call_havoc_views(
                 pointer,
                 value,
                 ..
-            } if pointer.block.starts_with("local:")
+            } if pointer.block.is_local_block()
                 || store_is_self_materialization(base, pointer, value) =>
             {
                 Some(base)
             }
-            CMemoryDerivation::BlockDeclared { base, block } if block.starts_with("local:") => {
+            CMemoryDerivation::BlockDeclared { base, block } if block.is_local_block() => {
                 Some(base)
             }
             CMemoryDerivation::ContractAllocationClaimsChanged { base } => Some(base),
@@ -1892,7 +1895,7 @@ fn function_claim_holds_on_prepared_path(
                     }
                     writes
                         .iter()
-                        .filter(|(pointer, _)| !pointer.block.starts_with("local:"))
+                        .filter(|(pointer, _)| !pointer.block.is_local_block())
                         .all(|(pointer, bytes)| {
                             covers_everything
                                 || is_function_fresh_heap_pointer(pointer, before)
@@ -2008,10 +2011,9 @@ pub(in crate::kernel) fn c_effect_memories_definitionally_equal(
 ) -> bool {
     let without_locals = |memory: &CMemory| {
         let mut external = memory.clone();
-        std::sync::Arc::make_mut(&mut external.blocks)
-            .retain(|block, _| !block.starts_with("local:"));
+        std::sync::Arc::make_mut(&mut external.blocks).retain(|block, _| !block.is_local_block());
         std::sync::Arc::make_mut(&mut external.cells)
-            .retain(|pointer, _| !pointer.block.starts_with("local:"));
+            .retain(|pointer, _| !pointer.block.is_local_block());
         std::sync::Arc::make_mut(&mut external.forgotten)
             .ended_local_blocks
             .clear();

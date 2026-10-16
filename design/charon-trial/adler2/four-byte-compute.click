@@ -714,28 +714,30 @@ impl adler2::Adler32 {
      have __rust_checked_81 == 65521u32;
      have at(reduction_b, b_vec.0[0]) < 65521u32 by { rewrite(at(reduction_b, b_vec.0[0]) == at(vector_mod, b_vec.0[0])); simp() using { at(vector_mod, b_vec.0[0]) < 65521u32; } }
      have b_vec.0[0] == at(reduction_b, b_vec.0[0]) % __rust_checked_81 by simp() using { b_vec.0[0] == at(reduction_b, b_vec.0[0]) % __rust_checked_81; };
-     have b_vec.0[0] == at(reduction_b, b_vec.0[0]) % 65521u32 by { rewrite(b_vec.0[0] == at(reduction_b, b_vec.0[0]) % __rust_checked_81); simp() using { __rust_checked_81 == 65521u32; } }
+     // Keep the two checked equalities together: rewriting the current read
+     // can also replace a historical read that denotes the same value.
+     have b_vec.0[0] == at(reduction_b, b_vec.0[0]) % 65521u32 by { simp() using { b_vec.0[0] == at(reduction_b, b_vec.0[0]) % __rust_checked_81; __rust_checked_81 == 65521u32; } }
      apply(uint32_less_than_divisor_implies_remainder_is_value(at(reduction_b, b_vec.0[0]), 65521u32)) using { at(reduction_b, b_vec.0[0]) < 65521u32; }
      have b_vec.0[0] == at(vector_mod, b_vec.0[0]) by { rewrite(b_vec.0[0] == at(reduction_b, b_vec.0[0]) % 65521u32); rewrite(at(reduction_b, b_vec.0[0]) % 65521u32 == at(reduction_b, b_vec.0[0])); simp() using { at(reduction_b, b_vec.0[0]) == at(vector_mod, b_vec.0[0]); } }
      have b_vec.0[0] == old(bytes[0]) by { rewrite(b_vec.0[0] == at(vector_mod, b_vec.0[0])); simp() using { at(vector_mod, b_vec.0[0]) == old(bytes[0]); } }
      have at(reduction_b, b_vec.0[1]) == at(vector_mod, b_vec.0[1]);
      have at(reduction_b, b_vec.0[1]) < 65521u32 by { rewrite(at(reduction_b, b_vec.0[1]) == at(vector_mod, b_vec.0[1])); simp() using { at(vector_mod, b_vec.0[1]) < 65521u32; } }
      have b_vec.0[1] == at(reduction_b, b_vec.0[1]) % __rust_checked_81 by simp() using { b_vec.0[1] == at(reduction_b, b_vec.0[1]) % __rust_checked_81; };
-     have b_vec.0[1] == at(reduction_b, b_vec.0[1]) % 65521u32 by { rewrite(b_vec.0[1] == at(reduction_b, b_vec.0[1]) % __rust_checked_81); simp() using { __rust_checked_81 == 65521u32; } }
+     have b_vec.0[1] == at(reduction_b, b_vec.0[1]) % 65521u32 by { simp() using { b_vec.0[1] == at(reduction_b, b_vec.0[1]) % __rust_checked_81; __rust_checked_81 == 65521u32; } }
      apply(uint32_less_than_divisor_implies_remainder_is_value(at(reduction_b, b_vec.0[1]), 65521u32)) using { at(reduction_b, b_vec.0[1]) < 65521u32; }
      have b_vec.0[1] == at(vector_mod, b_vec.0[1]) by { rewrite(b_vec.0[1] == at(reduction_b, b_vec.0[1]) % 65521u32); rewrite(at(reduction_b, b_vec.0[1]) % 65521u32 == at(reduction_b, b_vec.0[1])); simp() using { at(reduction_b, b_vec.0[1]) == at(vector_mod, b_vec.0[1]); } }
      have b_vec.0[1] == old(bytes[1]) by { rewrite(b_vec.0[1] == at(vector_mod, b_vec.0[1])); simp() using { at(vector_mod, b_vec.0[1]) == old(bytes[1]); } }
      have at(reduction_b, b_vec.0[2]) == at(vector_mod, b_vec.0[2]);
      have at(reduction_b, b_vec.0[2]) < 65521u32 by { rewrite(at(reduction_b, b_vec.0[2]) == at(vector_mod, b_vec.0[2])); simp() using { at(vector_mod, b_vec.0[2]) < 65521u32; } }
      have b_vec.0[2] == at(reduction_b, b_vec.0[2]) % __rust_checked_81 by simp() using { b_vec.0[2] == at(reduction_b, b_vec.0[2]) % __rust_checked_81; };
-     have b_vec.0[2] == at(reduction_b, b_vec.0[2]) % 65521u32 by { rewrite(b_vec.0[2] == at(reduction_b, b_vec.0[2]) % __rust_checked_81); simp() using { __rust_checked_81 == 65521u32; } }
+     have b_vec.0[2] == at(reduction_b, b_vec.0[2]) % 65521u32 by { simp() using { b_vec.0[2] == at(reduction_b, b_vec.0[2]) % __rust_checked_81; __rust_checked_81 == 65521u32; } }
      apply(uint32_less_than_divisor_implies_remainder_is_value(at(reduction_b, b_vec.0[2]), 65521u32)) using { at(reduction_b, b_vec.0[2]) < 65521u32; }
      have b_vec.0[2] == at(vector_mod, b_vec.0[2]) by { rewrite(b_vec.0[2] == at(reduction_b, b_vec.0[2]) % 65521u32); rewrite(at(reduction_b, b_vec.0[2]) % 65521u32 == at(reduction_b, b_vec.0[2])); simp() using { at(reduction_b, b_vec.0[2]) == at(vector_mod, b_vec.0[2]); } }
      have b_vec.0[2] == old(bytes[2]) by { rewrite(b_vec.0[2] == at(vector_mod, b_vec.0[2])); simp() using { at(vector_mod, b_vec.0[2]) == old(bytes[2]); } }
      have at(reduction_b, b_vec.0[3]) == at(vector_mod, b_vec.0[3]);
      have at(reduction_b, b_vec.0[3]) < 65521u32 by { rewrite(at(reduction_b, b_vec.0[3]) == at(vector_mod, b_vec.0[3])); simp() using { at(vector_mod, b_vec.0[3]) < 65521u32; } }
      have b_vec.0[3] == at(reduction_b, b_vec.0[3]) % __rust_checked_81 by simp() using { b_vec.0[3] == at(reduction_b, b_vec.0[3]) % __rust_checked_81; };
-     have b_vec.0[3] == at(reduction_b, b_vec.0[3]) % 65521u32 by { rewrite(b_vec.0[3] == at(reduction_b, b_vec.0[3]) % __rust_checked_81); simp() using { __rust_checked_81 == 65521u32; } }
+     have b_vec.0[3] == at(reduction_b, b_vec.0[3]) % 65521u32 by { simp() using { b_vec.0[3] == at(reduction_b, b_vec.0[3]) % __rust_checked_81; __rust_checked_81 == 65521u32; } }
      apply(uint32_less_than_divisor_implies_remainder_is_value(at(reduction_b, b_vec.0[3]), 65521u32)) using { at(reduction_b, b_vec.0[3]) < 65521u32; }
      have b_vec.0[3] == at(vector_mod, b_vec.0[3]) by { rewrite(b_vec.0[3] == at(reduction_b, b_vec.0[3]) % 65521u32); rewrite(at(reduction_b, b_vec.0[3]) % 65521u32 == at(reduction_b, b_vec.0[3])); simp() using { at(reduction_b, b_vec.0[3]) == at(vector_mod, b_vec.0[3]); } }
      have b_vec.0[3] == old(bytes[3]) by { rewrite(b_vec.0[3] == at(vector_mod, b_vec.0[3])); simp() using { at(vector_mod, b_vec.0[3]) == old(bytes[3]); } }
@@ -787,9 +789,10 @@ impl adler2::Adler32 {
      have a_vec.0[3] <= 65521u32 by arithmetic() using { a_vec.0[3] <= 255u32; };
      step();
      have __rust_checked_43 == 65521u32;
+     have 255u32 <= __rust_checked_43 by simp() using { __rust_checked_43 == 65521u32; };
      have __rust_checked_45 <= 255u32 by simp() using { a_vec.0[1] <= 255u32; };
      have __rust_mir_89 == __rust_checked_43 - __rust_checked_45 by simp() using {};
-     have __rust_checked_45 <= __rust_checked_43 by { rewrite(__rust_checked_43 == 65521u32); arithmetic() using { __rust_checked_45 <= 255u32; } }
+     have __rust_checked_45 <= __rust_checked_43 by { apply(uint32_less_equal_transitive(__rust_checked_45, 255u32, __rust_checked_43)) using { __rust_checked_45 <= 255u32; 255u32 <= __rust_checked_43; } assumption(); }
      apply(uint32_subtract_to_integer(__rust_checked_43, __rust_checked_45)) using { __rust_checked_45 <= __rust_checked_43; }
      apply(uint32_to_integer_bounds(__rust_checked_45));
      have to_integer(__rust_mir_89) == to_integer(__rust_checked_43) - to_integer(__rust_checked_45) by { rewrite(__rust_mir_89 == __rust_checked_43 - __rust_checked_45); simp() using { to_integer(__rust_checked_43 - __rust_checked_45) == to_integer(__rust_checked_43) - to_integer(__rust_checked_45); } }

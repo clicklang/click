@@ -1932,7 +1932,7 @@ impl CreationEvents {
         description.arguments().iter().all(|value| match value {
             AlgebraicValue::C(CValue::Pointer(pointer)) => {
                 matches!(pointer.pointer().block, PointerBlock::Heap(_))
-                    || pointer.pointer().block.starts_with("local:")
+                    || pointer.pointer().block.is_local_block()
             }
             AlgebraicValue::C(CValue::Int32(value)) => value.as_const().is_some(),
             _ => false,
@@ -3280,7 +3280,7 @@ impl CreationEvents {
     }
 
     fn created_uncached(&self, block: PointerBlock) -> Self {
-        debug_assert!(matches!(block, PointerBlock::Heap(_)) || block.starts_with("local:"));
+        debug_assert!(matches!(block, PointerBlock::Heap(_)) || block.is_local_block());
         let mut creators = self.0.creators.clone();
         assert!(
             !creators.contains_key(&block),

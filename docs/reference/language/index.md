@@ -850,6 +850,18 @@ known constructors. Symbolic Integer-valued datatype matches are supported when
 the matched result has one consistent carrier; contextual Integer literals in
 their arms inherit that result type. Mixed C and Integer arithmetic remains
 rejected unless an explicit conversion is present.
+
+An Integer comparison of exact observations of one machine type, such as
+`0 <= to_integer(capacity)` or `to_integer(x) != to_integer(y)`, also
+establishes the native comparison it is equivalent to, `0 <= capacity` or
+`x != y`, because `to_integer` is injective and preserves order. Built-in
+checks that read machine facts, such as resource quantities and the
+definedness of a population count, therefore accept the Integer premise
+(`mdtests/an_integer_bound_supplies_a_member_quantity.md`). The native
+comparison is exactly as strong as the Integer one
+(`mdtests/an_integer_premise_files_no_stronger_machine_fact.md`); a constant
+outside the type's range, or observations of two different types, establish
+no native fact.
 Resources may declare `field total: Integer;`: folding checks the resource's
 facts, and `old(model.total)` retains the entry value across updates.
 Checked resource pattern bindings retain each field's declared carrier, name,
@@ -2558,6 +2570,50 @@ let { first: a, second: b } = step(split_cells(left, right), {});
 ```
 
 A produced binder that no output pattern introduces is an error.
+
+#### Value binders
+
+A binder may also name the instance one resource clause selects, so a
+contract can state a resource argument its C signature does not carry. A
+`views` binder, or an `owns` or `consumes` binder with a `_` argument, is a
+value binder: each `_` is a value parameter of the contract named
+`binder.parameter`, after the resource's declared parameter name, and
+`binder.parameter` of a written argument is that argument.
+
+<!-- verified-example: mdtests/cstr_at_binder_names_a_length_the_c_signature_lacks.md -->
+```click
+extern uint64 string_length(const uint8* s) {
+    views str: cstr_at(s, _);
+    ensures result == str.len;
+}
+```
+
+The resource must be fieldless and have a body, and a `_` must stand for a
+scalar parameter. The value parameter is not a C argument and nothing is
+passed at run time. The function's body is proved for every value of it
+(`mdtests/cstr_at_binder_length_is_proved_for_every_length.md`). An `owns`
+binder returns the instance it received, so `old(k.len)` is `k.len`
+(`mdtests/cstr_at_owning_binder_keeps_its_length.md`).
+
+At a call each value parameter takes the argument of the one instance that
+agrees with every other argument of its clause: an instance the call map
+names, or else one the caller holds, owned or viewed. The map names it with
+a resource term or with one of the caller's own value binders:
+
+<!-- verified-example: mdtests/cstr_at_call_map_names_the_string_a_call_assembles.md -->
+```click
+step(string_length(src), { str: cstr_at(src, n) });
+step(string_length(src), { str: s });
+```
+
+The choice grants nothing: the call still requires the clause at the chosen
+value, so a term the caller neither holds nor can assemble is refused
+(`mdtests/cstr_at_call_map_refuses_a_string_the_caller_does_not_hold.md`).
+With no map entry, no matching held instance, or two that differ at the
+parameter, the call is refused with the parameter named
+(`mdtests/cstr_at_binder_needs_a_held_string.md`,
+`mdtests/cstr_at_binder_refuses_an_ambiguous_choice.md`); equal values are
+not searched for.
 
 The selected `modeled-pthread` runtime declares named mutex binders too.
 Initialization takes `state` and produces `lifetime`; destruction takes

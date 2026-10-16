@@ -566,7 +566,7 @@ impl ResourceContextIndex {
                     block.clone(),
                     entry,
                 );
-                if block.starts_with("local:") {
+                if block.is_local_block() {
                     result.owned_automatic_memory_by_block = insert_resource_index_entry(
                         &result.owned_automatic_memory_by_block,
                         block.clone(),
@@ -835,7 +835,7 @@ impl ResourceContextIndex {
                 }
                 result.owned_memory_by_block =
                     remove_resource_index_entry(&result.owned_memory_by_block, &block, entry);
-                if block.starts_with("local:") {
+                if block.is_local_block() {
                     result.owned_automatic_memory_by_block = remove_resource_index_entry(
                         &result.owned_automatic_memory_by_block,
                         &block,

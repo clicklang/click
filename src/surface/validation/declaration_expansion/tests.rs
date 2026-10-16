@@ -13,6 +13,7 @@ fn authority_test_scope(
             DeclaredResourceInfo {
                 fields: Default::default(),
                 field_schema: None,
+                parameter_names: vec!["value".to_string()],
                 parameter_types: vec![parameter_type],
                 resource_parameter_families: Vec::new(),
                 kind,

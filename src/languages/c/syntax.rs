@@ -3362,6 +3362,19 @@ impl C0Function {
         &self.parameters
     }
 
+    /// This declaration with contract value parameters after its C
+    /// parameters, so a contract that reads them lowers as it lowers the C
+    /// parameters. The lowered function moves them back out of its C
+    /// parameters ([`crate::kernel::CFunction::with_trailing_value_parameters`]).
+    pub(crate) fn with_trailing_value_parameters(
+        &self,
+        parameters: impl IntoIterator<Item = C0Parameter>,
+    ) -> Self {
+        let mut function = self.clone();
+        function.parameters.extend(parameters);
+        function
+    }
+
     pub fn return_type(&self) -> C0Type {
         self.return_type
     }

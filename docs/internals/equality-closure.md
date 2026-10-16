@@ -46,6 +46,18 @@ semantic fact lookup can therefore combine a checked tactic postcondition
 `new.model == old.model` with a match-arm fact `new.model == Empty` to establish
 `old.model == Empty`, without repeating the postcondition in source.
 
+Resource arm selection consumes these same classes when it needs the actual
+constructor and payloads, including `child.model == context == outer.model`
+when a match selects `outer.model`. Each typed class retains one exact root
+constructor from an admitted equality. A union carries that witness with the
+class in constant local work; lookup visits only the selected expression and
+class. The witness shares its immutable payload across class forks and is
+rebuilt from surviving equality inputs on withdrawal. Retaining only root
+operands avoids copying every nested constructor subtree during registration.
+The matched-resource regression is
+`mdtests/resource_unfold_uses_transitive_model_constructor.md`; its missing-link
+counterpart rejects selection from another class.
+
 Variables retain their resolved datatype. Constructor signatures retain that
 type, the constructor name, arity, and ordered payload classes. Pure calls
 retain their function identity, result type, and ordered typed arguments.

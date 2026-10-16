@@ -1528,7 +1528,7 @@ fn abstract_c_state_for_join_across_with_policy(
                 crate::kernel::primitives::SnapshotMapChange::Removed(_) => None,
                 crate::kernel::primitives::SnapshotMapChange::Added(block)
                 | crate::kernel::primitives::SnapshotMapChange::Changed(block) => {
-                    block.starts_with("havoc:").then(|| block.clone())
+                    block.is_havoc_block().then(|| block.clone())
                 }
             })
             .collect::<Vec<_>>();
@@ -3254,6 +3254,27 @@ pub(crate) fn c_mutex_use_resource(state: &CState, mutex: &Pointer) -> CResource
     crate::kernel::mutexes::use_resource(state, mutex)
 }
 
+/// Binds a contract's value parameters in an entry state, as a call binds
+/// them beside its arguments.
+pub(crate) fn bind_contract_value_parameters(
+    entry: &mut CState,
+    parameters: &[CParameter],
+    values: &[CValue],
+) {
+    for (parameter, value) in parameters.iter().zip(values) {
+        entry.locals.set_typed_qualified_with_all_qualifiers(
+            parameter.name().to_string(),
+            value.clone(),
+            parameter.c_type(),
+            CMemory::value_parameter_pointer(parameter.name()),
+            false,
+            false,
+            false,
+            false,
+        );
+    }
+}
+
 pub fn c_function_entry_state(
     caller_state: &CState,
     function: &CFunction,
@@ -3544,7 +3565,7 @@ fn install_borrowed_contract_inputs(
         if matches!(
             input.fact.resource(),
             CResource::Memory(range)
-                if range.base().block.starts_with("local:")
+                if range.base().block.is_local_block()
                     || state.memory().is_read_only_block(&range.base().block)
         ) {
             continue;
@@ -3578,7 +3599,7 @@ fn install_borrowed_contract_inputs(
         if matches!(
             viewed.resource(),
             CResource::Memory(range)
-                if range.base().block.starts_with("local:")
+                if range.base().block.is_local_block()
                     || state.memory().is_read_only_block(&range.base().block)
         ) {
             continue;

@@ -656,7 +656,7 @@ fn checks_population_authority_exchange(
         && (anchor.offset != crate::kernel::PointerOffsetTerm::Constant(0)
             || !(matches!(&anchor.block, crate::kernel::PointerBlock::Heap(_))
                 && before.memory.live_heap_block_size(anchor).is_some()
-                || anchor.block.starts_with("local:") && before.memory.has_block(&anchor.block)))
+                || anchor.block.is_local_block() && before.memory.has_block(&anchor.block)))
     {
         return Err("population authority rewrite requires live base storage".into());
     }
@@ -864,7 +864,7 @@ fn checks_population_member_exchange(
         && (anchor.offset != crate::kernel::PointerOffsetTerm::Constant(0)
             || !(matches!(&anchor.block, crate::kernel::PointerBlock::Heap(_))
                 && before.memory.live_heap_block_size(anchor).is_some()
-                || anchor.block.starts_with("local:") && before.memory.has_block(&anchor.block)))
+                || anchor.block.is_local_block() && before.memory.has_block(&anchor.block)))
     {
         return Err("population member rewrite requires live base storage".into());
     }
@@ -4655,7 +4655,7 @@ fn memory_diff_is_covered_by_writes(
     before
         .differing_cell_pointers(after)
         .into_iter()
-        .filter(|pointer| !pointer.block.starts_with("local:"))
+        .filter(|pointer| !pointer.block.is_local_block())
         .all(|diff_pointer| {
             if !after.has_known_cell_at(&diff_pointer) {
                 return false;
@@ -4694,7 +4694,7 @@ fn memory_diff_is_covered_by_ranges(
     before
         .differing_cell_pointers(after)
         .into_iter()
-        .filter(|pointer| !pointer.block.starts_with("local:"))
+        .filter(|pointer| !pointer.block.is_local_block())
         .all(|diff_pointer| {
             if !after.has_known_cell_at(&diff_pointer) {
                 return false;
