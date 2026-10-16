@@ -2053,7 +2053,11 @@ names both types
 `mdtests/a_byte_buffer_read_through_a_uint32_pointer_is_refused.md`,
 `mdtests/a_pointer_cell_read_through_a_pointer_of_other_signedness_is_refused.md`,
 `mdtests/an_unsigned_read_of_a_signed_object_is_allowed.md`,
-`mdtests/a_character_view_of_an_int_is_allowed.md`). The check does not yet
+`mdtests/a_character_view_of_an_int_is_allowed.md`). Stores are checked
+the same way
+(`mdtests/a_store_through_a_pointer_of_another_rank_is_refused.md`,
+`mdtests/an_indexed_store_through_a_pointer_of_another_rank_is_refused.md`,
+`mdtests/stores_through_the_objects_own_type_are_allowed.md`). The check does not yet
 cover struct members, `int *` and `int **` pointers, local byte arrays,
 globals, or heap objects;
 the effective-type design (`design/effective-types.md`) stages them next.

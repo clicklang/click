@@ -2547,13 +2547,16 @@ pub fn c_store(pointer: CExpression, value: CExpression) -> CStatement {
 }
 
 pub fn c_typed_store(pointer: CExpression, value: CExpression, value_type: CType) -> CStatement {
-    c_qualified_typed_store(pointer, value, value_type, false, false)
+    c_qualified_typed_store(pointer, value, value_type, None, false, false)
 }
 
+/// A typed store whose lvalue has `access_class` when `value_type` erases
+/// it, as [`c_classed_load`] does for a load.
 pub(crate) fn c_qualified_typed_store(
     pointer: CExpression,
     value: CExpression,
     value_type: CType,
+    access_class: Option<crate::kernel::effective_type::CAccessClass>,
     pointee_constant: bool,
     volatile: bool,
 ) -> CStatement {
@@ -2561,6 +2564,7 @@ pub(crate) fn c_qualified_typed_store(
         pointer,
         value,
         value_type,
+        access_class,
         pointee_constant,
         volatile,
         source: Default::default(),

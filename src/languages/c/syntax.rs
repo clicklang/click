@@ -5355,6 +5355,7 @@ impl C0Statement {
                     pointer.to_kernel_expression(),
                     value.to_kernel_expression(),
                     value_type.to_kernel_type(),
+                    value_type.access_class(),
                     *pointee_constant,
                     false,
                 ),
@@ -5373,6 +5374,7 @@ impl C0Statement {
                 C0Expression::AddressOf(Box::new(target.clone())).to_kernel_expression(),
                 value.to_kernel_expression(),
                 value_type.to_kernel_type(),
+                value_type.access_class(),
                 *pointee_constant,
                 true,
             ),
@@ -13542,14 +13544,16 @@ impl Parser {
                 )?;
             }
             return match target {
-                C0Expression::Load(pointer, _) => {
+                // A classed load's type rides on the store, so the kernel
+                // checks the store's access class as it does the load's.
+                C0Expression::Load(pointer, loaded_type) => {
                     if let Some(struct_name) = self.struct_pointer_pointer_name(&pointer) {
                         self.validate_struct_pointer_value(&struct_name, &value)?;
                     }
                     Ok(C0Statement::Store {
                         pointer: *pointer,
                         value,
-                        value_type: None,
+                        value_type: loaded_type,
                         pointee_constant: false,
                         site: C0Site::NONE,
                     })
@@ -13604,10 +13608,10 @@ impl Parser {
                 C0Expression::UnionField { .. } => {
                     Err(self.error_here("writing tagged union members is not supported"))
                 }
-                C0Expression::Index(base, index, _) => Ok(C0Statement::Store {
+                C0Expression::Index(base, index, element_type) => Ok(C0Statement::Store {
                     pointer: C0Expression::Add(base, index),
                     value,
-                    value_type: None,
+                    value_type: element_type,
                     pointee_constant: false,
                     site: C0Site::NONE,
                 }),

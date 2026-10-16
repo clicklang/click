@@ -448,6 +448,7 @@ fn one_heap_store_is_logarithmic_in_unrelated_allocations() {
             .with_memory(memory)
             .with_resource_context(resources);
         let statement = CStatement::TypedStore {
+            access_class: None,
             pointer: CExpression::Value(CValue::typed_pointer(
                 heap_cell(TARGET_HEAP, 4),
                 CType::UInt32Pointer,
