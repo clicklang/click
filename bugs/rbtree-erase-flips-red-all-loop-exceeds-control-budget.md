@@ -76,8 +76,8 @@ state); about 100,000 units.
   (`exit_cache_reconciliation_reuses_the_joins_exit_contexts`).
 - Since `d8707aa46` the sidecar had stopped earlier, at a `simp` at line 2355:
   a store forgot cells of its own object whenever a C pointer comparison
-  named that object's address. That is fixed
-  (`an_address_equality_forgets_the_other_object_and_keeps_the_written_ones`).
+  named that object's address. `098f48f35` fixed that; the sidecar again
+  stops only at the loop budget.
 
 ## Proposed remaining work (needs a design decision)
 
