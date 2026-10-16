@@ -223,19 +223,14 @@ fn unsupported_proof_shape(
     grouped: bool,
     claim_labels: &[String],
     tactics: &[ProofTactic],
+    decline: Decline,
 ) -> ClickError {
-    // The decline records are internal bookkeeping. Consume them here so a
-    // later diagnostic does not inherit stale state, but do not expose the
-    // driver topology to users.
-    let _ = take_driver_declines();
-    let depth_declined = take_region_depth_decline();
-    let short_of_exit = take_short_of_exit_decline();
-    if depth_declined {
+    if decline == Decline::RegionDepth {
         return ClickError::new(format!(
             "`{proof_label}`: checked execution-region recursion exceeds the supported depth of {MAX_CHECKED_PROOF_REGION_RECURSION}. This bound counts active recursive regions, not written proof nesting; completed early-return cases run iteratively. Move an inner `match`, `branch`, or proof `if` into a contracted helper, or prove part of it in a `have`."
         ));
     }
-    if short_of_exit {
+    if decline == Decline::ShortOfExit {
         // The written shape is supported; what stopped the drivers is a path
         // the proof left open. Say which, rather than calling the shape
         // unimplemented, since the fix is in the proof script.
@@ -546,11 +541,6 @@ fn prove_claims_by_checked_tactics(
     // The checked drivers are tried in order: the structural driver owns
     // scopes and branches, and the flat driver owns linear proofs. A decline
     // tries the next checked driver; an error is terminal.
-    // A decline recorded by an earlier claim's attempt, which another driver
-    // then satisfied, must not colour this claim's diagnostic.
-    let _ = take_driver_declines();
-    let _ = take_region_depth_decline();
-    let _ = take_short_of_exit_decline();
     let structural = try_check_structural_function_proof(
         &initial,
         &pure_facts,
@@ -568,10 +558,9 @@ fn prove_claims_by_checked_tactics(
         &function,
         &arguments,
     )?;
-    let direct_proof = if structural.is_some() {
-        structural
-    } else {
-        try_check_flat_function_proof(
+    let direct_proof = match structural {
+        Ok(proof) => Ok(proof),
+        Err(structural_decline) => try_check_flat_function_proof(
             &initial,
             &pure_facts,
             &constants,
@@ -588,8 +577,11 @@ fn prove_claims_by_checked_tactics(
             &function,
             &arguments,
         )?
+        // The structural driver's reason names more than the flat driver's,
+        // which only checks linear proofs: keep the more specific of the two.
+        .map_err(|flat_decline| structural_decline.max(flat_decline)),
     };
-    if let Some(proof) = direct_proof {
+    if let Ok(proof) = direct_proof {
         match finish_ordered_proof_units(
             expansion_capture,
             vec![proof],
@@ -618,11 +610,13 @@ fn prove_claims_by_checked_tactics(
         .iter()
         .map(|claim| diagnostic_claim_label(function_block, claim))
         .collect::<Vec<_>>();
+    let decline = direct_proof.err().unwrap_or(Decline::Shape);
     Err(unsupported_proof_shape(
         proof_label,
         grouped,
         &claim_labels,
         tactics,
+        decline,
     ))
 }
 
@@ -5649,9 +5643,6 @@ mod tests {
 
     #[test]
     fn unsupported_shape_diagnostic_names_route_and_tactic() {
-        // Do not let a decline recorded by another proof attempt leak into
-        // this direct diagnostic-unit test.
-        take_driver_declines();
         let error = unsupported_proof_shape(
             "f.ensures_0",
             false,
@@ -5660,6 +5651,7 @@ mod tests {
                 parameter: "n".to_string(),
                 hypothesis: "ih".to_string(),
             }],
+            Decline::Shape,
         );
 
         assert!(error.message().contains("cannot yet certify it"));
