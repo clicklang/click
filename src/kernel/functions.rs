@@ -2939,11 +2939,14 @@ fn execute_verified_function_applications_with_suspension(
             for argument in arguments {
                 collect_c_expression_bitvector_variables(argument, &mut existing_variables);
             }
-            collect_assumption_variables(assumptions, &mut existing_variables);
             existing_variables
         },
     );
-    let mut variables = KernelVariableGenerator::fresh_for_execution(existing_variables);
+    // The facts' variables are reserved by their ceiling rather than
+    // collected: collecting walked every fact, and every snapshot a fact
+    // names, at every call.
+    let mut variables = KernelVariableGenerator::fresh_for_execution(existing_variables)
+        .reserving_through(assumptions.execution_variable_ceiling());
     let memory_identity = variables.next_in(budget)?;
     let result_identity = variables.next_in(budget)?;
     let exceptional_payload_identity =

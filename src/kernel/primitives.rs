@@ -11125,6 +11125,10 @@ pub struct PureFactContext {
     pub(super) nonmemory_separation_facts: std::sync::Arc<Vec<Proposition>>,
     pub(super) content_fingerprint: u64,
     pub(super) reasoning_policy: ReasoningPolicy,
+    /// At least the greatest execution-range variable any fact filed here
+    /// mentions; see `ExecutionVariableCeiling`. Not part of the context's
+    /// equality or hash.
+    pub(super) execution_variable_ceiling: super::assumptions::ExecutionVariableCeiling,
 }
 
 impl PartialEq for PureFactContext {
@@ -11991,6 +11995,10 @@ pub(super) struct KernelVariableGenerator<'scope> {
     reserved: BTreeSet<Variable>,
     shared_reserved: Option<ReservedVariableSets>,
     deferred_reserved: Option<Box<dyn FnOnce() -> BTreeSet<Variable> + 'scope>>,
+    /// An execution stream allocates only above this: every identity up to
+    /// it is reserved without being listed (a fact context's
+    /// `execution_variable_ceiling`).
+    reserved_through: Option<Variable>,
 }
 
 impl<'scope> KernelVariableGenerator<'scope> {
@@ -12005,6 +12013,7 @@ impl<'scope> KernelVariableGenerator<'scope> {
             reserved: existing,
             shared_reserved: None,
             deferred_reserved: None,
+            reserved_through: None,
         }
     }
 
@@ -12018,6 +12027,7 @@ impl<'scope> KernelVariableGenerator<'scope> {
             reserved: existing,
             shared_reserved: None,
             deferred_reserved: None,
+            reserved_through: None,
         }
     }
 
@@ -12030,6 +12040,7 @@ impl<'scope> KernelVariableGenerator<'scope> {
             reserved: existing,
             shared_reserved: Some(shared_reserved.into()),
             deferred_reserved: None,
+            reserved_through: None,
         }
     }
 
@@ -12043,6 +12054,12 @@ impl<'scope> KernelVariableGenerator<'scope> {
             Self::fresh_for_execution_with_shared_reservations(BTreeSet::new(), shared_reserved);
         generator.deferred_reserved = Some(Box::new(collect));
         generator
+    }
+
+    /// Reserves every identity up to `ceiling` for the execution stream.
+    pub(super) fn reserving_through(mut self, ceiling: Option<Variable>) -> Self {
+        self.reserved_through = self.reserved_through.max(ceiling);
+        self
     }
 
     fn prepare_reservations(&mut self) {
@@ -12094,6 +12111,9 @@ impl<'scope> KernelVariableGenerator<'scope> {
             "a term-local fresh-variable stream must not allocate from an execution budget"
         );
         self.prepare_reservations();
+        if let Some(ceiling) = self.reserved_through {
+            budget.skip_kernel_variables_through(ceiling);
+        }
         loop {
             let variable = budget.allocate_kernel_variable()?;
             let shared_contains = self

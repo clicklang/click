@@ -132,6 +132,20 @@ instead of from what the step changed.
    and the projection starts from that map and filters only the `local:`
    cells and the load's own block; each `heap_objects` unfold is flat
    (141 units at every position at N = 24).
+7. **Fixed: a call reserved every variable its assumptions mention.** To
+   pick fresh identities, a verified call collected every variable of every
+   assumption, including each variable every named snapshot holds: per call
+   the facts times the snapshot's variables, so cubic in `objects_and_calls`
+   (`collect_assumption_variables`, x50 from N = 32 to 128). A fact context
+   now keeps an upper bound on the execution-range variables its facts
+   mention (`ExecutionVariableCeiling`): filing a fact reads its syntax, a
+   fact that names a snapshot is taken whole once when an execution first
+   asks, and executions allocate above the bound instead of reserving the
+   facts' variables (`asking_after_every_fact_takes_each_snapshot_fact_whole_once`).
+   `objects_and_calls` at N = 128: 10.69 to 9.90 billion instructions.
+   Separately, lowering a function's requirements bound every parameter
+   into the entry state again for each requirement; the state is now built
+   once per requirement list.
 
 Related scaling bugs stay in `bugs/` until fixed:
 [sequential-loop-clause-grows-with-earlier-loops.md](../bugs/sequential-loop-clause-grows-with-earlier-loops.md).
