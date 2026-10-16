@@ -791,3 +791,19 @@ selected tests, including the complete scaling suite, quantifier/transport
 controls and the matching-cell/read-kind controls. Formatting, documentation
 lint and diff checks pass; advisory Vale lint is unavailable. The full local
 gate and nightly suite were not run.
+
+
+The next shared proof-retention extraction preserves completed post-return
+transports as execution evidence and gives post-return `have` scopes their
+original assumptions, keeping facts derived by premise selection in the checked
+successor. It does not replay transport or relax return-fact certification.
+The original arena-write C is retained in a complete Markdown fixture.
+
+On upstream baseline `60c97316a`, 1,048 selected unit tests pass, including the
+whole scaling suite, outcome, return-proposition, scope, have and transport
+controls. The focused Markdown run passes. On recovery `0a5a47e82`, the complete
+isolated arena-write proof passes fresh, expansion, rewritten and retained
+checking; 368 selected controls and both affected Markdown fixtures pass. Its
+normal example audit remains 50/52, with arena destroy and binary-tree still
+under repair. These recovery results do not claim foundation activation or a
+full green gate.
