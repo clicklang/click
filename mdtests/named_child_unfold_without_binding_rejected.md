@@ -14,7 +14,7 @@ void copy_across(struct pair *p) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "named_child_unfold_without_binding_rejected.c";
 resource cell(p: struct pair*) {

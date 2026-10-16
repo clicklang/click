@@ -61,13 +61,13 @@ requires no layout or file names in it, and never writes into it.
 
 ```json
 {
-  "target": "x86_64-linux-userspace",
+  "target": "x86_64-unknown-linux-gnu",
   "units": {
     "label": {
       "language": "c",
       "root": "../vendor/label-1.0",
       "compiler": "/usr/bin/gcc",
-      "environment": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+      "env": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
       "args": ["-Isrc/include", "-DLABEL_CAPACITY=32"],
       "sources": {
         "src/label_fit.c": {},
@@ -85,17 +85,23 @@ requires no layout or file names in it, and never writes into it.
   it. Source keys are relative paths inside the root, without `..`.
 - `compiler` is required, relative to the project directory or absolute. Plain
   C that Click preprocesses itself needs no unit.
-- `environment` holds the only variables the compiler runs with; every other
+- `env` holds the only variables the compiler runs with; every other
   variable is cleared. `option_profile` names an
   [option profile](#option-profile-linux-68-x86_64-kbuild) that admits more
   than the preprocessor flags, and a source's `projection` selects the
   [dependency-closure projection](#dependency-closure-projection).
 - Unit `args` precede each source's own `args`; together they are validated
   as [Validation and supported profile](#validation-and-supported-profile)
-  describes. The target is the project's `target`, or the default target.
+  describes.
+- The project's top-level `target` and `mode` select the C target for
+  every C unit: `x86_64-unknown-linux-gnu`, the only target, in the
+  `userspace` (default) or `kernel` mode; see
+  [Selecting a target](../language/c.md#selecting-a-target). A unit that still names its variables `environment` is refused with the
+  new name, `env`. A retired single-name target such as `x86_64-linux-kernel` is
+  refused with its replacement.
 
 A Rust unit is one crate or one single-file program; it takes no `compiler`,
-`environment`, `option_profile` or `args`, and `sources` lists exactly one
+`env`, `option_profile` or `args`, and `sources` lists exactly one
 source with no arguments. Without a `crate` object the source is a lone Rust
 2024 file read from its own directory, as `examples/basic-rust` does. With
 one, the source is the crate root and `crate` gives the crate description (see
@@ -122,7 +128,7 @@ Verification needs neither Charon nor `CLICK_CHARON`.
 A C++ unit gives `exceptions` and `rtti` (both default `false`) and `args`, the
 Clang arguments of its build, which Click writes into a compilation database of
 its own at lock time; the standard is C++20 and the target
-`x86_64-unknown-linux-gnu`. It takes no `compiler`, `environment` or
+`x86_64-unknown-linux-gnu`. It takes no `compiler`, `env` or
 `option_profile`. Each source is a logical source, a `.cpp` file or a header,
 and lists the `functions` its sidecars verify; it may also give the
 `translation_unit` that includes a header (by default the source itself), its
@@ -1548,14 +1554,17 @@ toolchain and header changes require a new explicit refresh to produce a proof
 about that new environment. A supplied digest alone does not authenticate who
 prepared a native-platform artifact.
 
-Compiler-backed C imports accept two explicit targets. A C unit is prepared for
-the project's `target`, which a sidecar's `target` directive must match;
-without one the project uses the default `x86_64-linux-userspace`. Prepared imports retain their target through verification and expansion.
+Compiler-backed C imports accept the target `x86_64-unknown-linux-gnu` in two
+modes. A C unit is prepared for the project's `target` and
+`mode`, which a sidecar's `target` and `mode` directives must
+match; without them the project uses the default mode, `userspace`. A
+lock records both, so changing either requires `click import lock` again.
+Prepared imports retain their target through verification and expansion.
 
-| Target | Fixed compiler profile |
+| Mode | Fixed compiler profile |
 | --- | --- |
-| `x86_64-linux-kernel` | GCC, `-x c`, `-std=gnu11`, `-m64`, `-funsigned-char`, `-nostdinc`. |
-| `x86_64-linux-userspace` | GCC, `-x c`, `-std=c11`, `-m64`, `-fsigned-char`, `-nostdinc`, `-pthread`, `-D_POSIX_C_SOURCE=200809L`. |
+| `kernel` | GCC, `-x c`, `-std=gnu11`, `-m64`, `-funsigned-char`, `-nostdinc`. |
+| `userspace` | GCC, `-x c`, `-std=c11`, `-m64`, `-fsigned-char`, `-nostdinc`, `-pthread`, `-D_POSIX_C_SOURCE=200809L`. |
 
 The user-space profile checks C11, POSIX and pthread feature macros as well as
 the LP64, eight-bit-byte, signed-char ABI: the probe requires that `__CHAR_UNSIGNED__` is not defined. It does not define `__KERNEL__`.
@@ -1666,7 +1675,7 @@ from the unit's.
 
 The one profile, `linux-6.8-x86_64-kbuild`, is the option set of the recorded
 Linux v6.8.12 `x86_64_defconfig` Kbuild compilation of `lib/rbtree.c` with
-GCC 13, for the `x86_64-linux-kernel` target. It exists for that in-repository
+GCC 13, for the `kernel` mode. It exists for that in-repository
 import. An option is accepted only where ignoring it cannot make Click accept
 a program the compiler treats differently: the option affects only
 preprocessing, whose result is the locked artifact, or only diagnostics, or

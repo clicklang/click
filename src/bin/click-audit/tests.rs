@@ -830,7 +830,7 @@ fn prepared_audit_reuses_validated_inputs_across_sites() {
         &project_file,
         serde_json::to_vec(&serde_json::json!({"units": {"unit": {
             "language": "c", "compiler": "/usr/bin/gcc",
-            "environment": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+            "env": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
             "sources": {"unit.c": {}}
         }}}))
         .unwrap(),

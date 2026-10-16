@@ -11,7 +11,8 @@ uint8* string_literal() {
 ```
 
 ```click
-target "x86_64-linux-kernel";
+target "x86_64-unknown-linux-gnu";
+mode "kernel";
 verifying "string_literals.c";
 
 uint8* string_literal() {

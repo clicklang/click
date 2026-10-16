@@ -22,7 +22,8 @@ int32 string_literal_mutable_footprint_rejected() {
 ```
 
 ```click
-target "x86_64-linux-kernel";
+target "x86_64-unknown-linux-gnu";
+mode "kernel";
 verifying "string_literal_mutable_footprint_rejected.c";
 
 void overwrite(uint8* p) {

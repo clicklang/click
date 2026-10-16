@@ -8,7 +8,7 @@ void caller(struct holder *holder) { keep(holder); }
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_authority_named_missing_map.c";
 

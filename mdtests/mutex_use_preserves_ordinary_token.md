@@ -44,7 +44,7 @@ int increment_twice(struct mutex_counter *counter) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_counter.c";
 abstract resource increment_credit(counter: struct mutex_counter*);

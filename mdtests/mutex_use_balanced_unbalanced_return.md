@@ -7,7 +7,7 @@ void helper(struct holder *holder) { pthread_mutex_lock(&holder->mu); }
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_use_balanced_unbalanced_return.c";
 

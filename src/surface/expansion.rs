@@ -81,11 +81,12 @@ pub fn map_verifying_source_paths(
     Ok(rebased)
 }
 
-/// Finds the top-level `target "..."` directive that selects the C
-/// implementation target, before any C source is preprocessed. Include
-/// expansion needs the target, and expansion happens before the sidecar is
-/// parsed, so this scan and the parser share one accepted-name registry.
-/// Absent directive selects the default target.
+/// Finds the top-level `target "..."` and `mode "..."` directives
+/// that select the C implementation target, before any C source is
+/// preprocessed. Include expansion needs the target, and expansion happens
+/// before the sidecar is parsed, so this scan and the parser resolve names
+/// through the same [`CTarget::from_parts`]. Absent directives select the
+/// default target.
 pub fn selected_c_target(click_source: &str) -> Result<CTarget, ClickError> {
     Ok(declared_c_target(click_source)?.unwrap_or(CTarget::SUPPORTED))
 }
@@ -189,19 +190,19 @@ pub fn selected_project_c_target(project: &ClickProject) -> Result<CTarget, Clic
 
 fn declared_c_target(click_source: &str) -> Result<Option<CTarget>, ClickError> {
     let tokens = scan_source_tokens(click_source)?;
-    let mut selected = None;
+    let mut target = None;
+    let mut mode = None;
     let mut depth = 0usize;
     for window in tokens.windows(3) {
-        // The directive is a file item, so only brace depth zero can hold one.
-        // A deeper `target "..."` spelling is not a directive here and must
-        // not be one for the parser either.
+        // The directives are file items, so only brace depth zero can hold
+        // one. A deeper `target "..."` spelling is not a directive here and
+        // must not be one for the parser either.
         match window[0].text.as_str() {
             "{" => depth += 1,
             "}" => depth = depth.saturating_sub(1),
             _ => {}
         }
         if depth > 0
-            || window[0].text != "target"
             || !window[1].text.starts_with('"')
             || !window[1].text.ends_with('"')
             || window[1].text.len() < 2
@@ -209,21 +210,25 @@ fn declared_c_target(click_source: &str) -> Result<Option<CTarget>, ClickError> 
         {
             continue;
         }
-        let name = &window[1].text[1..window[1].text.len() - 1];
-        let target = CTarget::from_name(name).ok_or_else(|| {
-            ClickError::new(format!(
-                "unknown C target `{name}`; accepted targets are {}",
-                CTarget::accepted_names()
-            ))
-        })?;
-        if selected.is_some() {
-            return Err(ClickError::new(
-                "a Click file declares more than one `target`".to_string(),
-            ));
+        let slot = match window[0].text.as_str() {
+            "target" => &mut target,
+            "mode" => &mut mode,
+            _ => continue,
+        };
+        if slot.is_some() {
+            return Err(ClickError::new(format!(
+                "a Click file declares more than one `{}`",
+                window[0].text
+            )));
         }
-        selected = Some(target);
+        *slot = Some(&window[1].text[1..window[1].text.len() - 1]);
     }
-    Ok(selected)
+    if target.is_none() && mode.is_none() {
+        return Ok(None);
+    }
+    CTarget::from_parts(target, mode)
+        .map(Some)
+        .map_err(ClickError::new)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -12,7 +12,7 @@ void first_byte(const unsigned char *p, unsigned long held) {}
 ```click
 import click::machine_integer;
 
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "native_prefix.c";
 void byte_prefix(const uint8* p, uint64 held, uint64 requested) {
     requires requested <= held;

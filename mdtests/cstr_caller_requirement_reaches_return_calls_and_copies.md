@@ -20,7 +20,7 @@ uint64 copied(uint8 bytes[]) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "cstr_return_and_copy.c";
 
 uint64 returned(const char* s) {

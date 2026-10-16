@@ -30,7 +30,7 @@ int run(void) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "authority_mutex_control_helper_open.c";
 authorized resource reference(obj: struct object*) {}

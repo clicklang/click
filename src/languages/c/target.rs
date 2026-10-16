@@ -106,31 +106,83 @@ pub enum CTarget {
 impl CTarget {
     pub const SUPPORTED: Self = Self::X86_64LinuxUserspace;
 
+    /// The target triple every selectable target shares; the mode tells
+    /// kernel and user space apart.
+    pub const TRIPLE: &'static str = "x86_64-unknown-linux-gnu";
+
     /// Every selectable target, in the order a diagnostic lists them.
     pub const ALL: &'static [Self] = &[Self::X86_64LinuxKernel, Self::X86_64LinuxUserspace];
 
+    /// The mode spelling: `kernel` or `userspace`.
+    pub const fn mode(self) -> &'static str {
+        match self {
+            Self::X86_64LinuxKernel => "kernel",
+            Self::X86_64LinuxUserspace => "userspace",
+        }
+    }
+
+    /// The target and mode, as diagnostics and lock identities name them.
     pub const fn name(self) -> &'static str {
+        match self {
+            Self::X86_64LinuxKernel => "x86_64-unknown-linux-gnu (kernel)",
+            Self::X86_64LinuxUserspace => "x86_64-unknown-linux-gnu (userspace)",
+        }
+    }
+
+    /// Resolves a `target` and `mode` pair, as a project file or a sidecar
+    /// spells them. An omitted target is the shared triple and an omitted
+    /// mode is user space. A retired single-name spelling is
+    /// refused with its replacement.
+    pub fn from_parts(target: Option<&str>, mode: Option<&str>) -> Result<Self, String> {
+        if let Some(target) = target
+            && target != Self::TRIPLE
+        {
+            return Err(
+                match Self::ALL
+                    .iter()
+                    .find(|known| known.retired_name() == target)
+                {
+                    Some(Self::X86_64LinuxKernel) => format!(
+                        "C target `{target}` is retired; use target `{}` with mode `kernel`",
+                        Self::TRIPLE
+                    ),
+                    Some(Self::X86_64LinuxUserspace) => format!(
+                        "C target `{target}` is retired; use target `{}`, whose default mode is `userspace`",
+                        Self::TRIPLE
+                    ),
+                    None => format!(
+                        "unknown C target `{target}`; the accepted target is `{}`",
+                        Self::TRIPLE
+                    ),
+                },
+            );
+        }
+        match mode {
+            None => Ok(Self::SUPPORTED),
+            Some(name) => Self::ALL
+                .iter()
+                .copied()
+                .find(|known| known.mode() == name)
+                .ok_or_else(|| {
+                    format!(
+                        "unknown C mode `{name}`; accepted modes are {}",
+                        Self::ALL
+                            .iter()
+                            .map(|known| format!("`{}`", known.mode()))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                }),
+        }
+    }
+
+    /// The single-name spelling this target had before targets were
+    /// spelled as a triple and a mode.
+    const fn retired_name(self) -> &'static str {
         match self {
             Self::X86_64LinuxKernel => "x86_64-linux-kernel",
             Self::X86_64LinuxUserspace => "x86_64-linux-userspace",
         }
-    }
-
-    /// Resolves the spelling used by a sidecar's `target` directive.
-    pub fn from_name(name: &str) -> Option<Self> {
-        Self::ALL
-            .iter()
-            .copied()
-            .find(|target| target.name() == name)
-    }
-
-    /// The accepted directive spellings, for an unknown-target diagnostic.
-    pub fn accepted_names() -> String {
-        Self::ALL
-            .iter()
-            .map(|target| format!("`{}`", target.name()))
-            .collect::<Vec<_>>()
-            .join(", ")
     }
 
     pub const fn abi(self) -> CAbi {
@@ -251,9 +303,32 @@ mod tests {
     }
 
     #[test]
+    fn targets_are_a_triple_and_a_mode() {
+        let triple = Some(CTarget::TRIPLE);
+        assert_eq!(CTarget::from_parts(None, None), Ok(CTarget::SUPPORTED));
+        assert_eq!(
+            CTarget::from_parts(triple, Some("kernel")),
+            Ok(CTarget::X86_64LinuxKernel)
+        );
+        assert_eq!(
+            CTarget::from_parts(triple, Some("userspace")),
+            Ok(CTarget::X86_64LinuxUserspace)
+        );
+        let retired = CTarget::from_parts(Some("x86_64-linux-kernel"), None).unwrap_err();
+        assert!(
+            retired.contains("retired") && retired.contains("mode `kernel`"),
+            "{retired}"
+        );
+        let unknown = CTarget::from_parts(Some("aarch64-unknown-linux-gnu"), None).unwrap_err();
+        assert!(unknown.contains("x86_64-unknown-linux-gnu"), "{unknown}");
+        let mode = CTarget::from_parts(triple, Some("bare")).unwrap_err();
+        assert!(mode.contains("`kernel`, `userspace`"), "{mode}");
+    }
+
+    #[test]
     fn default_target_is_userspace_with_signed_char() {
         let target = CTarget::SUPPORTED;
-        assert_eq!(target.name(), "x86_64-linux-userspace");
+        assert_eq!(target.mode(), "userspace");
         assert_eq!(target.abi(), CAbi::SUPPORTED);
         assert_eq!(target.char_bits(), 8);
         assert!(target.plain_char_is_signed());

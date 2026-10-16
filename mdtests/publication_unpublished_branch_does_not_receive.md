@@ -18,7 +18,7 @@ int try_consume(struct channel *channel) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "publication_unpublished_branch_does_not_receive.c";
 resource ready_payload(channel: struct channel*) {

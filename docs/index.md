@@ -67,9 +67,10 @@ change.
 - **Click follows GCC and Clang, not the letter of the standard.** Click
   accepts what GCC and Clang accept by default
   ([supported C](reference/language/c.md)).
-- **Name the target.** Without a `target` directive, C verifies as
-  `x86_64-linux-userspace` (LP64, signed plain `char`). Kernel code selects
-  `target "x86_64-linux-kernel";` (unsigned plain `char`); see
+- **Name the target.** Without `target` and `mode` directives, C
+  verifies as `x86_64-unknown-linux-gnu` in `userspace` mode
+  (LP64, signed plain `char`). Kernel code selects `mode "kernel";`
+  (unsigned plain `char`); see
   [C implementation target](reference/language/c.md#c-implementation-target).
 - **A refused construct is a coverage boundary, not a reason to rewrite.**
   Check the [coverage matrix](reference/coverage.md) and the

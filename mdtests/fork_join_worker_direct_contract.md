@@ -26,7 +26,7 @@ void *fill_range(void *argument) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "fill_range.c";
 
 predicate range_filled(job: struct range_job*) {

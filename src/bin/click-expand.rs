@@ -1626,11 +1626,12 @@ mod prepared_output_tests {
             "prepared-import fixture requires GCC at /usr/bin/gcc; provision it before scripts/check.sh"
         );
         let project = serde_json::json!({
-            "target": "x86_64-linux-kernel",
+            "target": "x86_64-unknown-linux-gnu",
+                "mode": "kernel",
             "units": {"main": {
                 "language": "c",
                 "compiler": "/usr/bin/gcc",
-                "environment": {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "SOURCE_DATE_EPOCH": "0"},
+                "env": {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "SOURCE_DATE_EPOCH": "0"},
                 "args": ["-DVARIANT=1", "-isystem", "configured"],
                 "sources": {"main.c": {}}
             }}

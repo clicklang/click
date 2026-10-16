@@ -11,7 +11,8 @@ int is_negative(char c) {
 ```
 
 ```click
-target "x86_64-linux-kernel";
+target "x86_64-unknown-linux-gnu";
+mode "kernel";
 verifying "kernel_char_parameter.c";
 
 int32 is_negative(char c) {

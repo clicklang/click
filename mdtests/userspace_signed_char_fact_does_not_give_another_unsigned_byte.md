@@ -13,7 +13,7 @@ int first_unsigned(char *p) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "signed_char_fact_does_not_give_another_unsigned_byte.c";
 
 int32 first_unsigned(char* p) {

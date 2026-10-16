@@ -13,7 +13,7 @@ int fill(unsigned char *d) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "builtin_memset.c";
 
 int32 fill(uint8 d[]) {

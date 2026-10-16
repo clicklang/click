@@ -422,9 +422,9 @@ fn unsupported_system_header(
         .find(|other| **other != target && modeled_header_names(**other).contains(&header))
         .map(|other| {
             format!(
-                "; Click models it for `{}`, selected with `target \"{}\";` in the sidecar",
+                "; Click models it for `{}`, selected with `mode \"{}\";` in the sidecar",
                 other.name(),
-                other.name()
+                other.mode()
             )
         })
         .unwrap_or_default();

@@ -34,7 +34,7 @@ its target-dependent layout work belongs here.
 
 ## Violated invariant
 
-The initial concrete `CTarget` is now named `x86_64-linux-kernel` (LP64 and
+The initial concrete `CTarget` is now spelled target `x86_64-unknown-linux-gnu` with mode `kernel` (LP64 and
 eight-bit unsigned plain char), and is exposed in CLI/theorem results and
 incremental markers. This centralizes the single supported profile; it does
 not yet implement target selection, compiler validation, or symbolic targets.

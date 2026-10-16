@@ -19,7 +19,7 @@ void object_release_unlocked(struct object *obj) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 authorized resource reference(obj: struct object*) {}
 authorized resource permit(obj: struct object*) {}

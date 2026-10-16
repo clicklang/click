@@ -4,11 +4,12 @@
     "zlib": {
       "language": "c",
       "lock": {
-        "click_header_catalog_sha256": "ca6c11f5d8c8749f7d2ed6edb814fdd6d2394edfc386a9659f69d750b48d404a",
+        "click_header_catalog_sha256": "1eb5c9764e83c5a13e4d4fb5274581350b8dd3b03a35ab1038ebc30d1be51108",
         "compiler_path": "/usr/bin/x86_64-linux-gnu-gcc-13",
-        "config_directory": "/home/user/click-p/design/charon-trial/zlib",
-        "config_sha256": "dc4e06000a85baca93a5be7406be5ac4ac05e81b7855ae6c236cf4ecadc1fe2b",
-        "invocation_sha256": "30b7c0fb73a55f6e78b23b914164728ea89bc3e4816d28ab593c6d59905c574d",
+        "config_directory": "/home/user/click-b/design/charon-trial/zlib",
+        "config_sha256": "53ef34896e286f97bd5e923036291d85df5213c6dd3589031e96e34a23ecc99e",
+        "invocation_sha256": "a2175b25259a6ac67f84a0649cec026eb527277e90988bcde48d7d57529e51fa",
+        "mode": "userspace",
         "schema": 3,
         "sources": [
           {
@@ -19,7 +20,7 @@
             "artifact_bytes": 13855,
             "artifact_sha256": "46a4957cc681a51156c385736ccca9636f7e8aab0468dafdeeeb44f696241a75",
             "click_headers": {
-              "limits.h": "e880c1ee000e701bd4675e095f3fb30c1cf93bed921c3e63e17a4d3fe1850a60",
+              "limits.h": "808b47b0b6ab8dcca0287171c1637f059e1799bf938714c2224f56fb6d16e582",
               "stdarg.h": "e0f7e6bc4f5706ebb1b7f68cce89a96ef335d84dc32cc68982551e7032fdc3c8",
               "stddef.h": "6842e2bdc6186d40ba5893cfb07b56ea55f2a2426360041487cad189cafc119d",
               "stdlib.h": "d262f01d2bd57f6e9a7f4f266672ba070d60a460e0aa538190ea84b01bd4f692",
@@ -27,11 +28,11 @@
               "sys/types.h": "007fe1ae0ba0a2f54101c6828a01cd1da67c56a647d4f7c50c6543253c77ff1a"
             },
             "dependencies": {
-              "/home/user/click-p/design/charon-trial/zlib/zconf.h": "f5134250a67d57459234b63858f0d9d3ef8dcc48e9e1028d3f4fdcf6eae677ae",
-              "/home/user/click-p/design/charon-trial/zlib/zlib.h": "8a5579af72ea4f427ff00a4150f0ccb3fc5c1e4379f726e101133b1ab9fc600c",
-              "/home/user/click-p/design/charon-trial/zlib/zutil.h": "dddb2dc7a1dc339ecf2c8e089b366f08bb731c0839c7110240d17ce731bb4fea"
+              "/home/user/click-b/design/charon-trial/zlib/zconf.h": "f5134250a67d57459234b63858f0d9d3ef8dcc48e9e1028d3f4fdcf6eae677ae",
+              "/home/user/click-b/design/charon-trial/zlib/zlib.h": "8a5579af72ea4f427ff00a4150f0ccb3fc5c1e4379f726e101133b1ab9fc600c",
+              "/home/user/click-b/design/charon-trial/zlib/zutil.h": "dddb2dc7a1dc339ecf2c8e089b366f08bb731c0839c7110240d17ce731bb4fea"
             },
-            "identity": "2e9c81b589e5e96355dcff05b91576487f1ac1d8876bc249bb6d77c7bdd2b0fa",
+            "identity": "1dc6000ff338c244f60bf1ed9fee0ba1d092961b4e0518dabc9c7e59d3fb83d9",
             "local_dependencies": {
               "zconf.h": "f5134250a67d57459234b63858f0d9d3ef8dcc48e9e1028d3f4fdcf6eae677ae",
               "zlib.h": "8a5579af72ea4f427ff00a4150f0ccb3fc5c1e4379f726e101133b1ab9fc600c",
@@ -49,7 +50,7 @@
             "artifact_bytes": 14131,
             "artifact_sha256": "a6f8919ed16280b8102a6c22925da10bb75ea019e2281b25c6615991f46edc2e",
             "click_headers": {
-              "limits.h": "e880c1ee000e701bd4675e095f3fb30c1cf93bed921c3e63e17a4d3fe1850a60",
+              "limits.h": "808b47b0b6ab8dcca0287171c1637f059e1799bf938714c2224f56fb6d16e582",
               "stdarg.h": "e0f7e6bc4f5706ebb1b7f68cce89a96ef335d84dc32cc68982551e7032fdc3c8",
               "stddef.h": "6842e2bdc6186d40ba5893cfb07b56ea55f2a2426360041487cad189cafc119d",
               "stdlib.h": "d262f01d2bd57f6e9a7f4f266672ba070d60a460e0aa538190ea84b01bd4f692",
@@ -57,12 +58,12 @@
               "sys/types.h": "007fe1ae0ba0a2f54101c6828a01cd1da67c56a647d4f7c50c6543253c77ff1a"
             },
             "dependencies": {
-              "/home/user/click-p/design/charon-trial/zlib/adler32.c": "9cd1443a24ff2a3053961695bd432035c58347386a420d3388232376ebabe211",
-              "/home/user/click-p/design/charon-trial/zlib/zconf.h": "f5134250a67d57459234b63858f0d9d3ef8dcc48e9e1028d3f4fdcf6eae677ae",
-              "/home/user/click-p/design/charon-trial/zlib/zlib.h": "8a5579af72ea4f427ff00a4150f0ccb3fc5c1e4379f726e101133b1ab9fc600c",
-              "/home/user/click-p/design/charon-trial/zlib/zutil.h": "dddb2dc7a1dc339ecf2c8e089b366f08bb731c0839c7110240d17ce731bb4fea"
+              "/home/user/click-b/design/charon-trial/zlib/adler32.c": "9cd1443a24ff2a3053961695bd432035c58347386a420d3388232376ebabe211",
+              "/home/user/click-b/design/charon-trial/zlib/zconf.h": "f5134250a67d57459234b63858f0d9d3ef8dcc48e9e1028d3f4fdcf6eae677ae",
+              "/home/user/click-b/design/charon-trial/zlib/zlib.h": "8a5579af72ea4f427ff00a4150f0ccb3fc5c1e4379f726e101133b1ab9fc600c",
+              "/home/user/click-b/design/charon-trial/zlib/zutil.h": "dddb2dc7a1dc339ecf2c8e089b366f08bb731c0839c7110240d17ce731bb4fea"
             },
-            "identity": "e11e2dccd071227c38bf1b63e876cffef0da45affcc8a9bf5a63931b62d08201",
+            "identity": "234bf9eecb97f5d04d093c68ffd0a75e11d5bae9d60cc33bdd7949a0488589b1",
             "local_dependencies": {
               "adler32.c": "9cd1443a24ff2a3053961695bd432035c58347386a420d3388232376ebabe211",
               "zconf.h": "f5134250a67d57459234b63858f0d9d3ef8dcc48e9e1028d3f4fdcf6eae677ae",
@@ -74,7 +75,7 @@
             "source_sha256": "c3daad149a45f4bcc7b68eb6a0b4cd99cba450ed3985318d05448a2b42300087"
           }
         ],
-        "target": "x86_64-linux-userspace",
+        "target": "x86_64-unknown-linux-gnu",
         "toolchain": {
           "abi_probe_sha256": "5e7789053c4ff4b5cc64e011d8b266f733d5db1ed80e79d65713ab53b39571ed",
           "cc1_path": "/usr/libexec/gcc/x86_64-linux-gnu/13/cc1",
@@ -228,7 +229,7 @@
           "specs_path": null,
           "specs_sha256": null
         },
-        "working_directory": "/home/user/click-p/design/charon-trial/zlib/."
+        "working_directory": "/home/user/click-b/design/charon-trial/zlib/."
       }
     }
   }

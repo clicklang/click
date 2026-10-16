@@ -653,12 +653,12 @@ void f(int32* p) {
             [
                 ClickModuleSource::new(
                     "library.click",
-                    "target \"x86_64-linux-userspace\";\npredicate positive(x: int32) { x > 0 }\n",
+                    "target \"x86_64-unknown-linux-gnu\";\npredicate positive(x: int32) { x > 0 }\n",
                     [],
                 ),
                 ClickModuleSource::new(
                     "entry.click",
-                    "import \"library.click\";\ntarget \"x86_64-linux-userspace\";\n",
+                    "import \"library.click\";\ntarget \"x86_64-unknown-linux-gnu\";\n",
                     ["library.click".to_string()],
                 ),
             ],
@@ -678,12 +678,12 @@ void f(int32* p) {
             [
                 ClickModuleSource::new(
                     "library.click",
-                    "target \"x86_64-linux-userspace\";\npredicate positive(x: int32) { x > 0 }\n",
+                    "target \"x86_64-unknown-linux-gnu\";\npredicate positive(x: int32) { x > 0 }\n",
                     [],
                 ),
                 ClickModuleSource::new(
                     "entry.click",
-                    "import \"library.click\";\ntarget \"x86_64-linux-kernel\";\n",
+                    "import \"library.click\";\ntarget \"x86_64-unknown-linux-gnu\";\nmode \"kernel\";\n",
                     ["library.click".to_string()],
                 ),
             ],

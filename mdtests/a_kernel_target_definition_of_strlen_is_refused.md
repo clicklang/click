@@ -4,7 +4,7 @@ The Linux kernel defines its own `strlen` in `lib/string.c`, but compiles
 that file alone with `-ffreestanding` (`CFLAGS_string.o := -ffreestanding`
 in Linux 6.8's `lib/Makefile`), so that GCC calls the body instead of
 treating `strlen` as the library function. Every other x86-64 kernel file
-is built hosted, and so is Click's `x86_64-linux-kernel` target, whose
+is built hosted, and so is Click's `kernel` mode, whose
 fixed compiler profile is `-std=gnu11 -m64 -funsigned-char -nostdinc` with
 neither `-ffreestanding` nor `-fno-builtin`. Under that profile GCC 14 and
 Clang fold `strlen("abc")` to 3 at `-O0` whatever this body computes, so the
@@ -27,7 +27,8 @@ size_t name_length(const char *name) {
 ```
 
 ```click
-target "x86_64-linux-kernel";
+target "x86_64-unknown-linux-gnu";
+mode "kernel";
 verifying "main.c";
 
 uint64 name_length(const char* name) {

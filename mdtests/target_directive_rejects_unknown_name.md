@@ -1,7 +1,7 @@
 # An unknown target name is rejected with the accepted spellings
 
 The `target` directive selects one of the verifier's own C implementation
-targets. An unrecognized name is a sidecar error that lists what is accepted,
+targets. An unrecognized name is a sidecar error that names what is accepted,
 not a silently ignored directive.
 
 ```c filename=answer.c
@@ -23,5 +23,5 @@ int32 answer() {
 ```
 
 ```expect
-fail: unknown C target `x86_64-linux-embedded`; accepted targets are `x86_64-linux-kernel`, `x86_64-linux-userspace`
+fail: unknown C target `x86_64-linux-embedded`; the accepted target is `x86_64-unknown-linux-gnu`
 ```

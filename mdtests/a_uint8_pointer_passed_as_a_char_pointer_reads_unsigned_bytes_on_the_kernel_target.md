@@ -1,6 +1,6 @@
 # A `uint8 *` passed as a `char *` reads unsigned bytes on the kernel target
 
-The x86_64-linux-kernel form of
+The kernel-mode form of
 `a_uint8_pointer_passed_as_a_char_pointer_reads_signed_bytes.md`. Plain `char`
 is unsigned there, so the uncast `uint8 *` to `char *` argument, lowered as
 the explicit `(char *)` cast, reads the byte `0xC8` as `200`.
@@ -27,7 +27,8 @@ int pass_to_inline(void) {
 ```
 
 ```click
-target "x86_64-linux-kernel";
+target "x86_64-unknown-linux-gnu";
+mode "kernel";
 verifying "a_uint8_pointer_passed_as_a_char_pointer_reads_unsigned_bytes_on_the_kernel_target.c";
 
 int first_char(char *p) {

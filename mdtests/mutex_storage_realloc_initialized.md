@@ -20,7 +20,7 @@ int run(void) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_storage_realloc_initialized.c";
 int32 run() {

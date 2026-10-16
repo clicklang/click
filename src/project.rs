@@ -43,6 +43,9 @@ pub const LOCK_NAME: &str = "click.project.lock.json";
 pub const ARTIFACT_DIRECTORY: &str = ".click";
 
 const LOCK_SCHEMA: u32 = 1;
+/// The target tag a C++ or Rust unit's digest binds; see
+/// [`Project::unit_digest`].
+const NON_C_DIGEST_TAG: &str = "x86_64-linux-userspace";
 const MAX_PROJECT_FILE_BYTES: u64 = 1 << 20;
 const MAX_LOCK_BYTES: u64 = 16 << 20;
 const MAX_UNITS: usize = 256;
@@ -54,8 +57,12 @@ struct UnitJson {
     #[serde(default = "project_directory")]
     root: String,
     compiler: Option<String>,
+    /// The only environment variables a C unit's compiler runs with.
     #[serde(default)]
-    environment: BTreeMap<String, String>,
+    env: BTreeMap<String, String>,
+    /// Retired spelling of `env`, refused with its replacement.
+    #[serde(default)]
+    environment: Option<serde_json::Value>,
     option_profile: Option<String>,
     /// Arguments every source of the unit is prepared with, before its own.
     #[serde(default)]
@@ -127,7 +134,7 @@ pub struct Project {
     file: PathBuf,
     /// The project root: the project file's directory.
     root: PathBuf,
-    target: Option<String>,
+    target: CTarget,
     units: BTreeMap<String, Unit>,
 }
 
@@ -166,10 +173,15 @@ impl Project {
         let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| {
             format!("invalid Click project config `{}`: {error}", file.display())
         })?;
-        let target = value
-            .get("target")
-            .and_then(serde_json::Value::as_str)
-            .map(str::to_string);
+        let setting = |key: &str| match value.get(key) {
+            None => Ok(None),
+            Some(setting) => setting
+                .as_str()
+                .map(Some)
+                .ok_or_else(|| format!("`{key}` in `{}` must be a string", file.display())),
+        };
+        let target = CTarget::from_parts(setting("target")?, setting("mode")?)
+            .map_err(|error| format!("{error} in `{}`", file.display()))?;
         let mut units = BTreeMap::new();
         if let Some(described) = value.get("units") {
             let described = described
@@ -221,12 +233,6 @@ impl Project {
         self.root.join(LOCK_NAME)
     }
 
-    fn target_name(&self) -> String {
-        self.target
-            .clone()
-            .unwrap_or_else(|| CTarget::SUPPORTED.name().to_string())
-    }
-
     /// The digest of unit `name`'s description and the project target it is
     /// prepared for. A unit's lock entry records it.
     pub(crate) fn unit_digest(&self, name: &str) -> Result<String, String> {
@@ -234,10 +240,21 @@ impl Project {
             .units
             .get(name)
             .ok_or_else(|| format!("`{}` has no unit `{name}`", self.file.display()))?;
-        let data = serde_json::to_vec(&serde_json::json!({
-            "target": self.target_name(),
-            "unit": unit.description,
-        }))
+        let data = if unit.spec.language == "c" {
+            serde_json::to_vec(&serde_json::json!({
+                "target": CTarget::TRIPLE,
+                "mode": self.target.mode(),
+                "unit": unit.description,
+            }))
+        } else {
+            // C++ and Rust units are prepared for their own fixed target, so
+            // the C target and mode leave them alone. The tag is the one their
+            // locks were first written with, kept so those locks stay valid.
+            serde_json::to_vec(&serde_json::json!({
+                "target": NON_C_DIGEST_TAG,
+                "unit": unit.description,
+            }))
+        }
         .expect("a unit description serializes");
         Ok(hex_digest(&data))
     }
@@ -254,10 +271,10 @@ impl Project {
             lock_path: self.lock_path(),
             unit_name: name.to_string(),
             unit_digest: self.unit_digest(name)?,
-            target: self.target_name(),
+            target: self.target,
             compiler: PathBuf::from(compiler),
             root: unit.spec.root.clone(),
-            environment: unit.spec.environment.clone(),
+            environment: unit.spec.env.clone(),
             option_profile: unit.spec.option_profile.clone(),
             sources: unit
                 .spec
@@ -595,6 +612,11 @@ fn validate_unit_name(name: &str) -> Result<(), String> {
 }
 
 fn validate_unit(name: &str, unit: &UnitJson) -> Result<(), String> {
+    if unit.environment.is_some() {
+        return Err(format!(
+            "unit `{name}` names its compiler's variables in `environment`, which is now `env`; rename the field"
+        ));
+    }
     match unit.language.as_str() {
         "c" => {
             if unit.crate_config.is_some() || unit.exceptions.is_some() || unit.rtti.is_some() {
@@ -611,11 +633,11 @@ fn validate_unit(name: &str, unit: &UnitJson) -> Result<(), String> {
         "c++" => {
             if unit.crate_config.is_some()
                 || unit.compiler.is_some()
-                || !unit.environment.is_empty()
+                || !unit.env.is_empty()
                 || unit.option_profile.is_some()
             {
                 return Err(format!(
-                    "C++ unit `{name}` takes no `crate`, `compiler`, `environment` or `option_profile`; the pinned exporter prepares it"
+                    "C++ unit `{name}` takes no `crate`, `compiler`, `env` or `option_profile`; the pinned exporter prepares it"
                 ));
             }
             for (path, source) in &unit.sources {
@@ -628,14 +650,14 @@ fn validate_unit(name: &str, unit: &UnitJson) -> Result<(), String> {
         }
         "rust" => {
             if unit.compiler.is_some()
-                || !unit.environment.is_empty()
+                || !unit.env.is_empty()
                 || unit.option_profile.is_some()
                 || !unit.args.is_empty()
                 || unit.exceptions.is_some()
                 || unit.rtti.is_some()
             {
                 return Err(format!(
-                    "Rust unit `{name}` takes no `compiler`, `environment`, `option_profile`, `args`, `exceptions` or `rtti`; the pinned Charon prepares it"
+                    "Rust unit `{name}` takes no `compiler`, `env`, `option_profile`, `args`, `exceptions` or `rtti`; the pinned Charon prepares it"
                 ));
             }
             if unit.sources.len() != 1
@@ -774,6 +796,11 @@ mod tests {
                 "lists no sources",
             ),
             (
+                r#"{"old": {"language": "c", "compiler": "/usr/bin/gcc",
+                    "environment": {"PATH": "/usr/bin"}, "sources": {"a.c": {}}}}"#,
+                "which is now `env`",
+            ),
+            (
                 r#"{"typo": {"language": "c", "source": {"a.c": {}}}}"#,
                 "unknown field `source`",
             ),
@@ -823,8 +850,19 @@ mod tests {
         let project = project.unwrap();
         let digest = project.unit_digest("up").unwrap();
         let mut retargeted = project.clone();
-        retargeted.target = Some("x86_64-linux-kernel".into());
+        retargeted.target = CTarget::X86_64LinuxKernel;
         assert_ne!(retargeted.unit_digest("up").unwrap(), digest);
         assert_eq!(project.unit_digest("up").unwrap(), digest);
+    }
+
+    #[test]
+    fn non_c_unit_digests_ignore_the_c_mode() {
+        let (_scratch, project) =
+            project_with(r#"{"rs": {"language": "rust", "sources": {"main.rs": {}}}}"#);
+        let project = project.unwrap();
+        let digest = project.unit_digest("rs").unwrap();
+        let mut kernel = project.clone();
+        kernel.target = CTarget::X86_64LinuxKernel;
+        assert_eq!(kernel.unit_digest("rs").unwrap(), digest);
     }
 }

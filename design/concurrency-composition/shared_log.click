@@ -1,7 +1,7 @@
 import click::integer;
 import click::machine_integer;
 
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 
 theorem int32_equality_transitive(first: int32, second: int32, third: int32) {
