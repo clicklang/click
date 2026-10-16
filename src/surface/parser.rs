@@ -7311,9 +7311,11 @@ impl Parser {
             | ContractExpression::Multiply(left, right) => {
                 self.integer_operand(left) || self.integer_operand(right)
             }
-            ContractExpression::Negate(inner) | ContractExpression::Old(inner) => {
-                self.integer_operand(inner)
-            }
+            ContractExpression::Negate(inner)
+            | ContractExpression::Old(inner)
+            | ContractExpression::At {
+                expression: inner, ..
+            } => self.integer_operand(inner),
             leaf => self.integer_leaf(leaf),
         }
     }
@@ -7376,6 +7378,15 @@ impl Parser {
             }
             ContractExpression::Old(inner) if has_arithmetic_spine(&inner) => {
                 ContractExpression::Old(Box::new(self.observe_machine_operands(*inner)))
+            }
+            ContractExpression::At {
+                selector,
+                expression,
+            } if has_arithmetic_spine(&expression) || self.integer_operand(&expression) => {
+                ContractExpression::At {
+                    selector,
+                    expression: Box::new(self.observe_machine_operands(*expression)),
+                }
             }
             ContractExpression::IntegerLiteral(value) => ContractExpression::IntegerLiteral(value),
             leaf if self.integer_leaf(&leaf) => leaf,
@@ -14879,7 +14890,10 @@ fn has_arithmetic_spine(expression: &ContractExpression) -> bool {
         | ContractExpression::Subtract(..)
         | ContractExpression::Multiply(..)
         | ContractExpression::Negate(_) => true,
-        ContractExpression::Old(inner) => has_arithmetic_spine(inner),
+        ContractExpression::Old(inner)
+        | ContractExpression::At {
+            expression: inner, ..
+        } => has_arithmetic_spine(inner),
         _ => false,
     }
 }

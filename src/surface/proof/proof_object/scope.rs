@@ -688,7 +688,10 @@ impl<'a> ProofScope<'a> {
                     Some(body) => body,
                     None => match self.body.try_wide_equality_solver_closure()? {
                         Some(body) => body,
-                        None => return Ok(None),
+                        None => match self.body.try_native_goal_by_integer_reading()? {
+                            Some(body) => body,
+                            None => return Ok(None),
+                        },
                     },
                 },
             },

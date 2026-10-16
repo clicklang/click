@@ -149,10 +149,16 @@ difference, count comparisons widen under the directive, `simp` selects
 Integer equalities as rewrites, and an Integer equality over 32-bit
 observations files its wrapped word equality for built-in checks.
 `pool_init`, `pool_destroy` and `pool_zero_pipeline` now verify under the
-directive. In `pool_checkout`, `auto` did not carry the kernel's
-consumed-member bound `count >= 1` to Integer (the bridge theorem applies
-by hand), and the closing ledger fold is not yet investigated. Next:
-those, the rest of the pool, then the migration file by file and the flip.
+directive. `auto` also reads native bounds such as the consumed-member
+`count >= 1` as Integer facts, proves a machine comparison through its
+Integer reading, and cites callee postconditions at their call sites. In a
+draft of `bounded-pool` under the directive, `pool_checkout`, `pool_return`,
+`pool_shrink` and `pool_grow` also verify with their bridge lemmas and
+helper theorems removed (`pool_checkout` drops from 28 proof lines to 7).
+The other pipelines are blocked: `step()` does not hand a call precondition
+such as `a < 100` to `auto`, which would prove it from Integer facts. Next:
+that hand-off, the rest of the pool, then the migration file by file and the
+flip.
 
 Afterwards, delete the `machine_integer` and `integer` lemmas Integer
 arithmetic makes unnecessary, complete the families that remain, and give

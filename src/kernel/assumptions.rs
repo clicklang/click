@@ -8930,8 +8930,8 @@ pub(in crate::kernel) fn native_comparison_of_integer_observation(
 /// The Integer comparisons of exact observations whose native comparison
 /// (`native_comparison_of_integer_observation`) is exactly `proposition`,
 /// a native comparison fact: `1u32 <= x` gives `1 <= to_integer(x)`. Each
-/// candidate is recomputed through the forward map, so only exact converses
-/// are returned. A 32-bit word comparison may read as `int32` and, when its
+/// candidate is recomputed through the forward map, so only exact converses,
+/// up to the fact's equivalent order spellings, are returned. A 32-bit word comparison may read as `int32` and, when its
 /// operands carry the unsigned sign-bit encoding, as `uint32`.
 pub(crate) fn integer_observations_of_native_comparison(
     proposition: &Proposition,
@@ -8988,6 +8988,9 @@ pub(crate) fn integer_observations_of_native_comparison(
             _ => None,
         }
     };
+    // A native order has four spellings (`a >= 1` is `1 <= a`); the forward
+    // map produces one, so compare against all of them.
+    let spellings = crate::kernel::proof::fact_reasoning::condition_polarity_forms(proposition);
     let mut lifted = Vec::new();
     for &ty in types {
         let carriers = if ty == MachineIntegerType::UInt32
@@ -9021,7 +9024,10 @@ pub(crate) fn integer_observations_of_native_comparison(
                 true
             };
             if native_comparison_of_integer_observation(&candidate, truth).is_some_and(
-                |(native, native_truth)| &native == condition && native_truth == *value,
+                |(native, native_truth)| {
+                    let native = Proposition::ConditionIs(native, native_truth);
+                    &native == proposition || spellings.contains(&native)
+                },
             ) {
                 lifted.push(Proposition::ConditionIs(candidate, truth));
                 break;
@@ -9205,6 +9211,26 @@ mod integer_observation_tests {
                 );
             }
         }
+        // A native order the forward map spells the other way round, as
+        // `x >= 1` is stated beside `1 <= x`, reads back as the same bound.
+        let mirrored = Proposition::ConditionIs(
+            ConditionTerm::Bitvector32SignedGreaterEqual(
+                Box::new(word(1)),
+                Box::new(Bitvector32Term::Constant(1)),
+            ),
+            true,
+        );
+        assert!(
+            integer_observations_of_native_comparison(&mirrored).contains(
+                &Proposition::ConditionIs(
+                    ConditionTerm::IntegerLessEqual(
+                        constant(1),
+                        observe(MachineIntegerType::Int32, 1)
+                    ),
+                    true,
+                )
+            )
+        );
         // Facts other than native comparisons read as nothing.
         assert!(
             integer_observations_of_native_comparison(&Proposition::ConditionIs(

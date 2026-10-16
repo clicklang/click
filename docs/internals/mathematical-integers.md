@@ -905,6 +905,17 @@ retries run only after a miss, so a proof that needs none keeps its
 certificate, and identities do not nest: a bound that needs another
 identity is not proved this way.
 
+After its other searches, `auto` also closes a native comparison of exact
+observations, such as a machine `result <= 50`, by proving its Integer
+reading `to_integer(result) <= 50` this way; the Integer fact then supplies
+the native one. To cite a fact, `auto` needs a source spelling for it. A
+callee's Integer postcondition at the call site is spelled from the current
+state, an observation of a value the proof has since replaced is spelled at
+function entry (`old(*p)` for a written `*p`), and a native fact read as an
+Integer one is spelled from the native fact's own operands
+(`mdtests/auto_reads_a_call_postcondition_for_a_machine_bound.md`,
+`mdtests/auto_spells_a_replaced_value_at_function_entry.md`).
+
 ## Bounded polynomial identities and quotient shifts
 
 The explicit `rules` node
