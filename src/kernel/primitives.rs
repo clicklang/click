@@ -3250,6 +3250,9 @@ pub enum CStatement {
         pointer: CExpression,
         value: CExpression,
         value_type: CType,
+        /// The class of the stored lvalue when `value_type` erases it; see
+        /// [`CExpression::TypedLoad::access_class`].
+        access_class: Option<crate::kernel::effective_type::CAccessClass>,
         /// See [`CExpression::TypedLoad::volatile`].
         volatile: bool,
         /// The destination pointer cell's declared pointee qualification.

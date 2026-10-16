@@ -146,7 +146,9 @@ allowed cases:
 - **Step 1 (scalar and pointer classes):** done.
   - Accesses carry their class. Loads and stores whose kernel type erases it
     (`long`, `long long`, exact pointer types) get it from the C frontend's
-    type; others get it from the kernel type.
+    type; others get it from the kernel type. Assignments through `*p` and
+    `p[i]` first carried no class and went unchecked; they now carry the
+    class of the lvalue they write.
   - Pointer parameters carry their pointee class from entry. A pointer read
     from memory carries its lvalue's pointee class unless it already carries
     one.
