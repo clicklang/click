@@ -80,6 +80,22 @@ Profiling attributes this work to `return claim goal lowering`. The
 [unfolded-predicate fixture](https://github.com/clicklang/click/blob/master/mdtests/explicit_return_closer_keeps_unfolded_predicate_goal.md)
 keeps the distinct folded and unfolded forms available when they are needed.
 
+Return-goal lowering separates entry/exit view preparation from individual
+ensures. Consecutive exact return closers (`assumption`, `normalize`,
+`arithmetic using`, checked arithmetic certificates and `both`) share one lazy
+`CFunctionEnsureGoalContext`, including failed preparation, because they only
+discharge claims. Every other deferred tactic discards it before running; an
+assumption closer's checked contract-resource transition also discards it.
+Rewrite and smart-completion batches share views only inside their own fixed
+frontier. There is no global cache or structural state comparison. The nested
+`return claim state preparation` operation attributes the preparation cost;
+it overlaps `return claim goal lowering`, so do not add their work or times.
+Regular scalar regressions bound lowering work by resources plus claims
+at sizes 1, 2, 4 and 8 for both assumption runs and normalization batches.
+A named nightly regression independently varies four resource sizes and
+three claim sizes, retaining the full matrix without slowing the regular gate. It does not bound every part of contract
+verification or eliminate preparation after a frontier-changing tactic.
+
 ### Refused ownership separation
 
 A refused separation of fixed fields on independent pointer parameters uses

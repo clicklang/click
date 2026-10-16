@@ -38,6 +38,83 @@ fn explicit_closers_lower_each_return_goal_once_without_unfoldings() {
     }
 }
 
+fn check_return_claim_preparation_scaling(
+    closer: &str,
+    sizes: impl IntoIterator<Item = (usize, usize)>,
+) {
+    use crate::instrumentation::{VerificationEvent, collect};
+    crate::surface::verify_c0_sources("theorem warm() { ensures true by normalize(); }", &[])
+        .unwrap();
+    for (resources, claims) in sizes {
+        let holdings = (0..resources)
+            .map(|i| format!("owns marker({i});\n"))
+            .collect::<String>();
+        let ensures = "ensures result == x;\n".repeat(claims);
+        let closers = if closer == "normalize();" {
+            closer.to_string()
+        } else {
+            closer.repeat(claims)
+        };
+        let source = format!(
+            "resource marker(n: int32) {{ fact n == n; }}
+         verifying \"echo.c\";
+         int32 echo(int32 x) {{ {holdings}{ensures} }}
+         by {{ step(); {closers} }}"
+        );
+        let (verified, events) = collect(|| {
+            crate::surface::verify_c0_sources(
+                &source,
+                &[("echo.c", "int32 echo(int32 x) { return x; }")],
+            )
+        });
+        assert_eq!(verified.unwrap().len(), claims + resources);
+        // Preparation is nested inside the first lowering; count only
+        // the enclosing lowerings so no work is counted twice.
+        let work = events
+            .iter()
+            .filter_map(|event| match event {
+                VerificationEvent::OperationFinished {
+                    function,
+                    name,
+                    work,
+                    ..
+                } if function == "echo" && name == "return claim goal lowering" => Some(*work),
+                _ => None,
+            })
+            .sum::<usize>();
+        eprintln!(
+            "return views: closer={closer} resources={resources} claims={claims} work={work}"
+        );
+        assert!(
+            work <= 16 * resources + 32 * claims,
+            "return views must cost O(resources + claims): closer={closer}, resources={resources}, claims={claims}, work={work}"
+        );
+    }
+}
+
+#[test]
+fn return_assumption_views_scale_with_resources_and_claims() {
+    check_return_claim_preparation_scaling("assumption();", [1, 2, 4, 8].map(|size| (size, size)));
+}
+
+#[test]
+fn return_normalization_views_scale_with_resources_and_claims() {
+    check_return_claim_preparation_scaling("normalize();", [1, 2, 4, 8].map(|size| (size, size)));
+}
+
+#[test]
+#[ignore = "nightly: full 24-case resource/claim matrix took 10.38s beside release compilation"]
+fn exact_return_closers_share_preparation_beside_unrelated_resources() {
+    for closer in ["assumption();", "normalize();"] {
+        check_return_claim_preparation_scaling(
+            closer,
+            [0, 4, 16, 64]
+                .into_iter()
+                .flat_map(|resources| [1, 4, 16].map(move |claims| (resources, claims))),
+        );
+    }
+}
+
 #[test]
 fn joint_resource_receipts_ignore_unrelated_holdings() {
     use crate::kernel::{Bitvector32Term, CResource, CResourceFact, ResourceContext};
