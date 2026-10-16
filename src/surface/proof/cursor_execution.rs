@@ -2827,16 +2827,25 @@ fn execute_step_from_frontier_position_selecting_path(
             } else {
                 "could not verify C operation"
             };
-            let detail = format!(
-                "{}{}",
-                describe_runtime_error_before_statement(
-                    error,
-                    &current_state,
-                    proof_context.parsed_function,
-                    parameter_binding,
-                ),
-                describe_missing_range_end_note(error, &current_resources, parameter_binding)
-            );
+            let detail = crate::surface::diagnostics::describe_unestablished_assembly_fact(
+                error,
+                &listed_context_pure_facts(available_pure_facts, context),
+                &current_resources,
+                parameter_binding,
+                &[],
+            )
+            .unwrap_or_else(|| {
+                format!(
+                    "{}{}",
+                    describe_runtime_error_before_statement(
+                        error,
+                        &current_state,
+                        proof_context.parsed_function,
+                        parameter_binding,
+                    ),
+                    describe_missing_range_end_note(error, &current_resources, parameter_binding)
+                )
+            });
             if matches!(
                 error,
                 crate::kernel::CRuntimeError::UninitializedMutex { .. }
@@ -3490,16 +3499,25 @@ fn execute_step_from_frontier_position_selecting_path(
             } else {
                 "could not verify C operation"
             };
-            let detail = format!(
-                "{}{}",
-                describe_runtime_error_before_statement(
-                    &error,
-                    &current_state,
-                    proof_context.parsed_function,
-                    parameter_binding,
-                ),
-                describe_missing_range_end_note(&error, &current_resources, parameter_binding)
-            );
+            let detail = crate::surface::diagnostics::describe_unestablished_assembly_fact(
+                &error,
+                &listed_context_pure_facts(available_pure_facts, context),
+                &current_resources,
+                parameter_binding,
+                &execution_pure_facts,
+            )
+            .unwrap_or_else(|| {
+                format!(
+                    "{}{}",
+                    describe_runtime_error_before_statement(
+                        &error,
+                        &current_state,
+                        proof_context.parsed_function,
+                        parameter_binding,
+                    ),
+                    describe_missing_range_end_note(&error, &current_resources, parameter_binding)
+                )
+            });
             if matches!(
                 error,
                 crate::kernel::CRuntimeError::UninitializedMutex { .. }

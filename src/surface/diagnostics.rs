@@ -1509,6 +1509,16 @@ pub(super) fn describe_runtime_error(
                 format!("missing resource fact `{fact}`")
             }
         }
+        crate::kernel::CRuntimeError::UnestablishedAssemblyFact { assembled, fact } => {
+            use crate::surface::proof_diagnostics::render::{SnapshotLabels, render_proposition_labeled};
+            let mut labels = SnapshotLabels::naming(parameter_binding);
+            format!(
+                "assembling `{}` from owned pieces requires an exact body fact: missing pure fact: {}{}",
+                render_resource_fact_diagnostic(assembled, parameter_binding),
+                render_proposition_labeled(fact, &mut labels),
+                labels.trace_legend()
+            )
+        }
         crate::kernel::CRuntimeError::UnbackedReturnedView { view } => format!(
             "{}: `{}`",
             crate::kernel::CRuntimeError::UNBACKED_RETURNED_VIEW,
@@ -2302,6 +2312,33 @@ fn parameter_relative_endpoints(
         bitvector32_add(base_index.clone(), range.start().clone()),
         bitvector32_add(base_index.clone(), range.end().clone()),
     )
+}
+
+/// A call refused because assembling a viewed composite from the caller's
+/// owned pieces is a fold whose body fact is unproved: the instance, the
+/// missing fact and the available facts, as a refused `fold` reports them.
+/// `None` for every other runtime error.
+pub(super) fn describe_unestablished_assembly_fact(
+    error: &crate::kernel::CRuntimeError,
+    pure_facts: &[Proposition],
+    resource_facts: &[CResourceFact],
+    parameter_binding: ParameterBinding<'_>,
+    execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
+) -> Option<String> {
+    let crate::kernel::CRuntimeError::UnestablishedAssemblyFact { assembled, fact } = error else {
+        return None;
+    };
+    Some(format!(
+        "assembling `{}` from owned pieces requires an exact body fact: {}",
+        render_resource_fact_diagnostic(assembled, parameter_binding),
+        describe_missing_pure_fact(
+            fact,
+            pure_facts,
+            resource_facts,
+            parameter_binding,
+            execution_pure_facts
+        )
+    ))
 }
 
 /// A note for a missing memory range that a held range over the same base

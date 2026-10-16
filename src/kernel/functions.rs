@@ -10004,6 +10004,7 @@ fn candidate_composite_view_adapter(
     caller_state: &CState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
+    unestablished: &mut Option<Proposition>,
 ) -> ExecutionResult<Option<CompositeViewAdapter>> {
     let CResource::Composite { name, arguments } = required.resource() else {
         return Ok(None);
@@ -10037,15 +10038,32 @@ fn candidate_composite_view_adapter(
     {
         return Ok(None);
     }
-    if !composite_definition_facts_hold(definition, arguments, caller_state, assumptions, budget)? {
-        return Ok(None);
-    }
+    let mut gap = None;
+    let facts_hold = composite_definition_facts_hold(
+        definition,
+        arguments,
+        caller_state,
+        assumptions,
+        budget,
+        &mut gap,
+    )?;
+    // A backing below is owned authority the view would be assembled from.
+    // Where one exists but a body fact does not hold, the refusal names that
+    // fact; a caller with no backing has nothing to assemble, and its
+    // refusal stays the missing view.
+    let mut refuse_for_the_fact = || {
+        *unestablished = gap.take();
+        Ok(None)
+    };
     // The materialized form: the caller's own owners already cover the
     // frontier piecewise, so the head is exactly those facts under another
     // name and recovery gives them back unchanged.
     if let Some(remaining) = remove_frontier(resources.clone(), &frontier, assumptions)
         && let Ok(materialized) = remaining.try_compose_with_fact(head.clone(), assumptions)
     {
+        if !facts_hold {
+            return refuse_for_the_fact();
+        }
         return Ok(Some(CompositeViewAdapter {
             resources: materialized,
             head,
@@ -10096,6 +10114,9 @@ fn candidate_composite_view_adapter(
         };
         if checked_frontier_coverage(owner_frontier, &frontier, assumptions).is_none() {
             continue;
+        }
+        if !facts_hold {
+            return refuse_for_the_fact();
         }
         return Ok(Some(CompositeViewAdapter {
             resources: resources.clone(),
@@ -10175,12 +10196,17 @@ fn remove_frontier(
 /// in and must be available by the kernel's exact routes. There is no search
 /// here; a fact the caller has not established is a prompt refusal the proof
 /// can answer with an explicit step.
+/// Whether the body facts of `definition` hold for `arguments` in the
+/// caller's state. A body fact the caller has not established is recorded in
+/// `unestablished`, lowered at the caller's memory, so a refused assembly can
+/// name it as a refused `fold` does.
 fn composite_definition_facts_hold(
     definition: &CCompositeResourceDefinition,
     arguments: &[AlgebraicValue],
     caller_state: &CState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
+    unestablished: &mut Option<Proposition>,
 ) -> ExecutionResult<bool> {
     if definition.facts().is_empty() {
         return Ok(true);
@@ -10235,6 +10261,7 @@ fn composite_definition_facts_hold(
             || established.settles_exactly(&path.proposition)
             || resource_body_fact_is_established(&established, &path.proposition))
         {
+            *unestablished = Some(path.proposition.clone());
             return Ok(false);
         }
     }
@@ -10926,6 +10953,9 @@ fn prepare_contract_resource_transfer_unexplained(
                 "could not allocate stable-view callee participant".to_string(),
             )));
         };
+        // A viewed composite the caller would assemble from its owned
+        // pieces, mapped to the first body fact it has not established.
+        let mut assembly_gaps = BTreeMap::new();
         let composite_backings = if stable_requirements.iter().any(|requirement| {
             requirement.fact.is_view()
                 && matches!(requirement.fact.resource(), CResource::Composite { .. })
@@ -10950,6 +10980,7 @@ fn prepare_contract_resource_transfer_unexplained(
                         .view_occurrences_for_fact(&requirement.fact, assumptions)
                         .is_empty()
                 {
+                    let mut unestablished = None;
                     match candidate_composite_view_adapter(
                         &planning_resources,
                         &requirement.fact,
@@ -10957,6 +10988,7 @@ fn prepare_contract_resource_transfer_unexplained(
                         caller_state,
                         assumptions,
                         budget,
+                        &mut unestablished,
                     )? {
                         Some(adapter) => {
                             planning_resources = adapter.resources;
@@ -10964,7 +10996,12 @@ fn prepare_contract_resource_transfer_unexplained(
                             adapted = adapter.adapted;
                             restored = adapter.restored;
                         }
-                        None => continue,
+                        None => {
+                            if let Some(fact) = unestablished {
+                                assembly_gaps.insert(requirement.fact.clone(), fact);
+                            }
+                            continue;
+                        }
                     }
                 }
                 let Some((support, owned)) = planning_resources
@@ -11172,6 +11209,17 @@ fn prepare_contract_resource_transfer_unexplained(
                 {
                     return Ok(Err(CRuntimeError::MissingResource {
                         resource: Box::new(resource.clone()),
+                    }));
+                }
+                // A view the caller holds the pieces of, but could not
+                // assemble because a body fact is unproved: name that fact,
+                // as a refused `fold` does, rather than the missing loan.
+                if let super::loans::StableViewPlanError::MissingResource(resource) = &error
+                    && let Some(fact) = assembly_gaps.remove(resource)
+                {
+                    return Ok(Err(CRuntimeError::UnestablishedAssemblyFact {
+                        assembled: Box::new(resource.clone()),
+                        fact: Box::new(fact),
                     }));
                 }
                 if let Some(diagnostic) = error.loan_diagnostic(LoanRefusalOperation::Plan) {

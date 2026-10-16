@@ -643,12 +643,14 @@ fn candidate_composite_view_with_an_unestablished_fact_is_refused() {
     );
     let (_, transfer) = plan_adapter_lend(&function);
     let error = transfer.expect_err("an unestablished body fact is refused");
-    let CRuntimeError::LoanRefusal(diagnostic) = &error else {
+    // Assembling the view is a fold, so the refusal names the instance and
+    // the body fact it could not establish rather than a missing loan.
+    let CRuntimeError::UnestablishedAssemblyFact { assembled, .. } = &error else {
         panic!("{error}");
     };
     assert_eq!(
-        diagnostic.category(),
-        crate::kernel::loans::LoanRefusalCategory::Missing
+        assembled.as_ref(),
+        &CResourceFact::view_composite("cell".into(), vec![CValue::pointer(pointer())])
     );
     // The same adapter with a fact the call already establishes is
     // accepted, so the refusal above is the fact check and not the shape.
