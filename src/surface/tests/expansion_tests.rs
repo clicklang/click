@@ -15815,11 +15815,10 @@ fn normalize_using_c_pointer_equality_expands_and_rechecks() {
     }
     let reversed = source.replace("ensures a == c;", "ensures c == a;");
     verify_c0_sources(&reversed, &c_sources).expect("symmetric transitivity should verify");
-    let unavailable = source.replace("using { }", "using { a == c; }");
-    assert!(
-        verify_c0_sources(&unavailable, &c_sources).is_err(),
-        "graph success cannot excuse an unavailable cited premise"
-    );
+    let derived = source.replace("using { }", "using { a == c; }");
+    verify_c0_sources(&derived, &c_sources).expect("a cited pointer congruence is known");
+    let unavailable = source.replace("using { }", "using { a != c; }");
+    assert!(verify_c0_sources(&unavailable, &c_sources).is_err());
     let false_goal = source.replace("ensures a == c;", "ensures a != c;");
     assert!(verify_c0_sources(&false_goal, &c_sources).is_err());
 }
@@ -15875,7 +15874,11 @@ fn normalize_using_graph_conditions_expands_and_rechecks() {
         )
         .is_err()
     );
-    let unavailable = source.replacen("using { }", "using { a + 1 == b + 1; }", 1);
+    // This congruence is known from a == b even when it was not separately
+    // recorded. A cited premise uses the same scoped equality lookup.
+    let derived = source.replacen("using { }", "using { a + 1 == b + 1; }", 1);
+    verify_c0_sources(&derived, &c_sources).expect("cited congruence is already known");
+    let unavailable = source.replacen("using { }", "using { a + 1 == b + 2; }", 1);
     assert!(verify_c0_sources(&unavailable, &c_sources).is_err());
     let negated = source.replace("== b + 1 { 7 } else { 0 }", "!= b + 1 { 0 } else { 7 }");
     verify_c0_sources(&negated, &c_sources)
@@ -15922,12 +15925,11 @@ fn normalize_using_int32_equality_expands_and_rechecks() {
         )
         .is_err()
     );
-    let unavailable = source.replacen("using { }", "using { a == c; }", 1);
-    assert_ne!(unavailable, source);
-    assert!(
-        verify_c0_sources(&unavailable, &c_sources).is_err(),
-        "a graph consequence is not an exactly available cited premise"
-    );
+    let derived = source.replacen("using { }", "using { a == c; }", 1);
+    assert_ne!(derived, source);
+    verify_c0_sources(&derived, &c_sources).expect("a cited int32 congruence is known");
+    let unavailable = source.replacen("using { }", "using { a != c; }", 1);
+    assert!(verify_c0_sources(&unavailable, &c_sources).is_err());
     let (_, choose) = source.split_once("theorem choose").unwrap();
     let choose = format!("theorem choose{choose}");
     let unknown = choose.replace("requires b == c;", "");

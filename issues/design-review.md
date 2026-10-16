@@ -140,16 +140,19 @@ switch removed when the default flips, and the kernel decides Integer
 comparisons of machine observations through their native comparisons.
 Under the directive, `bounded-pool`'s `pool_init` verifies with its bridge
 lemmas removed; the next blocker is population counts, which are still
-`int32` machine sums. Step 3 has started: a count with ruled-out overflow
-observes as the exact Integer sum or difference, count comparisons widen
-under the directive, `simp` selects Integer equalities as rewrites, and an
-Integer equality over 32-bit observations files its wrapped word equality
-for built-in checks. `pool_init`, `pool_destroy` and `pool_zero_pipeline`
-now verify under the directive. In `pool_checkout`, `auto` does not carry
-the kernel's consumed-member bound `count >= 1` to Integer (the bridge
-theorem applies by hand), and the closing ledger fold is not yet
-investigated. Next: those, the rest of the pool, then the migration file
-by file and the flip.
+`int32` machine sums. Step 3 has started: `auto` proves that an in-range
+machine `+` or `-` is the Integer operation (`integer_operation_identity`),
+using native comparisons as Integer facts and machine type ranges, so
+`ensures result == x - 1;` verifies from `requires 1 <= x;` with no bridge
+lemma. A count with ruled-out overflow observes as the exact Integer sum or
+difference, count comparisons widen under the directive, `simp` selects
+Integer equalities as rewrites, and an Integer equality over 32-bit
+observations files its wrapped word equality for built-in checks.
+`pool_init`, `pool_destroy` and `pool_zero_pipeline` now verify under the
+directive. In `pool_checkout`, `auto` did not carry the kernel's
+consumed-member bound `count >= 1` to Integer (the bridge theorem applies
+by hand), and the closing ledger fold is not yet investigated. Next:
+those, the rest of the pool, then the migration file by file and the flip.
 
 Afterwards, delete the `machine_integer` and `integer` lemmas Integer
 arithmetic makes unnecessary, complete the families that remain, and give

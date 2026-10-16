@@ -23,6 +23,7 @@ mod integer_bound_exclusion;
 mod integer_cast_identity;
 mod integer_division_bounds;
 mod integer_multiply_order;
+pub(crate) mod integer_operation_identity;
 mod integer_polynomial_identity;
 mod integer_product_bounds;
 mod integer_quotient_bound;

@@ -208,6 +208,12 @@ pub(in crate::surface) fn special_plan_to_surface_certificate(
                     result: goal.clone(),
                 }
             }
+            KernelNode::IntegerOperationIdentity { bounds, .. } => {
+                SpecialArithmeticNode::IntegerOperationIdentity {
+                    bounds: bounds.clone(),
+                    result: goal.clone(),
+                }
+            }
             KernelNode::IntegerProductBounds { bounds, .. } => {
                 SpecialArithmeticNode::IntegerProductBounds {
                     bounds: bounds.clone(),
@@ -285,6 +291,7 @@ fn cited_premise_indices(node: &mut SpecialArithmeticNode) -> Vec<&mut usize> {
         | SpecialArithmeticNode::IntegerPolynomialIdentity { bounds, .. }
         | SpecialArithmeticNode::IntegerQuotientShift { bounds, .. }
         | SpecialArithmeticNode::IntegerCastIdentity { bounds, .. }
+        | SpecialArithmeticNode::IntegerOperationIdentity { bounds, .. }
         | SpecialArithmeticNode::UnsignedSumBound { bounds, .. }
         | SpecialArithmeticNode::SignedDefined { bounds, .. } => bounds.iter_mut().collect(),
         SpecialArithmeticNode::PointerTranslation {
@@ -402,7 +409,8 @@ fn term_mentions_pointer(term: &Bitvector32Term, target: &crate::kernel::Pointer
     let mut pending = vec![term];
     while let Some(current) = pending.pop() {
         match current {
-            Bitvector32Term::PointerAddress(pointer) => {
+            Bitvector32Term::PointerAddress(pointer)
+            | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
                 if bounded_pointer_equal(pointer, target) {
                     return true;
                 }
@@ -688,10 +696,14 @@ fn bounded_term_work(root: &Bitvector32Term) -> bool {
                 pending.push(right);
             }
             Bitvector32Term::UInt32From64(value) => pending.push(value),
-            Bitvector32Term::PointerAddress(pointer) if !bounded_offset_work(&pointer.offset) => {
+            Bitvector32Term::PointerAddress(pointer)
+            | Bitvector32Term::ObjectPointerAddress(pointer, _)
+                if !bounded_offset_work(&pointer.offset) =>
+            {
                 return false;
             }
             Bitvector32Term::PointerAddress(pointer)
+            | Bitvector32Term::ObjectPointerAddress(pointer, _)
                 if !bounded_pointer_block_work(&pointer.block) =>
             {
                 return false;
@@ -734,7 +746,10 @@ fn bounded_term_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
             (Bitvector32Term::Int64Constant(a), Bitvector32Term::Int64Constant(b)) if a == b => {}
             (Bitvector32Term::UInt64Constant(a), Bitvector32Term::UInt64Constant(b)) if a == b => {}
             (Bitvector32Term::Variable(a), Bitvector32Term::Variable(b)) if a == b => {}
-            (Bitvector32Term::PointerAddress(_), Bitvector32Term::PointerAddress(_)) => {
+            (
+                Bitvector32Term::PointerAddress(_) | Bitvector32Term::ObjectPointerAddress(_, _),
+                Bitvector32Term::PointerAddress(_) | Bitvector32Term::ObjectPointerAddress(_, _),
+            ) => {
                 return false;
             }
             (
@@ -804,10 +819,16 @@ fn alignment_shape(condition: &ConditionTerm) -> Option<(&crate::kernel::Pointer
         return None;
     };
     let (pointer, mask) = match (left.as_ref(), right.as_ref()) {
-        (Bitvector32Term::PointerAddress(pointer), mask)
-        | (mask, Bitvector32Term::PointerAddress(pointer)) => {
-            (pointer, bounded_u64_constant(mask)?)
-        }
+        (
+            Bitvector32Term::PointerAddress(pointer)
+            | Bitvector32Term::ObjectPointerAddress(pointer, _),
+            mask,
+        )
+        | (
+            mask,
+            Bitvector32Term::PointerAddress(pointer)
+            | Bitvector32Term::ObjectPointerAddress(pointer, _),
+        ) => (pointer, bounded_u64_constant(mask)?),
         _ => return None,
     };
     let alignment = mask.checked_add(1)?;

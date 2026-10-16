@@ -870,6 +870,41 @@ and remainder narrowing, modular caller framing, offline artifacts, expansion,
 and retained audit. The source profile remains unchanged; the current artifact schema is 45.
 
 
+## In-range machine sums and differences
+
+The `integer_operation_identity` node in the `rules` family proves that a
+machine `+` or `-` that does not wrap is the same operation on its operands'
+Integer values: `to_integer(a + b) == to_integer(a) + to_integer(b)`, or with
+`-`, in either orientation. The operation is an `int`, `unsigned int`,
+`int64` or `uint64` addition or subtraction, and each operand is observed in
+that same type. Two named premises `lo <= S` and `S <= hi` bound the stated
+Integer result `S` by constants inside the type's range, in that order. The
+kernel recomputes `S` from the observed operation and reads only the two
+named premises (`mdtests/an_in_range_machine_difference_is_its_integer_difference.md`,
+`mdtests/an_operation_identity_bound_outside_its_type_is_refused.md`).
+
+The Integer certificate's `type_range => MIN <= to_integer(v);` (or
+`to_integer(v) <= MAX`) states the range of a machine observation's type,
+with the type's exact endpoint. It needs no premise.
+
+An Integer certificate premise that compares exact observations of one
+machine type, such as `1 <= to_integer(x)`, is also available when its native
+comparison (`1u32 <= x`) is: the two hold together, which is the converse of
+filing the native comparison beside an Integer fact.
+
+`auto` uses all three. When the Integer facts leave its refutation a
+counterexample, it retries with the facts' native comparisons read as
+Integer ones and with the type range of each machine observation. When that
+also fails, it may assume the identity of each machine `+` or `-` it sees;
+for each identity the refutation uses, it proves the two bounds with the
+solver, applies `integer_operation_identity`, and then proves the goal. So
+under `arithmetic "integer";`, `ensures result == x - 1;` for an unsigned
+`x - 1u` verifies from `requires 1 <= x;` alone
+(`mdtests/auto_proves_an_in_range_machine_sum_is_its_integer_sum.md`). The
+retries run only after a miss, so a proof that needs none keeps its
+certificate, and identities do not nest: a bound that needs another
+identity is not proved this way.
+
 ## Bounded polynomial identities and quotient shifts
 
 The explicit `rules` node

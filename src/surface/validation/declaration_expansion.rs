@@ -1642,6 +1642,11 @@ fn expand_declared_resource_certificate(
                                     result: proposition(result)?,
                                 }
                             }
+                            IntegerCertificateNode::TypeRange { result } => {
+                                IntegerCertificateNode::TypeRange {
+                                    result: proposition(result)?,
+                                }
+                            }
                             IntegerCertificateNode::NegatedGoal { result } => {
                                 IntegerCertificateNode::NegatedGoal {
                                     result: proposition(result)?,
@@ -1685,6 +1690,12 @@ fn expand_declared_resource_certificate(
                     Ok(match node {
                         SpecialArithmeticNode::IntegerCastIdentity { bounds, result } => {
                             SpecialArithmeticNode::IntegerCastIdentity {
+                                bounds,
+                                result: proposition(result)?,
+                            }
+                        }
+                        SpecialArithmeticNode::IntegerOperationIdentity { bounds, result } => {
+                            SpecialArithmeticNode::IntegerOperationIdentity {
                                 bounds,
                                 result: proposition(result)?,
                             }

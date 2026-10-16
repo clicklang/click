@@ -500,6 +500,9 @@ pub enum Bitvector32Term {
     /// is interpreted as address arithmetic; tag bits are handled by checked
     /// rewrites on top of this term.
     PointerAddress(Box<Pointer>),
+    /// The same numeric address with checked source object-class evidence.
+    /// The destination type of a later cast never supplies this class.
+    ObjectPointerAddress(Box<Pointer>, crate::kernel::effective_type::CAccessClass),
     IntegerToMachine {
         value: SharedIntegerTerm,
         destination: MachineIntegerType,

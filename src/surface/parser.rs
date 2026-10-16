@@ -9654,6 +9654,15 @@ impl Parser {
                     self.expect(Token::Semicolon)?;
                     nodes.push(SpecialArithmeticNode::IntegerCastIdentity { bounds, result });
                 }
+                "integer_operation_identity" => {
+                    self.expect_ident_spelling("bounds")?;
+                    let bounds =
+                        self.parse_certificate_index_list("integer operation bound premise")?;
+                    self.expect(Token::FatArrow)?;
+                    let result = self.parse_proposition()?;
+                    self.expect(Token::Semicolon)?;
+                    nodes.push(SpecialArithmeticNode::IntegerOperationIdentity { bounds, result });
+                }
                 "integer_product_bounds" => {
                     self.expect_ident_spelling("bounds")?;
                     let bounds =
@@ -10291,6 +10300,12 @@ impl Parser {
                     let result = self.parse_proposition()?;
                     self.expect(Token::Semicolon)?;
                     nodes.push(IntegerCertificateNode::Trivial { result });
+                }
+                "type_range" => {
+                    self.expect(Token::FatArrow)?;
+                    let result = self.parse_proposition()?;
+                    self.expect(Token::Semicolon)?;
+                    nodes.push(IntegerCertificateNode::TypeRange { result });
                 }
                 "negated_goal" => {
                     self.expect(Token::FatArrow)?;

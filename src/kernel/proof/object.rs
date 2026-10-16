@@ -906,7 +906,25 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             .focused_proposition()
             .ok_or(PropositionCloseError::NotProposition)?;
         for (index, premise) in premises.iter().enumerate() {
-            if !facts.listed_premise_available(premise, &[], false) {
+            // An Integer comparison of exact observations of one machine
+            // type holds exactly when its native comparison does, so that
+            // listed native fact also supplies it.
+            let native = || match premise {
+                Proposition::ConditionIs(condition, value) => {
+                    crate::kernel::assumptions::native_comparison_of_integer_observation(
+                        condition, *value,
+                    )
+                    .is_some_and(|(native, truth)| {
+                        facts.listed_premise_available(
+                            &Proposition::ConditionIs(native, truth),
+                            &[],
+                            false,
+                        )
+                    })
+                }
+                _ => false,
+            };
+            if !facts.listed_premise_available(premise, &[], false) && !native() {
                 return Err(PropositionCloseError::IntegerArithmeticPremiseUnavailable(
                     index,
                 ));

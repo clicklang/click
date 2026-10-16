@@ -956,6 +956,9 @@ fn write_arithmetic_certificate(
             IntegerCertificateNode::Trivial { result } => {
                 format!("trivial => {};", source_click_proposition(result))
             }
+            IntegerCertificateNode::TypeRange { result } => {
+                format!("type_range => {};", source_click_proposition(result))
+            }
             IntegerCertificateNode::NegatedGoal { result } => {
                 format!("negated_goal => {};", source_click_proposition(result))
             }
@@ -1002,6 +1005,15 @@ fn write_special_arithmetic_certificate(
         let text = match node {
             SpecialArithmeticNode::IntegerCastIdentity { bounds, result } => format!(
                 "integer_cast_identity bounds [{}] => {};",
+                bounds
+                    .iter()
+                    .map(usize::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                source_click_proposition(result)
+            ),
+            SpecialArithmeticNode::IntegerOperationIdentity { bounds, result } => format!(
+                "integer_operation_identity bounds [{}] => {};",
                 bounds
                     .iter()
                     .map(usize::to_string)

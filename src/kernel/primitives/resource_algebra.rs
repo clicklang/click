@@ -1188,7 +1188,8 @@ fn collect_memory_load_work<'a>(
                         ));
                         work.push(MemoryLoadFootprintWork::Offset(&pointer.offset, depth + 1));
                     }
-                    Bitvector32Term::PointerAddress(pointer) => {
+                    Bitvector32Term::PointerAddress(pointer)
+                    | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
                         work.push(MemoryLoadFootprintWork::Offset(&pointer.offset, depth + 1));
                     }
                     crate::kernel::binary_machine_term!(left, right)
