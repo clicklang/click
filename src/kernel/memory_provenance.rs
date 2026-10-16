@@ -2321,6 +2321,82 @@ pub(in crate::kernel) fn typed_range_disjoint_from_pointer_evidence(
     Some(RangeDisjointFromPointerEvidence::ForwardOffset { offset, positive })
 }
 
+/// Shared cheap byte-separation rule for cache retention and read-over-store.
+/// Numeric address geometry is consulted before separation authority: a known
+/// partial overlap invalidates an old partition just as an equal base does.
+/// Stated authority is indexed by the two anchors, not their shared C block.
+pub(in crate::kernel) fn indexed_store_byte_separation_evidence(
+    write: &Pointer,
+    write_bytes: u32,
+    pointer: &Pointer,
+    load_bytes: u32,
+    assumptions: &PureFactContext,
+) -> Option<MemoryDagHopJustification> {
+    use crate::kernel::reasoning::AccessByteOverlap;
+    let numeric = assumptions.numeric_access_byte_overlap(write, write_bytes, pointer, load_bytes);
+    match numeric {
+        Some(AccessByteOverlap::Overlaps) => return None,
+        Some(AccessByteOverlap::Separate) => {
+            return Some(MemoryDagHopJustification::StoreAddressByteSeparation);
+        }
+        _ => {}
+    }
+    if write.block == pointer.block
+        && crate::kernel::reasoning::exact_access_byte_overlap(
+            write,
+            write_bytes,
+            pointer,
+            load_bytes,
+        ) == Some(AccessByteOverlap::Separate)
+    {
+        return Some(MemoryDagHopJustification::StoreAddressByteSeparation);
+    }
+    if assumptions.pointers_proven_equal_ignoring_memory_separation(write, pointer) {
+        return None;
+    }
+    assumptions
+        .anchored_memory_separation_candidates(write, pointer)
+        .find_map(|proposition| {
+            crate::instrumentation::record_deterministic_work(1);
+            let (left, right) = proposition.memory_separation()?;
+            let (orientation, write_membership, load_membership) = if let (Some(w), Some(r)) = (
+                AccessInRangeEvidence::for_access(write, write_bytes, left, assumptions),
+                AccessInRangeEvidence::for_access(pointer, load_bytes, right, assumptions),
+            ) {
+                (StoreSeparatedRangeOrientation::WriteLeftLoadRight, w, r)
+            } else if let (Some(w), Some(r)) = (
+                AccessInRangeEvidence::for_access(write, write_bytes, right, assumptions),
+                AccessInRangeEvidence::for_access(pointer, load_bytes, left, assumptions),
+            ) {
+                (StoreSeparatedRangeOrientation::WriteRightLoadLeft, w, r)
+            } else {
+                return None;
+            };
+            if assumptions.memory_ranges_overlap_after_base_equality(left, right) {
+                return None;
+            }
+            crate::kernel::record_implicit_reasoning_provenance(assumptions, proposition);
+            Some(MemoryDagHopJustification::StoreSeparatedRanges {
+                authority: StoreSeparatedRangesAuthority::ExactProposition(proposition.clone()),
+                left: left.clone(),
+                right: right.clone(),
+                orientation,
+                write_membership,
+                load_membership,
+            })
+        })
+        .or_else(|| {
+            owned_composition_store_separated_evidence_impl(
+                write,
+                write_bytes,
+                pointer,
+                load_bytes,
+                assumptions,
+                true,
+            )
+        })
+}
+
 pub(in crate::kernel) fn typed_store_separated_ranges_evidence(
     write: &Pointer,
     write_bytes: u32,
@@ -2501,6 +2577,24 @@ pub(in crate::kernel) fn owned_composition_store_separated_evidence(
     load_bytes: u32,
     assumptions: &PureFactContext,
 ) -> Option<MemoryDagHopJustification> {
+    owned_composition_store_separated_evidence_impl(
+        write,
+        write_bytes,
+        pointer,
+        load_bytes,
+        assumptions,
+        false,
+    )
+}
+
+fn owned_composition_store_separated_evidence_impl(
+    write: &Pointer,
+    write_bytes: u32,
+    pointer: &Pointer,
+    load_bytes: u32,
+    assumptions: &PureFactContext,
+    indexed_only: bool,
+) -> Option<MemoryDagHopJustification> {
     if assumptions.resource_compositions.is_empty()
         || crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
             write,
@@ -2527,7 +2621,9 @@ pub(in crate::kernel) fn owned_composition_store_separated_evidence(
                             .composition_members
                             .listed_under(
                                 write_bases.iter().chain(&load_bases),
-                                [&write.block, &pointer.block],
+                                [&write.block, &pointer.block]
+                                    .into_iter()
+                                    .filter(|_| !indexed_only),
                             )
                             .into_iter(),
                     ),
@@ -2545,7 +2641,11 @@ pub(in crate::kernel) fn owned_composition_store_separated_evidence(
                                 },
                             )
                         })
-                        .or_else(|| resources.owned_memory_member_containing_pointer(pointer))
+                        .or_else(|| {
+                            (!indexed_only)
+                                .then(|| resources.owned_memory_member_containing_pointer(pointer))
+                                .flatten()
+                        })
                 };
                 let (write_entry, left) = member(write, &write_bases)?;
                 let (load_entry, right) = member(pointer, &load_bases)?;

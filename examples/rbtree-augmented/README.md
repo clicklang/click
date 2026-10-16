@@ -281,15 +281,17 @@ through arbitrary ancestors and writable erase integration remain unfinished.
 
 
 `rbtree_size_insert_context_color_flip.click` and its mirrored counterpart
-extend the four-node flip beneath a nonnull black parent with an arbitrary
-owned outer ancestor context and arbitrary sibling trees. The loop moves past
+prove a flip beneath a nonnull black parent with arbitrary owned children of
+the red focus, symbolic cached sizes at the focus, parent, and grandparent,
+and an arbitrary owned outer ancestor context with arbitrary sibling trees.
+The parent's other child remains empty and the uncle is a leaf. The loop moves past
 the two inner frames, stops at the black parent, and uses the previously
 proved `restore_sized_context` to return the whole root tree. The postcondition
 states its exact model as the unchanged outer context filled with the recolored
 subtree; cached counts and links are preserved throughout. The ranking measure
 is the actual context depth, reduced by two on the continuing path. This covers
-a single flip followed by a black-parent exit, not repeated flips through red
-ancestors or non-root rotations.
+a single flip followed by a black-parent exit. Repeated flips through red
+ancestors remain unfinished.
 
 
 `rbtree_size_change_child.click` now checks the insertion translation unit's

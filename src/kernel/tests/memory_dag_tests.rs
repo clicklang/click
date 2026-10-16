@@ -3925,3 +3925,136 @@ fn seeded_scalar_read_keeps_its_predecessor_cell_version() {
         );
     }
 }
+
+#[test]
+fn numeric_address_byte_gaps_preserve_cache_and_read_history() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let p = Pointer::symbolic(Variable(970_101));
+    let q = Pointer::symbolic(Variable(970_102));
+    for shift in [0, 4, 8, 16] {
+        let premise = Proposition::ConditionIs(
+            ConditionTerm::uint64_equal(
+                Bitvector32Term::pointer_address(q.clone()),
+                Bitvector32Term::pointer_address(p.offset_by_bytes(shift)),
+            ),
+            true,
+        );
+        let context = PureFactContext::new().assume_proposition(premise.clone());
+        // Equal physical addresses do not grant pointer provenance.
+        assert!(!context.pointers_known_equal(&q, &p.offset_by_bytes(shift)));
+        let before = intern_c_memory(CMemory::new().store(
+            p.clone(),
+            CValue::UInt64(Bitvector32Term::UInt64Constant(17)),
+        ));
+        let cache = before
+            .memory()
+            .without_possible_aliasing_cells(&q, 8, &context);
+        assert_eq!(cache.has_known_cell_at(&p), shift >= 8, "gap {shift}");
+        let after = intern_c_memory(cache.store(
+            q.clone(),
+            CValue::UInt64(Bitvector32Term::UInt64Constant(9)),
+        ));
+        let history = recorded_load_history(&before, &after, &p, LoadKind::Bits64, &context);
+        assert_eq!(
+            matches!(history, LoadHistory::OneVersion(_)),
+            shift >= 8,
+            "gap {shift}: {history:?}"
+        );
+        if shift >= 8 {
+            let missing = context.without_exact_fact(&premise);
+            assert!(
+                crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(
+                    &q, 8, &p, 8, &missing,
+                )
+                .is_none()
+            );
+        }
+    }
+}
+
+#[test]
+fn anchored_byte_separation_checks_full_width_and_scope() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let p = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(970_111)),
+    };
+    let q = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(970_112)),
+    };
+    let separation = Proposition::CResourceSeparate {
+        left: Box::new(CResource::Memory(memory_range(p.clone(), 0, 2))),
+        right: Box::new(CResource::Memory(memory_range(q.clone(), 0, 2))),
+    };
+    let context = PureFactContext::new().assume_proposition(separation.clone());
+    let check = |context: &PureFactContext, bytes| {
+        crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(
+            &q, 8, &p, bytes, context,
+        )
+        .is_some()
+    };
+    assert!(check(&context, 8));
+    assert!(!check(&context, 16));
+    assert!(!check(&PureFactContext::new(), 8));
+    assert!(!check(&context.without_exact_fact(&separation), 8));
+    let overlapping = context.assume_condition(
+        ConditionTerm::uint64_equal(
+            Bitvector32Term::pointer_address(q.clone()),
+            Bitvector32Term::pointer_address(p.offset_by_bytes(4)),
+        ),
+        true,
+    );
+    assert!(!check(&overlapping, 8));
+}
+
+#[test]
+fn owned_byte_separation_survives_an_unknown_numeric_displacement() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let p = Pointer::symbolic(Variable(970_141));
+    let q = Pointer::symbolic(Variable(970_142));
+    let owners = Proposition::CResourceComposition(
+        ResourceContext::new()
+            .unchecked_with_fact(CResourceFact::own_memory(memory_range(p.clone(), 0, 2)))
+            .unchecked_with_fact(CResourceFact::own_memory(memory_range(q.clone(), 0, 2))),
+    );
+    let context = PureFactContext::new()
+        .assume_proposition(owners.clone())
+        .assume_condition(
+            ConditionTerm::uint64_equal(
+                Bitvector32Term::pointer_address(q.clone()),
+                Bitvector32Term::UInt64Add(
+                    Box::new(Bitvector32Term::pointer_address(p.clone())),
+                    Box::new(Bitvector32Term::Variable(Variable(970_143))),
+                ),
+            ),
+            true,
+        );
+    assert!(!context.address_connected_objects(&q).is_empty());
+    let before = intern_c_memory(CMemory::new().store(
+        p.clone(),
+        CValue::UInt64(Bitvector32Term::UInt64Constant(17)),
+    ));
+    let cache = before
+        .memory()
+        .without_possible_aliasing_cells(&q, 8, &context);
+    assert!(cache.has_known_cell_at(&p));
+    let after = intern_c_memory(cache.store(
+        q.clone(),
+        CValue::UInt64(Bitvector32Term::UInt64Constant(9)),
+    ));
+    assert!(matches!(
+        recorded_load_history(&before, &after, &p, LoadKind::Bits64, &context),
+        LoadHistory::OneVersion(_)
+    ));
+    assert!(
+        crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(
+            &q,
+            8,
+            &p,
+            8,
+            &context.with_only_proposition_facts(&[])
+        )
+        .is_none()
+    );
+}

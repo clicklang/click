@@ -88,6 +88,8 @@ pub(crate) struct MemoryDagHop {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::kernel) enum MemoryDagHopJustification {
     StoreDistinctBlocks,
+    /// Full byte geometry in the maintained numeric-address classes.
+    StoreAddressByteSeparation,
     /// The store's full address equals `write` in this checking context;
     /// exact byte geometry at that spelling misses the complete read.
     StoreAliasedByteSeparation {
@@ -422,6 +424,31 @@ impl MemoryDagHopJustification {
                 CMemoryDerivation::Store { pointer: write, .. }
                     if write.blocks_proven_distinct(pointer)
             ),
+            Self::StoreAddressByteSeparation => {
+                let CMemoryDerivation::Store {
+                    pointer: write,
+                    value,
+                    ..
+                } = derivation
+                else {
+                    return false;
+                };
+                assumptions
+                    .numeric_access_byte_overlap(write, value.byte_width(), pointer, bytes)
+                    .or_else(|| {
+                        (write.block == pointer.block)
+                            .then(|| {
+                                crate::kernel::reasoning::exact_access_byte_overlap(
+                                    write,
+                                    value.byte_width(),
+                                    pointer,
+                                    bytes,
+                                )
+                            })
+                            .flatten()
+                    })
+                    == Some(crate::kernel::reasoning::AccessByteOverlap::Separate)
+            }
             Self::StoreAliasedByteSeparation { write: aligned } => {
                 let CMemoryDerivation::Store {
                     pointer: write,

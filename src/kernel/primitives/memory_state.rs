@@ -5915,16 +5915,14 @@ impl CMemory {
                     &normalized_cell_pointer,
                 ))
             {
-                // Object-wide address aliases are conservative. A same-block
-                // exact byte gap still proves this cell untouched; reuse the
-                // same geometry as read-over-store rather than losing that fact.
-                return if normalized_cell_pointer.block == normalized_pointer.block
-                    && crate::kernel::reasoning::exact_access_byte_overlap(
-                        &normalized_cell_pointer,
-                        crate::kernel::reasoning::cell_access_byte_width(cell_value),
-                        &normalized_pointer,
-                        bytes,
-                    ) == Some(crate::kernel::reasoning::AccessByteOverlap::Separate)
+                return if crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(
+                    &normalized_pointer,
+                    bytes,
+                    &normalized_cell_pointer,
+                    crate::kernel::reasoning::cell_access_byte_width(cell_value),
+                    assumptions,
+                )
+                .is_some()
                 {
                     CachedValueFate::Kept
                 } else {
@@ -6017,13 +6015,14 @@ impl CMemory {
                     &normalized_cell_pointer,
                 ))
             {
-                return if normalized_cell_pointer.block == normalized_pointer.block
-                    && crate::kernel::reasoning::exact_access_byte_overlap(
-                        &normalized_cell_pointer,
-                        cell_type.byte_width().max(1),
-                        &normalized_pointer,
-                        bytes,
-                    ) == Some(crate::kernel::reasoning::AccessByteOverlap::Separate)
+                return if crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(
+                    &normalized_pointer,
+                    bytes,
+                    &normalized_cell_pointer,
+                    cell_type.byte_width().max(1),
+                    assumptions,
+                )
+                .is_some()
                 {
                     CachedValueFate::Kept
                 } else {

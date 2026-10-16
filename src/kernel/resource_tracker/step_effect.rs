@@ -667,6 +667,16 @@ fn store_cell_effect(
         // Retain the selected spelling, then recheck equality and all bytes
         // when consuming the hop; no alias/history search enters the proof.
         hop(MemoryDagHopJustification::StoreAliasedByteSeparation { write: aligned })
+    } else if let Some(justification) =
+        crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(
+            write,
+            value.byte_width(),
+            pointer,
+            bytes,
+            assumptions,
+        )
+    {
+        hop(justification)
     } else if explicit_dag_check_active()
         && let Some(justification) = typed_store_separated_ranges_evidence(
             write,
