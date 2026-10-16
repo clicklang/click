@@ -2483,13 +2483,15 @@ fn expanded_library_names_resolve_and_audit() {
             String::from_utf8_lossy(&expanded.stderr)
         );
         let source = String::from_utf8(expanded.stdout).unwrap();
-        assert!(
-            source
-                .split("using {")
-                .skip(1)
-                .all(|rest| !rest.trim_start().starts_with('}')),
-            "{source}"
-        );
+        // A premise-free application retains an explicit empty premise list
+        // in its certificate. The full path must still resolve on recheck;
+        // dropping that list could turn a different application into search.
+        if fixture == "qualified_library_names.md" {
+            assert!(
+                source.contains("apply(click::list::append_left_identity(xs)) using {"),
+                "{source}"
+            );
+        }
         let rewritten = std::env::temp_dir().join(format!(
             "click-expanded-library-{}-{fixture}",
             std::process::id()
