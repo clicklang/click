@@ -2807,7 +2807,7 @@ impl PureFactContext {
         right: &Pointer,
         right_bytes: u32,
     ) -> Option<crate::kernel::reasoning::AccessByteOverlap> {
-        if self.wide_pointer_alias_endpoints_by_object.is_empty() {
+        if !self.equality_graph.has_wide_pointer_sources() {
             return None;
         }
         let (left, right) = self.equality_graph.numeric_address_spellings(left, right);
