@@ -684,8 +684,11 @@ fn checks_population_authority_exchange(
         &before.instance_field_scope.loan_dependencies,
         &after.instance_field_scope.loan_dependencies,
     ) || !same_bindings
-        || !Arc::ptr_eq(&before.locals.bindings, &after.locals.bindings)
-        || !Arc::ptr_eq(&before.locals.slots, &after.locals.slots)
+        || !before
+            .locals
+            .bindings
+            .shares_root_with(&after.locals.bindings)
+        || !before.locals.slots.shares_root_with(&after.locals.slots)
         || before.memory.diagnostic_identity() != after.memory.diagnostic_identity()
         || before.loan_ledger != after.loan_ledger
         || before.loan_participant != after.loan_participant
@@ -897,8 +900,11 @@ fn checks_population_member_exchange(
         &before.instance_field_scope.loan_dependencies,
         &after.instance_field_scope.loan_dependencies,
     ) || !same_bindings
-        || !Arc::ptr_eq(&before.locals.bindings, &after.locals.bindings)
-        || !Arc::ptr_eq(&before.locals.slots, &after.locals.slots)
+        || !before
+            .locals
+            .bindings
+            .shares_root_with(&after.locals.bindings)
+        || !before.locals.slots.shares_root_with(&after.locals.slots)
         || before.memory.diagnostic_identity() != after.memory.diagnostic_identity()
         || before.loan_ledger != after.loan_ledger
         || before.loan_participant != after.loan_participant
@@ -1774,8 +1780,14 @@ impl CheckedResourceRewrite {
             .same_storage_roots(after_state.memory())
             || before_state.population_access != after_state.population_access
             || !same_bindings
-            || !Arc::ptr_eq(&before_state.locals.bindings, &after_state.locals.bindings)
-            || !Arc::ptr_eq(&before_state.locals.slots, &after_state.locals.slots)
+            || !before_state
+                .locals
+                .bindings
+                .shares_root_with(&after_state.locals.bindings)
+            || !before_state
+                .locals
+                .slots
+                .shares_root_with(&after_state.locals.slots)
             || !Arc::ptr_eq(
                 &before_state.instance_field_scope.storage,
                 &after_state.instance_field_scope.storage,
@@ -2259,8 +2271,14 @@ impl CheckedResourceRewrite {
                     _ => false,
                 };
                 if !same_bindings
-                    || !Arc::ptr_eq(&before_state.locals.bindings, &after_state.locals.bindings)
-                    || !Arc::ptr_eq(&before_state.locals.slots, &after_state.locals.slots)
+                    || !before_state
+                        .locals
+                        .bindings
+                        .shares_root_with(&after_state.locals.bindings)
+                    || !before_state
+                        .locals
+                        .slots
+                        .shares_root_with(&after_state.locals.slots)
                     || !Arc::ptr_eq(
                         &before_state.instance_field_scope.storage,
                         &after_state.instance_field_scope.storage,

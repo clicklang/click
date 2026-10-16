@@ -5507,8 +5507,10 @@ impl CFunctionOutcome {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CLocalEnvironment {
-    pub(super) bindings: std::sync::Arc<BTreeMap<String, CLocalBinding>>,
-    pub(super) slots: std::sync::Arc<BTreeMap<Pointer, String>>,
+    /// Persistent, so binding one name copies one search path rather than
+    /// every binding: a frame of N locals bound one at a time costs N log N.
+    pub(super) bindings: crate::persistent::PersistentMap<String, CLocalBinding>,
+    pub(super) slots: crate::persistent::PersistentMap<Pointer, String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
