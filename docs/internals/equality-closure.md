@@ -84,6 +84,42 @@ condition graph before filing selected proposition edges; it never rebuilds
 inherited scalar edges only to discard them. Clearing a model-free proposition
 fragment retains its existing scalar graph.
 
+## Ordinary integer expression congruence
+
+Mathematical `Integer` equalities enter the shared classes. Congruence follows
+negation, addition, subtraction, multiplication, truncating quotient/remainder,
+typed machine observations, and pure calls. Integer arguments and constructor
+fields register those same terms. Thus model equality reaches a C-valued getter,
+its `to_integer` observation, an enclosing count expression, and an admitted
+Integer comparison without an explicit rewrite.
+
+Machine expressions reuse the common unary/binary operator decomposition.
+Integer arithmetic, bitwise operations, shifts, integral conversions, and
+`IntegerToMachine` applications retain their operator and carrier width;
+conversions also retain source/destination types. Existing specialized addition,
+read, and unsigned 64-bit application nodes remain in use. Pure-call arguments
+cover `_Bool` and every supported signed/unsigned integer type, including 128-bit
+values, with distinct C type tags. Floating-point expressions remain opaque.
+
+A wide shift's independently promoted count has no source-type tag in the term
+representation. Its complete count spelling remains opaque rather than guessing
+a width. Congruence still propagates equalities of the shifted value. Binder-bearing
+matches/folds and legacy untyped pure applications also remain opaque.
+
+Integer constructors fold machine literal observations. Registration therefore
+connects each selected Integer literal to its representable typed machine
+observations, at most ten fixed formats, using checked range conversion. No
+truncation or signed/unsigned identification is inferred. This makes a late
+machine equality to a literal reach the canonical Integer numeral.
+
+Registration visits only selected expressions; shared Integer DAG nodes are
+visited once per registration. Curried applications use the existing indexed
+parent-use propagation for late equalities. There is no ambient-fact scan,
+function unfolding, cancellation, or arithmetic search. Existing branch,
+withdrawal, and snapshot restrictions apply unchanged. Regressions live in
+`integer_tests`, `ordinary_expression_tests`, and their scaling counterparts;
+`mdtests/integer_count_model_congruence.md` exercises source-level count lookup.
+
 ## Predicate and callback pointer matching
 
 Semantic predicate lookup and callback-contract selection query the same
@@ -1637,9 +1673,9 @@ selects the exact address/interpretation bucket before comparing snapshots.
 
 Literal values and conditional/load witnesses are annotations of shared term
 roots. Folding uses application dependency hooks and reindexes affected uses
-when a class learns a literal. The supported nonliteral congruence theory is
-unchanged: operators added for literal folding do not acquire unrestricted
-congruence. Full-width constant discovery first asks the shared class engine;
+when a class learns a literal. Ordinary integer operators use those same applications for nonliteral
+congruence, with typed curried applications for the remaining conversions and
+wide operators. Full-width constant discovery first asks the shared class engine;
 contextual folding and implicit-provenance collection retain exact source
 premises. None of these operations grants memory access or snapshot transport.
 

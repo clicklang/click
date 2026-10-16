@@ -1726,5 +1726,10 @@ explicit count equalities connect the opened ancestor frames to the recolored
 models. Both orientations and both augmented wrappers verify, and both
 12-site expansion audits pass. Whole-root ownership, exact `sized_plug` models,
 and context-depth termination are preserved without changing the Linux C.
-The parent's other child remains empty and the uncle remains a leaf; arbitrary
-neighbor subtrees and repeated flips through red ancestors are still pending.
+Both sidecars now also accept an arbitrary owned other child of the parent and
+arbitrary owned children of the red uncle. Parent and grandparent cache values
+remain symbolic. The three count obligations in each orientation close with
+`assumption()` through the shared Integer/model equality classes, without
+explicit alias rewrites. Each sidecar verifies all three insertion claims.
+Repeated color-flip propagation through a red outer ancestor and writable erase
+integration remain unfinished.
