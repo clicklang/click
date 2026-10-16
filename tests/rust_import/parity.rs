@@ -20,7 +20,7 @@ fn inventory() -> Vec<Entry> {
     serde_json::from_str(include_str!("../../design/charon-trial/parity.json")).unwrap()
 }
 
-/// Read the hash-pinned historical proofs through today's signature spelling.
+/// Read hash-pinned historical proofs through today's signature and tactic spelling.
 /// This is a fixture adapter, not a production compatibility mode. The files
 /// and their proof scripts stay unchanged, including their original proof gaps.
 pub(super) fn frozen_proof_input(source: &str) -> String {
@@ -31,7 +31,7 @@ pub(super) fn frozen_proof_input(source: &str) -> String {
             .any(|entry| entry.frozen_sha256.as_deref() == Some(hash.as_str())),
         "only a hash-pinned historical fixture may use this adapter"
     );
-    let mut input = source.to_string();
+    let mut input = source.replace("close_invariants by", "close_invariants() by");
     for (old, current) in [
         (
             "int32 sum(const uint8* bytes, uint64 bytes_len)",
@@ -70,9 +70,12 @@ fn charon_frozen_proof_adapter_preserves_the_contracts_and_pinned_bytes() {
     {
         let source = fs::read_to_string(root.join(entry.frozen_sidecar.as_ref().unwrap())).unwrap();
         let input = frozen_proof_input(&source);
-        // The original C spelling remains valid for C. Compare the parsed
-        // contracts to ensure the fixture adaptation changes only spelling.
-        let c_input = source.replace(".rs\"", ".c\"") + FROZEN_LIBRARY_IMPORTS;
+        // Keep the original C signatures and update the shared tactic spelling
+        // on both sides. The parsed contracts must still agree.
+        let c_input = source
+            .replace(".rs\"", ".c\"")
+            .replace("close_invariants by", "close_invariants() by")
+            + FROZEN_LIBRARY_IMPORTS;
         assert_eq!(
             click::surface::parse(&input).unwrap().function_blocks(),
             click::surface::parse(&c_input).unwrap().function_blocks(),

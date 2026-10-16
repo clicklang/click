@@ -29,20 +29,20 @@ theorem strict_integer_order(value: Integer) {
 theorem strict_signed_order(value: int32) {
     requires value < 100;
     ensures value < value + 1 by {
-        apply(int32_increment_strictly_increases(value, 100)) using { value < 100; }
+        apply(int32_increment_strictly_increases(value, 100)) using { value < 100; };
     }
     ensures value + 1 > value by {
-        apply(int32_increment_strictly_increases(value, 100)) using { value < 100; }
+        apply(int32_increment_strictly_increases(value, 100)) using { value < 100; };
     }
 }
 
 theorem unsigned_order(value: uint32, upper: uint32) {
     requires value < upper;
     ensures value + 1u32 <= upper by {
-        apply(uint32_increment_upper_bound(value, upper)) using { value < upper; }
+        apply(uint32_increment_upper_bound(value, upper)) using { value < upper; };
     }
     ensures upper >= value + 1u32 by {
-        apply(uint32_increment_upper_bound(value, upper)) using { value < upper; }
+        apply(uint32_increment_upper_bound(value, upper)) using { value < upper; };
     }
 }
 ```

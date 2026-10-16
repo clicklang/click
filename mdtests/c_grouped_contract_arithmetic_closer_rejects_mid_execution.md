@@ -17,7 +17,7 @@ int32 bump(int32 n) {
     requires n <= 100;
     ensures result <= 101;
 } by {
-    arithmetic() using { 0 <= n; n <= 100; }
+    arithmetic() using { 0 <= n; n <= 100; };
     execute();
     simp();
 }

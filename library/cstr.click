@@ -43,7 +43,7 @@ theorem readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
         cases {
             left < right => {
                 instantiate(forall (k: uint64) { k < right implies bytes[k] != '\0' }, left)
-                    using { left < right; }
+                    using { left < right; };
                 contradiction(bytes[left] == '\0');
             }
             not (left < right) => {
@@ -57,7 +57,7 @@ theorem readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
                 cases {
                     right < left => {
                         instantiate(forall (k: uint64) { k < left implies bytes[k] != '\0' }, right)
-                            using { right < left; }
+                            using { right < left; };
                         contradiction(bytes[right] == '\0');
                     }
                     not (right < left) => {
@@ -67,7 +67,7 @@ theorem readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
                         apply(uint64_less_equal_and_not_less_than_implies_equal(left, right)) using {
                             left <= right;
                             not (left < right);
-                        }
+                        };
                     }
                 }
             }

@@ -529,7 +529,7 @@ the pivot is therefore an ordinary proof of one disjunct, closed with
 prints, not a search the kernel
 performs. `close_invariants()` plans those members with the same bounded
 search it uses for the invariants; where it misses, spell them in a
-`close_invariants by { ... }` body, whose `both { ... } and { ... }` structure
+`close_invariants() by { ... }` body, whose `both { ... } and { ... }` structure
 follows the member order above. An explicit closer body written before a
 `decreases` clause existed fails promptly, and the diagnostic names the
 ranking obligations the bundle now carries.
@@ -544,7 +544,7 @@ this path took to reach the back edge, each in whichever of those two
 spellings holds where the member is proved. An inequality that is in scope but
 is none of those is not a candidate, so a member that needs one fails at that
 member instead of being closed by a search over ambient facts; cite it by hand
-in a `close_invariants by { ... }` body, or declare it as an invariant.
+in a `close_invariants() by { ... }` body, or declare it as an invariant.
 <!-- verified-example: mdtests/c_decreases_lexicographic_loop.md -->
 ```click
 loop {
@@ -993,7 +993,7 @@ theorem countdown_is_zero(n: int32) {
         induct(n) as ih;
         if n <= 0 {
             unfold(countdown(n));
-            normalize() using { n <= 0; }
+            normalize() using { n <= 0; };
         } else {
             apply(ih(n - 1));
             unfold(countdown(n));

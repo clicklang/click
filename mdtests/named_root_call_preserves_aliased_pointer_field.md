@@ -60,8 +60,8 @@ void probe(struct node *p, struct root *root) {
   have p->right == sid;
   have sid->left == nid;
   have nid->left == rid;
-  have rid == p->right->left->left by { normalize() using { p->right == sid; sid->left == nid; nid->left == rid; } }
-  have nid == p->right->left by { normalize() using { p->right == sid; sid->left == nid; } }
+  have rid == p->right->left->left by { normalize() using { p->right == sid; sid->left == nid; nid->left == rid; }; }
+  have nid == p->right->left by { normalize() using { p->right == sid; sid->left == nid; }; }
   have separate(memory(p->right->left->left->left), memory(p->right->left->left)) by assumption();
   have separate(memory(rid->left), memory(nid->left)) by { transport(separate(memory(p->right->left->left->left), memory(p->right->left->left)), separate(memory(rid->left), memory(nid->left))) using { separate(memory(p->right->left->left->left), memory(p->right->left->left)); rid == p->right->left->left; nid == p->right->left; }; }
   have separate(memory(p->right->left->right), memory(p->right->left->left->right)) by assumption();

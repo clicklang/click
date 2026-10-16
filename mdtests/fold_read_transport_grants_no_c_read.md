@@ -33,7 +33,7 @@ int32 set_then_read(int32 *v, int32 i) {
             zeros(v, 0, i) == 0
         ) using {
             at(entry, zeros(v, 0, i)) == 0;
-        }
+        };
         assumption();
     }
     execute();

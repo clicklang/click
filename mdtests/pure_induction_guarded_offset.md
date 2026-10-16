@@ -21,22 +21,22 @@ theorem guarded_count(base: int32, n: int32) {
     ensures guarded_countdown(n) == 0 and base + n == base + n by {
         induct(n) as ih;
         if n <= 0 {
-            both { unfold(guarded_countdown(n)); normalize() using { n <= 0; } }
+            both { unfold(guarded_countdown(n)); normalize() using { n <= 0; }; }
             and { normalize(); }
         } else {
             have 0 < n;
-            have 0 <= n - 1 by { arithmetic() using { 0 < n; } }
-            have n - 1 < n by { arithmetic() using { 0 < n; } }
+            have 0 <= n - 1 by { arithmetic() using { 0 < n; }; }
+            have n - 1 < n by { arithmetic() using { 0 < n; }; }
             have defined(n - 1);
-            have base <= 2147483647 - (n - 1) by { arithmetic() using { 0 <= base; base <= 1000000; 0 <= n; n <= 1000000; 0 < n; } }
-            have n - 1 <= 1000000 by { arithmetic() using { 0 < n; n <= 1000000; } }
+            have base <= 2147483647 - (n - 1) by { arithmetic() using { 0 <= base; base <= 1000000; 0 <= n; n <= 1000000; 0 < n; }; }
+            have n - 1 <= 1000000 by { arithmetic() using { 0 < n; n <= 1000000; }; }
             apply(int32_nonnegative_add_within_max_is_defined(base, n - 1));
             have defined(base + (n - 1)) by assumption();
             apply(ih(n - 1));
             both {
                 unfold(guarded_countdown(n));
                 rewrite(guarded_countdown(n - 1) == 0);
-                normalize() using { not(n <= 0); }
+                normalize() using { not(n <= 0); };
             } and { normalize(); }
         }
     }

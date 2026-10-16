@@ -148,7 +148,7 @@ theorem compute_size_restores_subtree_size()
                                         to_integer(1) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                         sized_counts_valid(left_model) == 1;
                                         sized_counts_valid(right_model) == 1;
-                                    }
+                                    };
                                 }
                                 have result == 0 or sized_value(checked.model) == sized_value(old(tree.model)) by {
                                     rewrite(checked.model == SizedTree::Node(identity, parent, color, 1, left_model, right_model));
@@ -173,7 +173,7 @@ theorem compute_size_restores_subtree_size()
                                         to_integer(1) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                         to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model));
                                         to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model));
-                                    }
+                                    };
                                 }
                                 simp();
                             },
@@ -226,7 +226,7 @@ theorem compute_size_restores_subtree_size()
                                         to_integer(1 + rv) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                         sized_counts_valid(left_model) == 1;
                                         sized_counts_valid(right_model) == 1;
-                                    }
+                                    };
                                 }
                                 have result == 0 or sized_value(checked.model) == sized_value(old(tree.model)) by {
                                     rewrite(checked.model == SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model));
@@ -251,7 +251,7 @@ theorem compute_size_restores_subtree_size()
                                         to_integer(1 + rv) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                         to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model));
                                         to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model));
-                                    }
+                                    };
                                 }
                                 simp();
                             },
@@ -322,7 +322,7 @@ theorem compute_size_restores_subtree_size()
                                         to_integer(1 + lv) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                         sized_counts_valid(left_model) == 1;
                                         sized_counts_valid(right_model) == 1;
-                                    }
+                                    };
                                 }
                                 have result == 0 or sized_value(checked.model) == sized_value(old(tree.model)) by {
                                     rewrite(checked.model == SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model));
@@ -347,7 +347,7 @@ theorem compute_size_restores_subtree_size()
                                         to_integer(1 + lv) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                         to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model));
                                         to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model));
-                                    }
+                                    };
                                 }
                                 simp();
                             },
@@ -410,7 +410,7 @@ theorem compute_size_restores_subtree_size()
                                         to_integer(1 + lv + rv) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                         sized_counts_valid(left_model) == 1;
                                         sized_counts_valid(right_model) == 1;
-                                    }
+                                    };
                                 }
                                 have result == 0 or sized_value(checked.model) == sized_value(old(tree.model)) by {
                                     rewrite(checked.model == SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model));
@@ -435,7 +435,7 @@ theorem compute_size_restores_subtree_size()
                                         to_integer(1 + lv + rv) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                         to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model));
                                         to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model));
-                                    }
+                                    };
                                 }
                                 simp();
                             },

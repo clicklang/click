@@ -5088,7 +5088,7 @@ fn block_tactic_entries(
 }
 
 /// Records each smart tactic written inside a smart site that owns its body
-/// (a smart `have`, `both`, or `close_invariants by`) as an alias selecting
+/// (a smart `have`, `both`, or `close_invariants() by`) as an alias selecting
 /// that site: the body is expanded as part of the site, never on its own.
 fn smart_container_alias_entries(
     tokens: &[SourceToken],

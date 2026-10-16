@@ -18,8 +18,8 @@ theorem bounded_pointer_association(base: const uint8*, index: int32) {
  requires 0 <= index;
  requires index <= 22200;
  ensures (base + index) + 4 == base + (index + 4) by {
-  have defined(index + 4) by { simp() using { 0 <= index; index <= 22200; } }
-  normalize() using { defined(index + 4); }
+  have defined(index + 4) by { simp() using { 0 <= index; index <= 22200; }; }
+  normalize() using { defined(index + 4); };
  }
 }
 theorem readable_byte_pointer(base: const uint8*) {

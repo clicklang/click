@@ -47,20 +47,20 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
                 if k < at(before, i) {
                     instantiate(forall (k: uint64) { k < at(before, i) implies at(before, bytes[k]) == at(before, value) }, k) using {
                         k < at(before, i);
-                    }
+                    };
                     transport(at(before, bytes[k]) == at(before, value), bytes[k] == value) using {
                         at(before, bytes[k]) == at(before, value);
                         k < at(before, i);
-                    }
+                    };
                 } else {
                     have k <= at(before, i) by {
-                        arithmetic() using { k < at(before, i) + 1u64; at(before, i) < length; }
+                        arithmetic() using { k < at(before, i) + 1u64; at(before, i) < length; };
                     }
                     have k == at(before, i) by {
                         apply(uint64_less_equal_and_not_less_than_implies_equal(k, at(before, i))) using {
                             k <= at(before, i);
                             not k < at(before, i);
-                        }
+                        };
                     }
                     rewrite(k == at(before, i));
                     simp();
@@ -73,7 +73,7 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
         apply(uint64_less_equal_and_not_less_than_implies_equal(at(loop(0).exit, i), length)) using {
             at(loop(0).exit, i) <= length;
             not at(loop(0).exit, i) < length;
-        }
+        };
     }
     have forall (k: uint64) { k < length implies bytes[k] == value } by {
         intro();
@@ -84,7 +84,7 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
         }
         instantiate(forall (k: uint64) { k < at(loop(0).exit, i) implies at(loop(0).exit, bytes[k]) == at(loop(0).exit, value) }, k) using {
             k < at(loop(0).exit, i);
-        }
+        };
         assumption();
     }
     assumption();

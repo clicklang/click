@@ -10,7 +10,7 @@ theorem derived_strict_observer(left: int32, right: int32) {
             apply(int32_to_integer_less_equal_implies_less_equal(right, left));
             contradiction(left < right);
         } else {
-            arithmetic() using { not (to_integer(right) <= to_integer(left)); }
+            arithmetic() using { not (to_integer(right) <= to_integer(left)); };
         }
     }
 }

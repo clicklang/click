@@ -28,7 +28,7 @@ int32 probe(int32 n) {
     apply(start_below(1, n)) using {
         1 <= 0;
         1 <= n;
-    }
+    };
     simp();
 }
 ```

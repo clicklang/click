@@ -48,7 +48,7 @@ void clear(int32* values, uint32 n) {
                 apply(uint32_less_than_less_equal_transitive(at(statement(3).entry, x), n, 4u32)) using {
                     at(statement(3).entry, x) < n;
                     n <= 4u32;
-                }
+                };
             }
             close_invariants();
         }

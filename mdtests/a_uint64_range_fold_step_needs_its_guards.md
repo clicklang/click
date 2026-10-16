@@ -16,7 +16,7 @@ function total(lo: uint64, hi: uint64) -> Integer {
 theorem step(lo: uint64, hi: uint64) {
     requires lo <= hi;
     ensures total(lo, hi + 1u64) == total(lo, hi) + to_integer(hi) by {
-        peel(total(lo, hi + 1u64)) using { lo <= hi; }
+        peel(total(lo, hi + 1u64)) using { lo <= hi; };
         simp();
     }
 }

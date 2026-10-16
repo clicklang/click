@@ -41,7 +41,7 @@ void sweep(int32 visited[], int32 n) {
     step();
     have 0 <= 0;
     have unmarked(visited, 0, 0) == 0 by {
-        peel(unmarked(visited, 0, 0)) using { 0 <= 0; }
+        peel(unmarked(visited, 0, 0)) using { 0 <= 0; };
         normalize();
     }
     loop {
@@ -54,7 +54,7 @@ void sweep(int32 visited[], int32 n) {
         preserve by {
             mark iter;
             have i < 2147483647 by {
-                arithmetic() using { i < n; n <= 1073741823; }
+                arithmetic() using { i < n; n <= 1073741823; };
             }
             step();
             have unmarked(visited, 0, i) == 0 by {
@@ -63,14 +63,14 @@ void sweep(int32 visited[], int32 n) {
                     unmarked(visited, 0, i) == 0
                 ) using {
                     at(iter, unmarked(visited, 0, i)) == 0;
-                }
+                };
                 assumption();
             }
             have unmarked(visited, 0, i + 1) == 0 by {
                 peel(unmarked(visited, 0, i + 1)) using {
                     0 <= (i + 1) - 1;
                     (i + 1) - 1 < 2147483647;
-                }
+                };
                 simp();
             }
             step();

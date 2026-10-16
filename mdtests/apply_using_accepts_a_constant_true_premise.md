@@ -37,7 +37,7 @@ int32 probe(int32 n) {
     apply(start_below(0, n)) using {
         0 <= 0;
         0 <= n;
-    }
+    };
     simp();
 }
 ```

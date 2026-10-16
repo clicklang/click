@@ -65,7 +65,7 @@ void spin(struct cell* node, int32 n) {
             match c.model {
                 Sign::Neg(value) => {
                     have Sign::Neg(value) == old(c.model) by {
-                        simp() using { c.model == Sign::Neg(value); c.model == old(c.model); }
+                        simp() using { c.model == Sign::Neg(value); c.model == old(c.model); };
                     }
                     unfold(c);
                     step();
@@ -73,25 +73,25 @@ void spin(struct cell* node, int32 n) {
                 },
                 Sign::Pos(value) => {
                     have Sign::Pos(value) == old(c.model) by {
-                        simp() using { c.model == Sign::Pos(value); c.model == old(c.model); }
+                        simp() using { c.model == Sign::Pos(value); c.model == old(c.model); };
                     }
                     unfold(c);
                     step();
                     let c = fold(cell(node), { model: Sign::Pos(value) });
                 },
             }
-            close_invariants by {
+            close_invariants() by {
                 both {
                     apply(int32_increment_greater_equal_lower_bound(at(statement(3).entry, i), at(statement(3).entry, 0), at(statement(3).entry, n))) using {
                         at(statement(3).entry, i) >= at(statement(3).entry, 0);
                         at(statement(3).entry, i) < at(statement(3).entry, n);
-                    }
+                    };
                 } and {
                     both {
                         intro();
                         apply(int32_increment_upper_bound(at(statement(3).entry, i), at(statement(3).entry, n))) using {
                             at(statement(3).entry, i) < at(statement(3).entry, n);
-                        }
+                        };
                     } and {
                         both {
                             intro();

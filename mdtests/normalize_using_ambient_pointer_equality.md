@@ -13,7 +13,7 @@ theorem pointer_transitivity() {
         intro();
         intro();
         intro();
-        normalize() using { }
+        normalize() using { };
     }
 }
 ```

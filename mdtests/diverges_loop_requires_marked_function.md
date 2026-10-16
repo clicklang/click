@@ -22,7 +22,7 @@ int32 wait_for_zero(int32 x) {
         initialize by simp();
         preserve by {
             step();
-            close_invariants by { simp(); }
+            close_invariants() by { simp(); }
         }
     }
     step();

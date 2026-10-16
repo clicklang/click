@@ -25,7 +25,7 @@ theorem concrete_explicit(child: int32) {
         have not(Tree::Node(child) == Tree::Empty) by normalize();
         apply(nonempty(Tree::Node(child))) using {
             not(Tree::Node(child) == Tree::Empty);
-        }
+        };
         assumption();
     }
 }

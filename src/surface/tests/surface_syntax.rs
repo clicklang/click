@@ -4096,7 +4096,7 @@ fn a_diverges_function_never_yields_termination_evidence() {
                             apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }
                         }
                         step();
-                        close_invariants by {
+                        close_invariants() by {
                             both { arithmetic() using { 0 <= n; } }
                             and {
                                 both { arithmetic() using { 0 <= n; } }
@@ -4110,7 +4110,7 @@ fn a_diverges_function_never_yields_termination_evidence() {
                     initialize by simp();
                     preserve by {
                         step();
-                        close_invariants by { simp(); }
+                        close_invariants() by { simp(); }
                     }
                 }
                 step();

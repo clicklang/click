@@ -66,7 +66,7 @@ void clear_data(struct region* region) {
                 }
                 transport(at(opened, region->arena->occupied[k]) == old(region->arena->occupied[k]), region->arena->occupied[k] == old(region->arena->occupied[k])) using {
                     at(opened, region->arena->occupied[k]) == old(region->arena->occupied[k]);
-                }
+                };
             }
             simp();
         }

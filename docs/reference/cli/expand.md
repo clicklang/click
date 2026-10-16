@@ -62,7 +62,7 @@ starts more than one tactic.
 
 A smart tactic that owns its body is one site. The `simp` written in a smart
 `have` (`have P by { simp(); }`) or anywhere inside a smart `both` or
-`close_invariants by` bundle selects that enclosing tactic, and expansion
+`close_invariants() by` bundle selects that enclosing tactic, and expansion
 rewrites the whole site. A `have` whose body mixes several tactics is not a
 site itself; each smart tactic written in its body is, and expanding one
 rewrites exactly that tactic's source, leaving its neighbors as written. The

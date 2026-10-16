@@ -59,7 +59,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                         arithmetic() using {
                             rb_subtree_size(sized_shape(sub_model)) <= rb_subtree_size(sized_shape(sized_plug(sized_path_context(path_model), sub_model)));
                             rb_subtree_size(sized_shape(sized_plug(sized_path_context(path_model), sub_model))) <= 2147483647;
-                        }
+                        };
                     }
                     let { focus: dirty, path: path } = unfold(walk);
                     let { prepared: dirty } = prepare_sized_focus(rb, { tree: dirty });
@@ -117,7 +117,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                                 have sized_walk_rank(walk.model) < sized_walk_rank(at(iteration, walk.model)) by {
                                     rewrite(sized_walk_rank(at(iteration, walk.model)) == sized_context_depth(sized_path_context(path_model)) + 1); assumption();
                                 }
-                                close_invariants by { simp(); }
+                                close_invariants() by { simp(); }
                             },
                         }
                     }

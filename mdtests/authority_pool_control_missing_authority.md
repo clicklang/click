@@ -40,7 +40,7 @@ void checkout(struct pool* pool, struct payload* p) {
             0 <= pool->checked_out;
             1 <= count(slot(pool));
             pool->capacity == pool->checked_out + count(slot(pool));
-        }
+        };
         unfold(slot(pool));
         step();
         fold(item(pool, p));

@@ -853,7 +853,7 @@ fn tactic_certificate_treats_an_omitted_nested_proof_as_auto() {
 }
 
 /// `close_invariants()` plans the back-edge bundle body, so it is smart and
-/// no certificate can hold it. The retained step is `close_invariants by`,
+/// no certificate can hold it. The retained step is `close_invariants() by`,
 /// which carries that planned body explicitly.
 #[test]
 fn tactic_certificate_rejects_a_bare_invariant_closure() {

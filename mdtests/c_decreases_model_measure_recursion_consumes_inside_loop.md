@@ -52,7 +52,7 @@ theorem tree_size_is_nonnegative(m: Tree) {
                 arithmetic() using {
                     0 <= tree_size(child);
                     0 <= tree_size(sibling);
-                }
+                };
             }
         }
     }
@@ -100,19 +100,19 @@ void destroy(struct tree* t) {
                             tree_size(x.model) == tree_size(child_model) + tree_size(sibling_model) + 1;
                             tree_size(x.model) <= tree_size(old(x.model));
                             0 <= tree_size(sibling_model);
-                        }
+                        };
                     }
                     have tree_size(sibling_model) < tree_size(x.model) by {
                         arithmetic() using {
                             tree_size(x.model) == tree_size(child_model) + tree_size(sibling_model) + 1;
                             0 <= tree_size(child_model);
-                        }
+                        };
                     }
                     have tree_size(sibling_model) <= tree_size(old(x.model)) by {
                         arithmetic() using {
                             tree_size(sibling_model) < tree_size(x.model);
                             tree_size(x.model) <= tree_size(old(x.model));
-                        }
+                        };
                     }
                     let { child: c, sibling: s } = unfold(x);
                     have 0 <= tree_size(c.model) by {

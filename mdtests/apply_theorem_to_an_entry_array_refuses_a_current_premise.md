@@ -46,7 +46,7 @@ int32 clear_head(int32 box[2]) {
         apply(head_small_doubles(old(box))) using {
             0 - 1 < box[0];
             box[0] < 1;
-        }
+        };
         assumption();
     }
 }

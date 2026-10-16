@@ -60,7 +60,7 @@ int32 count_zero_run(int32* a, int32 n) {
                 assumption();
             }
             have i + 1 <= n by {
-                apply(int32_increment_upper_bound(i, n)) using { i < n; }
+                apply(int32_increment_upper_bound(i, n)) using { i < n; };
             }
             branch then { contradiction(a[i] == 0); } else {
                 step();
@@ -73,14 +73,14 @@ int32 count_zero_run(int32* a, int32 n) {
                     0 <= at(iteration, i);
                     at(iteration, i) < n;
                     0 <= n;
-                }
+                };
             }
             have 0 - at(iteration, i) + n - 1 < 0 - at(iteration, i) + n by {
                 arithmetic() using {
                     0 <= at(iteration, i);
                     at(iteration, i) < n;
                     0 <= n;
-                }
+                };
             }
             close_invariants();
         }

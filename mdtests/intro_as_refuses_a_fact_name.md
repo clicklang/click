@@ -10,7 +10,7 @@ theorem t(x: int32) {
     ensures forall (k: int32) { x == 5 } by {
         have five: x == 5;
         intro() as five;
-        normalize() using { x == 5; }
+        normalize() using { x == 5; };
     }
 }
 ```

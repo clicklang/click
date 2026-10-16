@@ -31,7 +31,7 @@ uint32 gcd(uint32 a, uint32 b) {
     have a % b < b by {
         apply(uint32_remainder_less_than_divisor(a, b)) using {
             b != 0u32;
-        }
+        };
     }
     step();
     step();

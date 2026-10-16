@@ -19,7 +19,7 @@ theorem successor_nonnegative(i: int32, n: int32) {
     requires 0 <= i;
     requires i <= n;
     ensures 0 <= i + 1 by {
-        arithmetic() using { 0 <= i; i <= n; }
+        arithmetic() using { 0 <= i; i <= n; };
     }
 }
 

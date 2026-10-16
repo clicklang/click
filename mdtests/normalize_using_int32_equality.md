@@ -13,14 +13,14 @@ void keep(int32 a, int32 b, int32 c) {
     ensures a == c;
 } by {
     execute();
-    normalize() using { }
+    normalize() using { };
 }
 
 theorem choose(a: int32, b: int32, c: int32) {
     requires a == b;
     requires b == c;
     ensures (if c == a { 7 } else { 0 }) == 7 by {
-        normalize() using { }
+        normalize() using { };
     }
 }
 ```

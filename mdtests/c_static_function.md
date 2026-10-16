@@ -41,8 +41,8 @@ int32 run(int32 value) {
     ensures result == value + 2;
 } by {
     let { result: r } = step(add_one(value), {});
-    apply(int32_increment_upper_bound(value, 99)) using { value < 99; }
-    have r < 100 by { arithmetic() using { r == value + 1; value + 1 <= 99; } }
+    apply(int32_increment_upper_bound(value, 99)) using { value < 99; };
+    have r < 100 by { arithmetic() using { r == value + 1; value + 1 <= 99; }; }
     step();
     step();
     simp();

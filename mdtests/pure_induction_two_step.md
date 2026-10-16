@@ -13,7 +13,7 @@ theorem by_two_is_zero(n: int32) {
         induct(n) as ih;
         if n <= 1 {
             unfold(by_two(n));
-            normalize() using { n <= 1; }
+            normalize() using { n <= 1; };
         } else {
             apply(ih(n - 2));
             unfold(by_two(n));

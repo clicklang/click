@@ -7,7 +7,7 @@ theorem refused(pointer: int32*, index: uint64) {
     requires 0 <= (int32)index;
     requires (int32)index <= 1073741823;
     ensures pointer + (int32)index == pointer + index by {
-        simp() using { 0 <= (int32)index; (int32)index <= 1073741823; }
+        simp() using { 0 <= (int32)index; (int32)index <= 1073741823; };
     }
 }
 ```

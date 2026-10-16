@@ -37,7 +37,7 @@ int32 same_value(int32 x, int32 y) {
     requires y == x;
     ensures result == y;
 } by {
-    apply(value_symmetric(x, y)) using { x == y; }
+    apply(value_symmetric(x, y)) using { x == y; };
     execute();
     simp();
 }
@@ -47,7 +47,7 @@ int32 same_cell(struct cell* p, struct cell* q) {
     requires q == p;
     ensures result == q->value;
 } by {
-    apply(cell_symmetric(p, q)) using { p == q; }
+    apply(cell_symmetric(p, q)) using { p == q; };
     execute();
     simp();
 }

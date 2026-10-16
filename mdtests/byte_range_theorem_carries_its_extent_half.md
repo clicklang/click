@@ -20,7 +20,7 @@ theorem apply_cites_the_byte_range_extent(v: uint8[], lo: int32, hi: int32) {
     ensures 0 <= hi - lo by {
         apply(stated_byte_range_extent_is_nonnegative(v, lo, hi)) using {
             viewable(v[lo..hi]);
-        }
+        };
     }
 }
 ```

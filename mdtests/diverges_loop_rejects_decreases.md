@@ -25,7 +25,7 @@ int32 drain(int32 n) diverges {
         initialize by simp();
         preserve by {
             step();
-            close_invariants by { simp(); }
+            close_invariants() by { simp(); }
         }
     }
     step();

@@ -63,13 +63,13 @@ tactic refold_erase_spine(focus: struct rb_node*, anchor: struct rb_node*) {
             }
             apply(plug_parent_consistent_ctx(Context::Left(identity, grandparent, color, sibling_model, erase_context(up_model)), t.model, anchor)) using {
                 rb_parent_consistent(plug(Context::Left(identity, grandparent, color, sibling_model, erase_context(up_model)), t.model), anchor) == 1;
-            }
+            };
             apply(ctx_consistent_left_focus(identity, grandparent, color, sibling_model, erase_context(up_model), t.model, anchor)) using {
                 ctx_consistent(Context::Left(identity, grandparent, color, sibling_model, erase_context(up_model)), t.model, anchor) == 1;
-            }
+            };
             apply(erase_parent_consistent_parent_is(t.model, identity)) using {
                 rb_parent_consistent(t.model, identity) == 1;
-            }
+            };
             let { sibling: s, up: u } = unfold(c);
             let sub = fold(rb_at(identity), { model: RbTree::Node(identity, grandparent, color, old(t.model), sibling_model) }, { left: t, right: s });
             apply(erase_spine_depth_is_nonnegative(up_model));
@@ -84,7 +84,7 @@ tactic refold_erase_spine(focus: struct rb_node*, anchor: struct rb_node*) {
             }
             have erase_spine_depth(u.model) < erase_spine_depth(old(c.model)) by {
                 rewrite(u.model == up_model);
-                arithmetic() using { erase_spine_depth(old(c.model)) == erase_spine_depth(up_model) + 1; }
+                arithmetic() using { erase_spine_depth(old(c.model)) == erase_spine_depth(up_model) + 1; };
             }
             have plug(Context::Left(identity, grandparent, color, sibling_model, erase_context(up_model)), old(t.model)) == plug(erase_context(up_model), RbTree::Node(identity, grandparent, color, old(t.model), sibling_model)) by {
                 unfold(plug(Context::Left(identity, grandparent, color, sibling_model, erase_context(up_model)), old(t.model)));
@@ -125,7 +125,7 @@ tactic open_erase_spine_link(focus: struct rb_node*, parent: struct rb_node*, an
                 rewrite(c.model == EraseSpine::Top);
                 unfold(erase_spine_parent(EraseSpine::Top, anchor)); normalize();
             }
-            have parent == anchor by { normalize() using { } }
+            have parent == anchor by { normalize() using { }; }
             unfold(c);
             have parent != 0;
             let frame = fold(erase_spine_frame(parent, anchor), { model: EraseSpine::Top });
@@ -137,7 +137,7 @@ tactic open_erase_spine_link(focus: struct rb_node*, parent: struct rb_node*, an
                 rewrite(c.model == EraseSpine::Left(identity, grandparent, color, sibling_model, up_model));
                 unfold(erase_spine_parent(EraseSpine::Left(identity, grandparent, color, sibling_model, up_model), anchor)); normalize();
             }
-            have parent == identity by { normalize() using { } }
+            have parent == identity by { normalize() using { }; }
             let { sibling: sibling, up: up } = unfold(c);
             let frame = fold(erase_spine_frame(parent, anchor), {
                 model: EraseSpine::Left(identity, grandparent, color, sibling_model, up_model)
@@ -1175,12 +1175,12 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                                     execute_until(statement(62));
                                                                     have cid->__rb_parent_color == (address(mp) | 1);
                                                                     have aligned(mp, 8);
-                                                                    have ((address(mp) | 1) & 1) == 1 by { arithmetic() using { aligned(mp, 8); } }
+                                                                    have ((address(mp) | 1) & 1) == 1 by { arithmetic() using { aligned(mp, 8); }; }
                                                                     have (cid->__rb_parent_color & 1) == color_bit(Color::Black) by {
                                                                         unfold(color_bit(Color::Black));
                                                                     }
                                                                     have (address(mp) | 1) == address(mp) + ((address(mp) | 1) & 1) by {
-                                                                        arithmetic() using { aligned(mp, 8); }
+                                                                        arithmetic() using { aligned(mp, 8); };
                                                                     }
                                                                     have cid->__rb_parent_color == address(mp) + (cid->__rb_parent_color & 1) by {
                                                                         rewrite(cid->__rb_parent_color == (address(mp) | 1)); assumption();

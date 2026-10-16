@@ -50,12 +50,12 @@ theorem increment_is_guarded_progress() {
         both {
             apply(int32_less_than_transitive(old(cell[0]), 100, 1000)) using {
                 old(cell[0]) < 100;
-            }
+            };
         } and {
             intro();
             both {
                 have not (old(cell[0]) < 0) by {
-                    arithmetic() using { 0 <= old(cell[0]); }
+                    arithmetic() using { 0 <= old(cell[0]); };
                 }
                 intro();
                 contradiction(not (old(cell[0]) < 0));
@@ -63,7 +63,7 @@ theorem increment_is_guarded_progress() {
                 rewrite(cell[0] == old(cell[0]) + 1);
                 apply(int32_increment_strictly_increases(old(cell[0]), 100)) using {
                     old(cell[0]) < 100;
-                }
+                };
             }
         }
     }

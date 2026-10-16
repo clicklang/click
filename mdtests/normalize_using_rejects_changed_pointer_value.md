@@ -47,8 +47,8 @@ void call(struct node* p, struct node* q, int32* anchor) {
     mark before;
     let { b: c } = step(retarget(p, q, anchor), { a: c });
     have p->left == 0;
-    have p->right == 0 by { normalize() using { at(before, p->right) == 0; } }
-    have q->left == p by { normalize() using { } }
+    have p->right == 0 by { normalize() using { at(before, p->right) == 0; }; }
+    have q->left == p by { normalize() using { }; }
     unfold(c);
     execute(); simp();
 }

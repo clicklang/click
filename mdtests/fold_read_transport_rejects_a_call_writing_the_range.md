@@ -43,7 +43,7 @@ void caller(int32 *v, int32 i, int32 n) {
             zeros(at(entry, v), 0, i) == zeros(v, 0, i)
         ) using {
             zeros(at(entry, v), 0, i) == zeros(at(entry, v), 0, i);
-        }
+        };
         assumption();
     }
     execute();

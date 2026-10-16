@@ -223,6 +223,9 @@ fn long_flat_integer_sum_expands_and_rechecks_without_parenthesis_growth() {
     let expanded =
         expand_c0_tactic_source_at(&source, &[], position.line, position.column).unwrap();
     assert!(!expanded.contains("arithmetic()"), "{expanded}");
+    let certificate = expanded.split("arithmetic_certificate {").nth(1).unwrap();
+    let body = certificate.split('}').next().unwrap();
+    assert!(body.lines().all(|line| line.len() <= 100), "{expanded}");
     verify_click_theorems(&expanded).unwrap();
 }
 
@@ -607,7 +610,7 @@ fn an_arms_invariant_closer_expands_with_that_arms_checked_body() {
         "{expanded}"
     );
     assert_eq!(
-        expanded.matches("close_invariants by").count(),
+        expanded.matches("close_invariants() by").count(),
         1,
         "{expanded}"
     );
@@ -8510,7 +8513,7 @@ fn restricted_simp_expands_loadable_subrange_to_explicit_transport() {
          viewable(data[0..length]);\n\
          0 <= index;\n\
          index < length;\n\
-         }\n\
+         };\n\
          }"
     );
     assert!(!expanded_have.contains("simp() using"), "{expanded_have}");

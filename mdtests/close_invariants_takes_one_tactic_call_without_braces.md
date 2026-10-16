@@ -1,7 +1,7 @@
-# `close_invariants by` takes one tactic call without braces
+# `close_invariants() by` takes one tactic call without braces
 
-A one-step body after `close_invariants by` is written as the call alone,
-`close_invariants by normalize();`, as it is after `have` and `ensures`.
+A one-step body after `close_invariants() by` is written as the call alone,
+`close_invariants() by normalize();`, as it is after `have` and `ensures`.
 It is the body `{ normalize(); }`. The bare `by simp();` form is in
 `diverges_perpetual_loop.md`.
 
@@ -24,7 +24,7 @@ int32 wait_for_zero(int32 x) diverges {
         initialize by simp();
         preserve by {
             step();
-            close_invariants by normalize();
+            close_invariants() by normalize();
         }
     }
     step();

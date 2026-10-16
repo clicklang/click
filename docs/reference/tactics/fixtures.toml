@@ -245,7 +245,7 @@ needle = "close_invariants();"
 [[form]]
 id = "close-invariants-by"
 path = "mdtests/loop_invariant_body.md"
-needle = "close_invariants by {"
+needle = "close_invariants() by {"
 
 [[form]]
 id = "rewrite"

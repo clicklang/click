@@ -2018,7 +2018,7 @@ fn ranked_loop_with_unrelated_inequalities(fact_count: usize) -> (String, String
          \x20               apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }\n\
          \x20           }\n\
          \x20           step();\n\
-         \x20           close_invariants by {\n\
+         \x20           close_invariants() by {\n\
          \x20               both { arithmetic() using { 0 <= n; } }\n\
          \x20               and {\n\
          \x20                   both { arithmetic() using { 0 <= n; } }\n\
@@ -3796,7 +3796,7 @@ fn framed_field_cells_loop(cells: usize) -> (String, String) {
          \x20           have 0 <= i by {{ simp(); }}\n\
          \x20           step();\n\
          \x20           step();\n\
-         \x20           close_invariants by {{ {closure} }}\n\
+         \x20           close_invariants() by {{ {closure} }}\n\
          \x20       }}\n\
          \x20   }}\n\
          \x20   execute();\n\

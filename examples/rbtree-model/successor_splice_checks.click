@@ -197,7 +197,7 @@ theorem immediate_successor_rejects_zero_height(erased: struct rb_node*,
         normalize() using {
             is_rb(rb_reparent(splice_black_leaf(l, erased), successor)) == 1;
             not(black_height(rb_reparent(splice_black_leaf(l, erased), successor)) == Nat::Zero);
-        }
+        };
     }
 }
 

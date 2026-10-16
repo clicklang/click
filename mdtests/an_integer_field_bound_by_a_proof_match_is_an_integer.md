@@ -40,7 +40,7 @@ void touch(int32 n) {
                 normalize();
             }
             have wd == 3 by {
-                arithmetic() using { depth(c.model) == wd; depth(c.model) == 3; }
+                arithmetic() using { depth(c.model) == wd; depth(c.model) == 3; };
             }
             step();
             step();

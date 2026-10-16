@@ -33,13 +33,13 @@ void mark_other(int32 a[], int32 b[], int32 n, int32 j) {
 } by {
     have 0 <= 0;
     have icount(a, 0, 0) == 0 by {
-        peel(icount(a, 0, 0)) using { 0 <= 0; }
+        peel(icount(a, 0, 0)) using { 0 <= 0; };
         normalize();
     }
-    have to_integer(a[0]) == 5 by { simp() using { a[0] == 5; } }
+    have to_integer(a[0]) == 5 by { simp() using { a[0] == 5; }; }
     have icount(a, 0, 1) == 5 by {
-        peel(icount(a, 0, 1)) using { 0 <= 0; 0 < 2147483647; }
-        arithmetic() using { icount(a, 0, 0) == 0; to_integer(a[0]) == 5; }
+        peel(icount(a, 0, 1)) using { 0 <= 0; 0 < 2147483647; };
+        arithmetic() using { icount(a, 0, 0) == 0; to_integer(a[0]) == 5; };
     }
     step();
     have icount(a, 0, 1) == 5;

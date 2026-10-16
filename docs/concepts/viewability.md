@@ -169,7 +169,7 @@ fact form:
 ```click
 apply(element_of_a_viewed_range(a, 0, 3, 1)) using {
     viewable(a[0..3]);
-}
+};
 ```
 
 Listing the range cites both of its halves. The application owes the extent
@@ -219,8 +219,8 @@ see a range on its own, state it first and the step that needs it goes through:
 
 <!-- verified-example: mdtests/have_viewable_prefix_of_a_range.md -->
 ```click
-have lo <= hi - 1 by { arithmetic() using { lo < hi; 0 < hi; } }
-have hi - 1 < hi by { arithmetic() using { 0 < hi; } }
+have lo <= hi - 1 by { arithmetic() using { lo < hi; 0 < hi; }; }
+have hi - 1 < hi by { arithmetic() using { 0 < hi; }; }
 ```
 
 <!-- verified-example: mdtests/have_viewable_single_cell.md -->

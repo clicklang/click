@@ -10,9 +10,9 @@ theorem t(x: int32) {
     ensures x == 5 by {
         if x >= 0 {
             have five: x == 5;
-            normalize() using { five; }
+            normalize() using { five; };
         } else {
-            normalize() using { five; }
+            normalize() using { five; };
         }
     }
 }

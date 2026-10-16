@@ -32,7 +32,7 @@ theorem adler_pack_fields(a: uint16, b: uint16) {
    to_integer(((uint32)b << 16) | (uint32)a) == to_integer((uint32)a) + 65536 * to_integer((uint32)b);
    to_integer((uint32)a) == to_integer(a);
    to_integer((uint32)b) == to_integer(b);
-  }
+  };
  }
 }
 
@@ -49,7 +49,7 @@ theorem adler_pack_fields_spec(a: uint16, b: uint16, bytes: uint8[], length: int
    to_integer(((uint32)b << 16) | (uint32)a) == 65536 * to_integer(b) + to_integer(a);
    to_integer(a) == adler_spec_a(bytes, length, a0);
    to_integer(b) == adler_spec_b(bytes, length, a0, b0);
-  }
+  };
  }
 }
 

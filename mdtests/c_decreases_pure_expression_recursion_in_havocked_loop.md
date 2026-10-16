@@ -57,7 +57,7 @@ int32 walk(int32 n) {
                 unfold(level(old(n)));
                 apply(int32_positive_predecessor_strictly_decreases(n)) using {
                     n > 0;
-                }
+                };
                 simp();
             }
             step();

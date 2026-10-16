@@ -32,13 +32,13 @@ int32 caller(int32 a, int32 b) {
         step() {
             requires is_positive(a) == 1 or is_positive(b) == 1 by {
                 have is_positive(a) == 1 by {
-                    unfold(is_positive(a)); normalize() using { a > 0; }
+                    unfold(is_positive(a)); normalize() using { a > 0; };
                 }
                 assumption();
             }
             requires is_positive(b) == 1 or is_positive(a) == 1 by {
                 have is_positive(a) == 1 by {
-                    unfold(is_positive(a)); normalize() using { a > 0; }
+                    unfold(is_positive(a)); normalize() using { a > 0; };
                 }
                 assumption();
             }

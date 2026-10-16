@@ -78,7 +78,7 @@ theorem pointer_instance(xs: TestList<int32*>) {
 theorem scalar_parameter_instance(value: int32) {
     requires value == value;
     ensures value == value by {
-        apply(retain(value, value)) using { value == value; }
+        apply(retain(value, value)) using { value == value; };
         apply(reflexive_via_generic(value));
         assumption();
     }

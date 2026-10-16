@@ -48,7 +48,7 @@ theorem walk_in_range(next: int32[], n: int32, from: int32, fuel: Nat) {
                     }, walk(next, from, previous)) using {
                         0 <= walk(next, from, previous);
                         walk(next, from, previous) < n;
-                    }
+                    };
                     assumption();
                 }
                 unfold(walk(next, from, Nat::Succ(previous)));
@@ -88,7 +88,7 @@ theorem explicit_walk_use(a: int32[], n: int32, from: int32, fuel: Nat) {
             forall (k: int32) {
                 0 <= k and k < n implies 0 <= a[k] and a[k] < n
             };
-        }
+        };
     }
 }
 

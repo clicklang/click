@@ -66,7 +66,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                         apply(int32_less_equal_and_not_less_than_implies_equal(i, p)) using {
                             i <= p;
                             not (i < p);
-                        }
+                        };
                     }
                     have p <= i by {
                         rewrite(i == p);
@@ -82,7 +82,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                         }, i) using {
                             p <= i;
                             i < capacity;
-                        }
+                        };
                         assumption();
                     }
                     have not (occupied[i] == 1) by {
@@ -93,10 +93,10 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                 }
             }
             have i + 1 <= p by {
-                apply(int32_increment_upper_bound(i, p)) using { i < p; }
+                apply(int32_increment_upper_bound(i, p)) using { i < p; };
             }
             have 0 <= i + 1 by {
-                apply(int32_increment_lower_bound(i, 0, p)) using { 0 <= i; i < p; }
+                apply(int32_increment_lower_bound(i, 0, p)) using { 0 <= i; i < p; };
             }
             step();
             have 0 <= i and i <= p;
@@ -106,14 +106,14 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                     0 <= at(iteration, i);
                     at(iteration, i) < p;
                     0 <= p;
-                }
+                };
             }
             have 0 - at(iteration, i) + p - 1 < 0 - at(iteration, i) + p by {
                 arithmetic() using {
                     0 <= at(iteration, i);
                     at(iteration, i) < p;
                     0 <= p;
-                }
+                };
             }
             close_invariants();
         }
@@ -126,7 +126,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                 }, i) using {
                     0 <= i;
                     i < p;
-                }
+                };
                 assumption();
             }
             contradiction(occupied[i] == 1);
@@ -134,16 +134,16 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
             apply(int32_less_equal_and_not_less_than_implies_equal(i, p)) using {
                 i <= p;
                 not (i < p);
-            }
+            };
         }
     }
     mark before_store;
     step();
     have p + 1 <= capacity by {
-        apply(int32_increment_upper_bound(p, capacity)) using { p < capacity; }
+        apply(int32_increment_upper_bound(p, capacity)) using { p < capacity; };
     }
     have 0 <= p + 1 by {
-        apply(int32_increment_lower_bound(p, 0, capacity)) using { 0 <= p; p < capacity; }
+        apply(int32_increment_lower_bound(p, 0, capacity)) using { 0 <= p; p < capacity; };
     }
     have forall (k: int32) {
         0 <= k and k < p + 1 implies occupied[k] == 1
@@ -161,11 +161,11 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                 }, k) using {
                     0 <= k;
                     k < p;
-                }
+                };
                 assumption();
             }
             have k != p by {
-                apply(int32_less_than_implies_not_equal(k, p)) using { k < p; }
+                apply(int32_less_than_implies_not_equal(k, p)) using { k < p; };
             }
             have k != i by {
                 rewrite(i == p);
@@ -174,16 +174,16 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
             transport(at(before_store, occupied[k]) == 1, occupied[k] == 1) using {
                 at(before_store, occupied[k]) == 1;
                 k != i;
-            }
+            };
         } else {
             have k <= p by {
-                apply(int32_less_than_increment_implies_less_equal(k, p)) using { k < p + 1; }
+                apply(int32_less_than_increment_implies_less_equal(k, p)) using { k < p + 1; };
             }
             have k == p by {
                 apply(int32_less_equal_and_not_less_than_implies_equal(k, p)) using {
                     k <= p;
                     not (k < p);
-                }
+                };
             }
             rewrite(k == p);
             simp();
@@ -196,12 +196,12 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
         intro();
         extract(p + 1 <= k);
         extract(k < capacity);
-        apply(int32_increment_strictly_increases(p, capacity)) using { p < capacity; }
+        apply(int32_increment_strictly_increases(p, capacity)) using { p < capacity; };
         apply(int32_increment_less_equal_implies_less_than(p, k)) using {
             p < p + 1;
             p + 1 <= k;
-        }
-        apply(int32_less_than_implies_less_equal(p, k)) using { p < k; }
+        };
+        apply(int32_less_than_implies_less_equal(p, k)) using { p < k; };
         have at(before_store, occupied[k]) == 0 by {
             instantiate(forall (j: int32) {
                 at(before_store, p) <= at(before_store, j) and
@@ -210,7 +210,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
             }, k) using {
                 p <= k;
                 k < capacity;
-            }
+            };
             assumption();
         }
         have i < k by {
@@ -218,12 +218,12 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
             assumption();
         }
         have i != k by {
-            apply(int32_less_than_implies_not_equal(i, k)) using { i < k; }
+            apply(int32_less_than_implies_not_equal(i, k)) using { i < k; };
         }
         transport(at(before_store, occupied[k]) == 0, occupied[k] == 0) using {
             at(before_store, occupied[k]) == 0;
             i != k;
-        }
+        };
     }
     let after = fold(claimed_prefix(data, occupied, capacity), { prefix: p + 1 });
     step();

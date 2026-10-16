@@ -31,16 +31,16 @@ uint32 contribute_early(struct counter* p) {
             arithmetic() using {
                 count(remaining(p)) > 1;
                 count(remaining(p)) <= 3;
-            }
+            };
         }
         have (3 - count(remaining(p))) + 1 == 3 - (count(remaining(p)) - 1) by {
             arithmetic() using {
                 count(remaining(p)) > 1;
                 count(remaining(p)) <= 3;
-            }
+            };
         }
         have count(remaining(p)) - 1 <= 3 by {
-            arithmetic() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; }
+            arithmetic() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; };
         }
         unfold(remaining(p));
         step();

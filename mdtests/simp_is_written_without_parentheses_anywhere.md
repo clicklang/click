@@ -10,7 +10,7 @@ theorem bare_simp_steps(x: int32) {
         simp();
     }
     ensures 0 <= x by {
-        have 0 <= x by { simp() using { 0 <= x; } }
+        have 0 <= x by { simp() using { 0 <= x; }; }
         simp();
     }
 }

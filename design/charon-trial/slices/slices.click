@@ -55,8 +55,8 @@ fn guarded_read(value: &mut i32, bytes: &[u8], index: usize) -> u32 {
     ensures value[0] == old(value[0]);
 } by {
     execute();
-    have index <= 2147483647u64 by { simp() using { index < bytes.len(); bytes.len() <= 2147483647u64; } }
-    have 0 <= (int32)(uint32)index by { simp() using { index <= 2147483647u64; } }
-    have ((int32)(uint32)index) < (int32)(uint32)bytes.len() by { simp() using { index < bytes.len(); bytes.len() <= 2147483647u64; } }
+    have index <= 2147483647u64 by { simp() using { index < bytes.len(); bytes.len() <= 2147483647u64; }; }
+    have 0 <= (int32)(uint32)index by { simp() using { index <= 2147483647u64; }; }
+    have ((int32)(uint32)index) < (int32)(uint32)bytes.len() by { simp() using { index < bytes.len(); bytes.len() <= 2147483647u64; }; }
     simp();
 }

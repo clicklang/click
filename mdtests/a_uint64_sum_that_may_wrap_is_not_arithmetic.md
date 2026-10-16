@@ -12,7 +12,7 @@ The premises here do not bound `i`, so the step is refused, naming the sum.
 theorem step_two(i: uint64, length: uint64) {
     requires i + 1u64 < length;
     ensures i + 2u64 <= length by {
-        arithmetic() using { i + 1u64 < length; }
+        arithmetic() using { i + 1u64 < length; };
     }
 }
 ```

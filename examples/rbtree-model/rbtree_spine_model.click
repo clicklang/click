@@ -37,7 +37,7 @@ theorem erase_spine_depth_is_nonnegative(ctx: EraseSpine) {
             EraseSpine::Left(identity, grandparent, color, sibling_model, up_model) => {
                 apply(ih(up_model));
                 unfold(erase_spine_depth(EraseSpine::Left(identity, grandparent, color, sibling_model, up_model)));
-                arithmetic() using { 0 <= erase_spine_depth(up_model); }
+                arithmetic() using { 0 <= erase_spine_depth(up_model); };
             }
         }
     }
@@ -300,12 +300,12 @@ function erase_anchor_context(anchor: struct rb_node*, frame: EraseAnchorFrame) 
 theorem packed_parent_word(p: struct rb_node*, word: uint64) {
     requires aligned(p, 8);
     ensures (((word & 1) | address(p)) & 1) == (word & 1) by {
-        arithmetic() using { aligned(p, 8); }
+        arithmetic() using { aligned(p, 8); };
     }
     ensures ((word & 1) | address(p)) == address(p) + (((word & 1) | address(p)) & 1) by {
         have (((word & 1) | address(p)) & 1) == (word & 1) by auto();
         rewrite((((word & 1) | address(p)) & 1) == (word & 1));
-        arithmetic() using { aligned(p, 8); }
+        arithmetic() using { aligned(p, 8); };
     }
 }
 

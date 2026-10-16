@@ -11,7 +11,7 @@ theorem size_sum_defined(left: int32, right: int32) {
                 0 <= right;
                 right <= 2147483646;
                 left <= 2147483646 - right;
-            }
+            };
         }
         apply(int32_add_to_integer(1, left));
         apply(int32_subtract_to_integer(2147483647, right));
@@ -22,7 +22,7 @@ theorem size_sum_defined(left: int32, right: int32) {
             arithmetic() using {
                 to_integer(2147483647 - right) == 2147483647 - to_integer(right);
                 to_integer(1 + left) <= to_integer(2147483647 - right);
-            }
+            };
         }
         apply(int32_add_defined_by_integer_bounds(1 + left, right));
         assumption();
@@ -37,7 +37,7 @@ theorem size_sum_as_integer(left: int32, right: int32) {
         arithmetic() using {
             to_integer(1 + left) == 1 + to_integer(left);
             to_integer(1 + left + right) == to_integer(1 + left) + to_integer(right);
-        }
+        };
     }
 }
 

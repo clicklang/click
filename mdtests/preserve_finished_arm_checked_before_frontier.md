@@ -73,12 +73,12 @@ void spin(struct cell* node, int32 n) {
                 },
                 Sign::Pos(value) => {
                     have Sign::Pos(value) == old(c.model) by {
-                        simp() using { c.model == Sign::Pos(value); c.model == old(c.model); }
+                        simp() using { c.model == Sign::Pos(value); c.model == old(c.model); };
                     }
                     unfold(c);
                     step();
                     let c = fold(cell(node), { model: Sign::Pos(value) });
-                    close_invariants by {
+                    close_invariants() by {
                         normalize();
                     }
                 },

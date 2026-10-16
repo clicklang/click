@@ -18,7 +18,7 @@ theorem native_reduction(value: uint32, divisor: uint32) {
 theorem adler_reduction(value: uint32) {
     ensures to_integer(value % 65521u32) <= 65520 by {
         apply(native_reduction(value, 65521u32));
-        arithmetic() using { to_integer(value % 65521u32) < 65521; }
+        arithmetic() using { to_integer(value % 65521u32) < 65521; };
     }
 }
 theorem full_width_reduction() {

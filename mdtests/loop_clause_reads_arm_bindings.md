@@ -69,18 +69,18 @@ int spin(struct node* p, int n) {
                 initialize by simp();
                 preserve by {
                     step();
-                    close_invariants by {
+                    close_invariants() by {
                         both {
                             apply(int32_increment_greater_equal_lower_bound(at(statement(3).entry, i), at(statement(3).entry, 0), at(statement(3).entry, n))) using {
                                 at(statement(3).entry, i) >= at(statement(3).entry, 0);
                                 at(statement(3).entry, i) < at(statement(3).entry, n);
-                            }
+                            };
                         } and {
                             both {
                                 intro();
                                 apply(int32_increment_upper_bound(at(statement(3).entry, i), at(statement(3).entry, n))) using {
                                     at(statement(3).entry, i) < at(statement(3).entry, n);
-                                }
+                                };
                             } and {
                                 both {
                                     intro();

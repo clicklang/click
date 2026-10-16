@@ -94,8 +94,8 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
      have to_integer(sum2) == to_integer(zlib_batch_count(n)) + adler_weighted_sum(old(buf), zlib_batch_count(n), zlib_batch_count(n)) by {
       rewrite(zlib_batch_count(n) == 0); rewrite(adler_weighted_sum(old(buf), 0, 0) == 0); assumption();
      }
-     have to_integer(adler) <= 1 + 255 * to_integer(zlib_batch_count(n)) by { rewrite(zlib_batch_count(n) == 0); arithmetic() using { to_integer(adler) == 1; } }
-     have to_integer(sum2) <= 1415761 * to_integer(zlib_batch_count(n)) by { rewrite(zlib_batch_count(n) == 0); arithmetic() using { to_integer(sum2) == 0; } }
+     have to_integer(adler) <= 1 + 255 * to_integer(zlib_batch_count(n)) by { rewrite(zlib_batch_count(n) == 0); arithmetic() using { to_integer(adler) == 1; }; }
+     have to_integer(sum2) <= 1415761 * to_integer(zlib_batch_count(n)) by { rewrite(zlib_batch_count(n) == 0); arithmetic() using { to_integer(sum2) == 0; }; }
      simp();
     }
     preserve by {
@@ -763,7 +763,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
       have to_integer(n) < at(before_advance, to_integer(n)) by arithmetic() using {
        to_integer(n) == at(before_advance, to_integer(n)) - 1;
       };
-      close_invariants by assumption();
+      close_invariants() by assumption();
      }
     }
    }
@@ -838,7 +838,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     to_integer(len) == 0;
     at(batch_entry, to_integer(len)) == 5552;
    };
-   close_invariants by assumption();
+   close_invariants() by assumption();
   }
  }
  have len < 5552u64 by assumption();

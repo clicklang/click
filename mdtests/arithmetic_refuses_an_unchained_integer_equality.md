@@ -12,7 +12,7 @@ theorem unchained_integer_equalities(t: Integer, a: Integer, b: Integer, x: Inte
         arithmetic() using {
             t == a + x;
             a == b;
-        }
+        };
     }
 }
 ```

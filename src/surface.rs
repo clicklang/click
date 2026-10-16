@@ -4294,7 +4294,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "close-invariants-by",
-        syntax: "close_invariants by",
+        syntax: "close_invariants() by",
         class: "control",
     },
     PublicTacticForm {

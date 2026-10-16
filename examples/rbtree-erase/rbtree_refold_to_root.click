@@ -40,13 +40,13 @@ tactic refold_to_root(focus: struct rb_node*, root: struct rb_root*) {
             }
             apply(plug_parent_consistent_ctx(Context::Left(identity, grandparent, color, sibling_model, up_model), t.model, 0)) using {
                 rb_parent_consistent(plug(Context::Left(identity, grandparent, color, sibling_model, up_model), t.model), 0) == 1;
-            }
+            };
             apply(ctx_consistent_left_focus(identity, grandparent, color, sibling_model, up_model, t.model, 0)) using {
                 ctx_consistent(Context::Left(identity, grandparent, color, sibling_model, up_model), t.model, 0) == 1;
-            }
+            };
             apply(erase_parent_consistent_parent_is(t.model, identity)) using {
                 rb_parent_consistent(t.model, identity) == 1;
-            }
+            };
             let { sibling: s, up: u } = unfold(c);
             let sub = fold(rb_at(identity), { model: RbTree::Node(identity, grandparent, color, old(t.model), sibling_model) }, { left: t, right: s });
             apply(ctx_depth_is_nonnegative(up_model));
@@ -69,13 +69,13 @@ tactic refold_to_root(focus: struct rb_node*, root: struct rb_root*) {
             have rb_parent_consistent(plug(Context::Right(identity, grandparent, color, sibling_model, up_model), t.model), 0) == 1 by auto();
             apply(plug_parent_consistent_ctx(Context::Right(identity, grandparent, color, sibling_model, up_model), t.model, 0)) using {
                 rb_parent_consistent(plug(Context::Right(identity, grandparent, color, sibling_model, up_model), t.model), 0) == 1;
-            }
+            };
             apply(ctx_consistent_right_focus(identity, grandparent, color, sibling_model, up_model, t.model, 0)) using {
                 ctx_consistent(Context::Right(identity, grandparent, color, sibling_model, up_model), t.model, 0) == 1;
-            }
+            };
             apply(erase_parent_consistent_parent_is(t.model, identity)) using {
                 rb_parent_consistent(t.model, identity) == 1;
-            }
+            };
             let { sibling: s, up: u } = unfold(c);
             let sub = fold(rb_at(identity), { model: RbTree::Node(identity, grandparent, color, sibling_model, old(t.model)) }, { left: s, right: t });
             apply(ctx_depth_is_nonnegative(up_model));

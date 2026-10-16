@@ -47,14 +47,14 @@ int32 even(int32 n) {
             unfold(level(n - 1));
             apply(int32_positive_predecessor_is_nonnegative(n)) using {
                 n > 0;
-            }
+            };
         }
         have level(n - 1) < level(n) by {
             unfold(level(n - 1));
             unfold(level(n));
             apply(int32_positive_predecessor_strictly_decreases(n)) using {
                 n > 0;
-            }
+            };
         }
         step();
         step();
@@ -75,14 +75,14 @@ int32 odd(int32 n) {
             unfold(level(n - 1));
             apply(int32_positive_predecessor_is_nonnegative(n)) using {
                 n > 0;
-            }
+            };
         }
         have level(n - 1) < level(n) by {
             unfold(level(n - 1));
             unfold(level(n));
             apply(int32_positive_predecessor_strictly_decreases(n)) using {
                 n > 0;
-            }
+            };
         }
         step();
         step();

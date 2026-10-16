@@ -4,7 +4,7 @@
 theorem compound(x: int32, y: int32) {
     requires x == 0 and y == 0;
     ensures x == x by {
-        normalize() using { x == 0 and y == 0; }
+        normalize() using { x == 0 and y == 0; };
     }
 }
 ```

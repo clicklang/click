@@ -7558,12 +7558,6 @@ impl Parser {
             "both" => self.parse_both_proof_tactic(),
             "if" => self.parse_if_proof_tactic(),
             "induct" if !self.tactic_names.contains(&name) => self.parse_induct_proof_tactic(),
-            "close_invariants" if self.peek_ident() == Some("by") => {
-                self.position += 1;
-                let body = self.parse_close_invariants_body()?;
-                self.skip_redundant_semicolon();
-                Ok(ProofTactic::CloseInvariantsBy(body))
-            }
             _ => self.parse_other_proof_tactic(name),
         }
     }
@@ -8567,6 +8561,12 @@ impl Parser {
             }
             "close_invariants" => {
                 self.expect_empty_tactic_args(&name)?;
+                if self.peek_ident() == Some("by") {
+                    self.position += 1;
+                    let body = self.parse_close_invariants_body()?;
+                    self.skip_redundant_semicolon();
+                    return Ok(ProofTactic::CloseInvariantsBy(body));
+                }
                 ProofTactic::CloseInvariants
             }
             "execute" => {
@@ -9145,7 +9145,7 @@ impl Parser {
     }
 
     /// The body after a step's `by`: a block or one tactic call, as
-    /// after `close_invariants by`.
+    /// after `close_invariants() by`.
     fn parse_step_proof_body(&mut self) -> Result<Vec<ProofTactic>, ClickError> {
         if self.peek() == Some(&Token::LBrace) {
             let body = self.parse_possibly_empty_tactic_block()?;
@@ -9163,8 +9163,8 @@ impl Parser {
         }
     }
 
-    // `close_invariants by T(...);` is the one-step body
-    // `close_invariants by { T(...); }`, as after `have` and `ensures`.
+    // `close_invariants() by T(...);` is the one-step body
+    // `close_invariants() by { T(...); }`, as after `have` and `ensures`.
     #[inline(never)]
     fn parse_close_invariants_body(&mut self) -> Result<Vec<ProofTactic>, ClickError> {
         if self.peek() == Some(&Token::LBrace) {
@@ -9174,16 +9174,16 @@ impl Parser {
         // smart one; say so rather than suggest the `by auto();` just written.
         if self.peek_ident() == Some("auto") {
             return Err(self.error(
-                "`close_invariants by auto()` is not a form: write `close_invariants();`, whose closer is already smart, or end the `preserve` script and let the back edge close implicitly",
+                "`close_invariants() by auto()` is not a form: write `close_invariants();`, whose closer is already smart, or end the `preserve` script and let the back edge close implicitly",
             ));
         }
         match self.peek() {
             Some(Token::Ident(_)) => Ok(vec![self.parse_proof_tactic()?]),
             Some(token) => Err(self.error(format!(
-                "expected a proof after `close_invariants by`, got {token}: write one tactic call or a block `{{ ... }}`"
+                "expected a proof after `close_invariants() by`, got {token}: write one tactic call or a block `{{ ... }}`"
             ))),
             None => Err(self.error(
-                "expected a proof after `close_invariants by`, got end of input",
+                "expected a proof after `close_invariants() by`, got end of input",
             )),
         }
     }
@@ -9344,7 +9344,9 @@ impl Parser {
     }
 
     fn expect_empty_tactic_args(&mut self, name: &str) -> Result<(), ClickError> {
-        if is_tactic_name(name) && self.peek() != Some(&Token::LParen) {
+        if (is_tactic_name(name) || name == "close_invariants")
+            && self.peek() != Some(&Token::LParen)
+        {
             return Err(self.error(format!("`{name}` requires parentheses; write `{name}()`")));
         }
         self.expect(Token::LParen)?;

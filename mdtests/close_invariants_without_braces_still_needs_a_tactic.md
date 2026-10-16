@@ -1,4 +1,4 @@
-# `close_invariants by` without braces still needs a tactic
+# `close_invariants() by` without braces still needs a tactic
 
 The brace-less body is one tactic call. Anything else after `by` is
 refused where it is written, with the two spellings that are accepted.
@@ -22,7 +22,7 @@ int32 wait_for_zero(int32 x) diverges {
         initialize by simp();
         preserve by {
             step();
-            close_invariants by 3;
+            close_invariants() by 3;
         }
     }
     step();
@@ -31,5 +31,5 @@ int32 wait_for_zero(int32 x) diverges {
 ```
 
 ```expect
-fail: expected a proof after `close_invariants by`, got number `3`
+fail: expected a proof after `close_invariants() by`, got number `3`
 ```

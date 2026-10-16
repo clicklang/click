@@ -16,7 +16,7 @@ fn sum(bytes: &[u8]) -> i32 {
     have prefix(bytes, i) == 0 by {
         peel(prefix(bytes, i)) using {
             i <= 0u64;
-        } simp();
+        }; simp();
     }
     loop {
         decreases bytes.len() - i;
@@ -30,7 +30,7 @@ fn sum(bytes: &[u8]) -> i32 {
                     at(function.entry, viewable(bytes[0..bytes.len()]));
                     i < bytes.len();
                     bytes.len() <= 9223372036854775807u64;
-                }
+                };
             }
             have 0 <= bytes[i] as i32 and 255 >= bytes[i] as i32;
             have 0 <= to_integer(total);
@@ -40,32 +40,32 @@ fn sum(bytes: &[u8]) -> i32 {
                 peel(prefix(bytes, i + 1u64)) using {
                     0u64 <= i;
                     i < 18446744073709551615u64;
-                }
+                };
                 simp();
             }
             have to_integer(total + (bytes[i] as i32)) == to_integer(total) + to_integer((bytes[i] as i32)) by {
-                apply(int32_add_to_integer(total, (bytes[i] as i32))) using { defined(total + (bytes[i] as i32)); }
+                apply(int32_add_to_integer(total, (bytes[i] as i32))) using { defined(total + (bytes[i] as i32)); };
             }
             have to_integer(total + (bytes[i] as i32)) == prefix(bytes, i + 1u64) by {
                 arithmetic() using {
                     to_integer(total + (bytes[i] as i32)) == to_integer(total) + to_integer((bytes[i] as i32));
                     to_integer(total) == prefix(bytes, i);
                     prefix(bytes, i + 1u64) == prefix(bytes, i) + to_integer((bytes[i] as i32));
-                }
+                };
             }
             have 0 <= to_integer(total + bytes[i] as i32) by auto();
-            have i <= 1000u64 by { arithmetic() using { i <= bytes.len(); bytes.len() <= 1000u64; } }
+            have i <= 1000u64 by { arithmetic() using { i <= bytes.len(); bytes.len() <= 1000u64; }; }
             have to_integer(i) <= 1000 by {
-                apply(uint64_less_equal_to_integer(i, 1000u64)) using { i <= 1000u64; }
+                apply(uint64_less_equal_to_integer(i, 1000u64)) using { i <= 1000u64; };
             }
             have to_integer(i) + 1 <= 18446744073709551615 by {
-                arithmetic() using { to_integer(i) <= 1000; }
+                arithmetic() using { to_integer(i) <= 1000; };
             }
             have to_integer(i + 1u64) == to_integer(i) + 1 by {
-                apply(uint64_add_to_integer(i, 1u64)) using { to_integer(i) + 1 <= 18446744073709551615; }
+                apply(uint64_add_to_integer(i, 1u64)) using { to_integer(i) + 1 <= 18446744073709551615; };
             }
             have to_integer((bytes[i] as i32)) <= 255 by {
-                apply(int32_less_equal_to_integer((bytes[i] as i32), 255)) using { 255 >= (bytes[i] as i32); }
+                apply(int32_less_equal_to_integer((bytes[i] as i32), 255)) using { 255 >= (bytes[i] as i32); };
             }
             have to_integer(total + (bytes[i] as i32)) <= 255 * to_integer(i + 1u64) by {
                 arithmetic() using {
@@ -73,7 +73,7 @@ fn sum(bytes: &[u8]) -> i32 {
                     to_integer((bytes[i] as i32)) <= 255;
                     to_integer(total + (bytes[i] as i32)) == to_integer(total) + to_integer((bytes[i] as i32));
                     to_integer(i + 1u64) == to_integer(i) + 1;
-                }
+                };
             }
             execute_until(assignment(i, 1));
             step();
@@ -83,7 +83,7 @@ fn sum(bytes: &[u8]) -> i32 {
         apply(uint64_less_equal_and_not_less_than_implies_equal(i, bytes.len())) using {
             i <= bytes.len();
             not i < bytes.len();
-        }
+        };
     }
     have prefix(bytes, i) == prefix(bytes, bytes.len()) by {
         rewrite(i == bytes.len());

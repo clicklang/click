@@ -68,7 +68,7 @@ struct node* skip(struct node* p, struct node* q, int32 n) {
             have holds(Box::Box(p), p) != 0 by {
                 apply(holds_is_nonzero(p)) using {
                     holds(Box::Box(p), p) == 1;
-                }
+                };
                 assumption();
             }
             step();

@@ -24,9 +24,9 @@ int32 last_of_view(int32 *p, int32 lo, int32 hi) {
     requires lo < hi;
     views p[lo..hi];
     ensures result == hi by {
-        have 0 < hi by { arithmetic() using { 0 <= lo; lo < hi; } }
-        have lo <= hi - 1 by { arithmetic() using { lo < hi; 0 < hi; } }
-        have hi - 1 < hi by { arithmetic() using { 0 < hi; } }
+        have 0 < hi by { arithmetic() using { 0 <= lo; lo < hi; }; }
+        have lo <= hi - 1 by { arithmetic() using { lo < hi; 0 < hi; }; }
+        have hi - 1 < hi by { arithmetic() using { 0 < hi; }; }
         have to_integer(p[hi - 1]) == to_integer(p[hi - 1]);
         step();
         simp();

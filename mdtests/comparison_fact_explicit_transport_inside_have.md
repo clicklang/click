@@ -26,7 +26,7 @@ void mark(int32 *next, int32 *visited) {
         transport(at(entry, 0 <= next[0]), 0 <= next[0]) using {
             at(entry, 0 <= next[0]);
             separate(memory(next[0..1]), memory(visited[0..1]));
-        }
+        };
         assumption();
     }
     execute();

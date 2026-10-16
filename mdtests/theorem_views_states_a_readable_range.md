@@ -49,7 +49,7 @@ theorem first_cell_of_a_viewed_range(v: int32[], hi: int32) {
             0 < hi;
             0 <= hi;
             hi <= 1073741823;
-        }
+        };
         assumption();
     }
 }

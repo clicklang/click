@@ -76,7 +76,7 @@ use `using` to mark that boundary:
 simp() using {
     i >= 0;
     i < n;
-}
+};
 ```
 
 An empty `using {}` block is valid on every tactic that takes a list. It means

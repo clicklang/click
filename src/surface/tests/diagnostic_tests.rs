@@ -155,7 +155,7 @@ fn failed_written_have_keeps_its_goal_and_actual_queries_for_simp_and_auto() {
         let source = format!(
             r#"verifying "f.c"; void f(int32* p, int32 i) {{
             owns p[0..2]; requires 0 <= i; requires i < 2;
-        }} by {{ step(); have p[0] == old(p[0]) by {closer}; execute(); }}"#
+        }} by {{ step(); have p[0] == old(p[0]) by {closer}(); execute(); }}"#
         );
         let ordinary = verify_c0_sources(&source, &[("f.c", c)])
             .unwrap_err()
@@ -241,7 +241,7 @@ fn implicit_loop_closure_is_smart_while_written_closure_is_simple() {
         ("invariant n == 2;", "", "simp", "smart"),
         (
             "decreases n; invariant 0 <= n;",
-            "close_invariants by simp();",
+            "close_invariants() by simp();",
             "close_invariants",
             "simple",
         ),
@@ -2387,7 +2387,7 @@ void run(int32 total) {{ requires 0 <= total; requires total <= 1000; ensures 0 
   invariant 0 <= remaining;
   invariant remaining <= total;
   {invariants}
-  preserve by {{ step(); close_invariants by {{ simp(); }} }}
+  preserve by {{ step(); close_invariants() by {{ simp(); }} }}
  }}
  execute(); simp();
 }}
@@ -3015,7 +3015,7 @@ uint64 drain(uint64 len) {
    step();
    have len == 0u64 by simp();
    have to_integer(len) == 0 by simp() using { len == 0u64; };
-   close_invariants by assumption();
+   close_invariants() by assumption();
   }
  }
  execute(); simp();
@@ -3094,8 +3094,8 @@ fn failed_invariant_closure_trace_prefix_is_lazy_and_scales() {
     for size in [16, 32, 64] {
         let repeated = "   have len == len by normalize();\n".repeat(size);
         let source = CLOSURE_TRACE_CLICK.replace(
-            "   close_invariants by assumption();",
-            &format!("{repeated}   close_invariants by assumption();"),
+            "   close_invariants() by assumption();",
+            &format!("{repeated}   close_invariants() by assumption();"),
         );
         with_proof_trace("drain", || {
             let error = verify_c0_sources(&source, &[("loop.c", CLOSURE_TRACE_C)])
@@ -3133,10 +3133,10 @@ fn failed_invariant_closure_trace_keeps_its_branch_guard() {
                     branch then {
                         step();
                         have len == 0u64 by simp();
-                        close_invariants by assumption();
+                        close_invariants() by assumption();
                     } else {
                         step();
-                        close_invariants by assumption();
+                        close_invariants() by assumption();
                     }
                 }
             }

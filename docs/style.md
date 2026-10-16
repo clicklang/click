@@ -74,7 +74,15 @@ For a one-tactic proof, use `by T(args);`, such as `by simp();` or
 `by assumption();`. Braces are optional around that single tactic. Use
 `by { ... }` for a sequence of tactics. Call-style tactics always take
 parentheses, including `simp()` and `auto()`. Structural forms such as `if`,
-`match`, and `have` retain their own grammar.
+`match`, and `have` retain their own grammar. Call modifiers follow the
+parenthesized head, as in `close_invariants() by { ... }`.
+
+End call statements with `;`, including calls with a `using { ... };` list.
+Do not add a trailing semicolon to proof-control blocks such as `by { ... }`,
+`if`, `both`, or `loop`. The parser still accepts redundant semicolons.
+Generated premise lists put each premise on its own line. Wrap long premises
+and certificate entries near 100 columns with a further four-space indentation;
+keep quoted literals and individual tokens intact.
 
 Use semantic proof marks for states a handwritten proof has already reached.
 Use numeric statement selectors when the example needs to target a source

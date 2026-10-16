@@ -31,12 +31,12 @@ int32 count() { ensures result == 3; } by {
         preserve by {
             mark iteration;
             step();
-            close_invariants by {
+            close_invariants() by {
                 both { simp(); }
                 and {
                     both { simp(); }
-                    and { both { arithmetic() using { at(iteration, i) < 3; at(iteration, i) >= 0; } }
-                        and { arithmetic() using { at(iteration, i) < 3; at(iteration, i) >= 0; } } }
+                    and { both { arithmetic() using { at(iteration, i) < 3; at(iteration, i) >= 0; }; }
+                        and { arithmetic() using { at(iteration, i) < 3; at(iteration, i) >= 0; }; } }
                 }
             }
         }

@@ -31,10 +31,10 @@ int32 drift(int32 n) {
         initialize by simp();
         preserve by {
             have 0 <= n - 1 by {
-                apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }
+                apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; };
             }
             step();
-            close_invariants by { simp(); }
+            close_invariants() by { simp(); }
         }
     }
     step();

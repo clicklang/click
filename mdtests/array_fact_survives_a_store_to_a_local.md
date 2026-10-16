@@ -31,7 +31,7 @@ void bump(int32 a[], int32 n) {
     have a[0] == 5;
     have 0 <= 0;
     have icount(a, 0, 0) == 0 by {
-        peel(icount(a, 0, 0)) using { 0 <= 0; }
+        peel(icount(a, 0, 0)) using { 0 <= 0; };
         normalize();
     }
     step();

@@ -34,8 +34,8 @@ int32 ident(int32 x) {
 
     ensures result >= 0 by {
         have x >= 0 by {
-            apply(two_bounds(x)) using { small(x); }
-            apply(needs_upper(x)) using { x <= 10; }
+            apply(two_bounds(x)) using { small(x); };
+            apply(needs_upper(x)) using { x <= 10; };
             assumption();
         }
         execute();

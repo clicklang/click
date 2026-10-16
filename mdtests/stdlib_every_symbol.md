@@ -144,7 +144,7 @@ theorem use_uint32_mul_guard_by_integer_bound(left: uint32, right: uint32) {
     ensures right == 0u32 or left <= 4294967295u32 / right by {
         apply(uint32_multiply_guard_by_integer_bound(left, right)) using {
             to_integer(left) * to_integer(right) <= 4294967295;
-        }
+        };
     }
 }
 

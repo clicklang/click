@@ -195,7 +195,7 @@ fn linear_execution_proof_step(tactic: &ProofTactic) -> Option<ProofStep> {
 /// `close_invariants()` is smart: it plans the back-edge bundle body. It has
 /// no certificate step of its own, so the drivers that support it route it
 /// through `apply_close_invariants_body`, which retains the checked body as a
-/// `close_invariants by` step. It stays outside `linear_execution_proof_step`
+/// `close_invariants() by` step. It stays outside `linear_execution_proof_step`
 /// so no driver can record a bare closure request as certificate provenance.
 fn closes_loop_invariants(tactic: &ProofTactic) -> bool {
     matches!(

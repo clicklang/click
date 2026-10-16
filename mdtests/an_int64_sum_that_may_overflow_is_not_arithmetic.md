@@ -11,7 +11,7 @@ the bound it could not show.
 theorem predecessor(i: int64, length: int64) {
     requires i <= length;
     ensures i - 1i64 <= length by {
-        arithmetic() using { i <= length; }
+        arithmetic() using { i <= length; };
     }
 }
 ```

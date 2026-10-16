@@ -73,7 +73,7 @@ void countdown(int32 n) {
                     have to_integer(chain_nat(rest_model)) < to_integer(chain_nat(c.model)) by {
                         arithmetic() using {
                             to_integer(chain_nat(c.model)) == to_integer(chain_nat(rest_model)) + 1;
-                        }
+                        };
                     }
                     let { rest: r } = unfold(c);
                     step();

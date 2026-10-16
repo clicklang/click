@@ -56,7 +56,7 @@ void produce_population(struct owner* owner, int32 amount) {
         apply(int32_greater_equal_and_not_greater_than_implies_equal(amount, 0)) using {
             0 <= amount;
             not (0 < amount);
-        }
+        };
         execute(); simp();
     }
 }

@@ -54,14 +54,14 @@ int32 spin(struct cell* node, int32 n) {
         initialize by simp();
         preserve by {
             have c.rank == i;
-            have i == 0 by { simp() using { c.rank == i; c.rank == old(c.rank); old(c.rank) == 0; } }
-            have 0 <= n - i - 1 by { arithmetic() using { i < n; 0 <= i; } }
-            have n - i - 1 < n - i by { arithmetic() using { i < n; 0 <= i; } }
+            have i == 0 by { simp() using { c.rank == i; c.rank == old(c.rank); old(c.rank) == 0; }; }
+            have 0 <= n - i - 1 by { arithmetic() using { i < n; 0 <= i; }; }
+            have n - i - 1 < n - i by { arithmetic() using { i < n; 0 <= i; }; }
             step();
             close_invariants();
         }
     }
-    have n <= 1 by { arithmetic() using { i >= n; i <= 1; } }
+    have n <= 1 by { arithmetic() using { i >= n; i <= 1; }; }
     step();
     simp();
 }

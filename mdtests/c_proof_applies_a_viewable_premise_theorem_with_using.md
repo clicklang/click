@@ -49,7 +49,7 @@ int32 probe(int32 a[], int32 n) {
     have n >= 0 and viewable(a[0..n]) by assumption();
     apply(viewable_range_is_nonnegative(a, n)) using {
         n >= 0 and viewable(a[0..n]);
-    }
+    };
     simp();
 }
 ```

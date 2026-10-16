@@ -39,17 +39,17 @@ int32 drain(int32 n, int32 m) {
             have 0 <= m - 1 by {
                 apply(int32_positive_predecessor_is_nonnegative(m)) using {
                     m > 0;
-                }
+                };
             }
             have 0 <= level(n) by {
                 unfold(level(n));
                 apply(int32_less_equal_to_integer(0, n)) using {
                     0 <= n;
-                }
+                };
                 simp();
             }
             step();
-            close_invariants by { simp(); }
+            close_invariants() by { simp(); }
         }
     }
     step();

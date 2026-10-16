@@ -36,7 +36,7 @@ void mark_global(int32 v[], int32 n) {
             zeros(at(entry, v), 0, n) == zeros(v, 0, n)
         ) using {
             zeros(at(entry, v), 0, n) == zeros(at(entry, v), 0, n);
-        }
+        };
         assumption();
     }
     execute();

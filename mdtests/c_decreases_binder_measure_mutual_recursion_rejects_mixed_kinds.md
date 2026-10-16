@@ -55,7 +55,7 @@ theorem links_len_is_nonnegative(m: Links) {
             Links::Cons(rest) => {
                 apply(ih(rest));
                 unfold(links_len(Links::Cons(rest)));
-                arithmetic() using { 0 <= links_len(rest); }
+                arithmetic() using { 0 <= links_len(rest); };
             }
         }
     }
@@ -131,7 +131,7 @@ int32 walk_odd(struct node* p) {
             }
             have links_len(r.model) < links_len(old(x.model)) by {
                 rewrite(r.model == rest_model);
-                arithmetic() using { links_len(old(x.model)) == links_len(rest_model) + 1; }
+                arithmetic() using { links_len(old(x.model)) == links_len(rest_model) + 1; };
             }
             step();
             step();

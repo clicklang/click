@@ -121,7 +121,7 @@ int32 refcount_pipeline(int32 amount) {
             0 <= amount;
             amount <= 2147483646;
             defined(1 + amount);
-        }
+        };
     }
     step();
     open(control(obj)) {

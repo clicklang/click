@@ -45,7 +45,7 @@ int32 use_five(int32* cell) {
             simp() using {
                 c(flag) == 1;
                 c(flag) == 1 implies cell[0] == 5;
-            }
+            };
         }
         execute();
         assumption();

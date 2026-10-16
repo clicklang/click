@@ -35,7 +35,7 @@ int32 prefix_sum_equation(int32 a[], int32 n) {
         peel(icount(a, 0, n)) using {
             0 <= n - 1;
             n - 1 < 2147483647;
-        }
+        };
         simp();
     }
 }

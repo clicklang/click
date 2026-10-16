@@ -10320,7 +10320,7 @@ fn close_invariants_is_a_transactional_constant_local_proof_step() {
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
         // The closure request is a semantic-core update, not a certificate
-        // leaf. `close_invariants by`, carrying the checked body, is the only
+        // leaf. `close_invariants() by`, carrying the checked body, is the only
         // step that records a closure; a bare request spells nothing a proof
         // could write, so it contributes no provenance of its own.
         assert!(closed.certificate().steps().is_empty());

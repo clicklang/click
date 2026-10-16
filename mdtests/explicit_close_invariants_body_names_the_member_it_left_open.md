@@ -1,4 +1,4 @@
-# an explicit `close_invariants by` body names the member it left open
+# an explicit `close_invariants() by` body names the member it left open
 
 The body proves the invariant and the ranking's nonnegativity, but its last
 arm only restates `0 <= n` and never proves the decrease, so the bundle's
@@ -30,14 +30,14 @@ int32 drain(int32 n) {
         initialize by simp();
         preserve by {
             have 0 <= n - 1 by {
-                apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }
+                apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; };
             }
             step();
-            close_invariants by {
-                both { arithmetic() using { 0 <= n; } }
+            close_invariants() by {
+                both { arithmetic() using { 0 <= n; }; }
                 and {
-                    both { arithmetic() using { 0 <= n; } }
-                    and { have 0 <= n by { arithmetic() using { 0 <= n; } } }
+                    both { arithmetic() using { 0 <= n; }; }
+                    and { have 0 <= n by { arithmetic() using { 0 <= n; }; } }
                 }
             }
         }

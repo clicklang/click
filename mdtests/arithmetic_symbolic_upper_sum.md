@@ -15,7 +15,7 @@ int32 f(int32 a, int32 b) {
     ensures result == 0;
 } by {
     have a < 1000 by {
-        arithmetic() using { a + b <= 1000; a >= 0; a <= 1000; b >= 1; b <= 1000; }
+        arithmetic() using { a + b <= 1000; a >= 0; a <= 1000; b >= 1; b <= 1000; };
     }
     step();
     simp();

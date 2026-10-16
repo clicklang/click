@@ -221,9 +221,9 @@ theorem heap_member_is_address_membership(tree: HeapTree, target: struct tree_no
                 rewrite(heap_member(left, target) == list::contains(heap_addresses(left), address(target)));
                 rewrite(heap_member(right, target) == list::contains(heap_addresses(right), address(target)));
                 if address(node) == address(target) {
-                    normalize() using { address(node) == address(target); }
+                    normalize() using { address(node) == address(target); };
                 } else {
-                    normalize() using { not(address(node) == address(target)); }
+                    normalize() using { not(address(node) == address(target)); };
                 }
             }
         }
@@ -461,7 +461,7 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
             } else {}
             have not(address(node) == address(target)) by {
                 rewrite(node == root);
-                normalize() using { address(root) != address(target); }
+                normalize() using { address(root) != address(target); };
             }
             let { result: found_left } = step(tree_contains(root->left, target), { t: l });
             branch then {
@@ -482,7 +482,7 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
                 simp() using {
                     found_left == 0;
                     found_left == heap_member(left_model, target);
-                }
+                };
             }
             let { result: found_right } = step(tree_contains(root->right, target), { t: r });
             step();
@@ -494,7 +494,7 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
                     HeapTree::Node(node, value, left_model, right_model), target));
                 rewrite(heap_member(left_model, target) == false);
                 rewrite(result == heap_member(right_model, target));
-                normalize() using { not(address(node) == address(target)); }
+                normalize() using { not(address(node) == address(target)); };
             }
             simp();
         },

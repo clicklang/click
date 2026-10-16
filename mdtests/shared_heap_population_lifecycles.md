@@ -202,12 +202,12 @@ void child_release(struct child* obj) {
     } else {
         unfold(child_ref(obj));
         have 1 < obj->refs by {
-            arithmetic() using { 1 <= obj->refs; obj->refs != 1; }
+            arithmetic() using { 1 <= obj->refs; obj->refs != 1; };
         }
         have obj->refs - 1 >= 1 by {
             apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using {
                 1 < obj->refs;
-            }
+            };
         }
         step();
         step();
@@ -339,10 +339,10 @@ int32 run_first_destroyed(int32 payload) {
         simp() using {
             at(detaching, first->kid)->payload == at(detaching, first->kid->payload);
             at(detaching, first->kid->payload) == payload;
-        }
+        };
     }
     have kid->payload == payload by {
-        have kid == at(detaching, first->kid) by { simp() using { at(detaching, first->kid) == kid; } }
+        have kid == at(detaching, first->kid) by { simp() using { at(detaching, first->kid) == kid; }; }
         rewrite(kid == at(detaching, first->kid));
         assumption();
     }
@@ -401,10 +401,10 @@ int32 run_second_destroyed(int32 payload) {
         simp() using {
             at(detaching, second->kid)->payload == at(detaching, second->kid->payload);
             at(detaching, second->kid->payload) == payload;
-        }
+        };
     }
     have kid->payload == payload by {
-        have kid == at(detaching, second->kid) by { simp() using { at(detaching, second->kid) == kid; } }
+        have kid == at(detaching, second->kid) by { simp() using { at(detaching, second->kid) == kid; }; }
         rewrite(kid == at(detaching, second->kid));
         assumption();
     }

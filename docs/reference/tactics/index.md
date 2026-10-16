@@ -1855,7 +1855,7 @@ mathematical product.
 | `name(args, { binder: instance })` | simple | Specialized | Apply a verified tactic with resource bindings. | [Reference](#user-defined-tactic-calls) |
 | `observe(resource)` | simple | Specialized | Read a resource's persistent observations. | [Reference](#observing-resources) |
 | `close_invariants()` | smart | Core | Prove the invariant obligations at a loop back edge. | [Reference](#closing-loop-invariants) |
-| `close_invariants by` | control | Expansion output | Supply explicit proofs for invariant closure. | [Reference](#explicit-invariant-closure) |
+| `close_invariants() by` | control | Expansion output | Supply explicit proofs for invariant closure. | [Reference](#explicit-invariant-closure) |
 
 Predicate calls are opaque to framing until their definitions are unfolded.
 To carry such a fact across C execution, run `unfold(name)` before the relevant
@@ -2181,14 +2181,14 @@ bound from the guard
 A `preserve` path whose tactics stop inside the body first runs the rest of it
 as an omitted `preserve` would
 ([`preserve_runs_the_rest_of_the_body.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_runs_the_rest_of_the_body.md)).
-`close_invariants by auto()` is refused, naming these forms
+`close_invariants() by auto()` is refused, naming these forms
 ([`close_invariants_by_auto_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/close_invariants_by_auto_is_refused.md)).
 
 **Failure, checking, and tools:**
 
 A bounded planning miss fails locally, and a ranked loop's diagnostic names the
 ranking obligations; one needing an inequality outside that named set fails
-there rather than starting a search. Spell `close_invariants by { ... }` with
+there rather than starting a search. Spell `close_invariants() by { ... }` with
 explicit steps when needed. Expansion emits the retained body and never repeats
 invariant discovery while checking it.
 
@@ -2196,7 +2196,7 @@ invariant discovery while checking it.
 
 ### Explicit invariant closure
 
-**Form:** `close_invariants by`
+**Form:** `close_invariants() by`
 
 **Expansion output.** `click expand` writes it; by hand, write it only when the
 planned closer misses and the invariant bundle needs explicit steps. At a loop

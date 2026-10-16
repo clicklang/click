@@ -43,7 +43,7 @@ void pool_checkout(struct pool* pool, struct object* object) {
             0 <= pool->checked_out;
             1 <= count(pool_slot(pool));
             pool->capacity == pool->checked_out + count(pool_slot(pool));
-        }
+        };
         unfold(pool_slot(pool));
         step();
         fold(pool_object(pool, object));

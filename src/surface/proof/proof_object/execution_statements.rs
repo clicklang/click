@@ -2000,9 +2000,9 @@ impl<'a> Proof<'a> {
         &self,
         body: &[ProofTactic],
     ) -> Result<Self, ClickError> {
-        self.require_execution_frontier("`close_invariants by`")?;
+        self.require_execution_frontier("`close_invariants() by`")?;
         if body.is_empty() {
-            return Err(self.step_error("`close_invariants by` requires a nonempty proof body"));
+            return Err(self.step_error("`close_invariants() by` requires a nonempty proof body"));
         }
         if self
             .execution()
@@ -2017,13 +2017,15 @@ impl<'a> Proof<'a> {
             ));
         }
         if !self.is_at_region_boundary() {
-            return Err(self.step_error("`close_invariants by` requires the loop back edge"));
+            return Err(self.step_error("`close_invariants() by` requires the loop back edge"));
         }
         let ProofContext::Execution(context) = self.context.as_ref() else {
-            return Err(self.step_error("`close_invariants by` requires a loop proof"));
+            return Err(self.step_error("`close_invariants() by` requires a loop proof"));
         };
         let Some(bundle) = context.constants.invariant_body_context.as_deref() else {
-            return Err(self.step_error("`close_invariants by` requires a loop invariant context"));
+            return Err(
+                self.step_error("`close_invariants() by` requires a loop invariant context")
+            );
         };
         let execution = self
             .execution()
@@ -2510,7 +2512,7 @@ impl<'a> Proof<'a> {
     /// The retained evidence is created by `retain_invariant_body`, which also
     /// requests the frontier's closure, so a validated bundle is always an
     /// already-closed one. Certification therefore adds no proof step of its
-    /// own: the bundle's certificate step is the `close_invariants by` node
+    /// own: the bundle's certificate step is the `close_invariants() by` node
     /// carrying the checked body, never a bare closure request that no
     /// explicit proof could spell.
     pub(in crate::surface::proof) fn certify_loop_invariant_bundle(

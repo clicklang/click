@@ -22,7 +22,7 @@ fn walk(bytes: &[u8]) -> usize {
         arithmetic() using {
             iter_remaining == bytes.len() - bytes.len() % 4u64;
             bytes.len() % 4u64 <= bytes.len();
-        }
+        };
     }
     have iter_cursor == bytes + ((bytes.len() - bytes.len() % 4u64) - iter_remaining) by {
         rewrite((bytes.len() - bytes.len() % 4u64) - iter_remaining == 0u64); simp();
@@ -46,19 +46,19 @@ fn walk(bytes: &[u8]) -> usize {
                     4u64 <= iter_remaining;
                     iter_remaining <= (bytes.len() - bytes.len() % 4u64);
                     bytes.len() % 4u64 <= bytes.len();
-                }
+                };
             }
             have ((bytes.len() - bytes.len() % 4u64) - iter_remaining) + 3u64 < bytes.len() by {
                 arithmetic() using {
                     4u64 <= iter_remaining;
                     iter_remaining <= (bytes.len() - bytes.len() % 4u64);
                     bytes.len() % 4u64 <= bytes.len();
-                }
+                };
             }
             execute_until(read(1)); step();
             have iter_remaining == at(iteration, iter_remaining) - 4u64;
             have (at(iteration, iter_remaining) - 4u64) % 4u64 == at(iteration, iter_remaining % 4u64) by {
-                normalize() using { 4u64 <= at(iteration, iter_remaining); }
+                normalize() using { 4u64 <= at(iteration, iter_remaining); };
             }
             have iter_remaining % 4u64 == 0u64 by {
                 rewrite(iter_remaining == at(iteration, iter_remaining) - 4u64);
@@ -71,20 +71,20 @@ fn walk(bytes: &[u8]) -> usize {
                     4u64 <= at(iteration, iter_remaining);
                     at(iteration, iter_remaining) <= (bytes.len() - bytes.len() % 4u64);
                     bytes.len() % 4u64 <= bytes.len();
-                }
+                };
             }
             have (bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining) <= 18446744073709551611u64 by {
                 arithmetic() using {
                     4u64 <= at(iteration, iter_remaining);
                     at(iteration, iter_remaining) <= (bytes.len() - bytes.len() % 4u64);
                     bytes.len() % 4u64 <= bytes.len();
-                }
+                };
             }
             have at(iteration, iter_cursor) + 4 == bytes + (((bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining)) + 4u64) by {
                 arithmetic() using {
                     at(iteration, iter_cursor) == bytes + ((bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining));
                     (bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining) <= 18446744073709551611u64;
-                }
+                };
             }
             have (bytes.len() - bytes.len() % 4u64) - iter_remaining == ((bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining)) + 4u64 by {
                 arithmetic() using {
@@ -92,7 +92,7 @@ fn walk(bytes: &[u8]) -> usize {
                     4u64 <= at(iteration, iter_remaining);
                     at(iteration, iter_remaining) <= (bytes.len() - bytes.len() % 4u64);
                     bytes.len() % 4u64 <= bytes.len();
-                }
+                };
             }
             have iter_cursor == bytes + ((bytes.len() - bytes.len() % 4u64) - iter_remaining) by {
                 rewrite((bytes.len() - bytes.len() % 4u64) - iter_remaining == ((bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining)) + 4u64);
@@ -102,7 +102,7 @@ fn walk(bytes: &[u8]) -> usize {
                 arithmetic() using {
                     iter_remaining == at(iteration, iter_remaining) - 4u64;
                     4u64 <= at(iteration, iter_remaining);
-                }
+                };
             }
             execute_until(back_edge());
             close_invariants();
@@ -111,13 +111,13 @@ fn walk(bytes: &[u8]) -> usize {
     have iter_remaining < 4u64 by {
         cases {
             not (0u64 < iter_remaining) => {
-                arithmetic() using { not 0u64 < iter_remaining; }
+                arithmetic() using { not 0u64 < iter_remaining; };
             }
             not (4u64 <= iter_remaining) => { assumption(); }
         }
     }
     have iter_remaining % 4u64 == iter_remaining by {
-        normalize() using { iter_remaining < 4u64; }
+        normalize() using { iter_remaining < 4u64; };
     }
     have iter_remaining == 0u64;
     have iter_cursor == iter_tail;

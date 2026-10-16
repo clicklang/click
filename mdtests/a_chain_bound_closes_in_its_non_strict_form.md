@@ -20,13 +20,13 @@ theorem unsigned_by_simp(x: uint32, n: uint32) {
 theorem signed_by_arithmetic(x: int32, n: int32) {
     requires x < n;
     requires n <= 4;
-    ensures x <= 3 by { arithmetic() using { x < n; n <= 4; } }
+    ensures x <= 3 by { arithmetic() using { x < n; n <= 4; }; }
 }
 
 theorem unsigned_by_arithmetic(x: uint32, n: uint32) {
     requires x < n;
     requires n <= 4u32;
-    ensures x <= 3u32 by { arithmetic() using { x < n; n <= 4u32; } }
+    ensures x <= 3u32 by { arithmetic() using { x < n; n <= 4u32; }; }
 }
 ```
 

@@ -50,9 +50,9 @@ int32 last_element(int32 arr[], int32 n, int32 cap) {
                 arithmetic() using {
                     at(statement(5).entry, p) == at(statement(5).entry, arr + i);
                     at(statement(5).entry, i) < at(statement(5).entry, n);
-                }
+                };
             }
-            close_invariants by simp();
+            close_invariants() by simp();
         }
     }
     step();
@@ -61,7 +61,7 @@ int32 last_element(int32 arr[], int32 n, int32 cap) {
             apply(int32_less_equal_and_not_less_than_implies_equal(at(loop(0).exit, i), at(loop(0).exit, n))) using {
                 at(loop(0).exit, i) <= at(loop(0).exit, n);
                 not at(loop(0).exit, i) < at(loop(0).exit, n);
-            }
+            };
         }
         rewrite(at(loop(0).exit, p) == at(loop(0).exit, arr + i));
         rewrite(at(loop(0).exit, i) == at(loop(0).exit, n));

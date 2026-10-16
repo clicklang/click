@@ -43,12 +43,12 @@ void advance(int32* rb, int32* stop) {
         preserve by {
             have remaining(rb, stop) == 1 by {
                 unfold(remaining(rb, stop));
-                normalize() using { address(rb) != address(stop); }
+                normalize() using { address(rb) != address(stop); };
             }
             step();
             have remaining(rb, stop) == 0 by {
                 unfold(remaining(rb, stop));
-                normalize() using { address(rb) == address(stop); }
+                normalize() using { address(rb) == address(stop); };
             }
             close_invariants();
         }

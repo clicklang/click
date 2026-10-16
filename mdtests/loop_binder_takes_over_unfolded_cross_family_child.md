@@ -58,13 +58,13 @@ void drain(int32 n) {
                     have 0 <= n - 1 by {
                         apply(int32_positive_predecessor_is_nonnegative(n)) using {
                             n > 0;
-                        }
+                        };
                         assumption();
                     }
                     have n - 1 >= 0 by {
                         apply(int32_less_equal_implies_reversed_greater_equal(0, n - 1)) using {
                             0 <= n - 1;
-                        }
+                        };
                         assumption();
                     }
                     step();

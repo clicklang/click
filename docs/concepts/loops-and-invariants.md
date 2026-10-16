@@ -376,10 +376,10 @@ that disjunction reads the same way on all of them:
 have 0 < a + b by {
     cases {
         a > 0 => {
-            arithmetic() using { a > 0; b >= 0; a <= 1; b <= 1; }
+            arithmetic() using { a > 0; b >= 0; a <= 1; b <= 1; };
         }
         b > 0 => {
-            arithmetic() using { b > 0; a >= 0; a <= 1; b <= 1; }
+            arithmetic() using { b > 0; a >= 0; a <= 1; b <= 1; };
         }
     }
 }
@@ -766,7 +766,7 @@ void bump_n(struct cell* p, int32 n) {
 
         initialize by simp();
         preserve by {
-            have c.count == i by { simp() using { c.count == old(c.count) + i; old(c.count) == 0; } }
+            have c.count == i by { simp() using { c.count == old(c.count) + i; old(c.count) == 0; }; }
             unfold(c);
             step();
             step();
@@ -930,7 +930,7 @@ preserve by {
         Maybe::None => { contradiction(c.model == Maybe::None); },
         Maybe::Some(value) => {
             have Maybe::Some(value) == old(c.model) by {
-                simp() using { c.model == Maybe::Some(value); c.model == old(c.model); }
+                simp() using { c.model == Maybe::Some(value); c.model == old(c.model); };
             }
             unfold(c);
             step();
@@ -1224,7 +1224,7 @@ clause is a guard in its bare form rather than as the whole earlier member,
 so the bundle gains one guard per earlier declaration instead of doubling
 with each one (`mdtests/loop_frame_keeps_two_header_cells_of_a_field_map.md`).
 
-A written `close_invariants by { both { ... } and { ... } }` splits the
+A written `close_invariants() by { both { ... } and { ... } }` splits the
 bundle as it is. When the whole bundle has no source form, for instance
 because one member is at the loop entry beside members at the iteration
 entry, each member is spelled on its own at the one snapshot it names, the

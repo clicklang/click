@@ -103,7 +103,7 @@ int32 restricted(struct box* b) {
                 defined(1 + got) implies st.live == at(m, st.live) + got;
                 got == 0;
                 at(m, st.live) == 1;
-            }
+            };
         }
         step();
         simp();

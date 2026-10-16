@@ -24,7 +24,7 @@ theorem icount_of_an_empty_range(p: int32[], lo: int32, hi: int32, x: int32) {
     ensures icount(p, lo, hi, x) == 0 by {
         peel(icount(p, lo, hi, x)) using {
             hi <= lo;
-        }
+        };
         simp();
     }
 }

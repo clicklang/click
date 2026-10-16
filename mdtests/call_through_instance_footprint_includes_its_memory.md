@@ -69,7 +69,7 @@ void caller(int32* occupied, int32 capacity, int32 start) {
         ) using {
             0 <= start;
             start < capacity;
-        }
+        };
     }
     have occupied[start] == 1 by simp();
     have start < 0 by {

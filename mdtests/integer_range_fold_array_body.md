@@ -25,7 +25,7 @@ int32 array_fold_append_at_zero(int32 a[]) {
         )) using {
             0 <= 0;
             0 < 2147483647;
-        }
+        };
         simp();
     }
 }

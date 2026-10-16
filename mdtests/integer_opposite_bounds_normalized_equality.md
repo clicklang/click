@@ -7,7 +7,7 @@ source operands differ. The generated equality must verify after expansion.
 theorem pinned(x: Integer, b: Integer) {
     requires b <= x;
     requires not (b + 1 <= x);
-    ensures x == b by { arithmetic() using { b <= x; not (b + 1 <= x); } }
+    ensures x == b by { arithmetic() using { b <= x; not (b + 1 <= x); }; }
 }
 ```
 

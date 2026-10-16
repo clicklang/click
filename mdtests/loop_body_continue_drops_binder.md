@@ -58,7 +58,7 @@ int32 spin(struct cell* node, int32 n) {
                 Maybe::None => { contradiction(c.model == Maybe::None); },
                 Maybe::Some(value) => {
                     have Maybe::Some(value) == old(c.model) by {
-                        simp() using { c.model == Maybe::Some(value); c.model == old(c.model); }
+                        simp() using { c.model == Maybe::Some(value); c.model == old(c.model); };
                     }
                     unfold(c);
                     step();

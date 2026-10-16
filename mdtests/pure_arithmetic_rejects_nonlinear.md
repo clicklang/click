@@ -9,7 +9,7 @@ theorem nonlinear_product_is_outside_arithmetic(x: int32, y: int32) {
         arithmetic() using {
             x == 0;
             y == 0;
-        }
+        };
     }
 }
 ```

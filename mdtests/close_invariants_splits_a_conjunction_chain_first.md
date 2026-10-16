@@ -53,14 +53,14 @@ int32 count_up(int32 n) {
                     0 <= at(iteration, i);
                     at(iteration, i) < at(iteration, n);
                     0 <= n;
-                }
+                };
             }
             have n - at(iteration, i) - 1 < n - at(iteration, i) by {
                 arithmetic() using {
                     0 <= at(iteration, i);
                     at(iteration, i) < at(iteration, n);
                     0 <= n;
-                }
+                };
             }
             close_invariants();
         }

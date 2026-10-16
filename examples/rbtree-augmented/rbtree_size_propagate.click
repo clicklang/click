@@ -47,7 +47,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
             }
             have propagate_remaining(rb, stop) == 1 by {
                 unfold(propagate_remaining(rb, stop));
-                normalize() using { rb != stop; }
+                normalize() using { rb != stop; };
             }
             unfold(links);
             step();
@@ -79,7 +79,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                 have rb == stop by { assumption(); }
                 have propagate_remaining(rb, stop) == 0 by {
                     unfold(propagate_remaining(rb, stop));
-                    normalize() using { rb == stop; }
+                    normalize() using { rb == stop; };
                 }
                 have metadata.value == 1 by { assumption(); }
                 have metadata.value == 1 or rb == old(rb) by { assumption(); }

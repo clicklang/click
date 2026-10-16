@@ -93,25 +93,25 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                 simp() using {
                     lo <= hi;
                     hi == i;
-                }
+                };
             }
             have 0 <= i by {
                 apply(int32_less_equal_transitive(0, lo, i)) using {
                     0 <= lo;
                     lo <= i;
-                }
+                };
             }
             have i + 1 <= capacity by {
                 apply(int32_increment_upper_bound(i, capacity)) using {
                     i < capacity;
-                }
+                };
             }
             if occupied[i] == 0 {
                 have run_length < capacity by {
                     arithmetic() using {
                         run_length <= i;
                         i < capacity;
-                    }
+                    };
                 }
                 branch then {
                     step();
@@ -129,7 +129,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                     simp() using {
                         lo <= hi;
                         hi == at(iteration, i);
-                    }
+                    };
                 }
                 have at(iteration, i) < at(iteration, i) + 1 by {
                     apply(int32_increment_strictly_increases(
@@ -137,7 +137,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                         at(iteration, capacity)
                     )) using {
                         at(iteration, i) < at(iteration, capacity);
-                    }
+                    };
                 }
                 have at(iteration, i) < i by {
                     rewrite(i == at(iteration, i) + 1);
@@ -146,13 +146,13 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                 have at(iteration, i) <= i by {
                     apply(int32_less_than_implies_less_equal(at(iteration, i), i)) using {
                         at(iteration, i) < i;
-                    }
+                    };
                 }
                 have lo <= i by {
                     apply(int32_less_equal_transitive(lo, at(iteration, i), i)) using {
                         lo <= at(iteration, i);
                         at(iteration, i) <= i;
-                    }
+                    };
                 }
                 have i <= capacity by {
                     simp();
@@ -188,7 +188,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, capacity);
                         0 <= capacity;
-                    }
+                    };
                 }
                 have capacity - at(iteration, i) - 1
                     < capacity - at(iteration, i) by {
@@ -196,7 +196,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, capacity);
                         0 <= capacity;
-                    }
+                    };
                 }
                 close_invariants();
             } else {
@@ -219,7 +219,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, capacity);
                         0 <= capacity;
-                    }
+                    };
                 }
                 have capacity - at(iteration, i) - 1
                     < capacity - at(iteration, i) by {
@@ -227,7 +227,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, capacity);
                         0 <= capacity;
-                    }
+                    };
                 }
                 close_invariants();
             }

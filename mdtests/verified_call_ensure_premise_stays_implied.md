@@ -48,7 +48,7 @@ int32 ensure_premise_caller(int32 count, int32* cell) {
         have count > 0 by {
             arithmetic() using {
                 1 <= count;
-            }
+            };
         }
         extract(cell[0] == 1);
         assumption();

@@ -29,7 +29,7 @@ theorem signed_pair_compound(n: int32) {
         arithmetic() using {
             0 <= n;
             n <= 100;
-        }
+        };
     }
 }
 

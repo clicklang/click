@@ -66,7 +66,7 @@ int32 uprec_owned(int32 a, int32* p) {
         invariant a >= 0;
         invariant a <= 10;
         preserve by {
-            have 0 < a by { arithmetic() using { a >= 0; a != 0; } }
+            have 0 < a by { arithmetic() using { a >= 0; a != 0; }; }
             step();
             close_invariants();
         }
@@ -89,7 +89,7 @@ int32 ufor_owned(int32 a, int32* p) {
         invariant i >= 0;
         invariant i <= 10;
         preserve by {
-            have 0 < i by { arithmetic() using { i >= 0; i != 0; } }
+            have 0 < i by { arithmetic() using { i >= 0; i != 0; }; }
             step();
             step();
             close_invariants();
@@ -116,12 +116,12 @@ int32 either(int32 a, int32 b) {
             have 0 < a + b by {
                 cases {
                     a != 0 => {
-                        have 0 < a by { arithmetic() using { a >= 0; a != 0; } }
-                        arithmetic() using { 0 < a; b >= 0; a <= 1; b <= 1; }
+                        have 0 < a by { arithmetic() using { a >= 0; a != 0; }; }
+                        arithmetic() using { 0 < a; b >= 0; a <= 1; b <= 1; };
                     }
                     b != 0 => {
-                        have 0 < b by { arithmetic() using { b >= 0; b != 0; } }
-                        arithmetic() using { 0 < b; a >= 0; a <= 1; b <= 1; }
+                        have 0 < b by { arithmetic() using { b >= 0; b != 0; }; }
+                        arithmetic() using { 0 < b; a >= 0; a <= 1; b <= 1; };
                     }
                 }
             }

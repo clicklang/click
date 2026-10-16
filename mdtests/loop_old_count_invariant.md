@@ -51,14 +51,14 @@ int32 loop_old_count_invariant(int32 p[3]) {
                     apply(int32_increment_greater_equal_lower_bound(at(statement(3).entry, i), at(statement(3).entry, 0), at(statement(3).entry, 3))) using {
                         at(statement(3).entry, i) >= at(statement(3).entry, 0);
                         at(statement(3).entry, i) < at(statement(3).entry, 3);
-                    }
+                    };
                 } and {
                     apply(int32_increment_upper_bound(at(statement(3).entry, i), at(statement(3).entry, 3))) using {
                         at(statement(3).entry, i) < at(statement(3).entry, 3);
-                    }
+                    };
                 }
             }
-            close_invariants by {
+            close_invariants() by {
                 both {
                     normalize();
                 } and {
@@ -104,7 +104,7 @@ int32 loop_old_count_invariant(int32 p[3]) {
         apply(int32_less_equal_and_not_less_than_implies_equal(at(loop(0).exit, i), at(loop(0).exit, 3))) using {
             at(loop(0).exit, i) <= at(loop(0).exit, 3);
             not at(loop(0).exit, i) < at(loop(0).exit, 3);
-        }
+        };
     }
     assumption();
 }
