@@ -93,3 +93,26 @@ fn charon_array_lengths_live_refresh_and_compiler_rejections() {
         p.refresh().unwrap();
     }
 }
+
+#[test]
+#[ignore = "nightly: verifies and expands Rust array bodies for literal spelling coverage"]
+fn charon_rust_integer_literals_preserve_native_array_contracts() {
+    let p = project(false);
+    let sidecar = ARRAYS_SIDECAR
+        .replace("[u8; 4]", "[u8; 0x4usize]")
+        .replace("[u32; 3]", "[u32; 0b11usize]")
+        .replace("4u64", "0b1_00usize")
+        .replace("3u64", "0o3usize")
+        .replace("2u64", "2_usize")
+        .replace("0u64", "0_usize")
+        .replace("7u32", "0b111_u32")
+        .replace("9u32", "0o11_u32");
+    assert_ne!(sidecar, ARRAYS_SIDECAR);
+    fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
+    C0VerificationSession::new_program_prepared(&sidecar, &p.prepared().unwrap()).unwrap();
+    assert_cli(&p, &["expand", "--claim", "length.contract", "--in-place"]);
+    assert_cli(&p, &["verify"]);
+    let invalid = sidecar.replace("ensures result == 0o3usize;", "ensures result == 0o4usize;");
+    assert_ne!(invalid, sidecar);
+    assert!(C0VerificationSession::new_program_prepared(&invalid, &p.prepared().unwrap()).is_err());
+}

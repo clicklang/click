@@ -377,12 +377,40 @@ sidecar keeps every comparison a proposition. A `bool` parameter is a claim
 too: `ensures early implies result == 7;`. Rust has no cast to `bool`, so
 `x as bool` is refused.
 
+### Integer literals
+
 An unsuffixed literal takes its type from what it is compared or combined
-with, so `bytes.len() == 4` compares two `usize` values. A suffix may still
-fix a literal's type: `4u64`, `255u8`, `7u32` and `-1i64` are both Rust and
-Click spellings. Click has no `usize`, `i32` or `u16` suffix, and no `_`
-separator; a literal that needs one of those types is written unsuffixed or
-cast with `as`.
+with, so `bytes.len() == 4` compares two `usize` values. Rust sidecars accept
+decimal literals and the Rust radix prefixes `0x`, `0o`, and `0b`. Underscore
+separators are accepted in the digits and before a suffix, as in
+`65_535u16`, `0xff_ff_u16`, and `0b1_010usize`.
+
+A suffix fixes the literal's native type: `i8`, `i16`, `i32`, `i64`, `isize`,
+`u8`, `u16`, `u32`, `u64`, or `usize`. On the pinned target, `isize` and
+`usize` are 64 bits. These are specification integer types; imported source
+coverage is defined under [Supported semantics](#supported-semantics).
+Floating-point suffixes and 128-bit integer suffixes are not supported.
+
+A suffixed literal must fit its type; it is never truncated to make it fit.
+A signed minimum, such as `-2_147_483_648i32` or `-(0x8000_0000i32)`, is
+accepted under unary minus. The same positive magnitude is out of range.
+Negating an unsigned suffixed literal is refused. Unsuffixed literals retain
+contextual typing, including arbitrary-precision mathematical `Integer`
+values when no native type is required.
+
+<!-- verified-example: tests/fixtures/rust-verification/integer_literals.click -->
+```click
+verifying "literals.rs";
+
+theorem literal_forms(word: u16, index: usize, signed_word: i32) {
+    requires word == 0xff_ff;
+    requires index == 0b1_010;
+    requires signed_word == -0x8000_0000;
+    ensures word == 65_535u16 by { assumption(); }
+    ensures index == 0o12usize by { assumption(); }
+    ensures signed_word == -2_147_483_648i32 by { assumption(); }
+}
+```
 
 ### Pure functions, predicates and theorems
 

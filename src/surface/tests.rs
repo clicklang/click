@@ -2345,6 +2345,7 @@ mod expansion_tests;
 mod fold_body_tests;
 mod loop_tests;
 mod project_tests;
+mod rust_literals;
 #[path = "../scaling_tests/surface/tests/scaling_tests.rs"]
 mod scaling_tests;
 #[path = "../scaling_tests/surface/tests/step_shape_scaling_tests.rs"]

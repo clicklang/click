@@ -2,6 +2,7 @@ mod cpp_class_objects;
 mod cpp_model;
 mod cpp_syntax;
 mod library_paths;
+mod rust_literals;
 mod rust_syntax;
 mod rust_trait_objects;
 pub(crate) use rust_trait_objects::implementation_interface_contract;
@@ -431,6 +432,7 @@ fn is_tactic_name(name: &str) -> bool {
 enum Token {
     Ident(String),
     Number(u32),
+    RustInteger(rust_literals::IntegerLiteral),
     BigNumber(String),
     UnsuffixedInt64(i64),
     UnsuffixedUInt64(u64),
@@ -493,6 +495,7 @@ impl Token {
         match self {
             Self::Ident(name) => format!("identifier `{name}`"),
             Self::Number(value) => format!("number `{value}`"),
+            Self::RustInteger(literal) => literal.describe(),
             Self::BigNumber(value) => format!("number `{value}`"),
             Self::UnsuffixedInt64(value) => format!("number `{value}`"),
             Self::UnsuffixedUInt64(value) => format!("number `{value}`"),
@@ -516,6 +519,7 @@ impl Token {
         match self {
             Self::Ident(_)
             | Self::Number(_)
+            | Self::RustInteger(_)
             | Self::BigNumber(_)
             | Self::UnsuffixedInt64(_)
             | Self::UnsuffixedUInt64(_)
@@ -571,6 +575,7 @@ fn charged_token_equal(left: &[Token], right: &[Token]) -> bool {
     for (left, right) in left.iter().zip(right) {
         let payload = |token: &Token| match token {
             Token::Ident(value) | Token::BigNumber(value) | Token::String(value) => value.len(),
+            Token::RustInteger(literal) => literal.digits.len(),
             _ => 0,
         };
         let work = payload(left)
@@ -1154,6 +1159,18 @@ impl Parser {
                 }
                 _ => None,
             }));
+        let mut tokens = tokens;
+        if language == SourceLanguage::Rust {
+            rust_literals::normalize_tokens(&mut tokens);
+        } else if let Some(index) = tokens
+            .iter()
+            .position(|token| matches!(token, Token::RustInteger(_)))
+        {
+            return Err(ClickError::new(format!(
+                "{}: Rust integer literal syntax requires a Rust sidecar",
+                positions[index]
+            )));
+        }
         // A Rust sidecar's trait object state is rewritten into contracts
         // over abstract resources before anything is parsed.
         let (tokens, positions, rust_object_traits) = if language == SourceLanguage::Rust {
@@ -11660,6 +11677,12 @@ impl Parser {
         }
         if self.peek() == Some(&Token::Minus) {
             self.check_unary_nesting_limit(depth)?;
+            if let Some((literal, end)) = self.negated_rust_literal() {
+                self.position = end;
+                return literal
+                    .contract_expression(true)
+                    .map_err(|message| self.error(message));
+            }
             if self.peek_next() == Some(&Token::Int64MinimumMagnitude) {
                 self.position += 2;
                 return Ok(ContractExpression::CFragment(CExpression::Value(
@@ -12628,6 +12651,7 @@ impl Parser {
             // A surrounding conversion or Integer-valued expression may supply
             // that context even when the enclosing theorem has only C params.
             Some(Token::Number(value)) => Ok(ContractExpression::IntegerLiteral(value.to_string())),
+            Some(Token::RustInteger(literal)) => literal.contract_expression(false).map_err(|message| self.error(message)),
             Some(Token::BigNumber(value)) => Ok(ContractExpression::IntegerLiteral(value)),
             Some(Token::UnsuffixedInt64(value)) => {
                 Ok(ContractExpression::IntegerLiteral(value.to_string()))
@@ -13190,6 +13214,12 @@ impl Parser {
     fn parse_ensure_unary_at_depth(&mut self, depth: usize) -> Result<C0Expression, ClickError> {
         if self.peek() == Some(&Token::Minus) {
             self.check_unary_nesting_limit(depth)?;
+            if let Some((literal, end)) = self.negated_rust_literal() {
+                self.position = end;
+                return literal
+                    .c_expression(true)
+                    .map_err(|message| self.error(message));
+            }
             if self.peek_next() == Some(&Token::Int64MinimumMagnitude) {
                 self.position += 2;
                 return Ok(C0Expression::Int64Literal(i64::MIN));
@@ -13284,6 +13314,7 @@ impl Parser {
                 let name = self.take_rust_slice_len(&name).unwrap_or(name);
                 Ok(C0Expression::Variable(name))
             }
+            Some(Token::RustInteger(literal)) => literal.c_expression(false).map_err(|message| self.error(message)),
             Some(Token::Number(value)) => Ok(C0Expression::Int32Literal(value)),
             Some(Token::UInt8Number(value)) => Ok(C0Expression::UInt8Literal(value)),
             Some(Token::UInt32Number(value)) => Ok(C0Expression::UInt32Literal(value)),
@@ -13389,6 +13420,15 @@ impl Parser {
     fn expect_number(&mut self, expected: &str) -> Result<u32, ClickError> {
         let at = self.error_context();
         match self.next() {
+            Some(Token::RustInteger(literal)) => {
+                literal
+                    .c_expression(false)
+                    .map_err(|message| self.error_at(at.clone(), message))?;
+                literal
+                    .digits
+                    .parse::<u32>()
+                    .map_err(|_| self.error_at(at, format!("expected {expected} to fit in uint32")))
+            }
             Some(Token::Number(value)) => Ok(value),
             Some(token) => {
                 Err(self.error_at(at, format!("expected {expected}, got {}", token.describe())))
@@ -13412,6 +13452,15 @@ impl Parser {
         };
         let at = self.error_context();
         let value = match self.next() {
+            Some(Token::RustInteger(literal)) => {
+                let value = literal
+                    .signed_i64(negative)
+                    .map_err(|message| self.error_at(at, message))?;
+                if parenthesized {
+                    self.expect(Token::RParen)?;
+                }
+                return Ok(value);
+            }
             Some(Token::Number(value)) => i64::from(value),
             Some(Token::UnsuffixedInt64(value) | Token::Int64Number(value)) => value,
             Some(Token::UnsuffixedUInt64(value) | Token::UInt64Number(value)) => {
