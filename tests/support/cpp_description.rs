@@ -188,14 +188,14 @@ pub fn lock_entry_mut(lock: &mut serde_json::Value) -> &mut serde_json::Value {
 }
 
 /// The digest a project lock records for the described unit: its
-/// description as written and the project's default target.
+/// description as written and the project's stable non-C target tag.
 #[allow(dead_code)]
 pub fn unit_digest(description: &Path) -> String {
     use sha2::{Digest, Sha256};
     let (project_file, _, _) = describe_project(description).unwrap();
     let project = read_json(&project_file, "project file").unwrap();
     let data = serde_json::to_vec(&serde_json::json!({
-        "target": "x86_64-unknown-linux-gnu",
+        "target": "x86_64-linux-userspace",
         "unit": project["units"][unit_name(description)],
     }))
     .unwrap();
