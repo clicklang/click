@@ -2738,7 +2738,7 @@ fn interface_load_definition_rejects_wrong_variable_address_and_snapshot() {
 }
 
 #[test]
-fn checked_interface_branch_rejects_unproved_facts_and_unowned_resources() {
+fn interface_branch_constructs_resources_and_rejects_unproved_facts() {
     let function = c_function(
         CType::Void,
         "interface",
@@ -2836,7 +2836,7 @@ fn checked_interface_branch_rejects_unproved_facts_and_unowned_resources() {
         .proposition;
     let successor_facts = root_facts.with_fact(checked_fact.clone());
 
-    let checked = CheckedExecutionBranch::check_interface(
+    let checked = CheckedExecutionBranch::construct_interface(
         split.clone(),
         &root_facts,
         [&then_theorem, &else_theorem],
@@ -2889,7 +2889,7 @@ fn checked_interface_branch_rejects_unproved_facts_and_unowned_resources() {
         true,
     );
     assert!(
-        CheckedExecutionBranch::check_interface(
+        CheckedExecutionBranch::construct_interface(
             split.clone(),
             &root_facts,
             [&then_theorem, &else_theorem],
@@ -2914,25 +2914,26 @@ fn checked_interface_branch_rejects_unproved_facts_and_unowned_resources() {
     let forged_state = state
         .clone()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(forged_resource));
+    let constructed = CheckedExecutionBranch::construct_interface(
+        split,
+        &root_facts,
+        [&then_theorem, &else_theorem],
+        [&root_facts, &root_facts],
+        &parent,
+        [&then_arm, &else_arm],
+        &function,
+        &[],
+        &stable_join_locals,
+        std::slice::from_ref(&spec),
+        &[],
+        [&[], &[]],
+        &forged_state,
+        &successor_facts,
+        None,
+    )
+    .expect("ownership is derived from the arms, not the proposed state");
     assert!(
-        CheckedExecutionBranch::check_interface(
-            split,
-            &root_facts,
-            [&then_theorem, &else_theorem],
-            [&root_facts, &root_facts],
-            &parent,
-            [&then_arm, &else_arm],
-            &function,
-            &[],
-            &stable_join_locals,
-            std::slice::from_ref(&spec),
-            &[],
-            [&[], &[]],
-            &forged_state,
-            &successor_facts,
-            None,
-        )
-        .is_err(),
+        constructed.joined_state.resources().is_empty(),
         "a resource absent from both arms must not gain interface authority"
     );
 }
