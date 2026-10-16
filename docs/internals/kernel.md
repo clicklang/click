@@ -406,9 +406,12 @@ transitions across that back edge remain a separate hard-bucket recursion
 boundary.
 
 A loop back edge must also preserve any object class retained for a pointer
-local at the head. A class mismatch names the first failing local and prints
-the head and back-edge classes. A missing back-edge class is reported as
-`unknown (no retained object class)`, distinct from an unbound local. Class
+local at the head. A back edge that returns the local unclassed, as an
+integer-to-pointer conversion such as `rb_parent` does, keeps the head's
+class: a class only adds strict-aliasing refusals, so the iteration checked
+against it covers the unchecked pointer. A class mismatch (another class, or
+an unbound local) names the first failing local and prints the head and
+back-edge classes. Class
 printing uses nominal struct tags, pointer base/depth, and member/scalar classes,
 without dumping struct layouts. The diagnostic retains the comparison already
 made by the join checker; it does not scan locals a second time.

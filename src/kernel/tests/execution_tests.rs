@@ -3319,16 +3319,22 @@ fn loop_join_reports_the_local_and_both_object_classes() {
     let other = CAccessClass::Struct(CStructClass::opaque("other"));
     let head = CState::new().with_local("parent", pointer(Some(node.clone())));
     let assumptions = PureFactContext::new();
-    for (class, expected) in [
-        (Some(other), "struct other"),
-        (None, "unknown (no retained object class)"),
-    ] {
+    let back = CState::new().with_local("parent", pointer(Some(other)));
+    let error =
+        c_loop_state_components_match_at_back_edge(&head, &back, &assumptions, &[]).unwrap_err();
+    assert!(
+        error.contains(
+            "pointer local `parent`: loop-head object class: struct node; back-edge object class: "
+        ),
+        "{error}"
+    );
+    assert!(error.ends_with("struct other"), "{error}");
+    // A back edge that returns the local unclassed (an integer-to-pointer
+    // conversion) keeps the head's class, which only adds refusals.
+    for class in [None, Some(node)] {
         let back = CState::new().with_local("parent", pointer(class));
-        let error = c_loop_state_components_match_at_back_edge(&head, &back, &assumptions, &[])
-            .unwrap_err();
-        assert!(error.contains("pointer local `parent`: loop-head object class: struct node; back-edge object class: "), "{error}");
-        assert!(error.ends_with(expected), "{error}");
+        assert!(
+            c_loop_state_components_match_at_back_edge(&head, &back, &assumptions, &[]).is_ok()
+        );
     }
-    let back = CState::new().with_local("parent", pointer(Some(node)));
-    assert!(c_loop_state_components_match_at_back_edge(&head, &back, &assumptions, &[]).is_ok());
 }

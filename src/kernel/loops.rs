@@ -2186,11 +2186,11 @@ fn c_loop_state_components_match_at_back_edge_inner(
             changed.join(", ")
         );
         if let Some((name, head, back_edge)) = object_class_mismatch {
-            let back_edge = match back_edge {
-                Some(Some(class)) => class.to_string(),
-                Some(None) => "unknown (no retained object class)".into(),
-                None => "local is not bound".into(),
-            };
+            // An unclassed back edge keeps the head's class, so a mismatch
+            // is another class or an unbound local.
+            let back_edge = back_edge
+                .flatten()
+                .map_or_else(|| "local is not bound".into(), |class| class.to_string());
             message.push_str(&format!(
                 "\npointer local `{name}`: loop-head object class: {head}; back-edge object class: {back_edge}"
             ));
