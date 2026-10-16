@@ -5121,7 +5121,7 @@ impl CMemory {
     ) -> Self {
         crate::kernel::debug_assert_widths(
             "a stored value",
-            || crate::kernel::value_width_mismatch(&value),
+            || crate::kernel::value_mismatch(&value),
             &value,
         );
         // Most scalar stores have no union views to displace. When one is

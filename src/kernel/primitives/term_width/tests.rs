@@ -175,3 +175,85 @@ fn separate_fact_contexts_may_use_one_variable_number_at_different_widths() {
         true,
     );
 }
+
+#[test]
+fn a_narrow_constant_stays_inside_its_type() {
+    let c = Bitvector32Term::Constant;
+    for in_range in [
+        CValue::Bool(c(1)),
+        CValue::Int8(c(-128i32 as u32)),
+        CValue::Int8(c(127)),
+        CValue::UInt8(c(255)),
+        CValue::Int16(c(-32768i32 as u32)),
+        CValue::UInt16(c(65535)),
+        // A symbolic narrow value is kept in range by its path facts.
+        CValue::UInt8(Bitvector32Term::Variable(Variable(15))),
+    ] {
+        assert_eq!(
+            narrow_constant_out_of_range(&in_range),
+            None,
+            "{in_range:?}"
+        );
+    }
+    for out_of_range in [
+        CValue::Bool(c(2)),
+        CValue::Int8(c(128)),
+        CValue::Int8(c(-129i32 as u32)),
+        CValue::UInt8(c(256)),
+        // A negative int8 must be sign-extended, not zero-extended.
+        CValue::Int8(c(0xff)),
+        CValue::UInt16(c(65536)),
+    ] {
+        assert!(
+            narrow_constant_out_of_range(&out_of_range).is_some(),
+            "{out_of_range:?}"
+        );
+    }
+}
+
+/// The same order questions decide alike over `int32`, `int64` and
+/// `uint64`: a chain, a chain to a constant bound, and a chain with a gap.
+#[test]
+fn order_chains_decide_alike_at_every_width() {
+    type Less = fn(Bitvector32Term, Bitvector32Term) -> ConditionTerm;
+    let widths: [(Less, fn(u64) -> Bitvector32Term); 3] = [
+        (ConditionTerm::signed_less_than, |n| {
+            Bitvector32Term::Constant(n as u32)
+        }),
+        (ConditionTerm::int64_signed_less_than, |n| {
+            Bitvector32Term::Int64Constant(n as i64)
+        }),
+        (
+            ConditionTerm::uint64_less_than,
+            Bitvector32Term::UInt64Constant,
+        ),
+    ];
+    for (base, (less, constant)) in widths.into_iter().enumerate() {
+        let v = |n: u64| Bitvector32Term::Variable(Variable(997_000 + 100 * base as u64 + n));
+        let mut facts = PureFactContext::new();
+        for i in 0..3 {
+            facts = facts.assume_condition(less(v(i), v(i + 1)), true);
+        }
+        facts = facts.assume_condition(less(v(3), constant(100)), true);
+        // A second chain with a gap: v(10) < v(11), v(12) < v(13).
+        facts = facts
+            .assume_condition(less(v(10), v(11)), true)
+            .assume_condition(less(v(12), v(13)), true);
+        assert_eq!(
+            facts.decide(&less(v(0), v(3))),
+            Some(true),
+            "chain at {base}"
+        );
+        assert_eq!(
+            facts.decide(&less(v(0), constant(100))),
+            Some(true),
+            "bound at {base}"
+        );
+        assert_eq!(
+            facts.decide(&less(v(3), v(0))),
+            Some(false),
+            "reversed at {base}"
+        );
+        assert_eq!(facts.decide(&less(v(10), v(13))), None, "gap at {base}");
+    }
+}
