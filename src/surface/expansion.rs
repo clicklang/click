@@ -2072,21 +2072,34 @@ fn splice_source(
             spliced.push_str(&source[span.end..]);
         }
     }
-    with_cited_library_imports(spliced, replacement)
+    with_cited_library_imports(spliced, replacement, source)
 }
 
 /// `source` with an `import click::...;` line for each Click library module
 /// whose theorem `replacement` cites but `source` does not yet see. A
 /// tactic's expansion writes out the library theorems the tactic applied,
 /// and the expanded sidecar must still name their modules.
-fn with_cited_library_imports(source: String, replacement: &str) -> String {
+fn with_cited_library_imports(source: String, replacement: &str, original: &str) -> String {
     let cited = replacement
         .split(|character: char| !(character.is_alphanumeric() || character == '_'))
         .filter(|word| !word.is_empty());
-    let imported = names::FileSymbols::for_source(&source)
+    let mut imported = names::FileSymbols::for_source(&source)
         .map(|symbols| symbols.visible_modules())
         .unwrap_or_default();
-    let missing = validation::library_modules_to_import(&imported, cited);
+    imported.extend(
+        parser::library_path_modules(&source)
+            .unwrap_or_default()
+            .into_iter()
+            .map(str::to_owned),
+    );
+    let mut missing = validation::library_modules_to_import(&imported, cited);
+    // Preserve dependencies contributed by fully qualified resource paths
+    // even when the replacement uses the resource's canonical bare name.
+    for module in parser::library_path_modules(original).unwrap_or_default() {
+        if !imported.iter().any(|import| import == module) && !missing.contains(&module) {
+            missing.push(module);
+        }
+    }
     if missing.is_empty() {
         return source;
     }

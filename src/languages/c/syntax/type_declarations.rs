@@ -424,6 +424,7 @@ impl Parser {
             .ok_or_else(|| self.error_here(format!("struct `{name}` layout is too large")))?;
         let (aggregate_fields, aggregate_unions) =
             flatten_aggregate_layout(&fields, &self.structs, &self.unions);
+        let class = struct_class_of_fields(&name, &fields, &self.structs, &self.unions);
         if self
             .structs
             .insert(
@@ -434,6 +435,7 @@ impl Parser {
                     aggregate_unions,
                     size_bytes,
                     alignment_bytes: struct_alignment,
+                    class: Some(class),
                 },
             )
             .is_some()

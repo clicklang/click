@@ -134,7 +134,7 @@ allowed cases:
 1. scalar and pointer classes, so `long` vs `long long` and `int` vs `long`
    are refused through `void *`, for declared objects and pointer parameters;
 2. struct access paths, including the struct probe, union reads and
-   `container_of`;
+   `container_of`, then `int *` classes and local byte arrays;
 3. heap effective types and the call boundary;
 4. the project optimization level, `-O2` by default. The Linux profile then
    stops requiring `-fno-strict-aliasing`, `-fno-strict-overflow` and
@@ -146,7 +146,9 @@ allowed cases:
 - **Step 1 (scalar and pointer classes):** done.
   - Accesses carry their class. Loads and stores whose kernel type erases it
     (`long`, `long long`, exact pointer types) get it from the C frontend's
-    type; others get it from the kernel type.
+    type; others get it from the kernel type. Assignments through `*p` and
+    `p[i]` first carried no class and went unchecked; they now carry the
+    class of the lvalue they write.
   - Pointer parameters carry their pointee class from entry. A pointer read
     from memory carries its lvalue's pointee class unless it already carries
     one.
@@ -157,6 +159,24 @@ allowed cases:
     struct pointers with them; step 2 separates them.
   - Globals, and local `int8` and `uint8` arrays, which the frontend also
     uses for arrays of structs, are not covered yet.
+- **Step 2a (struct access paths):** done.
+  - A struct class is the struct's tag with the classes it contains at any
+    depth: scalar and pointer members, embedded structs' contents, and every
+    member of a contained union. A struct-pointer member's pointee is
+    identified by tag alone, which keeps self-referential structs finite.
+  - A member access carries `Member(container, member class)`. On a struct
+    object it requires the same struct, a struct embedding the container, or
+    one the container embeds (`container_of`). On a scalar object it
+    requires the member's class. A scalar or pointer access on a struct
+    object requires a member of its class.
+  - Struct-pointer parameters carry their struct; declared local structs
+    record it on their block. A struct-pointer member's load carries its
+    pointee's full class, so the loaded pointer designates a known struct.
+  - Positions are not compared: the check accepts a member of the right
+    class at the wrong offset. The undecidable-position rule waits for
+    positional checking.
+- **Step 2b (next):** `int *` and `int **` classes, separated from struct
+  pointers, and local byte arrays separated from arrays of structs.
 
 ## Validation
 

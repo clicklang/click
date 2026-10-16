@@ -3843,7 +3843,7 @@ pub(in crate::surface) fn substitute_c_fragment_in(
             value_type: *value_type,
             volatile: *volatile,
             pointee_constant: *pointee_constant,
-            access_class: *access_class,
+            access_class: access_class.clone(),
             source: source.clone(),
         }),
         CExpression::Index(base, index) => Ok(CExpression::Index(

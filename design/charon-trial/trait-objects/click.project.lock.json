@@ -4,15 +4,20 @@
     "trait_objects": {
       "language": "rust",
       "lock": {
-        "artifact": "346dd5f302c9bde8cd8f3d86225db78e06386be6727525be92a7fd0ea7dc36f9",
-        "charon_driver": "645ab4b0456083642cafa05da8b1d58aca0c6d3349c2b7921b0820cbb465fb72",
-        "config": "58cde5846660223054ef3aee04525ee3dc1a2bc205d6a3dfa5aa8bd5f01d0a30",
-        "exporter": "c6cc5acf5bb7e4d4bb6bef5265639d1b05b0138e3072767825cc2aa62a5040e4",
-        "identity": "feee11d43a028b72d80cf15fd33fbeda203df5eb698d1b95bd04125fad0faf3c",
-        "schema": 8,
-        "source": "ede355dfe756e59fb935a6c4451f91ad5d2bcd29ca63c6d0aa67e5e032f43d8b",
+        "artifact": "5f29a54a58972ed6f2ac989cd8ad3018cd8d6eb6c09b79dead740bf085587c15",
+        "config": "9512d1a4786b9228d544433355a6de4825c1e9ce5ef47f65d7b9b7057e51076a",
+        "frontend": {
+          "click_version": "0.1.0",
+          "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+          "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+          "extractor_version": "0.1.279",
+          "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+        },
+        "identity": "77a4aa92a26cdbef01e898af71a71e290a613abf2950ab999d5fa2d7e485d9f3",
+        "schema": 9,
+        "source": "2fccfefca376fdc9001783c4020d5a4f09cfe96deab979ada53adcbc46dd0292",
         "source_files": {
-          "shapes.rs": "9ba7077307424ec3abb0dd995ac5b2ea536e923db32bac53ca02dc038de98797"
+          "shapes.rs": "2cfa90e1603027c90323da4acbe254ddde8194a3c5238c1493c8d19c9d70477a"
         }
       }
     }

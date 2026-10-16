@@ -1685,8 +1685,12 @@ source fact and its conclusion, `requires Adds(f, { amount: 3 }); ensures
 Shifts(f, { offset: 3 })`. See
 `mdtests/named_contract_value_parameter_refinement_theorem.md` and
 `mdtests/named_contract_value_parameter_contract_refinement_theorem.md`. An
-execution theorem cannot yet conclude a contract with value parameters;
-formation at `&f` checks it automatically.
+execution theorem fixes them the same way, `theorem t() executes add3(int32
+x) { ensures Adds(&add3, { amount: 3 }) by { step(); simp(); } }` or, from a
+source fact, `requires Adds(f, { amount: 3 }); ensures Shifts(f, { offset: 3
+})`: its one checked call is proved with the target's value parameters at
+the conclusion's values
+(`mdtests/named_contract_value_parameter_execution_theorem.md`).
 
 A top-level `contract` block defines a reusable behavioral interface without
 declaring a concrete C function:
@@ -2053,10 +2057,35 @@ names both types
 `mdtests/a_byte_buffer_read_through_a_uint32_pointer_is_refused.md`,
 `mdtests/a_pointer_cell_read_through_a_pointer_of_other_signedness_is_refused.md`,
 `mdtests/an_unsigned_read_of_a_signed_object_is_allowed.md`,
-`mdtests/a_character_view_of_an_int_is_allowed.md`). The check does not yet
-cover struct members, `int *` and `int **` pointers, local byte arrays,
-globals, or heap objects;
-the effective-type design (`design/effective-types.md`) stages them next.
+`mdtests/a_character_view_of_an_int_is_allowed.md`). Stores are checked
+the same way
+(`mdtests/a_store_through_a_pointer_of_another_rank_is_refused.md`,
+`mdtests/an_indexed_store_through_a_pointer_of_another_rank_is_refused.md`,
+`mdtests/stores_through_the_objects_own_type_are_allowed.md`).
+
+Structs are distinct types even when their layouts agree. A member access
+such as `p->y` names the struct it goes through, and is refused when the
+object is a struct of another type: a declared local struct, the struct a
+struct-pointer parameter points to, or the struct a pointer loaded from a
+struct-pointer member points to. Partial knowledge is checked only for
+consistency: a member access through a struct that embeds the object's
+struct, as `container_of` makes, or one the object's struct embeds, is
+allowed. A struct object admits a scalar or pointer access of a class one of
+its members has at any depth, members of contained unions included, so an
+`int *` may read a struct's `int` member and a union member may be read after
+a store to another. The check compares types, not offsets: which member lies
+at the accessed position is not checked
+(`mdtests/a_struct_read_through_a_pointer_to_another_struct_is_refused.md`,
+`mdtests/a_declared_struct_read_through_another_struct_is_refused.md`,
+`mdtests/a_struct_pointer_loaded_from_a_member_designates_its_struct.md`,
+`mdtests/a_long_long_view_of_a_struct_is_refused.md`,
+`mdtests/struct_members_read_through_their_own_types_are_allowed.md`,
+`mdtests/container_of_reads_the_enclosing_struct.md`,
+`mdtests/container_of_into_an_unrelated_struct_is_refused.md`,
+`mdtests/a_union_member_read_after_another_member_store_is_allowed.md`).
+The check does not yet cover `int *` and `int **` pointers, local byte
+arrays, local arrays of structs, globals, or heap objects; the
+effective-type design (`design/effective-types.md`) stages them next.
 
 Automatic scalar, pointer, and array declarations do not zero-initialize their
 storage. Reading a local before a value has been written is undefined behavior.

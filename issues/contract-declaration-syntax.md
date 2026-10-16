@@ -200,11 +200,10 @@ that writes `int32` for such a source already writes the source's spelling.
    contract, whose value parameters are body clauses `let amount: i32;`
    attached as `Adds(f, { amount: k })`. Parameterized contracts are done
    for C and Rust function pointers, through automatic formation at
-   `&f`, and for capturing closures by contract-to-contract refinement;
-   refinement theorems conclude them with the values fixed, and execution
-   theorems for them remain,
-   through the C++ exporter and Charon, with the same refinement check as C
-   (`Comparator(&f)`).
+   `&f`, and for capturing closures by contract-to-contract refinement, and
+   refinement and execution theorems conclude them with the values fixed.
+   C++ and Rust function values reach them through the C++ exporter and
+   Charon, with the same refinement check as C (`Comparator(&f)`).
 4. **Base-class and trait method interfaces.** A contract on a C++ virtual
    method or a Rust trait method is the interface for that method. Each
    override or `impl` is checked against it with the named-contract
@@ -217,13 +216,14 @@ that writes `int32` for such a source already writes the source's spelling.
    2026-10-15, the interface's `ensures` join the implementation's own and
    its proof establishes them, and its `requires` apply when the
    implementation writes none; written `requires` must follow from the
-   interface's. Object state is done for `&self` and shared object
-   references: a trait's `function size(self) -> i32;` is a field of its
+   interface's. Object state is done for `&self` and `&mut self`, shared
+   and mutable object references: a trait's `function size(self) -> i32;` is a field of its
    sealed object resource, each `impl` defines it from its fields and is
    verified on its own memory against an `_iface` contract, and the
    importer packs the struct into the object at generic instantiation and
-   `dyn` coercion. Remaining: `&mut self` object state, implementations of
-   function-free traits that rename the interface's parameters, generic
+   `dyn` coercion; a mutable reference may change the state, which its
+   `ensures` read as new and `old(...)` as at entry. Remaining:
+   implementations of function-free traits that rename the interface's parameters, generic
    traits and default methods, and C++ virtual methods. Done for C++
    virtual methods without object state: a virtual method's contract is the
    interface a call through it assumes, each override in the source

@@ -2543,7 +2543,10 @@ fn expand_declared_resource_clause(
                     .instance_resource(binding.identity)
                     .unwrap_or_else(|| name.clone())
             };
-            resource_definitions.record_instance(binding.identity, &name, construction);
+            // Unfold syntax can still carry the parser's provisional parent
+            // family for a child. Keep the family resolved above, including
+            // after an explicit child fold removed its slot annotation.
+            resource_definitions.record_instance(binding.identity, &parent, construction);
             if let Some(children) = binding.child_bindings.as_ref() {
                 let slots = resource_definitions
                     .get(&parent)

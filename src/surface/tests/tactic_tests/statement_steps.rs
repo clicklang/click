@@ -268,6 +268,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         true,
     );
     let statement = CStatement::TypedStore {
+        access_class: None,
         pointer: CExpression::Value(CValue::pointer(second)),
         value: CExpression::Value(int32(9)),
         value_type: CType::Int32,

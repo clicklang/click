@@ -514,6 +514,7 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
     assert!(pending.pending_thread_create.is_some());
     assert!(pending.locals.is_uninitialized_object("thread"));
     let external_store = |index, value, value_type, pointer_type| CStatement::TypedStore {
+        access_class: None,
         pointer: CExpression::Value(CValue::typed_pointer(pointer(index), pointer_type)),
         value: CExpression::Value(value),
         value_type,
@@ -529,6 +530,7 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
             CType::UInt8Pointer,
         ),
         CStatement::TypedStore {
+            access_class: None,
             pointer: c_addr_of("thread"),
             value: c_uint64_literal(123),
             value_type: CType::UInt64,

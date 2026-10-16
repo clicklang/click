@@ -509,9 +509,11 @@ In `src/kernel/`:
   width either, so each fact context remembers the width its facts use each
   variable at, and debug builds also refuse a condition that uses one at
   another width. The scope is the context, not the run: variable numbers are
-  assigned per function, and two facts only combine within one context.
-  Making the width part of the term is the open issue
-  `issues/one-integer-term-type.md`.
+  assigned per function, and two facts only combine within one context. A
+  narrow constant must also lie inside its type's range: an `int8` constant
+  is its sign-extended word, a `uint8` one its zero-extended word. Why the
+  width stays implied instead of part of the term is ruled in
+  `design/typed-indices.md`.
 - `PointerOffsetTerm`: pointer-offset expressions.
 - `ConditionTerm`: proof-level truth-valued conditions such as signed and
   unsigned order, equality, overflow, pointer-offset equality, and typed
