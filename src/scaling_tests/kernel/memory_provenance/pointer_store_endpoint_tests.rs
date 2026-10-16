@@ -52,7 +52,10 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
         let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
             pointer_value_at_stopping_store(&cell, &address, LoadKind::Bits32, 8, &context)
         });
-        assert_eq!(value, Some(CPointerValue::new(stored.clone(), CType::Int32Pointer)));
+        assert_eq!(
+            value,
+            Some(CPointerValue::new(stored.clone(), CType::Int32Pointer))
+        );
         samples.push(work);
         for (kind, bytes) in [
             (LoadKind::Bits32, 4),

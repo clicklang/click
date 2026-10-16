@@ -64,24 +64,44 @@ pointer coordinates with native eight-byte read nodes was withdrawn after its
 compatibility regressions; numeric pointer coordinates retain their existing
 representation.
 
-The build-75 complete ordinary example run passed 48 of 51 projects. The
-remaining failures were arena, owned-vector and rust-usize. Subsequent full
-checks of owned-vector and rust-usize pass: the vector loop explicitly retains
-its data pointer, and pure numeric conversions observe the word's bits and
-discard its carrier. Arena allocation and free now verify with explicit pointer
-invariants; the full arena project next stops when refolding the region after a
-nested pointer-field write in `arena_write`. That remaining compatibility failure
-is not counted as fixed. The build-80 ordinary non-scaling library run passes
-all 4,795 selected tests, including the new conversion and contract proof-mode
-regressions. The latter's full fresh/expanded/retained check is kept in the named
-nightly tests to respect the ordinary gate's half-second rule.
+After integrating upstream through `3e3f5ccd4`, the build-94 ordinary
+non-scaling library run passes all 4,853 selected tests. It includes a reduced
+complete-pointer read regression: a cached four-byte scalar prefix may recover
+only a complete stored eight-byte pointer; an upper-half overwrite invalidates
+that recovery. Numeric wide-read observations project a retained integer
+record's bits without copying its pointer authority.
 
-The original input-cursor, modeled-binary-tree, owned-string, refcount,
-rust-array-slices, rust-chunks-exact and marked-linked-list projects pass.
-The tree's membership and inorder models compare numeric addresses explicitly,
-while its resource model retains complete pointers. No full nightly suite, PR
-or upstream publication has been performed. Current upstream must be integrated
-before publishing; the branch's base predates its recent pointer-field fixes.
+At build 89, all ordinary Markdown fixtures, all 51 ordinary example projects,
+and all 754 scaling tests passed, and Clippy passed with warnings denied.
+That checkpoint used character-to-character casts that preserve their incoming
+bounds. One existing library policy test expects an authored signedness cast
+to widen instead. Approval for refining that policy is pending; the current
+narrower implementation still rejects the borrowed C-string signedness-cast
+fixture. Consequently those earlier corpus results are not a green verdict
+for the current working tree.
+
+The earlier arena, vector and Rust integer compatibility failures are resolved.
+Eight independent expansion/verification checks and the named packed-cast
+fresh/expanded/retained test passed after the first upstream integration.
+They need rerunning after the final compatibility changes.
+
+The affected named `rbtree-erase` nightly project is under investigation.
+Its packed-parent resources need the approved full cast relationships in
+addition to numeric address facts. A scratch proof with those relationships
+gets farther, but its complete left-child read across the transplant still
+fails; this is not counted as fixed. The equality holds before the transplant.
+An explicit frame transport and an explicit separation of the intervening
+parent-word store from the child field do not close the later obligation.
+Smaller model-alias and packed-cast/store/call probes pass, so the general
+cause is not established. The investigation and resource adaptations remain
+in a scratch copy; the existing tree proof has not been weakened.
+
+After the complete-read producer fix, all 754 scaling tests and the named
+packed-cast fresh/expanded/retained test pass again. Clippy passes with warnings
+denied. The authored `void*` identity-cast control also passes: every explicit
+cast to `void*` still widens, including when its operand already has that type.
+No C implementation source was changed, no full nightly suite was run, and no
+PR has been published.
 
 The hidden-record experiment closes the direct integer escape; it does not
 complete Phase B or justify closing the parent bug.

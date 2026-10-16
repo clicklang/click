@@ -137,9 +137,13 @@ fn fold_nonnull_fact_uses_an_exact_composite_pointer_alias() {
     assert!(!resource_body_fact_is_established(&context, &needed_parent));
     // A pure pointer argument observes the complete value; a numeric address
     // alias suffices for nonnull above, but cannot rewrite this argument.
-    let context = context.assume_condition(ConditionTerm::pointer_value_equal(
-        CPointerValue::new(model.clone(), CType::Int32Pointer),
-        CPointerValue::new(program.clone(), CType::Int32Pointer)), true);
+    let context = context.assume_condition(
+        ConditionTerm::pointer_value_equal(
+            CPointerValue::new(model.clone(), CType::Int32Pointer),
+            CPointerValue::new(program.clone(), CType::Int32Pointer),
+        ),
+        true,
+    );
     assert!(resource_body_fact_is_established(&context, &needed_parent));
     assert!(!resource_body_fact_is_established(
         &context,

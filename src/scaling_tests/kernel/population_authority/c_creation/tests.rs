@@ -508,7 +508,10 @@ fn count_alias_lookup_does_not_scan_unrelated_authority_heads() {
         arguments: vec![Some(SpecExpression::Value(CValue::pointer(alias.clone())))],
     };
     let equal = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_value_equal(CPointerValue::new(alias, anchor.c_type()), anchor.clone()),
+        ConditionTerm::pointer_value_equal(
+            CPointerValue::new(alias, anchor.c_type()),
+            anchor.clone(),
+        ),
         true,
     );
     let samples = [64usize, 256, 1024].map(|size| {

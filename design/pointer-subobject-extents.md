@@ -260,9 +260,12 @@ none of that.
     (`examples/byte-representation`).
   - The consequence: `*(int32*)((char*)&p->first + 4)` is accepted. An explicit
     character round trip is the standard escape hatch, and compilers honor it.
-  - Conversions between character-pointer spellings preserve the existing byte
-    view. Character signedness and qualifier adjustments do not widen it again;
-    the original C-string caller/callee fixtures cover these conversions.
+  - Identity casts other than `void*` casts and compiler-inserted pointer
+    conversions preserve the existing view. Explicit conversions to a different
+    character pointer type, and every explicit cast to `void*`, select the
+    enclosing view. A refinement that also preserves bounds across character
+    signedness casts is awaiting user approval: without it, the borrowed
+    C-string signedness-cast fixture requires an additional resource adapter.
   - Recommended: accept, and document it in `docs/`.
 - **D5. Staging.**
   - Recommended: Phase A in three PRs:

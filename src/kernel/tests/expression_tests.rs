@@ -3855,19 +3855,26 @@ fn implicit_byte_pointer_coercion_retains_the_selected_extent() {
     assert_eq!(coerced.designation(), pointer.designation());
     assert_eq!(coerced.opaque_extent(), pointer.opaque_extent());
     assert_eq!(coerced.extent(), pointer.extent());
-    let (value, _) = c_evaluate_spec_expression_at_state(
-        &CState::new(),
-        &SpecExpression::Cast(
-            Box::new(SpecExpression::Value(CValue::Pointer(pointer))),
-            CType::UInt8Pointer,
-        ),
-        None,
-        &PureFactContext::new(),
-    )
-    .unwrap();
-    let CValue::Pointer(explicit) = value else {
-        panic!("a pointer cast must yield a pointer")
-    };
-    assert!(explicit.extent_is_known());
-    assert!(explicit.extent().is_none());
+    for (source, target) in [
+        (CType::Int8Pointer, CType::UInt8Pointer),
+        (CType::VoidPointer, CType::VoidPointer),
+    ] {
+        let (value, _) = c_evaluate_spec_expression_at_state(
+            &CState::new(),
+            &SpecExpression::Cast(
+                Box::new(SpecExpression::Value(CValue::Pointer(
+                    pointer.clone().with_type(source),
+                ))),
+                target,
+            ),
+            None,
+            &PureFactContext::new(),
+        )
+        .unwrap();
+        let CValue::Pointer(explicit) = value else {
+            panic!("a pointer cast must yield a pointer")
+        };
+        assert!(explicit.extent_is_known());
+        assert!(explicit.extent().is_none());
+    }
 }

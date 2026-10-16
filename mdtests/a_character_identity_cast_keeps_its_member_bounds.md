@@ -1,16 +1,16 @@
-# Character signedness conversion retains the existing byte view
+# An identity character-pointer cast retains the existing byte view
 
 ```c filename=bytes.c
 struct bytes { signed char first; signed char second; };
-unsigned char read_byte(struct bytes* p) {
-    unsigned char* q = (unsigned char*)&p->first;
+signed char read_byte(struct bytes* p) {
+    signed char* q = (signed char*)&p->first;
     return q[1];
 }
 ```
 
 ```click
 verifying "bytes.c";
-uint8 read_byte(struct bytes* p) {
+int8 read_byte(struct bytes* p) {
     requires p != 0;
     views p->first;
     views p->second;

@@ -1120,15 +1120,13 @@ fn cast_c_value_to_type_with_integer_origin(
                 return Ok(CValue::Pointer(pointer.with_type(target_type)));
             }
             CValue::Pointer(pointer) => {
-                // Signedness and qualifiers do not create a new byte view.
-                // A byte pointer already names that view; keep its bounds when
-                // converting between the C character-pointer spellings.
-                let byte_to_byte =
-                    matches!(pointer.c_type(), CType::UInt8Pointer | CType::Int8Pointer)
-                        && matches!(target_type, CType::UInt8Pointer | CType::Int8Pointer);
+                // An identity byte cast retains the current view. Other byte
+                // casts and every void-pointer cast select the enclosing view.
+                let identity_cast = pointer.c_type() == target_type
+                    && matches!(target_type, CType::UInt8Pointer | CType::Int8Pointer);
                 let pointer = pointer.with_type(target_type);
                 return Ok(CValue::Pointer(
-                    if !byte_to_byte
+                    if !identity_cast
                         && matches!(
                             target_type,
                             CType::VoidPointer | CType::UInt8Pointer | CType::Int8Pointer
@@ -1845,7 +1843,13 @@ fn evaluate_c_cast_paths(
                     }
                     _ => None,
                 };
-                let coerced = if integer_mode == CIntegerCastMode::PointerCoercion {
+                let implicit_pointer_conversion = integer_mode == CIntegerCastMode::CConversion
+                    && !explicit_qualification
+                    && target_type.is_pointer()
+                    && matches!(&value, CValue::Pointer(_));
+                let coerced = if integer_mode == CIntegerCastMode::PointerCoercion
+                    || implicit_pointer_conversion
+                {
                     match value {
                         CValue::Pointer(pointer) if target_type.is_pointer() => {
                             Ok(CValue::Pointer(pointer.with_type(target_type)))

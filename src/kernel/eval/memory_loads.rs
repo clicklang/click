@@ -1456,6 +1456,16 @@ fn canonicalized_pointer_value_from_int_cell(
         &crate::kernel::intern_c_memory_ref(memory),
         pointer,
     );
+    // A scalar cache can name the numeric prefix of a pointer whose complete
+    // value is still present in the recorded memory. Select that whole value
+    // inside the typed read producer; never infer its bounds from the prefix
+    // or publish the known pointer as an unconditional name for one cell.
+    if let Some(stored) = crate::kernel::memory_provenance::complete_pointer_read_value(
+        result.designation(),
+        assumptions,
+    ) {
+        return Some(CValue::Pointer(stored.with_type(value_type)));
+    }
     if let Some(load) = defining_load {
         if matches!(purpose, LoadPurpose::Logical | LoadPurpose::Validity)
             && let Bitvector32Term::MemoryLoad(memory, address, _) = &load
@@ -5125,6 +5135,68 @@ mod tests {
             .assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true);
         assert!(reconstructed.pointers_known_equal(&x, &y));
         assert_eq!(reconstructed.pure_facts().len(), 1);
+    }
+
+    #[test]
+    fn a_cached_scalar_prefix_recovers_only_the_complete_stored_pointer() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer {
+            block: "global:cached-pointer-a".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let other = Pointer {
+            block: "global:cached-pointer-b".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let address = Pointer::symbolic(Variable(210_172));
+        let stored = CPointerValue::new(address.clone(), CType::Int32Pointer).with_extent(Some(
+            SubobjectExtent {
+                start: address,
+                width: 4,
+            },
+        ));
+        let memory = CMemory::new()
+            .store(field.clone(), CValue::Pointer(stored.clone()))
+            .store(other.clone(), CValue::Pointer(stored.clone()));
+        let memory = memory
+            .without_possible_aliasing_cells(
+                &Pointer::symbolic(Variable(210_173)),
+                8,
+                &PureFactContext::new(),
+            )
+            .materialize_symbolic_cell(field.clone(), CType::Int32)
+            .materialize_symbolic_cell(other.clone(), CType::Int32);
+        let context = PureFactContext::new();
+        let read = |memory: &CMemory, field: &Pointer| {
+            let prefix = memory.known_value(field).expect("cached prefix");
+            assert!(matches!(prefix, CValue::Int32(_)));
+            let CValue::Pointer(value) = canonicalized_pointer_value_from_int_cell(
+                memory,
+                field,
+                &prefix,
+                CType::Int32Pointer,
+                &mut ExecutionFacts::new(),
+                &context,
+                None,
+                LoadPurpose::Logical,
+            )
+            .unwrap() else {
+                panic!("pointer read")
+            };
+            value
+        };
+        assert_eq!(read(&memory, &field), stored);
+        assert_eq!(read(&memory, &other), stored);
+        assert!(
+            crate::kernel::equality_graph::logical_pointer_read_term(stored.pointer()).is_none()
+        );
+        let overwritten = memory.store(
+            field.clone().offset_by_bytes(4),
+            CValue::UInt32(0u32.into()),
+        );
+        let changed = read(&overwritten, &field);
+        assert!(changed.extent().is_none());
+        assert!(!context.pointer_designations_match(&changed, &stored));
     }
 
     #[test]

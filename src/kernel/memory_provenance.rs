@@ -4810,7 +4810,7 @@ fn wide_read_observations_have_value(
             })
         });
         // Compare only a complete typed word in the current native-width graph.
-        let equal = match &value {
+        let equal = match value.as_ref().map(CValue::numeric_value) {
             Some(CValue::Int64(word) | CValue::UInt64(word)) => {
                 assumptions.uint64_values_known_equal(word, other)
             }
@@ -7066,6 +7066,29 @@ mod opaque_pointer_frame_tests {
             assert_eq!(inner.len(), 1);
         });
         assert!(outer.is_empty());
+    }
+
+    #[test]
+    fn a_wide_numeric_read_observes_bits_without_copying_the_pointer_record() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer::symbolic(Variable(9_880_490));
+        let bits = Bitvector32Term::UInt64Constant(17);
+        let number = CValue::UInt64(bits.clone());
+        let word = number
+            .clone()
+            .complete_word(Pointer::symbolic(Variable(9_880_491)));
+        let context = PureFactContext::new();
+        let same_value = || {
+            crate::kernel::reasoning::c_values_proven_equal_for_memory_resolution(
+                &word, &number, &context,
+            )
+        };
+        assert!(!same_value());
+        let memory = intern_c_memory(CMemory::new().store(field.clone(), word.clone()));
+        let read = Bitvector32Term::MemoryLoad(memory, Box::new(field), LoadKind::Bits64);
+        assert!(wide_read_has_recorded_value(&read, &bits, &context));
+        assert!(wide_read_has_recorded_value(&bits, &read, &context));
+        assert!(!same_value());
     }
 
     #[test]

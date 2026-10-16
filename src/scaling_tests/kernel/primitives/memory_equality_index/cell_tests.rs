@@ -1478,15 +1478,16 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
             CPointerValue::from_read(pointer, CType::Int32Pointer, &snapshot, &field)
         };
         let source = read(&PureFactContext::new(), &CMemory::new());
-        let before = CMemory::new().store(
-            field.clone(),
-            CValue::Pointer(source.clone()),
-        );
+        let before = CMemory::new().store(field.clone(), CValue::Pointer(source.clone()));
         let range = |base: CPointerValue, start: u32, end: u32| {
             CMemoryRange::from_pointer_value(&base, start.into(), end.into(), 4)
         };
         let separation = Proposition::CResourceSeparate {
-            left: Box::new(CResource::Memory(range(CPointerValue::new(field.clone(), CType::Int32Pointer), 0, 2))),
+            left: Box::new(CResource::Memory(range(
+                CPointerValue::new(field.clone(), CType::Int32Pointer),
+                0,
+                2,
+            ))),
             right: Box::new(CResource::Memory(range(source.clone(), 0, 8))),
         };
         let context = PureFactContext::new().assume_proposition(separation.clone());
@@ -1498,7 +1499,10 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
         );
         let current = read(&context, &after);
         assert_eq!(
-            crate::kernel::memory_provenance::checked_pointer_read_endpoint(current.pointer(), &context),
+            crate::kernel::memory_provenance::checked_pointer_read_endpoint(
+                current.pointer(),
+                &context
+            ),
             Some(source.pointer().clone())
         );
         let tail = CResourceFact::own_memory(range(source.clone(), 1, 8));
@@ -1507,7 +1511,10 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
             .unchecked_with_fact(CResourceFact::own_memory(range(current.clone(), 0, 1)));
         for index in 0..size {
             resources = resources.unchecked_with_fact(CResourceFact::own_memory(range(
-                CPointerValue::new(Pointer::symbolic(Variable(9_911_000 + index)), CType::Int32Pointer),
+                CPointerValue::new(
+                    Pointer::symbolic(Variable(9_911_000 + index)),
+                    CType::Int32Pointer,
+                ),
                 0,
                 8,
             )));
@@ -1522,7 +1529,11 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
         let remaining = remaining.expect("selected framed prefix and tail must rejoin");
         assert_eq!(remaining.iter().count(), size as usize);
         work_samples.push(work);
-        assert!(!context.equality_graph.are_equal(source.pointer(), current.pointer()));
+        assert!(
+            !context
+                .equality_graph
+                .are_equal(source.pointer(), current.pointer())
+        );
         let weakened = context.without_exact_fact(&separation);
         assert!(
             resources
@@ -1665,7 +1676,9 @@ fn cold_read_queries_ignore_unrelated_classes_and_resource_ranges() {
             let a = pointer(990_000 + index * 2);
             let b = pointer(990_001 + index * 2);
             context = context.assume_condition(ConditionTerm::pointer_equal(a, b.clone()), true);
-            resources = resources.unchecked_with_fact(CResourceFact::view_memory(CMemoryRange::new(b, 0u32.into(), 1u32.into())));
+            resources = resources.unchecked_with_fact(CResourceFact::view_memory(
+                CMemoryRange::new(b, 0u32.into(), 1u32.into()),
+            ));
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             assert!(resources.permits_memory_read(&pointer(990_000), 4, &context));
@@ -1675,5 +1688,8 @@ fn cold_read_queries_ignore_unrelated_classes_and_resource_ranges() {
         });
         samples.push(work);
     }
-    assert!(samples.iter().max().unwrap() - samples.iter().min().unwrap() < 64, "{samples:?}");
+    assert!(
+        samples.iter().max().unwrap() - samples.iter().min().unwrap() < 64,
+        "{samples:?}"
+    );
 }
