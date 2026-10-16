@@ -674,7 +674,7 @@ pub(crate) fn render_memory_history_check(
         labels.state_phrase(memory)
     };
     Some(format!(
-        "memory-history check stops at {snapshot}:\n    store: {} bytes at {written}\n    read range checked: {bytes} bytes at {read}\n    supplemental history explanation: equality and ownership facts from the failed check are not used by this walk",
+        "memory history without the failed check's facts stops at {snapshot}:\n    store: {} bytes at {written}\n    read range checked: {bytes} bytes at {read}\n    supplemental history explanation: equality and ownership facts from the failed check are not used by this walk, so a store the check itself crosses (by a quantified fact's guard, for one) can stop it; it does not say why the check failed",
         written_bytes,
     ))
 }

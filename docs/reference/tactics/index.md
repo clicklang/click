@@ -1908,8 +1908,8 @@ A `viewable` target is decided by the kernel's viewability rules, so a range
 narrows to a sub-range the listed order facts place inside it, provided the
 source range is established to be a valid 32-bit byte extent. A fact about an
 application of an `Integer` range-fold function whose body the kernel checks
-reads its one `int32[]` argument only at the fold's own index crosses each store
-and checked call write set that an exact order fact or stated `separate(...)`
+reads its one `T[]` argument, for a C integer `T` such as `int32` or `uint64`,
+only at the fold's own index crosses each store and checked call write set that an exact order fact or stated `separate(...)`
 places outside the application's `lo..hi` cells; the proved application equality
 grants no C access.
 
@@ -1917,13 +1917,16 @@ The rule answers the same for every caller, so `simp`'s snapshot transport
 reaches it too. A universal fact `forall (k: int32) { G implies F }` crosses the
 same steps: `k` is renamed fresh, `G` is assumed, and each read of `F` and `G`
 is carried when the recorded history shows its cell unchanged between its two
-snapshots, read against the current context's own facts (for example `k != cur`
+snapshots, read against the current context's own facts (for example `k < n`
+excluding a store to `dst[n]`, `k != cur`
 excluding a store to `visited[cur]`, or `0 <= k and k < n` with a contract
 separation placing `left[k]` apart from it).
 
 The structural frame includes 64-bit equality and preserves the read kind, all
 eight bytes, and the other operand. A source that is a reflexive equality, under
-binders and guards, needs no proof and no `using` entry.
+binders and guards, needs no proof and no `using` entry. A listed quantified
+premise may name its own binder: a call's postcondition held under the binder
+its lowering chose is cited by a written form with another, as in `apply using`.
 
 **Failure, checking, and tools:**
 
@@ -1936,7 +1939,7 @@ leaf it wanted.
 Click checks that transport only; expansion is unchanged, and profiling charges
 the named evidence.
 
-**Checked examples:** [`field_derived_precise_effect_after_metadata_write.md`](https://github.com/clicklang/click/blob/master/mdtests/field_derived_precise_effect_after_metadata_write.md), [`have_viewable_prefix_of_a_range.md`](https://github.com/clicklang/click/blob/master/mdtests/have_viewable_prefix_of_a_range.md), [`sweep_maintains_a_zero_unmarked_count.md`](https://github.com/clicklang/click/blob/master/mdtests/sweep_maintains_a_zero_unmarked_count.md), [`sweep_prefix_survives_its_endpoint_store_by_simp.md`](https://github.com/clicklang/click/blob/master/mdtests/sweep_prefix_survives_its_endpoint_store_by_simp.md), [`quantified_frame_carries_a_fact_past_the_excluded_store.md`](https://github.com/clicklang/click/blob/master/mdtests/quantified_frame_carries_a_fact_past_the_excluded_store.md), [`quantified_frame_preserves_uint64_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/quantified_frame_preserves_uint64_equality.md)
+**Checked examples:** [`field_derived_precise_effect_after_metadata_write.md`](https://github.com/clicklang/click/blob/master/mdtests/field_derived_precise_effect_after_metadata_write.md), [`have_viewable_prefix_of_a_range.md`](https://github.com/clicklang/click/blob/master/mdtests/have_viewable_prefix_of_a_range.md), [`sweep_maintains_a_zero_unmarked_count.md`](https://github.com/clicklang/click/blob/master/mdtests/sweep_maintains_a_zero_unmarked_count.md), [`sweep_prefix_survives_its_endpoint_store_by_simp.md`](https://github.com/clicklang/click/blob/master/mdtests/sweep_prefix_survives_its_endpoint_store_by_simp.md), [`quantified_frame_carries_a_fact_past_the_excluded_store.md`](https://github.com/clicklang/click/blob/master/mdtests/quantified_frame_carries_a_fact_past_the_excluded_store.md), [`quantified_frame_preserves_uint64_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/quantified_frame_preserves_uint64_equality.md), [`memcpy_then_terminator_keeps_copied_bytes.md`](https://github.com/clicklang/click/blob/master/mdtests/memcpy_then_terminator_keeps_copied_bytes.md)
 
 ### Unfolding predicates
 

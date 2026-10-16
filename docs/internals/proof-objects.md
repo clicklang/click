@@ -314,6 +314,16 @@ grants no ownership or read validity. The abstract successor retains state-only
 lowering so its propositions match the exact exported facts. Both paths share
 persistent contexts without rebuilding or scanning their premises.
 
+The kernel interface join constructs successor ownership once: consume the
+owned interface from each concrete arm, intersect the residual frames, and
+restore the exported interface under the successor facts. The surface supplies
+the abstract memory and locals and records the state the operation returns;
+it does not construct a second resource exchange for the kernel to compare.
+Execution state, retained evidence, and recorded snapshots use that same
+constructed successor. Clause lowering reads the common frame and projected
+interface models through an unpublished contract view. An arbitrary resource
+in a proposed state cannot add ownership to the result.
+
 An interface `branch ensuring` may join different heap lifetimes when the
 interface includes an owned, arm-sensitive resource that represents the
 lifetime. The kernel's interface abstraction retains the union of potential

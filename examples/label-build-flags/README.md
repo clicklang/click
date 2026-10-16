@@ -26,8 +26,11 @@ returns `s.len`. The call to `label_fit` applies `label_fit`'s verified
 contract.
 
 `label_copy` also verifies: for a viewed source string and a separate 32-byte
-destination buffer, it returns the same kept length and terminates the
-destination at it. The standard library model
+destination buffer, it returns the same kept length, terminates the
+destination at it, and copies that many bytes of the string,
+`bytes::equal(dst, 0u64, src, 0u64, result)`. The proof carries `memcpy`'s
+postcondition past the terminator store `dst[n] = '\0'` with a `transport`
+from the point right after the call. The standard library model
 accepts its `const char *` source without changing the C.
 
 From this directory:
