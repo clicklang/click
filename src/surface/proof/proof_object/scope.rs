@@ -306,12 +306,13 @@ impl<'a> ProofScope<'a> {
         &self,
         ensuring: bool,
         source_index: usize,
-        advance: impl FnOnce(Proof<'a>) -> Result<Option<Proof<'a>>, ClickError>,
-    ) -> Result<Option<Self>, ClickError> {
+        advance: impl FnOnce(Proof<'a>) -> Driven<Proof<'a>>,
+    ) -> Driven<Self> {
         let prepared = self.body.prepare_execution_match(ensuring, source_index)?;
         let marker = prepared.checkpoint();
-        let Some(body) = advance(prepared)? else {
-            return Ok(None);
+        let body = match advance(prepared)? {
+            Ok(body) => body,
+            Err(decline) => return Ok(Err(decline)),
         };
         if !body
             .node
@@ -333,7 +334,7 @@ impl<'a> ProofScope<'a> {
             }
         }
         next.body = body;
-        Ok(Some(next))
+        Ok(Ok(next))
     }
 
     /// Joins the two completed cases of an in-`Proof` case split as the next
