@@ -8,7 +8,7 @@ At upstream `296760674`, build the CLI and run:
 click verify --trace-proof __rb_insert examples/rbtree-augmented/rbtree_size_insert_context_color_flip.click
 ```
 
-The unchanged checked sidecar fails at `close_invariants by simp` (line 362):
+The unchanged checked sidecar fails at `close_invariants() by simp()` (line 362):
 
 ```text
 loop state join changes pointer object classes; the body path does not reach the loop-head state
@@ -89,14 +89,14 @@ void follow_model(struct model_node* p, int32 more) {
         decreases more;
         invariant p == old(p);
         invariant 0 <= more;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             match held.model { PackedLink::At(q) => {
             let { word: saved_word } = unfold(held);
             have p->parent_word == address(q) by { assumption(); }
             step(); step();
             let held = fold(model_link(old(p)), { word: saved_word, model: PackedLink::At(q) });
-            close_invariants by simp;
+            close_invariants() by simp();
             } }
         }
     }

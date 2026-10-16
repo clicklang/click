@@ -28,13 +28,13 @@ void follow(struct node* p, int32 more) {
         decreases more;
         invariant p == old(p);
         invariant 0 <= more;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             let { word: saved_word } = unfold(held);
             have p->parent_word == address(p) by { assumption(); }
             step(); step();
             let held = fold(self_link(old(p)), { word: saved_word });
-            close_invariants by simp;
+            close_invariants() by simp();
         }
     }
     execute();

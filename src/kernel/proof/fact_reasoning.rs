@@ -3015,7 +3015,7 @@ mod annotated_address_condition_tests {
                 let cited = Proposition::ConditionIs(comparison(!annotated), value);
                 let facts = crate::kernel::proof::ProofFacts::from_ordered(&[source]);
                 let goal = choice(comparison(annotated), value);
-                normalize_using_conditions(&goal, &[cited.clone()], &facts).unwrap();
+                normalize_using_conditions(&goal, std::slice::from_ref(&cited), &facts).unwrap();
                 assert!(matches!(
                     normalize_using_conditions(
                         &goal,
