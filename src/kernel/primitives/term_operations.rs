@@ -169,6 +169,13 @@ impl Bitvector32Term {
     /// Keep pointer-to-integer casts canonical when checked rewriting turns
     /// a symbolic pointer into null, just as C cast evaluation does.
     pub(crate) fn pointer_address(pointer: Pointer) -> Self {
+        if let PointerBlock::PureFunctionApplication(application) = &pointer.block
+            && application.name() == "$integer-address"
+            && pointer.offset == PointerOffsetTerm::Constant(0)
+            && let [PureFunctionArgument::Value(CValue::UInt64(bits))] = application.arguments()
+        {
+            return bits.clone();
+        }
         if pointer == Pointer::null() {
             Self::UInt64Constant(0)
         } else {
@@ -2437,7 +2444,9 @@ impl ConditionTerm {
                 Self::Bitvector64Equal(right.clone(), left.clone())
             }
             Self::PointerEqual(left, right) => Self::PointerEqual(right.clone(), left.clone()),
-            Self::PointerValueEqual(left, right) => Self::PointerValueEqual(right.clone(), left.clone()),
+            Self::PointerValueEqual(left, right) => {
+                Self::PointerValueEqual(right.clone(), left.clone())
+            }
             Self::PointerOffsetEqual(left, right) => {
                 Self::PointerOffsetEqual(right.clone(), left.clone())
             }
@@ -2748,20 +2757,42 @@ impl ConditionTerm {
         }
     }
 
+    /// The numeric consequence of an established true pointer equality.
+    /// Unlike `pointer_offset_sides`, this does not describe an equivalent
+    /// proposition: equal addresses alone cannot prove full-value equality.
+    pub(crate) fn true_pointer_offset_sides(
+        &self,
+    ) -> Option<(&PointerOffsetTerm, &PointerOffsetTerm)> {
+        match self {
+            Self::PointerValueEqual(a, b) if a.block == b.block => Some((&a.offset, &b.offset)),
+            _ => self.pointer_offset_sides(),
+        }
+    }
+
     /// A common-base comparison's offset view, retaining the original
     /// condition as the supporting premise in callers' indexes.
     pub(crate) fn pointer_offset_sides(&self) -> Option<(&PointerOffsetTerm, &PointerOffsetTerm)> {
         match self {
             Self::PointerOffsetEqual(a, b) => Some((a, b)),
             Self::PointerEqual(a, b) if a.block == b.block => Some((&a.offset, &b.offset)),
-            Self::PointerValueEqual(a,b) if a.block == b.block && a.designation() == b.designation() && a.extent() == b.extent() => Some((&a.offset, &b.offset)),
+            Self::PointerValueEqual(a, b)
+                if a.block == b.block
+                    && a.designation() == b.designation()
+                    && a.extent() == b.extent() =>
+            {
+                Some((&a.offset, &b.offset))
+            }
             _ => None,
         }
     }
 
     pub(crate) fn pointer_value_equal(left: CPointerValue, right: CPointerValue) -> Self {
-        if (left.designation() == right.designation() && left.extent() == right.extent() && left.extent_is_known() == right.extent_is_known())
-            || (matches!(left.c_type(), CType::FunctionPointer(_)) && matches!(right.c_type(), CType::FunctionPointer(_)))
+        if (left.designation() == right.designation()
+            && left.extent() == right.extent()
+            && left.extent_is_known() == right.extent_is_known()
+            && (left.extent_is_known() || left.opaque_extent() == right.opaque_extent()))
+            || (matches!(left.c_type(), CType::FunctionPointer(_))
+                && matches!(right.c_type(), CType::FunctionPointer(_)))
         {
             Self::pointer_equal(left.pointer().clone(), right.pointer().clone())
         } else {
@@ -3195,7 +3226,7 @@ impl CType {
     }
 
     pub(crate) fn accepts(self, value: &CValue) -> bool {
-        match (self, value) {
+        match (self, value.numeric_value()) {
             (Self::Int128, CValue::Int128(term)) => {
                 MachineIntegerType::Int128.accepts_wide_term(term)
             }
@@ -3335,6 +3366,26 @@ impl CType {
 }
 
 impl CValue {
+    /// An unconstrained complete C word has identity but no pointer authority.
+    pub(crate) fn complete_word(self, identity: Pointer) -> Self {
+        if !matches!(self, Self::Int64(_) | Self::UInt64(_)) {
+            return self;
+        }
+        Self::PointerInteger(PointerIntegerValue {
+            numeric: Box::new(self),
+            pointer: Box::new(CPointerValue::new(identity, CType::VoidPointer)),
+            kind: PointerIntegerKind::Word { changed_bits: 0 },
+        })
+    }
+
+    /// Mathematical observation, deliberately without a representation record.
+    pub(crate) fn numeric_value(&self) -> &Self {
+        match self {
+            Self::PointerInteger(record) => record.numeric.numeric_value(),
+            _ => self,
+        }
+    }
+
     pub(crate) fn pointer(pointer: Pointer) -> Self {
         Self::typed_pointer(pointer, CType::Int32Pointer)
     }
@@ -3378,6 +3429,7 @@ impl CValue {
 
     pub(crate) fn c_type(&self) -> CType {
         match self {
+            Self::PointerInteger(record) => record.numeric.c_type(),
             Self::Void => CType::Void,
             Self::Bool(_) => CType::Bool,
             Self::Int8(_) => CType::Int8,
@@ -3398,6 +3450,7 @@ impl CValue {
 
     pub(in crate::kernel) fn byte_width(&self) -> u32 {
         match self {
+            Self::PointerInteger(_) => 8,
             Self::Void => 0,
             Self::Bool(_) => 1,
             Self::Int8(_) => 1,
@@ -3438,6 +3491,7 @@ impl CLValue {
             extent: None,
             designation: None,
             extent_known: false,
+            opaque_extent: None,
         }
     }
 
@@ -3466,6 +3520,7 @@ impl CLValue {
             extent: None,
             designation: None,
             extent_known: false,
+            opaque_extent: None,
         }
     }
 
@@ -3492,7 +3547,21 @@ impl CLValue {
         self.extent = pointer.extent().cloned().map(std::sync::Arc::new);
         self.designation = Some(std::sync::Arc::new(pointer.designation().clone()));
         self.extent_known = pointer.extent_is_known();
+        self.opaque_extent = pointer.opaque_extent.clone();
         self
+    }
+
+    pub(in crate::kernel) fn access_designation(&self) -> Option<(&Pointer, Option<&Pointer>)> {
+        self.designation.as_deref().map(|root| {
+            (
+                root,
+                if self.extent_known {
+                    None
+                } else {
+                    self.opaque_extent.as_deref()
+                },
+            )
+        })
     }
 
     pub(in crate::kernel) fn extent(&self) -> Option<&SubobjectExtent> {
@@ -3608,6 +3677,21 @@ impl Pointer {
     /// first.
     pub(in crate::kernel) fn is_in_null_block(&self) -> bool {
         self.block == PointerBlock::Concrete("null".to_string())
+    }
+
+    /// Numeric LP64 reconstruction. This application is only an address;
+    /// a complete C word carries its independent designation beside it.
+    pub(in crate::kernel) fn integer_address(bits: Bitvector32Term) -> Self {
+        if bits.uint64_as_const() == Some(0) {
+            return Self::null();
+        }
+        Self {
+            block: PointerBlock::PureFunctionApplication(SharedPureApplication::intern(
+                "$integer-address".into(),
+                vec![PureFunctionArgument::Value(CValue::UInt64(bits))],
+            )),
+            offset: PointerOffsetTerm::Constant(0),
+        }
     }
 
     pub(crate) fn symbolic(variable: Variable) -> Self {

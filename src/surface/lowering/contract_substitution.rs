@@ -2995,14 +2995,11 @@ pub(in crate::surface) fn pure_function_parameter_argument(
     }
 }
 
-/// The explicit byte view `(uint8*)name` of a C pointer named `name`, in
-/// exactly the form the parser gives a written contract cast.
-///
-/// This is how the C-string bridge is elaborated. A predicate or theorem
-/// parameter of `uint8` bytes may be passed a character pointer; where the
-/// target's plain `char` is signed, that pointer's bytes are `int8` reads,
-/// so the implicit conversion is made explicit as this byte view rather than
-/// left to textual substitution, which would read the bytes signed.
+/// The compiler-inserted byte view of a C character pointer named `name`.
+/// A `uint8` predicate parameter reads unsigned bytes even when the source
+/// target's plain `char` is signed. The conversion changes that read type
+/// while retaining the source pointer's selected extent. An authored byte
+/// cast uses the separate explicit-cast rule and can widen to the root.
 pub(in crate::surface) fn character_byte_view(name: &str) -> ContractExpression {
     ContractExpression::CUnary {
         operand: Box::new(ContractExpression::CFragment(CExpression::Variable(
@@ -3011,7 +3008,7 @@ pub(in crate::surface) fn character_byte_view(name: &str) -> ContractExpression 
         lowered: CExpression::Cast {
             expression: Box::new(CExpression::Variable(name.to_string())),
             target_type: crate::kernel::CType::UInt8Pointer,
-            integer_mode: crate::kernel::CIntegerCastMode::Standard,
+            integer_mode: crate::kernel::CIntegerCastMode::PointerCoercion,
             pointee_struct: None,
             pointee_volatile: false,
             pointee_constant: false,

@@ -396,7 +396,8 @@ pub(super) fn apply_witness_tactic(
     if let Some(expected) = expected
         && !expected.accepts(&witness_value)
     {
-        let actual = match &witness_value {
+        let actual = match witness_value.numeric_value() {
+            CValue::PointerInteger(_) => unreachable!("numeric projection"),
             CValue::Void => CType::Void,
             CValue::Bool(_) => CType::Bool,
             CValue::Int8(_) => CType::Int8,

@@ -4361,7 +4361,8 @@ fn equation_states_nothing(equation: &Proposition) -> bool {
 
 /// The scalar term a C value carries, for the one-variable renaming above.
 fn scalar_bitvector(value: &CValue) -> Option<&Bitvector32Term> {
-    match value {
+    match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Int8(term) => Some(term),
         CValue::Bool(term)
         | CValue::Int16(term)
@@ -4498,13 +4499,39 @@ fn loop_exit_local_arguments(
             if argument_snapshots.get(position) != Some(&CResourceSnapshot::Current) {
                 return None;
             }
-            let CExpression::Variable(name) = expression else {
-                return None;
+            // A numeric address is a pure projection of the declared local.
+            // It must follow the local's joined value just as a direct index
+            // does; it never transfers the pointer's designation or extent.
+            let (name, address_only) = match expression {
+                CExpression::Variable(name) => (name, false),
+                CExpression::Cast {
+                    expression,
+                    target_type: CType::UInt64,
+                    ..
+                } => {
+                    let CExpression::Variable(name) = expression.as_ref() else {
+                        return None;
+                    };
+                    (name, true)
+                }
+                _ => return None,
             };
-            let fresh = successor.locals().get(name)?;
+            let project = |value: &CValue| {
+                if address_only {
+                    let CValue::Pointer(pointer) = value else {
+                        return None;
+                    };
+                    Some(CValue::UInt64(Bitvector32Term::pointer_address(
+                        pointer.pointer().clone(),
+                    )))
+                } else {
+                    Some(value.clone())
+                }
+            };
+            let fresh = project(successor.locals().get(name)?)?;
             for ((exit, instance), context) in exits.iter().zip(instances).zip(contexts) {
                 crate::instrumentation::record_deterministic_work(1);
-                let held = exit.locals().get(name)?;
+                let held = project(exit.locals().get(name)?)?;
                 let argument = instance.arguments().get(position)?;
                 if !crate::kernel::resource_arguments_proven_equal(
                     argument,
@@ -4602,6 +4629,96 @@ mod exit_local_argument_tests {
             ),
             vec![None]
         );
+    }
+
+    #[test]
+    fn exit_address_argument_tracks_only_the_declared_current_local() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointers = [1, 2, 3].map(|id| {
+            CValue::typed_pointer(
+                Pointer::symbolic(Variable(880_000 + id)),
+                CType::Int32Pointer,
+            )
+        });
+        let address = |value: &CValue| {
+            let CValue::Pointer(pointer) = value else {
+                unreachable!()
+            };
+            AlgebraicValue::C(CValue::UInt64(Bitvector32Term::pointer_address(
+                pointer.pointer().clone(),
+            )))
+        };
+        let exits = [
+            CState::new().with_local("cur", pointers[0].clone()),
+            CState::new().with_local("cur", pointers[1].clone()),
+        ];
+        let successor = CState::new().with_local("cur", pointers[2].clone());
+        for snapshot in [
+            CResourceSnapshot::Current,
+            CResourceSnapshot::Entry,
+            CResourceSnapshot::Post,
+        ] {
+            let (_, old_instances) = fixture(snapshot);
+            let schema = old_instances[0].schema.clone();
+            let instances = pointers[..2]
+                .iter()
+                .map(|pointer| {
+                    ResourceInstance::new(
+                        Variable(99),
+                        "cursor".into(),
+                        vec![address(pointer)].into(),
+                        schema.clone(),
+                        vec![AlgebraicValue::C(int32(0))].into(),
+                    )
+                    .unwrap()
+                })
+                .collect::<Vec<_>>();
+            let spec = CResourceSpec::new(
+                CResourceTerm::Instance {
+                    identity: Variable(99),
+                    binder: "c".into(),
+                    schema,
+                    resource: Box::new(CResourceTerm::Composite {
+                        name: "cursor".into(),
+                        arguments: vec![CExpression::Cast {
+                            expression: Box::new(c_variable("cur")),
+                            target_type: CType::UInt64,
+                            integer_mode: CIntegerCastMode::Standard,
+                            pointee_struct: None,
+                            pointee_volatile: false,
+                            pointee_constant: false,
+                            explicit_qualification: false,
+                        }],
+                        argument_snapshots: vec![snapshot],
+                        parameter_types: vec![CType::UInt64],
+                    }),
+                },
+                CResourceAccessMode::Own,
+                CResourceQuantity::One,
+                CResourceTransferRole::Consume,
+                CResourceSnapshot::Current,
+            )
+            .unwrap();
+            let binder = CLoopBinder {
+                identity: Variable(99),
+                name: "c".into(),
+                spec: Some(spec),
+            };
+            let contexts = [PureFactContext::new(), PureFactContext::new()];
+            let expected = (snapshot == CResourceSnapshot::Current).then(|| address(&pointers[2]));
+            assert_eq!(
+                loop_exit_local_arguments(&successor, &exits, &binder, &instances, &contexts),
+                vec![expected]
+            );
+            let mismatched = [
+                exits[0].clone(),
+                exits[1].clone().with_local("cur", pointers[0].clone()),
+            ];
+            assert_eq!(
+                loop_exit_local_arguments(&successor, &mismatched, &binder, &instances, &contexts),
+                vec![None]
+            );
+        }
     }
 
     #[cfg(test)]
@@ -5136,8 +5253,10 @@ fn fresh_loop_local_value(
         CType::UInt8 => uint8(Bitvector32Term::Variable(variable)),
         CType::UInt16 => uint16(Bitvector32Term::Variable(variable)),
         CType::UInt32 => uint32(Bitvector32Term::Variable(variable)),
-        CType::Int64 => CValue::Int64(Bitvector32Term::Variable(variable)),
-        CType::UInt64 => CValue::UInt64(Bitvector32Term::Variable(variable)),
+        CType::Int64 => CValue::Int64(Bitvector32Term::Variable(variable))
+            .complete_word(Pointer::symbolic(variable)),
+        CType::UInt64 => CValue::UInt64(Bitvector32Term::Variable(variable))
+            .complete_word(Pointer::symbolic(variable)),
         CType::Float32 => CValue::Float32(Bitvector32Term::Variable(variable)),
         CType::Float64 => CValue::Float64(Bitvector32Term::Variable(variable)),
         CType::FunctionPointer(_) => {
@@ -6791,6 +6910,8 @@ pub(super) fn collect_loop_preservation_summary(
 pub(super) struct EvaluatedMemorySegment {
     pub(super) base: Pointer,
     pub(super) designation: std::sync::Arc<Pointer>,
+    pub(super) opaque_extent: Option<std::sync::Arc<Pointer>>,
+    pub(super) extent_known: bool,
     pub(super) start: Bitvector32Term,
     pub(super) end: Bitvector32Term,
     pub(super) element_width: u32,
@@ -6812,7 +6933,10 @@ impl EvaluatedMemorySegment {
                 CMemoryRange::new_wide(self.base, self.start, self.end, self.element_width)
             }
         };
-        range.with_designation(designation)
+        range
+            .with_designation(designation)
+            .with_opaque_extent(self.opaque_extent, self.extent_known)
+            .with_typed_carrier()
     }
 }
 
@@ -8118,38 +8242,43 @@ fn rebind_one_loop_binder_instance(
                     crate::kernel::resource_arguments_proven_equal(held, declared, assumptions)
                 })
     };
-    if state
+    let selected = if let Some(instance) = state
         .resources()
         .owned_instance(identity)
-        .is_some_and(|instance| instance.name == name && arguments_match(instance))
+        .filter(|instance| instance.name == name && arguments_match(instance))
     {
-        claimed.insert(identity);
-        return Ok(state.clone());
-    }
-    let mut candidates = state
-        .resources()
-        .owned_instances_of_shape(name, arguments.len())
-        .into_iter()
-        .filter(|instance| !claimed.contains(&instance.identity) && arguments_match(instance))
-        .cloned()
-        .collect::<Vec<_>>();
-    let Some(selected) = candidates.pop() else {
-        return Err(format!(
-            "loop binder `{binder}` has no owned `{name}` instance at its arguments here"
-        ));
+        if instance.arguments == *arguments {
+            claimed.insert(identity);
+            return Ok(state.clone());
+        }
+        instance.clone()
+    } else {
+        let mut candidates = state
+            .resources()
+            .owned_instances_of_shape(name, arguments.len())
+            .into_iter()
+            .filter(|instance| !claimed.contains(&instance.identity) && arguments_match(instance))
+            .cloned()
+            .collect::<Vec<_>>();
+        let Some(selected) = candidates.pop() else {
+            return Err(format!(
+                "loop binder `{binder}` has no owned `{name}` instance at its arguments here"
+            ));
+        };
+        if !candidates.is_empty() {
+            return Err(format!(
+                "loop binder `{binder}` matches {} owned `{name}` instances at its arguments; a loop binder must name exactly one",
+                candidates.len() + 1
+            ));
+        }
+        selected
     };
-    if !candidates.is_empty() {
-        return Err(format!(
-            "loop binder `{binder}` matches {} owned `{name}` instances at its arguments; a loop binder must name exactly one",
-            candidates.len() + 1
-        ));
-    }
     claimed.insert(identity);
     let held = CResourceFact::own(CResource::Instance(selected.clone()));
     let Some(rebound) = ResourceInstance::new_with_resource_arguments(
         identity,
         selected.name.clone(),
-        selected.arguments.clone(),
+        arguments.clone(),
         selected.schema.clone(),
         selected.fields.clone(),
         selected.resource_arguments().to_vec(),
@@ -8158,8 +8287,10 @@ fn rebind_one_loop_binder_instance(
             "loop binder `{binder}` names an instance whose fields do not match its schema"
         ));
     };
-    // The rename removes one exact instance fact and adds it back under the
-    // binder's identity. Incremental consumption touches that fact's own
+    // The matching step established the declared argument values on this exit.
+    // Publish those values before joining exits, while their equality premises
+    // are still available. The rename removes one exact instance fact and adds
+    // it back under the binder's identity. Incremental consumption touches its own
     // bucket instead of normalizing the ambient context.
     let Some(resources) = state
         .resources()
@@ -8646,6 +8777,8 @@ pub(super) fn collect_loop_effect_check_obligations(
                         .iter()
                         .map(|range| EvaluatedMemorySegment {
                             designation: range.designation.clone(),
+                            opaque_extent: range.opaque_extent.clone(),
+                            extent_known: range.carrier_extent_known,
                             base: range.base.clone(),
                             start: range.bound_terms().0.clone(),
                             end: range.bound_terms().1.clone(),
@@ -8793,6 +8926,8 @@ pub(super) fn evaluate_loop_effect_segment(
     {
         let evaluated = EvaluatedMemorySegment {
             designation: std::sync::Arc::new(base_value.designation().clone()),
+            opaque_extent: base_value.opaque_extent().cloned().map(std::sync::Arc::new),
+            extent_known: base_value.extent_is_known(),
             base,
             start,
             end,
@@ -8834,6 +8969,8 @@ pub(super) fn evaluate_loop_effect_segment(
 
     let evaluated = EvaluatedMemorySegment {
         designation: std::sync::Arc::new(base_value.designation().clone()),
+        opaque_extent: base_value.opaque_extent().cloned().map(std::sync::Arc::new),
+        extent_known: base_value.extent_is_known(),
         base,
         start,
         end,
@@ -8894,6 +9031,8 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     {
         let evaluated = EvaluatedMemorySegment {
             designation: std::sync::Arc::new(base_value.designation().clone()),
+            opaque_extent: base_value.opaque_extent().cloned().map(std::sync::Arc::new),
+            extent_known: base_value.extent_is_known(),
             base,
             start,
             end,
@@ -8935,6 +9074,8 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     let element_width = segment.element_width;
     let evaluated = EvaluatedMemorySegment {
         designation: std::sync::Arc::new(base_value.designation().clone()),
+        opaque_extent: base_value.opaque_extent().cloned().map(std::sync::Arc::new),
+        extent_known: base_value.extent_is_known(),
         base,
         start,
         end,
@@ -10232,6 +10373,8 @@ mod wide_range_reader_tests {
         );
         let segment = EvaluatedMemorySegment {
             designation: wide.designation.clone(),
+            opaque_extent: wide.opaque_extent.clone(),
+            extent_known: wide.carrier_extent_known,
             base: base.clone(),
             start: wide.bound_terms().0.clone(),
             end: wide.bound_terms().1.clone(),
@@ -10344,9 +10487,15 @@ fn c_value_subobject_extent(value: &CValue) -> Option<&SubobjectExtent> {
 /// `fresh` with the subobject extent of the pointer value it abstracts.
 fn with_retained_extent(fresh: CValue, previous: Option<&CValue>) -> CValue {
     match (fresh, previous) {
-        (CValue::Pointer(pointer), Some(CValue::Pointer(previous))) if previous.extent().is_some() => {
-            CValue::Pointer(pointer.with_extent(previous.extent().cloned())
-                .with_designation(std::sync::Arc::new(previous.designation().clone())))
+        (CValue::Pointer(pointer), Some(CValue::Pointer(previous)))
+            if previous.extent().is_some() =>
+        {
+            CValue::Pointer(
+                pointer
+                    .with_extent(previous.extent().cloned())
+                    .with_designation(std::sync::Arc::new(previous.designation().clone()))
+                    .with_opaque_extent(previous.opaque_extent().cloned().map(std::sync::Arc::new)),
+            )
         }
         (fresh, _) => fresh,
     }

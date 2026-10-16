@@ -192,7 +192,9 @@ impl Application {
                 let (mut left, mut right) = (classes.root(left), classes.root(right));
                 if matches!(
                     kind,
-                    congruence::ConditionKind::PointerEq | congruence::ConditionKind::PointerValueEq | congruence::ConditionKind::OffsetEq
+                    congruence::ConditionKind::PointerEq
+                        | congruence::ConditionKind::PointerValueEq
+                        | congruence::ConditionKind::OffsetEq
                 ) && left > right
                 {
                     std::mem::swap(&mut left, &mut right);
@@ -324,6 +326,10 @@ pub(super) struct TermClasses {
     // newly identified pairs for the legacy affine/index projection.
     read_witnesses: PersistentMap<u64, PointerBlock>,
     pointer_values: PersistentMap<u64, crate::kernel::CPointerValue>,
+    extent_values: PersistentMap<u64, crate::kernel::CPointerValue>,
+    read_domains: crate::kernel::pointer_designations::ValueClasses<Pointer>,
+    read_designation_nodes: PersistentMap<Pointer, u64>,
+    read_extent_nodes: PersistentMap<Pointer, u64>,
     read_merges: imbl::Vector<(PointerBlock, PointerBlock)>,
     nodes: PersistentMap<Node, u64>,
     load_blocks: PersistentMap<PointerBlock, u64>,
@@ -1536,6 +1542,16 @@ impl TermClasses {
             if let Some(value) = self.pointer_values.get(&moved).cloned() {
                 self.pointer_values.remove(&moved);
                 self.retain_pointer_value(kept, value);
+            }
+            if let Some(value) = self.extent_values.get(&moved).cloned() {
+                self.extent_values.remove(&moved);
+                let witness = self
+                    .extent_values
+                    .get(&kept)
+                    .map_or(value.clone(), |previous| {
+                        crate::kernel::pointer_designations::prefer_pointer(previous, &value)
+                    });
+                self.extent_values.insert(kept, witness);
             }
             self.merge_affine_applications(moved, kept);
             let weight = self.weight(kept) + self.weight(moved);

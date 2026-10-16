@@ -43,9 +43,10 @@ fn old_collect_body_reads(
             old_collect_body_reads(left, bound, reads)?;
             old_collect_body_reads(right, bound, reads)
         }
-        SpecExpression::Subobject { pointer: inner, .. } | SpecExpression::BitwiseNot(inner) | SpecExpression::Cast(inner, _) => {
-            old_collect_body_reads(inner, bound, reads)
-        }
+        SpecExpression::Subobject { pointer: inner, .. }
+        | SpecExpression::BitwiseNot(inner)
+        | SpecExpression::Cast(inner, _)
+        | SpecExpression::PointerCoercion(inner, _) => old_collect_body_reads(inner, bound, reads),
         SpecExpression::If {
             condition,
             then_branch,

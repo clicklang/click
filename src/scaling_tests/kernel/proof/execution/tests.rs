@@ -140,9 +140,9 @@ fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_fa
             crate::kernel::ConditionTerm::pointer_equal(program.clone(), witness),
             true,
         );
-        assert!(partition.facts_for_case(0).unwrap().contains(&transported));
-        assert!(!partition.facts_for_case(1).unwrap().contains(&transported));
-        assert!(!facts.contains(&transported));
+        assert!(partition.facts_for_case(0).unwrap().available(&transported));
+        assert!(!partition.facts_for_case(1).unwrap().available(&transported));
+        assert!(!facts.available(&transported));
         let (unrelated, _, _) = core
             .algebraic_case_partition(
                 &ProofFacts::default(),
@@ -154,7 +154,7 @@ fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_fa
                 65_536,
             )
             .unwrap();
-        assert!(!unrelated.facts_for_case(0).unwrap().contains(&transported));
+        assert!(!unrelated.facts_for_case(0).unwrap().available(&transported));
         samples.push(work);
     }
     assert!(

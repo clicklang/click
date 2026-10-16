@@ -361,6 +361,8 @@ pub(crate) enum Change {
     /// Cached cell values were dropped; the state is the same, the form is
     /// not.
     CellsForgotten,
+    /// A read observation was added to the cache without changing bytes.
+    CellObserved,
     /// Incoming branch memories are joined; a read needs agreement in every arm.
     BranchJoin,
     /// An object's initialized-byte metadata was extended.
@@ -434,6 +436,7 @@ impl Change {
             CMemoryDerivation::ObjectInitializationRecorded { .. } => {
                 Self::ObjectInitializationRecorded
             }
+            CMemoryDerivation::CellObserved { .. } => Self::CellObserved,
             CMemoryDerivation::CellsForgotten { .. } => Self::CellsForgotten,
             CMemoryDerivation::BranchJoin { .. } => Self::BranchJoin,
         }
@@ -1043,6 +1046,10 @@ fn cell_last_same_point(
     // the access width and the recorded edges, so the answer is memoized per
     // query. The width is part of the key because it is part of the
     // question: a wider access stops at stores a narrower one crosses.
+    // Cache observations retain a direct byte-source identity. Jump over
+    // that entire prefix before naming a new cell, rather than walking the
+    // same unchanged observations separately for every address.
+    let memory = memory.unchanged_bytes_source();
     let key = (memory.clone(), pointer.clone(), bytes);
     if let Some(hit) = CELL_EPOCH_MEMO.with(|memo| memo.borrow().get(&key).cloned()) {
         return hit;
@@ -1081,7 +1088,7 @@ fn cell_last_same_point(
                     &evidence,
                 ) {
                     step_effect::StepEffect::Separate(step_effect::Separation::Cell(_)) => {
-                        current = derivation.base().clone()
+                        current = derivation.base().unchanged_bytes_source()
                     }
                     _ => break Some(current),
                 }
@@ -1304,7 +1311,9 @@ fn push_read(reads: &mut Vec<ResourceRead>, resource: OwnedResource, point: Prog
 fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRead>) {
     match condition {
         ConditionTerm::PointerValueEqual(left, right) => {
-            for pointer in left.pointers().chain(right.pointers()) { collect_offset_reads(&pointer.offset, reads); }
+            for pointer in left.pointers().chain(right.pointers()) {
+                collect_offset_reads(&pointer.offset, reads);
+            }
         }
 
         ConditionTerm::AlgebraicEqual(left, right) => {

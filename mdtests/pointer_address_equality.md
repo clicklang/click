@@ -1,6 +1,8 @@
-# Address equality is pointer equality
+# Address equality follows C pointer comparison
 
-Two address words compare equal exactly when their pointers do. A node whose
+Two address words compare equal exactly when their pointers compare equal in C.
+Full specification pointer equality also compares designation; the distinct-node
+control therefore states address inequality explicitly. A node whose
 word holds its own address is self-parented; a node whose word holds a
 distinct node's address is not. This is the `RB_EMPTY_NODE` shape.
 
@@ -40,7 +42,7 @@ int32 self_after_clear(struct node* node) {
 
 int32 other_after_link(struct node* node, struct node* other) {
     requires node != 0;
-    requires other != node;
+    requires address(other) != address(node);
     owns node->word;
     ensures result == 0;
 } by {

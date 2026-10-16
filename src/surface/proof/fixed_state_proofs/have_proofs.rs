@@ -899,13 +899,14 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
     contract_environment: ContractEnvironment<'_>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
-) -> Result<ClickArrayRef, String> {
+) -> Result<(ClickArrayRef, crate::kernel::CPointerValue), String> {
     if let ContractExpression::Binding(name)
     | ContractExpression::CFragment(CExpression::Variable(name))
     | ContractExpression::CBinding(name) = expression
         && let Some(array_ref) = contract_environment.array_refs.get(name)
+        && let Some(CValue::Pointer(value)) = contract_environment.values.get(name)
     {
-        return Ok(array_ref.clone());
+        return Ok((array_ref.clone(), value.clone()));
     }
     let value = evaluate_fixed_state_expression_through_kernel(
         expression,
@@ -935,11 +936,14 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
     let element_type = contract_array_ref_element_type(contract_environment.array_refs, expression)
         .or_else(|| pointer.c_type().pointee_type())
         .ok_or_else(|| "array reference pointer has no modeled element type".to_string())?;
-    Ok(ClickArrayRef {
-        memory,
-        pointer: pointer.into_pointer(),
-        element_type,
-    })
+    Ok((
+        ClickArrayRef {
+            memory,
+            pointer: pointer.pointer().clone(),
+            element_type,
+        },
+        pointer,
+    ))
 }
 
 /// A proposition or expression that reads memory the state shows freed is
@@ -1170,7 +1174,12 @@ pub(in crate::surface::proof) fn reverse_kernel_equality(
         Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(left, right), true) => Some(
             Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(right, left), true),
         ),
-        Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) => Some(Proposition::ConditionIs(ConditionTerm::PointerValueEqual(right.clone(), left.clone()), true)),
+        Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) => {
+            Some(Proposition::ConditionIs(
+                ConditionTerm::PointerValueEqual(right.clone(), left.clone()),
+                true,
+            ))
+        }
         Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => Some(
             Proposition::ConditionIs(ConditionTerm::PointerEqual(right, left), true),
         ),

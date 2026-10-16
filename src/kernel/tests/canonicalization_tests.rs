@@ -20,7 +20,8 @@ fn collect_offset_load_variables_from_value(
     value: &CValue,
     load_variables: &mut BTreeSet<Variable>,
 ) {
-    match value {
+    match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Void => {}
         crate::kernel::arithmetic_c_value!(term) => {
             collect_offset_load_variables_from_term(term, load_variables);
@@ -1108,7 +1109,10 @@ fn a_pointer_substitution_rewrites_the_one_symbolic_array_element_it_names() {
         crate::kernel::reasoning::substitute_pointer_variable_in_memory(&memory, named, &target);
     assert_eq!(
         element(&substituted, 50),
-        CValue::typed_pointer(target, CType::Int32Pointer)
+        match element(&memory, 50) {
+            CValue::Pointer(pointer) => CValue::Pointer(pointer.with_address(target)),
+            _ => unreachable!(),
+        }
     );
     for index in [0, 1, 49, 51, 99] {
         assert_eq!(element(&substituted, index), element(&memory, index));

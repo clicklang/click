@@ -561,6 +561,7 @@ impl MemoryDagHopJustification {
                     | CMemoryDerivation::HeapAllocationFailed { .. }
                     | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
                     | CMemoryDerivation::ObjectInitializationRecorded { .. }
+                    | CMemoryDerivation::CellObserved { .. }
                     | CMemoryDerivation::CellsForgotten { .. }
             ),
             Self::AllocationOfOtherBlock => matches!(

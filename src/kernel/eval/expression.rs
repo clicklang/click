@@ -122,7 +122,8 @@ fn float64_to_float32_bits(bits: u64) -> u32 {
 }
 
 fn integer_constant_as_sign_magnitude(value: &CValue) -> Option<(bool, u128)> {
-    match value {
+    match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Bool(bits) => Some((false, u128::from(bits.as_const()?))),
         CValue::Int8(bits) => {
             let value = bits.as_const()? as i32;
@@ -256,7 +257,8 @@ fn float64_to_integer_value(bits: u64, target_type: CType) -> Option<CValue> {
 }
 
 fn integer_to_float_value(value: CValue, target_type: CType) -> Option<CValue> {
-    let (source_name, term) = match &value {
+    let (source_name, term) = match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Bool(term) => ("bool", term),
         CValue::Int8(term) => ("int8", term),
         CValue::Int16(term) => ("int16", term),
@@ -545,7 +547,8 @@ pub(in crate::kernel) fn add_narrow_integer_range_execution_pure_facts(
 }
 
 pub(in crate::kernel) fn promote_c_int32_path_value(value: CValue) -> Option<Bitvector32Term> {
-    match value {
+    match value.numeric_value().clone() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Int128(_) | CValue::UInt128(_) => None,
 
         CValue::Void => None,
@@ -561,7 +564,8 @@ pub(in crate::kernel) fn promote_c_int32_path_value(value: CValue) -> Option<Bit
 }
 
 pub(in crate::kernel) fn promote_c_uint32_path_value(value: CValue) -> Option<Bitvector32Term> {
-    match value {
+    match value.numeric_value().clone() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Bool(value) | CValue::Int32(value) | CValue::UInt32(value) => Some(value),
         CValue::Int8(value) => Some(value),
         CValue::Int16(value) => Some(value),
@@ -579,7 +583,8 @@ pub(in crate::kernel) fn promote_c_uint32_path_value(value: CValue) -> Option<Bi
 }
 
 pub(in crate::kernel) fn promote_c_int64_path_value(value: CValue) -> Option<Bitvector32Term> {
-    match value {
+    match value.numeric_value().clone() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Int64(value) => Some(value),
         CValue::Bool(value) => Some(Bitvector32Term::int64_from_32(value)),
         CValue::Int8(value) => Some(Bitvector32Term::int64_from_32(value)),
@@ -599,7 +604,8 @@ pub(in crate::kernel) fn promote_c_int64_path_value(value: CValue) -> Option<Bit
 }
 
 pub(in crate::kernel) fn promote_c_uint64_path_value(value: CValue) -> Option<Bitvector32Term> {
-    match value {
+    match value.numeric_value().clone() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::UInt64(value) => Some(value),
         CValue::Bool(value) => Some(Bitvector32Term::uint64_from_32(value)),
         CValue::UInt8(value) | CValue::UInt16(value) | CValue::UInt32(value) => {
@@ -655,6 +661,12 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Option<CValue> {
+    // Assignment and argument binding preserve complete, unchanged words.
+    // Every other numeric conversion starts from a mathematical observation.
+    if matches!(value, CValue::PointerInteger(_)) && value.c_type() == target_type {
+        return Some(value);
+    }
+    let value = value.numeric_value().clone();
     if target_type == CType::Bool && matches!(value.c_type(), CType::Int128 | CType::UInt128) {
         let source = MachineIntegerType::from_c_type(value.c_type())?;
         let observed = IntegerTerm::from_machine(source, c_value_bitvector_term(&value)?)?;
@@ -1050,17 +1062,78 @@ pub(in crate::kernel) fn cast_c_value_to_type(
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Result<CValue, CRuntimeError> {
+    cast_c_value_to_type_with_integer_origin(
+        value,
+        target_type,
+        conversion,
+        obligations,
+        assumptions,
+        None,
+    )
+}
+
+fn cast_c_value_to_type_with_integer_origin(
+    value: CValue,
+    target_type: CType,
+    conversion: IntegerConversion,
+    obligations: &mut Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+    integer_pointer_origin: Option<Pointer>,
+) -> Result<CValue, CRuntimeError> {
     if target_type.is_pointer() {
         match value {
+            CValue::PointerInteger(record) if !matches!(target_type, CType::FunctionPointer(_)) => {
+                // Numeric observations cannot choose the representation carrier.
+                // A checked tagged value must have its tag removed before use.
+                let pointer = match record.kind {
+                    PointerIntegerKind::Exact => *record.pointer,
+                    PointerIntegerKind::Word { changed_bits } => {
+                        if changed_bits != 0 {
+                            return Err(CRuntimeError::PointerConversion(
+                                "integer-to-pointer cast requires modified tag bits cleared".into(),
+                            ));
+                        }
+                        let bits = crate::kernel::spec::c_value_bitvector_term(&record.numeric)
+                            .ok_or(CRuntimeError::TypeMismatch)?;
+                        // A logical cast must name the same value before its
+                        // own relationship is assumed. Numeric address choices
+                        // belong to execution, never to this carrier's name.
+                        record.pointer.with_address(Pointer::integer_address(bits))
+                    }
+                    PointerIntegerKind::Tagged => {
+                        let bits = crate::kernel::spec::c_value_bitvector_term(&record.numeric)
+                            .ok_or(CRuntimeError::TypeMismatch)?;
+                        let recovered = super::pointer_tags::cast_tagged_address_to_pointer(
+                            &bits,
+                            assumptions,
+                            obligations,
+                        )
+                        .map_err(CRuntimeError::PointerConversion)?;
+                        if recovered.as_ref() != Some(record.pointer.pointer()) {
+                            return Err(CRuntimeError::PointerConversion(
+                                "integer-to-pointer cast requires the original pointer with its tag cleared".into(),
+                            ));
+                        }
+                        *record.pointer
+                    }
+                };
+                return Ok(CValue::Pointer(pointer.with_type(target_type)));
+            }
             CValue::Pointer(pointer) => {
                 let pointer = pointer.with_type(target_type);
-                return Ok(CValue::Pointer(if matches!(target_type, CType::VoidPointer | CType::UInt8Pointer | CType::Int8Pointer) { pointer.with_root_extent() } else { pointer }));
+                return Ok(CValue::Pointer(
+                    if matches!(
+                        target_type,
+                        CType::VoidPointer | CType::UInt8Pointer | CType::Int8Pointer
+                    ) {
+                        pointer.with_root_extent()
+                    } else {
+                        pointer
+                    },
+                ));
             }
-            // Integer-to-pointer conversion is accepted only for a 64-bit
-            // value that is exactly the recorded address of an object
-            // pointer, or a value proven zero. Zero needs no allocation
-            // provenance; non-null provenance still comes from the term,
-            // never from integer coincidence.
+            // An address without a complete representation record reconstructs
+            // an opaque designation. Numeric facts cannot supply pointer bounds.
             CValue::UInt64(term) | CValue::Int64(term)
                 if !matches!(target_type, CType::FunctionPointer(_)) =>
             {
@@ -1072,17 +1145,20 @@ pub(in crate::kernel) fn cast_c_value_to_type(
                 {
                     return Ok(CValue::typed_pointer(Pointer::null(), target_type));
                 }
-                return match super::pointer_tags::cast_tagged_address_to_pointer(
-                    &term,
-                    assumptions,
-                    obligations,
-                ) {
-                    Ok(Some(pointer)) => Ok(CValue::typed_pointer(pointer, target_type)),
+                // Existing checked tag identities can recover address bits for
+                // comparisons. They cannot recover the original designation.
+                return match super::pointer_tags::cast_tagged_address_to_pointer(&term, assumptions, obligations) {
+                    Ok(Some(pointer)) if pointer == Pointer::null() => Ok(CValue::typed_pointer(pointer, target_type)),
+                    Ok(Some(pointer)) => {
+                        // This is the cast producer's fresh opaque value identity.
+                        // A numeric term or numeric congruence class cannot name it.
+                        let origin = integer_pointer_origin.ok_or_else(|| CRuntimeError::PointerConversion(
+                            "integer-to-pointer cast requires a complete representation or a fresh cast identity".into(),
+                        ))?;
+                        Ok(CValue::Pointer(CPointerValue::new(origin, target_type).with_address(pointer)))
+                    }
                     Ok(None) => Err(CRuntimeError::PointerConversion(
-                        "integer-to-pointer cast requires a value that is a recorded pointer \
-                         address or zero; an integer without pointer origin cannot become a \
-                         pointer"
-                            .to_string(),
+                        "integer-to-pointer cast requires an unchanged pointer representation, a recorded address, or zero".to_string(),
                     )),
                     Err(message) => Err(CRuntimeError::PointerConversion(message)),
                 };
@@ -1122,10 +1198,15 @@ pub(in crate::kernel) fn cast_c_value_to_type(
             ));
         }
         let address = Bitvector32Term::pointer_address(pointer.pointer().clone());
-        return Ok(match target_type {
+        let numeric = match target_type {
             CType::UInt64 => CValue::UInt64(address),
             _ => CValue::Int64(address),
-        });
+        };
+        return Ok(CValue::PointerInteger(PointerIntegerValue {
+            numeric: Box::new(numeric),
+            pointer: Box::new(pointer.clone()),
+            kind: PointerIntegerKind::Exact,
+        }));
     }
     coerce_c_value_to_type_as(value, target_type, conversion, obligations, assumptions)
         .ok_or(CRuntimeError::TypeMismatch)
@@ -1240,7 +1321,9 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
             add_narrow_integer_range_execution_pure_facts(&mut facts, assumptions, value);
             vec![CExpressionPath {
                 outcome: CExpressionOutcome::Value(match value {
-                    CValue::Pointer(pointer) => CValue::Pointer(assumptions.pointer_value_at_entry(pointer)),
+                    CValue::Pointer(pointer) => {
+                        CValue::Pointer(assumptions.pointer_value_at_entry(pointer))
+                    }
                     _ => value.clone(),
                 }),
                 facts,
@@ -1720,12 +1803,44 @@ fn evaluate_c_cast_paths(
                 } else {
                     IntegerConversion::Checked
                 };
-                let coerced = if integer_mode == CIntegerCastMode::Modulo {
+                let needs_integer_origin = match &value {
+                    CValue::Int64(bits) | CValue::UInt64(bits) if target_type.is_pointer() => {
+                        bits.uint64_as_const() != Some(0)
+                            && effective_assumptions.decide(&ConditionTerm::uint64_equal(
+                                bits.clone(),
+                                Bitvector32Term::UInt64Constant(0),
+                            )) != Some(true)
+                    }
+                    _ => false,
+                };
+                let integer_pointer_origin = if needs_integer_origin {
+                    Some(Pointer::symbolic(budget.allocate_kernel_variable()?))
+                } else {
+                    None
+                };
+                let word_bits = match &value {
+                    CValue::PointerInteger(record)
+                        if target_type.is_pointer()
+                            && matches!(record.kind, PointerIntegerKind::Word { .. })
+                            && !SPECIFICATION_READS.with(|depth| depth.get() > 0) =>
+                    {
+                        crate::kernel::spec::c_value_bitvector_term(&record.numeric)
+                    }
+                    _ => None,
+                };
+                let coerced = if integer_mode == CIntegerCastMode::PointerCoercion {
+                    match value {
+                        CValue::Pointer(pointer) if target_type.is_pointer() => {
+                            Ok(CValue::Pointer(pointer.with_type(target_type)))
+                        }
+                        _ => Err(CRuntimeError::TypeMismatch),
+                    }
+                } else if integer_mode == CIntegerCastMode::Modulo {
                     MachineIntegerType::from_c_type(target_type)
                         .and_then(|destination| destination.convert_modulo_value(value))
                         .ok_or(CRuntimeError::TypeMismatch)
                 } else if integer_mode == CIntegerCastMode::UInt64BitsToInt64 {
-                    match (target_type, value) {
+                    match (target_type, value.numeric_value().clone()) {
                         (CType::Int64, CValue::UInt64(bits)) => {
                             Ok(CValue::Int64(Bitvector32Term::int64_from_uint64_bits(bits)))
                         }
@@ -1739,12 +1854,13 @@ fn evaluate_c_cast_paths(
                         | CValue::UInt16(_)) => promote_c_int32_path_value(value)
                             .map(CValue::Int32)
                             .ok_or(CRuntimeError::TypeMismatch),
-                        value => cast_c_value_to_type(
+                        value => cast_c_value_to_type_with_integer_origin(
                             value,
                             target_type,
                             conversion,
                             &mut obligations,
                             &effective_assumptions,
+                            integer_pointer_origin,
                         ),
                     }
                 } else if target_type == CType::UInt32
@@ -1760,14 +1876,40 @@ fn evaluate_c_cast_paths(
                         .map(CValue::UInt32)
                         .ok_or(CRuntimeError::TypeMismatch)
                 } else {
-                    cast_c_value_to_type(
+                    cast_c_value_to_type_with_integer_origin(
                         value,
                         target_type,
                         conversion,
                         &mut obligations,
                         &effective_assumptions,
+                        integer_pointer_origin,
                     )
                 };
+                let coerced = coerced.and_then(|value| {
+                    let (Some(bits), CValue::Pointer(pointer)) = (&word_bits, &value) else {
+                        return Ok(value);
+                    };
+                    if effective_assumptions.decide(&ConditionTerm::uint64_equal(
+                        bits.clone(),
+                        Bitvector32Term::UInt64Constant(0),
+                    )) == Some(true)
+                    {
+                        return Ok(CValue::typed_pointer(Pointer::null(), target_type));
+                    }
+                    // Only full-value premises supply the selected extent.
+                    // Numeric tag equations may then choose address coordinates.
+                    let pointer = effective_assumptions.pointer_value_at_entry(pointer);
+                    let address = super::pointer_tags::cast_tagged_address_to_pointer(
+                        bits,
+                        &effective_assumptions,
+                        &mut obligations,
+                    )
+                    .map_err(CRuntimeError::PointerConversion)?;
+                    Ok(CValue::Pointer(match address {
+                        Some(address) => pointer.with_address(address),
+                        None => pointer,
+                    }))
+                });
                 // A C conversion into a narrow type lands in that type's
                 // range whatever its operand; file the range where the value
                 // is produced, as a narrow read does.
@@ -2317,14 +2459,50 @@ fn read_c_lvalue_paths_without_ranges(
     Ok(match outcome {
         CLValueOutcome::LValue(lvalue) => match &lvalue.storage {
             CLValueStorage::Local { name } => {
-                let local_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
                 if let Some(pointer) = state.locals.slot(name)
-                    && lvalue.designation.as_deref().is_some_and(|origin| !local_assumptions.designations_equal(origin, &pointer.object_identity()))
-                    && !state.resources().permits_designated_memory_read(pointer, lvalue.designation.as_deref(), lvalue.value_type.byte_width(), &local_assumptions)
+                    && let Some(refusal) = subobject_access_refusal(
+                        pointer,
+                        lvalue.extent(),
+                        lvalue.value_type.byte_width(),
+                        &facts,
+                        &obligations,
+                        assumptions,
+                    )
                 {
-                    return Ok(vec![CExpressionPath { outcome: CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource {
-                        resource: Box::new(CResourceFact::view_memory(CMemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), 1u32.into(), lvalue.value_type.byte_width()))),
-                    }), facts, obligations }]);
+                    return Ok(vec![CExpressionPath {
+                        outcome: CExpressionOutcome::UndefinedBehavior(refusal),
+                        facts,
+                        obligations,
+                    }]);
+                }
+                let local_assumptions =
+                    assumptions_with_path_context(assumptions, &facts, &obligations);
+                if let Some(pointer) = state.locals.slot(name)
+                    && lvalue.designation.as_deref().is_some_and(|origin| {
+                        !local_assumptions.designations_equal(origin, &pointer.object_identity())
+                            || !lvalue.extent_known && lvalue.opaque_extent.is_some()
+                    })
+                    && !state.resources().permits_designated_memory_read(
+                        pointer,
+                        lvalue.access_designation(),
+                        lvalue.value_type.byte_width(),
+                        &local_assumptions,
+                    )
+                {
+                    return Ok(vec![CExpressionPath {
+                        outcome: CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource {
+                            resource: Box::new(CResourceFact::view_memory(
+                                CMemoryRange::new_with_element_width(
+                                    pointer.clone(),
+                                    0u32.into(),
+                                    1u32.into(),
+                                    lvalue.value_type.byte_width(),
+                                ),
+                            )),
+                        }),
+                        facts,
+                        obligations,
+                    }]);
                 }
                 if matches!(
                     state.locals.binding(name),
@@ -2361,9 +2539,14 @@ fn read_c_lvalue_paths_without_ranges(
                 }
                 let outcome = match state.locals.get(name) {
                     Some(value) if lvalue.value_type.accepts(value) => CExpressionOutcome::Value(
-                        match value { CValue::Pointer(pointer) => CValue::Pointer(local_assumptions.pointer_value_at_entry(pointer)), _ => value.clone() }
-                            .with_pointer_pointee_volatile(lvalue.pointee_is_volatile())
-                            .with_pointer_pointee_constant(lvalue.pointee_is_constant()),
+                        match value {
+                            CValue::Pointer(pointer) => {
+                                CValue::Pointer(local_assumptions.pointer_value_at_entry(pointer))
+                            }
+                            _ => value.clone(),
+                        }
+                        .with_pointer_pointee_volatile(lvalue.pointee_is_volatile())
+                        .with_pointer_pointee_constant(lvalue.pointee_is_constant()),
                     ),
                     Some(_) => CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
                     None if matches!(
@@ -2451,15 +2634,22 @@ fn read_c_lvalue_paths_without_ranges(
                     assumptions_with_path_context(assumptions, &facts, &obligations);
                 let is_external = is_external_memory_pointer(pointer)
                     || state.memory.requires_explicit_scalar_ownership(pointer)
-                    || lvalue.designation.as_deref().is_some_and(|origin|
-                        !effective_assumptions.designations_equal(origin, &pointer.object_identity()));
+                    || lvalue.designation.as_deref().is_some_and(|origin| {
+                        !effective_assumptions
+                            .designations_equal(origin, &pointer.object_identity())
+                            || !lvalue.extent_known && lvalue.opaque_extent.is_some()
+                    });
                 let require_owned = assumptions.should_require_owned_expression_loads();
                 let has_read_resource = (is_external || require_owned)
                     && ((!require_owned && assumptions.should_allow_symbolic_contract_loads())
-                        || crate::kernel::api::with_extended_dag_bridging(|| state.resources().permits_designated_memory_read(
-                            pointer, lvalue.designation.as_deref(),
-                            lvalue.value_type.byte_width(), &effective_assumptions,
-                        )));
+                        || crate::kernel::api::with_extended_dag_bridging(|| {
+                            state.resources().permits_designated_memory_read(
+                                pointer,
+                                lvalue.access_designation(),
+                                lvalue.value_type.byte_width(),
+                                &effective_assumptions,
+                            )
+                        }));
                 if (is_external || require_owned) && !has_read_resource {
                     return Ok(vec![CExpressionPath {
                         outcome: CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource {
@@ -2585,9 +2775,13 @@ pub(in crate::kernel) fn address_of_lvalue_paths(
                                 .with_pointee_volatile(lvalue.is_volatile())
                                 .with_pointee_constant(lvalue.is_constant())
                                 .with_extent(lvalue.extent().cloned());
-                            if lvalue.extent_known && lvalue.extent().is_none() { address = address.with_root_extent(); }
+                            if lvalue.extent_known && lvalue.extent().is_none() {
+                                address = address.with_root_extent();
+                            }
                             if let Some(designation) = &lvalue.designation {
-                                address = address.with_designation(designation.clone());
+                                address = address
+                                    .with_designation(designation.clone())
+                                    .with_opaque_extent(lvalue.opaque_extent.clone());
                             }
                             if let Some(reference) = &lvalue.local_reference {
                                 address = address.with_local_reference(*reference);
@@ -2795,7 +2989,8 @@ pub(in crate::kernel) fn c_truthiness_paths(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CTruthinessPath> {
-    match value {
+    match value.numeric_value().clone() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Void => unreachable!("void truthiness must be rejected by the caller"),
         CValue::Bool(bits) => {
             let is_zero = ConditionTerm::equal(bits, Bitvector32Term::Constant(0));
@@ -3107,4 +3302,300 @@ pub(in crate::kernel) fn c_truthiness_as_c_int32_paths(
             obligations: path.obligations,
         })
         .collect()
+}
+
+#[cfg(test)]
+mod pointer_integer_tests {
+    use super::*;
+
+    fn cast(value: CValue, ty: CType, context: &PureFactContext) -> Result<CValue, CRuntimeError> {
+        let mut obligations = Vec::new();
+        let result = cast_c_value_to_type_with_integer_origin(
+            value,
+            ty,
+            IntegerConversion::Modular,
+            &mut obligations,
+            context,
+            Some(Pointer::symbolic(Variable(991_099))),
+        );
+        assert!(obligations.is_empty());
+        result
+    }
+
+    #[test]
+    fn pointer_integer_round_trip_retains_the_complete_pointer() {
+        let root = CPointerValue::new(Pointer::symbolic(Variable(991_001)), CType::Int32Pointer);
+        let member = root.clone().with_extent(Some(SubobjectExtent {
+            start: root.pointer().clone(),
+            width: 4,
+        }));
+        let context = PureFactContext::new();
+        for ty in [CType::Int64, CType::UInt64] {
+            for pointer in [
+                member.clone(),
+                member
+                    .clone()
+                    .with_address(member.pointer().offset_by_bytes(4)),
+            ] {
+                let word = cast(CValue::Pointer(pointer.clone()), ty, &context).unwrap();
+                assert_eq!(
+                    cast(word.clone(), CType::Int32Pointer, &context).unwrap(),
+                    CValue::Pointer(pointer)
+                );
+                let CValue::Pointer(opaque) =
+                    cast(word.numeric_value().clone(), CType::Int32Pointer, &context).unwrap()
+                else {
+                    panic!("pointer")
+                };
+                assert!(!opaque.extent_is_known());
+                assert_ne!(opaque.designation(), member.designation());
+            }
+        }
+    }
+
+    #[test]
+    fn equal_integer_bits_do_not_exchange_pointer_extents() {
+        let root = CPointerValue::new(Pointer::symbolic(Variable(991_002)), CType::Int32Pointer);
+        let member = root.clone().with_extent(Some(SubobjectExtent {
+            start: root.pointer().clone(),
+            width: 4,
+        }));
+        let context = PureFactContext::new();
+        let root_word = cast(CValue::Pointer(root.clone()), CType::UInt64, &context).unwrap();
+        let member_word = cast(CValue::Pointer(member.clone()), CType::UInt64, &context).unwrap();
+        assert_eq!(root_word.numeric_value(), member_word.numeric_value());
+        assert_ne!(root_word, member_word);
+        assert_eq!(
+            cast(root_word, CType::Int32Pointer, &context).unwrap(),
+            CValue::Pointer(root.clone())
+        );
+        assert_eq!(
+            cast(member_word.clone(), CType::VoidPointer, &context).unwrap(),
+            CValue::Pointer(member.with_type(CType::VoidPointer))
+        );
+        let variable = Bitvector32Term::Variable(Variable(991_003));
+        let context = context.assume_condition(
+            ConditionTerm::uint64_equal(
+                variable.clone(),
+                c_value_bitvector_term(&member_word).unwrap(),
+            ),
+            true,
+        );
+        let CValue::Pointer(opaque) =
+            cast(CValue::UInt64(variable), CType::Int32Pointer, &context).unwrap()
+        else {
+            panic!("pointer")
+        };
+        assert!(!opaque.extent_is_known());
+        assert!(!context.pointer_designations_match(&opaque, &root));
+    }
+}
+
+#[cfg(test)]
+mod pointer_integer_partial_write_tests {
+    use super::*;
+
+    #[test]
+    fn a_partial_byte_write_discards_the_representation_even_when_bits_are_unchanged() {
+        let context = PureFactContext::new();
+        let word = cast_c_value_to_type(
+            CValue::Pointer(CPointerValue::new(
+                Pointer::symbolic(Variable(995_001)),
+                CType::Int32Pointer,
+            )),
+            CType::UInt64,
+            IntegerConversion::Modular,
+            &mut Vec::new(),
+            &context,
+        )
+        .unwrap();
+        let byte = crate::kernel::eval::byte_view::integer_cell_byte(&word, 0).unwrap();
+        let cell = crate::kernel::eval::byte_view::ContainingIntegerCell {
+            pointer: Pointer::null(),
+            value: word,
+            byte: 0,
+        };
+        let updated =
+            crate::kernel::eval::byte_view::integer_cell_with_byte(&cell, &CValue::UInt8(byte))
+                .unwrap();
+        assert!(matches!(updated, CValue::UInt64(_)));
+    }
+}
+
+#[cfg(test)]
+mod pointer_integer_cast_identity_tests {
+    use super::*;
+
+    #[test]
+    fn identical_numeric_bits_cannot_copy_a_casts_established_bounds() {
+        let source = CPointerValue::new(Pointer::symbolic(Variable(997_001)), CType::Int32Pointer);
+        let bits = Bitvector32Term::pointer_address(source.pointer().clone());
+        let context = PureFactContext::new();
+        let cast = |origin| {
+            cast_c_value_to_type_with_integer_origin(
+                CValue::UInt64(bits.clone()),
+                CType::Int32Pointer,
+                IntegerConversion::Modular,
+                &mut Vec::new(),
+                &context,
+                Some(Pointer::symbolic(Variable(origin))),
+            )
+            .unwrap()
+        };
+        let CValue::Pointer(first) = cast(997_002) else {
+            panic!("pointer")
+        };
+        let CValue::Pointer(second) = cast(997_003) else {
+            panic!("pointer")
+        };
+        assert_eq!(first.pointer(), second.pointer());
+        let context = context.assume_condition(
+            ConditionTerm::pointer_value_equal(first, source.clone()),
+            true,
+        );
+        let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
+            CMemoryRange::from_pointer_value(&source, 0u32.into(), 1u32.into(), 4),
+        ));
+        assert!(!resources.permits_designated_memory_read(
+            second.pointer(),
+            Some(second.access_designation()),
+            4,
+            &context
+        ));
+    }
+}
+
+#[cfg(test)]
+mod packed_word_contract_tests {
+    use super::*;
+
+    fn cast(value: CValue, assumptions: &PureFactContext) -> CPointerValue {
+        let result = cast_c_value_to_type(
+            value,
+            CType::Int32Pointer,
+            IntegerConversion::Modular,
+            &mut Vec::new(),
+            assumptions,
+        )
+        .unwrap();
+        let CValue::Pointer(pointer) = result else {
+            panic!("pointer cast")
+        };
+        pointer
+    }
+
+    #[test]
+    fn modulo_conversion_observes_bits_and_discards_the_word_carrier() {
+        let word = CValue::UInt64(Bitvector32Term::UInt64Constant(4_294_967_297))
+            .complete_word(Pointer::symbolic(Variable(997_030)));
+        assert_eq!(
+            MachineIntegerType::UInt32.convert_modulo_value(word.clone()),
+            Some(CValue::UInt32(Bitvector32Term::Constant(1)))
+        );
+        assert_eq!(
+            MachineIntegerType::UInt64.convert_modulo_value(word),
+            Some(CValue::UInt64(Bitvector32Term::UInt64Constant(
+                4_294_967_297
+            )))
+        );
+    }
+
+    #[test]
+    fn complete_word_narrowing_uses_its_numeric_equality() {
+        let bits = Bitvector32Term::Variable(Variable(997_020));
+        let context = PureFactContext::new().assume_condition(
+            ConditionTerm::uint64_equal(bits.clone(), Bitvector32Term::UInt64Constant(41)),
+            true,
+        );
+        let word = CValue::UInt64(bits).complete_word(Pointer::symbolic(Variable(997_021)));
+        let narrowed =
+            coerce_c_value_to_type(word, CType::Int32, &mut Vec::new(), &context).unwrap();
+        let term = crate::kernel::spec::c_value_bitvector_term(&narrowed).unwrap();
+        assert_eq!(
+            context.decide(&ConditionTerm::equal(term, Bitvector32Term::Constant(41))),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn incoming_word_carriers_need_full_equality_and_lose_it_on_withdrawal() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let bits = Bitvector32Term::Variable(Variable(997_001));
+        let word = CValue::UInt64(bits.clone()).complete_word(Pointer::symbolic(Variable(997_002)));
+        let other = CValue::UInt64(bits).complete_word(Pointer::symbolic(Variable(997_003)));
+        let empty = PureFactContext::new();
+        let reconstructed = cast(word, &empty);
+        let unrelated = cast(other, &empty);
+        assert_eq!(reconstructed.pointer(), unrelated.pointer());
+        assert!(!empty.pointer_designations_match(&reconstructed, &unrelated));
+        let target = CPointerValue::new(Pointer::symbolic(Variable(997_004)), CType::Int32Pointer)
+            .with_extent(Some(SubobjectExtent {
+                start: Pointer::symbolic(Variable(997_004)),
+                width: 4,
+            }));
+        let numeric = empty.assume_condition(
+            ConditionTerm::pointer_equal(reconstructed.pointer().clone(), target.pointer().clone()),
+            true,
+        );
+        assert!(!numeric.pointer_designations_match(&reconstructed, &target));
+        let relation = Proposition::ConditionIs(
+            ConditionTerm::PointerValueEqual(
+                Box::new(reconstructed.clone()),
+                Box::new(target.clone()),
+            ),
+            true,
+        );
+        let full = numeric.assume_proposition(relation.clone());
+        assert!(full.pointer_designations_match(&reconstructed, &target));
+        assert!(!full.pointer_designations_match(&unrelated, &target));
+        let withdrawn = full.without_exact_fact(&relation);
+        assert!(!withdrawn.pointer_designations_match(&reconstructed, &target));
+    }
+
+    #[test]
+    fn modified_incoming_word_tag_bits_must_be_cleared_before_casting() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let context = PureFactContext::new();
+        let word = CValue::UInt64(Bitvector32Term::Variable(Variable(997_010)))
+            .complete_word(Pointer::symbolic(Variable(997_011)));
+        let original = cast(word.clone(), &context);
+        let value_of = |paths: Vec<CExpressionPath>| {
+            let [path] = paths.as_slice() else {
+                panic!("one scalar result")
+            };
+            let CExpressionOutcome::Value(value) = &path.outcome else {
+                panic!("value")
+            };
+            value.clone()
+        };
+        let tagged = value_of(super::super::operators::apply_c_bitwise_binary(
+            word,
+            CValue::Int32(Bitvector32Term::Constant(1)),
+            ExecutionFacts::new(),
+            Vec::new(),
+            &context,
+            super::super::operators::CBitwiseOperation::Or,
+        ));
+        assert!(
+            cast_c_value_to_type(
+                tagged.clone(),
+                CType::Int32Pointer,
+                IntegerConversion::Modular,
+                &mut Vec::new(),
+                &context
+            )
+            .is_err()
+        );
+        let cleared = value_of(super::super::operators::apply_c_bitwise_binary(
+            tagged,
+            CValue::Int32(Bitvector32Term::Constant(!1)),
+            ExecutionFacts::new(),
+            Vec::new(),
+            &context,
+            super::super::operators::CBitwiseOperation::And,
+        ));
+        let restored = cast(cleared, &context);
+        assert!(context.pointer_designations_match(&restored, &original));
+        assert!(!restored.extent_is_known());
+    }
 }

@@ -3268,7 +3268,10 @@ fn composite_resource_arguments_respect_proven_pointer_equality() {
         arguments: vec![CValue::pointer(right_pointer.clone()).into()].into(),
     });
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(left_pointer, right_pointer),
+        ConditionTerm::PointerValueEqual(
+            Box::new(CPointerValue::new(left_pointer, CType::Int32Pointer)),
+            Box::new(CPointerValue::new(right_pointer, CType::Int32Pointer)),
+        ),
         true,
     );
 

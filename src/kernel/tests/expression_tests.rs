@@ -1370,7 +1370,10 @@ fn pointer_cast_retags_the_view_but_pointer_type_mismatch_is_not_implicit() {
 fn spec_pointer_equality_lowers_to_a_pure_fact() {
     let left = Pointer::symbolic(Variable(22_100));
     let right = Pointer::symbolic(Variable(22_101));
-    let equality = ConditionTerm::pointer_equal(left.clone(), right.clone());
+    let equality = ConditionTerm::PointerValueEqual(
+        Box::new(CPointerValue::new(left.clone(), CType::Int32Pointer)),
+        Box::new(CPointerValue::new(right.clone(), CType::Int32Pointer)),
+    );
 
     assert_eq!(
         c_value_comparison_proposition(
@@ -3822,4 +3825,47 @@ fn substitution_maps_the_extent_start_with_the_address() {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/tests/expression_tests.rs");
+}
+
+#[test]
+fn implicit_byte_pointer_coercion_retains_the_selected_extent() {
+    let address = Pointer::symbolic(Variable(22_102));
+    let pointer = CPointerValue::new(address.clone(), CType::Int8Pointer).with_extent(Some(
+        SubobjectExtent {
+            start: address,
+            width: 4,
+        },
+    ));
+    let (value, _) = c_evaluate_spec_expression_at_state(
+        &CState::new(),
+        &SpecExpression::PointerCoercion(
+            Box::new(SpecExpression::Value(CValue::Pointer(pointer.clone()))),
+            CType::UInt8Pointer,
+        ),
+        None,
+        &PureFactContext::new(),
+    )
+    .unwrap();
+    let CValue::Pointer(coerced) = value else {
+        panic!("a pointer coercion must yield a pointer")
+    };
+    assert_eq!(coerced.c_type(), CType::UInt8Pointer);
+    assert_eq!(coerced.designation(), pointer.designation());
+    assert_eq!(coerced.opaque_extent(), pointer.opaque_extent());
+    assert_eq!(coerced.extent(), pointer.extent());
+    let (value, _) = c_evaluate_spec_expression_at_state(
+        &CState::new(),
+        &SpecExpression::Cast(
+            Box::new(SpecExpression::Value(CValue::Pointer(pointer))),
+            CType::UInt8Pointer,
+        ),
+        None,
+        &PureFactContext::new(),
+    )
+    .unwrap();
+    let CValue::Pointer(explicit) = value else {
+        panic!("a pointer cast must yield a pointer")
+    };
+    assert!(explicit.extent_is_known());
+    assert!(explicit.extent().is_none());
 }

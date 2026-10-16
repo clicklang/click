@@ -50,7 +50,7 @@ impl Context<'_> {
         array_length(element, length)?;
         // Record field addresses retain the record pointer's pointee type.
         // Element addressing must instead use the array's scalar stride.
-        let target = c_cast(
+        let target = reference_view(
             target,
             match element {
                 CType::UInt8 => CType::UInt8Pointer,
@@ -58,6 +58,8 @@ impl Context<'_> {
                 CType::Int32 => CType::Int32Pointer,
                 _ => unreachable!(),
             },
+            false,
+            false,
         );
         let source_type = match element {
             CType::UInt8 => Type::U8,

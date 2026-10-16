@@ -10184,11 +10184,17 @@ fn pointer_predicate_matching_preserves_types_arguments_snapshots_and_scope() {
     let source = fact("Selected", state.clone(), &[a.clone(), c.clone()], ty, 7);
     let goal = fact("Selected", state.clone(), &[b.clone(), d.clone()], ty, 7);
     let ab = Proposition::ConditionIs(
-        ConditionTerm::PointerEqual(Box::new(a.clone()), Box::new(b.clone())),
+        ConditionTerm::PointerValueEqual(
+            Box::new(CPointerValue::new(a.clone(), ty)),
+            Box::new(CPointerValue::new(b.clone(), ty)),
+        ),
         true,
     );
     let cd = Proposition::ConditionIs(
-        ConditionTerm::PointerEqual(Box::new(c.clone()), Box::new(d.clone())),
+        ConditionTerm::PointerValueEqual(
+            Box::new(CPointerValue::new(c.clone(), ty)),
+            Box::new(CPointerValue::new(d.clone(), ty)),
+        ),
         true,
     );
     let base = PureFactContext::new().assume_proposition(source.clone());

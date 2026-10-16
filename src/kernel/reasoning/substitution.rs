@@ -281,11 +281,15 @@ pub(crate) fn substitute_pointer_value_in_proposition(
     from: Variable,
     to: &CPointerValue,
 ) -> Result<Proposition, String> {
-    let c = std::collections::BTreeMap::from([(from,
-        crate::kernel::proof::term_rewrite::TypedCReplacement::Pointer(to.clone()))]);
+    let c = std::collections::BTreeMap::from([(
+        from,
+        crate::kernel::proof::term_rewrite::TypedCReplacement::Pointer(to.clone()),
+    )]);
     let integers = Default::default();
     let algebraic = Default::default();
-    let mut rewrite = crate::kernel::proof::term_rewrite::TermRewrite::for_typed_variables(&c, &integers, &algebraic);
+    let mut rewrite = crate::kernel::proof::term_rewrite::TermRewrite::for_typed_variables(
+        &c, &integers, &algebraic,
+    );
     let result = rewrite.proposition(proposition);
     match rewrite.refusal() {
         None => Ok(result),
@@ -1584,11 +1588,20 @@ fn walk_c_memory_range<S: VariableSubstitution + ?Sized>(
     range: &CMemoryRange,
     s: &S,
 ) -> CMemoryRange {
-    range.with_bounds(
-        s.pointer(&range.base),
-        s.bitvector(range.bound_terms().0),
-        s.bitvector(range.bound_terms().1),
-    ).with_designation(std::sync::Arc::new(s.pointer(&range.designation)))
+    range
+        .with_bounds(
+            s.pointer(&range.base),
+            s.bitvector(range.bound_terms().0),
+            s.bitvector(range.bound_terms().1),
+        )
+        .with_designation(std::sync::Arc::new(s.pointer(&range.designation)))
+        .with_opaque_extent(
+            range
+                .opaque_extent
+                .as_deref()
+                .map(|origin| std::sync::Arc::new(s.pointer(origin))),
+            range.carrier_extent_known,
+        )
 }
 
 #[cfg(test)]
@@ -2421,6 +2434,10 @@ fn collect_sequence_bound_variables(sequence: &SequenceTerm, variables: &mut BTr
 
 fn collect_c_value_bound_variables(value: &CValue, variables: &mut BTreeSet<Variable>) {
     match value {
+        CValue::PointerInteger(record) => {
+            collect_c_value_bound_variables(&record.numeric, variables);
+            collect_c_value_bound_variables(&CValue::Pointer(*record.pointer.clone()), variables);
+        }
         CValue::Int8(bits) => collect_bitvector_bound_variables(bits, variables),
         CValue::Bool(bits)
         | CValue::Int16(bits)
@@ -5542,6 +5559,19 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_value(
     to: &Bitvector32Term,
 ) -> CValue {
     match value {
+        CValue::PointerInteger(record) => CValue::PointerInteger(PointerIntegerValue {
+            kind: record.kind.clone(),
+            numeric: Box::new(substitute_bitvector_variable_in_c_value(
+                &record.numeric,
+                from,
+                to,
+            )),
+            pointer: Box::new(
+                record
+                    .pointer
+                    .map_pointers(|p| substitute_bitvector_variable_in_pointer(p, from, to)),
+            ),
+        }),
         CValue::Void => CValue::Void,
         CValue::Bool(bits) => CValue::Bool(substitute_bitvector_variable(bits, from, to)),
         CValue::Int8(bits) => int8(substitute_bitvector_variable(bits, from, to)),
@@ -5711,7 +5741,10 @@ fn substitute_pointer_variable_in_condition(
                 right, from, to,
             )),
         ),
-        ConditionTerm::PointerValueEqual(..) => crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to).condition(condition),
+        ConditionTerm::PointerValueEqual(..) => {
+            crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to)
+                .condition(condition)
+        }
         ConditionTerm::PointerEqual(left, right) => ConditionTerm::pointer_equal(
             substitute_pointer_variable_in_pointer(left, from, to),
             substitute_pointer_variable_in_pointer(right, from, to),
@@ -6276,6 +6309,14 @@ fn substitute_pointer_variable_in_spec_expression(
             )),
             *target_type,
         ),
+        SpecExpression::PointerCoercion(expression, target_type) => {
+            SpecExpression::PointerCoercion(
+                Box::new(substitute_pointer_variable_in_spec_expression(
+                    expression, from, to,
+                )),
+                *target_type,
+            )
+        }
         SpecExpression::If {
             condition,
             then_branch,
@@ -6347,7 +6388,10 @@ fn substitute_pointer_variable_in_spec_expression(
             ))
         }
         SpecExpression::Subobject { pointer, width } => SpecExpression::Subobject {
-            pointer: Box::new(substitute_pointer_variable_in_spec_expression(pointer, from, to)), width: *width,
+            pointer: Box::new(substitute_pointer_variable_in_spec_expression(
+                pointer, from, to,
+            )),
+            width: *width,
         },
         SpecExpression::PointerOffset {
             pointer,

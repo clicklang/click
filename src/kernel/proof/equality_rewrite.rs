@@ -151,7 +151,9 @@ pub(crate) fn reverse_equality(equality: &Proposition) -> Option<Proposition> {
         Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(a, b), true) => {
             ConditionTerm::PointerOffsetEqual(b.clone(), a.clone())
         }
-        Proposition::ConditionIs(ConditionTerm::PointerValueEqual(a, b), true) => ConditionTerm::PointerValueEqual(b.clone(), a.clone()),
+        Proposition::ConditionIs(ConditionTerm::PointerValueEqual(a, b), true) => {
+            ConditionTerm::PointerValueEqual(b.clone(), a.clone())
+        }
         Proposition::ConditionIs(ConditionTerm::PointerEqual(a, b), true) => {
             ConditionTerm::PointerEqual(b.clone(), a.clone())
         }
@@ -578,7 +580,9 @@ fn pointer_congruence_rewrite(
     let mut rewrite = if let PointerBlock::Symbolic(variable) = left.block
         && left.offset == PointerOffsetTerm::Constant(0)
     {
-        crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(variable, right)
+        crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_address_variable(
+            variable, right,
+        )
     } else {
         crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_exact(left, right)
     };
@@ -605,20 +609,36 @@ fn rewrite_atomic_proposition_by_exact_equality(
     goal: &Proposition,
     equality: &Proposition,
 ) -> Result<Proposition, String> {
-    if let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) = equality {
+    if let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) = equality
+    {
         let mut rewrite = super::term_rewrite::TermRewrite::for_pointer_value_exact(left, right);
         let rewritten = rewrite.proposition(goal);
-        if rewrite.refusal().is_some() { return Err("pointer value rewrite exceeded its supported scope".into()); }
-        if rewritten != *goal { return Ok(rewritten); }
-        return rewrite_atomic_proposition_by_exact_equality(goal, &Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(left.pointer().clone(), right.pointer().clone()), true,
-        ));
+        if rewrite.refusal().is_some() {
+            return Err("pointer value rewrite exceeded its supported scope".into());
+        }
+        if rewritten != *goal {
+            return Ok(rewritten);
+        }
+        return rewrite_atomic_proposition_by_exact_equality(
+            goal,
+            &Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(left.pointer().clone(), right.pointer().clone()),
+                true,
+            ),
+        );
     }
-    if matches!(goal, Proposition::ConditionIs(ConditionTerm::PointerValueEqual(..), _)) {
-        if let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right) | ConditionTerm::Bitvector64Equal(left, right), true) = equality {
-            let mut rewrite = super::term_rewrite::TermRewrite::for_bits(left, right);
-            let rewritten = rewrite.proposition(goal);
-            if rewrite.refusal().is_none() && rewritten != *goal { return Ok(rewritten); }
+    if matches!(
+        goal,
+        Proposition::ConditionIs(ConditionTerm::PointerValueEqual(..), _)
+    ) && let Proposition::ConditionIs(
+        ConditionTerm::Bitvector32Equal(left, right) | ConditionTerm::Bitvector64Equal(left, right),
+        true,
+    ) = equality
+    {
+        let mut rewrite = super::term_rewrite::TermRewrite::for_bits(left, right);
+        let rewritten = rewrite.proposition(goal);
+        if rewrite.refusal().is_none() && rewritten != *goal {
+            return Ok(rewritten);
         }
     }
     fn rewrite_c_value(
@@ -627,6 +647,15 @@ fn rewrite_atomic_proposition_by_exact_equality(
         rewrite_pointer: &impl Fn(&Pointer) -> Pointer,
     ) -> CValue {
         match value {
+            CValue::PointerInteger(record) => CValue::PointerInteger(PointerIntegerValue {
+                kind: record.kind.clone(),
+                numeric: Box::new(rewrite_c_value(
+                    &record.numeric,
+                    rewrite_term,
+                    rewrite_pointer,
+                )),
+                pointer: Box::new(record.pointer.map_addresses(rewrite_pointer)),
+            }),
             CValue::Void => CValue::Void,
             CValue::Bool(term) => CValue::Bool(rewrite_term(term)),
             CValue::Int8(term) => CValue::Int8(rewrite_term(term)),
@@ -1248,10 +1277,16 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 ),
                 *expected,
             ),
-            Proposition::ConditionIs(ConditionTerm::PointerValueEqual(goal_left, goal_right), expected) => Proposition::ConditionIs(
+            Proposition::ConditionIs(
+                ConditionTerm::PointerValueEqual(goal_left, goal_right),
+                expected,
+            ) => Proposition::ConditionIs(
                 ConditionTerm::PointerValueEqual(
                     Box::new(goal_left.map_addresses(&rewrite_pointer)),
-                    Box::new(goal_right.map_addresses(&rewrite_pointer))), *expected),
+                    Box::new(goal_right.map_addresses(&rewrite_pointer)),
+                ),
+                *expected,
+            ),
             Proposition::ConditionIs(condition, expected) => {
                 let rewrite_term =
                     |term: &Bitvector32Term| rewrite_load_pointers(term, &rewrite_pointer);

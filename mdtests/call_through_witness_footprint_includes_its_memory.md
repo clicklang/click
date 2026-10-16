@@ -38,7 +38,7 @@ int32 caller(struct node* p, struct node* q) {
 ```click
 resource hop(node: struct node*) {
     owns *node;
-    let next: struct node* where aligned(next, 8) and node->word == address(next) + (node->word & 1);
+    let next: struct node* where aligned(next, 8) and node->word == address(next) + (node->word & 1) and ((struct node*)(node->word & ~1)) == next;
     owns next->value;
 }
 

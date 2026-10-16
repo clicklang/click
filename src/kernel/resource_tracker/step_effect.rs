@@ -220,6 +220,7 @@ pub(in crate::kernel) fn separation_check(
             | CMemoryDerivation::HeapAllocationFailed { .. }
             | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
             | CMemoryDerivation::ObjectInitializationRecorded { .. }
+            | CMemoryDerivation::CellObserved { .. }
             | CMemoryDerivation::CellsForgotten { .. }
             | CMemoryDerivation::LocalLifetimeEnded { .. } => SeparationCheck::PointerDistinctness,
         },
@@ -236,6 +237,7 @@ pub(in crate::kernel) fn separation_check(
             | CMemoryDerivation::HeapAllocationFailed { .. }
             | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
             | CMemoryDerivation::ObjectInitializationRecorded { .. }
+            | CMemoryDerivation::CellObserved { .. }
             | CMemoryDerivation::CellsForgotten { .. }
             | CMemoryDerivation::LocalLifetimeEnded { .. }
             | CMemoryDerivation::HeapFreed { .. }
@@ -264,6 +266,7 @@ pub(in crate::kernel) fn separation_check(
             | CMemoryDerivation::HeapAllocationFailed { .. }
             | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
             | CMemoryDerivation::ObjectInitializationRecorded { .. }
+            | CMemoryDerivation::CellObserved { .. }
             | CMemoryDerivation::CellsForgotten { .. }
             | CMemoryDerivation::LocalLifetimeEnded { .. }
             | CMemoryDerivation::BranchJoin { .. }
@@ -348,6 +351,7 @@ fn cell_effect(
         | CMemoryDerivation::HeapAllocationFailed { .. }
         | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
         | CMemoryDerivation::ObjectInitializationRecorded { .. }
+        | CMemoryDerivation::CellObserved { .. }
         | CMemoryDerivation::CellsForgotten { .. } => {
             if extended_dag_bridging_active() {
                 hop(MemoryDagHopJustification::IntrinsicNoWrite)
@@ -1016,8 +1020,10 @@ fn block_effect(step: &CMemoryDerivation, block: &PointerBlock) -> StepEffect {
             )
         }
         // The state is the same but the cell map is not, and the edge names no
-        // cell, so nothing says the dropped values were not this block's.
-        CMemoryDerivation::CellsForgotten { .. } => stops(None),
+        // cell, so nothing states agreement of its cached representation.
+        CMemoryDerivation::CellObserved { .. } | CMemoryDerivation::CellsForgotten { .. } => {
+            stops(None)
+        }
         CMemoryDerivation::BranchJoin { .. } => unknown(),
         CMemoryDerivation::CallHavoc { mutable_ranges, .. }
         | CMemoryDerivation::LoopHavoc {
@@ -1101,6 +1107,7 @@ fn footprint_effect(step: &CMemoryDerivation, ranges: Option<&[CMemoryRange]>) -
             | CMemoryDerivation::HeapAllocationFailed { .. }
             | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
             | CMemoryDerivation::ObjectInitializationRecorded { .. }
+            | CMemoryDerivation::CellObserved { .. }
             | CMemoryDerivation::CellsForgotten { .. }
     ) {
         return separate(FootprintSeparation::WritesNothing);
@@ -1203,6 +1210,7 @@ fn footprint_effect(step: &CMemoryDerivation, ranges: Option<&[CMemoryRange]>) -
         | CMemoryDerivation::HeapAllocationFailed { .. }
         | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
         | CMemoryDerivation::ObjectInitializationRecorded { .. }
+        | CMemoryDerivation::CellObserved { .. }
         | CMemoryDerivation::CellsForgotten { .. } => separate(FootprintSeparation::WritesNothing),
     }
 }

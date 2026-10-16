@@ -9479,7 +9479,10 @@ pub(super) fn contract_refinement_context_for_interface(
     let mut argument_values = Vec::with_capacity(function_interface.parameters().len());
     for parameter in function_interface.parameters() {
         let variable = budget.allocate_kernel_variable().ok()?;
-        argument_values.push(symbolic_call_result(parameter.c_type(), variable));
+        argument_values.push(
+            symbolic_call_result(parameter.c_type(), variable)
+                .complete_word(Pointer::symbolic(variable)),
+        );
     }
     let result_variable = budget.allocate_kernel_variable().ok()?;
     // A contract not fixed by a fact holds for arbitrary values of its value
@@ -13774,6 +13777,7 @@ fn state_independent_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecExpression::BitwiseNot(_)
             | SpecExpression::LoopEntrySnapshot(_)
             | SpecExpression::Cast(..)
+            | SpecExpression::PointerCoercion(..)
             | SpecExpression::If { .. }
             | SpecExpression::Let { .. }
             | SpecExpression::PureFunctionApplication { .. }
@@ -13880,6 +13884,7 @@ fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             crate::kernel::binary_spec_expression!(_, _)
             | SpecExpression::BitwiseNot(_)
             | SpecExpression::Cast(..)
+            | SpecExpression::PointerCoercion(..)
             | SpecExpression::If { .. }
             | SpecExpression::Let { .. }
             | SpecExpression::PureFunctionApplication { .. }
@@ -14238,7 +14243,8 @@ fn spec_expression_constant(expression: &SpecExpression) -> Option<u32> {
     let SpecExpression::Value(value) = expression else {
         return None;
     };
-    match value {
+    match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Int8(term) => term.as_const(),
         CValue::Int16(term)
         | CValue::Int32(term)
@@ -14265,10 +14271,13 @@ fn spec_expression_parameter_offset(
         SpecExpression::CExpression(expression) => {
             c_expression_parameter_offset(expression, parameter_name)
         }
-        SpecExpression::Cast(expression, _) | SpecExpression::LoopEntrySnapshot(expression)
-        | SpecExpression::Subobject { pointer: expression, .. } => {
-            spec_expression_parameter_offset(expression, parameter_name)
-        }
+        SpecExpression::Cast(expression, _)
+        | SpecExpression::PointerCoercion(expression, _)
+        | SpecExpression::LoopEntrySnapshot(expression)
+        | SpecExpression::Subobject {
+            pointer: expression,
+            ..
+        } => spec_expression_parameter_offset(expression, parameter_name),
         SpecExpression::PointerOffset {
             pointer,
             elements,
@@ -15876,6 +15885,7 @@ fn symbolic_contract_result(interface: &CFunctionContractInterface, variable: Va
         .with_pointer_pointee_constant(interface.return_pointee_is_constant());
     }
     symbolic_call_result(interface.return_type(), variable)
+        .complete_word(Pointer::symbolic(variable))
         .with_pointer_pointee_constant(interface.return_pointee_is_constant())
 }
 
@@ -18135,7 +18145,12 @@ fn aggregate_argument_read_refusal(
             continue;
         };
         if let Some(refusal) = crate::kernel::eval::subobject_access_refusal(
-            source.pointer(), source.extent(), layout.size_bytes(), &ExecutionFacts::new(), &[], assumptions,
+            source.pointer(),
+            source.extent(),
+            layout.size_bytes(),
+            &ExecutionFacts::new(),
+            &[],
+            assumptions,
         ) {
             return Some(CFunctionOutcome::UndefinedBehavior(refusal));
         }
@@ -22305,7 +22320,7 @@ fn body_fact_is_established_through_a_pointer_alias(
             .exact_pointer_aliases(&Pointer::symbolic(variable))
             .any(|alias| {
                 let candidate =
-                    crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(
+                    crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_address_variable(
                         variable, alias,
                     )
                     .proposition(proposition);
@@ -23073,10 +23088,13 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                 // conservative equivalent of emitting the obligation.
                 if paths.len() != 1
                     || paths[0].facts.iter().any(|fact| {
-                        !required_obligation_is_exactly_discharged(
-                            &child_assumptions,
-                            fact.proposition(),
-                        )
+                        // Kernel-issued read definitions are producer outputs,
+                        // not prerequisites to prove again in the parent context.
+                        !fact.is_certified()
+                            && !required_obligation_is_exactly_discharged(
+                                &child_assumptions,
+                                fact.proposition(),
+                            )
                     })
                     || paths[0].obligations.iter().any(|goal| {
                         !required_obligation_is_exactly_discharged(
@@ -30066,7 +30084,12 @@ fn evaluate_function_declared_resource_spec(
                 "resource `{name}` argument {index} has the wrong type"
             ))));
         }
-        values.push(value);
+        // Logical resource indices observe numbers; they do not store C
+        // representation records or carry those records through loop models.
+        values.push(match value {
+            CValue::PointerInteger(word) => *word.numeric,
+            value => value,
+        });
     }
     let resource = match family {
         ResourceFamily::Composite => CResource::Composite {

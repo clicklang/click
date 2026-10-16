@@ -321,14 +321,16 @@ pub(in crate::surface) fn initial_call_state(
                 )));
             }
             C0Type::Int64(_) => {
-                arguments.push(CExpression::Value(CValue::Int64(
-                    Bitvector32Term::Variable(Variable(arguments.len() as u64)),
-                )));
+                arguments.push(CExpression::Value(
+                    CValue::Int64(Bitvector32Term::Variable(Variable(arguments.len() as u64)))
+                        .complete_word(Pointer::symbolic(input_pointer_variable(scope, index)?)),
+                ));
             }
             C0Type::UInt64(_) => {
-                arguments.push(CExpression::Value(CValue::UInt64(
-                    Bitvector32Term::Variable(Variable(arguments.len() as u64)),
-                )));
+                arguments.push(CExpression::Value(
+                    CValue::UInt64(Bitvector32Term::Variable(Variable(arguments.len() as u64)))
+                        .complete_word(Pointer::symbolic(input_pointer_variable(scope, index)?)),
+                ));
             }
             C0Type::Float32 => {
                 arguments.push(CExpression::Value(CValue::Float32(
@@ -2723,7 +2725,12 @@ fn lower_resource_segment_with_values(
     };
     // The same rule as the kernel's resource and proposition lowering.
     if let Some((start, end)) = crate::kernel::wide_range_bounds(&start_value, &end_value) {
-        return refuse_past_extent(CMemoryRange::from_pointer_value_wide(&base_value, start, end, element_width));
+        return refuse_past_extent(CMemoryRange::from_pointer_value_wide(
+            &base_value,
+            start,
+            end,
+            element_width,
+        ));
     }
     let start = bound(start_value, "start")?;
     let end = bound(end_value, "end")?;
@@ -2735,7 +2742,10 @@ fn lower_resource_segment_with_values(
         )));
     }
     refuse_past_extent(CMemoryRange::from_pointer_value(
-        &base_value, start, end, element_width,
+        &base_value,
+        start,
+        end,
+        element_width,
     ))
 }
 

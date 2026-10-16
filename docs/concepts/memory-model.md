@@ -16,46 +16,53 @@ pointer is a semantic object:
 Pointer { block, offset }
 ```
 
-The pointer block carries provenance. Pointer offsets are separate terms, not
-raw integers. C pointer arithmetic is scaled by the pointee type: `int32*`
-adds four bytes per element, while `uint8*` adds one byte per element.
+These coordinates describe the raw address. A complete C pointer separately
+carries its designation and selected subobject extent. Numeric address equality
+does not equate those bounds. C pointer arithmetic is scaled by the pointee
+type: `int32*` adds four bytes per element, while `uint8*` adds one byte per
+element.
 
 Click's integer constant `0` converts to a single canonical null pointer in
 pointer-valued return, initialization, assignment, argument, and comparison
-contexts. This narrow conversion does not identify pointers with integers:
-nonzero integers still cannot be used as pointers.
+contexts. Implicit integer-to-pointer conversions accept only zero.
 
-Under the LP64 profile a pointer also has an integer representation. Casting an
-object pointer to `unsigned long` (or another 64-bit integer type) yields its
-address, a kernel term that records the exact source pointer rather than an
-arbitrary number; `address(p)` is the spec spelling. Only such an address, or
-zero, converts back through an explicit pointer cast, and it restores the
-original block, offset, and provenance. Two addresses are equal exactly when
-their pointers are equal, an address is zero exactly when its pointer is null,
-and an address compared with an integer that has no pointer origin is not
-decided either way. Integer coincidence therefore never manufactures an
-allocation identity. Null converts to the integer zero. An explicit cast of a
-64-bit integer proven zero also yields null, including a loaded word whose
-cleared tag bits leave zero; it requires no allocation provenance.
+Under the LP64 profile an object pointer has a 64-bit integer representation.
+A pointer-to-integer cast retains the complete pointer, including its selected
+subobject bounds, beside its numeric address. `address(p)` observes only that
+address. Whole local, store/reload and aggregate copies retain a representation;
+ordinary arithmetic, changes of integer format and partial overwrites discard
+it. A lossless cast back preserves the selected bounds, including when the
+target is `void*` or a character pointer. It does not apply the widening rule
+for a direct pointer-to-pointer byte/void cast.
 
-Tag arithmetic keeps the address form. `address(p) + t` is an exact integer
-identity, so additions track a tagged word without any obligation. A bit
-operation relies on the low address bits being zero: clearing them with
-`& ~m` keeps the address with a masked tag, reading them with `& m` yields
-the masked tag alone, and setting them with `| b` folds into the tag. Each
-such step is valid only under `aligned(p, a)` for the alignment `a` the mask
-presumes and the tag below `a`, so a tag can never carry into or read an
-address bit. Evaluation never rewrites a word; equality decisions apply these
-rules when their conditions are decided, and the cast back to a pointer
-records undecided ones as obligations, fails promptly on a refuted one, and
-additionally requires the tag proven zero, by a mask or by any other fact. A
-word whose tagged form is known only through a contract or resource equality,
-such as `node->word == address(next) + tag`, gets the same treatment. An exact
-address equation can also name the complete expression being cast, such as
-`(word & ~3) == address(next)`. The lookup still applies when `word` itself has
-no recorded address form (`mdtests/cast_masked_word_uses_exact_address.md`);
-clearing bits without that evidence gives no pointer origin
-(`mdtests/cast_masked_word_requires_pointer_origin.md`).
+Incoming C words, opaque modular results and complete typed word reads have
+independent opaque carrier identities. Numeric equality never identifies those
+carriers or supplies pointer bounds. A complete word can name an opaque pointer
+without granting allocation or access authority. An explicit contract can state
+the full relationship using existing cast syntax:
+
+```click
+requires ((struct node*)(word & ~1)) == p;
+```
+
+This equality includes designation and selected extent. It lets a copied word
+reconstruct `p` with those bounds. A modular callee must explicitly preserve
+such a relationship when callers need it; `ensures result == word` preserves
+only the number. Mathematical integers, integer model fields and pure numeric
+function arguments carry no C representation.
+
+Numeric tag arithmetic remains a separate theory. Checked low-bit additions,
+sets and clears on retained pointer representations keep their source pointer.
+Mask identities require the corresponding alignment and tag bounds; casting
+back requires the tag cleared. Incoming opaque words retain their identity
+through low-bit masks; newly set tag bits must be cleared before a cast can use
+the retained carrier. An address equation such as `(word & ~3) == address(p)`
+can recover numeric coordinates, but does not establish the full relationship
+or authorize a dereference. Clearing a word known to contain only tag bits
+recovers the unique null pointer.
+
+See [integer representation policy](../../design/pointer-integer-representations.md)
+for the unpublished implementation checkpoint and remaining Phase B work.
 
 Alignment is evidence, not a property of the pointee type. `aligned(p, n)`
 holds when the address of `p` is a multiple of `n`; Click derives it from a

@@ -22,6 +22,8 @@ pub(in crate::surface) fn comparison_proposition(
     operator: ComparisonOperator,
     right: CValue,
 ) -> Result<Proposition, ClickError> {
+    let left = left.numeric_value().clone();
+    let right = right.numeric_value().clone();
     let pointer_and_null = match (&left, &right) {
         (CValue::Pointer(pointer), CValue::Int32(Bitvector32Term::Constant(0))) => {
             Some((pointer.pointer().clone(), Pointer::null()))
@@ -61,10 +63,14 @@ pub(in crate::surface) fn comparison_proposition(
             }
         };
         if !left.is_null() && !right.is_null() {
-            return Ok(Proposition::ConditionIs(ConditionTerm::pointer_value_equal(left.clone(), right.clone()), value));
+            return Ok(Proposition::ConditionIs(
+                ConditionTerm::pointer_value_equal(left.clone(), right.clone()),
+                value,
+            ));
         }
         return Ok(Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(left.pointer().clone(), right.pointer().clone()), value,
+            ConditionTerm::pointer_equal(left.pointer().clone(), right.pointer().clone()),
+            value,
         ));
     }
     if matches!(left, CValue::UInt64(_)) || matches!(right, CValue::UInt64(_)) {
@@ -153,7 +159,8 @@ pub(in crate::surface) fn spec_range_membership_proposition(
 }
 
 pub(in crate::surface) fn promoted_int32_term(value: &CValue) -> Option<Bitvector32Term> {
-    match value {
+    match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Int8(bits) => Some(simp_bitvector(bits)),
         CValue::Bool(bits)
         | CValue::Int16(bits)
@@ -173,7 +180,8 @@ pub(in crate::surface) fn promoted_int32_term(value: &CValue) -> Option<Bitvecto
 }
 
 fn promoted_int64_term(value: &CValue) -> Option<Bitvector32Term> {
-    match value {
+    match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Int64(bits) => Some(bits.clone()),
         CValue::Bool(bits) => Some(Bitvector32Term::int64_from_32(bits.clone())),
         CValue::Int8(bits) => Some(Bitvector32Term::int64_from_32(bits.clone())),
@@ -192,7 +200,8 @@ fn promoted_int64_term(value: &CValue) -> Option<Bitvector32Term> {
 }
 
 fn promoted_uint64_term(value: &CValue) -> Option<Bitvector32Term> {
-    match value {
+    match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::UInt64(bits) => Some(bits.clone()),
         CValue::Bool(bits) => Some(Bitvector32Term::uint64_from_32(bits.clone())),
         CValue::Int64(bits) => Some(Bitvector32Term::uint64_from_int64(bits.clone())),

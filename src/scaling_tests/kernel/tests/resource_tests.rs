@@ -1163,7 +1163,7 @@ fn nonexact_composite_entailment_ignores_unrelated_instances_of_the_shape() {
         let context = ResourceContext::new()
             .unchecked_with_facts((0..size).map(|index| boxed(object(index))));
         let assumptions = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(alias.clone(), object(size - 1)),
+            ConditionTerm::pointer_value_equal(CPointerValue::new(alias.clone(), CType::Int32Pointer), CPointerValue::new(object(size - 1), CType::Int32Pointer)),
             true,
         );
         let (held, used) = crate::instrumentation::measure_deterministic_work(|| {

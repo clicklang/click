@@ -316,7 +316,8 @@ impl LoadKind {
     /// The kind of read that returns exactly `value`, a cell's stored value:
     /// a read of any other kind at the cell's address does not.
     pub fn of_value(value: &CValue) -> Option<Self> {
-        Some(match value {
+        Some(match value.numeric_value() {
+            CValue::PointerInteger(_) => unreachable!("numeric projection"),
             CValue::Void => return None,
             CValue::Bool(_) | CValue::UInt8(_) => Self::UInt8,
             CValue::Int8(_) => Self::Int8,
@@ -446,12 +447,10 @@ pub enum Bitvector32Term {
     /// that differ in width or, below four bytes, in signedness return
     /// different values, so they are different terms. See [`LoadKind`].
     MemoryLoad(SharedCMemory, Box<Pointer>, LoadKind),
-    /// The 64-bit integer representation of a non-null object pointer under
-    /// the LP64 profile.  The term keeps the exact source pointer, so the
-    /// integer carries provenance: a cast back recovers that pointer, and two
-    /// addresses compare as their pointers do.  No arithmetic on the term
-    /// is interpreted as address arithmetic; tag bits are handled by checked
-    /// rewrites on top of this term.
+    /// The physical LP64 address bits of an object pointer. This numeric
+    /// observation carries no designation or selected extent. Complete C
+    /// integer copies retain that information separately in PointerInteger.
+    /// Checked tag identities can recover address bits, never pointer bounds.
     PointerAddress(Box<Pointer>),
     IntegerToMachine {
         value: SharedIntegerTerm,
@@ -1028,6 +1027,9 @@ pub struct CPointerValue {
     /// The object designated when this value entered. Address aliases never
     /// replace this component; only value transport or substitution maps it.
     designation: Arc<Pointer>,
+    /// The opaque containing extent retained through narrowing. A byte/void
+    /// view clears it, so that wider view cannot authorize the original input.
+    opaque_extent: Option<Arc<Pointer>>,
     c_type: CType,
     qualifiers: Option<Arc<CPointerQualifiers>>,
 }
@@ -1064,27 +1066,84 @@ impl CPointerValue {
             c_type.is_pointer(),
             "C pointer values require a pointer type"
         );
-        let is_function = matches!(c_type, CType::FunctionPointer(_)) || pointer.block.is_function();
-        let known_root = is_function || matches!(pointer.block, PointerBlock::Concrete(_) | PointerBlock::Heap(_) | PointerBlock::Temporary(_));
+        let is_function =
+            matches!(c_type, CType::FunctionPointer(_)) || pointer.block.is_function();
+        let known_root = is_function
+            || matches!(
+                pointer.block,
+                PointerBlock::Concrete(_) | PointerBlock::Heap(_) | PointerBlock::Temporary(_)
+            );
+        let root = if is_function {
+            Pointer::null()
+        } else {
+            pointer.object_identity()
+        };
         Self {
-            designation: Arc::new(if is_function { Pointer::null() } else { pointer.object_identity() }),
+            opaque_extent: (!known_root).then(|| Arc::new(root.clone())),
+            designation: Arc::new(root),
             pointer,
             c_type,
-            qualifiers: known_root.then(|| Arc::new(CPointerQualifiers { extent_known: true, ..Default::default() })),
+            qualifiers: known_root.then(|| {
+                Arc::new(CPointerQualifiers {
+                    extent_known: true,
+                    ..Default::default()
+                })
+            }),
         }
     }
 
-    /// An opaque complete pointer read has its own value origin. Its numeric
-    /// address may retain the legacy load spelling without determining that
-    /// origin from the storage allocation or the loaded bits.
-    pub(in crate::kernel) fn from_read(pointer: Pointer, c_type: CType, memory: &SharedCMemory, cell: &Pointer) -> Self {
-        let value = Self::new(pointer, c_type);
-        if matches!(c_type, CType::FunctionPointer(_)) || value.pointer.block.is_function() { return value; }
-        value.with_designation(Arc::new(Pointer::loaded_value(memory, cell)))
+    /// A complete pointer read owns an opaque domain independently of its
+    /// numeric address. Both bounds and origin cover all eight bytes.
+    pub(in crate::kernel) fn from_read(
+        pointer: Pointer,
+        c_type: CType,
+        memory: &SharedCMemory,
+        cell: &Pointer,
+    ) -> Self {
+        let mut value = Self::new(pointer, c_type);
+        if matches!(c_type, CType::FunctionPointer(_)) || value.pointer.block.is_function() {
+            return value;
+        }
+        value.qualifiers = None;
+        // The domain comes from one complete pointer read.
+        // Name its eight-byte version using the tracker's cached, assumption-
+        // free naming query rather than a cached four-byte scalar prefix.
+        let point = crate::kernel::resource_tracker::last_same_point(
+            crate::kernel::resource_tracker::Resource::Cell {
+                pointer: cell,
+                bytes: C_POINTER_BYTE_WIDTH,
+            },
+            &crate::kernel::resource_tracker::ProgramPoint::at(memory),
+        );
+        let source = point.as_ref().map_or(memory, |point| point.snapshot());
+        let origin = Arc::new(Pointer::loaded_value(source, cell));
+        value
+            .with_opaque_extent(Some(origin.clone()))
+            .with_designation(origin)
     }
 
     pub(crate) fn designation(&self) -> &Pointer {
         &self.designation
+    }
+
+    pub(in crate::kernel) fn opaque_extent(&self) -> Option<&Pointer> {
+        self.opaque_extent.as_deref()
+    }
+
+    pub(in crate::kernel) fn with_opaque_extent(mut self, extent: Option<Arc<Pointer>>) -> Self {
+        self.opaque_extent = extent;
+        self
+    }
+
+    pub(in crate::kernel) fn access_designation(&self) -> (&Pointer, Option<&Pointer>) {
+        (
+            self.designation(),
+            if self.extent_is_known() {
+                None
+            } else {
+                self.opaque_extent()
+            },
+        )
     }
 
     pub(in crate::kernel) fn with_designation(mut self, designation: Arc<Pointer>) -> Self {
@@ -1116,6 +1175,7 @@ impl CPointerValue {
         Self {
             pointer: self.pointer,
             designation: self.designation,
+            opaque_extent: self.opaque_extent,
             c_type,
             qualifiers: self.qualifiers,
         }
@@ -1173,6 +1233,7 @@ impl CPointerValue {
     }
 
     pub(in crate::kernel) fn with_root_extent(mut self) -> Self {
+        self.opaque_extent = None;
         let qualifiers = Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default));
         qualifiers.extent = None;
         qualifiers.extent_known = true;
@@ -1180,7 +1241,9 @@ impl CPointerValue {
     }
 
     pub(crate) fn with_extent(mut self, extent: Option<SubobjectExtent>) -> Self {
-        if extent.is_some() { Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).extent_known = true; }
+        if extent.is_some() {
+            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).extent_known = true;
+        }
         if extent.is_some() || self.extent().is_some() {
             Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).extent = extent;
         }
@@ -1197,6 +1260,7 @@ impl CPointerValue {
         if designation != *self.designation {
             result.designation = Arc::new(designation);
         }
+        result.opaque_extent = self.opaque_extent().map(|origin| Arc::new(map(origin)));
         if let Some(extent) = self.extent() {
             result = result.with_extent(Some(SubobjectExtent {
                 start: map(&extent.start),
@@ -1206,25 +1270,44 @@ impl CPointerValue {
         result
     }
 
-    pub(in crate::kernel) fn try_map_pointers(&self, mut map: impl FnMut(&Pointer) -> Option<Pointer>) -> Option<Self> {
+    pub(in crate::kernel) fn try_map_pointers(
+        &self,
+        mut map: impl FnMut(&Pointer) -> Option<Pointer>,
+    ) -> Option<Self> {
         let pointer = map(&self.pointer)?;
         let designation = map(&self.designation)?;
-        let extent = match self.extent() {
-            Some(extent) => Some(SubobjectExtent { start: map(&extent.start)?, width: extent.width }),
+        let opaque_extent = match self.opaque_extent() {
+            Some(origin) => Some(Arc::new(map(origin)?)),
             None => None,
         };
-        Some(self.clone().with_address(pointer).with_designation(Arc::new(designation)).with_extent(extent))
+        let extent = match self.extent() {
+            Some(extent) => Some(SubobjectExtent {
+                start: map(&extent.start)?,
+                width: extent.width,
+            }),
+            None => None,
+        };
+        Some(
+            self.clone()
+                .with_address(pointer)
+                .with_designation(Arc::new(designation))
+                .with_extent(extent)
+                .with_opaque_extent(opaque_extent),
+        )
     }
 
     /// Re-spell physical addresses without changing the value's origin.
     pub(in crate::kernel) fn map_addresses(&self, map: impl FnMut(&Pointer) -> Pointer) -> Self {
-        self.map_pointers(map).with_designation(self.designation.clone())
+        self.map_pointers(map)
+            .with_designation(self.designation.clone())
+            .with_opaque_extent(self.opaque_extent.clone())
     }
 
     /// Every address the value mentions, for variable collection.
     pub(crate) fn pointers(&self) -> impl Iterator<Item = &Pointer> {
         std::iter::once(&self.pointer)
             .chain(std::iter::once(self.designation.as_ref()))
+            .chain(self.opaque_extent())
             .chain(self.extent().map(|extent| &extent.start))
     }
 
@@ -1250,6 +1333,7 @@ impl CPointerValue {
         &CType,
         bool,
         bool,
+        Option<&Pointer>,
         Option<&SubobjectExtent>,
         Option<super::loans::LocalReferenceId>,
     ) {
@@ -1259,6 +1343,11 @@ impl CPointerValue {
             &self.c_type,
             self.pointee_volatile(),
             self.extent_is_known(),
+            if self.extent_is_known() {
+                None
+            } else {
+                self.opaque_extent()
+            },
             self.extent(),
             self.local_reference().map(|reference| reference.id()),
         )
@@ -1588,8 +1677,29 @@ impl std::fmt::Display for PointerBlock {
     }
 }
 
+/// Complete LP64 integer produced from a pointer. Numeric projections discard
+/// this record; complete C-value transport keeps it. Fields are kernel-owned.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(in crate::kernel) enum PointerIntegerKind {
+    Exact,
+    Tagged,
+    /// An incoming or loaded complete word. Its identity is independent of
+    /// its numeric value; only an explicit full-pointer contract gives bounds.
+    Word {
+        changed_bits: u64,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct PointerIntegerValue {
+    pub(in crate::kernel) numeric: Box<CValue>,
+    pub(in crate::kernel) pointer: Box<CPointerValue>,
+    pub(in crate::kernel) kind: PointerIntegerKind,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CValue {
+    PointerInteger(PointerIntegerValue),
     Void,
     /// C `_Bool` values are represented by a 32-bit term whose value is
     /// always normalized to zero or one.  The storage width remains the
@@ -1828,6 +1938,7 @@ pub struct CLValue {
     /// The subobject extent of the pointer this memory lvalue was reached
     /// through. The access is checked against it, and `&lvalue` keeps it.
     pub(super) extent_known: bool,
+    pub(super) opaque_extent: Option<Arc<Pointer>>,
     pub(super) extent: Option<Arc<SubobjectExtent>>,
     pub(super) designation: Option<Arc<Pointer>>,
 }
@@ -1853,6 +1964,9 @@ pub enum CIntegerCastMode {
     /// range (`narrowed_cast_identity`). `Standard` remains the
     /// specification's checked conversion.
     CConversion,
+    /// An inserted character-byte view changes the read type while retaining
+    /// the source pointer's bounds. Authored C casts still use CConversion.
+    PointerCoercion,
     /// Legacy exact uint64-to-int64 boundary.
     UInt64BitsToInt64,
 }
@@ -2157,6 +2271,8 @@ pub enum SpecExpression {
     BitwiseXor(Box<SpecExpression>, Box<SpecExpression>),
     BitwiseNot(Box<SpecExpression>),
     Cast(Box<SpecExpression>, CType),
+    /// An implicit pointer conversion retains the complete designation.
+    PointerCoercion(Box<SpecExpression>, CType),
     If {
         condition: Box<SpecProposition>,
         then_branch: Box<SpecExpression>,
@@ -2631,7 +2747,8 @@ impl AlgebraicTerm {
                         }
                     }
                 },
-                Node::Value(value) => match value {
+                Node::Value(value) => match value.numeric_value() {
+                    CValue::PointerInteger(_) => unreachable!("numeric projection"),
                     CValue::Void => {}
                     CValue::Bool(v) => visit(v),
                     CValue::Pointer(v) => pending.push(Node::Offset(&v.pointer().offset)),
@@ -3302,11 +3419,17 @@ pub struct CMemorySegment {
     pub(super) guard: Option<SpecProposition>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Clone, Debug)]
 pub struct CMemoryRange {
     pub(super) base: Pointer,
     /// Origin of the value naming the range, independent of address aliases.
     pub(super) designation: Arc<Pointer>,
+    /// A typed clause also demands this carrier's designation. Raw kernel
+    /// intervals ask only about physical authority; both retain supplier
+    /// designations through resource algebra and subsequent C access checks.
+    pub(super) typed_carrier: bool,
+    pub(super) carrier_extent_known: bool,
+    pub(super) opaque_extent: Option<Arc<Pointer>>,
     /// The bounds, in elements. Read them through [`CMemoryRange::start`]
     /// and [`CMemoryRange::end`], which hold only for an `Int32` range, or
     /// through [`CMemoryRange::wide_bounds`]: a term carries no width, so a
@@ -3322,6 +3445,53 @@ pub struct CMemoryRange {
     /// How the bounds are read. Last, so ranges order by base first and
     /// `Int32` ranges keep the order they had among themselves.
     kind: RangeIndexKind,
+}
+
+impl CMemoryRange {
+    // The mode changes what a requested clause must establish, not the
+    // identity of the physical authority and retained carrier it names.
+    fn identity(
+        &self,
+    ) -> (
+        &Pointer,
+        &Pointer,
+        Option<&Pointer>,
+        &Bitvector32Term,
+        &Bitvector32Term,
+        u32,
+        RangeIndexKind,
+    ) {
+        (
+            &self.base,
+            &self.designation,
+            self.opaque_extent.as_deref(),
+            &self.start_bound,
+            &self.end_bound,
+            self.element_width,
+            self.kind,
+        )
+    }
+}
+impl PartialEq for CMemoryRange {
+    fn eq(&self, other: &Self) -> bool {
+        self.identity() == other.identity()
+    }
+}
+impl Eq for CMemoryRange {}
+impl std::hash::Hash for CMemoryRange {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.identity().hash(state);
+    }
+}
+impl PartialOrd for CMemoryRange {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for CMemoryRange {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.identity().cmp(&other.identity())
+    }
 }
 
 /// The integer type of a range's bounds. Two ranges with the same terms in
@@ -6113,6 +6283,31 @@ impl SharedCMemory {
         })
     }
 
+    /// The producer-retained source of unchanged physical bytes. This is
+    /// read congruence only: callers must retain the current snapshot for
+    /// initialization, lifetime and permission checks.
+    pub(crate) fn unchanged_bytes_source(&self) -> Self {
+        C_MEMORY_ARENA.with(|arena| {
+            let arena = arena.borrow();
+            if arena.0 != self.arena {
+                return self.clone();
+            }
+            let source = arena.1.read_identities[self.id as usize];
+            if source == self.id {
+                return self.clone();
+            }
+            let memory = arena.1.memories[source as usize].clone();
+            let (_, content_hash) =
+                arena.1.shallow_identities[&CMemoryShallowIdentity::of(&memory)];
+            Self {
+                arena: self.arena,
+                id: source,
+                content_hash,
+                memory,
+            }
+        })
+    }
+
     pub(crate) fn memory(&self) -> &CMemory {
         &self.memory
     }
@@ -6406,6 +6601,8 @@ pub enum CMemoryDerivation {
     /// own never-crossed / guarded edge kinds, so this edge cannot launder a
     /// havoc (conventions.md's soundness trap).
     CellsForgotten { base: SharedCMemory },
+    /// Cache a value observed in `base`; no bytes or lifetime facts change.
+    CellObserved { base: SharedCMemory },
     /// `base` after a loop body that may write anything it can reach.
     ///
     /// `mutable_ranges` is present only when the loop's whole-effect summary
@@ -6493,6 +6690,7 @@ impl CMemoryDerivation {
             Self::HeapFreed { .. } => "HeapFreed",
             Self::ObjectInitializationRecorded { .. } => "ObjectInitializationRecorded",
             Self::CellsForgotten { .. } => "CellsForgotten",
+            Self::CellObserved { .. } => "CellObserved",
             Self::LocalLifetimeEnded { .. } => "LocalLifetimeEnded",
             Self::LoopHavoc { .. } => "LoopHavoc",
             Self::CallHavoc { .. } => "CallHavoc",
@@ -6513,6 +6711,7 @@ impl CMemoryDerivation {
             | Self::HeapFreed { base, .. }
             | Self::ObjectInitializationRecorded { base, .. }
             | Self::CellsForgotten { base }
+            | Self::CellObserved { base }
             | Self::LocalLifetimeEnded { base, .. }
             | Self::LoopHavoc { base, .. }
             | Self::CallHavoc { base, .. }
@@ -6686,7 +6885,9 @@ pub(crate) fn record_c_memory_derivation(result: &mut CMemory, derivation: CMemo
     }
     // Interning borrows the arena, so it has to finish before the write.
     let read_identity = match derivation.as_ref() {
-        CMemoryDerivation::CellsForgotten { base } => Some(base.read_identity()),
+        CMemoryDerivation::CellsForgotten { base } | CMemoryDerivation::CellObserved { base } => {
+            Some(base.read_identity())
+        }
         CMemoryDerivation::CellsSeeded { base, run }
             if matches!(run.value_mode(), cell_store::RunValueMode::Load)
                 && run.element_width() == run.value_width()
@@ -10853,8 +11054,15 @@ pub struct PureFactContext {
     /// terms. Appended on insertion; withdrawal rebuilds from exact equality
     /// indexes, preserving the remaining support in every fragment.
     pub(super) equality_graph: super::equality_graph::EqualityGraph,
+    /// Producer-retained predecessor for withdrawing the latest full-pointer
+    /// premise. Exact persistent roots identify the unchanged fact frontier.
+    pub(super) pointer_value_undo: Option<Arc<super::assumptions::PointerValueUndo>>,
+    pub(super) restoring_pointer_graph: Option<Arc<super::equality_graph::EqualityGraph>>,
     /// Value-level pointer origins. C address comparisons never enter this graph.
-    pub(super) pointer_address_sources: crate::persistent::PersistentMap<ConditionTerm, crate::persistent::PersistentSet<ConditionTerm>>,
+    pub(super) pointer_address_sources: crate::persistent::PersistentMap<
+        ConditionTerm,
+        crate::persistent::PersistentSet<ConditionTerm>,
+    >,
     pub(super) designation_graph: super::pointer_designations::ValueClasses<Pointer>,
     pub(super) extent_graph: super::pointer_designations::ValueClasses<Pointer>,
     pub(super) pointer_value_classes: super::pointer_designations::ValueClasses<CPointerValue>,

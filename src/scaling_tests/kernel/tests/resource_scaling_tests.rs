@@ -1490,7 +1490,7 @@ fn external_descriptor(identity: u64) -> Pointer {
 /// The pointer a load of `cell` reads in `source`, as execution materializes
 /// it: the cell's own block, offset by the load's name.
 fn materialized_pointer(source: &CMemory, cell: &Pointer) -> CValue {
-    CValue::typed_pointer(
+    CValue::Pointer(CPointerValue::from_read(
         Pointer {
             block: cell.block.clone(),
             offset: PointerOffsetTerm::scale_int32(
@@ -1503,7 +1503,9 @@ fn materialized_pointer(source: &CMemory, cell: &Pointer) -> CValue {
             ),
         },
         CType::Int32Pointer,
-    )
+        &crate::kernel::intern_c_memory_ref(source),
+        cell,
+    ))
 }
 
 /// Unfolding a region beside other owned descriptors of its type reads the
@@ -1522,7 +1524,7 @@ fn unfold_beside_descriptors_of_its_type_ignores_unrelated_descriptors() {
         let other = external_descriptor(100_001);
         let entry = CMemory::new();
         let pool = match materialized_pointer(&entry, &region) {
-            CValue::Pointer(value) => value.pointer().clone(),
+            CValue::Pointer(value) => value,
             _ => unreachable!("a pointer cell is materialized as a pointer"),
         };
         let instance = ResourceInstance::new(
@@ -1556,7 +1558,12 @@ fn unfold_beside_descriptors_of_its_type_ignores_unrelated_descriptors() {
             )
             .unchecked_with_facts([
                 owned_range(other.clone(), 0, 4),
-                owned_range(pool.clone(), 0, 4),
+                CResourceFact::own_memory(CMemoryRange::from_pointer_value(
+                    &pool,
+                    0u32.into(),
+                    4u32.into(),
+                    4,
+                )),
                 CResourceFact::own(CResource::Instance(instance.clone())),
             ]);
         let state = CState::new()

@@ -2408,6 +2408,7 @@ pub(crate) fn completion_key(proposition: &Proposition) -> Proposition {
         match condition {
             ConditionTerm::Bitvector32Equal(left, right) => left == right,
             ConditionTerm::PointerEqual(left, right) => left == right,
+            ConditionTerm::PointerValueEqual(left, right) => left == right,
             ConditionTerm::PointerOffsetEqual(left, right) => left == right,
             _ => false,
         }
@@ -2543,7 +2544,8 @@ fn literal_completion_key(outcome: &CFunctionOutcome) -> Option<(bool, CValue)> 
         CFunctionOutcome::Throw { value, .. } => (true, value),
         _ => return None,
     };
-    let term = match value {
+    let term = match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Void => return Some((exceptional, CValue::Void)),
         CValue::Bool(term)
         | CValue::Int8(term)

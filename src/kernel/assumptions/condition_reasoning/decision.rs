@@ -347,16 +347,39 @@ impl PureFactContext {
     fn decide_inner(&self, condition: &ConditionTerm) -> Option<bool> {
         // A cited full pointer value equality also supplies the C address
         // comparison. Keep this projection indexed and positive only.
-        if matches!(condition, ConditionTerm::PointerEqual(..) | ConditionTerm::PointerOffsetEqual(..))
-            && (self.pointer_address_sources.contains_key(condition)
-                || self.pointer_address_sources.contains_key(&condition.flipped()))
-        { return Some(true); }
+        if matches!(
+            condition,
+            ConditionTerm::PointerEqual(..) | ConditionTerm::PointerOffsetEqual(..)
+        ) && (self.pointer_address_sources.contains_key(condition)
+            || self
+                .pointer_address_sources
+                .contains_key(&condition.flipped()))
+        {
+            return Some(true);
+        }
         if let ConditionTerm::PointerValueEqual(left, right) = condition {
-            if let Some(value) = self.exact_condition_value(condition) { return Some(value); }
-            if self.equality_graph.knows_condition(condition, true) { return Some(true); }
-            if self.equality_graph.knows_condition(condition, false) { return Some(false); }
-            if self.pointer_designations_match(left, right) && crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(left.pointer(), right.pointer(), self) { return Some(true); }
-            let address = self.decide(&ConditionTerm::pointer_equal(left.pointer().clone(), right.pointer().clone()));
+            if let Some(value) = self.exact_condition_value(condition) {
+                return Some(value);
+            }
+            if self.equality_graph.knows_condition(condition, true) {
+                return Some(true);
+            }
+            if self.equality_graph.knows_condition(condition, false) {
+                return Some(false);
+            }
+            if self.pointer_designations_match(left, right)
+                && crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+                    left.pointer(),
+                    right.pointer(),
+                    self,
+                )
+            {
+                return Some(true);
+            }
+            let address = self.decide(&ConditionTerm::pointer_equal(
+                left.pointer().clone(),
+                right.pointer().clone(),
+            ));
             return match address {
                 Some(false) => Some(false),
                 Some(true) if self.pointer_designations_match(left, right) => Some(true),
@@ -1182,7 +1205,13 @@ impl PureFactContext {
                         left.as_ref().clone(),
                     ))
                     .copied(),
-                ConditionTerm::PointerValueEqual(left, right) => self.condition_facts.get(&ConditionTerm::PointerValueEqual(right.clone(), left.clone())).copied(),
+                ConditionTerm::PointerValueEqual(left, right) => self
+                    .condition_facts
+                    .get(&ConditionTerm::PointerValueEqual(
+                        right.clone(),
+                        left.clone(),
+                    ))
+                    .copied(),
                 ConditionTerm::PointerEqual(left, right) => self
                     .condition_facts
                     .get(&ConditionTerm::pointer_equal(

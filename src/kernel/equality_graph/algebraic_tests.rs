@@ -218,7 +218,7 @@ fn algebraic_closure_generic_arguments_and_constructor_field_order_remain_typed(
 }
 
 #[test]
-fn algebraic_closure_pointer_payloads_share_the_existing_address_classes() {
+fn algebraic_closure_pointer_payloads_require_full_value_equality() {
     let ty = model_type("PointerModel", AlgebraicValueType::C(CType::Int32Pointer));
     let pointer = |name: &str| Pointer {
         block: name.into(),
@@ -236,6 +236,11 @@ fn algebraic_closure_pointer_payloads_share_the_existing_address_classes() {
     };
     let mut graph = EqualityGraph::default();
     graph.add_equality(&pointer("a"), &pointer("b"));
+    assert!(!graph.are_algebraic_equal(&node(pointer("a")), &node(pointer("b"))));
+    graph.add_pointer_value_equality(
+        &CPointerValue::new(pointer("a"), CType::Int32Pointer),
+        &CPointerValue::new(pointer("b"), CType::Int32Pointer),
+    );
     assert!(graph.are_algebraic_equal(&node(pointer("a")), &node(pointer("b"))));
 }
 

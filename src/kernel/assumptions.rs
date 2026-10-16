@@ -31,6 +31,15 @@ pub(in crate::kernel) use condition_reasoning::{
 };
 mod constant_classes;
 use super::equality_graph::EqualityGraph;
+
+#[derive(Clone, Debug)]
+pub(super) struct PointerValueUndo {
+    source: std::sync::Arc<ConditionTerm>,
+    conditions: crate::persistent::PersistentMap<ConditionTerm, bool>,
+    propositions: imbl::OrdSet<Proposition>,
+    graph: std::sync::Arc<EqualityGraph>,
+}
+
 pub(in crate::kernel) use constant_classes::ConstantClasses;
 mod memory_reasoning;
 pub(in crate::kernel) use memory_reasoning::additive_base_spellings;
@@ -60,6 +69,23 @@ pub(in crate::kernel) fn pointers_equal_with_load_atoms(
 ) -> bool {
     (left.block == right.block
         || match (&left.block, &right.block) {
+            (PointerBlock::LoadedPointer(_), PointerBlock::LoadedPointer(_)) => {
+                let (Some(a), Some(b)) = (left.as_loaded_value(), right.as_loaded_value()) else {
+                    return false;
+                };
+                loads_match(
+                    &Bitvector32Term::MemoryLoad(
+                        a.defining_memory,
+                        Box::new(a.defining_address),
+                        LoadKind::Bits64,
+                    ),
+                    &Bitvector32Term::MemoryLoad(
+                        b.defining_memory,
+                        Box::new(b.defining_address),
+                        LoadKind::Bits64,
+                    ),
+                )
+            }
             (PointerBlock::Symbolic(_), PointerBlock::Symbolic(_)) => {
                 let base = |pointer: &Pointer| Pointer {
                     block: pointer.block.clone(),
@@ -237,6 +263,24 @@ pub(crate) fn pointers_equal_ignoring_memories(left: &Pointer, right: &Pointer) 
 /// availability on its own — it only narrows the candidate set before the
 /// proving comparison runs.
 pub fn conditions_equal_ignoring_memories(left: &ConditionTerm, right: &ConditionTerm) -> bool {
+    if let (ConditionTerm::PointerValueEqual(a, b), ConditionTerm::PointerValueEqual(c, d)) =
+        (left, right)
+    {
+        // Candidate selection only. The context's snapshot bridge separately
+        // compares both complete designations before accepting this candidate.
+        return a.c_type() == c.c_type()
+            && b.c_type() == d.c_type()
+            && pointers_equal_with_load_atoms(
+                a.pointer(),
+                c.pointer(),
+                &load_atoms_equal_ignoring_memories,
+            )
+            && pointers_equal_with_load_atoms(
+                b.pointer(),
+                d.pointer(),
+                &load_atoms_equal_ignoring_memories,
+            );
+    }
     conditions_equal_with_load_atoms(left, right, &load_atoms_equal_ignoring_memories)
 }
 
@@ -1478,7 +1522,8 @@ fn hash_memory_blind_condition<H: std::hash::Hasher>(condition: &ConditionTerm, 
     std::hash::Hash::hash(&std::mem::discriminant(condition), hasher);
     match condition {
         ConditionTerm::PointerValueEqual(left, right) => {
-            std::hash::Hash::hash(left, hasher); std::hash::Hash::hash(right, hasher);
+            std::hash::Hash::hash(left, hasher);
+            std::hash::Hash::hash(right, hasher);
         }
 
         ConditionTerm::Constant(value) => std::hash::Hash::hash(value, hasher),
@@ -1799,7 +1844,12 @@ fn collect_condition_memory_loads(
     match condition {
         ConditionTerm::PointerValueEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
-                collect_pointer_offset_memory_loads(&pointer.offset, current_memory, loads, seen_integers)?;
+                collect_pointer_offset_memory_loads(
+                    &pointer.offset,
+                    current_memory,
+                    loads,
+                    seen_integers,
+                )?;
             }
             Ok(())
         }
@@ -2111,7 +2161,8 @@ fn collect_cvalue_memory_loads(
     loads: &mut Vec<(Pointer, u32)>,
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
-    match value {
+    match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Int128(term) | CValue::UInt128(term) => collect_bitvector_memory_loads_with_width(
             term,
             current_memory,
@@ -2785,13 +2836,28 @@ impl PureFactContext {
     /// address; a false one is not an alias and never enters the index, which
     /// also makes withdrawal a no-op for the fact values that were never
     /// filed.
-    fn adjust_pointer_address_source(&mut self, key: ConditionTerm, source: &ConditionTerm, insert: bool) -> Option<ConditionTerm> {
-        let sources = self.pointer_address_sources.get(&key).cloned().unwrap_or_default();
-        let sources = if insert { sources.with_value(source.clone()) } else { sources.without_value(source) };
+    fn adjust_pointer_address_source(
+        &mut self,
+        key: ConditionTerm,
+        source: &ConditionTerm,
+        insert: bool,
+    ) -> Option<ConditionTerm> {
+        let sources = self
+            .pointer_address_sources
+            .get(&key)
+            .cloned()
+            .unwrap_or_default();
+        let sources = if insert {
+            sources.with_value(source.clone())
+        } else {
+            sources.without_value(source)
+        };
         let selected = sources.iter().next().cloned();
         self.pointer_address_sources = if sources.is_empty() {
             self.pointer_address_sources.without_key(&key)
-        } else { self.pointer_address_sources.with_inserted(key, sources) };
+        } else {
+            self.pointer_address_sources.with_inserted(key, sources)
+        };
         selected
     }
 
@@ -2817,7 +2883,11 @@ impl PureFactContext {
         if !value || left == right {
             return;
         }
-        let key = if left < right { ConditionTerm::pointer_equal(left.clone(), right.clone()) } else { ConditionTerm::pointer_equal(right.clone(), left.clone()) };
+        let key = if left < right {
+            ConditionTerm::pointer_equal(left.clone(), right.clone())
+        } else {
+            ConditionTerm::pointer_equal(right.clone(), left.clone())
+        };
         let source = self.adjust_pointer_address_source(key, condition, insert);
         for (key, alias) in [(left, right), (right, left)] {
             let aliases = self
@@ -2883,6 +2953,10 @@ impl PureFactContext {
     /// cannot forget one equality, so a withdrawal refiles the equalities
     /// that remain: work in the equalities held, not in unrelated facts.
     fn rebuild_equality_graph(&mut self) {
+        if let Some(graph) = &self.restoring_pointer_graph {
+            self.equality_graph = graph.as_ref().clone();
+            return;
+        }
         let mut classes = EqualityGraph::default();
         for (left, aliases) in self.pointer_block_aliases.iter() {
             for (right, _) in aliases.iter() {
@@ -2952,51 +3026,235 @@ impl PureFactContext {
     }
 
     pub(in crate::kernel) fn designations_equal(&self, left: &Pointer, right: &Pointer) -> bool {
-        left == right || self.designation_graph.equal(left, right) || self.equality_graph.designations_equal(left, right)
+        left == right
+            || self.designation_graph.equal(left, right)
+            || self.equality_graph.designations_equal(left, right)
             || crate::kernel::memory_provenance::pointer_read_designations_equal(left, right, self)
-    }
-
-    pub(in crate::kernel) fn pointer_designations_match(&self, left: &CPointerValue, right: &CPointerValue) -> bool {
-        self.pointer_value_classes.equal(left, right)
-            || (self.designations_equal(left.designation(), right.designation()) && match (left.extent(), right.extent()) {
-                (None, None) => self.extent_graph.equal(left.designation(), right.designation()),
-                (Some(a), Some(b)) => a.width == b.width && self.equality_graph.are_equal(&a.start, &b.start),
-                _ => false,
+            || self.designation_graph.direct_aliases(right).any(|alias| {
+                crate::instrumentation::record_deterministic_work(1);
+                crate::kernel::memory_provenance::pointer_read_designations_equal(left, alias, self)
+            })
+            || self.designation_graph.direct_aliases(left).any(|alias| {
+                crate::instrumentation::record_deterministic_work(1);
+                crate::kernel::memory_provenance::pointer_read_designations_equal(
+                    alias, right, self,
+                )
             })
     }
 
+    pub(in crate::kernel) fn opaque_extents_equal(&self, a: &Pointer, b: &Pointer) -> bool {
+        self.extent_graph.equal(a, b)
+            || self.equality_graph.opaque_extents_equal(a, b)
+            || crate::kernel::memory_provenance::pointer_read_extents_equal(a, b, self)
+            || self.extent_graph.direct_aliases(b).any(|alias| {
+                crate::instrumentation::record_deterministic_work(1);
+                crate::kernel::memory_provenance::pointer_read_extents_equal(a, alias, self)
+            })
+            || self.extent_graph.direct_aliases(a).any(|alias| {
+                crate::instrumentation::record_deterministic_work(1);
+                crate::kernel::memory_provenance::pointer_read_extents_equal(alias, b, self)
+            })
+    }
+
+    pub(in crate::kernel) fn access_designations_match(
+        &self,
+        required: (&Pointer, Option<&Pointer>),
+        available: &CMemoryRange,
+    ) -> bool {
+        self.designations_equal(required.0, &available.designation)
+            && required.1.is_none_or(|extent| {
+                available
+                    .opaque_extent
+                    .as_deref()
+                    .is_some_and(|source| self.opaque_extents_equal(extent, source))
+            })
+    }
+
+    pub(in crate::kernel) fn pointer_designations_match(
+        &self,
+        left: &CPointerValue,
+        right: &CPointerValue,
+    ) -> bool {
+        // Null is one pointer value, with no allocation or selected object.
+        // Establishing its zero address therefore does not transfer authority.
+        ((left.is_null() || self.pointers_known_equal(left.pointer(), &Pointer::null()))
+            && (right.is_null() || self.pointers_known_equal(right.pointer(), &Pointer::null())))
+            || self.pointer_value_classes.equal(left, right)
+            || self.equality_graph.knows_condition(
+                &ConditionTerm::PointerValueEqual(Box::new(left.clone()), Box::new(right.clone())),
+                true,
+            )
+            || (self.designations_equal(left.designation(), right.designation())
+                && match (left.extent(), right.extent()) {
+                    (None, None) if left.extent_is_known() && right.extent_is_known() => true,
+                    (None, None) if !left.extent_is_known() && !right.extent_is_known() => left
+                        .opaque_extent()
+                        .zip(right.opaque_extent())
+                        .is_some_and(|(a, b)| self.opaque_extents_equal(a, b)),
+                    (Some(a), Some(b)) => {
+                        a.width == b.width && self.equality_graph.are_equal(&a.start, &b.start)
+                    }
+                    _ => false,
+                })
+    }
+
     pub(in crate::kernel) fn pointer_value_at_entry(&self, value: &CPointerValue) -> CPointerValue {
-        if value.extent_is_known() { return value.clone(); }
+        if value.extent_is_known() {
+            return value.clone();
+        }
         let representative = self.pointer_value_classes.representative(value);
-        let representative = super::pointer_designations::prefer_pointer(&representative, &self.equality_graph.pointer_value_representative(value));
-        let adopted = value.clone().with_address(representative.pointer().clone())
+        let representative = super::pointer_designations::prefer_pointer(
+            &representative,
+            &self.equality_graph.pointer_value_representative(value),
+        );
+        let mut framed_address = None;
+        let representative = if !representative.extent_is_known()
+            && value.designation().as_loaded_value().is_some()
+            && value.opaque_extent() == Some(value.designation())
+        {
+            self.known_value_of_framed_pointer_read(value)
+                .inspect(|known| {
+                    framed_address = Some(known.pointer().clone());
+                })
+                .unwrap_or(representative)
+        } else {
+            representative
+        };
+        if !representative.extent_is_known() {
+            // An equality between opaque inputs needs no choice of address
+            // spelling. Only an actual complete stored value can replace an
+            // opaque read; its producer supplied the entire pointer.
+            return crate::kernel::memory_provenance::complete_pointer_read_value(
+                value.designation(),
+                self,
+            )
+            .map(|stored| stored.with_type(value.c_type()))
+            .unwrap_or_else(|| value.clone());
+        }
+        let adopted = value
+            .clone()
             .with_designation(std::sync::Arc::new(representative.designation().clone()))
-            .with_extent(representative.extent().cloned());
-        if representative.extent_is_known() && representative.extent().is_none() { adopted.with_root_extent() } else { adopted }
+            .with_extent(representative.extent().cloned())
+            .with_opaque_extent(
+                representative
+                    .opaque_extent()
+                    .cloned()
+                    .map(std::sync::Arc::new),
+            );
+        let adopted = match framed_address {
+            Some(address) => adopted.with_address(address),
+            None => adopted,
+        };
+        if representative.extent().is_none() {
+            adopted.with_root_extent()
+        } else {
+            adopted
+        }
+    }
+
+    /// Address aliases select existing full-value premises; only the selected
+    /// read's complete eight-byte source can authorize their pointer metadata.
+    fn known_value_of_framed_pointer_read(&self, value: &CPointerValue) -> Option<CPointerValue> {
+        for alias in self.exact_pointer_aliases(value.pointer()) {
+            let address = ConditionTerm::pointer_equal(value.pointer().clone(), alias.clone());
+            let Some(sources) = self
+                .pointer_address_sources
+                .get(&address)
+                .or_else(|| self.pointer_address_sources.get(&address.flipped()))
+            else {
+                continue;
+            };
+            for source in sources.iter() {
+                crate::instrumentation::record_deterministic_work(1);
+                let ConditionTerm::PointerValueEqual(left, right) = source else {
+                    continue;
+                };
+                for read in [left.as_ref(), right.as_ref()] {
+                    if read.pointer() != value.pointer()
+                        || read.extent_is_known()
+                        || read.extent().is_some()
+                        || read.opaque_extent() != Some(read.designation())
+                        || !crate::kernel::memory_provenance::pointer_read_designations_equal(
+                            value.designation(),
+                            read.designation(),
+                            self,
+                        )
+                        || !crate::kernel::memory_provenance::pointer_read_extents_equal(
+                            value.designation(),
+                            read.designation(),
+                            self,
+                        )
+                    {
+                        continue;
+                    }
+                    let representative = self.pointer_value_classes.representative(read);
+                    let representative = super::pointer_designations::prefer_pointer(
+                        &representative,
+                        &self.equality_graph.pointer_value_representative(read),
+                    );
+                    if representative.extent_is_known() {
+                        return Some(representative);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    pub(in crate::kernel) fn exact_pointer_value_aliases<'a>(
+        &'a self,
+        value: &CPointerValue,
+    ) -> impl Iterator<Item = &'a CPointerValue> {
+        self.pointer_value_classes.direct_aliases(value)
     }
 
     fn adjust_pointer_value_equality(&mut self, proposition: &Proposition, insert: bool) {
         let (left, right) = match proposition {
-            Proposition::Equal(Term::CValue(CValue::Pointer(left)), Term::CValue(CValue::Pointer(right))) => (left, right),
-            Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) => (left.as_ref(), right.as_ref()),
+            Proposition::Equal(
+                Term::CValue(CValue::Pointer(left)),
+                Term::CValue(CValue::Pointer(right)),
+            ) => (left, right),
+            Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) => {
+                (left.as_ref(), right.as_ref())
+            }
             _ => return,
         };
         let key = (left.clone(), right.clone());
         if insert {
             self.pointer_value_equalities = self.pointer_value_equalities.with_value(key);
-            self.designation_graph.insert(left.designation(), right.designation(), |a,_| a.clone());
-            if left.extent().is_none() && right.extent().is_none() {
-                self.extent_graph.insert(left.designation(), right.designation(), |a,_|a.clone());
+            self.designation_graph
+                .insert(left.designation(), right.designation(), |a, _| a.clone());
+            if left.extent().is_none()
+                && right.extent().is_none()
+                && !left.extent_is_known()
+                && !right.extent_is_known()
+                && let Some((a, b)) = left.opaque_extent().zip(right.opaque_extent())
+            {
+                self.extent_graph.insert(a, b, |a, _| a.clone());
             }
-            self.pointer_value_classes.insert(left, right, super::pointer_designations::prefer_pointer);
+            self.pointer_value_classes.insert(
+                left,
+                right,
+                super::pointer_designations::prefer_pointer,
+            );
             self.equality_graph.add_pointer_value_equality(left, right);
         } else {
             self.pointer_value_equalities = self.pointer_value_equalities.without_value(&key);
-            self.designation_graph.remove(left.designation(), right.designation(), |a,_| a.clone());
-            if left.extent().is_none() && right.extent().is_none() {
-                self.extent_graph.remove(left.designation(), right.designation(), |a,_|a.clone());
+            self.designation_graph
+                .remove(left.designation(), right.designation(), |a, _| a.clone());
+            if left.extent().is_none()
+                && right.extent().is_none()
+                && !left.extent_is_known()
+                && !right.extent_is_known()
+                && let Some((a, b)) = left.opaque_extent().zip(right.opaque_extent())
+            {
+                self.extent_graph.remove(a, b, |a, _| a.clone());
             }
-            self.pointer_value_classes.remove(left, right, super::pointer_designations::prefer_pointer);
+            self.pointer_value_classes.remove(
+                left,
+                right,
+                super::pointer_designations::prefer_pointer,
+            );
             self.rebuild_equality_graph();
         }
     }
@@ -3097,8 +3355,8 @@ impl PureFactContext {
         let derived;
         let (left, right) = match condition {
             ConditionTerm::Bitvector32Equal(left, right) => (left.as_ref(), right.as_ref()),
-            condition if condition.pointer_offset_sides().is_some() => {
-                let (left, right) = condition.pointer_offset_sides().expect("offset view");
+            condition if condition.true_pointer_offset_sides().is_some() => {
+                let (left, right) = condition.true_pointer_offset_sides().expect("offset view");
                 let Some(pair) = int32_element_index_from_offset(left)
                     .zip(int32_element_index_from_offset(right))
                 else {
@@ -3238,9 +3496,9 @@ impl PureFactContext {
             .unwrap_or_else(|| memory.clone());
         for spelling in self.equality_graph.pointer_spellings(address) {
             if let Some(CValue::Pointer(value)) = start.known_value(&spelling) {
-                self.equality_graph.add_checked_read_equality(
-                    &Pointer::loaded_value(memory, address),
-                    value.pointer(),
+                self.equality_graph.add_checked_pointer_value_equality(
+                    &CPointerValue::new(Pointer::loaded_value(memory, address), value.c_type()),
+                    &value,
                 );
                 return;
             }
@@ -3287,7 +3545,7 @@ impl PureFactContext {
             _ => None,
         };
         if let Some(source) = source {
-            self.equality_graph.add_checked_read_equality(
+            self.equality_graph.add_checked_pointer_read_equality(
                 &Pointer::loaded_value(memory, address),
                 &Pointer::loaded_value(&source, address),
             );
@@ -3378,18 +3636,22 @@ impl PureFactContext {
     ) {
         let (left, right) = match condition {
             ConditionTerm::PointerOffsetEqual(left, right) => (left.as_ref(), right.as_ref()),
-            ConditionTerm::PointerValueEqual(left, right) if left.block == right.block => (&left.offset, &right.offset),
+            ConditionTerm::PointerValueEqual(left, right) if left.block == right.block => {
+                (&left.offset, &right.offset)
+            }
             _ => return,
         };
         if !value || left == right {
             return;
         }
-        let key = if left < right { ConditionTerm::PointerOffsetEqual(Box::new(left.clone()), Box::new(right.clone())) } else { ConditionTerm::PointerOffsetEqual(Box::new(right.clone()), Box::new(left.clone())) };
+        let key = if left < right {
+            ConditionTerm::PointerOffsetEqual(Box::new(left.clone()), Box::new(right.clone()))
+        } else {
+            ConditionTerm::PointerOffsetEqual(Box::new(right.clone()), Box::new(left.clone()))
+        };
         let source = self.adjust_pointer_address_source(key, condition, insert);
         let retained = source.is_some();
-        for (key, alias) in [
-            (left, right), (right, left),
-        ] {
+        for (key, alias) in [(left, right), (right, left)] {
             let aliases = self
                 .pointer_offset_aliases
                 .get(key)
@@ -3704,7 +3966,10 @@ impl PureFactContext {
         let conditions = self.condition_facts.clone();
         for (condition, value) in conditions.iter() {
             if matches!(condition, ConditionTerm::PointerValueEqual(..)) {
-                self.adjust_pointer_value_equality(&Proposition::ConditionIs(condition.clone(), *value), true);
+                self.adjust_pointer_value_equality(
+                    &Proposition::ConditionIs(condition.clone(), *value),
+                    true,
+                );
             }
             self.adjust_condition_variable_index(condition, *value, true, false);
             self.adjust_condition_side_indexes(condition, *value, true);
@@ -3774,7 +4039,10 @@ impl PureFactContext {
         insert: bool,
     ) {
         if matches!(condition, ConditionTerm::PointerValueEqual(..)) {
-            self.adjust_pointer_value_equality(&Proposition::ConditionIs(condition.clone(), value), insert);
+            self.adjust_pointer_value_equality(
+                &Proposition::ConditionIs(condition.clone(), value),
+                insert,
+            );
         }
         let proposition = Proposition::ConditionIs(condition.clone(), value);
         if !insert {
@@ -4154,8 +4422,9 @@ impl PureFactContext {
                     ConditionTerm::Bitvector32Equal(left, right) => {
                         Some((left.as_ref().clone(), right.as_ref().clone()))
                     }
-                    condition if condition.pointer_offset_sides().is_some() => {
-                        let (left, right) = condition.pointer_offset_sides().expect("offset view");
+                    condition if condition.true_pointer_offset_sides().is_some() => {
+                        let (left, right) =
+                            condition.true_pointer_offset_sides().expect("offset view");
                         int32_element_index_from_offset(left)
                             .zip(int32_element_index_from_offset(right))
                     }
@@ -5400,10 +5669,16 @@ impl PureFactContext {
         condition: &ConditionTerm,
         extra: &[(ConditionTerm, bool)],
     ) -> Option<bool> {
-        if matches!(condition, ConditionTerm::PointerEqual(..) | ConditionTerm::PointerOffsetEqual(..))
-            && (self.pointer_address_sources.contains_key(condition)
-                || self.pointer_address_sources.contains_key(&condition.flipped()))
-        { return Some(true); }
+        if matches!(
+            condition,
+            ConditionTerm::PointerEqual(..) | ConditionTerm::PointerOffsetEqual(..)
+        ) && (self.pointer_address_sources.contains_key(condition)
+            || self
+                .pointer_address_sources
+                .contains_key(&condition.flipped()))
+        {
+            return Some(true);
+        }
         let graph = self.difference_graph.graph(|| {
             self.condition_facts
                 .iter()
@@ -5451,6 +5726,25 @@ impl PureFactContext {
 
     pub(crate) fn proves_exact(&self, proposition: &Proposition) -> bool {
         if solve_builtin_prop(proposition) {
+            return true;
+        }
+        // An exact full-pointer premise directly supplies its numeric
+        // equality. Retain the actual source premise for proof replay; this
+        // projection never runs in the reverse direction.
+        if let Proposition::ConditionIs(
+            condition @ (ConditionTerm::PointerEqual(..) | ConditionTerm::PointerOffsetEqual(..)),
+            true,
+        ) = proposition
+            && let Some(source) = self
+                .pointer_address_sources
+                .get(condition)
+                .or_else(|| self.pointer_address_sources.get(&condition.flipped()))
+                .and_then(|sources| sources.iter().next())
+        {
+            record_implicit_reasoning_provenance(
+                self,
+                &Proposition::ConditionIs(source.clone(), true),
+            );
             return true;
         }
         let proved = self.contains_assumed_exact(proposition);
@@ -5503,7 +5797,10 @@ impl PureFactContext {
             return true;
         }
         match proposition {
-            Proposition::Equal(Term::CValue(CValue::Pointer(left)), Term::CValue(CValue::Pointer(right))) => {
+            Proposition::Equal(
+                Term::CValue(CValue::Pointer(left)),
+                Term::CValue(CValue::Pointer(right)),
+            ) => {
                 self.pointer_value_classes.equal(left, right)
                     || (self.designations_equal(left.designation(), right.designation())
                         && left.extent() == right.extent()
@@ -5515,7 +5812,9 @@ impl PureFactContext {
             Proposition::Predicate { .. } => {
                 self.equality_graph.knows_pointer_predicate(proposition)
             }
-            Proposition::ConditionIs(condition @ ConditionTerm::PointerValueEqual(..), value) => self.decide(condition) == Some(*value),
+            Proposition::ConditionIs(condition @ ConditionTerm::PointerValueEqual(..), value) => {
+                self.decide(condition) == Some(*value)
+            }
             Proposition::ConditionIs(condition, value) => {
                 self.equality_graph.knows_condition(condition, *value)
             }
@@ -5547,6 +5846,13 @@ impl PureFactContext {
         if self.condition_facts.get(&condition) == Some(&value) {
             return self;
         }
+        let pointer_predecessor =
+            (value && matches!(condition, ConditionTerm::PointerValueEqual(..))).then(|| {
+                (
+                    std::sync::Arc::new(condition.clone()),
+                    std::sync::Arc::new(self.equality_graph.clone()),
+                )
+            });
         crate::kernel::eval::check_canonical_at_creation(&condition, value);
         if let ConditionTerm::Bitvector32Equal(left, right) = &condition
             && let Some((left, right)) = bitvector_equality_after_additive_cancellation(left, right)
@@ -5662,14 +5968,19 @@ impl PureFactContext {
             &Proposition::ConditionIs(condition.clone(), value),
             true,
         );
-        if value && matches!(condition, ConditionTerm::PointerEqual(..)) {
-            self.composition_object_resources
-                .advance_memory_equalities(&self);
-        }
         self.adjust_bitvector64_equality(&condition, value, true);
         self.adjust_exact_constant_equality(&condition, value, true);
         self.adjust_direct_bitvector_equality(&condition, value, true);
         self.adjust_condition_match_indexes(&condition, value, true);
+        if value
+            && matches!(
+                condition,
+                ConditionTerm::PointerEqual(..) | ConditionTerm::PointerValueEqual(..)
+            )
+        {
+            self.composition_object_resources
+                .advance_memory_equalities(&self);
+        }
         if old == Some(true) && matches!(condition, ConditionTerm::Bitvector32Equal(..)) {
             // A replaced true equality is withdrawn from classes that only
             // grow, so they are rebuilt from the facts that remain.
@@ -5694,6 +6005,14 @@ impl PureFactContext {
         self.content_fingerprint ^= Self::fingerprint(1, &(condition, value));
         if let Some(complement) = complement {
             self = self.assume_condition_uncharged(complement, !value);
+        }
+        if let Some((source, graph)) = pointer_predecessor {
+            self.pointer_value_undo = Some(std::sync::Arc::new(PointerValueUndo {
+                source,
+                graph,
+                conditions: self.condition_facts.clone(),
+                propositions: self.prop_facts.clone(),
+            }));
         }
         self
     }
@@ -6152,6 +6471,13 @@ impl PureFactContext {
 
     fn forget_condition_fact(&mut self, condition: &ConditionTerm, assumed: bool) {
         crate::instrumentation::record_deterministic_work(1);
+        let predecessor = self.pointer_value_undo.take().filter(|undo| {
+            assumed
+                && undo.source.as_ref() == condition
+                && undo.conditions.shares_root_with(&self.condition_facts)
+                && undo.propositions.ptr_eq(&self.prop_facts)
+        });
+        self.restoring_pointer_graph = predecessor.map(|undo| undo.graph.clone());
         self.condition_facts = self.condition_facts.without_key(condition);
         if self.congruence_conditions.contains_key(condition) {
             self.congruence_conditions.remove(condition);
@@ -6176,7 +6502,17 @@ impl PureFactContext {
             false,
         );
         self.withdraw_typed_pointer_read_definition(condition, assumed);
-        self.rebuild_memory_load_condition_facts();
+        if matches!(condition, ConditionTerm::PointerValueEqual(..)) {
+            // This source contributes no scalar equality or constant-class
+            // entry. Its typed indexes were withdrawn above.
+            self.memory_load_condition_facts = std::sync::Arc::new(std::sync::OnceLock::new());
+            self.bitvector_equality_facts = std::sync::Arc::new(std::sync::OnceLock::new());
+        } else {
+            self.rebuild_memory_load_condition_facts();
+        }
+        if let Some(graph) = self.restoring_pointer_graph.take() {
+            self.equality_graph = graph.as_ref().clone();
+        }
         self.content_fingerprint ^= Self::fingerprint(1, &(condition.clone(), assumed));
     }
 
@@ -7983,6 +8319,15 @@ impl ExecutionPureFact {
         if !self.is_certified() {
             return;
         }
+        if self.is_logical_read_equation()
+            && let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) =
+                self.proposition()
+        {
+            context
+                .equality_graph
+                .add_checked_pointer_value_equality(left, right);
+            return;
+        }
         let Some(
             binding @ GeneratedLoadBinding::Exact {
                 variable,
@@ -8077,7 +8422,10 @@ impl ExecutionPureFact {
         Self {
             logical_read_equation: true,
             ..Self::certified(Proposition::ConditionIs(
-                ConditionTerm::pointer_value_equal(value.clone(), CPointerValue::new(read, value.c_type())),
+                ConditionTerm::pointer_value_equal(
+                    value.clone(),
+                    CPointerValue::new(read, value.c_type()),
+                ),
                 true,
             ))
         }

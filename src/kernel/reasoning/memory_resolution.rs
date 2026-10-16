@@ -2062,6 +2062,9 @@ pub(in crate::kernel) fn c_values_proven_equal_for_memory_resolution(
     right: &CValue,
     assumptions: &PureFactContext,
 ) -> bool {
+    if left == right {
+        return true;
+    }
     match (left, right) {
         (CValue::Void, CValue::Void) => true,
         (CValue::Int8(left), CValue::Int8(right)) => {
@@ -2070,22 +2073,26 @@ pub(in crate::kernel) fn c_values_proven_equal_for_memory_resolution(
         (CValue::Int32(left), CValue::Int32(right)) => {
             int32_values_proven_equal_for_memory_resolution(left, right, assumptions)
         }
+        (CValue::Int64(left), CValue::Int64(right))
+        | (CValue::UInt64(left), CValue::UInt64(right)) => {
+            assumptions.uint64_values_known_equal(left, right)
+                || bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
+        }
         (CValue::Int16(left), CValue::Int16(right))
         | (CValue::UInt8(left), CValue::UInt8(right))
         | (CValue::UInt16(left), CValue::UInt16(right))
         | (CValue::UInt32(left), CValue::UInt32(right))
-        | (CValue::Int64(left), CValue::Int64(right))
-        | (CValue::UInt64(left), CValue::UInt64(right))
         | (CValue::Float32(left), CValue::Float32(right))
         | (CValue::Float64(left), CValue::Float64(right)) => {
             bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
         }
         (CValue::Pointer(left), CValue::Pointer(right)) => {
-            assumptions.pointer_designations_match(left, right) && pointers_proven_equal_for_memory_resolution(
-                left.pointer(),
-                right.pointer(),
-                assumptions,
-            )
+            assumptions.pointer_designations_match(left, right)
+                && pointers_proven_equal_for_memory_resolution(
+                    left.pointer(),
+                    right.pointer(),
+                    assumptions,
+                )
         }
         _ => false,
     }
@@ -4424,7 +4431,8 @@ impl StoreByteInterval {
 /// records. Materialization changes which cells are concrete, not what the
 /// load means.
 fn materialized_cell_source(cell_pointer: &Pointer, value: &CValue) -> Option<SharedCMemory> {
-    let bits = match value {
+    let bits = match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Int8(bits)
         | CValue::Bool(bits)
         | CValue::Int16(bits)

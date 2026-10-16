@@ -1928,7 +1928,7 @@ impl LoadVariableBridgeSide for PointerOffsetTerm {
         let Proposition::ConditionIs(condition, true) = proposition else {
             return None;
         };
-        let (left, right) = condition.pointer_offset_sides()?;
+        let (left, right) = condition.true_pointer_offset_sides()?;
         Some((left.clone(), right.clone()))
     }
 

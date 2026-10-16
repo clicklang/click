@@ -178,6 +178,15 @@ impl DifferenceGraph {
     /// Records a true or false condition fact. A fact difference logic does
     /// not express is ignored.
     pub(crate) fn assume_condition(&mut self, condition: &ConditionTerm, value: bool) {
+        if let ConditionTerm::PointerValueEqual(a, b) = condition {
+            if value {
+                self.assume_condition(
+                    &ConditionTerm::pointer_equal(a.pointer().clone(), b.pointer().clone()),
+                    true,
+                );
+            }
+            return;
+        }
         if value && let ConditionTerm::Bitvector64Equal(a, b) = condition {
             self.residues.assume_equal(a, b);
         }
@@ -1340,7 +1349,7 @@ impl ContextDifferenceGraph {
 /// Whether difference logic reads anything from a fact about `condition`.
 fn expresses(condition: &ConditionTerm) -> bool {
     use ConditionTerm as C;
-    matches!(condition, C::PointerEqual(..))
+    matches!(condition, C::PointerEqual(..) | C::PointerValueEqual(..))
         || overflow_parts(condition).is_some()
         || offset_equality(condition).is_some()
         || matches!(

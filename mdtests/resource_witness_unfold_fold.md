@@ -2,9 +2,8 @@
 
 A composite resource may bind an existential pointer with `let next: T
 where P;`. On unfold the witness is a fresh symbolic pointer constrained by
-`P`; on fold it is the recorded origin of the word `P` relates it to. The
-word below packs the witness's address with a low bit, and clearing the bit
-recovers exactly the witness.
+`P`. The word below packs its numeric address with a low bit. Clearing the
+bit recovers that address; this contract does not recover pointer bounds.
 
 ```c filename=resource_witness_unfold_fold.c
 struct node {
@@ -32,6 +31,12 @@ struct node* unpack(struct node* node) {
 } by {
     unfold(packed(node));
     execute();
+    have address(result) == (node->word & ~1) by {
+        arithmetic() using {
+            aligned(result, 8);
+            node->word == address(result) + (node->word & 1);
+        }
+    }
     fold(packed(node));
     simp();
 }

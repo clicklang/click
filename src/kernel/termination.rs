@@ -589,12 +589,11 @@ fn structural_recursion_paths(
 }
 
 fn c_expression_mentions_variable(expression: &CExpression, variable: &str) -> bool {
-    let mut substitutions = BTreeMap::new();
-    substitutions.insert(
-        variable.to_string(),
-        CExpression::Value(CValue::Int32(Bitvector32Term::Constant(0))),
-    );
-    substitute_c_expression_variables(expression, &substitutions) != *expression
+    // Substitution also normalizes subobject wrappers, even when no variable
+    // is replaced. Such normalization cannot establish a free occurrence.
+    let mut variables = BTreeSet::new();
+    collect_c_expression_variables(expression, &mut variables);
+    variables.contains(variable)
 }
 
 /// Assumes one evaluation path's facts. Loadability obligations are the
@@ -1449,9 +1448,10 @@ fn collect_spec_c_variables(
                     | SpecExpression::ResourceField { .. }
                     | crate::kernel::binary_spec_expression!(_, _)
                     | SpecExpression::Subobject { .. }
-            | SpecExpression::PointerOffset { .. }
+                    | SpecExpression::PointerOffset { .. }
                     | SpecExpression::BitwiseNot(_)
                     | SpecExpression::Cast(_, _)
+                    | SpecExpression::PointerCoercion(_, _)
                     | SpecExpression::PureFunctionApplication { .. }
                     | SpecExpression::IntegerToMachine { .. }
                     | SpecExpression::AlgebraicMatch { .. } => {}
@@ -2392,7 +2392,8 @@ struct RankingMachineTerm {
 
 impl RankingMachineTerm {
     fn from_value(value: &CValue) -> Option<Self> {
-        let (machine_type, term) = match value {
+        let (machine_type, term) = match value.numeric_value() {
+            CValue::PointerInteger(_) => unreachable!("numeric projection"),
             CValue::Bool(term)
             | CValue::Int8(term)
             | CValue::Int16(term)
@@ -5220,6 +5221,28 @@ fn termination_rules_recording_function<'a>(
 #[cfg(test)]
 mod address_escape_tests {
     use super::*;
+
+    #[test]
+    fn subobject_child_mentions_only_its_actual_source_variables() {
+        let child = CExpression::TypedLoad {
+            pointer: Box::new(CExpression::Subobject {
+                pointer: Box::new(CExpression::PointerOffsetBytes {
+                    pointer: Box::new(CExpression::Variable("p".into())),
+                    bytes: 8,
+                }),
+                width: 8,
+            }),
+            value_type: CType::Int32Pointer,
+            volatile: false,
+            pointee_constant: false,
+            source: CExpressionLoadSource::none(),
+        };
+        assert!(c_expression_mentions_variable(&child, "p"));
+        for name in ["identity", "value", "left_model", "right_model"] {
+            assert!(!c_expression_mentions_variable(&child, name));
+        }
+    }
+
     use std::sync::Arc;
 
     fn variable(name: &str) -> CExpression {

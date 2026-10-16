@@ -309,7 +309,9 @@ fn collect_spec_expression_carriers(
             }
             collect_spec_expression_carriers(right, variables, integer_seen);
         }
-        SpecExpression::BitwiseNot(value) | SpecExpression::Cast(value, _) => {
+        SpecExpression::BitwiseNot(value)
+        | SpecExpression::Cast(value, _)
+        | SpecExpression::PointerCoercion(value, _) => {
             collect_spec_expression_carriers(value, variables, integer_seen)
         }
         SpecExpression::If {
@@ -1114,6 +1116,10 @@ impl<'a> TermRewrite<'a> {
             SpecExpression::Cast(value, target_type) => {
                 SpecExpression::Cast(Box::new(self.rewrite_spec_expression(value)?), *target_type)
             }
+            SpecExpression::PointerCoercion(value, target_type) => SpecExpression::PointerCoercion(
+                Box::new(self.rewrite_spec_expression(value)?),
+                *target_type,
+            ),
             SpecExpression::If {
                 condition,
                 then_branch,
@@ -1159,7 +1165,8 @@ impl<'a> TermRewrite<'a> {
                 SpecExpression::LoopEntrySnapshot(Box::new(self.rewrite_spec_expression(value)?))
             }
             SpecExpression::Subobject { pointer, width } => SpecExpression::Subobject {
-                pointer: Box::new(self.rewrite_spec_expression(pointer)?), width: *width,
+                pointer: Box::new(self.rewrite_spec_expression(pointer)?),
+                width: *width,
             },
             SpecExpression::PointerOffset {
                 pointer,

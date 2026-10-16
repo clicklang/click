@@ -225,6 +225,13 @@ int32 owned_string_push(struct owned_string* owner, int32 value) {
     step();
     have owner->len == at(statement(4).entry, (index + 1)) by auto;
     step();
+    have 0 <= old(owner->len) + 1 by {
+        arithmetic() using {
+            0 <= old(owner->len);
+            old(owner->len) < old(owner->cap);
+            old(owner->cap) <= 1073741823;
+        }
+    }
     have owner->data == old(owner->data) by {
         simp();
     }
@@ -277,6 +284,9 @@ int32 owned_string_pop(struct owned_string* owner) {
     ensures owner->data[owner->len] == 0;
 } by {
     unfold(owned_string(owner));
+    have 0 <= owner->len - 1 by {
+        arithmetic() using { 1 <= owner->len; }
+    }
     have (owner->len - 1) < owner->len by {
         have 0 < owner->len by auto;
         apply(int32_positive_predecessor_strictly_decreases(owner->len)) using {

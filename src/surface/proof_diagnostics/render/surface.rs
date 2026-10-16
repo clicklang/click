@@ -587,8 +587,14 @@ impl Printer<'_> {
             }
             ConditionTerm::PointerValueEqual(left, right) => {
                 let left = self.cvalue(&crate::kernel::CValue::Pointer((**left).clone()), depth)?;
-                let right = self.cvalue(&crate::kernel::CValue::Pointer((**right).clone()), depth)?;
-                return Some(atom(format!("{} {} {}", operand(left, SHIFT), if polarity { "==" } else { "!=" }, operand(right, SHIFT))));
+                let right =
+                    self.cvalue(&crate::kernel::CValue::Pointer((**right).clone()), depth)?;
+                return Some(atom(format!(
+                    "{} {} {}",
+                    operand(left, SHIFT),
+                    if polarity { "==" } else { "!=" },
+                    operand(right, SHIFT)
+                )));
             }
             ConditionTerm::PointerEqual(left, right) => {
                 if !self.source_mode() {
@@ -624,9 +630,17 @@ impl Printer<'_> {
                 let right = self.pointer(right, depth)?;
                 return Some(atom(format!(
                     "{} {} {}",
-                    if address_only { format!("address({})", left.text) } else { operand(left, SHIFT) },
+                    if address_only {
+                        format!("address({})", left.text)
+                    } else {
+                        operand(left, SHIFT)
+                    },
                     if polarity { "==" } else { "!=" },
-                    if address_only { format!("address({})", right.text) } else { operand(right, SHIFT) }
+                    if address_only {
+                        format!("address({})", right.text)
+                    } else {
+                        operand(right, SHIFT)
+                    }
                 )));
             }
             ConditionTerm::PointerOffsetEqual(left, right) => {
@@ -1893,7 +1907,8 @@ impl Printer<'_> {
                 _ => spelled_value,
             })
         };
-        match value {
+        match value.numeric_value() {
+            CValue::PointerInteger(_) => unreachable!("numeric projection"),
             CValue::Void => Some(atom("void")),
             CValue::Bool(Bitvector32Term::Constant(0)) => Some(atom("false")),
             CValue::Bool(Bitvector32Term::Constant(1)) => Some(atom("true")),

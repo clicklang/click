@@ -146,13 +146,31 @@ fn wildcard_helper_birth_does_not_scan_unrelated_imports() {
                 .import_opaque_wildcard_authority(&opaque_scope(index).0)
                 .unwrap();
         }
-        let bounded = PureFactContext::new().assume_condition(
-            crate::kernel::ConditionTerm::signed_add_overflows(
-                entry.observe_symbolic(&scope).unwrap().entry_count,
-                Bitvector32Term::Constant(1),
-            ),
-            false,
-        );
+        let counter = Bitvector32Term::Variable(Variable(960_721));
+        let mut bounded = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::equal(
+                    entry.observe_symbolic(&scope).unwrap().entry_count,
+                    counter.clone(),
+                ),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::signed_less_than(
+                    counter,
+                    Bitvector32Term::Constant(i32::MAX as u32),
+                ),
+                true,
+            );
+        for index in 0..size {
+            bounded = bounded.assume_condition(
+                ConditionTerm::signed_less_than(
+                    Bitvector32Term::Variable(Variable(970_000 + u64::from(index))),
+                    Bitvector32Term::Constant(0),
+                ),
+                true,
+            );
+        }
         let (issued, work) = crate::persistent::measure_persistent_work(|| {
             entry
                 .checked_member_exchange_quantity(

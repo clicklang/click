@@ -117,6 +117,7 @@ impl<'a> SpecNode<'a> {
                 }
                 SpecExpression::BitwiseNot(body)
                 | SpecExpression::Cast(body, _)
+                | SpecExpression::PointerCoercion(body, _)
                 | SpecExpression::LoopEntrySnapshot(body) => visit(N::Expression(body)),
                 SpecExpression::If {
                     condition,

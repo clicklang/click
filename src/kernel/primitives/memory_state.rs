@@ -5013,11 +5013,25 @@ impl CMemory {
         self.store_with_context(pointer, value, &PureFactContext::new())
     }
 
+    /// Observe and cache a scalar cell without changing its physical bytes.
+    /// The observation is computed here so callers cannot supply a new value
+    /// under the guise of a read.
+    pub(crate) fn materialize_symbolic_cell(self, pointer: Pointer, c_type: CType) -> Self {
+        let value = crate::kernel::eval::symbolic_storage_cell_value(&self, &pointer, c_type, true);
+        match value {
+            Some(value) => self.materialize_named_cell(pointer, value),
+            None => self,
+        }
+    }
+
     /// Cache the canonical value of an already existing cell for a resource
     /// projection. This is not a C write and cannot establish initialization.
-    /// The conservative store edge keeps memory-DAG lookup connected without
-    /// granting any new initialized-cell or allocation authority.
-    pub(crate) fn materialize_named_cell(mut self, pointer: Pointer, value: CValue) -> Self {
+    /// Kernel producers supply the value they observed or proved at this point.
+    pub(in crate::kernel) fn materialize_named_cell(
+        mut self,
+        pointer: Pointer,
+        value: CValue,
+    ) -> Self {
         if self.cells.contains_key(&pointer) {
             return self;
         }
@@ -5048,15 +5062,8 @@ impl CMemory {
             }
         }
         let base = intern_derivation_base(&mut self);
-        std::sync::Arc::make_mut(&mut self.cells).insert(pointer.clone(), value.clone());
-        record_c_memory_derivation(
-            &mut self,
-            CMemoryDerivation::Store {
-                base,
-                pointer,
-                value,
-            },
-        );
+        std::sync::Arc::make_mut(&mut self.cells).insert(pointer, value);
+        record_c_memory_derivation(&mut self, CMemoryDerivation::CellObserved { base });
         self
     }
 
@@ -6464,7 +6471,9 @@ impl CMemory {
         // resource argument evaluator does not retain a C load's fact stream.
         crate::kernel::equality_graph::EqualityGraph::default()
             .register_pointer_read_definition(&value, &snapshot, pointer);
-        CValue::Pointer(CPointerValue::from_read(value, value_type, &snapshot, pointer))
+        CValue::Pointer(CPointerValue::from_read(
+            value, value_type, &snapshot, pointer,
+        ))
     }
 }
 

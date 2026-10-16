@@ -375,6 +375,7 @@ impl SnapshotLabels {
                     .join(", ");
                 format!("join branch memories ({inputs})")
             }
+            CMemoryDerivation::CellObserved { .. } => "cache an observed cell".to_owned(),
             CMemoryDerivation::CellsForgotten { .. } => {
                 "cached cells forgotten (not a program write)".into()
             }

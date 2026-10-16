@@ -800,7 +800,9 @@ pub(crate) fn cell_run_value(
             {
                 crate::kernel::equality_graph::EqualityGraph::default()
                     .register_pointer_read_definition(&value, &snapshot, &address);
-                return CValue::Pointer(crate::kernel::CPointerValue::from_read(value, c_type, &snapshot, &address));
+                return CValue::Pointer(crate::kernel::CPointerValue::from_read(
+                    value, c_type, &snapshot, &address,
+                ));
             }
             CValue::typed_pointer(value, c_type)
         }

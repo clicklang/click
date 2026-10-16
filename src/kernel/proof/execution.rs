@@ -6738,6 +6738,7 @@ pub(super) fn checked_interface_pointer_equality(facts: &ProofFacts, goal: &Prop
         goal,
         Proposition::ConditionIs(
             crate::kernel::ConditionTerm::PointerEqual(_, _)
+                | crate::kernel::ConditionTerm::PointerValueEqual(_, _)
                 | crate::kernel::ConditionTerm::PointerOffsetEqual(_, _),
             true
         )

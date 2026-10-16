@@ -150,23 +150,25 @@ function heap_rotate_right(tree: HeapTree) -> HeapTree {
     }
 }
 
-function heap_inorder(tree: HeapTree) -> List<struct tree_node*>
+// Membership follows C pointer comparisons, which observe numeric addresses.
+// The resource model above still retains complete pointer values.
+function heap_inorder(tree: HeapTree) -> List<uint64>
     decreases tree
 {
     match tree {
         HeapTree::Empty => List::Nil,
         HeapTree::Node(node, value, left, right) =>
-            list::append(heap_inorder(left), List::Cons(node, heap_inorder(right))),
+            list::append(heap_inorder(left), List::Cons(address(node), heap_inorder(right))),
     }
 }
 
-function heap_member(tree: HeapTree, target: struct tree_node*) -> bool
+function heap_member(tree: HeapTree, target: uint64) -> bool
     decreases tree
 {
     match tree {
         HeapTree::Empty => false,
         HeapTree::Node(node, value, left, right) =>
-            if node == target {
+            if address(node) == target {
                 true
             } else {
                 if heap_member(left, target) {
@@ -178,13 +180,13 @@ function heap_member(tree: HeapTree, target: struct tree_node*) -> bool
     }
 }
 
-theorem heap_member_is_inorder_membership(tree: HeapTree, target: struct tree_node*) {
+theorem heap_member_is_inorder_membership(tree: HeapTree, target: uint64) {
     ensures heap_member(tree, target) == list::contains(heap_inorder(tree), target) by {
         induct(tree) as ih {
             HeapTree::Empty => {
                 unfold(heap_member(HeapTree::Empty, target));
                 unfold(heap_inorder(HeapTree::Empty));
-                unfold(list::contains(List::Nil, target));
+                unfold(list::contains(List<uint64>::Nil, target));
                 normalize();
             }
             HeapTree::Node(node, value, left, right) => {
@@ -193,27 +195,27 @@ theorem heap_member_is_inorder_membership(tree: HeapTree, target: struct tree_no
                 unfold(heap_member(HeapTree::Node(node, value, left, right), target));
                 unfold(heap_inorder(HeapTree::Node(node, value, left, right)));
                 apply(list::contains_append(heap_inorder(left),
-                    List::Cons(node, heap_inorder(right)), target));
+                    List::Cons(address(node), heap_inorder(right)), target));
                 rewrite(list::contains(list::append(heap_inorder(left),
-                    List::Cons(node, heap_inorder(right))), target)
+                    List::Cons(address(node), heap_inorder(right))), target)
                     == if list::contains(heap_inorder(left), target) {
                         true
                     } else {
-                        list::contains(List::Cons(node, heap_inorder(right)), target)
+                        list::contains(List::Cons(address(node), heap_inorder(right)), target)
                     });
-                apply(list::contains_cons(node, heap_inorder(right), target));
-                rewrite(list::contains(List::Cons(node, heap_inorder(right)), target)
-                    == if node == target {
+                apply(list::contains_cons(address(node), heap_inorder(right), target));
+                rewrite(list::contains(List::Cons(address(node), heap_inorder(right)), target)
+                    == if address(node) == target {
                         true
                     } else {
                         list::contains(heap_inorder(right), target)
                     });
                 rewrite(heap_member(left, target) == list::contains(heap_inorder(left), target));
                 rewrite(heap_member(right, target) == list::contains(heap_inorder(right), target));
-                if node == target {
-                    normalize() using { node == target; }
+                if address(node) == target {
+                    normalize() using { address(node) == target; }
                 } else {
-                    normalize() using { not(node == target); }
+                    normalize() using { not(address(node) == target); }
                 }
             }
         }
@@ -239,16 +241,16 @@ theorem heap_rotate_left_node_preserves_inorder(node: struct tree_node*, value: 
                 unfold(heap_inorder(HeapTree::Node(node, value, left, middle)));
                 unfold(heap_inorder(HeapTree::Node(pivot, pivot_value, middle, far_right)));
                 apply(list::append_associative(heap_inorder(left),
-                    List::Cons(node, heap_inorder(middle)),
-                    List::Cons(pivot, heap_inorder(far_right))));
+                    List::Cons(address(node), heap_inorder(middle)),
+                    List::Cons(address(pivot), heap_inorder(far_right))));
                 rewrite(list::append(list::append(heap_inorder(left),
-                    List::Cons(node, heap_inorder(middle))),
-                    List::Cons(pivot, heap_inorder(far_right)))
+                    List::Cons(address(node), heap_inorder(middle))),
+                    List::Cons(address(pivot), heap_inorder(far_right)))
                     == list::append(heap_inorder(left),
-                        list::append(List::Cons(node, heap_inorder(middle)),
-                            List::Cons(pivot, heap_inorder(far_right)))));
-                unfold(list::append(List::Cons(node, heap_inorder(middle)),
-                    List::Cons(pivot, heap_inorder(far_right))));
+                        list::append(List::Cons(address(node), heap_inorder(middle)),
+                            List::Cons(address(pivot), heap_inorder(far_right)))));
+                unfold(list::append(List::Cons(address(node), heap_inorder(middle)),
+                    List::Cons(address(pivot), heap_inorder(far_right))));
                 normalize();
             }
         }
@@ -289,16 +291,16 @@ theorem heap_rotate_right_node_preserves_inorder(node: struct tree_node*, value:
                 unfold(heap_inorder(HeapTree::Node(node, value, middle, right)));
                 unfold(heap_inorder(HeapTree::Node(pivot, pivot_value, far_left, middle)));
                 apply(list::append_associative(heap_inorder(far_left),
-                    List::Cons(pivot, heap_inorder(middle)),
-                    List::Cons(node, heap_inorder(right))));
+                    List::Cons(address(pivot), heap_inorder(middle)),
+                    List::Cons(address(node), heap_inorder(right))));
                 rewrite(list::append(list::append(heap_inorder(far_left),
-                    List::Cons(pivot, heap_inorder(middle))),
-                    List::Cons(node, heap_inorder(right)))
+                    List::Cons(address(pivot), heap_inorder(middle))),
+                    List::Cons(address(node), heap_inorder(right)))
                     == list::append(heap_inorder(far_left),
-                        list::append(List::Cons(pivot, heap_inorder(middle)),
-                            List::Cons(node, heap_inorder(right)))));
-                unfold(list::append(List::Cons(pivot, heap_inorder(middle)),
-                    List::Cons(node, heap_inorder(right))));
+                        list::append(List::Cons(address(pivot), heap_inorder(middle)),
+                            List::Cons(address(node), heap_inorder(right)))));
+                unfold(list::append(List::Cons(address(pivot), heap_inorder(middle)),
+                    List::Cons(address(node), heap_inorder(right))));
                 normalize();
             }
         }
@@ -431,7 +433,7 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
     owns t: tree_at(root);
     decreases t;
     ensures t.model == old(t.model);
-    ensures result == heap_member(old(t.model), target);
+    ensures result == heap_member(old(t.model), address(target));
 } by {
     match t.model {
         HeapTree::Empty => {
@@ -446,45 +448,45 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
             branch then {
                 step();
                 let t = fold(tree_at(root), { model: old(t.model) }, { left: l, right: r });
-                have node == target by auto;
+                have address(node) == address(target) by auto;
                 simp();
             } else {}
-            have not(node == target) by {
+            have not(address(node) == address(target)) by {
                 rewrite(node == root);
-                normalize() using { not(root == target); }
+                normalize() using { not(address(root) == address(target)); }
             }
             let { result: found_left } = step(tree_contains(root->left, target), { t: l });
             branch then {
                 step();
-                have heap_member(left_model, target) by {
+                have heap_member(left_model, address(target)) by {
                     have left_model == l.model by {
                         rewrite(l.model == left_model);
                         normalize();
                     }
-                    have heap_member(l.model, target) != false by auto;
+                    have heap_member(l.model, address(target)) != false by auto;
                     rewrite(left_model == l.model);
                     assumption();
                 }
                 let t = fold(tree_at(root), { model: old(t.model) }, { left: l, right: r });
                 simp();
             } else {}
-            have heap_member(left_model, target) == 0 by {
+            have heap_member(left_model, address(target)) == 0 by {
                 simp() using {
                     found_left == 0;
-                    found_left == heap_member(left_model, target);
+                    found_left == heap_member(left_model, address(target));
                 }
             }
             let { result: found_right } = step(tree_contains(root->right, target), { t: r });
             step();
             let t = fold(tree_at(root), { model: old(t.model) }, { left: l, right: r });
-            have result == heap_member(old(t.model), target) by {
+            have result == heap_member(old(t.model), address(target)) by {
                 rewrite(old(t.model)
                     == HeapTree::Node(node, value, left_model, right_model));
                 unfold(heap_member(
-                    HeapTree::Node(node, value, left_model, right_model), target));
-                rewrite(heap_member(left_model, target) == false);
-                rewrite(result == heap_member(right_model, target));
-                normalize() using { not(node == target); }
+                    HeapTree::Node(node, value, left_model, right_model), address(target)));
+                rewrite(heap_member(left_model, address(target)) == false);
+                rewrite(result == heap_member(right_model, address(target)));
+                normalize() using { not(address(node) == address(target)); }
             }
             simp();
         },

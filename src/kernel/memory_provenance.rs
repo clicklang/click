@@ -49,7 +49,13 @@ pub(crate) fn resource_arguments_proven_equal(
 ) -> bool {
     match (left, right) {
         (AlgebraicValue::C(left), AlgebraicValue::C(right)) => {
-            c_values_proven_equal_for_memory_resolution(left, right, assumptions)
+            // A resource index observes an integer's numeric value. Matching
+            // indices neither copies a C word nor transports its hidden record.
+            c_values_proven_equal_for_memory_resolution(
+                left.numeric_value(),
+                right.numeric_value(),
+                assumptions,
+            )
         }
         (AlgebraicValue::Algebraic(left), AlgebraicValue::Algebraic(right)) => {
             left.algebraic_type == right.algebraic_type
@@ -131,8 +137,10 @@ pub(crate) fn c_resources_directly_match(
                 "kernel",
                 "resource context equality",
                 "resource direct match: pointer value",
-                || assumptions.pointer_designations_match(left, right)
-                    && pointers_match_for_resource_check(left, right, assumptions),
+                || {
+                    assumptions.pointer_designations_match(left, right)
+                        && pointers_match_for_resource_check(left, right, assumptions)
+                },
             )
         }
         _ => false,
@@ -140,7 +148,11 @@ pub(crate) fn c_resources_directly_match(
     match (left, right) {
         (CResource::Memory(left), CResource::Memory(right)) => {
             left == right
-                || (assumptions.designations_equal(&left.designation, &right.designation)
+                || (((!left.typed_carrier
+                    || assumptions.access_designations_match(left.access_designation(), right))
+                    && (!right.typed_carrier
+                        || assumptions
+                            .access_designations_match(right.access_designation(), left)))
                     && left.int32_bounds().is_some()
                     && right.int32_bounds().is_some()
                     && crate::instrumentation::measure_operation(
@@ -384,6 +396,15 @@ fn canonical_c_memory_deep_uncached(memory: &CMemory) -> CMemory {
         |pointer, value| {
             let key = canonicalize_pointer_loads(pointer);
             let value = match value {
+                CValue::PointerInteger(record) => CValue::PointerInteger(PointerIntegerValue {
+                    kind: record.kind.clone(),
+                    numeric: Box::new(match record.numeric.as_ref() {
+                        CValue::Int64(t) => CValue::Int64(canonicalize_atomic_loads(t)),
+                        CValue::UInt64(t) => CValue::UInt64(canonicalize_atomic_loads(t)),
+                        _ => unreachable!("LP64 representation"),
+                    }),
+                    pointer: Box::new(record.pointer.map_addresses(canonicalize_pointer_loads)),
+                }),
                 CValue::Void => CValue::Void,
                 CValue::Bool(term) => CValue::Bool(canonicalize_atomic_loads(term)),
                 CValue::Int8(term) => CValue::Int8(canonicalize_atomic_loads(term)),
@@ -442,6 +463,15 @@ fn canonical_c_memory_deep_uncached(memory: &CMemory) -> CMemory {
     for ((pointer, c_type), value) in union_cells.iter() {
         let key = canonicalize_pointer_loads(pointer);
         let value = match value {
+            CValue::PointerInteger(record) => CValue::PointerInteger(PointerIntegerValue {
+                kind: record.kind.clone(),
+                numeric: Box::new(match record.numeric.as_ref() {
+                    CValue::Int64(t) => CValue::Int64(canonicalize_atomic_loads(t)),
+                    CValue::UInt64(t) => CValue::UInt64(canonicalize_atomic_loads(t)),
+                    _ => unreachable!("LP64 representation"),
+                }),
+                pointer: Box::new(record.pointer.map_addresses(canonicalize_pointer_loads)),
+            }),
             CValue::Void => CValue::Void,
             CValue::Bool(term) => CValue::Bool(canonicalize_atomic_loads(term)),
             CValue::Int8(term) => CValue::Int8(canonicalize_atomic_loads(term)),
@@ -1983,6 +2013,13 @@ pub(super) fn explicit_dag_check_active() -> bool {
     EXPLICIT_DAG_CHECK.with(std::cell::Cell::get)
 }
 
+struct ExplicitReadScope(bool);
+impl Drop for ExplicitReadScope {
+    fn drop(&mut self) {
+        EXPLICIT_DAG_CHECK.with(|flag| flag.set(self.0));
+    }
+}
+
 /// Runs `body` with the extended DAG bridging enabled (see above).
 pub(super) fn with_extended_dag_bridging<T>(body: impl FnOnce() -> T) -> T {
     let previous = EXTENDED_DAG_BRIDGING.with(|flag| flag.replace(true));
@@ -2477,35 +2514,167 @@ pub(crate) fn pointer_read_has_stored_value(
     right: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
-    pointer_read_stored_value(left, assumptions, None)
-        .is_some_and(|stored| stored.pointer() == right || assumptions.pointers_known_equal(stored.pointer(), right))
+    pointer_read_stored_value(left, assumptions, None).is_some_and(|stored| {
+        stored.pointer() == right || assumptions.pointers_known_equal(stored.pointer(), right)
+    })
 }
 
-/// Complete pointer reads preserve their designation across frames that
-/// leave all eight representation bytes unchanged. This compares source
-/// cells and recorded memory edges, never the loaded numeric addresses.
+/// Canonical load projections retain all potentially observable scalar bytes
+/// (up to MAX_SCALAR_ACCESS_BYTES). Reuse the producer's retained source for
+/// a complete pointer read, whose eight bytes fit that projection, so its
+/// selected memory history is available without rebuilding either snapshot.
+fn complete_pointer_read_source(read: &LoadedPointerView) -> SharedCMemory {
+    canonical_load_projection_source(&read.defining_memory, &read.defining_address)
+        .unwrap_or_else(|| read.defining_memory.clone())
+}
+
+/// Equal complete read applications across a frame denote equal numeric
+/// addresses too. This rule is used only when comparing complete C pointers;
+/// ordinary scalar load variables cannot acquire a typed read from it.
+pub(in crate::kernel) fn complete_pointer_reads_equal_across_frame(
+    left: &Pointer,
+    right: &Pointer,
+    assumptions: &PureFactContext,
+) -> bool {
+    let (Some(a), Some(b)) = (left.as_loaded_value(), right.as_loaded_value()) else {
+        return false;
+    };
+    if !crate::kernel::reasoning::pointer_offsets_proven_equal_for_memory_resolution(
+        &a.displacement,
+        &b.displacement,
+        assumptions,
+    ) || !crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+        &a.defining_address,
+        &b.defining_address,
+        assumptions,
+    ) {
+        return false;
+    }
+    let a_memory = complete_pointer_read_source(&a);
+    let b_memory = complete_pointer_read_source(&b);
+    a_memory == b_memory
+        || typed_read_has_same_memory_source(
+            &a_memory,
+            &b_memory,
+            &a.defining_address,
+            crate::kernel::C_POINTER_BYTE_WIDTH,
+            assumptions,
+        )
+        || typed_read_has_same_memory_source(
+            &b_memory,
+            &a_memory,
+            &b.defining_address,
+            crate::kernel::C_POINTER_BYTE_WIDTH,
+            assumptions,
+        )
+}
+
 pub(in crate::kernel) fn pointer_read_designations_equal(
-    left: &Pointer, right: &Pointer, assumptions: &PureFactContext,
+    left: &Pointer,
+    right: &Pointer,
+    assumptions: &PureFactContext,
+) -> bool {
+    pointer_read_domains_equal(left, right, assumptions, false)
+}
+
+pub(in crate::kernel) fn pointer_read_extents_equal(
+    left: &Pointer,
+    right: &Pointer,
+    assumptions: &PureFactContext,
+) -> bool {
+    pointer_read_domains_equal(left, right, assumptions, true)
+}
+
+fn pointer_read_domains_equal(
+    left: &Pointer,
+    right: &Pointer,
+    assumptions: &PureFactContext,
+    extent: bool,
 ) -> bool {
     let left_origin = left;
     let right_origin = right;
-    let (Some(left), Some(right)) = (left.as_loaded_value(), right.as_loaded_value()) else { return false; };
-    if !crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(&left.defining_address, &right.defining_address, assumptions) {
+    let (Some(left), Some(right)) = (left.as_loaded_value(), right.as_loaded_value()) else {
+        return false;
+    };
+    if !crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+        &left.defining_address,
+        &right.defining_address,
+        assumptions,
+    ) {
         return false;
     }
-    if left.defining_memory == right.defining_memory { return true; }
-    let Some((a, _)) = memory_dag_cell_source_with_stop(&left.defining_memory, &left.defining_address,
-        crate::kernel::C_POINTER_BYTE_WIDTH, assumptions, true) else { return false; };
-    let Some((b, _)) = memory_dag_cell_source_with_stop(&right.defining_memory, &left.defining_address,
-        crate::kernel::C_POINTER_BYTE_WIDTH, assumptions, true) else { return false; };
-    if a.node() == b.node() { return true; }
+    let left_memory = complete_pointer_read_source(&left);
+    let right_memory = complete_pointer_read_source(&right);
+    if left_memory == right_memory {
+        return true;
+    }
+    // A frame can retain an opaque read without materializing its cell.
+    // Follow only the selected cell, stopping at the older named snapshot.
+    if typed_read_has_same_memory_source(
+        &left_memory,
+        &right_memory,
+        &left.defining_address,
+        crate::kernel::C_POINTER_BYTE_WIDTH,
+        assumptions,
+    ) || typed_read_has_same_memory_source(
+        &right_memory,
+        &left_memory,
+        &right.defining_address,
+        crate::kernel::C_POINTER_BYTE_WIDTH,
+        assumptions,
+    ) {
+        return true;
+    }
+    let Some((a, _)) = memory_dag_cell_source_with_stop(
+        &left_memory,
+        &left.defining_address,
+        crate::kernel::C_POINTER_BYTE_WIDTH,
+        assumptions,
+        true,
+    ) else {
+        return false;
+    };
+    let Some((b, _)) = memory_dag_cell_source_with_stop(
+        &right_memory,
+        &left.defining_address,
+        crate::kernel::C_POINTER_BYTE_WIDTH,
+        assumptions,
+        true,
+    ) else {
+        return false;
+    };
+    if a.node() == b.node() {
+        return true;
+    }
     let a_value = a.resolved_value(&left.defining_address, LoadKind::Bits32);
     let b_value = b.resolved_value(&left.defining_address, LoadKind::Bits32);
-    if matches!(&a_value, Some(CValue::Pointer(stored)) if stored.designation() == right_origin)
-        || matches!(&b_value, Some(CValue::Pointer(stored)) if stored.designation() == left_origin)
-    { return true; }
+    if matches!(&a_value, Some(CValue::Pointer(stored)) if if extent { stored.extent().is_none() && !stored.extent_is_known() && stored.opaque_extent() == Some(right_origin) } else { stored.designation() == right_origin })
+        || matches!(&b_value, Some(CValue::Pointer(stored)) if if extent { stored.extent().is_none() && !stored.extent_is_known() && stored.opaque_extent() == Some(left_origin) } else { stored.designation() == left_origin })
+    {
+        return true;
+    }
     matches!((a_value, b_value),
         (Some(CValue::Pointer(a)), Some(CValue::Pointer(b))) if a == b)
+}
+
+/// Recover only an actual complete pointer stored at this read's source.
+/// Numeric scalar values and address equalities supply no pointer metadata.
+pub(in crate::kernel) fn complete_pointer_read_value(
+    origin: &Pointer,
+    assumptions: &PureFactContext,
+) -> Option<CPointerValue> {
+    let read = origin.as_loaded_value()?;
+    let cell = memory_dag_cell_source(
+        &complete_pointer_read_source(&read),
+        &read.defining_address,
+        crate::kernel::C_POINTER_BYTE_WIDTH,
+        assumptions,
+        true,
+    )?;
+    match cell.resolved_value(&read.defining_address, LoadKind::Bits32)? {
+        CValue::Pointer(value) => Some(value),
+        _ => None,
+    }
 }
 
 /// Explicit pointer read-value normalization follows at most 64 recorded
@@ -2523,7 +2692,8 @@ pub(crate) fn pointer_read_has_recorded_value(
         .into_iter()
         .any(|(read, value)| {
             pointer_read_stored_value(read, assumptions, Some(64)).is_some_and(|stored| {
-                stored.pointer() == value || assumptions.pointers_known_equal(stored.pointer(), value)
+                stored.pointer() == value
+                    || assumptions.pointers_known_equal(stored.pointer(), value)
             })
         })
 }
@@ -2615,12 +2785,6 @@ pub(in crate::kernel) fn checked_pointer_read_endpoint(
         canonical_load_projection_source(&memory, &address).unwrap_or_else(|| memory.clone());
     // Ask the existing explicit checker to produce typed frame evidence;
     // planner-only separation answers cannot certify a query-local union.
-    struct ExplicitReadScope(bool);
-    impl Drop for ExplicitReadScope {
-        fn drop(&mut self) {
-            EXPLICIT_DAG_CHECK.with(|flag| flag.set(self.0));
-        }
-    }
     let _scope = ExplicitReadScope(EXPLICIT_DAG_CHECK.with(|flag| flag.replace(true)));
     with_extended_dag_bridging(|| {
         let cell = memory_dag_cell_source_with_hop_limit(
@@ -3035,6 +3199,9 @@ pub(super) fn typed_read_has_same_memory_source(
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> bool {
+    // Complete pointer identity needs the explicit, whole-byte separation
+    // premises too, rather than only the planner's address-distinctness rungs.
+    let _scope = ExplicitReadScope(EXPLICIT_DAG_CHECK.with(|flag| flag.replace(true)));
     with_extended_dag_bridging(|| {
         let before = intern_c_memory_ref(before);
         let mut current = intern_c_memory_ref(after);
@@ -4624,7 +4791,9 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &Bitvector32Term) -> Bitvecto
                 }
             }
             AtomicCanonicalizationTask::VisitCondition(condition) => match condition {
-                ConditionTerm::AlgebraicEqual(_, _) | ConditionTerm::PointerValueEqual(..) => condition_results.push(condition.clone()),
+                ConditionTerm::AlgebraicEqual(_, _) | ConditionTerm::PointerValueEqual(..) => {
+                    condition_results.push(condition.clone())
+                }
                 crate::kernel::integer_comparison_condition!(_, _) => {
                     condition_results.push(condition.clone())
                 }
@@ -5060,7 +5229,8 @@ pub(crate) fn certified_store_equations(
         .fact_iter()
         .filter_map(|fact| {
             let store = fact.certified_store_data()?;
-            let value = match &store.value {
+            let value = match store.value.numeric_value() {
+                CValue::PointerInteger(_) => unreachable!("numeric projection"),
                 CValue::Int8(term) => term.clone(),
                 CValue::Bool(term)
                 | CValue::Int16(term)
@@ -5328,8 +5498,13 @@ fn transport_framed_atomic_condition(
     Some(match condition {
         // Do not claim a snapshot bridge through an opaque algebraic value.
         ConditionTerm::PointerValueEqual(left, right) => ConditionTerm::PointerValueEqual(
-            Box::new(left.try_map_pointers(|p| transport_framed_atomic_pointer(p, after, assumptions))?),
-            Box::new(right.try_map_pointers(|p| transport_framed_atomic_pointer(p, after, assumptions))?),
+            Box::new(
+                left.try_map_pointers(|p| transport_framed_atomic_pointer(p, after, assumptions))?,
+            ),
+            Box::new(
+                right
+                    .try_map_pointers(|p| transport_framed_atomic_pointer(p, after, assumptions))?,
+            ),
         ),
         ConditionTerm::AlgebraicEqual(_, _) => return None,
         ConditionTerm::Float32(float_condition) => {
@@ -6286,6 +6461,71 @@ fn directly_matched_effect_endpoint(
 #[cfg(test)]
 mod opaque_pointer_frame_tests {
     use super::*;
+
+    #[test]
+    fn complete_pointer_domain_uses_explicit_whole_header_separation() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let header = Pointer::symbolic(Variable(9_880_410));
+        let field = header.clone().offset_by_bytes(8);
+        let buffer = Pointer::symbolic(Variable(9_880_411));
+        let before = intern_c_memory(CMemory::new());
+        let after = intern_c_memory(before.memory().clone().store(
+            buffer.clone().offset_by_bytes(4),
+            CValue::Int32(7u32.into()),
+        ));
+        let read = |snapshot: &SharedCMemory| Pointer::loaded_value(snapshot, &field);
+        let separation = |header_words: u32| Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(CMemoryRange::new(
+                header.clone(),
+                0u32.into(),
+                header_words.into(),
+            ))),
+            right: Box::new(CResource::Memory(CMemoryRange::new(
+                buffer.clone(),
+                0u32.into(),
+                8u32.into(),
+            ))),
+        };
+        let empty = PureFactContext::new();
+        let context = empty.clone().assume_proposition(separation(4));
+        assert!(!pointer_read_designations_equal(
+            &read(&before),
+            &read(&after),
+            &empty
+        ));
+        assert!(pointer_read_designations_equal(
+            &read(&before),
+            &read(&after),
+            &context
+        ));
+        assert!(pointer_read_extents_equal(
+            &read(&before),
+            &read(&after),
+            &context
+        ));
+        let too_short = empty.assume_proposition(separation(1));
+        assert!(!pointer_read_designations_equal(
+            &read(&before),
+            &read(&after),
+            &too_short
+        ));
+        let overwritten = intern_c_memory(
+            after
+                .memory()
+                .clone()
+                .store(field.clone().offset_by_bytes(4), CValue::Int32(0u32.into())),
+        );
+        assert!(!pointer_read_designations_equal(
+            &read(&before),
+            &read(&overwritten),
+            &context
+        ));
+        assert!(!pointer_read_extents_equal(
+            &read(&before),
+            &read(&overwritten),
+            &context
+        ));
+    }
 
     fn setup() -> (Pointer, Pointer, Pointer, Proposition, Proposition) {
         let field = Pointer {

@@ -2119,8 +2119,12 @@ impl CMemoryRange {
         element_width: u32,
     ) -> Self {
         assert!(element_width > 0, "memory element width must be positive");
+        let carrier = CPointerValue::new(base.clone(), CType::VoidPointer);
         Self {
+            opaque_extent: carrier.opaque_extent.clone(),
+            carrier_extent_known: carrier.extent_is_known(),
             designation: std::sync::Arc::new(base.object_identity()),
+            typed_carrier: false,
             base,
             start_bound: start,
             end_bound: end,
@@ -2138,19 +2142,85 @@ impl CMemoryRange {
         element_width: u32,
     ) -> Self {
         Self::new_with_element_width(value.pointer().clone(), start, end, element_width)
-            .with_designation(value.designation.clone())
+            .with_pointer_carrier(value)
     }
 
     pub(crate) fn from_pointer_value_wide(
-        value: &CPointerValue, start: Bitvector32Term, end: Bitvector32Term, element_width: u32,
+        value: &CPointerValue,
+        start: Bitvector32Term,
+        end: Bitvector32Term,
+        element_width: u32,
     ) -> Self {
         Self::new_wide(value.pointer().clone(), start, end, element_width)
-            .with_designation(value.designation.clone())
+            .with_pointer_carrier(value)
     }
 
-    pub(in crate::kernel) fn with_designation(mut self, designation: std::sync::Arc<Pointer>) -> Self {
+    /// The origin and extent ancestry retained by this admitted footprint.
+    /// Its own bounds describe the authorized bytes; this carrier is not a
+    /// new pointer access and does not infer a selected subobject extent.
+    pub(in crate::kernel) fn pointer_carrier(&self) -> CPointerValue {
+        CPointerValue {
+            pointer: self.base.clone(),
+            designation: self.designation.clone(),
+            opaque_extent: self.opaque_extent.clone(),
+            c_type: CType::VoidPointer,
+            qualifiers: self.carrier_extent_known.then(|| {
+                std::sync::Arc::new(CPointerQualifiers {
+                    extent_known: true,
+                    ..Default::default()
+                })
+            }),
+        }
+    }
+
+    pub(in crate::kernel) fn with_pointer_carrier(mut self, value: &CPointerValue) -> Self {
+        self.designation = value.designation.clone();
+        self.opaque_extent = value.opaque_extent.clone();
+        self.carrier_extent_known = value.extent_is_known();
+        self.typed_carrier = true;
+        self
+    }
+
+    pub(in crate::kernel) fn with_opaque_extent(
+        mut self,
+        origin: Option<std::sync::Arc<Pointer>>,
+        known: bool,
+    ) -> Self {
+        self.opaque_extent = origin;
+        self.carrier_extent_known = known;
+        self
+    }
+
+    pub(in crate::kernel) fn with_designation(
+        mut self,
+        designation: std::sync::Arc<Pointer>,
+    ) -> Self {
         self.designation = designation;
         self
+    }
+
+    pub(in crate::kernel) fn with_typed_carrier(mut self) -> Self {
+        self.typed_carrier = true;
+        self
+    }
+
+    pub(in crate::kernel) fn with_carrier_of(mut self, source: &Self) -> Self {
+        self.designation = source.designation.clone();
+        self.typed_carrier = source.typed_carrier;
+        self.opaque_extent = source.opaque_extent.clone();
+        self.carrier_extent_known = source.carrier_extent_known;
+        self
+    }
+
+    pub(in crate::kernel) fn access_designation(&self) -> (&Pointer, Option<&Pointer>) {
+        (
+            &self.designation,
+            if self.carrier_extent_known {
+                None
+            } else {
+                self.opaque_extent.as_deref()
+            },
+        )
     }
 
     pub fn kind(&self) -> RangeIndexKind {
@@ -2314,6 +2384,9 @@ impl CMemoryRange {
         Self {
             kind: self.kind,
             designation: self.designation.clone(),
+            typed_carrier: self.typed_carrier,
+            opaque_extent: self.opaque_extent.clone(),
+            carrier_extent_known: self.carrier_extent_known,
             ..Self::new_with_element_width(base, start, end, self.element_width)
         }
     }
@@ -2858,6 +2931,7 @@ pub(crate) fn memory_range_extent_guards(range: &CMemoryRange) -> Vec<Propositio
 /// fits one: the only 64-bit bound a narrow range takes
 /// ([`wide_range_bounds`]).
 pub(crate) fn narrow_range_constant(value: &CValue) -> Option<Bitvector32Term> {
+    let value = value.numeric_value();
     let constant = match value {
         CValue::Int32(Bitvector32Term::Constant(bits)) => i64::from(*bits as i32),
         CValue::Int64(Bitvector32Term::Int64Constant(value)) => *value,
@@ -2872,6 +2946,9 @@ pub(crate) fn wide_range_bounds(
     start: &CValue,
     end: &CValue,
 ) -> Option<(Bitvector32Term, Bitvector32Term)> {
+    let start = start.numeric_value();
+    let end = end.numeric_value();
+
     let widened = |value: &CValue| match value {
         CValue::UInt64(term) => Some(term.clone()),
         // A signed bound is read as its sign extension, the same bits as an

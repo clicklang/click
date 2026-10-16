@@ -12,24 +12,13 @@ fn logical_cached_pointer_read_carries_its_current_cell_equation() {
     let address = Pointer::symbolic(Variable(955_901));
     let alias = Pointer::symbolic(Variable(955_902));
     let model = Pointer::symbolic(Variable(955_903));
-    let cached = logical_pointer_read(&base, &address, &empty);
-    let variable = typed_pointer_read_variable(&cached).unwrap();
     let mut samples = Vec::new();
     for size in [16u64, 64, 256, 1024] {
-        let mut memory = base.clone().materialize_named_cell(
-            address.clone(),
-            CValue::Int32(Bitvector32Term::Variable(variable)),
+        let mut memory = base.clone();
+        let mut context = empty.clone().assume_condition(
+            ConditionTerm::pointer_equal(address.clone(), alias.clone()),
+            true,
         );
-        let mut context = empty
-            .clone()
-            .assume_condition(
-                ConditionTerm::pointer_equal(address.clone(), alias.clone()),
-                true,
-            )
-            .assume_condition(
-                ConditionTerm::pointer_value_equal(CPointerValue::new(cached.clone(), CType::Int64Pointer), CPointerValue::new(model.clone(), CType::Int64Pointer)),
-                true,
-            );
         for i in 0..size {
             memory = memory.store(Pointer::symbolic(Variable(956_000 + i)), int32(7));
             context = context.assume_condition(
@@ -40,6 +29,37 @@ fn logical_cached_pointer_read_carries_its_current_cell_equation() {
                 true,
             );
         }
+        // Build the ambient state before observing the pointer. Stores
+        // through unrelated symbolic names after the observation might alias
+        // either half of the pointer and cannot preserve its complete value.
+        let cached = logical_pointer_read(&memory, &address, &empty);
+        let cached_value = CPointerValue::from_read(
+            cached.clone(),
+            CType::Int64Pointer,
+            &intern_c_memory_ref(&memory),
+            &address,
+        );
+        let variable = typed_pointer_read_variable(&cached).unwrap();
+        memory = memory.materialize_named_cell(
+            address.clone(),
+            CValue::Int32(Bitvector32Term::Variable(variable)),
+        );
+        context = context.assume_condition(
+            ConditionTerm::pointer_value_equal(
+                cached_value.clone(),
+                CPointerValue::new(model.clone(), CType::Int64Pointer),
+            ),
+            true,
+        );
+        let required = Pointer::loaded_value(&intern_c_memory_ref(&memory), &alias);
+        let equal = |facts: &PureFactContext| {
+            crate::kernel::resource_arguments_proven_equal(
+                &AlgebraicValue::C(CValue::typed_pointer(model.clone(), CType::Int64Pointer)),
+                &AlgebraicValue::C(CValue::typed_pointer(required.clone(), CType::Int64Pointer)),
+                facts,
+            )
+        };
+        let before_equal = equal(&context);
         let ((paths, work), map_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
                 evaluate_logical_memory_load_paths(
@@ -58,30 +78,26 @@ fn logical_cached_pointer_read_carries_its_current_cell_equation() {
         };
         assert_eq!(
             path.outcome,
-            CExpressionOutcome::Value(CValue::typed_pointer(cached.clone(), CType::Int64Pointer))
+            CExpressionOutcome::Value(CValue::Pointer(cached_value.clone()))
         );
         assert!(path.obligations.is_empty());
         assert_eq!(path.facts.len(), 1);
         assert!(!path.facts.has_path_conditions());
-        let required = Pointer::loaded_value(&intern_c_memory_ref(&memory), &alias);
-        let equal = |facts: &PureFactContext| {
-            crate::kernel::resource_arguments_proven_equal(
-                &AlgebraicValue::C(CValue::typed_pointer(model.clone(), CType::Int64Pointer)),
-                &AlgebraicValue::C(CValue::typed_pointer(required.clone(), CType::Int64Pointer)),
-                facts,
-            )
-        };
-        assert!(
-            !equal(&context),
+        assert_eq!(
+            equal(&context),
+            before_equal,
             "constructing the result must not mutate caller evidence"
         );
         let retained = assumptions_with_path_context(&context, &path.facts, &path.obligations);
         assert!(equal(&retained));
-        assert!(!equal(&context));
+        assert_eq!(equal(&context), before_equal);
         assert!(!equal(&retained.restricted_to_facts(&[], &[])));
         assert!(!ResourceContext::new().permits_memory_read(&alias, 8, &retained));
         let missing_alias = empty.clone().assume_condition(
-            ConditionTerm::pointer_value_equal(CPointerValue::new(cached.clone(), CType::Int64Pointer), CPointerValue::new(model.clone(), CType::Int64Pointer)),
+            ConditionTerm::pointer_value_equal(
+                cached_value.clone(),
+                CPointerValue::new(model.clone(), CType::Int64Pointer),
+            ),
             true,
         );
         assert!(!equal(&assumptions_with_path_context(
@@ -598,7 +614,10 @@ fn logical_scalar_read_reuses_model_cell_through_later_external_alias() {
         assert_eq!(paths.len(), 1);
         assert!(paths[0].facts.is_empty());
         assert!(paths[0].obligations.is_empty());
-        paths[0].outcome.clone()
+        let CExpressionOutcome::Value(value) = &paths[0].outcome else {
+            panic!("logical scalar read")
+        };
+        CExpressionOutcome::Value(value.numeric_value().clone())
     };
     let mut samples = Vec::new();
     for size in [8u64, 64, 512] {
@@ -843,6 +862,7 @@ fn cached_pointer_value_keeps_its_defining_coordinates_and_scales() {
         }
         let read = |at: &Pointer| {
             canonicalized_pointer_value_from_int_cell(
+                &memory,
                 at,
                 &cached,
                 CType::Int64Pointer,
@@ -857,10 +877,15 @@ fn cached_pointer_value_keeps_its_defining_coordinates_and_scales() {
         let ((actual, work), map_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| read(&cursor_address))
         });
-        assert_eq!(actual, expected, "alias rebased a cached pointer value");
+        let (CValue::Pointer(actual), CValue::Pointer(expected)) = (&actual, &expected) else {
+            panic!("typed pointer cache")
+        };
+        assert!(context.pointers_known_equal(actual.pointer(), expected.pointer()));
+        assert!(context.pointer_designations_match(actual, expected));
         samples.push((work, map_work));
         assert!(
             canonicalized_pointer_value_from_int_cell(
+                &memory,
                 &cursor_address,
                 &CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
                 CType::Int64Pointer,
@@ -900,10 +925,13 @@ fn cached_pointer_reads_retain_their_current_cell_identity() {
             alias.clone(),
             CValue::typed_pointer(stored.clone(), CType::Int64Pointer),
         );
-        let mut context = empty.clone().assume_condition(
-            ConditionTerm::pointer_equal(alias.clone(), address.clone()),
-            true,
-        );
+        let mut context = empty
+            .clone()
+            .require_owned_expression_loads()
+            .assume_condition(
+                ConditionTerm::pointer_equal(alias.clone(), address.clone()),
+                true,
+            );
         for index in 0..count {
             memory = memory.store(
                 Pointer {
@@ -956,8 +984,12 @@ fn cached_pointer_reads_retain_their_current_cell_identity() {
             panic!("pointer read expected");
         };
         assert!(context.pointers_known_equal(&stored, checked.pointer()));
+        // The producer may return the complete stored value directly. The
+        // read equation, rather than literal value reflexivity, is scoped.
+        let current_read = Pointer::loaded_value(&intern_c_memory_ref(&projected), &address);
+        assert!(context.pointers_known_equal(&stored, &current_read));
         assert!(
-            !empty.pointers_known_equal(&stored, checked.pointer()),
+            !empty.pointers_known_equal(&stored, &current_read),
             "a cache alias is scoped to its checked context"
         );
         let displaced = logical_pointer_read(&memory, &address.offset_by_bytes(8), &context);
@@ -1185,5 +1217,39 @@ fn recorded_pointer_normalization_has_bounded_history_work() {
             assert!(work <= previous, "count={count}: {work} > {previous}");
         }
         known_work.get_or_insert(work);
+    }
+}
+
+#[test]
+fn complete_pointer_domains_across_cached_observations_scale_with_new_cells() {
+    let mut samples = Vec::new();
+    for count in [16u64, 64, 256, 1024] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let address = Pointer::symbolic(Variable(199_101));
+        let mut memory = CMemory::new();
+        let CValue::Pointer(original) =
+            symbolic_load_value(&memory, &address, CType::Int64Pointer).unwrap()
+        else {
+            panic!("pointer read")
+        };
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                for i in 0..count {
+                    let cell = address.clone().offset_by_bytes((i * 4) as u32);
+                    memory = memory.clone().materialize_symbolic_cell(cell, CType::Int32);
+                    let CValue::Pointer(read) =
+                        symbolic_load_value(&memory, &address, CType::Int64Pointer).unwrap()
+                    else {
+                        panic!("pointer read")
+                    };
+                    assert_eq!(read.access_designation(), original.access_designation());
+                }
+            })
+        });
+        samples.push((count, work, map_work));
+    }
+    for pair in samples.windows(2) {
+        assert!(pair[1].1 <= pair[0].1 * 6 + 128, "{samples:?}");
+        assert!(pair[1].2 <= pair[0].2 * 6 + 512, "{samples:?}");
     }
 }

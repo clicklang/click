@@ -123,7 +123,10 @@ fn old_collect_spec_expression_c_variables(
             old_collect_spec_expression_c_variables(left, reads)?;
             old_collect_spec_expression_c_variables(right, reads)
         }
-        SpecExpression::Subobject { pointer: value, .. } | SpecExpression::BitwiseNot(value) | SpecExpression::Cast(value, _) => {
+        SpecExpression::Subobject { pointer: value, .. }
+        | SpecExpression::BitwiseNot(value)
+        | SpecExpression::Cast(value, _)
+        | SpecExpression::PointerCoercion(value, _) => {
             old_collect_spec_expression_c_variables(value, reads)
         }
         SpecExpression::MemoryLoad { pointer, .. } => {

@@ -24,6 +24,18 @@ into a resource, whose clause claims more than the member
 accepted: reaching another object through address equality inside a callee,
 or from a pointer loaded at function entry (Phase B).
 
+The Phase B investigation also reproduced an integer escape: converting
+`&pair->first` to `unsigned long` and back lets an element-one read reach the
+sibling. The regression is
+`mdtests/a_pointer_integer_round_trip_keeps_its_subobject.md`. The working
+prototype now rejects it and retains valid direct and stored-word member reads.
+A hidden complete-value record preserves the original pointer; mathematical
+integer observations cannot supply that record. The
+[integer representation notes](../design/pointer-integer-representations.md)
+record the implementation and the approved cast-based contract/tag support. This is
+still an unpublished prototype: the full Phase B compatibility and scaling
+checks must pass before closing this bug.
+
 ## Reproduction
 
 Save this as a Markdown proof and verify it with the ordinary C frontend:

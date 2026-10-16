@@ -16,14 +16,15 @@ proposition can appear:
   binding, lowered against C state on one path;
 - `rewrite(identity == p)`, which replaces the payload with the C pointer
   inside a goal, leaving a same-block pointer equality the listed premise
-  `p == q` closes;
-- `normalize() using { identity == q; }` inside a nested `branch` arm, where
+  `address(p) == address(q)` closes;
+- `normalize() using { address(identity) == address(q); }` inside a nested `branch` arm, where
   the arm bindings are still in scope; and
 - the postcondition `result == cell_member(old(c.model), q)`, where
   `cell_member` compares the payload with a C pointer inside a pure function.
 
-Pointers stay pointers throughout: nothing converts an address to an integer,
-and the payload carries no ownership of its own.
+The payload retains the full pointer value through `p == identity`. The model
+compares numeric addresses to match the C branch; it does not infer equal
+designations from that branch. The payload carries no ownership of its own.
 
 ```c filename=pointer_payload.c
 struct cell {
@@ -63,7 +64,7 @@ function cell_member(cell: CellModel, target: struct cell*) -> int32 {
     match cell {
         CellModel::Missing => 0,
         CellModel::Present(identity, value) =>
-            if identity == target { 1 } else { 0 },
+            if address(identity) == address(target) { 1 } else { 0 },
     }
 }
 
@@ -82,21 +83,21 @@ int cell_same(struct cell* p, struct cell* q) {
             branch then {
                 step();
                 let c = fold(cell_at(p), { model: old(c.model) });
-                have identity == q by { rewrite(identity == p); normalize() using { p == q; } }
+                have address(identity) == address(q) by { rewrite(identity == p); normalize() using { address(p) == address(q); } }
                 have result == cell_member(old(c.model), q) by {
                     rewrite(old(c.model) == CellModel::Present(identity, value));
                     unfold(cell_member(CellModel::Present(identity, value), q));
-                    normalize() using { identity == q; }
+                    normalize() using { address(identity) == address(q); }
                 }
                 simp();
             } else {}
             step();
             let c = fold(cell_at(p), { model: old(c.model) });
-            have not(identity == q) by { rewrite(identity == p); normalize() using { not(p == q); } }
+            have not(address(identity) == address(q)) by { rewrite(identity == p); normalize() using { not(address(p) == address(q)); } }
             have result == cell_member(old(c.model), q) by {
                 rewrite(old(c.model) == CellModel::Present(identity, value));
                 unfold(cell_member(CellModel::Present(identity, value), q));
-                normalize() using { not(identity == q); }
+                normalize() using { not(address(identity) == address(q)); }
             }
             simp();
         },

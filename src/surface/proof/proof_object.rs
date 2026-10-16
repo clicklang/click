@@ -1061,7 +1061,8 @@ struct ProofDiagnosticProofState(
 );
 
 fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
-    match value {
+    match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         crate::kernel::arithmetic_c_value!(term) => match term {
             Bitvector32Term::Variable(variable) => Some(*variable),
             _ => None,

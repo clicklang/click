@@ -671,6 +671,45 @@ impl EqualityGraph {
         }
     }
 
+    /// Retain the complete value supplied by the selected typed read producer.
+    /// The equality and its memo invalidation stay local to this branch.
+    pub(in crate::kernel) fn add_checked_pointer_value_equality(
+        &self,
+        left: &CPointerValue,
+        right: &CPointerValue,
+    ) {
+        self.add_checked_read_equality(left.pointer(), right.pointer());
+        let mut state = self.state.lock().expect("equality graph");
+        if state.terms.add_pointer_value_equality(left, right) {
+            state.remember_input(inputs::Input::PointerValue(left.clone(), right.clone()));
+            state.checked_read_generation =
+                NEXT_LOGICAL_READ_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        state.close(Vec::new());
+    }
+
+    /// Whole pointer reads linked by the selected memory producer share
+    /// their origin and opaque extent, independently of the eventual type.
+    pub(in crate::kernel) fn add_checked_pointer_read_equality(
+        &self,
+        left: &Pointer,
+        right: &Pointer,
+    ) {
+        self.add_checked_read_equality(left, right);
+        let mut state = self.state.lock().expect("equality graph");
+        if state.terms.merge_pointer_read_domains(left, right) {
+            state.remember_input(inputs::Input::PointerReadValue(left.clone(), right.clone()));
+            state.checked_read_generation =
+                NEXT_LOGICAL_READ_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        state.close(Vec::new());
+    }
+
+    pub(in crate::kernel) fn opaque_extents_equal(&self, left: &Pointer, right: &Pointer) -> bool {
+        let mut state = self.state.lock().expect("equality graph");
+        state.terms.opaque_extents_equal(left, right)
+    }
+
     fn register_logical_read_values<'a>(
         &self,
         state: &mut EqualityGraphState,
@@ -1353,7 +1392,9 @@ impl EqualityGraph {
     }
 
     pub(in crate::kernel) fn designations_equal(&self, left: &Pointer, right: &Pointer) -> bool {
-        if left == right { return true; }
+        if left == right {
+            return true;
+        }
         let mut state = self.state.lock().expect("equality graph");
         state.register_blocks([left.block.clone(), right.block.clone()]);
         let equal = state.terms.designations_equal(left, right);
@@ -1361,23 +1402,34 @@ impl EqualityGraph {
         equal
     }
 
-    pub(in crate::kernel) fn pointer_value_representative(&self, value: &CPointerValue) -> CPointerValue {
+    pub(in crate::kernel) fn pointer_value_representative(
+        &self,
+        value: &CPointerValue,
+    ) -> CPointerValue {
         let mut state = self.state.lock().expect("equality graph");
         state.register_blocks(value.pointers().map(|p| p.block.clone()));
         state.close(Vec::new());
         state.terms.pointer_value_representative(value)
     }
 
-    pub(in crate::kernel) fn add_pointer_value_equality(&mut self, left: &CPointerValue, right: &CPointerValue) {
+    pub(in crate::kernel) fn add_pointer_value_equality(
+        &mut self,
+        left: &CPointerValue,
+        right: &CPointerValue,
+    ) {
         self.add_equality(left.pointer(), right.pointer());
         if left.pointer().block == right.pointer().block {
             self.add_offset_equality(&left.pointer().offset, &right.pointer().offset);
         }
         let mut state = self.state.lock().expect("equality graph");
-        let origins_changed = state.terms.merge_designations(left.designation(), right.designation());
+        let origins_changed = state
+            .terms
+            .merge_designations(left.designation(), right.designation());
         let changed = state.terms.add_pointer_value_equality(left, right) || origins_changed;
         state.close(Vec::new());
-        if changed { state.remember_input(inputs::Input::PointerValue(left.clone(), right.clone())); }
+        if changed {
+            state.remember_input(inputs::Input::PointerValue(left.clone(), right.clone()));
+        }
     }
 
     pub(in crate::kernel) fn add_algebraic_equality(
@@ -1813,15 +1865,27 @@ impl EqualityGraph {
     /// The affine class containing one selected base, without replaying
     /// unrelated admitted merges. Used only for a disposable cold resource
     /// view; published indexes retain their incremental merge protocol.
-    pub(in crate::kernel) fn pointer_merges_for_block(&self, block: &PointerBlock) -> Vec<PointerClassMerge> {
+    pub(in crate::kernel) fn pointer_merges_for_block(
+        &self,
+        block: &PointerBlock,
+    ) -> Vec<PointerClassMerge> {
         let mut state = self.state.lock().expect("equality graph");
         state.register_blocks([block.clone()]);
         let (kept, _) = state.find(block);
-        state.members.get(&kept).into_iter().flat_map(|members| members.iter())
+        state
+            .members
+            .get(&kept)
+            .into_iter()
+            .flat_map(|members| members.iter())
             .map(|(moved, delta)| {
                 crate::instrumentation::record_deterministic_work(1);
-                PointerClassMerge { moved: moved.clone(), kept: kept.clone(), moved_from_kept: delta.clone() }
-            }).collect()
+                PointerClassMerge {
+                    moved: moved.clone(),
+                    kept: kept.clone(),
+                    moved_from_kept: delta.clone(),
+                }
+            })
+            .collect()
     }
 
     /// Transitional resource consumers still enumerate spellings. This is
