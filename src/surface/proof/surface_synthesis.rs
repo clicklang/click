@@ -2934,6 +2934,9 @@ fn synthesize_surface_bitvector(
                     bound_variables,
                 );
             }
+            if let Some(field) = synthesize_scalar_model_field(*variable, state) {
+                return Some(field);
+            }
             SYNTHESIS_ENTRY_STATE.with(|slot| {
                 let slot = slot.borrow();
                 let entry = slot.as_ref()?;
@@ -3928,6 +3931,57 @@ fn synthesize_loaded_pointer_value(
             selector,
             expression: Box::new(expression),
         })
+    })
+}
+
+/// The source spelling of a scalar model-field variable: `o.size` where the
+/// current state's instance holds it at that field, `at(<selector>, o.size)`
+/// where the snapshot state's does, and `old(o.size)` where the entry
+/// state's does. One registry lookup and one instance lookup per state.
+fn synthesize_scalar_model_field(variable: Variable, state: &CState) -> Option<ContractExpression> {
+    let origin = crate::kernel::model_fields::registered_model_field_origin(variable)?;
+    let owner = crate::kernel::model_fields::registered_instance_spelling(origin.identity)?;
+    let field_at = |state: &CState| {
+        let instance = state.resource_instance_at_path(origin.identity, &[])?;
+        matches!(
+            instance.fields().get(origin.field_index),
+            Some(AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(held)))) if *held == variable
+        )
+        .then_some(())?;
+        // The field's declared C type, as the parser's elaboration records it.
+        let crate::kernel::ResourceFieldType::C(c_type) =
+            instance.schema().fields().get(origin.field_index)?.1
+        else {
+            return None;
+        };
+        Some(ContractExpression::ResourceField(ResourceFieldAccess {
+            owner: owner.to_string(),
+            resource_name: instance.name().to_string(),
+            identity: origin.identity,
+            children: vec![],
+            field: origin.field.to_string(),
+            field_index: origin.field_index,
+            click_type: Some(ClickType::C(crate::surface::generics::c0_type_from_kernel(
+                c_type,
+            ))),
+        }))
+    };
+    if let Some(field) = field_at(state) {
+        return Some(field);
+    }
+    if let Some(field) = SYNTHESIS_SNAPSHOT_STATE.with(|slot| {
+        let slot = slot.borrow();
+        let (snapshot, selector) = slot.as_ref()?;
+        Some(ContractExpression::At {
+            selector: selector.clone(),
+            expression: Box::new(field_at(snapshot)?),
+        })
+    }) {
+        return Some(field);
+    }
+    SYNTHESIS_ENTRY_STATE.with(|slot| {
+        let slot = slot.borrow();
+        Some(ContractExpression::Old(Box::new(field_at(slot.as_ref()?)?)))
     })
 }
 
