@@ -4555,15 +4555,26 @@ impl Parser {
         // for the type it stands for, where the name is not a standard
         // spelling; a specification writes Click's type.
         let typedef_struct = match self.c_typedefs.get(&spelling) {
-            Some(syntax::C0HeadTypedef::Struct { name, constant }) => {
+            Some(syntax::C0HeadTypedef::Struct {
+                name,
+                c_type,
+                constant,
+                pointee_constant,
+            }) => {
                 self.check_head_typedef(&spelling)?;
                 is_constant |= constant;
-                Some(name.clone())
+                Some((name.clone(), *c_type, *pointee_constant))
             }
             _ => None,
         };
+        // A pointer alias has already supplied its `*`s: a `const` written
+        // before it qualifies the pointer, as in C.
+        let alias_pointer = typedef_struct
+            .as_ref()
+            .filter(|(_, c_type, _)| *c_type != C0Type::Int32)
+            .map(|(_, c_type, pointee_constant)| (*c_type, *pointee_constant));
         if spelling == "struct" || cpp_record || typedef_struct.is_some() {
-            let struct_name = if let Some(name) = typedef_struct {
+            let struct_name = if let Some((name, _, _)) = typedef_struct {
                 name
             } else if cpp_record {
                 spelling
@@ -4575,7 +4586,7 @@ impl Parser {
                 self.position += 1;
                 object_constant = true;
             }
-            if self.peek() == Some(&Token::Amp) {
+            if self.peek() == Some(&Token::Amp) && alias_pointer.is_none() {
                 self.position += 1;
                 return Ok(ParsedType {
                     c_type: C0Type::Int32Pointer,
@@ -4586,10 +4597,10 @@ impl Parser {
                     reference: true,
                 });
             }
-            if self.peek() == Some(&Token::Star) {
-                let mut c_type = C0Type::Int32;
-                let mut pointee_constant = false;
-                let mut saw_pointer = false;
+            if self.peek() == Some(&Token::Star) || alias_pointer.is_some() {
+                let (mut c_type, mut pointee_constant) =
+                    alias_pointer.unwrap_or((C0Type::Int32, false));
+                let mut saw_pointer = alias_pointer.is_some();
                 while self.peek() == Some(&Token::Star) {
                     if saw_pointer && pointee_constant {
                         return Err(self.error(
@@ -4657,6 +4668,8 @@ impl Parser {
         } else {
             LongRank::Long
         };
+        // A scalar pointer alias's pointee qualification, as for a struct one.
+        let mut alias_scalar_pointer = None;
         let scalar_type = if let Some((c_type, count)) = integer {
             self.position += count - 1;
             c_type
@@ -4683,14 +4696,22 @@ impl Parser {
                 }
                 _ if let Some(typedef) = self.c_typedefs.get(&spelling) => {
                     self.check_head_typedef(&spelling)?;
-                    let syntax::C0HeadTypedef::Scalar { c_type, constant } = *typedef else {
+                    let syntax::C0HeadTypedef::Scalar {
+                        c_type,
+                        constant,
+                        pointee_constant,
+                    } = *typedef
+                    else {
                         return Err(self.error(format!(
-                            "the typedef `{spelling}` stands for a pointer, array, function \
-                             pointer, union, or volatile or aligned type, or for different \
-                             types in two verified sources; a head writes its C type"
+                            "the typedef `{spelling}` stands for an array, function pointer, \
+                             union, or volatile or aligned type, or for different types in two \
+                             verified sources; a head writes its C type"
                         )));
                     };
                     is_constant |= constant;
+                    if c_type.is_pointer() {
+                        alias_scalar_pointer = Some(pointee_constant);
+                    }
                     c_type
                 }
                 _ => {
@@ -4702,12 +4723,12 @@ impl Parser {
         };
         let mut c_type = scalar_type;
         let mut object_constant = is_constant;
-        let mut pointee_constant = false;
+        let mut pointee_constant = alias_scalar_pointer.unwrap_or(false);
         if self.peek_ident() == Some("const") {
             self.position += 1;
             object_constant = true;
         }
-        let mut saw_pointer = false;
+        let mut saw_pointer = alias_scalar_pointer.is_some();
         // `T&` is carried by a pointer to `T`. A reference to a pointer is
         // not supported.
         let mut reference = false;
