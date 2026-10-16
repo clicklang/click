@@ -56,31 +56,6 @@ thread_local! {
     static INPUT_SCOPES: std::cell::RefCell<std::collections::HashMap<u64, String>> = Default::default();
     static INPUT_POINTER_PLACES: std::cell::RefCell<std::collections::HashMap<Variable, (u64, usize, crate::kernel::CPointerValue)>> = Default::default();
     static INPUT_VARIABLES: std::cell::RefCell<std::collections::HashMap<(u64, usize), Variable>> = Default::default();
-    static INPUT_EXTENT_VARIABLES: std::cell::RefCell<std::collections::HashMap<(u64, usize), Variable>> = Default::default();
-}
-
-/// The opaque extent of pointer input `index` of `scope`: the function did
-/// not see the argument formed, so it may assume only what its clauses and
-/// equalities say the argument designates (`design/pointer-subobject-extents.md`,
-/// Phase C). Each input keeps one identity, like its address.
-fn input_pointer_extent(
-    scope: u64,
-    index: usize,
-) -> Result<crate::kernel::SubobjectExtent, ClickError> {
-    use crate::kernel::SubobjectExtent;
-    INPUT_EXTENT_VARIABLES.with(|variables| {
-        let mut variables = variables.borrow_mut();
-        if let Some(variable) = variables.get(&(scope, index)) {
-            return Ok(SubobjectExtent::opaque(*variable));
-        }
-        let name = SubobjectExtent::OPAQUE_VARIABLE_BASE + variables.len() as u64;
-        if name >= SubobjectExtent::OPAQUE_VARIABLE_CEILING {
-            return Err(ClickError::new("pointer input extent namespace exhausted"));
-        }
-        let variable = Variable(name);
-        variables.insert((scope, index), variable);
-        Ok(SubobjectExtent::opaque(variable))
-    })
 }
 
 pub(in crate::surface) fn input_scope(name: &str) -> u64 {
@@ -306,23 +281,7 @@ pub(in crate::surface) fn initial_call_state(
                         i64::from(element_width),
                     ),
                 };
-                // A byte pointer views its complete object (D4), so only a
-                // typed object pointer has an opaque extent.
-                let byte_view = matches!(
-                    c_type,
-                    C0Type::CharPointer(_)
-                        | C0Type::UInt8Pointer
-                        | C0Type::CharPointerPointer(_)
-                        | C0Type::UInt8PointerPointer
-                ) || parameter.array_element_width().is_some();
-                arguments.push(if byte_view {
-                    c_typed_pointer_value(pointer, kernel_c_type)
-                } else {
-                    CExpression::Value(CValue::Pointer(
-                        crate::kernel::CPointerValue::new(pointer, kernel_c_type)
-                            .with_extent(Some(input_pointer_extent(scope, index)?)),
-                    ))
-                });
+                arguments.push(c_typed_pointer_value(pointer, kernel_c_type));
             }
             C0Type::Int8 => {
                 arguments.push(CExpression::Value(CValue::Int8(Bitvector32Term::Variable(

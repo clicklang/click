@@ -1142,6 +1142,37 @@ impl SubobjectExtent {
         }
     }
 
+    /// The extent a typed object pointer at `pointer` designates when the
+    /// function did not see it formed: a parameter, a pointer loaded from
+    /// memory, a call result or a model value. Each such address has one
+    /// identity variable, and the extent is named by it, so two spellings of
+    /// one value designate one extent and a substitution that maps the
+    /// identity maps the extent. A character or `void` pointer views its
+    /// complete object (D4) and has none.
+    pub(crate) fn unseen(pointer: &Pointer, c_type: CType) -> Option<Self> {
+        if !c_type.is_object_pointer()
+            || c_type.is_character_pointer()
+            || c_type == CType::VoidPointer
+        {
+            return None;
+        }
+        let identity = match (&pointer.block, &pointer.offset) {
+            (PointerBlock::Symbolic(variable), PointerOffsetTerm::Constant(0)) => *variable,
+            (PointerBlock::ExternalArgument, PointerOffsetTerm::Int32Scaled { value, .. }) => {
+                let Bitvector32Term::Variable(variable) = value.as_ref() else {
+                    return None;
+                };
+                *variable
+            }
+            _ => match pointer.as_loaded()? {
+                (_, Bitvector32Term::Variable(variable), _) => *variable,
+                _ => return None,
+            },
+        };
+        (identity.0 < Self::OPAQUE_VARIABLE_BASE)
+            .then(|| Self::opaque(Variable(Self::OPAQUE_VARIABLE_BASE + identity.0)))
+    }
+
     /// The variable naming this extent, when it is opaque.
     pub(crate) fn opaque_variable(&self) -> Option<Variable> {
         let PointerBlock::Symbolic(variable) = &self.start.block else {
@@ -1224,16 +1255,21 @@ impl SubobjectExtent {
 }
 
 impl CPointerValue {
+    /// A pointer value of `c_type` at `pointer`. A typed object pointer of
+    /// unseen formation designates its own opaque extent
+    /// ([`SubobjectExtent::unseen`]).
     pub(crate) fn new(pointer: Pointer, c_type: CType) -> Self {
         assert!(
             c_type.is_pointer(),
             "C pointer values require a pointer type"
         );
+        let extent = SubobjectExtent::unseen(&pointer, c_type);
         Self {
             pointer,
             c_type,
             qualifiers: None,
         }
+        .with_extent(extent)
     }
 
     pub(crate) fn pointer(&self) -> &Pointer {
@@ -1372,6 +1408,14 @@ impl CPointerValue {
     pub(crate) fn map_pointers(&self, mut map: impl FnMut(&Pointer) -> Pointer) -> Self {
         let mut result = self.clone();
         result.pointer = map(&self.pointer);
+        // The extent a pointer of unseen formation designates is named by
+        // its address's identity, so it follows the address.
+        if let Some(extent) = self.extent()
+            && SubobjectExtent::unseen(&self.pointer, self.c_type).as_ref() == Some(extent)
+        {
+            let unseen = SubobjectExtent::unseen(&result.pointer, self.c_type);
+            return result.with_extent(unseen);
+        }
         if let Some(extent) = self.extent() {
             result = result.with_extent(Some(SubobjectExtent {
                 start: map(&extent.start),

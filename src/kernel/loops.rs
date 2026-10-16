@@ -2110,8 +2110,10 @@ fn c_loop_state_components_match_at_back_edge_inner(
     }
     // The head keeps a pointer local's subobject only if every back edge
     // returns the local to that same subobject.
+    // A head's own opaque extent is known only from what the head assumes,
+    // which the back edge re-establishes, so any value may return to it.
     if top_state.locals().object_values().any(|(name, value)| {
-        c_value_subobject_extent(value).is_some()
+        c_value_subobject_extent(value).is_some_and(|extent| !head_owned_extent(value, extent))
             && next_state.locals().get(name).map(c_value_subobject_extent)
                 != Some(c_value_subobject_extent(value))
     }) {
@@ -3642,7 +3644,7 @@ fn abstract_loop_exit_locals(
             extents if extents[1..].iter().all(|extent| *extent == extents[0]) => {
                 with_retained_extent(fresh, held.first())
             }
-            _ => fresh,
+            _ => with_retained_extent(fresh, None),
         };
         // So do exits that agree on the class of the object it designates.
         let fresh = match held.iter().map(c_value_object_class).collect::<Vec<_>>() {
@@ -8430,7 +8432,13 @@ pub(super) fn havoc_loop_modified_locals(
         // A pointer local keeps the subobject it designates across the
         // abstract iteration; the back edge checks that the body returns
         // it to the same one (`c_loop_state_components_match_at_back_edge`).
-        let value = with_retained_extent(value, state.locals.get(&name));
+        // One that entered designating an opaque extent designates its own
+        // fresh one instead, known only from what the head assumes: the
+        // body may move it to any pointer it loads.
+        let value = match state.locals.get(&name).and_then(c_value_subobject_extent) {
+            Some(extent) if extent.is_opaque() => value,
+            _ => with_retained_extent(value, state.locals.get(&name)),
+        };
         let value = with_retained_object_class(value, state.locals.get(&name));
         sync_stack_local(&mut state, &name, &value);
         state.locals.set_typed(name, value, c_type);
@@ -8946,6 +8954,13 @@ fn c_value_subobject_extent(value: &CValue) -> Option<&SubobjectExtent> {
     }
 }
 
+/// Whether `extent` is the opaque extent `value` designates by its own
+/// identity: a loop head's fresh pointer of unseen formation.
+fn head_owned_extent(value: &CValue, extent: &SubobjectExtent) -> bool {
+    matches!(value, CValue::Pointer(pointer)
+        if SubobjectExtent::unseen(pointer.pointer(), pointer.c_type()).as_ref() == Some(extent))
+}
+
 fn c_value_object_class(value: &CValue) -> Option<crate::kernel::effective_type::CAccessClass> {
     match value {
         CValue::Pointer(pointer) => pointer.object_class(),
@@ -8959,13 +8974,14 @@ fn with_retained_object_class(fresh: CValue, previous: Option<&CValue>) -> CValu
     fresh.with_pointer_object_class(previous.and_then(c_value_object_class))
 }
 
-/// `fresh` with the subobject extent of the pointer value it abstracts.
+/// `fresh` with the subobject extent of the pointer value it abstracts, or
+/// none when that value is bounded only by its complete object.
 fn with_retained_extent(fresh: CValue, previous: Option<&CValue>) -> CValue {
-    match (fresh, previous.and_then(c_value_subobject_extent)) {
-        (CValue::Pointer(pointer), Some(extent)) => {
-            CValue::Pointer(pointer.with_extent(Some(extent.clone())))
-        }
-        (fresh, _) => fresh,
+    match fresh {
+        CValue::Pointer(pointer) => CValue::Pointer(
+            pointer.with_extent(previous.and_then(c_value_subobject_extent).cloned()),
+        ),
+        fresh => fresh,
     }
 }
 
