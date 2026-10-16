@@ -81,7 +81,7 @@ Run `scripts/setup-environment.sh` once for Click's pinned stable toolchain.
 Build pinned Charon and install its separate compiler with
 `scripts/build-charon.sh --install-toolchain`, then run:
 
-```sh
+```console
 cargo run --bin click -- import lock examples/basic-rust/borrow.click
 cargo run --bin click -- verify examples/basic-rust/borrow.click
 cargo run --bin click -- profile examples/basic-rust/borrow.click
@@ -92,7 +92,7 @@ cargo run --bin click -- verify examples/basic-rust/borrow.click
 
 Locked Rust imports also support focused proof tracing:
 
-```sh
+```console
 cargo run --bin click -- verify --trace-proof update examples/basic-rust/borrow.click
 ```
 
@@ -271,8 +271,10 @@ The contract names what it refers to as Rust does: `*value` for the
 referent and `parent.left` for a field. The type does not grant authority;
 the contract still states `views` or `owns`. Lifetimes may be written or
 left out, `fn pick<'a>(value: &'a u32) -> u32`; the contract does not use
-them, and a type parameter is refused, as the importer refuses a generic
-function. A tuple struct's field is named by its position, `self.0`.
+them. Type parameters are limited to the supported
+[callable bounds](#function-pointers-and-named-contracts) and
+[crate trait bounds](#trait-method-interfaces). A tuple struct's field is
+named by its position, `self.0`.
 
 A diagnostic about a function whose signature is written this way, and the
 proof `click expand` writes for it, spell its places the same way: a
@@ -681,7 +683,7 @@ the full-input checksum and byte preservation over the same length and split
 bounds. Arbitrary saved words need not satisfy the canonical-seed preconditions
 for an update.
 
-```sh
+```console
 cargo run --bin click -- import lock examples/rust-unsigned/arithmetic.click
 cargo run --bin click -- verify examples/rust-unsigned/arithmetic.click
 ```
@@ -779,7 +781,7 @@ covers all three element types, a checked element reborrow, a direct helper
 call, parent reuse, and preservation of an untouched word. Its helper owns
 only the indexed word, allowing the caller to retain the remaining storage.
 
-```sh
+```console
 scripts/build-charon.sh --install-toolchain
 cargo run --bin click -- import lock examples/rust-arrays/arrays.click
 cargo run --bin click -- verify examples/rust-arrays/arrays.click
@@ -855,7 +857,7 @@ signed indices must separately justify their conversions. The accumulator contra
 to one. These are synthetic loop regressions, not a checksum-library proof.
 Verification, profiling, auditing, and proof expansion use the shared engine.
 
-```sh
+```console
 cargo run --bin click -- import lock examples/rust-loops/loops.click
 cargo run --bin click -- verify examples/rust-loops/loops.click
 ```
@@ -1023,7 +1025,7 @@ nested aggregate arguments or returns, unstructured control flow, heap owners su
 as `Box`/`Vec`, and panic unwinding. Arithmetic, owned values, and loops use the
 same native body representation; there is no whole-function coverage switch.
 
-```sh
+```console
 cargo run --bin click -- import lock examples/rust-move-drop/guard.click
 cargo run --bin click -- verify examples/rust-move-drop/guard.click
 cargo run --bin click -- import lock examples/rust-field-borrow/guard.click

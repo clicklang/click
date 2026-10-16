@@ -103,7 +103,7 @@ not part of ordinary `scripts/check.sh`.
 Audit all examples and mdtests, continuing long enough to collect independent
 failures:
 
-```sh
+```console
 click audit --keep-going .
 ```
 

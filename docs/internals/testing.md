@@ -71,14 +71,14 @@ proof-fixture suites and cannot establish a green tree.
 
 Run the full suite with:
 
-```sh
+```console
 scripts/check.sh
 ```
 
 For a change limited to prose or documentation metadata, use the focused
 documentation gate:
 
-```sh
+```console
 scripts/check.sh --docs-only
 ```
 
@@ -100,7 +100,7 @@ into `target/click-docs/`; after a plain `scripts/mdbook-build.sh`, run
 
 Run the markdown proof fixtures with:
 
-```sh
+```console
 cargo test --test mdtests
 ```
 
@@ -111,7 +111,7 @@ pass a fixture.
 
 Run the larger example-project verifier with:
 
-```sh
+```console
 cargo test --test examples
 ```
 
@@ -471,7 +471,7 @@ only by the full gate. The setup script installs the Rust toolchain pinned in
 the pinned LLVM development packages. `scripts/check.sh` only looks tools up
 and never reaches the network. Then run:
 
-```sh
+```console
 cargo nextest run
 ```
 
@@ -554,9 +554,9 @@ deadline, so a proof could pass on an idle machine and fail under load:
 `click audit examples/arena` failed at `arena_pipeline.contract` tactic 113
 after 2.002 s against the smart limit.
 
-Budgets are measured with one command:
+Measure budgets with this command; `REPORT_DIR` is optional:
 
-```sh
+```text
 scripts/measure-tactic-work.sh [REPORT_DIR]
 ```
 
@@ -564,7 +564,7 @@ It runs the mdtest and example harnesses with
 `CLICK_DISABLE_TACTIC_BUDGETS=1`, so no cost is clipped (the harnesses' own
 pinned budgets step aside too), and with `CLICK_TACTIC_WORK_REPORT` set, so
 each fixture records in process the work every tactic charged and writes it
-to REPORT_DIR (default: a fresh directory under `target/tactic-work/`). It
+to `REPORT_DIR` (default: a fresh directory under `target/tactic-work/`). It
 prints, per class and per corpus, the count, p50, p95, p99, second-largest,
 and maximum, and the ten heaviest tactics of each class with their source
 locations. Each fixture also records its whole verification as one `run`
@@ -664,7 +664,7 @@ is needed because a path inside an inline module is resolved through
 directories that need not exist. Every scaling test's path therefore contains
 `scaling_tests`, and one filter runs the whole set:
 
-```sh
+```console
 cargo nextest run --lib -E 'test(/scaling_tests/)'
 ```
 
@@ -1032,7 +1032,7 @@ that a reader can understand the proof boundary.
 `click verify` is the plain verification command the expansion workflow ends
 with. It takes either a sidecar or a directory:
 
-```sh
+```console
 click verify examples/input-cursor/input_cursor.click
 click verify examples/input-cursor
 click verify examples
@@ -1065,7 +1065,7 @@ verdict about the proof.
 
 That makes the expansion loop runnable end to end:
 
-```sh
+```console
 click verify path/to/file.click
 click expand --in-place path/to/file.click:LINE:COLUMN
 click verify path/to/file.click
@@ -1074,7 +1074,7 @@ click verify path/to/file.click
 When profiling attributes aggregate cost to a claim containing many individually
 small smart tactics, expand the complete claim in one checked operation:
 
-```sh
+```console
 click expand --claim function.contract --in-place path/to/file.click
 ```
 
@@ -1098,7 +1098,7 @@ then restore successful verification before expanding anything.
 Use `click profile` to find slow proof steps without letting one project run
 indefinitely:
 
-```sh
+```console
 click profile examples
 click profile mdtests/bubble_sort3_two_pass_sorted.md
 click profile mdtests
@@ -1193,7 +1193,7 @@ and nowhere by time. Read that table before adding ad hoc instrumentation.
 question is where the verifier's own wall-clock time goes, which functions
 rather than which tactics, record a sampling profile with samply:
 
-```sh
+```console
 scripts/profile-samply.sh examples/binary-tree
 ```
 
@@ -1213,7 +1213,7 @@ interrupted or dirty verification cannot attest a baseline.
 
 Use the attested commit as a semantic comparison point:
 
-```sh
+```console
 click verify --changed-since HEAD~1 --explain examples/my-project
 click verify --changed-since HEAD~1 examples/my-project
 ```
@@ -1248,7 +1248,7 @@ label.
 Use `click audit` for a slow, exhaustive check of the source-expansion
 boundary:
 
-```sh
+```console
 click audit examples
 click audit mdtests
 click audit .
@@ -1418,7 +1418,7 @@ By default the audit stops at the first session, expansion, verification,
 fixed-point, work-budget, or performance failure and prints a copy-pasteable
 continuation command carrying every current limit:
 
-```sh
+```console
 click audit --session-work-limit 100000000 --expansion-work-limit 50000000 \
   --verification-work-limit 50000000 --performance-slack 10000 \
   --session-time-limit 10m --expansion-time-limit 10m \
@@ -1474,7 +1474,7 @@ list because it needs a release artifact explicitly; its ignored test fails
 when `CLICK_RUST_FRONTEND_ARCHIVE` is absent rather than substituting debug
 binaries. Run it locally with the pinned compiler installed:
 
-```sh
+```console
 scripts/build-charon.sh --release
 source scripts/charon-toolchain.sh
 scripts/package-rust-frontend-archive.sh target/rust-release target/charon/release "$CHARON_SYSROOT"

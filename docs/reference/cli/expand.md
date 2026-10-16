@@ -226,19 +226,19 @@ region into a contracted helper, or prove part of it in a `have`.
 
 Write one expansion to standard output:
 
-```sh
+```console
 click expand path/to/file.click:LINE:COLUMN
 ```
 
 Select the only smart tactic on a line:
 
-```sh
+```console
 click expand path/to/file.click:LINE
 ```
 
 Expand one claim into a review file:
 
-```sh
+```console
 click expand --claim function.contract \
     --output /tmp/expanded.click path/to/file.click
 ```
