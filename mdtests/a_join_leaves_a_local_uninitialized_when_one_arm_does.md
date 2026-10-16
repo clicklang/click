@@ -26,7 +26,7 @@ int32 maybe(int32 x) {
     ensures result == 1 or result != 1;
 } by {
     step();
-    branch then {
+    branch {
         step();
     } else {
     }

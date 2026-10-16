@@ -41,9 +41,9 @@ int32 run(void* p, void* q) {
     step();
     step();
     step();
-    branch then { have count(ticket(p)) == 2; step(); simp(); } else {}
+    branch { have count(ticket(p)) == 2; step(); simp(); } else {}
     step();
-    branch then {
+    branch {
         step();
         have count(ticket(p)) == 0;
         have count(ticket(q)) == 1;

@@ -139,3 +139,41 @@ fn canonical_using_calls_wrap_long_premises_and_keep_their_terminator() {
     );
     verify_click_theorems(&rewritten).unwrap();
 }
+
+#[test]
+fn binary_splits_require_then_exactly_when_they_have_an_interface() {
+    let source = |body: &str| {
+        format!("verifying \"split.c\"; int32 split(int32 x) {{ ensures true by {{ {body} }} }}")
+    };
+    for head in ["if x == 0", "branch"] {
+        for interface in ["", "ensuring { fact x == x; } then "] {
+            let written = source(&format!(
+                "{head} {interface}{{ assumption(); }} else {{ assumption(); }}"
+            ));
+            let parsed = parser::parse(&written).unwrap();
+            let proof = parsed.function_blocks()[0].ensures()[0].proof();
+            let printed =
+                super::super::printing::format_partial_tactic_sequence(proof.tactics().unwrap());
+            assert_eq!(
+                printed.contains("then {"),
+                !interface.is_empty(),
+                "{printed}"
+            );
+            let reparsed = parser::parse(&source(&printed)).unwrap();
+            assert_eq!(proof, reparsed.function_blocks()[0].ensures()[0].proof());
+        }
+        let error = parser::parse(&source(&format!(
+            "{head} then {{ assumption(); }} else {{ assumption(); }}"
+        )))
+        .unwrap_err();
+        assert!(
+            error.message().contains("requires an `ensuring` interface"),
+            "{error:?}"
+        );
+        let error = parser::parse(&source(&format!(
+            "{head} ensuring {{ fact x == x; }} {{ assumption(); }} else {{ assumption(); }}"
+        )))
+        .unwrap_err();
+        assert!(error.message().contains("then"), "{error:?}");
+    }
+}

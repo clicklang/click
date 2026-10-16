@@ -173,22 +173,14 @@ int32 arena_init(struct arena* arena, int32 capacity) {
     step();
     step();
     step();
-    branch then {
+    branch {
         step();
         let outcome = fold(arena_init_outcome(arena), {
             model: ArenaInitOutcome::Failure
         });
         simp();
     } else {}
-    branch then {
-        step();
-        let outcome = fold(arena_init_outcome(arena), {
-            model: ArenaInitOutcome::Failure
-        });
-        simp();
-    } else {}
-    step();
-    branch then {
+    branch {
         step();
         let outcome = fold(arena_init_outcome(arena), {
             model: ArenaInitOutcome::Failure
@@ -196,7 +188,15 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         simp();
     } else {}
     step();
-    branch then {
+    branch {
+        step();
+        let outcome = fold(arena_init_outcome(arena), {
+            model: ArenaInitOutcome::Failure
+        });
+        simp();
+    } else {}
+    step();
+    branch {
         step();
         step();
         let outcome = fold(arena_init_outcome(arena), {
@@ -400,7 +400,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
     step();
     step();
     step();
-    branch then {
+    branch {
         step();
         let st = fold(arena_state(arena), { live: n, capacity: arena->capacity });
         let outcome = fold(arena_alloc_result(region), {
@@ -506,7 +506,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         assumption();
         assumption();
     } else {}
-    branch then {
+    branch {
         step();
         let st = fold(arena_state(arena), { live: n, capacity: arena->capacity });
         let outcome = fold(arena_alloc_result(region), {
@@ -695,7 +695,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         run_length < count;
                     };
                 }
-                branch then {
+                branch {
                     step();
                 } else {
                     contradiction(not (arena->occupied[i] == 0));
@@ -840,7 +840,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     both { simp(); } and { simp(); }
                 }
             } else {
-                branch then {
+                branch {
                     contradiction(arena->occupied[i] == 0);
                 } else {
                     step();
@@ -944,7 +944,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         assumption();
     }
     mark scanned;
-    branch then {
+    branch {
         fold(arena_cells(arena->data, arena->occupied, arena->capacity));
         step();
         let st = fold(arena_state(arena), { live: n, capacity: arena->capacity });
@@ -2588,7 +2588,7 @@ int32 arena_pipeline(
     step();
     step();
     let { outcome: o0 } = step(arena_init(arena, 8), {});
-    branch then {
+    branch {
         have o0.model == ArenaInitOutcome::Failure by {
             simp();
         }
@@ -2632,7 +2632,7 @@ int32 arena_pipeline(
     have arena->capacity == at(a1, arena->capacity) by {
         simp();
     }
-    branch then {
+    branch {
         have o1.model == ArenaAllocOutcome::Failure by {
             simp();
         }
@@ -2769,7 +2769,7 @@ int32 arena_pipeline(
     have arena->capacity == at(a2, arena->capacity) by {
         simp();
     }
-    branch then {
+    branch {
         have o2.model == ArenaAllocOutcome::Failure by {
             simp();
         }
@@ -4231,7 +4231,7 @@ int32 arena_pipeline(
     have arena->capacity == at(a3, arena->capacity) by {
         assumption();
     }
-    branch then {
+    branch {
         have o3.model == ArenaAllocOutcome::Failure by {
             simp();
         }

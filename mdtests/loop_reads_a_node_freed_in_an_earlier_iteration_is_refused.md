@@ -98,7 +98,7 @@ void release(struct node* p) {
                     }
                     step();
                     step();
-                    branch then {
+                    branch {
                         step();
                     } else {}
                     step();

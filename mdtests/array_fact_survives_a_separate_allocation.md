@@ -42,7 +42,7 @@ int32 scratch(int32 a[], int32 n) {
     }
     step();
     step();
-    branch then {
+    branch {
         execute();
         simp();
     } else {

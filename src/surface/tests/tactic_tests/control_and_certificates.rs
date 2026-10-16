@@ -54,7 +54,7 @@ fn both_and_outcome_expands_and_rechecks() {
 fn parses_frontier_branch_tactic() {
     let source = FILL3_CLICK.replace(
         "by auto();",
-        "by { branch then { step(); } else { execute(); } }",
+        "by { branch { step(); } else { execute(); } }",
     );
     let file = parse(&source).expect("frontier branch tactic should parse");
     let tactics = file.function_blocks()[0].ensures()[0]
@@ -120,7 +120,7 @@ fn linear_frontier_branch_uses_the_checked_structural_join() {
             requires selected(x);
             ensures returns_one: result == 1;
         } by {
-            branch then {
+            branch {
                 unfold(selected);
                 step();
             } else {
@@ -179,7 +179,7 @@ fn terminal_frontier_branch_seals_without_a_body_rerun() {
         int32 choose_sign(int32 x) {
             ensures result == 1 or result == 2;
         } by {
-            branch then { step(); } else { step(); }
+            branch { step(); } else { step(); }
             simp();
         }
     "#;
@@ -217,8 +217,8 @@ fn successive_shared_continuation_branches_seal_without_path_multiplication() {
         int32 two_branches(int32 x, int32 y) {
             ensures result == x;
         } by {
-            branch then {} else {}
-            branch then {} else {}
+            branch {} else {}
+            branch {} else {}
             step();
             simp();
         }
@@ -256,7 +256,7 @@ fn decided_frontier_branch_retains_the_only_feasible_checked_arm() {
         int32 constant_negative(int32 x) {
             requires x < 0;
             ensures returns_one: result == 1 by {
-                branch then { step(); } else { step(); }
+                branch { step(); } else { step(); }
                 step();
                 simp();
             }

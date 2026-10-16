@@ -79,7 +79,7 @@ int cell_same(struct cell* p, struct cell* q) {
             unfold(c);
             have p == identity;
             have p->value == value;
-            branch then {
+            branch {
                 step();
                 let c = fold(cell_at(p), { model: old(c.model) });
                 have address(identity) == address(q) by { rewrite(identity == p); normalize() using { address(p) == address(q); }; }

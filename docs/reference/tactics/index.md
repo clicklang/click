@@ -30,7 +30,7 @@ remains supported.
   See [Execution](#execution).
 - `step()`: run one C statement, to put proof steps between statements. See
   [Execution](#execution).
-- `branch ... then { ... } else { ... }`: prove each arm of the C `if` at the
+- `branch { ... } else { ... }`: prove each arm of the C `if` at the
   frontier. See [Execution](#execution).
 - `loop { ... }` with `close_invariants()`: prove a C loop from its
   invariants, closing them at the back edge. See [Execution](#execution) and
@@ -204,7 +204,7 @@ the one execution transition that fails.
 | `let { result: name } = step()` | simple | Specialized | Bind the checked value of a scalar assignment. | [Reference](#binding-a-statement-result) |
 | `execute()` | smart | Core | Execute through the function and split undecided paths. | [Reference](#execution-to-function-exit) |
 | `execute_until(statement(N))` | smart | Specialized | Execute up to a selected source point. | [Reference](#execution-to-a-program-point) |
-| `branch [ensuring { ... }] then { ... } else { ... }` | control | Core | Prove and join the arms of source control flow. | [Reference](#source-branches) |
+| `branch [ensuring { ... } then] { ... } else { ... }` | control | Core | Prove and join the arms of source control flow. | [Reference](#source-branches) |
 | `loop [as name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
 | `step(Contract)` | simple | Specialized | Select a named contract for a call. | [Reference](#calls-through-named-contracts) |
 | `step(callee(...), { binder: instance })` | simple | Specialized | Map resource instances and bind call outputs. | [Reference](#calls-with-resource-bindings) |
@@ -349,7 +349,12 @@ site.
 
 ### Source branches
 
-**Form:** `branch [ensuring { ... }] then { ... } else { ... }`
+**Form:** `branch [ensuring { ... } then] { ... } else { ... }`
+
+A plain `branch` starts its first arm directly with `{`. With an `ensuring`
+interface, `then` separates that interface from the first arm. The same rule
+applies to a proof `if`; `then` is required with the interface and refused
+without it.
 
 **Core.** At a C `if` frontier, prove every feasible arm and join nonreturning
 arms into one continuation. Arms that end in one state join as they are. Arms

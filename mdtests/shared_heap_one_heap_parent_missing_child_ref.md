@@ -166,7 +166,7 @@ int32 caller(struct child* kid) {
 } by {
     step();
     step();
-    branch then {
+    branch {
         step(child_release(kid), {});
         step();
         simp();

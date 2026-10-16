@@ -8354,8 +8354,7 @@ impl Parser {
             })));
         }
         if name == "branch" {
-            let ensuring = self.parse_optional_join_interface()?;
-            self.expect_ident_spelling("then")?;
+            let ensuring = self.parse_binary_join_interface()?;
             let then_tactics = self.parse_possibly_empty_tactic_block()?;
             self.expect_ident_spelling("else")?;
             let else_tactics = self.parse_possibly_empty_tactic_block()?;
@@ -9027,6 +9026,19 @@ impl Parser {
         Ok(tactic)
     }
 
+    /// Binary proof splits use `then` exactly when an interface precedes the arms.
+    fn parse_binary_join_interface(&mut self) -> Result<Option<Vec<ProofAssertion>>, ClickError> {
+        let ensuring = self.parse_optional_join_interface()?;
+        if ensuring.is_some() {
+            self.expect_ident_spelling("then")?;
+        } else if self.peek_ident() == Some("then") {
+            return Err(
+                self.error("`then` requires an `ensuring` interface; start the arm with `{`")
+            );
+        }
+        Ok(ensuring)
+    }
+
     /// An optional `ensuring { fact ...; owns ...; views ...; }` block: what
     /// the state after a join keeps when its arms end in different states.
     fn parse_optional_join_interface(&mut self) -> Result<Option<Vec<ProofAssertion>>, ClickError> {
@@ -9139,10 +9151,7 @@ impl Parser {
         let result = (|| {
             loop {
                 let condition = self.parse_proposition()?;
-                let ensuring = self.parse_optional_join_interface()?;
-                if ensuring.is_some() {
-                    self.expect_ident_spelling("then")?;
-                }
+                let ensuring = self.parse_binary_join_interface()?;
                 let then_tactics = self.parse_possibly_empty_tactic_block()?;
                 self.expect_ident_spelling("else")?;
                 self.expect(Token::LBrace)?;

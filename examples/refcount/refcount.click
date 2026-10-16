@@ -103,7 +103,7 @@ int32 refcount_pipeline(int32 amount) {
     have defined(1 + amount) by auto();
     step();
     step();
-    branch then {
+    branch {
         step();
         simp();
     } else {}

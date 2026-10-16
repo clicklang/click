@@ -69,7 +69,7 @@ int32 uses_exit_disjunction(int32 a, int32* p) {
             }
         }
     }
-    branch then {
+    branch {
         have p[0] == 0 by {
             cases {
                 a == 0 => {

@@ -3130,7 +3130,7 @@ fn failed_invariant_closure_trace_keeps_its_branch_guard() {
                 invariant len == 16u64;
                 initialize by assumption();
                 preserve by {
-                    branch then {
+                    branch {
                         step();
                         have len == 0u64 by simp();
                         close_invariants() by assumption();

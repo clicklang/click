@@ -86,7 +86,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         0 <= k and k < n implies 0 <= old(right[k]) and old(right[k]) < n
     } by { assumption(); }
 
-    branch then {
+    branch {
         have (forall (k: int32) { 0 <= k and k < n implies old(visited[k]) == 0 }) implies forall (path: Path) { walk(old(left), old(right), cur, path) != to } by {
             intro();
             instantiate(forall (k: int32) { 0 <= k and k < n implies old(visited[k]) == 0 }, cur);
@@ -105,7 +105,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         step();
         simp();
     } else {}
-    branch then {
+    branch {
         have exists (path: Path) { walk(old(left), old(right), cur, path) == to } by {
             witness { path: Path::Here };
             unfold(walk(old(left), old(right), cur, Path::Here));
@@ -194,7 +194,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
                 == old(unmarked(visited, 0, n));
         };
     }
-    branch then {
+    branch {
         have exists (path: Path) {
             walk(at(after_mark, left), at(after_mark, right), at(after_mark, left[cur]), path) == to
         } by { simp(); }

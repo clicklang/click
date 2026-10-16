@@ -542,7 +542,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 write_join_interface(output, assertions, indent + 1);
                 line(output, &prefix, "} then {");
             } else {
-                line(output, &prefix, "branch then {");
+                line(output, &prefix, "branch {");
             }
             write_tactics(output, &proof_branch.then_tactics, indent + 1);
             line(output, &prefix, "} else {");

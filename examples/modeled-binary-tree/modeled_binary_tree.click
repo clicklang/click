@@ -452,8 +452,8 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
         },
         HeapTree::Node(node, value, left_model, right_model) => {
             let { left: l, right: r } = unfold(t);
-            branch then { step(); simp(); } else {}
-            branch then {
+            branch { step(); simp(); } else {}
+            branch {
                 step();
                 let t = fold(tree_at(root), { model: old(t.model) }, { left: l, right: r });
                 have address(node) == address(target) by auto();
@@ -464,7 +464,7 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
                 normalize() using { address(root) != address(target); };
             }
             let { result: found_left } = step(tree_contains(root->left, target), { t: l });
-            branch then {
+            branch {
                 step();
                 have heap_member(left_model, target) by {
                     have left_model == l.model by {

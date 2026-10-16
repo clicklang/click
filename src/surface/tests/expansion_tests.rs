@@ -441,7 +441,7 @@ fn selected_tactic_batch_removes_all_sites_in_a_dropped_arm() {
         "flag.c",
         "int32 flag(int32 x) { if (x > 0) { return 1; } return 0; }",
     )];
-    let source = "verifying \"flag.c\"; int32 flag(int32 x) { requires x <= 0; ensures result == 0; } by { branch then { step(); simp(); simp(); } else {} step(); simp(); }";
+    let source = "verifying \"flag.c\"; int32 flag(int32 x) { requires x <= 0; ensures result == 0; } by { branch { step(); simp(); simp(); } else {} step(); simp(); }";
     verify_c0_sources(source, &c).unwrap();
     let sites = c0_smart_tactic_source_sites(source, &c).unwrap();
     let positions = sites[..2]
@@ -2924,11 +2924,11 @@ int32 early(int32 x) {
     requires x != 0;
     ensures result == 0 or result == 1;
 } by {
-    branch then {
+    branch {
         step();
         simp();
     } else {}
-    branch then {
+    branch {
         step();
         simp();
     } else {}
@@ -5517,7 +5517,7 @@ fn smart_tactic_in_an_infeasible_branch_arm_expands_by_removal() {
                 requires x <= 0;
                 ensures result == 0;
             } by {
-                branch then { step(); simp(); } else {}
+                branch { step(); simp(); } else {}
                 step();
                 simp();
             }
@@ -5544,7 +5544,7 @@ fn smart_tactic_in_an_infeasible_branch_arm_expands_by_removal() {
     let expanded = expand_c0_tactic_source_at(click_source, &sources, line, column)
         .expect("a smart tactic on a dropped C path should expand");
     assert!(!expanded.contains("step(); simp();"), "{expanded}");
-    assert!(expanded.contains("then { step();"), "{expanded}");
+    assert!(expanded.contains("branch { step();"), "{expanded}");
     verify_c0_sources(&expanded, &sources)
         .expect("removing the dropped arm's closer should still verify");
 }
@@ -5764,7 +5764,7 @@ fn source_expander_rewrites_a_have_body_tactic_in_a_branch_arm() {
         } by {\n\
         \x20   step();\n\
         \x20   step();\n\
-        \x20   branch then {\n\
+        \x20   branch {\n\
         \x20       have c != 0 by {\n\
         \x20           have c == c by simp();\n\
         \x20           simp();\n\
@@ -10004,7 +10004,7 @@ fn execution_branch_arm_terminal_proof_if_stays_on_one_proof() {
         int32 choose_x_or_zero(int32 x, int32 flag) {
             ensures result == x or result == 0;
         } by {
-            branch then {
+            branch {
                 if x >= 0 {
                     execute();
                     simp();
@@ -10974,7 +10974,7 @@ fn explicit_branch_arms_retain_terminal_execute_search() {
         int32 choose_one_or_two(int32 flag) {
             ensures result == 1 or result == 2;
         } by {
-            branch then {
+            branch {
                 execute();
             } else {
                 execute();
@@ -11500,7 +11500,7 @@ fn open_scope_retains_its_checked_execution_branch() {
             ensures result == x;
         } by {
             open(marker(x)) {
-                branch then {
+                branch {
                 } else {
                 }
                 step();
@@ -11567,7 +11567,7 @@ fn open_scope_retains_a_decided_execution_branch_and_its_continuation() {
             ensures result == 1;
         } by {
             open(marker(x)) {
-                branch then { step(); } else { step(); }
+                branch { step(); } else { step(); }
                 step();
             }
             simp();
@@ -17121,8 +17121,8 @@ fn whole_claim_expansion_routes_return_closers_only_to_checked_branches() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    let tail = "branch then { step(); simp(); } else {}\n    step(); simp();";
-    let original_branch = "branch then { step(); simp(); } else { step(); simp(); }";
+    let tail = "branch { step(); simp(); } else {}\n    step(); simp();";
+    let original_branch = "branch { step(); simp(); } else { step(); simp(); }";
     for (case, source) in [
         ("then only", original.clone()),
         (
@@ -17185,8 +17185,8 @@ int32 f(int32 n) {
     requires n == 5;
     ensures result == 5;
 } by {
-    branch then {
-        branch then { step(); simp(); } else { step(); simp(); }
+    branch {
+        branch { step(); simp(); } else { step(); simp(); }
     } else { step(); simp(); }
 }
 "#;
@@ -18540,5 +18540,41 @@ fn repeated_retains_expand_with_checked_count_bounds() {
         let expanded = expand_c0_tactic_source_at(source, &sources, position.line, position.column)
             .expect("each retained call's implicit proof should expand");
         verify_c0_sources(&expanded, &sources).expect("the selected call expansion rechecks");
+    }
+}
+
+#[test]
+fn branch_arm_source_selection_and_batch_expansion_follow_the_interface_rule() {
+    let c = [(
+        "split.c",
+        "int32 split(int32 x) { if (x > 0) { x = 1; } else { x = 2; } return 0; }",
+    )];
+    for head in ["branch", "branch ensuring { fact x >= 1; } then"] {
+        let source = format!(
+            "verifying \"split.c\";
+            int32 split(int32 x) {{ ensures result == 0; }} by {{
+                {head} {{
+                    step();
+                    have x >= 1 by {{ simp(); }}
+                }} else {{
+                    step();
+                    have x >= 1 by {{ simp(); }}
+                }}
+                step();
+                simp();
+            }}"
+        );
+        verify_c0_sources(&source, &c).unwrap();
+        let positions = source
+            .match_indices("simp();")
+            .map(|(offset, _)| expansion::position_at_offset(&source, offset))
+            .collect::<Vec<_>>();
+        for position in &positions {
+            let expanded =
+                expand_c0_tactic_source_at(&source, &c, position.line, position.column).unwrap();
+            verify_c0_sources(&expanded, &c).unwrap();
+        }
+        let batch = expand_c0_tactics_source_at(&source, &c, &positions).unwrap();
+        verify_c0_sources(&batch.source, &c).unwrap();
     }
 }

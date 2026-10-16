@@ -38,7 +38,7 @@ int32 drain(int32 n) {
     ensures result == 0;
 } by {
     step();
-    branch then {
+    branch {
         have 0 <= level(n - 1) by {
             unfold(level(n - 1));
             apply(int32_positive_predecessor_is_nonnegative(n)) using {

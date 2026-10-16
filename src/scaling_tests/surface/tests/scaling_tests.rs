@@ -4051,7 +4051,7 @@ fn branching_grouped_claim_project(claim_count: usize) -> (String, String) {
         click_source.push_str("    ensures result == a;\n");
     }
     click_source.push_str(
-        "} by {\n    step();\n    branch then {\n            execute();\n            simp();\n        } else {}\n    step();\n    have x == a by {\n        simp();\n    }\n    execute();\n    simp();\n}\n",
+        "} by {\n    step();\n    branch {\n            execute();\n            simp();\n        } else {}\n    step();\n    have x == a by {\n        simp();\n    }\n    execute();\n    simp();\n}\n",
     );
     (c_source, click_source)
 }
@@ -8531,7 +8531,7 @@ fn proof_if_split_ignores_earlier_unrelated_facts() {
             "verifying \"split.c\";\n\n\
              int32 count_once(int32 flag) {{\n    ensures result == 1;\n}} by {{\n    \
              step();\n    step();\n    loop {{\n        decreases 1 - i;\n        invariant i >= 0;\n        \
-             invariant i <= 1;\n        initialize by simp;\n        preserve by {{\n            \
+             invariant i <= 1;\n        initialize by simp();\n        preserve by {{\n            \
              step();\n{haves}{close}        }}\n    }}\n    step();\n    simp();\n}}\n"
         );
         let c_source = "int32 count_once(int32 flag) {\n    int32 i;\n    i = 0;\n    \

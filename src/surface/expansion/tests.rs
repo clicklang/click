@@ -344,11 +344,11 @@ fn tactic_line_disambiguation_uses_columns_only_for_shared_lines() {
 
 #[test]
 fn trace_target_selects_only_the_arm_containing_its_source_position() {
-    let source = "by {\n  branch then { step(); } else { step(); }\n  step();\n}\n";
+    let source = "by {\n  branch { step(); } else { step(); }\n  step();\n}\n";
     let branch = position_at_offset(source, source.find("branch").unwrap());
     let then_step = position_at_offset(
         source,
-        source.find("then { step").unwrap() + "then { ".len(),
+        source.find("branch { step").unwrap() + "branch { ".len(),
     );
     let else_step = position_at_offset(
         source,
@@ -1070,7 +1070,7 @@ verifying "same.c";
 int32 same_after_branch(int32 x, int32 flag) {
     ensures result == x by {
         step();
-        branch then { step(); } else { step(); }
+        branch { step(); } else { step(); }
         step();
         simp();
     }
@@ -1110,7 +1110,7 @@ verifying "returning.c";
 
 int32 clamp_nonnegative(int32 x) {
     ensures result >= 0 by {
-        branch then {
+        branch {
             step();
             simp();
         } else {}

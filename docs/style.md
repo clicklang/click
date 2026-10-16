@@ -74,7 +74,9 @@ For a one-tactic proof, use `by T(args);`, such as `by simp();` or
 `by assumption();`. Braces are optional around that single tactic. Use
 `by { ... }` for a sequence of tactics. Call-style tactics always take
 parentheses, including `simp()` and `auto()`. Structural forms such as `if`,
-`match`, and `have` retain their own grammar. Call modifiers follow the
+`match`, and `have` retain their own grammar. For binary proof splits
+(`if` and `branch`), write `then` exactly when an `ensuring` interface precedes
+the arms. Call modifiers follow the
 parenthesized head, as in `close_invariants() by { ... }`.
 
 End call statements with `;`, including calls with a `using { ... };` list.

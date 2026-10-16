@@ -12404,7 +12404,7 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
     let click_file = crate::surface::parse(
         r#"int32 caller(bool construct, bool should_throw) {
             ensures result == result by {
-                branch then {
+                branch {
                     outcomes {
                         returned => { step(); }
                         threw => { step(); execute(); }

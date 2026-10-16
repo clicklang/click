@@ -1074,7 +1074,7 @@ its condition as a logical case split:
 
 <!-- verified-example: mdtests/proof_branch_old_state_interface.md -->
 ```click
-branch then {
+branch {
     step();
 } else {
     step();

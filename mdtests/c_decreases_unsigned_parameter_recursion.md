@@ -24,7 +24,7 @@ uint32 gcd(uint32 a, uint32 b) {
     decreases b;
     ensures result >= 0u32;
 } by {
-    branch then {
+    branch {
         step();
         simp();
     } else {}

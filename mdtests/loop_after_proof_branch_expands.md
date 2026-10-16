@@ -39,7 +39,7 @@ int32 count_after_guard(int32 n) {
     ensures result >= 0;
 } by {
     step();
-    branch then {
+    branch {
         step();
         simp();
     } else {}

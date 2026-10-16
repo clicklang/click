@@ -97,25 +97,25 @@ void arena_write(struct region* region, int32 index, int32 value) {
     have defined(s + index) by {
         simp() using {
             defined(s + index) and s + index < e;
-        }
+        };
     }
     have s + index < e by {
         simp() using {
             defined(s + index) and s + index < e;
-        }
+        };
     }
     have s <= s + index by {
         apply(int32_add_nonnegative_right_is_at_least_left(s, index)) using {
             0 <= index;
             defined(s + index);
-        }
+        };
     }
     have s + index + 1 <= e by {
         apply(int32_increment_upper_bound(s + index, e)) using {
             s + index < e;
-        }
+        };
     }
-    have region->start == s by auto;
+    have region->start == s by auto();
     have region->start + index + 1 <= e by {
         rewrite(region->start == s);
         assumption();
@@ -125,13 +125,13 @@ void arena_write(struct region* region, int32 index, int32 value) {
         apply(int32_less_equal_transitive(0, s, s + index)) using {
             0 <= s;
             s <= s + index;
-        }
+        };
     }
     have region->arena->capacity == c by {
         simp();
     }
-    have region->start + index < region->arena->capacity by auto;
-    have separate(memory(*region), memory(region->arena->data[s..e])) by auto;
+    have region->start + index < region->arena->capacity by auto();
+    have separate(memory(*region), memory(region->arena->data[s..e])) by auto();
     mark w;
     execute();
     transport(
@@ -141,14 +141,14 @@ void arena_write(struct region* region, int32 index, int32 value) {
         at(w, separate(memory(*region), memory(region->arena->data[s..e])));
         s <= s + index;
         s + index + 1 <= e;
-    }
+    };
     let r = fold(arena_region(region), { start: s, end: e });
     transport(old(region->arena->data) == old(region->arena->data),
-        region->arena->data == old(region->arena->data)) using { }
+        region->arena->data == old(region->arena->data)) using { };
     transport(old(region->arena->occupied) == old(region->arena->occupied),
-        region->arena->occupied == old(region->arena->occupied)) using { }
+        region->arena->occupied == old(region->arena->occupied)) using { };
     transport(old(region->arena->capacity) == old(region->arena->capacity),
-        region->arena->capacity == old(region->arena->capacity)) using { }
+        region->arena->capacity == old(region->arena->capacity)) using { };
     have separate(memory(region->arena->occupied[0..region->arena->capacity]), memory(region->arena->data[0..region->arena->capacity])) by {
         rewrite(region->arena->data == old(region->arena->data));
         rewrite(region->arena->occupied == old(region->arena->occupied));

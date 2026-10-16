@@ -39,13 +39,13 @@ int32 run(void* p, void* q) {
     step();
     step();
     step();
-    branch then {
+    branch {
         have count(ticket(p)) == 1;
         unfold(ticket(p));
         step(); simp();
     } else {}
     step();
-    branch then {
+    branch {
         step();
         unfold(ticket(p));
         have count(ticket(q)) == 1;

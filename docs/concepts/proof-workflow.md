@@ -228,7 +228,7 @@ When the execution frontier is a C `if`, use `branch`:
 
 <!-- verified-example: mdtests/step_proof_case_condition.md -->
 ```click
-branch then {
+branch {
     step(); // Execute the first statement in the C then arm.
 } else {
     step(); // Execute the first statement in the C else arm.

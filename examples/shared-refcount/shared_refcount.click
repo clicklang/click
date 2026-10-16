@@ -92,7 +92,7 @@ int32 run() {
     step();
     step();
     step();
-    branch then { step(); simp(); } else {}
+    branch { step(); simp(); } else {}
     step();
     fold(authority(reference(obj)));
     fold(authority(permit(obj)));
@@ -103,7 +103,7 @@ int32 run() {
     let { lifetime: lifetime } = step(pthread_mutex_init(&obj->mu, 0), { state: control });
     step(object_retain(obj), { access: lifetime });
     step();
-    branch then {
+    branch {
         step(object_release(obj), { access: lifetime });
         step(object_release(obj), { access: lifetime });
         step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
@@ -119,7 +119,7 @@ int32 run() {
     } else {}
     step(object_retain(obj), { access: lifetime });
     step();
-    branch then {
+    branch {
         step(object_release(obj), { access: lifetime });
         step();
         step(object_release(obj), { access: lifetime });
@@ -156,7 +156,7 @@ int32 run_reverse_join() {
     step();
     step();
     step();
-    branch then { step(); simp(); } else {}
+    branch { step(); simp(); } else {}
     step();
     fold(authority(reference(obj)));
     fold(authority(permit(obj)));
@@ -167,7 +167,7 @@ int32 run_reverse_join() {
     let { lifetime: lifetime } = step(pthread_mutex_init(&obj->mu, 0), { state: control });
     step(object_retain(obj), { access: lifetime });
     step();
-    branch then {
+    branch {
         step(object_release(obj), { access: lifetime });
         step(object_release(obj), { access: lifetime });
         step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
@@ -183,7 +183,7 @@ int32 run_reverse_join() {
     } else {}
     step(object_retain(obj), { access: lifetime });
     step();
-    branch then {
+    branch {
         step(object_release(obj), { access: lifetime });
         step();
         step(object_release(obj), { access: lifetime });

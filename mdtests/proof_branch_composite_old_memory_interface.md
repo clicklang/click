@@ -53,7 +53,7 @@ int32 retain_original(struct buffer* owner, int32 flag) {
 } by {
     execute_until(statement(3));
     observe(buffer(owner));
-    branch then {
+    branch {
         step();
     } else {
         step();

@@ -45,7 +45,7 @@ int32 f(int32* p, int32 x) {
 } by {
     match c.m {
         T::A(v) => {
-            branch then {
+            branch {
                 step();
                 simp();
             } else {}

@@ -32,7 +32,7 @@ int32 ack(int32 m, int32 n) {
     requires n >= 0;
     ensures result >= 0;
 } by {
-    branch then {
+    branch {
         step();
         simp();
     } else {}
@@ -52,7 +52,7 @@ int32 ack(int32 m, int32 n) {
             m > 0;
         };
     }
-    branch then {
+    branch {
         step();
         step();
         simp();

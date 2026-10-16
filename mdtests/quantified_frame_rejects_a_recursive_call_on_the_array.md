@@ -21,7 +21,7 @@ void zap(int32 *v, int32 n) {
     owns v[0..n];
     ensures forall (k: int32) { 0 <= k and k < n - 1 implies v[k] == old(v[k]) };
 } by {
-    branch then {
+    branch {
         step();
         simp();
     } else {}

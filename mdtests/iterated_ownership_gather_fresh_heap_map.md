@@ -43,7 +43,7 @@ void with_fresh_map(int32* data, int32 capacity) {
     step();
     step();
     step();
-    branch then {
+    branch {
         execute();
         simp();
     } else {}

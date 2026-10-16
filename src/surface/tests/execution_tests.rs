@@ -1885,7 +1885,7 @@ fn branch_continuation_tactics_are_timed_as_source_operations() {
             ensures result == a;
         } by {
             step();
-            branch then {
+            branch {
                 execute();
                 simp();
             } else {}

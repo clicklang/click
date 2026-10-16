@@ -779,7 +779,7 @@ int32 flag(int32 x) {
     requires x <= 0;
     ensures result == 0;
 } by {
-    branch then { step(); simp(); } else {}
+    branch { step(); simp(); } else {}
     step();
     simp();
 }

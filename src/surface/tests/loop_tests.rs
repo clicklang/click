@@ -2241,7 +2241,7 @@ fn whole_claim_expansion_reconstructs_nested_decided_branch_and_loop_match() {
             }
             match marker() {
                 Marker::Active => {
-                    branch then { step(); } else { step(); }
+                    branch { step(); } else { step(); }
                     loop {
                         decreases 2 - x;
                         invariant x >= 1;
@@ -2571,7 +2571,7 @@ int32 f(int32 n) {
     requires n >= 0;
     ensures result == n or result == 7;
 } by {
-    branch then {
+    branch {
         step(); step();
         loop { decreases n-i; invariant i >= 0; invariant i <= n; }
         step(); have result == n by simp(); simp();

@@ -74,7 +74,7 @@ int32 adopt(struct child* kid) {
 } by {
     step();
     step();
-    branch then {
+    branch {
         step();
         simp();
     } else {}

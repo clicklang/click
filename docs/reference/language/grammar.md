@@ -477,6 +477,12 @@ change the proposition or expression it denotes.
 
 ## Proof syntax
 
+Binary proof splits follow one rule: `then` appears exactly when there is an
+`ensuring` interface. Write `if P { ... } else { ... }` or
+`branch { ... } else { ... }` without an interface, and
+`if P ensuring { ... } then { ... } else { ... }` or
+`branch ensuring { ... } then { ... } else { ... }` with one.
+
 A proof is omitted, written as a single tactic call such as `by auto();` or
 `by simp();`, or written as a `by { ... }` block of tactic statements. Tactic
 arguments use the expression and proposition forms documented for that tactic. The exhaustive surface-spelling inventory is in

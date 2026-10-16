@@ -71,7 +71,7 @@ int32 caller(int32 a[], int32 n) {
     step();
     step();
     step();
-    branch then {
+    branch {
         execute();
         simp();
     } else {

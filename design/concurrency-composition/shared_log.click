@@ -993,7 +993,7 @@ int32 run_two_producers(struct shared_log* log) {
     };
     let state = fold(log_state(log), { cap: before.cap, slack: 2 }, { items: before });
     let { lifetime: lifetime } = step(pthread_mutex_init(&log->mu, 0), { state: state });
-    branch then {
+    branch {
         let { cap: cap1, slack: slack1, items: after } = unfold(state);
         unfold(credit(log));
         unfold(credit(log));
@@ -1001,7 +1001,7 @@ int32 run_two_producers(struct shared_log* log) {
         simp();
     } else {}
     step();
-    branch then {
+    branch {
         step(pthread_mutex_destroy(&log->mu), { lifetime: lifetime });
         let { cap: cap2, slack: slack2, items: after } = unfold(state);
         unfold(credit(log));
@@ -1010,7 +1010,7 @@ int32 run_two_producers(struct shared_log* log) {
         simp();
     } else {}
     step();
-    branch then {
+    branch {
         step();
         step(pthread_mutex_destroy(&log->mu), { lifetime: lifetime });
         let { cap: cap3, slack: slack3, items: after } = unfold(state);

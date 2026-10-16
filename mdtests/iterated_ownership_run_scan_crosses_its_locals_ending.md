@@ -113,7 +113,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                         i < capacity;
                     };
                 }
-                branch then {
+                branch {
                     step();
                 } else {
                     contradiction(not (occupied[i] == 0));
@@ -200,7 +200,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                 }
                 close_invariants();
             } else {
-                branch then {
+                branch {
                     contradiction(occupied[i] == 0);
                 } else {
                     step();

@@ -26,7 +26,7 @@ int32 early_exit(int32 c) {
 } by {
     step();
     step();
-    branch then {
+    branch {
         step();
         simp();
     } else {}

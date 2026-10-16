@@ -2348,7 +2348,7 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
             ensures result == old(value);
             ensures value == old(value);
         } by {
-            branch then {
+            branch {
                 step();
                 step();
                 outcomes {
@@ -5266,11 +5266,11 @@ fn third_sibling_scope_preserves_independent_cleanup_and_frames() {
         .rsplit_once("} by {")
         .unwrap();
     let proof = r#"step(); step();
-    branch then { execute(); simp(); } else { }
+    branch { execute(); simp(); } else { }
     step(); step();
     have value == old(value) by { simp(); }
     step(); step();
-    branch then { execute(); simp(); } else { }
+    branch { execute(); simp(); } else { }
     step(); step();
     have value == old(value) by { simp(); }
     step(); step(); step(); step();

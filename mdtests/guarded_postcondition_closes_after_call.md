@@ -91,7 +91,7 @@ int32 restricted(struct box* b) {
     step();
     mark m;
     step(pick(b), { st: st });
-    branch then {
+    branch {
         have got == 0 by {
             simp();
         }
