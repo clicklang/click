@@ -164,7 +164,7 @@ archived native-entry machinery and is not an independently landed activation;
 its introducing commit still needs attribution.
 
 The next reduced compatibility group is
-[native-span output admission for ordinary C buffers](../bugs/native-span-output-loses-c-carrier.md).
+[native-span output admission for ordinary C buffers](https://github.com/clicklang/click/blob/463c91ae609f6f680b074bdbd36861454ea63471/bugs/native-span-output-loses-c-carrier.md).
 Its producer/caller witness passes all four proof modes on the delivered
 entry-fold tree and fails on both the frozen archive and the conditional-record
 repair checkpoint. Preserve explicit typed validity while repairing automatic

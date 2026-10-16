@@ -14,6 +14,9 @@ The rendered reference also serves `/llms.txt`, which indexes every page with
 a one-line summary, and `/click-reference.md`, the whole "Using Click" part as
 one file.
 
+For short answers about setup, guarantees, supported languages, proof failures,
+and contributions, read the [frequently asked questions](faq.md).
+
 ## Reading order
 
 To verify a function today, read in this order:

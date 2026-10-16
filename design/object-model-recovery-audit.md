@@ -155,7 +155,7 @@ retain strict-native and explicit-validity rejection; two selected C++ member
 domain rejection fixtures pass. These targeted results do not constitute a new
 full example-stage or normal-gate verdict.
 
-The [C buffer output reduction](../bugs/native-span-output-loses-c-carrier.md)
+The [C buffer output reduction](https://github.com/clicklang/click/blob/463c91ae609f6f680b074bdbd36861454ea63471/bugs/native-span-output-loses-c-carrier.md)
 passes fresh, expanded, rewritten and retained checking on the #937 delivery
 and fails on both `e3d84a785` and `132cb424b`. A bounded probe distinguishes the
 entry's unresolved carrier from the designation-free symbolic field observed
