@@ -1765,7 +1765,12 @@ fn canonicalized_symbolic_load_value_with_identity(
         complete_read.designation(),
         assumptions,
     ) {
-        return Some(CValue::Pointer(stored.with_type(value_type)));
+        let stored = stored.with_type(value_type);
+        facts.push(ExecutionPureFact::logical_read_equation(
+            stored.clone(),
+            Pointer::loaded_value(&crate::kernel::intern_c_memory_ref(memory), &address),
+        ));
+        return Some(CValue::Pointer(stored));
     }
     let Some((block, bits, byte_width)) = pointer_value.pointer().as_loaded() else {
         return Some(value);
@@ -5175,11 +5180,12 @@ mod tests {
             .without_possible_aliasing_cells(&Pointer::symbolic(Variable(210_191)), 8, &context);
         assert!(memory.known_value(&field).is_none());
         let read = |memory: &CMemory| {
+            let mut facts = ExecutionFacts::new();
             let CValue::Pointer(value) = canonicalized_symbolic_load_value_with_identity(
                 memory,
                 &field,
                 CType::Int32Pointer,
-                &mut ExecutionFacts::new(),
+                &mut facts,
                 &context,
                 false,
                 None,
@@ -5188,16 +5194,26 @@ mod tests {
             .unwrap() else {
                 panic!("pointer read")
             };
-            value
+            (value, facts)
         };
-        let value = read(&memory);
+        let (value, facts) = read(&memory);
         assert_eq!(value, stored);
         assert_eq!(value.object_class(), Some(class));
+        assert_eq!(facts.len(), 1);
+        assert!(facts[0].is_logical_read_equation());
+        facts[0].retain_pointer_read_definition(&context);
+        let current = CPointerValue::new(
+            Pointer::loaded_value(&crate::kernel::intern_c_memory_ref(&memory), &field),
+            CType::Int32Pointer,
+        );
+        assert!(context.pointer_designations_match(&current, &stored));
+        assert!(context.pointers_known_equal(current.pointer(), stored.pointer()));
+        assert!(context.pure_facts().is_empty());
         assert!(
             crate::kernel::equality_graph::logical_pointer_read_term(stored.pointer()).is_none()
         );
         let partial = memory.store(field.offset_by_bytes(4), CValue::UInt32(0u32.into()));
-        assert!(!context.pointer_designations_match(&read(&partial), &stored));
+        assert!(!context.pointer_designations_match(&read(&partial).0, &stored));
     }
 
     #[test]

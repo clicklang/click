@@ -15,7 +15,7 @@ impl EqualityGraph {
             return;
         }
         if !matches!(condition, ConditionTerm::Bitvector32Equal(..))
-            && condition.pointer_offset_sides().is_none()
+            && condition.true_pointer_offset_sides().is_none()
         {
             return;
         }
@@ -71,7 +71,7 @@ impl EqualityGraph {
                 ConditionTerm::Bitvector32Equal(a, b) => {
                     Some((a.as_ref().clone(), b.as_ref().clone()))
                 }
-                other => other.pointer_offset_sides().and_then(|(a, b)| {
+                other => other.true_pointer_offset_sides().and_then(|(a, b)| {
                     crate::kernel::reasoning::int32_element_index_from_offset(a)
                         .zip(crate::kernel::reasoning::int32_element_index_from_offset(b))
                 }),

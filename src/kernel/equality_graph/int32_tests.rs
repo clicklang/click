@@ -730,3 +730,42 @@ fn parameter_shortcuts_notice_byte_coordinates_inside_an_alias_expression() {
             .offset_has_source_dependencies(&offset(1))
     );
 }
+
+#[test]
+fn complete_pointer_equalities_supply_only_their_true_numeric_consequences() {
+    let _session = VerificationSession::enter();
+    let pointer = |id| {
+        CPointerValue::new(
+            Pointer::loaded(PointerBlock::ExternalArgument, var(id), 4),
+            CType::Int32Pointer,
+        )
+    };
+    let (left, right) = (pointer(941_001), pointer(941_002));
+    let equality = ConditionTerm::pointer_value_equal(left.clone(), right.clone());
+    assert!(equality.pointer_offset_sides().is_none());
+    let context = PureFactContext::new().assume_condition(equality.clone(), true);
+    assert!(
+        context
+            .recorded_equality_class(&var(941_001))
+            .contains(&var(941_002))
+    );
+    assert!(
+        context
+            .equality_graph
+            .offset_has_source_dependencies(&left.offset)
+    );
+    let removed = context.without_exact_fact(&Proposition::ConditionIs(equality.clone(), true));
+    assert!(
+        !removed
+            .recorded_equality_class(&var(941_001))
+            .contains(&var(941_002))
+    );
+    let negative = PureFactContext::new().assume_condition(equality, false);
+    assert!(
+        !negative
+            .recorded_equality_class(&var(941_001))
+            .contains(&var(941_002))
+    );
+    let numeric = PureFactContext::new().assume_condition(eq(&var(941_001), &var(941_002)), true);
+    assert!(!numeric.pointer_designations_match(&left, &right));
+}
