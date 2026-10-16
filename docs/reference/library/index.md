@@ -2497,7 +2497,7 @@ theorem int32_greater_equal_and_not_greater_than_implies_equal(left: int32, righ
 
 ## Array specifications
 
-### `count`
+### `permutation::count`
 
 ```click
 function count(p: int32[], lo: int32, hi: int32, x: int32) -> int32 {
@@ -2513,12 +2513,12 @@ function count(p: int32[], lo: int32, hi: int32, x: int32) -> int32 {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `permutation`
+### `permutation::permutation`
 
 ```click
 predicate permutation(a: int32[], b: int32[], lo: int32, hi: int32) {
     forall (x: int32) {
-        count(a, lo, hi, x) == count(b, lo, hi, x)
+        permutation::count(a, lo, hi, x) == permutation::count(b, lo, hi, x)
     }
 }
 ```
@@ -2527,7 +2527,7 @@ predicate permutation(a: int32[], b: int32[], lo: int32, hi: int32) {
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(permutation)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(permutation::permutation)` when a proof needs the predicate body.
 
 ## Byte-range specifications
 
@@ -2792,7 +2792,7 @@ an arbitrary write to the string. See
 
 ```click
 resource cstr_at(p: const uint8*, len: uint64) {
-    views p[0..len + 1u64];
+    owns p[0..len + 1u64];
     fact len < 18446744073709551615u64;
     fact forall (k: uint64) { 0u64 <= k and k < len implies p[k] != '\0' };
     fact p[len] == '\0';
@@ -2800,20 +2800,34 @@ resource cstr_at(p: const uint8*, len: uint64) {
 }
 ```
 
-**Meaning:** A borrowed C string: a view of the `len + 1` bytes of `p`
-through its first terminator, with the facts that make them the C string of
-length `len`. The bytes determine `len`, so `fold(cstr_at(p, m))` at any other
-length fails. A contract holds it with `views cstr_at(p, len);` and lends it
-to a callee that views the same instance without opening it; `open(cstr_at(p,
-len)) { ... }` exposes the view and the facts. A `char`, `signed char`, or
-`unsigned char` pointer may be passed for `p`, as for the C-string predicates;
-a signed character pointer is read through its byte view `(uint8*)p`.
+**Meaning:** A C string: the `len + 1` bytes of `p` through its first
+terminator, with the facts that make them the C string of length `len`. The
+body owns the bytes, and a contract chooses how it holds them. `views
+cstr_at(p, len);` borrows the string read-only: the callee cannot write it,
+and an opened view exposes the bytes as views. `owns cstr_at(p, len);` holds
+it exclusively and returns the same instance, so `len` is unchanged at exit.
+A function that changes the length, such as one that writes an earlier
+terminator, states `consumes cstr_at(p, len);` and `produces` the new
+instance with the bytes it no longer covers. The bytes determine `len`, so
+`fold(cstr_at(p, m))` at any other length fails. An owner lends its instance
+to a callee that views it, and a caller that owns the bytes and holds the
+facts but no instance has the call assemble the view; the caller keeps its
+bytes. `open(cstr_at(p, len)) { ... }` exposes the body and the facts. A
+`char`, `signed char`, or `unsigned char` pointer may be passed for `p`, as
+for the C-string predicates; a signed character pointer is read through its
+byte view `(uint8*)p`.
 
 **Kind:** composite resource. Parameter types, memory clause, and facts are normative in the declaration above.
 
 **Verified use:** [`cstr_at_view_passes_through_a_call.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_view_passes_through_a_call.md),
 [`cstr_at_opens_and_lends_a_prefix_to_a_copy.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_opens_and_lends_a_prefix_to_a_copy.md),
 [`cstr_at_fold_refuses_a_wrong_length.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_fold_refuses_a_wrong_length.md),
+[`cstr_at_viewed_string_cannot_be_written.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_viewed_string_cannot_be_written.md),
+[`cstr_at_owner_rewrites_a_byte_and_refolds_the_same_length.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_owner_rewrites_a_byte_and_refolds_the_same_length.md),
+[`cstr_at_owns_clause_cannot_shorten_the_string.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_owns_clause_cannot_shorten_the_string.md),
+[`cstr_at_consumes_and_produces_a_shorter_string.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_consumes_and_produces_a_shorter_string.md),
+[`cstr_at_owner_lends_its_string_to_a_viewing_callee.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_owner_lends_its_string_to_a_viewing_callee.md),
+[`cstr_at_call_assembles_a_view_from_owned_bytes.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_call_assembles_a_view_from_owned_bytes.md),
 and, through character pointers,
 [`cstr_at_borrows_a_char_string_from_the_library.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_borrows_a_char_string_from_the_library.md).
 

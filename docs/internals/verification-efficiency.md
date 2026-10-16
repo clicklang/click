@@ -73,6 +73,28 @@ Existing produce-then-check code is a defect, tracked in
 change is: does this re-validate something the same session produced? If so,
 restructure it so the producing operation is the only one.
 
+### Refused ownership separation
+
+A refused separation of fixed fields on independent pointer parameters uses
+`ResourceContext::owned_memory_candidates_at` in all three composition routes:
+member selection, resource entailment, and interval coverage. Persistent buckets
+file fixed footprints by their unregistered scalar base variable; loaded,
+compound, wide, constant-base and symbolically bounded footprints stay in an
+open bucket. Scalar scales do not distinguish candidate buckets. A query whose
+base is open or named in a relating fact conservatively retains its whole
+block, preserving order-derived equality, constant pinning, transitive pointer
+aliases, and model projections. Otherwise only the same-variable and open
+buckets are inspected. The index grants no separation or access authority;
+existing membership and live-composition rules decide the result.
+
+The four-size refused-call regression pins the independent-parameter case.
+The conservative fallback can still visit a large aliased or loaded frame;
+this change does not claim constant work for those cases. Debug builds support
+`CLICK_DEBUG_CHECK_SEPARATION_CANDIDATES=1` for corpus validation: omitted
+members are tested with the original membership predicate, and indexed interval
+coverage is compared with the original full scan. These opt-in checks are
+uncharged and absent in release builds; they never supply proof evidence.
+
 ## Proof size and speed targets
 
 Direct int32 constant lookup follows only exact written equality edges filed
@@ -390,7 +412,7 @@ charged to visible semantic output rather than hidden ambient state:
   `prepared_path_extensions_with_new_facts_and_obligations_build_only_the_delta`
   checks a new fact and obligation at every step against a fresh context.
 
-  Three builds remain charged nothing (`assume_proposition_uncharged`,
+  Two builds remain charged nothing (`assume_proposition_uncharged`,
   counted by `count_uncharged_context_entries`), each a known violation. A
   step's direct-transport context covers its statement-local facts, and a
   simple step's statement-local facts hold every observable resource fact
@@ -401,11 +423,12 @@ charged to visible semantic output rather than hidden ambient state:
   path's memory-effect facts and every available fact afresh, so each transport is
   linear in the path: charging it pushes
   `expanded_roundtrip_work_per_source_byte_is_logarithmic` past its bound.
-  The set of a path's retained facts that evidence checking reads once per
-  checked step (`proof_evidence_unretained_premise`) is not a context, but
-  it is the same kind of rebuild: charging it grows the expanded extra copy
-  a unit per unrelated allocation. Removing them needs the resource facts'
-  and the path's memory-effect facts' contexts carried with the proof state.
+  Removing them needs the resource facts' and the path's memory-effect
+  facts' contexts carried with the proof state. A third, the set of a
+  path's retained facts that evidence checking built to look up a
+  statement theorem's premises, is gone with that lookup: a statement
+  theorem lists only its own path facts and obligations, and recording it
+  does not walk them (construction, not re-validation, above).
 
   Completed early-return paths retain shared fact prefixes and immutable
   candidate records. Terminal joins concatenate persistent candidate,
@@ -542,11 +565,16 @@ subrange inheritance, a store crossing a cached cell, two distinct range
 anchors — asks each held composition for two distinct owned members of the
 query's block, one holding each side
 (`ResourceContext::separated_owned_members_in_block`, and
-`separates_owned_anchors` for anchors). Each owned member of that block is
-asked once whether it holds the first side and, only when one does, once
-whether it holds the second, so a query costs the block's members and never
-their pairs. The anchor question is two keyed lookups in the composition's
-anchor index. The candidates are exactly the pairs the carrier used to
+`separates_owned_anchors` for anchors). The members filed under the roots
+the two sides are spelled at (and their same-block exact aliases' roots) are
+asked first, so a query that finds its pair there costs those members. When
+they hold no admitted pair, the complete conservative candidate index above
+selects the members asked for each side; answers already given are reused.
+Independent fixed fields avoid unrelated members even on refusal. Open and
+related bases retain the full block. The nominated members are a subset of
+the full scan's, and every member omitted by the conservative index cannot
+hold the queried operand, so the answers remain the scan's. The anchor question is two keyed lookups in the
+composition's anchor index. The candidates are exactly the pairs the carrier used to
 project into every fact context at insertion (two owned ranges of a block
 holding two or more, not already structurally separate, in a block whose
 ranges do not all share one concrete base), so the answers are unchanged;
@@ -556,13 +584,29 @@ object a pointer parameter reaches shares it
 (`holding_a_parameter_composition_states_no_pairs` and
 `one_parameter_separation_query_is_linear_in_the_owned_objects` in
 `src/scaling_tests/kernel/tests/resource_scaling_tests.rs`: 37, 137, 529, and 2,081 units
-to hold 8, 16, 32, and 64 owned parameter objects, now 0; a refused
-separation query 985 to 68,801 units, now 321 to 2,617). Consumers that need
+to hold 8, 16, 32, and 64 owned parameter objects, now 0). Consumers that need
 a separation *proposition* — an explicit premise, a have-proof `assumption`
 goal — ask the prover, which serves it from the carrier on demand; the
 proposition is materialized only at that ask, never into ambient fact sets.
 Adding a valid carrier must be monotone for already-provable snapshot
 premises (`added_composition_carrier_keeps_snapshot_premise_work_bounded`).
+
+A verified call's requirement check asks these queries for each separation
+it requires. A connective requirement is walked side by side, and a side
+whose sibling already decides it is not asked: the right disjunct of a
+null-guarded `p == 0 or separate(memory(q), memory(p->f))` once `p == 0`
+holds is a separation nothing establishes, which every route used to refuse
+only after asking the whole frame: six of the eight `sized_rotate` calls in
+`examples/rbtree-augmented/rbtree_size_rotate_model.click` charged 379,897
+to 397,816 units of requirement checking, and all eight now charge 2,210 to
+6,768.
+`call_separation_requirements_ignore_unrelated_owned_objects` (nightly)
+pins separated, null-guarded, and refused calls at fixed costs beside
+2, 4, 8 and 16 unrelated owned objects, and
+`a_proved_parameter_separation_reads_only_the_nominated_members` pins the
+proved kernel query at one cost beside 8 to 64 parameter objects.
+`refused_parameter_separation_ignores_unrelated_owned_objects` pins both
+missing ownership and overlapping operands at fixed work over the same sizes.
 
 Deciding that a context is a valid partition reads the same indexes. Only an
 identity held twice or with invalid access, a block owning two or more
@@ -679,6 +723,21 @@ explicit:
   get their own search. False list-position claims are checked below the
   ordinary smart budget, beside increasing unrelated fact sets and against
   the unchanged `rb_next` proof.
+- **Select pointer rewrites from the differing offsets.** For a same-block
+  pointer comparison, equality selection omits the shared block and an exact
+  shared leading offset: `(base + i) == base` selects facts about `i`, and
+  `(base + i) == (base + j)` selects facts about `i` and `j`. This also covers
+  external arguments whose base is a scaled offset in `ExternalArgument`.
+  A direct offset rewrite runs before a speculative typed closer searches
+  historical facts. Selected facts are first reconstructed at the current
+  state before searching historical snapshots that may not name their values.
+  The original pointer comparison remains the checked goal; candidate selection
+  neither changes pointer equality nor grants access authority. Deterministic
+  regressions grow same-base historical pointers and recorded snapshots
+  separately, keeping rewrite work bounded in both.
+  Exact pointer-operand buckets precede shared-base variable buckets. Literal
+  values do not nominate rewrite candidates; an old iterator's `k_old == 4`
+  cannot help rewrite a distinct `k` merely because its goal contains `4`.
 - **Decide an overlap before searching for a separation.** A walk across a
   call asks whether each cell it names is separate from the callee's write
   set. A cell the write set contains, such as a field of an object that a
@@ -769,7 +828,11 @@ where it had cost 2,294 to 408,974
 `src/scaling_tests/surface/tests/scaling_tests.rs`). The difference
 graph's bounded propagation now adds a fixed cost per store once more than
 its `EDGE_LIMIT` (32) indices share the bound, so the test checks
-near-linear growth at 4 to 32 stores and at 64 to 256 separately.
+near-linear growth at 4 to 32 stores and at 64 to 256 separately. The unsigned
+64-bit companion uses the same regimes, beginning the second at 33 stores and
+checking through 256, with the same growth-ratio limit. A focused run measured store work of
+`273*N - 107` below the cap and `369*N - 139` above it: the single cost jump is
+bounded propagation overhead, while each regime remains linear.
 
 A term's constant after equality normalization is a lookup in
 `ConstantClasses` (`src/kernel/assumptions/constant_classes.rs`), which the
@@ -859,6 +922,16 @@ rules (`PureFactContext::difference_decision`). The general decision
 leaves open keeps both branches, and a requirement it leaves open needs a
 proof step that states it.
 
+Signed-arithmetic planning and source-certificate term matching use the kernel's
+canonical load identities. A raw read and its registered load variable are the
+same arithmetic atom; comparing their surface representations must not lose a
+population-count bound after a call. Bound selection starts from these canonical
+goal variables and follows only their indexed bounds. The resulting arithmetic
+certificate remains explicit and is checked normally. Population-count
+comparisons try that indexed arithmetic path before memory-equality rewrites,
+so successive retains do not search every earlier call snapshot to rediscover
+the unchanged entry-count bound.
+
 The graph's nodes are `int32`, `int64` and `uint64` values keyed by term, and
 its edges are constraints `x - y <= c`; a constant bound is an edge to a zero
 node, so facts about unrelated values never meet at a shared constant.
@@ -866,11 +939,22 @@ Insertion propagates bounds, follows waiting links, and checks for cycles
 along at most `EDGE_LIMIT` edges, and a read pulls one hop from a node whose
 push was cut short. A value many others are bounded by, such as an array
 length, then costs the same however many there are. Past the limit the graph
-answers less, never something false. Queries read stored bounds or a bounded
-path between the two values. Pointer classes and disequalities, known low
+answers less, never something false. Order queries first look up the selected
+edge by its two endpoints, then fall back to stored bounds and the bounded
+path search. A written `ck < n` therefore remains usable when `n` bounds more
+than 32 unrelated indices; it does not depend on where that edge falls in the
+hub's traversal order. The nightly
+`written_order_queries_are_flat_beside_a_high_degree_bound`
+pins selected query work at 16/33/64/256/1024 neighbours for signed 32-bit,
+signed 64-bit, and unsigned 64-bit comparisons, including strict and non-strict
+bounds and their negations. `direct_order_fact_survives_a_high_degree_source`
+keeps the 33-edge correctness case in the normal gate. Pointer classes and disequalities, known low
 bits, and no-overflow facts are keyed by their own values (an overflow fact
 by its operands' nodes and offsets modulo the word size, so `(1 + a) + b`
-finds `defined(1 + a + b)`).
+finds `defined(1 + a + b)`). The same field of two bases (`b + k == c + k`)
+asks the bases' own offset question, one recursion per field, so a pointer
+equality `this == &other` makes `this->size` and `other.size` one cell
+(`mdtests/a_self_aliased_field_operand_is_one_value.md`).
 
 `work_is_independent_of_unrelated_bounded_values` pins insertion and query
 work beside 16 to 1,024 unrelated values, and

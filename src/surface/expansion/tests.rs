@@ -95,6 +95,145 @@ int32 identity(int32 x) { ensures result == x; } by {
     );
 }
 
+/// `rb_erase`'s general wrapper (`examples/rbtree-erase`): a file-static
+/// callbacks struct is folded and passed to a call whose outcome resource
+/// unfolds into a child named like the contract's own `produces whole`.
+/// `execute(); simp();` expands to `have whole.model == ...`, which reads
+/// the unfolded child through the contract binder's resource, not the
+/// outcome resource the unfold named it from.
+#[test]
+fn unfolded_child_named_like_a_produced_binder_expands_and_rechecks() {
+    let c = r#"
+struct root { int value; };
+struct callbacks { void (*rotate)(struct root *); };
+
+static void dummy_rotate(struct root *root) {}
+
+static const struct callbacks dummy_callbacks = {
+    .rotate = dummy_rotate
+};
+
+int produce(struct root *root, const struct callbacks *augment) {
+    return 0;
+}
+
+void use(struct root *root) {
+    int r;
+    r = produce(root, &dummy_callbacks);
+}
+"#;
+    let source = r#"
+verifying "callbacks_outcome.c";
+
+spec enum Out {
+    Done(int32),
+    Pending(int32),
+}
+
+function out_value(o: Out) -> int32 {
+    match o {
+        Out::Done(v) => v,
+        Out::Pending(v) => v,
+    }
+}
+
+resource cell_at(p: struct root*) {
+    field model: int32;
+    owns p->value;
+    fact p->value == model;
+}
+
+resource out_at(p: struct root*, r: int32) {
+    field model: Out;
+    match model {
+        Out::Done(v) => {
+            owns whole: cell_at(p);
+            fact whole.model == v;
+            fact r == 0;
+        },
+        Out::Pending(v) => {
+            owns pending: cell_at(p);
+            fact pending.model == v;
+            fact r != 0;
+        },
+    }
+}
+
+contract void Rotate(struct root* root) {
+    ensures 1 == 1;
+}
+
+resource callbacks_at(augment: const struct callbacks*) {
+    views augment->rotate;
+    fact Rotate(augment->rotate);
+}
+
+void dummy_rotate(struct root* root) {
+    ensures 1 == 1;
+} by { execute(); normalize(); }
+
+theorem dummy_rotate_contract() {
+    ensures Rotate(&dummy_rotate) by { unfold(Rotate); simp(); }
+}
+
+int produce(struct root* root, const struct callbacks* augment) {
+    consumes cell: cell_at(root);
+    views callbacks_at(augment);
+    produces out: out_at(root, result);
+    ensures out_value(out.model) == old(cell.model);
+} by {
+    execute();
+    let out = fold(out_at(root, 0), { model: Out::Done(cell.model) }, { whole: cell });
+    simp();
+}
+
+void use(struct root* root) {
+    consumes cell: cell_at(root);
+    views dummy_callbacks.rotate;
+    produces whole: cell_at(root);
+    ensures whole.model == old(cell.model);
+} by {
+    apply(dummy_rotate_contract());
+    fold(callbacks_at(&dummy_callbacks));
+    step();
+    let { out: out } = step(produce(root, &dummy_callbacks), { cell: cell });
+    match out.model {
+        Out::Done(v) => {
+            have out_value(Out::Done(v)) == old(cell.model) by { rewrite(Out::Done(v) == out.model); assumption(); }
+            have v == old(cell.model) by { unfold(out_value(Out::Done(v))); assumption(); }
+            let { whole: whole } = unfold(out);
+            execute(); simp();
+        },
+        Out::Pending(v) => {
+            have out_value(Out::Pending(v)) == old(cell.model) by { rewrite(Out::Pending(v) == out.model); assumption(); }
+            have v == old(cell.model) by { unfold(out_value(Out::Pending(v))); assumption(); }
+            let { pending: whole } = unfold(out);
+            execute(); simp();
+        },
+    }
+}
+"#;
+    let sources = [("callbacks_outcome.c", c)];
+    verify_c0_sources(source, &sources).unwrap();
+    let expanded = expand_c0_claim_source_by_label(source, &sources, "use.contract").unwrap();
+    assert!(
+        expanded.contains("have whole.model == old(cell.model) by"),
+        "the expansion should read the unfolded child through the produced binder: {expanded}"
+    );
+    crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .unwrap();
+    assert!(
+        crate::surface::proof::without_implicit_auto(|| verify_c0_sources(
+            &expanded.replace(
+                "ensures whole.model == old(cell.model);",
+                "ensures whole.model == old(cell.model) + 1;"
+            ),
+            &sources,
+        ))
+        .is_err()
+    );
+}
+
 #[test]
 fn tactic_expansion_can_name_an_outer_c_parameter_after_intro() {
     let c_source = "int32 shadowed_c(int32 x) { return 0; }";
@@ -517,6 +656,43 @@ fn expansion_spells_qualified_module_citations_by_their_in_scope_path() {
     assert_eq!(
         library_citation_spelling(selective, "apply(click::list::append_cons(x, xs, ys));"),
         "apply(append_cons(x, xs, ys));"
+    );
+}
+
+#[test]
+fn expansion_keeps_explicit_library_paths_and_unimported_predicates() {
+    let source = "theorem client() { ensures click::bytes::equal(p, 0, q, 0, 1) by simp; }";
+    assert_eq!(
+        library_citation_spelling(source, "have click::bytes::equal(p, 0, q, 0, 1);"),
+        "have click::bytes::equal(p, 0, q, 0, 1);"
+    );
+    assert_eq!(
+        library_citation_spelling(
+            "theorem client() {}",
+            "have click::bytes::equal(p, 0, q, 0, 1);"
+        ),
+        "have click::bytes::equal(p, 0, q, 0, 1);"
+    );
+    assert_eq!(
+        library_citation_spelling(
+            "/* import click::bytes; */ theorem client() {}",
+            "have click::bytes::equal(p, 0, q, 0, 1);"
+        ),
+        "have click::bytes::equal(p, 0, q, 0, 1);"
+    );
+    assert_eq!(
+        library_citation_spelling(
+            "import click::bytes;",
+            "have click::bytes::equal(p, 0, q, 0, 1);"
+        ),
+        "have bytes::equal(p, 0, q, 0, 1);"
+    );
+    assert_eq!(
+        library_citation_spelling(
+            "apply(click::list::append_left_identity(xs));",
+            "apply(click::list::append_left_identity(xs));"
+        ),
+        "apply(click::list::append_left_identity(xs));"
     );
 }
 
@@ -3093,4 +3269,53 @@ theorem evaluation() executes FeeFrac_EvaluateFeeDown(const struct FeeFrac* this
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/surface/expansion/tests.rs");
+}
+
+#[test]
+fn premise_free_applications_are_simple_but_required_premises_stay_smart() {
+    let source = r#"
+        import click::integer;
+        theorem unconditional(x: int32) { ensures x == x by simp; }
+        theorem conditional(x: int32) { requires x == 0; ensures x == 0 by assumption(); }
+        theorem value_identity(z: Integer) { ensures z == z by simp; }
+        theorem computed(x: int64) {
+            requires defined(x + 1i64);
+            ensures to_integer(x + 1i64) == to_integer(x + 1i64) by {
+                apply(value_identity(to_integer(x + 1i64)));
+            }
+        }
+        theorem client(x: int32) {
+            requires x == 0;
+            ensures x == 0 by {
+                apply(unconditional(x));
+                apply(conditional(x));
+            }
+        }
+    "#;
+    let sites = c0_smart_tactic_source_sites(source, &[]).unwrap();
+    assert_eq!(
+        sites
+            .iter()
+            .filter(|site| site.claim_label == "client.ensures_0")
+            .map(|site| site.source_index)
+            .collect::<Vec<_>>(),
+        [1]
+    );
+    assert!(
+        sites
+            .iter()
+            .any(|site| site.claim_label == "computed.ensures_0")
+    );
+    verify_c0_sources(source, &[]).unwrap();
+    assert!(verify_c0_sources(&source.replace("requires defined(x + 1i64);", ""), &[]).is_err());
+    assert!(
+        verify_c0_sources(
+            &source.replace(
+                "requires x == 0;\n            ensures",
+                "requires x == 1;\n            ensures"
+            ),
+            &[]
+        )
+        .is_err()
+    );
 }

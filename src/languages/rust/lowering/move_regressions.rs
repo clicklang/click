@@ -3,7 +3,7 @@ fn rust_kernel_rejects_duplicate_move_drop_and_missing_cleanup() {
     use crate::languages::rust::schema::{MirStatement as S, MirTerminator as T};
     use crate::surface::C0VerificationSession;
     let original = super::super::charon::decode(
-        include_bytes!("../../../../examples/rust-move-drop/guard.ullbc"),
+        include_bytes!("../../../../examples/rust-move-drop/.click/guard/guard.rs.ullbc"),
         "guard.rs",
         include_bytes!("../../../../examples/rust-move-drop/guard.rs"),
     )

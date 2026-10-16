@@ -85,10 +85,13 @@ predicate readable(bytes: uint8[]) {
     }
 }
 
-// A borrowed C string: a view of the bytes of `p` through its first
-// terminator, with the facts that make them the C string of length `len`.
+// A C string: the bytes of `p` through its first terminator, with the facts
+// that make them the C string of length `len`. The body owns the bytes; a
+// contract chooses how it holds them: `views` borrows the string read-only,
+// `owns` returns the same instance (so the same length), and `consumes` with
+// `produces` changes it.
 resource cstr_at(p: const uint8*, len: uint64) {
-    views p[0..len + 1u64];
+    owns p[0..len + 1u64];
     fact len < 18446744073709551615u64;
     fact forall (k: uint64) { 0u64 <= k and k < len implies p[k] != '\0' };
     fact p[len] == '\0';

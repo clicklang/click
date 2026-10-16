@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Entry {
-    config: String,
+    sidecar: String,
     outcome: String,
     diagnostic: String,
     #[serde(default)]
@@ -94,14 +94,22 @@ fn charon_parity_inventory_covers_every_rust_example() {
         if !directory.is_dir() {
             continue;
         }
+        if !directory.join("click.project.json").exists() {
+            continue;
+        }
         for file in fs::read_dir(directory).unwrap() {
             let path = file.unwrap().path();
-            if !path.to_string_lossy().ends_with(".click.import.json") {
+            if path
+                .extension()
+                .is_none_or(|extension| extension != "click")
+            {
                 continue;
             }
-            let config: serde_json::Value =
-                serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-            if config["language"] == "rust" {
+            let source = fs::read_to_string(&path).unwrap();
+            if source
+                .lines()
+                .any(|line| line.starts_with("verifying ") && line.contains(".rs\""))
+            {
                 actual.push(
                     path.strip_prefix(&root)
                         .unwrap()
@@ -133,12 +141,12 @@ fn charon_parity_inventory_covers_every_rust_example() {
                 Some(format!("{:x}", Sha256::digest(&bytes))),
                 entry.frozen_sha256
             );
-            let canonical = root.join(entry.config.trim_end_matches(".import.json"));
+            let canonical = root.join(&entry.sidecar);
             let port = root.join(entry.migrated_sidecar.as_ref().unwrap());
             assert_eq!(fs::read(canonical).unwrap(), fs::read(port).unwrap());
         }
     }
-    let expected: Vec<_> = entries.into_iter().map(|e| e.config).collect();
+    let expected: Vec<_> = entries.into_iter().map(|e| e.sidecar).collect();
     assert_eq!(
         actual, expected,
         "update the live parity inventory when fixtures change"
@@ -152,30 +160,30 @@ fn charon_parity_migrated_proof_inventory_is_explicit() {
         .filter_map(|e| {
             e.migrated_sidecar
                 .as_ref()
-                .map(|path| (e.config.as_str(), path.as_str()))
+                .map(|path| (e.sidecar.as_str(), path.as_str()))
         })
         .collect();
     assert_eq!(
         migrated,
         [
             (
-                "examples/rust-byte-sum/sum.click.import.json",
+                "examples/rust-byte-sum/sum.click",
                 "design/charon-trial/loop-headers/sum-proof.click"
             ),
             (
-                "examples/rust-chunks-exact/chunks.click.import.json",
+                "examples/rust-chunks-exact/chunks.click",
                 "design/charon-trial/chunk-proof/chunks.click"
             ),
             (
-                "examples/rust-iter-references/sum.click.import.json",
+                "examples/rust-iter-references/sum.click",
                 "design/charon-trial/iterator-proof/rust-iter-references/sum.click"
             ),
             (
-                "examples/rust-iterators/sum.click.import.json",
+                "examples/rust-iterators/sum.click",
                 "design/charon-trial/iterator-proof/rust-iterators/sum.click"
             ),
             (
-                "examples/rust-loops/loops.click.import.json",
+                "examples/rust-loops/loops.click",
                 "design/charon-trial/loop-headers/loops-assignments.click"
             ),
         ]
@@ -200,19 +208,8 @@ fn charon_canonical_examples_use_locked_native_artifacts() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut adopted = 0;
     for entry in inventory() {
-        let path = root.join(&entry.config);
-        let config: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        assert_eq!(config["schema"], 3);
-        assert!(config.get("backend").is_none());
-        assert!(config["artifact"].as_str().unwrap().ends_with(".ullbc"));
-        let prepared = load_import(&path).unwrap();
-        let sidecar = path.with_file_name(
-            path.file_name()
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .trim_end_matches(".import.json"),
-        );
+        let sidecar = root.join(&entry.sidecar);
+        let prepared = prepared_sidecar(&sidecar).unwrap();
         C0VerificationSession::new_program_prepared(
             &fs::read_to_string(sidecar).unwrap(),
             &prepared,
@@ -229,20 +226,10 @@ fn charon_canonical_examples_use_locked_native_artifacts() {
 #[test]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn charon_canonical_basic_tools_agree() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/basic-rust");
-    let p = Project::new("");
-    for name in [
-        "borrow.rs",
-        "borrow.click",
-        "borrow.ullbc",
-        "borrow.click.import.json",
-        "borrow.click.import.json.lock",
-    ] {
-        fs::write(p.root.join(name), fs::read(root.join(name)).unwrap()).unwrap();
-    }
+    let p = Project::from_fixture("examples/basic-rust");
     assert_cli(&p, &["verify"]);
     assert_cli(&p, &["profile"]);
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     let expanded =
         click::surface::expand_program_prepared_tactic_source_at(SIDECAR, &prepared, 8, 5).unwrap();
     C0VerificationSession::new_program_prepared(&expanded, &prepared).unwrap();
@@ -271,44 +258,31 @@ fn charon_legacy_parity_live_refresh_and_unchanged_contracts() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut mismatches = Vec::new();
     for entry in inventory() {
-        let original = root.join(&entry.config);
-        let directory = original.parent().unwrap();
-        let mut config: serde_json::Value =
-            serde_json::from_slice(&fs::read(&original).unwrap()).unwrap();
-        let source = config["source"].as_str().unwrap().to_owned();
-        let p = Project::new("");
-        fs::write(
-            p.root.join(&source),
-            fs::read(directory.join(&source)).unwrap(),
-        )
-        .unwrap();
-        config["schema"] = serde_json::json!(3);
-        config["backend"] = serde_json::json!("charon-trial");
-        config["exporter"] = serde_json::json!(
-            std::env::var_os("CLICK_CHARON")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| root.join("target/charon/debug/charon"))
+        let original = root.join(&entry.sidecar);
+        let p = Project::from_fixture(
+            original
+                .parent()
+                .unwrap()
+                .strip_prefix(&root)
+                .unwrap()
+                .to_str()
+                .unwrap(),
         );
-        config["artifact"] = serde_json::json!("parity.ullbc");
-        fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-        let (outcome, diagnostic) = match refresh_import(&p.config()) {
+        let sidecar = p.root.join(original.file_name().unwrap());
+        let (outcome, diagnostic) = match p.refresh() {
             Err(error) => ("rejected", error),
             Ok(()) => {
-                let prepared = load_import(&p.config()).unwrap();
-                let sidecar = original.with_file_name(
-                    original
-                        .file_name()
-                        .unwrap()
-                        .to_string_lossy()
-                        .trim_end_matches(".import.json"),
-                );
+                let prepared = prepared_sidecar(&sidecar).unwrap();
                 let canonical = fs::read_to_string(&sidecar).unwrap();
                 let canonical_error =
                     C0VerificationSession::new_program_prepared(&canonical, &prepared)
                         .err()
                         .map(|error| error.message().to_owned());
                 if let Some(error) = &canonical_error {
-                    mismatches.push(format!("{}: canonical proof failed: {error}", entry.config));
+                    mismatches.push(format!(
+                        "{}: canonical proof failed: {error}",
+                        entry.sidecar
+                    ));
                 }
                 // Preserve original frozen outcomes independently of canonical adoption.
                 let frozen_error = if let Some(frozen) = &entry.frozen_sidecar {
@@ -328,7 +302,7 @@ fn charon_legacy_parity_live_refresh_and_unchanged_contracts() {
             }
         };
         if outcome != entry.outcome || !diagnostic.contains(&entry.diagnostic) {
-            mismatches.push(format!("{}: {outcome}: {diagnostic}", entry.config));
+            mismatches.push(format!("{}: {outcome}: {diagnostic}", entry.sidecar));
         }
     }
     assert!(

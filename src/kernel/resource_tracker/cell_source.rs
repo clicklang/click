@@ -505,7 +505,7 @@ impl MemoryDagHopJustification {
                         Self::LocalLifetimeEndedSeparatedRanges { .. },
                         CMemoryDerivation::LocalLifetimeEnded { base, block },
                     ) => {
-                        if !block.starts_with("local:") || pointer.block == *block {
+                        if !block.is_local_block() || pointer.block == *block {
                             return false;
                         }
                         let Some(extent) = base.block_size(block).and_then(|size| size.as_const())
@@ -1358,11 +1358,49 @@ pub(in crate::kernel) fn memory_dag_cell_source_with_hop_limit(
     assumptions: &PureFactContext,
     max_hops: usize,
 ) -> Option<MemoryDagCell> {
+    memory_dag_cell_source_with_hop_limit_and_stop(memory, pointer, bytes, assumptions, max_hops)
+        .map(|(cell, _)| cell)
+}
+
+pub(in crate::kernel) fn memory_dag_cell_source_with_hop_limit_and_stop(
+    memory: &SharedCMemory,
+    pointer: &Pointer,
+    bytes: u32,
+    assumptions: &PureFactContext,
+    max_hops: usize,
+) -> Option<(MemoryDagCell, CellWalkStop)> {
     let _lookup = CellLookupGuard::enter(memory, pointer)?;
-    Some(memory_dag_cell_source_walk(memory, pointer, bytes, assumptions, true, Some(max_hops)).0)
+    Some(memory_dag_cell_source_walk(
+        memory,
+        pointer,
+        bytes,
+        assumptions,
+        true,
+        Some(max_hops),
+    ))
 }
 
 fn memory_dag_cell_source_walk(
+    memory: &SharedCMemory,
+    pointer: &Pointer,
+    bytes: u32,
+    assumptions: &PureFactContext,
+    cross_loop_havoc: bool,
+    max_hops: Option<usize>,
+) -> (MemoryDagCell, CellWalkStop) {
+    let result = memory_dag_cell_source_walk_inner(
+        memory,
+        pointer,
+        bytes,
+        assumptions,
+        cross_loop_havoc,
+        max_hops,
+    );
+    record_transport_cell_walk(memory, pointer, bytes, &result.0, result.1, max_hops);
+    result
+}
+
+fn memory_dag_cell_source_walk_inner(
     memory: &SharedCMemory,
     pointer: &Pointer,
     bytes: u32,

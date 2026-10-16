@@ -39,6 +39,7 @@
 #include "clang/Lex/PPCallbacks.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Sema/Sema.h"
+#include "clang/Tooling/ArgumentsAdjusters.h"
 #include "clang/Tooling/CompilationDatabase.h"
 #include "clang/Tooling/JSONCompilationDatabase.h"
 #include "clang/Tooling/Tooling.h"
@@ -57,6 +58,11 @@ constexpr unsigned kMaxCleanupScopes = 256;
 constexpr std::size_t kMaxScalarConversions = 256;
 
 constexpr const char *kClangVersion = "19.1.7";
+#ifndef CLICK_CLANG_RESOURCE_DIR
+#error "build with scripts/build-cpp-exporter.sh, which defines CLICK_CLANG_RESOURCE_DIR"
+#endif
+// The pinned Clang's resource directory, recorded when the exporter is built.
+constexpr const char *kClangResourceDir = CLICK_CLANG_RESOURCE_DIR;
 constexpr std::size_t kMaxPreprocessorFiles = 4096;
 
 struct Options {
@@ -188,6 +194,15 @@ public:
         library_assertions_(library_assertions), state_(state) {}
 
   bool VisitFunctionDecl(clang::FunctionDecl *declaration) {
+    // Every virtual method the translation unit declares outside system
+    // headers, so a reachable one brings the methods that override it,
+    // which a call through it may reach.
+    if (const auto *method = llvm::dyn_cast<clang::CXXMethodDecl>(declaration);
+        method != nullptr && method->isVirtual() &&
+        method == method->getCanonicalDecl() &&
+        !source_manager_.isInSystemHeader(
+            source_manager_.getExpansionLoc(method->getLocation())))
+      virtual_methods_.push_back(method);
     if (declaration->isThisDeclarationADefinition() &&
         is_in_logical_source(declaration->getLocation())) {
       const std::string name = declaration->getQualifiedNameAsString();
@@ -205,6 +220,10 @@ public:
       fail({}, "scalar int32 exception profile requires C++ exceptions enabled");
       return;
     }
+    // Each virtual method's overrides, indexed once.
+    for (const clang::CXXMethodDecl *method : virtual_methods_)
+      for (const clang::CXXMethodDecl *overridden : method->overridden_methods())
+        overriders_[overridden->getCanonicalDecl()].push_back(method);
     // Every selected function is known before any is lowered, so a selected
     // function that another one calls is exported once, as selected.
     std::vector<const clang::FunctionDecl *> selected;
@@ -324,6 +343,10 @@ private:
 
   using Json = llvm::json::Value;
 
+  std::vector<const clang::CXXMethodDecl *> virtual_methods_;
+  std::map<const clang::CXXMethodDecl *, std::vector<const clang::CXXMethodDecl *>>
+      overriders_;
+
   struct LoweredCall {
     llvm::json::Object callee;
     llvm::json::Array arguments;
@@ -387,14 +410,21 @@ private:
                              : llvm::dyn_cast<clang::CXXMethodDecl>(declaration);
     const bool ordinary_method =
         method != nullptr && constructor == nullptr && destructor == nullptr;
-    if (ordinary_method && (method->isVirtual() || method->isVolatile() ||
+    if (ordinary_method && (method->isVolatile() ||
                             method->getRefQualifier() != clang::RQ_None ||
                             method->isDeleted() || method->isVariadic())) {
       fail(method->getLocation(),
-           "supported C++ methods must be non-virtual, "
-           "non-volatile, non-deleted, unqualified, and non-variadic");
+           "supported C++ methods must be non-volatile, non-deleted, unqualified, "
+           "and non-variadic");
       return std::nullopt;
     }
+    std::optional<Json> virtual_method;
+    if (ordinary_method && method->isVirtual()) {
+      virtual_method = lower_virtual_method(method);
+      if (!virtual_method)
+        return std::nullopt;
+    }
+    const bool pure_virtual = ordinary_method && method->isPureVirtual();
     if (constructor != nullptr &&
         !validate_constructor(constructor,
                               constructor->getParent()->getDefinition())) {
@@ -514,7 +544,11 @@ private:
     }
     const auto *body =
         llvm::dyn_cast_or_null<clang::CompoundStmt>(declaration->getBody());
-    if (body == nullptr || (body->body_empty() && constructor == nullptr)) {
+    if (pure_virtual) {
+      // A pure virtual method is only its interface: the sidecar's contract
+      // for it is what a call through it assumes.
+      body = nullptr;
+    } else if (body == nullptr || (body->body_empty() && constructor == nullptr)) {
       fail(declaration->getLocation(),
            "the supported C++ function requires a nonempty compound body");
       return std::nullopt;
@@ -589,7 +623,8 @@ private:
         statements.push_back(std::move(statement));
       }
     }
-    for (const clang::Stmt *statement : body->body()) {
+    for (const clang::Stmt *statement :
+         body == nullptr ? llvm::ArrayRef<clang::Stmt *>() : body->body()) {
       if (is_checked_runtime_noop(statement)) continue;
       auto lowered = lower_statement(statement, declaration, true, true);
       if (!lowered) {
@@ -614,10 +649,91 @@ private:
       result["closure_captures"] = static_cast<int64_t>(closure_captures);
     result["span"] = span(declaration->getSourceRange());
     result["body"] = std::move(statements);
+    if (virtual_method)
+      result["virtual"] = std::move(*virtual_method);
     if (!state_.error.empty()) {
       return std::nullopt;
     }
     return Json(std::move(result));
+  }
+
+  // A virtual method's dispatch: whether it is pure, the methods it
+  // overrides, whose contracts it must refine, and, remembered here, every
+  // method of the source that overrides it, which a call through it may
+  // reach. A method declared outside the source is not seen, and so not
+  // checked: an override in another translation unit is trusted to keep the
+  // interface, as any unverified code is.
+  std::optional<Json> lower_virtual_method(const clang::CXXMethodDecl *method) {
+    if (method->isPureVirtual() && method->isDefined()) {
+      fail(method->getLocation(),
+           "a pure virtual C++ method with a definition remains unsupported");
+      return std::nullopt;
+    }
+    const auto same_signature = [this](const clang::CXXMethodDecl *left,
+                                       const clang::CXXMethodDecl *right) {
+      if (!context_.hasSameType(left->getReturnType(), right->getReturnType()) ||
+          left->getNumParams() != right->getNumParams())
+        return false;
+      for (unsigned index = 0; index < left->getNumParams(); ++index)
+        if (!context_.hasSameType(left->getParamDecl(index)->getType(),
+                                  right->getParamDecl(index)->getType()))
+          return false;
+      return true;
+    };
+    llvm::json::Array overrides;
+    for (const clang::CXXMethodDecl *overridden : method->overridden_methods()) {
+      if (!same_signature(method, overridden)) {
+        fail(method->getLocation(),
+             "a C++ override with a covariant result remains unsupported");
+        return std::nullopt;
+      }
+      const clang::FunctionDecl *target = virtual_target(overridden);
+      if (target == nullptr || !remember_function(target))
+        return std::nullopt;
+      llvm::json::Object reference;
+      reference["declaration_id"] = declaration_id(target);
+      reference["name"] = method_name(llvm::cast<clang::CXXMethodDecl>(target));
+      reference["span"] = span(overridden->getNameInfo().getSourceRange());
+      overrides.push_back(std::move(reference));
+    }
+    llvm::json::Array overridden_by;
+    static const std::vector<const clang::CXXMethodDecl *> no_overriders;
+    const auto found = overriders_.find(method->getCanonicalDecl());
+    for (const clang::CXXMethodDecl *candidate :
+         found == overriders_.end() ? no_overriders : found->second) {
+      const clang::FunctionDecl *target = virtual_target(candidate);
+      if (target == nullptr)
+        return std::nullopt;
+      if (!executable_source(source_manager_.getSpellingLoc(target->getLocation()))) {
+        fail(candidate->getLocation(),
+             "an override of a reachable virtual method must be in the selected or "
+             "dependency sources");
+        return std::nullopt;
+      }
+      if (!remember_function(target))
+        return std::nullopt;
+      llvm::json::Object reference;
+      reference["declaration_id"] = declaration_id(target);
+      reference["name"] = method_name(llvm::cast<clang::CXXMethodDecl>(target));
+      reference["span"] = span(candidate->getNameInfo().getSourceRange());
+      overridden_by.push_back(std::move(reference));
+    }
+    llvm::json::Object result;
+    result["pure"] = method->isPureVirtual();
+    result["overrides"] = std::move(overrides);
+    result["overridden_by"] = std::move(overridden_by);
+    return Json(std::move(result));
+  }
+
+  // The declaration a virtual method is exported from: its definition, or,
+  // for a pure virtual method, its declaration.
+  const clang::FunctionDecl *virtual_target(const clang::CXXMethodDecl *method) {
+    if (method->isPureVirtual())
+      return method->getCanonicalDecl();
+    const clang::FunctionDecl *definition = method->getDefinition();
+    if (definition == nullptr)
+      fail(method->getLocation(), "a C++ virtual method has no reachable definition");
+    return definition;
   }
 
   const clang::CXXRecordDecl *complete_record_type(
@@ -2671,9 +2787,17 @@ private:
       return std::nullopt;
     }
     const bool has_receiver = method != nullptr && !method->isStatic();
+    // A virtual call names the method of the receiver's static type; it is
+    // checked against that method's contract, which every override of it
+    // refines. A qualified call, `shape.Shape::area()`, does not dispatch.
+    bool qualified = false;
+    if (const auto *member = llvm::dyn_cast<clang::MemberExpr>(
+            call->getCallee()->IgnoreParenImpCasts()))
+      qualified = member->hasQualifier();
     if (has_receiver) {
-      if (method->isVirtual() || llvm::isa<clang::CXXConstructorDecl>(method) ||
-          llvm::isa<clang::CXXDestructorDecl>(method)) {
+      if (llvm::isa<clang::CXXConstructorDecl>(method) ||
+          llvm::isa<clang::CXXDestructorDecl>(method) ||
+          (method->isPureVirtual() && qualified)) {
         fail(call->getExprLoc(), "unsupported C++ method dispatch");
         return std::nullopt;
       }
@@ -2698,6 +2822,8 @@ private:
     const clang::FunctionDecl *definition = callee->getDefinition();
     if (definition == nullptr && is_axiom(callee))
       definition = callee;
+    if (method != nullptr && method->isPureVirtual())
+      definition = method->getCanonicalDecl();
     if (definition == nullptr) {
       fail(call->getExprLoc(),
            "direct C++ call has no reachable function definition");
@@ -4010,6 +4136,8 @@ private:
            "the supported C++ record must be declared within the import root");
       return false;
     }
+    if (record->isPolymorphic())
+      return validate_polymorphic_record(record);
     if (record->getNumBases() != 0) {
       if (record->getNumBases() != 1 || !record->field_empty()) {
         fail(record->getLocation(),
@@ -4064,6 +4192,64 @@ private:
            "a record without a supported destructor must remain trivially copyable with trivial destruction");
       return false;
     }
+    return validate_record_fields(record);
+  }
+
+  // A polymorphic class: its object starts with the vtable pointer Clang
+  // lays out, which no field names and no contract reads. It has at most
+  // one public non-virtual base, itself polymorphic, at offset zero; its own
+  // fields follow the whole base, and nothing destroys or copies it, so it
+  // is only ever reached through a reference.
+  bool validate_polymorphic_record(const clang::CXXRecordDecl *record) {
+    if (record->getNumVBases() != 0 || record->getNumBases() > 1) {
+      fail(record->getLocation(),
+           "a polymorphic C++ class has at most one public non-virtual base");
+      return false;
+    }
+    const clang::CXXDestructorDecl *destructor = record->getDestructor();
+    // A written destructor is checked as any is, which names what it lacks.
+    if (needs_destructor_body(destructor) && !validate_destructor(destructor, record))
+      return false;
+    if ((destructor != nullptr && destructor->isVirtual()) ||
+        needs_destructor_body(destructor) || !record->hasTrivialDestructor()) {
+      fail(record->getLocation(),
+           "a polymorphic C++ class has a trivial non-virtual destructor; "
+           "virtual destructors remain unsupported");
+      return false;
+    }
+    const auto &layout = context_.getASTRecordLayout(record);
+    if (record->getNumBases() == 1) {
+      const auto &base = *record->bases_begin();
+      const auto *base_record = base.getType()->getAsCXXRecordDecl();
+      if (base.isVirtual() || base.getAccessSpecifier() != clang::AS_public ||
+          base_record == nullptr || !remember_record(base_record) ||
+          !base_record->getDefinition()->isPolymorphic()) {
+        if (state_.error.empty())
+          fail(base.getBeginLoc(),
+               "a polymorphic C++ class's base is public, non-virtual, and polymorphic");
+        return false;
+      }
+      const auto *definition = base_record->getDefinition();
+      const auto base_size = context_.getASTRecordLayout(definition).getSize();
+      unsigned index = 0;
+      bool tail_reuse = false;
+      for (const clang::FieldDecl *field : record->fields()) {
+        (void)field;
+        tail_reuse = tail_reuse ||
+            context_.toCharUnitsFromBits(layout.getFieldOffset(index)) < base_size;
+        ++index;
+      }
+      if (!layout.getBaseClassOffset(definition).isZero() || tail_reuse) {
+        fail(base.getBeginLoc(),
+             "a polymorphic C++ class's base is at offset zero, and its own fields follow the "
+             "whole base");
+        return false;
+      }
+    }
+    return validate_record_fields(record);
+  }
+
+  bool validate_record_fields(const clang::CXXRecordDecl *record) {
     for (const clang::FieldDecl *field : record->fields()) {
       if (stateless_field(field))
         continue;
@@ -4115,6 +4301,11 @@ private:
 
   bool validate_constructor(const clang::CXXConstructorDecl *constructor,
                             const clang::CXXRecordDecl *record) {
+    if (record->isPolymorphic()) {
+      fail(constructor->getLocation(),
+           "constructing a polymorphic C++ object remains unsupported");
+      return false;
+    }
     if (record->getNumBases() != 0) {
       fail(constructor->getLocation(), "C++ constructors with base subobjects remain unsupported");
       return false;
@@ -4260,6 +4451,9 @@ private:
     result["size_bytes"] = static_cast<std::int64_t>(size);
     result["alignment_bytes"] = static_cast<std::int64_t>(alignment);
     result["fields"] = std::move(fields);
+    // Its leading bytes hold the vtable pointer, which no field names.
+    if (record->isPolymorphic())
+      result["polymorphic"] = true;
     // Keep the new nominal type argument even when no field mentions it.
     // The offline importer authenticates its actual locked declaration.
     llvm::json::Array byte_arguments;
@@ -5193,6 +5387,19 @@ int main(int argc, const char **argv) {
   options->compilation_file = command.Filename;
   options->compilation_command = command.CommandLine;
   clang::tooling::ClangTool tool(*database, {options->source});
+  // A command that names no resource directory gets the pinned Clang's, not
+  // one derived from where this executable happens to be installed.
+  const bool names_resource_dir = std::any_of(
+      command.CommandLine.begin(), command.CommandLine.end(),
+      [](const std::string &argument) {
+        return argument == "-resource-dir" ||
+               argument.rfind("-resource-dir=", 0) == 0;
+      });
+  if (!names_resource_dir) {
+    tool.appendArgumentsAdjuster(clang::tooling::getInsertArgumentAdjuster(
+        (std::string("-resource-dir=") + kClangResourceDir).c_str(),
+        clang::tooling::ArgumentInsertPosition::END));
+  }
   ExportState state;
   ExportActionFactory factory(*options, state);
   const int status = tool.run(&factory);

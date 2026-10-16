@@ -1,0 +1,70 @@
+{
+  "schema": 1,
+  "units": {
+    "adler2": {
+      "language": "rust",
+      "lock": {
+        "artifact": "ba226119c1aca0f07ee1c720f8b57d325a361854577c9f8fdc8ff9d9c232f23a",
+        "config": "6b6133d76364e254e61aa0ea717a91eecf7ff11f303ee5ff00c2bbacc71774b9",
+        "frontend": {
+          "click_version": "0.1.0",
+          "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+          "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+          "extractor_version": "0.1.279",
+          "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+        },
+        "identity": "80c3784204b7db6eb5774e77ce03430eb0167b835e36426afbc4eea29657a9d0",
+        "schema": 9,
+        "source": "1eeb86173e0eb14ef276fc210ba5340a89a749a77a2894fbb12851167856bc98",
+        "source_files": {
+          "src/algo.rs": "932c2bc591d13fe4470185125617b5aaa660a3898f23b553acc85df0bf49dded",
+          "src/lib.rs": "4acd41668fe30daffa37084e7e223f268957b816afc1864ffb3f5d6d7adf0890"
+        }
+      }
+    },
+    "adler_incremental": {
+      "language": "rust",
+      "lock": {
+        "artifact": "68eeb96a6799d48eebcfb4821174fa4ac606789dc3839cdd8711acc1d1236271",
+        "config": "01cbcf36c8b354f53335de28bea851a5d2cc6a790c3bddb09283eeaa7f5f4fde",
+        "frontend": {
+          "click_version": "0.1.0",
+          "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+          "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+          "extractor_version": "0.1.279",
+          "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+        },
+        "identity": "13f0c8bc0aad7a6a16818f2e7748edf80e54033437553d700ed2e069e788d76e",
+        "schema": 9,
+        "source": "06ebf5aea67af75de61471573c4ce05ea83b000e07a2d82d567ce8e19898e573",
+        "source_files": {
+          "incremental.rs": "4a7a25094aa39f0f753d029ba4638a81e43a4ccff010749c36d7e248eecdce6d",
+          "src/algo.rs": "932c2bc591d13fe4470185125617b5aaa660a3898f23b553acc85df0bf49dded",
+          "src/lib.rs": "4acd41668fe30daffa37084e7e223f268957b816afc1864ffb3f5d6d7adf0890"
+        }
+      }
+    },
+    "adler_resumed": {
+      "language": "rust",
+      "lock": {
+        "artifact": "4a5f4a9628f684beff8ad8d263699f7937407ed51cef60955f5a44b3a0f3746f",
+        "config": "0268ad03a1121f9a0a4207520bea547ddaf77b1083b908364bf5dadbd0e0fac5",
+        "frontend": {
+          "click_version": "0.1.0",
+          "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+          "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+          "extractor_version": "0.1.279",
+          "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+        },
+        "identity": "5a335ecfd1e4b31562107390e50580a73278a3dce071bc0d02c63653318f52c2",
+        "schema": 9,
+        "source": "cd88406e463ed20494d51151643e0da9962028becd85ee772999d639c8410ed2",
+        "source_files": {
+          "resumed.rs": "d78d1adf1e13b3ec971ac9c4faab4f96da28f32002c3102fb2533b993e5d7541",
+          "src/algo.rs": "932c2bc591d13fe4470185125617b5aaa660a3898f23b553acc85df0bf49dded",
+          "src/lib.rs": "4acd41668fe30daffa37084e7e223f268957b816afc1864ffb3f5d6d7adf0890"
+        }
+      }
+    }
+  }
+}

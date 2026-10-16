@@ -803,11 +803,16 @@ fn certified_transitions_from_execution(
                 None => successor_facts.context(),
             };
             let mut prerequisite_derivations = Vec::new();
+            // Stable-view recovery refuses a call whose checked path still
+            // carries pending obligations (`PendingCallObligations`); other
+            // contract boundaries refuse with `FunctionContract`.
             let rejected_contract_call = matches!(
                 implication_body(path.theorem().proposition()),
                 Proposition::CStatementVerifies {
                     outcome: CStatementOutcome::RuntimeError(
                         crate::kernel::CRuntimeError::FunctionContract(_)
+                            | crate::kernel::CRuntimeError::UnsuppliedResourceValue(_)
+                            | crate::kernel::CRuntimeError::PendingCallObligations(_)
                     ),
                     ..
                 }

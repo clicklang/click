@@ -3337,7 +3337,169 @@ fn rejected_transport_prints_checked_reads_and_retains_prefix() {
     }
 }
 
+#[test]
+fn failed_normalize_using_retains_actual_wide_read_resolution() {
+    let c = "void f(uint64 *p) { int32 y = 0; return; }";
+    let source = r#"verifying "f.c";
+        void f(uint64 *p) { owns p[0]; ensures true; } by {
+            step();
+            have p[0] == 7u64 by { normalize() using {}; };
+            execute(); assumption();
+        }
+    "#;
+    with_proof_trace("f", || {
+        let error = verify_c0_sources(source, &[("f.c", c)])
+            .expect_err("an unknown initial word need not be seven");
+        let message = error.message();
+        for expected in [
+            "read-resolution check:",
+            "read<Bits64>",
+            "producer source: snapshot#",
+            "walk stop: snapshot#",
+            "oldest recorded snapshot reached",
+            "recovered value: none",
+            "checked read equality:",
+            "equality check: not attempted",
+        ] {
+            assert!(message.contains(expected), "missing {expected}: {message}");
+        }
+        let trace = error
+            .trace_context_report()
+            .expect("the failed written check retains its diagnostic state");
+        assert!(trace.contains("steps through: declare y"), "{trace}");
+        assert!(trace.contains("read-resolution check:"), "{trace}");
+        assert!(trace.contains("equality check: not attempted"), "{trace}");
+    });
+}
+
+#[test]
+fn rejected_loop_transport_premise_uses_shared_exact_diagnostic() {
+    let c = "void f(int32 *p, int32 *q) { while (1) { p[0] = 9; break; } return; }";
+    let source = r#"verifying "f.c";
+        void f(int32 *p, int32 *q) {
+            owns p[0]; requires p[0] == 7; ensures true;
+        } by {
+            loop {
+                invariant true;
+                initialize by { normalize(); }
+                preserve by {
+                    mark before_write; step();
+                    transport(at(before_write, p[0] == 7), p[0] == 7) using {
+                        separate(memory(p[0]), memory(q[0]));
+                    };
+                }
+            }
+            execute(); assumption();
+        }
+    "#;
+    with_proof_trace("f", || {
+        let error =
+            verify_c0_sources(source, &[("f.c", c)]).expect_err("the arbitrary q may alias p");
+        let message = error.message();
+        assert!(message.contains("required transport premise:"), "{message}");
+        assert!(!message.contains("available resource facts"), "{message}");
+        let trace = error
+            .trace_context_report()
+            .expect("a rejected premise retains its checked prefix");
+        assert!(trace.contains("required transport premise:"), "{trace}");
+        assert!(trace.contains("steps through: p[0] = 9"), "{trace}");
+        assert!(trace.contains("p"), "{trace}");
+        assert!(trace.contains("q"), "{trace}");
+        let premise = trace
+            .lines()
+            .find(|line| line.contains("required transport premise:"))
+            .unwrap();
+        assert!(!premise.contains("…"), "{premise}");
+    });
+}
+
+#[test]
+fn rejected_wide_transport_shows_actual_walk_stop_and_prefix() {
+    let c = "void f(uint64 *p) { p[0] = 9; int32 y = 0; return; }";
+    let source = r#"verifying "f.c";
+        void f(uint64 *p) {
+            owns p[0]; requires p[0] == 7u64; ensures true;
+        } by {
+            mark before_write; step();
+            transport(at(before_write, p[0] == 7u64), p[0] == 7u64) using {
+                at(before_write, p[0] == 7u64);
+            };
+            execute(); normalize();
+        }
+    "#;
+    with_proof_trace("f", || {
+        let error = verify_c0_sources(source, &[("f.c", c)])
+            .expect_err("a real write invalidates the old word");
+        let message = error.message();
+        for expected in [
+            "cell walks performed while checking transport",
+            "address: value#",
+            "width: 8 bytes",
+            "start: snapshot#",
+            "stop: snapshot#",
+            "oldest recorded snapshot reached",
+            "step affects the queried bytes",
+            "transport label definitions",
+            "store",
+            "read<Bits64>",
+        ] {
+            assert!(message.contains(expected), "missing {expected}: {message}");
+        }
+        assert!(!message.contains("information unavailable"), "{message}");
+        let trace = error
+            .trace_context_report()
+            .expect("retain the failed written check's prefix");
+        assert!(trace.contains("steps through: p[0] = 9"), "{trace}");
+    });
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/surface/tests/diagnostic_tests.rs");
+}
+
+#[test]
+#[ignore = "nightly: repeated-retain source diagnostic took 0.63s in parallel"]
+fn a_failed_retain_names_the_population_count_requirement() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/repeated_child_retains_require_enough_count_capacity.md");
+    let markdown = std::fs::read_to_string(&path).unwrap();
+    let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let error = verify_c0_sources(fixture.click_source.as_deref().unwrap(), &sources)
+        .expect_err("the caller does not establish the helper's stricter count bound");
+    let (report, _) = error.concise_report_parts();
+    assert!(report.contains("count(child_ref(obj)) < 8"), "{report}");
+    assert!(!report.contains("*obj"), "{report}");
+}
+
+/// A written auto miss keeps the same checked prefix as other have failures.
+/// The failed smart candidates must not become facts in that prefix.
+#[test]
+fn auto_have_failure_trace_retains_checked_call_prefix() {
+    let c = "int helper(void) { return 1; } int f(void) { int x; x = helper(); return x; }";
+    let source = "verifying \"f.c\"; int32 helper() { ensures result == 1; } by { execute(); simp(); } \
+                  int32 f() { ensures result == 1; } by { step(); step(); have x == 2 by auto; execute(); simp(); }";
+    with_proof_trace("f", || {
+        let error =
+            verify_c0_sources(source, &[("f.c", c)]).expect_err("the false have must still fail");
+        assert!(
+            error
+                .raw_summary()
+                .contains("`auto` could not prove `x == 2`")
+        );
+        assert_eq!(error.proof_claim_label(), Some("f.contract"));
+        let trace = error.trace_context_report().expect("checked prefix trace");
+        assert!(trace.contains("step(helper("), "{trace}");
+        assert!(
+            trace.contains("== 1") || trace.contains(", 1) is true"),
+            "{trace}"
+        );
+        assert!(!trace.contains("adds: x == 2"), "{trace}");
+        assert!(!trace.contains("<no checked simple steps"), "{trace}");
+    });
 }

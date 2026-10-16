@@ -225,12 +225,25 @@ struct DynamicViewDependencyIndex {
     bound_dependencies:
         BTreeMap<crate::kernel::ResourceOccurrenceId, crate::kernel::LoanViewBinding>,
     unbound: ResourceContext,
+    /// Owned memory an unfold is about to insert. The folded instance held
+    /// it exclusively, so a body fact over it needs no loan: it is supported
+    /// exactly as a read of ambient owned memory is.
+    owned: ResourceContext,
 }
 
 impl DynamicViewDependencyIndex {
     fn new(
         bound_views: &[(CResourceFact, crate::kernel::LoanViewBinding)],
         unbound_views: &[CResourceFact],
+        assumptions: &PureFactContext,
+    ) -> Self {
+        Self::with_owned(bound_views, unbound_views, &[], assumptions)
+    }
+
+    fn with_owned(
+        bound_views: &[(CResourceFact, crate::kernel::LoanViewBinding)],
+        unbound_views: &[CResourceFact],
+        owned: &[CResourceFact],
         assumptions: &PureFactContext,
     ) -> Self {
         let (bound, inserted) = ResourceContext::new_with_equalities(assumptions)
@@ -245,6 +258,8 @@ impl DynamicViewDependencyIndex {
             bound_dependencies,
             unbound: ResourceContext::new_with_equalities(assumptions)
                 .unchecked_with_facts(unbound_views.iter().cloned()),
+            owned: ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_facts(owned.iter().cloned()),
         }
     }
 }
@@ -329,6 +344,10 @@ fn dynamic_body_fact_dependency(
                 .resources()
                 .directly_supporting_owned_entry(&required_view, assumptions)
                 .is_some()
+                || temporary_views
+                    .owned
+                    .directly_supporting_owned_entry(&required_view, assumptions)
+                    .is_some()
             {
                 return Ok(());
             }
@@ -718,6 +737,7 @@ fn unmatched_instance_body(
             composite_body: Some(scope),
             field_schema: definition.field_schema.clone(),
             authorized: definition.authorized,
+            sealed: definition.sealed,
         },
         bindings: instance.fields().to_vec(),
     })
@@ -3370,6 +3390,10 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     }
 
     let mut unfolded_facts = Vec::new();
+    // Lower later selectors through earlier cached fields, but name every
+    // exposed cell at this one rewrite's input snapshot. Caching a read is
+    // not a new program write or a new load-naming epoch.
+    let naming_memory = state.memory().clone();
     for contained in contained_clauses {
         let contained = instantiate_resource_clause(contained, &substitutions).map_err(|message| {
             ClickError::new(format!(
@@ -3386,8 +3410,9 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         // receives loadability and symbolic loads without modifying the
         // certified program memory by installing cached cells into it.
         if materialize_memory {
-            let memory = materialize_composite_resource_cells(
+            let memory = materialize_composite_resource_cells_from_snapshot(
                 state.memory().clone(),
+                &naming_memory,
                 &contained,
                 &lowered,
                 parameter_binding.parameters,
@@ -3500,9 +3525,15 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         } else {
             Vec::new()
         };
-        let temporary_view_index = DynamicViewDependencyIndex::new(
+        let temporary_owned = unfolded_facts
+            .iter()
+            .filter(|child| child.memory_own_range().is_some())
+            .cloned()
+            .collect::<Vec<_>>();
+        let temporary_view_index = DynamicViewDependencyIndex::with_owned(
             &temporary_views,
             &temporary_unbound_views,
+            &temporary_owned,
             available_pure_facts.assumptions(),
         );
         if let Some(binding) = dynamic_body_fact_dependency(
@@ -5155,22 +5186,6 @@ fn instantiate_contract_segment(
         end: substitute_c_fragment(&segment.end, substitutions)?,
         surface,
     })
-}
-
-fn materialize_composite_resource_cells(
-    memory: CMemory,
-    resource_clause: &ResourceClause,
-    lowered: &CResourceFact,
-    parameters: &[syntax::C0Parameter],
-) -> CMemory {
-    let naming_memory = memory.clone();
-    materialize_composite_resource_cells_from_snapshot(
-        memory,
-        &naming_memory,
-        resource_clause,
-        lowered,
-        parameters,
-    )
 }
 
 fn materialize_composite_resource_cells_from_snapshot(

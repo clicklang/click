@@ -24,6 +24,43 @@ const PROVENANCE: &str =
 const COMMAND: &str =
     include_str!("../integrations/bitcoin-core-money-range/feerate-command.json.in");
 const SIDECAR: &str = include_str!("../integrations/bitcoin-core-money-range/MoneyRange.click");
+const PROJECT: &str = include_str!("../integrations/bitcoin-core-money-range/click.project.json");
+
+/// The project's `bitcoin` unit is the selected CMake command itself: every
+/// argument in order, relocated to the unit root, except those Click
+/// supplies (the driver, target, standard, resource directory, `-c` and `-o`).
+#[test]
+fn bitcoin_unit_arguments_are_the_cmake_command() {
+    let command: serde_json::Value = serde_json::from_str(COMMAND).unwrap();
+    let mut words = command[0]["command"].as_str().unwrap().split_whitespace();
+    assert_eq!(words.next(), Some("@CLANGXX@"));
+    let mut expected = Vec::new();
+    while let Some(word) = words.next() {
+        if word == "-o" || word == "-c" {
+            words.next();
+        } else if !(word.starts_with("--target=")
+            || word == "-std=c++20"
+            || word.starts_with("-resource-dir="))
+        {
+            expected.push(word.replace("@ROOT@/", ""));
+        }
+    }
+    let project: serde_json::Value = serde_json::from_str(PROJECT).unwrap();
+    let unit = &project["units"]["bitcoin"];
+    assert_eq!(unit["language"], "c++");
+    assert_eq!(
+        (&unit["exceptions"], &unit["rtti"]),
+        (&true.into(), &true.into())
+    );
+    let actual = unit["args"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|argument| argument.as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(actual, expected);
+    assert!(actual.iter().any(|argument| argument == "-O2"));
+}
 
 fn check_upstream_fee_frac(selected: &str, name: &str, source: &str) {
     check_upstream_cpp(

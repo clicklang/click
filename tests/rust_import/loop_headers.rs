@@ -2,93 +2,16 @@
 use super::*;
 
 fn project(name: &str, positive: bool) -> Project {
-    let p = Project::new("");
-    let files: &[(&str, &[u8])] = match name {
-        "loops" => &[
-            (
-                "loops.rs",
-                include_bytes!("../../design/charon-trial/loop-headers/loops.rs"),
-            ),
-            (
-                "borrow.click",
-                if positive {
-                    include_bytes!("../../design/charon-trial/loop-headers/loops-proof.click")
-                        .as_slice()
-                } else {
-                    include_bytes!("../../design/charon-trial/loop-headers/loops.click").as_slice()
-                },
-            ),
-            (
-                "borrow.click.import.json",
-                include_bytes!("../../design/charon-trial/loop-headers/loops.click.import.json"),
-            ),
-            (
-                "borrow.click.import.json.lock",
-                include_bytes!(
-                    "../../design/charon-trial/loop-headers/loops.click.import.json.lock"
-                ),
-            ),
-            (
-                "loops.ullbc",
-                include_bytes!("../../design/charon-trial/loop-headers/loops.ullbc"),
-            ),
-        ],
-        "sum" => &[
-            (
-                "sum.rs",
-                include_bytes!("../../design/charon-trial/loop-headers/sum.rs"),
-            ),
-            (
-                "borrow.click",
-                if positive {
-                    include_bytes!("../../design/charon-trial/loop-headers/sum-proof.click")
-                        .as_slice()
-                } else {
-                    include_bytes!("../../design/charon-trial/loop-headers/sum.click").as_slice()
-                },
-            ),
-            (
-                "borrow.click.import.json",
-                include_bytes!("../../design/charon-trial/loop-headers/sum.click.import.json"),
-            ),
-            (
-                "borrow.click.import.json.lock",
-                include_bytes!("../../design/charon-trial/loop-headers/sum.click.import.json.lock"),
-            ),
-            (
-                "sum.ullbc",
-                include_bytes!("../../design/charon-trial/loop-headers/sum.ullbc"),
-            ),
-        ],
-        "headers" => &[
-            (
-                "headers.rs",
-                include_bytes!("../../design/charon-trial/loop-headers/headers.rs"),
-            ),
-            (
-                "borrow.click",
-                include_bytes!("../../design/charon-trial/loop-headers/headers.click"),
-            ),
-            (
-                "borrow.click.import.json",
-                include_bytes!("../../design/charon-trial/loop-headers/headers.click.import.json"),
-            ),
-            (
-                "borrow.click.import.json.lock",
-                include_bytes!(
-                    "../../design/charon-trial/loop-headers/headers.click.import.json.lock"
-                ),
-            ),
-            (
-                "headers.ullbc",
-                include_bytes!("../../design/charon-trial/loop-headers/headers.ullbc"),
-            ),
-        ],
+    let p = Project::from_fixture("design/charon-trial/loop-headers");
+    let sidecar = match (name, positive) {
+        ("loops", true) => "loops-proof.click",
+        ("loops", false) => "loops.click",
+        ("sum", true) => "sum-proof.click",
+        ("sum", false) => "sum.click",
+        ("headers", _) => "headers.click",
         _ => panic!("unknown checkpoint"),
     };
-    for (name, bytes) in files {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    fs::copy(p.root.join(sidecar), p.root.join("borrow.click")).unwrap();
     p
 }
 
@@ -115,7 +38,7 @@ fn charon_loop_headers_import_unchanged_fixtures_and_retain_frontier_gaps() {
         ("sum", "local `i` has no value at this frontier"),
     ] {
         let p = project(name, false);
-        let prepared = load_import(&p.config()).unwrap();
+        let prepared = p.prepared().unwrap();
         let error = C0VerificationSession::new_program_prepared(
             &super::parity::frozen_proof_input(
                 &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
@@ -136,7 +59,7 @@ fn charon_loop_headers_import_unchanged_fixtures_and_retain_frontier_gaps() {
 #[ignore = "nightly: 2.4s in the parallel gate"]
 fn charon_loop_phase_expands_by_label_over_the_prepared_program() {
     let p = project("loops", true);
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     let sidecar = fs::read_to_string(p.root.join("borrow.click")).unwrap();
     let inputs = click::surface::ProgramInputs::program(&prepared);
     for phase in ["initialize", "preserve"] {
@@ -176,7 +99,7 @@ fn charon_loop_phase_expands_by_label_over_the_prepared_program() {
 fn charon_loop_headers_check_real_guards_final_assignments_and_false_claims() {
     for name in ["loops", "sum", "headers"] {
         let p = project(name, true);
-        let prepared = load_import(&p.config()).unwrap();
+        let prepared = p.prepared().unwrap();
         let sidecar = fs::read_to_string(p.root.join("borrow.click")).unwrap();
         C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
         for (before, after) in [
@@ -225,14 +148,8 @@ fn charon_loop_headers_tools_recheck_expanded_certificates() {
 fn charon_loop_headers_live_refresh_and_effectful_header_rejections() {
     for name in ["loops", "sum", "headers"] {
         let p = project(name, true);
-        let mut config: serde_json::Value =
-            serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
-        config["exporter"] = serde_json::json!(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
-        );
-        fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-        refresh_import(&p.config()).unwrap();
-        let prepared = load_import(&p.config()).unwrap();
+        p.refresh().unwrap();
+        let prepared = p.prepared().unwrap();
         C0VerificationSession::new_program_prepared(
             &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
             &prepared,
@@ -246,12 +163,12 @@ fn charon_loop_headers_live_refresh_and_effectful_header_rejections() {
                 original.replacen("let mut i = 0;", "let unrelated = n; let mut i = 0;", 1),
             )
             .unwrap();
-            refresh_import(&p.config()).unwrap();
-            let prepared = load_import(&p.config()).unwrap();
+            p.refresh().unwrap();
+            let prepared = p.prepared().unwrap();
             let sidecar = assignment_frontier_sidecar();
             C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
             fs::write(p.root.join("loops.rs"), original).unwrap();
-            refresh_import(&p.config()).unwrap();
+            p.refresh().unwrap();
         }
         if name == "sum" {
             let original = fs::read_to_string(p.root.join("sum.rs")).unwrap();
@@ -264,8 +181,8 @@ fn charon_loop_headers_live_refresh_and_effectful_header_rejections() {
                 ),
             )
             .unwrap();
-            refresh_import(&p.config()).unwrap();
-            let prepared = load_import(&p.config()).unwrap();
+            p.refresh().unwrap();
+            let prepared = p.prepared().unwrap();
             C0VerificationSession::new_program_prepared(
                 &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
                 &prepared,
@@ -293,17 +210,17 @@ fn charon_loop_headers_live_refresh_and_effectful_header_rejections() {
                 "extra exit",
             ),
         ] {
-            fs::remove_file(p.root.join("headers.ullbc")).unwrap();
+            fs::remove_file(p.artifact("headers.rs")).unwrap();
             fs::write(p.root.join("headers.rs"), source).unwrap();
-            let error = refresh_import(&p.config()).unwrap_err();
+            let error = p.refresh().unwrap_err();
             assert!(error.contains(diagnostic), "{error}");
-            assert!(!p.root.join("headers.ullbc").exists());
+            assert!(!p.artifact("headers.rs").exists());
             fs::write(
                 p.root.join("headers.rs"),
                 include_str!("../../design/charon-trial/loop-headers/headers.rs"),
             )
             .unwrap();
-            refresh_import(&p.config()).unwrap();
+            p.refresh().unwrap();
         }
     }
 }
@@ -318,7 +235,7 @@ fn charon_assignment_frontiers_select_source_locals_and_recheck_tools() {
     let p = project("loops", true);
     let sidecar = assignment_frontier_sidecar();
     fs::write(p.root.join("borrow.click"), sidecar).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     for (from, to) in [
         ("assignment(i, 0)", "assignment(absent, 0)"),

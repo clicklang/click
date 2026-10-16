@@ -180,6 +180,7 @@ pub(in crate::surface) fn resource_match_arm_scopes<'a, 'b>(
                 composite_body: Some(body),
                 field_schema: definition.field_schema.clone(),
                 authorized: definition.authorized,
+                sealed: definition.sealed,
             },
         ));
     }
@@ -538,6 +539,7 @@ pub(in crate::surface) fn resource_unmatched_body_scope<'b>(
         composite_body: Some(body),
         field_schema: definition.field_schema.clone(),
         authorized: definition.authorized,
+        sealed: definition.sealed,
     }))
 }
 

@@ -28,7 +28,7 @@ use std::time::Duration;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-struct TrialArtifact {
+struct ExtractionArtifact {
     extractor_revision: String,
     compiler_commit: String,
     profile: String,
@@ -95,14 +95,15 @@ pub(super) fn extract_crate(
             format!("--emit=dep-info={}", dep.display()),
         ];
         rustc_args.extend(flags.iter().cloned());
-        runtime.run_rustc(&rustc_args, root, limits)?;
+        runtime.run_rustc(&rustc_args, root, limits).map_err(|error| {
+            format!("Rust crate input check failed; the compiler sees only configured files. Check `crate.files` for missing module/include inputs.\n{}", error.replace(&format!("{}/", root.display()), ""))
+        })?;
         let observed =
             super::crate_inputs::dep_files(&std::fs::read(&dep).map_err(|e| e.to_string())?, root)?;
-        let expected = c.files.iter().cloned().collect();
-        if observed != expected {
-            return Err("Rust compiler source closure differs from configured crate files".into());
-        }
+        super::crate_inputs::check_closure(&c.files, &observed)?;
     }
+    // Historical metadata labels remain stable so naming cleanup does not
+    // rewrite frozen artifacts. They are not the frontend's product identity.
     let artifact = temp.path().join("trial.ullbc");
     let mut args: Vec<String> = [
         "rustc",
@@ -148,7 +149,7 @@ pub(super) fn extract_crate(
     run_compiler(executable, &args, temp.path(), environment, limits)?;
     let metadata = std::fs::metadata(&artifact).map_err(|e| e.to_string())?;
     if !metadata.is_file() || metadata.len() > 4 << 20 {
-        return Err("Charon trial artifact exceeds its file bound".into());
+        return Err("Rust frontend artifact exceeds its file bound".into());
     }
     let bytes = std::fs::read(artifact).map_err(|e| e.to_string())?;
     let mut data: charon_lib::export::CrateData =
@@ -175,7 +176,18 @@ pub(super) fn extract_crate(
             }
         }
     }
-    serde_json::to_vec(&TrialArtifact {
+    // Single-file imports also need portable metadata: rustc names this input
+    // by its absolute checkout path. Only this crate's file is rewritten;
+    // external library locations retain their compiler identity.
+    if crate_config.is_none() {
+        let name = source.file_name().ok_or("Rust source needs a filename")?;
+        for file in &mut data.translated.files {
+            if file.crate_name == data.translated.crate_name {
+                file.name = a::FileName::Local(name.into());
+            }
+        }
+    }
+    serde_json::to_vec(&ExtractionArtifact {
         extractor_revision: profile::get().extractor_revision.clone(),
         compiler_commit: profile::get().compiler_commit.clone(),
         profile: profile::get().extraction.clone(),
@@ -188,7 +200,7 @@ pub(super) fn extract_crate(
 }
 
 fn unsupported(what: &str) -> String {
-    format!("Charon trial does not support {what}")
+    format!("Rust frontend does not support {what}")
 }
 fn span(s: a::Span) -> out::Span {
     out::Span {
@@ -349,6 +361,9 @@ struct Adapter<'a> {
     /// The crate trait method implementations, by the interface function
     /// each implements.
     trait_impl_methods: BTreeMap<a::FunDeclId, String>,
+    /// Each crate struct a call passes as a crate trait's object, with the
+    /// trait: the struct's pack and unpack functions are imported.
+    object_coercions: std::cell::RefCell<BTreeSet<(a::TypeDeclId, a::TraitDeclId)>>,
 }
 impl Adapter<'_> {
     fn ty(&self, t: &a::Ty) -> Result<Type, String> {
@@ -560,6 +575,12 @@ struct BodyAdapter<'a, 'b> {
     slice_pairs: BTreeMap<a::LocalId, [String; 2]>,
     iterator_refs: BTreeMap<a::LocalId, a::LocalId>,
     iterator_discriminants: BTreeMap<a::LocalId, a::LocalId>,
+    /// The locals a crate struct reference is unsized into a `&dyn` crate
+    /// trait for.
+    unsized_objects: BTreeMap<a::LocalId, (a::TypeDeclId, a::TraitDeclId)>,
+    /// The pack, unpack, and argument of each object the block's call makes
+    /// from a crate struct reference.
+    coercions: std::cell::RefCell<Vec<(String, String, E)>>,
 }
 impl BodyAdapter<'_, '_> {
     /// Named interpretations for compiler-resolved slice length and unsigned From.
@@ -1478,7 +1499,7 @@ impl BodyAdapter<'_, '_> {
                         return Err(unsupported("projected call destination"));
                     };
                     let mut owned_arguments = Vec::new();
-                    let arguments = call
+                    let arguments: Vec<E> = call
                         .args
                         .iter()
                         .enumerate()
@@ -1508,6 +1529,45 @@ impl BodyAdapter<'_, '_> {
                             }
                         })
                         .collect::<Result<_, String>>()?;
+                    // A crate struct reference passed as a crate trait's
+                    // object becomes the object for the call.
+                    for (index, operand) in call.args.iter().enumerate() {
+                        let generic = callee
+                            .signature
+                            .inputs
+                            .get(index)
+                            .and_then(|ty| self.adapter.object_parameter_trait(callee, ty))
+                            .and_then(|trait_id| match operand.ty().kind() {
+                                a::TyKind::Ref(_, pointee, _) => self
+                                    .adapter
+                                    .record_id(pointee)
+                                    .ok()
+                                    .map(|record| (record, trait_id)),
+                                _ => None,
+                            });
+                        let unsized_object = match operand {
+                            a::Operand::Move(place) | a::Operand::Copy(place) => match place.kind {
+                                a::PlaceKind::Local(local) => {
+                                    self.unsized_objects.get(&local).copied()
+                                }
+                                _ => None,
+                            },
+                            _ => None,
+                        };
+                        if let Some((record, trait_id)) = generic.or(unsized_object) {
+                            let (pack, unpack) =
+                                self.adapter.object_coercion_names(record, trait_id)?;
+                            self.adapter
+                                .object_coercions
+                                .borrow_mut()
+                                .insert((record, trait_id));
+                            self.coercions.borrow_mut().push((
+                                pack,
+                                unpack,
+                                arguments[index].clone(),
+                            ));
+                        }
+                    }
                     T::Call {
                         function: self
                             .adapter
@@ -1543,7 +1603,7 @@ pub(super) fn decode_crate(
     crate_config: Option<&super::crate_inputs::CrateConfig>,
     sources: Option<&super::crate_inputs::SourceFiles>,
 ) -> Result<out::RustExport, String> {
-    let artifact: TrialArtifact =
+    let artifact: ExtractionArtifact =
         serde_json::from_slice(bytes).map_err(|e| format!("Charon artifact: {e}"))?;
     if artifact.extractor_revision != profile::get().extractor_revision
         || artifact.compiler_commit != profile::get().compiler_commit
@@ -1577,7 +1637,7 @@ pub(super) fn decode_crate(
     // The driver clears rustc_args after consuming them; the refresh-owned
     // envelope records those flags along with the checked compiler identity.
     if opts != &expected {
-        return Err("Charon artifact differs from the trial extraction profile".into());
+        return Err("Rust artifact differs from the pinned extraction profile".into());
     }
     if let Some(c) = crate_config {
         if krate.crate_name != c.name {
@@ -1635,7 +1695,7 @@ pub(super) fn decode_crate(
             .collect();
         if files.len() != 1 || files[0].contents.as_deref().map(str::as_bytes) != Some(source_bytes)
         {
-            return Err("Charon trial requires exactly one locked source file".into());
+            return Err("Rust single-file import requires exactly one locked source file".into());
         }
     }
     let mut adapter = Adapter {
@@ -1649,6 +1709,7 @@ pub(super) fn decode_crate(
         closure_captures: BTreeMap::new(),
         callable_parameters: std::cell::RefCell::new(Vec::new()),
         trait_impl_methods: BTreeMap::new(),
+        object_coercions: std::cell::RefCell::new(BTreeSet::new()),
     };
     if crate_config.is_some() {
         adapter.record_closure_captures()?;
@@ -2023,8 +2084,11 @@ pub(super) fn decode_crate(
             slice_pairs,
             iterator_refs,
             iterator_discriminants,
+            unsized_objects: traits::unsized_objects(&adapter, body),
+            coercions: std::cell::RefCell::new(Vec::new()),
         };
         let mut blocks = Vec::new();
+        let mut coercions = Vec::new();
         for block in &b.body.body {
             let mut statements: Vec<S> = block
                 .statements
@@ -2077,11 +2141,13 @@ pub(super) fn decode_crate(
                     block.terminator.span.data().beg.line
                 )
             })?;
+            coercions.push((blocks.len(), b.coercions.take()));
             blocks.push(out::MirBlock {
                 statements,
                 terminator,
             });
         }
+        traits::wrap_object_coercions(&mut blocks, coercions)?;
         protocol::split_next_branches(&mut blocks)?;
         functions.push(out::Function {
             name: name.clone(),
@@ -2109,6 +2175,9 @@ pub(super) fn decode_crate(
             }
             functions.push(function);
         }
+    }
+    for (record, trait_id) in adapter.object_coercions.borrow().iter() {
+        functions.extend(adapter.object_coercion_functions(*record, *trait_id)?);
     }
     for imp in krate.trait_impls.iter() {
         let id = imp.impl_trait.id;
@@ -2145,7 +2214,9 @@ pub(super) fn decode_crate(
 mod tests {
     #[test]
     fn charon_plain_record_loop_needs_storage_lifetime_restarts() {
-        let artifact = include_bytes!("../../../design/charon-trial/plain-record-loop/loop.ullbc");
+        let artifact = include_bytes!(
+            "../../../design/charon-trial/plain-record-loop/.click/loop/loop.rs.ullbc"
+        );
         let source = include_bytes!("../../../design/charon-trial/plain-record-loop/loop.rs");
         let claim = include_str!("../../../design/charon-trial/plain-record-loop/loop.click");
         let export = decode(artifact, "loop.rs", source).unwrap();
@@ -2182,13 +2253,15 @@ mod tests {
     fn loop_array_copy_export() -> out::RustExport {
         let source = include_bytes!("../../../design/charon-trial/loop-array-copy/quad.rs");
         let config: serde_json::Value = serde_json::from_slice(include_bytes!(
-            "../../../design/charon-trial/loop-array-copy/quad.click.import.json"
+            "../../../design/charon-trial/loop-array-copy/click.project.json"
         ))
         .unwrap();
-        let config = serde_json::from_value(config["crate"].clone()).unwrap();
+        let config = serde_json::from_value(config["units"]["quad"]["crate"].clone()).unwrap();
         let sources = BTreeMap::from([("quad.rs".into(), source.to_vec())]);
         decode_crate(
-            include_bytes!("../../../design/charon-trial/loop-array-copy/quad.ullbc"),
+            include_bytes!(
+                "../../../design/charon-trial/loop-array-copy/.click/quad/quad.rs.ullbc"
+            ),
             "quad.rs",
             source,
             Some(&config),
@@ -2327,7 +2400,7 @@ mod tests {
     #[test]
     fn charon_storage_restart_cannot_erase_a_drop_record() {
         let mut export = decode(
-            include_bytes!("../../../design/charon-trial/borrowed-loop/loop.ullbc"),
+            include_bytes!("../../../design/charon-trial/borrowed-loop/.click/loop/loop.rs.ullbc"),
             "loop.rs",
             include_bytes!("../../../design/charon-trial/borrowed-loop/loop.rs"),
         )
@@ -2376,12 +2449,14 @@ mod tests {
     }
     use super::*;
     use crate::surface::C0VerificationSession;
-    const ARTIFACT: &[u8] = include_bytes!("../../../design/charon-trial/trial.ullbc");
+    const ARTIFACT: &[u8] =
+        include_bytes!("../../../design/charon-trial/.click/trial/trial.rs.ullbc");
     const SOURCE: &[u8] = include_bytes!("../../../design/charon-trial/trial.rs");
     const CLAIM: &str = include_str!("../../../design/charon-trial/trial.click");
 
-    const ARRAY_ARTIFACT: &[u8] =
-        include_bytes!("../../../design/charon-trial/conversions-arrays/arrays.ullbc");
+    const ARRAY_ARTIFACT: &[u8] = include_bytes!(
+        "../../../design/charon-trial/conversions-arrays/.click/arrays/arrays.rs.ullbc"
+    );
     const ARRAY_SOURCE: &[u8] =
         include_bytes!("../../../design/charon-trial/conversions-arrays/arrays.rs");
     const ARRAY_CLAIM: &str =
@@ -2390,7 +2465,7 @@ mod tests {
     #[test]
     fn charon_chunks_keep_state_and_owned_moves() {
         let export = decode(
-            include_bytes!("../../../design/charon-trial/chunks/chunks.ullbc"),
+            include_bytes!("../../../design/charon-trial/chunks/.click/chunks/chunks.rs.ullbc"),
             "chunks.rs",
             include_bytes!("../../../design/charon-trial/chunks/chunks.rs"),
         )
@@ -2436,7 +2511,7 @@ mod tests {
     #[ignore = "nightly: original chunk-iterator whole-sidecar proof measured at 16.9 s"]
     fn charon_chunks_original_sidecar_verifies() {
         let export = decode(
-            include_bytes!("../../../design/charon-trial/chunks/chunks.ullbc"),
+            include_bytes!("../../../design/charon-trial/chunks/.click/chunks/chunks.rs.ullbc"),
             "chunks.rs",
             include_bytes!("../../../design/charon-trial/chunks/chunks.rs"),
         )
@@ -2449,8 +2524,9 @@ mod tests {
         .unwrap();
     }
 
-    const OPERATOR_ARTIFACT: &[u8] =
-        include_bytes!("../../../design/charon-trial/assignment-operators/operators.ullbc");
+    const OPERATOR_ARTIFACT: &[u8] = include_bytes!(
+        "../../../design/charon-trial/assignment-operators/.click/operators/operators.rs.ullbc"
+    );
     const OPERATOR_SOURCE: &[u8] =
         include_bytes!("../../../design/charon-trial/assignment-operators/operators.rs");
 
@@ -2488,7 +2564,8 @@ mod tests {
     #[test]
     fn charon_assignment_operators_reject_forged_identity_signatures_and_calls() {
         for mutation in 0..15 {
-            let mut artifact: TrialArtifact = serde_json::from_slice(OPERATOR_ARTIFACT).unwrap();
+            let mut artifact: ExtractionArtifact =
+                serde_json::from_slice(OPERATOR_ARTIFACT).unwrap();
             let krate = &mut artifact.data.translated;
             if mutation < 12 {
                 let f = krate.fun_decls.iter_mut().find(|f| matches!(f.item_meta.name.name.last(), Some(a::PathElem::Ident(n, _)) if n == "mul_assign")).unwrap();
@@ -2561,8 +2638,9 @@ mod tests {
         }
     }
 
-    const ITERATION_ARTIFACT: &[u8] =
-        include_bytes!("../../../design/charon-trial/array-iteration/iteration.ullbc");
+    const ITERATION_ARTIFACT: &[u8] = include_bytes!(
+        "../../../design/charon-trial/array-iteration/.click/iteration/iteration.rs.ullbc"
+    );
     const ITERATION_SOURCE: &[u8] =
         include_bytes!("../../../design/charon-trial/array-iteration/iteration.rs");
     const ITERATION_CLAIM: &str =
@@ -2616,7 +2694,8 @@ mod tests {
     #[ignore = "nightly: 0.7s in the parallel gate"]
     fn charon_shared_iteration_rejects_forged_declarations_signatures_and_paths() {
         for mutation in 0..8 {
-            let mut artifact: TrialArtifact = serde_json::from_slice(ITERATION_ARTIFACT).unwrap();
+            let mut artifact: ExtractionArtifact =
+                serde_json::from_slice(ITERATION_ARTIFACT).unwrap();
             let callee =
                 artifact
                     .data
@@ -2781,8 +2860,9 @@ mod tests {
         assert!(C0VerificationSession::new_program_prepared("verifying \"iteration.rs\"; fn signed(words: &[i32; 4]) -> i32 { ensures result == 0; } by { execute(); simp(); }", &prepared).is_err());
     }
 
-    const OWNED_ARRAY_ARTIFACT: &[u8] =
-        include_bytes!("../../../design/charon-trial/owned-array-fields/owned.ullbc");
+    const OWNED_ARRAY_ARTIFACT: &[u8] = include_bytes!(
+        "../../../design/charon-trial/owned-array-fields/.click/owned/owned.rs.ullbc"
+    );
     const OWNED_ARRAY_SOURCE: &[u8] =
         include_bytes!("../../../design/charon-trial/owned-array-fields/owned.rs");
     #[test]
@@ -2810,7 +2890,7 @@ mod tests {
     }
 
     const FIELDS_ARTIFACT: &[u8] =
-        include_bytes!("../../../design/charon-trial/array-fields/fields.ullbc");
+        include_bytes!("../../../design/charon-trial/array-fields/.click/fields/fields.rs.ullbc");
     const FIELDS_SOURCE: &[u8] =
         include_bytes!("../../../design/charon-trial/array-fields/fields.rs");
     #[test]
@@ -2869,8 +2949,9 @@ mod tests {
         assert!(error.contains("mutable array field borrow"));
     }
 
-    const ARITHMETIC_ARTIFACT: &[u8] =
-        include_bytes!("../../../design/charon-trial/arithmetic/arithmetic.ullbc");
+    const ARITHMETIC_ARTIFACT: &[u8] = include_bytes!(
+        "../../../design/charon-trial/arithmetic/.click/arithmetic/arithmetic.rs.ullbc"
+    );
     const ARITHMETIC_SOURCE: &[u8] =
         include_bytes!("../../../design/charon-trial/arithmetic/arithmetic.rs");
 
@@ -2878,7 +2959,7 @@ mod tests {
     fn charon_checksum_operators_reject_wrapping_and_unchecked_modes() {
         for name in ["quotient", "reduce", "wide_left", "wide_right"] {
             for mode in [a::OverflowMode::Wrap, a::OverflowMode::UB] {
-                let mut artifact: TrialArtifact =
+                let mut artifact: ExtractionArtifact =
                     serde_json::from_slice(ARITHMETIC_ARTIFACT).unwrap();
                 let function = artifact.data.translated.fun_decls.iter_mut().find(|f| matches!(f.item_meta.name.name.last(), Some(a::PathElem::Ident(n, _)) if n == name)).unwrap();
                 let a::Body::Unstructured(body) = &mut function.body else {
@@ -2919,7 +3000,7 @@ mod tests {
 
     #[test]
     fn charon_checksum_unsigned_operator_types_must_match() {
-        let mut artifact: TrialArtifact = serde_json::from_slice(ARITHMETIC_ARTIFACT).unwrap();
+        let mut artifact: ExtractionArtifact = serde_json::from_slice(ARITHMETIC_ARTIFACT).unwrap();
         let function = artifact.data.translated.fun_decls.iter_mut().find(|f| matches!(f.item_meta.name.name.last(), Some(a::PathElem::Ident(n, _)) if n == "quotient")).unwrap();
         let a::Body::Unstructured(body) = &mut function.body else {
             panic!()
@@ -2951,7 +3032,7 @@ mod tests {
     }
 
     const NESTED_ARTIFACT: &[u8] =
-        include_bytes!("../../../design/charon-trial/nested/nested.ullbc");
+        include_bytes!("../../../design/charon-trial/nested/.click/nested/nested.rs.ullbc");
     const NESTED_SOURCE: &[u8] = include_bytes!("../../../design/charon-trial/nested/nested.rs");
 
     #[test]
@@ -3021,7 +3102,7 @@ mod tests {
 
     #[test]
     fn charon_generated_local_names_do_not_collide_with_source_names() {
-        let mut artifact: TrialArtifact = serde_json::from_slice(NESTED_ARTIFACT).unwrap();
+        let mut artifact: ExtractionArtifact = serde_json::from_slice(NESTED_ARTIFACT).unwrap();
         let body = artifact.data.translated.fun_decls.iter_mut().find_map(|function| {
             if !matches!(function.item_meta.name.name.last(), Some(a::PathElem::Ident(name, _)) if name == "nested") { return None; }
             let a::Body::Unstructured(body) = &mut function.body else { return None; };
@@ -3057,7 +3138,7 @@ mod tests {
     #[test]
     fn charon_array_unsize_rejects_mismatched_metadata_and_reference_types() {
         for mutation in 0..4 {
-            let mut artifact: TrialArtifact = serde_json::from_slice(NESTED_ARTIFACT).unwrap();
+            let mut artifact: ExtractionArtifact = serde_json::from_slice(NESTED_ARTIFACT).unwrap();
             let mut changed = false;
             'functions: for function in artifact.data.translated.fun_decls.iter_mut() {
                 let a::Body::Unstructured(body) = &mut function.body else {
@@ -3153,14 +3234,14 @@ mod tests {
     }
 
     const CHUNK_ARTIFACT: &[u8] =
-        include_bytes!("../../../design/charon-trial/chunks/chunks.ullbc");
+        include_bytes!("../../../design/charon-trial/chunks/.click/chunks/chunks.rs.ullbc");
     const CHUNK_SOURCE: &[u8] = include_bytes!("../../../design/charon-trial/chunks/chunks.rs");
 
     #[test]
     #[ignore = "nightly: 0.5s in the parallel gate"]
     fn charon_chunk_models_check_resolved_identity_and_signature() {
         for mutation in 0..7 {
-            let mut artifact: TrialArtifact = serde_json::from_slice(CHUNK_ARTIFACT).unwrap();
+            let mut artifact: ExtractionArtifact = serde_json::from_slice(CHUNK_ARTIFACT).unwrap();
             let callee =
                 artifact
                     .data
@@ -3277,7 +3358,7 @@ mod tests {
 
     #[test]
     fn charon_chunk_option_projection_checks_variant_and_field() {
-        let mut artifact: TrialArtifact = serde_json::from_slice(CHUNK_ARTIFACT).unwrap();
+        let mut artifact: ExtractionArtifact = serde_json::from_slice(CHUNK_ARTIFACT).unwrap();
         let mut changed = false;
         for function in artifact.data.translated.fun_decls.iter_mut() {
             let a::Body::Unstructured(body) = &mut function.body else {
@@ -3358,13 +3439,13 @@ mod tests {
     }
 
     const SLICE_ARTIFACT: &[u8] =
-        include_bytes!("../../../design/charon-trial/slices/slices.ullbc");
+        include_bytes!("../../../design/charon-trial/slices/.click/slices/slices.rs.ullbc");
     const SLICE_SOURCE: &[u8] = include_bytes!("../../../design/charon-trial/slices/slices.rs");
 
     #[test]
     fn charon_slice_length_checks_declaration_identity_and_types() {
         for mutation in 0..4 {
-            let mut artifact: TrialArtifact = serde_json::from_slice(SLICE_ARTIFACT).unwrap();
+            let mut artifact: ExtractionArtifact = serde_json::from_slice(SLICE_ARTIFACT).unwrap();
             let callee = artifact
                 .data
                 .translated
@@ -3392,7 +3473,7 @@ mod tests {
 
     #[test]
     fn charon_slice_reborrow_rejects_unrelated_metadata() {
-        let mut artifact: TrialArtifact = serde_json::from_slice(SLICE_ARTIFACT).unwrap();
+        let mut artifact: ExtractionArtifact = serde_json::from_slice(SLICE_ARTIFACT).unwrap();
         let mut changed = false;
         for function in artifact.data.translated.fun_decls.iter_mut() {
             let a::Body::Unstructured(body) = &mut function.body else {
@@ -3438,7 +3519,7 @@ mod tests {
     #[test]
     fn charon_unsigned_from_checks_resolved_identity_and_signature() {
         for mutation in 0..4 {
-            let mut artifact: TrialArtifact = serde_json::from_slice(ARRAY_ARTIFACT).unwrap();
+            let mut artifact: ExtractionArtifact = serde_json::from_slice(ARRAY_ARTIFACT).unwrap();
             let tr = artifact
                 .data
                 .translated
@@ -3473,8 +3554,9 @@ mod tests {
 
     #[test]
     fn charon_identity_from_requires_the_resolved_generic_signature() {
-        const ARTIFACT: &[u8] =
-            include_bytes!("../../../design/charon-trial/identity-from/identity.ullbc");
+        const ARTIFACT: &[u8] = include_bytes!(
+            "../../../design/charon-trial/identity-from/.click/identity/identity.rs.ullbc"
+        );
         const SOURCE: &[u8] =
             include_bytes!("../../../design/charon-trial/identity-from/identity.rs");
         let export = decode(ARTIFACT, "identity.rs", SOURCE).unwrap();
@@ -3485,7 +3567,7 @@ mod tests {
         )
         .unwrap();
         for mutation in 0..6 {
-            let mut artifact: TrialArtifact = serde_json::from_slice(ARTIFACT).unwrap();
+            let mut artifact: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
             let trait_id = artifact
                 .data
                 .translated
@@ -3529,8 +3611,9 @@ mod tests {
 
     #[test]
     fn charon_borrowed_iterator_forwarding_keeps_one_state_and_checks_declarations() {
-        const ARTIFACT: &[u8] =
-            include_bytes!("../../../design/charon-trial/borrowed-chunks/chunks.ullbc");
+        const ARTIFACT: &[u8] = include_bytes!(
+            "../../../design/charon-trial/borrowed-chunks/.click/chunks/chunks.rs.ullbc"
+        );
         const SOURCE: &[u8] =
             include_bytes!("../../../design/charon-trial/borrowed-chunks/chunks.rs");
         let export = decode(ARTIFACT, "chunks.rs", SOURCE).unwrap();
@@ -3568,7 +3651,7 @@ mod tests {
         assert_eq!(next_states.len(), 2);
         assert!(next_states.iter().all(|name| *name == "chunks"));
         for mutation in 0..6 {
-            let mut artifact: TrialArtifact = serde_json::from_slice(ARTIFACT).unwrap();
+            let mut artifact: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
             let wrapper = artifact.data.translated.fun_decls.iter_mut().find(|f| {
                 f.item_meta.name.name.last().is_some_and(|p| matches!(p, a::PathElem::Ident(name, _) if name == "next"))
                     && matches!(f.signature.inputs.as_slice(), [input] if matches!(input.kind(), a::TyKind::Ref(_, p, _) if matches!(p.kind(), a::TyKind::Ref(..))))
@@ -3601,7 +3684,7 @@ mod tests {
                 "mutation {mutation}"
             );
         }
-        let mut artifact: TrialArtifact = serde_json::from_slice(ARTIFACT).unwrap();
+        let mut artifact: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
         let function = artifact
             .data
             .translated
@@ -3662,7 +3745,7 @@ mod tests {
     #[test]
     fn charon_borrowed_loop_keeps_a_real_while_guard() {
         let export = decode(
-            include_bytes!("../../../design/charon-trial/borrowed-loop/loop.ullbc"),
+            include_bytes!("../../../design/charon-trial/borrowed-loop/.click/loop/loop.rs.ullbc"),
             "loop.rs",
             include_bytes!("../../../design/charon-trial/borrowed-loop/loop.rs"),
         )
@@ -3707,7 +3790,7 @@ mod tests {
     #[ignore = "nightly: 0.7s in the parallel gate"]
     fn charon_borrowed_loop_rejects_missing_guard_cleanup() {
         let mut export = decode(
-            include_bytes!("../../../design/charon-trial/borrowed-loop/loop.ullbc"),
+            include_bytes!("../../../design/charon-trial/borrowed-loop/.click/loop/loop.rs.ullbc"),
             "loop.rs",
             include_bytes!("../../../design/charon-trial/borrowed-loop/loop.rs"),
         )
@@ -3741,7 +3824,7 @@ mod tests {
 
     #[test]
     fn charon_trial_rejects_partial_or_incompatible_extraction() {
-        let mutations: [fn(&mut TrialArtifact); 5] = [
+        let mutations: [fn(&mut ExtractionArtifact); 5] = [
             |a| a.data.has_errors = true,
             |a| a.compiler_commit = "untrusted-compiler".into(),
             |a| a.flags[3] = "-Coverflow-checks=off".into(),
@@ -3749,7 +3832,7 @@ mod tests {
             |a| a.data.translated.options.mir = Some(charon_lib::options::MirLevel::Elaborated),
         ];
         for mutation in mutations {
-            let mut artifact: TrialArtifact = serde_json::from_slice(ARTIFACT).unwrap();
+            let mut artifact: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
             mutation(&mut artifact);
             assert!(decode(&serde_json::to_vec(&artifact).unwrap(), "trial.rs", SOURCE).is_err());
         }

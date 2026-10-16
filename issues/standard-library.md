@@ -222,9 +222,11 @@ Each step is a separate PR that leaves every example verifying:
      `cstr_readable` is `cstr::readable`, and so on. The predicate that
      was `cstr` keeps its name as `cstr::cstr`, beside `cstr::len` and
      `cstr::readable`.
-   - Next: the `permutation` rename, joining `QUALIFIED_MODULES` in
-     `src/surface/parser/library_paths.rs`; `machine_integer` and
-     `integer` wait on the Integer-default arithmetic decision.
+   - Done: the `permutation` rename: `count` and `permutation` are
+     `permutation::count` and `permutation::permutation`, so a file may
+     declare its own `count` or `permutation` beside a module import.
+   - Next: `machine_integer` and `integer`, which wait on the
+     Integer-default arithmetic decision.
 6. Document the primitives in the language reference, and describe the
    library per module in the reference.
 7. Apply the consistency rules below: generic `count` and `permutation`,
@@ -259,8 +261,10 @@ Each step is a separate PR that leaves every example verifying:
   widths (`int8` through `uint64`) or replaced by one generic statement.
   A checked list of families and widths keeps each family complete.
 - Container and array predicates are generic over the element type where
-  the kernel supports it. `count` and `permutation` become generic, or their
-  `int32` restriction is documented as a kernel limit.
+  the kernel supports it. `permutation::count` and
+  `permutation::permutation` become generic if the kernel's generic folds
+  allow it; otherwise their `int32` restriction is documented as a kernel
+  limit (maintainer, 2026-10-15).
 - Size and index parameters of library models use the C types the real
   functions use (`size_t`), including `allocation`.
 - Write the naming scheme down in `library/README.md` and apply it to every
@@ -270,14 +274,19 @@ Each step is a separate PR that leaves every example verifying:
 
 ### Sequencing with Integer-default specification arithmetic
 
-[design-review.md](design-review.md) P2 proposes that specification
-arithmetic use `Integer` by default. If
-that lands, most of the 110 width lemmas exist only to bridge machine
-arithmetic and can be deleted rather than completed. Do the layering, the
-generic predicates, the `allocation` signature and the naming scheme first.
-Decide the width-lemma families only after that arithmetic decision is
-made. If it is decided against, complete the families. If it lands, delete
-the families it makes unnecessary and complete only the ones that remain.
+[design-review.md](design-review.md) P2 is decided (maintainer,
+2026-10-15): specification arithmetic uses `Integer` by default. Most of the
+110 width lemmas exist only to bridge machine arithmetic, so once that lands
+they are deleted rather than completed, and only the families that remain
+are completed. The `machine_integer` and `integer` renames follow that
+deletion, so the rename does not touch lemmas about to disappear.
+
+### Naming decisions (maintainer, 2026-10-15)
+
+- The predicate that was `cstr` stays `cstr::cstr`.
+- A module that C code brings without an import, such as `click::bytes`
+  through a C string call, is not in scope by its short name; such a file
+  writes the full `click::` path, or imports the module.
 
 ## Intended regression
 

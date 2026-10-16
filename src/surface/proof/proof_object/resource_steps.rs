@@ -386,6 +386,19 @@ impl<'a> Proof<'a> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("instance fold/unfold requires a C execution proof"));
         };
+        if let ResourceClause::Named { resource, .. } = resource
+            && let ResourceClause::Declared { name, .. } = resource.as_ref()
+            && context
+                .resource_environment
+                .get(name)
+                .is_some_and(ResourceDefinition::is_sealed)
+        {
+            let operation = if unfold { "unfold" } else { "fold" };
+            return Err(self.step_error(format!(
+                "`{name}` is an abstract resource: it has no body, so no proof can {operation} \
+                 it; only contracts produce and consume its instances"
+            )));
+        }
         let branch = self
             .focused_branch()
             .ok_or_else(|| self.step_error("instance rewrite requires an open goal"))?;
@@ -417,9 +430,10 @@ impl<'a> Proof<'a> {
             // arguments, so `fold(cell_at(id), ...)` names the pointer a
             // `have` goal spelling `id` does.
             let resource = &self.substitute_fixed_state_locals_in_resource_arguments(resource)?;
-            let lowered = lower_resource_clause_at_current_locals_with_assumptions(
+            let lowered = lower_resource_clause_at_current_locals_with_entry_and_assumptions(
                 resource,
                 context.parameter_binding(),
+                pre_state,
                 before,
                 outcome.map(|goal| &*goal.data.core.result),
                 self.facts().assumptions(),
@@ -2590,6 +2604,31 @@ impl<'a> Proof<'a> {
                 }),
             _ => false,
         };
+        // Certification reads an ordinary fold's composite back from the
+        // exit's pieces by its definition law, which assembles a composite
+        // only where its body facts hold under the path's own premises. A
+        // fact this proof established after execution (a predicate it
+        // unfolded, say) is not among them. When the entry premises alone do
+        // not give the law this fold's facts, the fold is also offered as a
+        // checked return exchange, which carries the proof's post-return
+        // facts into the certified trace. The exchange is kept only when the
+        // path still certifies with it; otherwise the fold stays with the
+        // definition law, which checks its facts itself.
+        let fact_bearing_exchange = match checked.selected.resource() {
+            CResource::Composite { name, .. } => {
+                context
+                    .function
+                    .composite_resource_definition(name)
+                    .is_some_and(|definition| !definition.facts().is_empty())
+                    && !crate::kernel::c_resource_definitionally_established(
+                        &goal.data.core.state,
+                        &checked.selected,
+                        context.function.composite_resource_definitions(),
+                        &execution.core.entry_assumptions(),
+                    )
+            }
+            _ => false,
+        };
         // The checked contract transition has its own resource evidence and
         // may bind outputs to their interface identities. A later scope close
         // still checks its body law, but does not exchange that final contract
@@ -2633,6 +2672,27 @@ impl<'a> Proof<'a> {
                     &checked.facts,
                 )
                 .map_err(|message| self.step_error(message))?;
+        } else if retain_return_exchange && fact_bearing_exchange && *state != *goal.data.core.state
+        {
+            let mut offered = execution.clone();
+            if offered
+                .core
+                .record_return_composite_resource_rewrite(
+                    context.function,
+                    goal.path_index,
+                    self.facts(),
+                    &checked.selected,
+                    &goal.data.core.state,
+                    &state,
+                    &checked.facts,
+                )
+                .is_ok()
+                && offered
+                    .core
+                    .return_path_certifies(context.function, goal.path_index)
+            {
+                execution = offered;
+            }
         }
         let mut data = (*goal.data).clone();
         data.core.result = Arc::new(value);

@@ -1,0 +1,22 @@
+{
+  "units": {
+    "trait_objects": {
+      "language": "rust",
+      "sources": {
+        "shapes.rs": {}
+      },
+      "crate": {
+        "name": "trait_objects",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "trait_objects::through_bound",
+          "trait_objects::through_dyn"
+        ],
+        "files": [
+          "shapes.rs"
+        ]
+      }
+    }
+  }
+}

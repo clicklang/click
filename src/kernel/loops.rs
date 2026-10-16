@@ -3904,9 +3904,7 @@ fn indexed_loop_exit_load_equality(
 }
 
 fn is_loop_exit_snapshot_marker(block: &PointerBlock) -> bool {
-    block.starts_with("havoc:")
-        || block.starts_with("call-havoc:")
-        || block.starts_with("call-write-set:")
+    block.is_havoc_block() || block.is_call_havoc_block() || block.starts_with("call-write-set:")
 }
 
 #[cfg(test)]
@@ -7231,7 +7229,7 @@ pub(super) fn prepare_loop_top_state(
     let mut runs_by_slot = Vec::new();
     for run in entry_state.memory().cells.runs() {
         crate::instrumentation::record_deterministic_work(1);
-        if run.base().block.starts_with("local:") || run.live_count() == 0 {
+        if run.base().block.is_local_block() || run.live_count() == 0 {
             continue;
         }
         if summaries.is_empty() && withheld.is_none() {
@@ -7305,7 +7303,7 @@ pub(super) fn prepare_loop_top_state(
     {
         let pointer = &pointer;
         let value = &value;
-        if pointer.block.starts_with("local:") {
+        if pointer.block.is_local_block() {
             continue;
         }
         let is_stable = summaries.iter().any(|summary| {
@@ -7323,7 +7321,7 @@ pub(super) fn prepare_loop_top_state(
         }
     }
     for ((pointer, c_type), value) in entry_state.memory().union_cells.iter() {
-        if pointer.block.starts_with("local:") {
+        if pointer.block.is_local_block() {
             continue;
         }
         let is_stable = summaries.iter().any(|summary| {
@@ -8749,7 +8747,7 @@ pub(super) fn evaluate_loop_effect_segment(
     segment: &CMemorySegment,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<EvaluatedMemorySegment, String>> {
+) -> ExecutionResult<Result<EvaluatedMemorySegment, ValueRefusal>> {
     let base = match evaluate_loop_effect_segment_value(
         state,
         &segment.base,
@@ -8759,10 +8757,10 @@ pub(super) fn evaluate_loop_effect_segment(
     )? {
         Ok(CValue::Pointer(pointer)) => pointer,
         Ok(value) => {
-            return Ok(Err(format!(
+            return Ok(Err(ValueRefusal::from(format!(
                 "segment base evaluated to a {} value, not a pointer",
                 super::functions::c_type_spelling(value.c_type())
-            )));
+            ))));
         }
         Err(message) => return Ok(Err(message)),
     };
@@ -8795,7 +8793,7 @@ pub(super) fn evaluate_loop_effect_segment(
             kind: RangeIndexKind::UInt64,
         };
         if let Some(refusal) = segment_extent_refusal(&base_value, &evaluated, assumptions) {
-            return Ok(Err(refusal));
+            return Ok(Err(refusal.into()));
         }
         return Ok(Ok(evaluated));
     }
@@ -8805,10 +8803,10 @@ pub(super) fn evaluate_loop_effect_segment(
             crate::kernel::narrow_range_constant(&value).expect("checked above")
         }
         Ok(value) => {
-            return Ok(Err(format!(
+            return Ok(Err(ValueRefusal::from(format!(
                 "segment start evaluated to a {} value, not an int32",
                 super::functions::c_type_spelling(value.c_type())
-            )));
+            ))));
         }
         Err(message) => return Ok(Err(message)),
     };
@@ -8818,10 +8816,10 @@ pub(super) fn evaluate_loop_effect_segment(
             crate::kernel::narrow_range_constant(&value).expect("checked above")
         }
         Ok(value) => {
-            return Ok(Err(format!(
+            return Ok(Err(ValueRefusal::from(format!(
                 "segment end evaluated to a {} value, not an int32",
                 super::functions::c_type_spelling(value.c_type())
-            )));
+            ))));
         }
         Err(message) => return Ok(Err(message)),
     };
@@ -8835,7 +8833,7 @@ pub(super) fn evaluate_loop_effect_segment(
         kind: RangeIndexKind::Int32,
     };
     if let Some(refusal) = segment_extent_refusal(&base_value, &evaluated, assumptions) {
-        return Ok(Err(refusal));
+        return Ok(Err(refusal.into()));
     }
     Ok(Ok(evaluated))
 }
@@ -8845,7 +8843,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     segment: &CMemorySegment,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<(EvaluatedMemorySegment, ExecutionFacts), String>> {
+) -> ExecutionResult<Result<(EvaluatedMemorySegment, ExecutionFacts), ValueRefusal>> {
     let mut facts = Vec::new();
     let mut evaluate = |expression: &CExpression, label: &str| {
         let local_assumptions = assumptions_with_path_context(assumptions, &facts, &[]);
@@ -8870,10 +8868,10 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     let base = match evaluate(&segment.base, "segment base")? {
         Ok(CValue::Pointer(pointer)) => pointer,
         Ok(value) => {
-            return Ok(Err(format!(
+            return Ok(Err(ValueRefusal::from(format!(
                 "segment base evaluated to a {} value, not a pointer",
                 super::functions::c_type_spelling(value.c_type())
-            )));
+            ))));
         }
         Err(message) => return Ok(Err(message)),
     };
@@ -8895,7 +8893,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         };
         let context = assumptions_with_path_context(assumptions, &facts, &[]);
         if let Some(refusal) = segment_extent_refusal(&base_value, &evaluated, &context) {
-            return Ok(Err(refusal));
+            return Ok(Err(refusal.into()));
         }
         return Ok(Ok((evaluated, facts.into())));
     }
@@ -8905,10 +8903,10 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
             crate::kernel::narrow_range_constant(&value).expect("checked above")
         }
         Ok(value) => {
-            return Ok(Err(format!(
+            return Ok(Err(ValueRefusal::from(format!(
                 "segment start evaluated to a {} value, not an int32",
                 super::functions::c_type_spelling(value.c_type())
-            )));
+            ))));
         }
         Err(message) => return Ok(Err(message)),
     };
@@ -8918,10 +8916,10 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
             crate::kernel::narrow_range_constant(&value).expect("checked above")
         }
         Ok(value) => {
-            return Ok(Err(format!(
+            return Ok(Err(ValueRefusal::from(format!(
                 "segment end evaluated to a {} value, not an int32",
                 super::functions::c_type_spelling(value.c_type())
-            )));
+            ))));
         }
         Err(message) => return Ok(Err(message)),
     };
@@ -8935,7 +8933,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     };
     let context = assumptions_with_path_context(assumptions, &facts, &[]);
     if let Some(refusal) = segment_extent_refusal(&base_value, &evaluated, &context) {
-        return Ok(Err(refusal));
+        return Ok(Err(refusal.into()));
     }
     Ok(Ok((evaluated, facts.into())))
 }
@@ -8946,7 +8944,7 @@ pub(super) fn evaluate_loop_effect_segment_value(
     assumptions: &PureFactContext,
     label: &str,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<CValue, String>> {
+) -> ExecutionResult<Result<CValue, ValueRefusal>> {
     Ok(evaluate_loop_effect_segment_value_with_facts(
         state,
         expression,
@@ -8963,13 +8961,49 @@ pub(super) fn evaluate_loop_effect_segment_value(
 pub(in crate::kernel) const UNRULED_OUT_UNDEFINED_BEHAVIOR: &str =
     "may have undefined behavior the facts do not rule out";
 
+/// Why a resource or loop-effect expression has no single defined value.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::kernel) struct ValueRefusal {
+    message: String,
+    /// The expression may have undefined behavior the facts do not rule
+    /// out: a requirement repairs it, never another clause's cells.
+    undefined_behavior: bool,
+}
+
+impl ValueRefusal {
+    pub(in crate::kernel) fn is_undefined_behavior(&self) -> bool {
+        self.undefined_behavior
+    }
+}
+
+impl From<String> for ValueRefusal {
+    fn from(message: String) -> Self {
+        Self {
+            message,
+            undefined_behavior: false,
+        }
+    }
+}
+
+impl From<ValueRefusal> for String {
+    fn from(refusal: ValueRefusal) -> Self {
+        refusal.message
+    }
+}
+
+impl std::fmt::Display for ValueRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
 fn evaluate_loop_effect_segment_value_with_facts(
     state: &CState,
     expression: &CExpression,
     assumptions: &PureFactContext,
     label: &str,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<(CValue, ExecutionFacts), String>> {
+) -> ExecutionResult<Result<(CValue, ExecutionFacts), ValueRefusal>> {
     evaluate_loop_effect_segment_value_capturing(
         state,
         expression,
@@ -8987,7 +9021,7 @@ pub(super) fn evaluate_resource_argument_value(
     label: &str,
     budget: &mut ExecutionBudget,
     diagnostic: &mut Option<CRuntimeError>,
-) -> ExecutionResult<Result<CValue, String>> {
+) -> ExecutionResult<Result<CValue, ValueRefusal>> {
     Ok(evaluate_loop_effect_segment_value_capturing(
         state,
         expression,
@@ -9006,7 +9040,7 @@ fn evaluate_loop_effect_segment_value_capturing(
     label: &str,
     budget: &mut ExecutionBudget,
     diagnostic: Option<&mut Option<CRuntimeError>>,
-) -> ExecutionResult<Result<(CValue, ExecutionFacts), String>> {
+) -> ExecutionResult<Result<(CValue, ExecutionFacts), ValueRefusal>> {
     let paths = evaluate_c_expression_paths(state, expression, assumptions, budget)?;
     // An endpoint the facts do not keep defined splits into its defined value
     // and the undefined behavior beside it: name that behavior, which a
@@ -9019,19 +9053,24 @@ fn evaluate_loop_effect_segment_value_capturing(
         })
         .collect::<BTreeSet<_>>();
     if paths.len() > 1 && !undefined.is_empty() {
-        return Ok(Err(format!(
-            "{label} {UNRULED_OUT_UNDEFINED_BEHAVIOR}: {}",
-            undefined.into_iter().collect::<Vec<_>>().join("; ")
-        )));
+        return Ok(Err(ValueRefusal {
+            message: format!(
+                "{label} {UNRULED_OUT_UNDEFINED_BEHAVIOR}: {}",
+                undefined.into_iter().collect::<Vec<_>>().join("; ")
+            ),
+            undefined_behavior: true,
+        }));
     }
     if paths.len() != 1 {
-        return Ok(Err(format!(
+        return Ok(Err(ValueRefusal::from(format!(
             "{label} evaluated through {} paths, expected exactly one",
             paths.len()
-        )));
+        ))));
     }
     let Some(path) = paths.into_iter().next() else {
-        return Ok(Err(format!("{label} had no evaluation path")));
+        return Ok(Err(ValueRefusal::from(format!(
+            "{label} had no evaluation path"
+        ))));
     };
     if !path.obligations.is_empty() {
         // Named by the sentences their lowering wrote; the kernel has no
@@ -9046,7 +9085,7 @@ fn evaluate_loop_effect_segment_value_capturing(
         let narrowing = contexts
             .iter()
             .any(|context| context.contains("int32 narrowing"));
-        return Ok(Err(format!(
+        return Ok(Err(ValueRefusal::from(format!(
             "{label} left {} proof obligation(s): {}{}",
             contexts.len(),
             contexts.join("; "),
@@ -9057,7 +9096,7 @@ fn evaluate_loop_effect_segment_value_capturing(
             } else {
                 ""
             }
-        )));
+        ))));
     }
     match path.outcome {
         CExpressionOutcome::Value(value) => {
@@ -9070,14 +9109,16 @@ fn evaluate_loop_effect_segment_value_capturing(
             Ok(Ok((value, path.facts)))
         }
         CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead) => {
-            Ok(Err(format!(
+            Ok(Err(ValueRefusal::from(format!(
                 "{label} could not establish that the memory location contains an initialized value"
-            )))
+            ))))
         }
-        CExpressionOutcome::UndefinedBehavior(undefined_behavior) => Ok(Err(format!(
-            "{label} produced undefined behavior: {}",
-            undefined_behavior.description()
-        ))),
+        CExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
+            Ok(Err(ValueRefusal::from(format!(
+                "{label} produced undefined behavior: {}",
+                undefined_behavior.description()
+            ))))
+        }
         CExpressionOutcome::RuntimeError(error) => {
             if let CRuntimeError::MissingResource { resource } = &error {
                 crate::kernel::functions::record_resource_dependency(*resource.clone());
@@ -9092,10 +9133,10 @@ fn evaluate_loop_effect_segment_value_capturing(
                     });
                 }
             }
-            Ok(Err(format!(
+            Ok(Err(ValueRefusal::from(format!(
                 "{label} produced runtime error: {}",
                 super::api::contract_certification::describe_certification_runtime_error(&error)
-            )))
+            ))))
         }
     }
 }
@@ -9150,7 +9191,7 @@ pub(super) fn loop_effect_segment_contains_range(
 }
 
 pub(super) fn is_loop_effect_relevant_pointer(pointer: &Pointer) -> bool {
-    !pointer.block.starts_with("local:") && !pointer.block.starts_with("havoc:")
+    !pointer.block.is_local_block() && !pointer.block.is_havoc_block()
 }
 
 /// A footprint range for a loop-effect refusal, without the kernel's

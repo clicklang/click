@@ -89,7 +89,7 @@ predicate (equal `count` of every value over `0..3`), works:
 
 <!-- verified-example: mdtests/loop_stdlib_permutation_invariant.md -->
 ```click
-ensures permutation_after_loop: permutation(p, old(p), 0, 3);
+ensures permutation_after_loop: permutation::permutation(p, old(p), 0, 3);
 ```
 
 The first `p` means the current array. `old(p)` means the function-entry array

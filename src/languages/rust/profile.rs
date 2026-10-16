@@ -1,9 +1,12 @@
 //! The compiled-in extraction and semantic profile. Changes to interpretation
 //! must version its named semantic entry; existing lock byte order is stable.
-use serde::Deserialize;
+/// Historical spelling accepted only when checking an existing lock identity.
+pub(super) const LEGACY_IDENTITY: &str = "click-charon-trial-v1";
+
+use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Profile {
     schema: u32,
@@ -26,6 +29,31 @@ impl Profile {
         )
     }
 }
+/// Portable contribution to a Rust lock. Runtime paths and binary bytes are not
+/// release identities; runtime handshakes still check these pins at extraction.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct FrontendIdentity {
+    click_version: String,
+    extractor_revision: String,
+    extractor_version: String,
+    compiler_commit: String,
+    profile: String,
+}
+impl FrontendIdentity {
+    pub fn current() -> Self {
+        use sha2::{Digest, Sha256};
+        let p = get();
+        Self {
+            click_version: env!("CARGO_PKG_VERSION").into(),
+            extractor_revision: p.extractor_revision.clone(),
+            extractor_version: p.extractor_version.clone(),
+            compiler_commit: p.compiler_commit.clone(),
+            profile: format!("{:x}", Sha256::digest(serde_json::to_vec(p).unwrap())),
+        }
+    }
+}
+
 pub(super) fn get() -> &'static Profile {
     static PROFILE: OnceLock<Profile> = OnceLock::new();
     PROFILE.get_or_init(|| {

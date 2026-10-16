@@ -1192,6 +1192,105 @@ fn one_parameter_separation_query_is_linear_in_the_owned_objects() {
     assert_at_most_linear_growth("a refused parameter separation", &refused, 64);
 }
 
+/// A separation the composition law proves costs the same work however many
+/// other parameter objects share the block: the members filed under the two
+/// sides' roots are asked first, and they hold the pair. This is the query a
+/// verified call's separation requirement asks (`proves_resource_separate`),
+/// in both the pointer and the range form. A query no pair satisfies is
+/// still refused, by asking the whole block.
+#[test]
+fn a_proved_parameter_separation_reads_only_the_nominated_members() {
+    let mut pointer_work = Vec::new();
+    let mut range_work = Vec::new();
+    for size in PARAMETER_SIZES {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (_, assumptions) = parameter_frame(size);
+        let field = |identity: u64| {
+            parameter_base(identity).offset_by_elements(Bitvector32Term::Constant(1), 4)
+        };
+        let range = |identity: u64| {
+            CResource::Memory(CMemoryRange::new_with_element_width(
+                parameter_base(identity),
+                Bitvector32Term::Constant(1),
+                Bitvector32Term::Constant(2),
+                4,
+            ))
+        };
+        let (left, right) = (
+            FIRST_PARAMETER + size as u64 - 2,
+            FIRST_PARAMETER + size as u64 - 1,
+        );
+        let (separate, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assumptions.pointers_proven_disjoint_by_explicit_range_for_memory_resolution(
+                &field(left),
+                &field(right),
+            )
+        });
+        assert!(separate, "two owned members hold the two fields");
+        pointer_work.push(work);
+        let (separate, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assumptions.proves_resource_separate(&range(left), &range(right))
+        });
+        assert!(separate, "two owned members hold the two ranges");
+        range_work.push(work);
+        // A refusal asks the whole block, through every route; once is
+        // enough to see the nomination grants nothing.
+        if size == PARAMETER_SIZES[0] {
+            assert!(
+                !assumptions.proves_resource_separate(&range(left), &range(3 * FIRST_PARAMETER)),
+                "no member holds the second range"
+            );
+            assert!(
+                !assumptions.proves_resource_separate(&range(left), &range(left)),
+                "one member holds both sides"
+            );
+        }
+    }
+    eprintln!("proved parameter separation units, pointer {pointer_work:?}, range {range_work:?}");
+    assert!(
+        pointer_work.iter().all(|work| *work == pointer_work[0]),
+        "a proved pointer separation read unrelated members: {pointer_work:?}"
+    );
+    assert!(
+        range_work.iter().all(|work| *work == range_work[0]),
+        "a proved range separation read unrelated members: {range_work:?}"
+    );
+}
+
+/// Refusing a missing or overlapping field must be as local as proving a
+/// separation: the frame's other independent parameters are not candidates.
+#[test]
+fn refused_parameter_separation_ignores_unrelated_owned_objects() {
+    let mut samples = Vec::new();
+    for size in PARAMETER_SIZES {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (_, assumptions) = parameter_frame(size);
+        let range = |id| {
+            CResource::Memory(CMemoryRange::new_with_element_width(
+                parameter_base(id),
+                1u32.into(),
+                2u32.into(),
+                4,
+            ))
+        };
+        let left = range(FIRST_PARAMETER);
+        let outside = range(3 * FIRST_PARAMETER);
+        let (refused, work) = crate::instrumentation::measure_deterministic_work(|| {
+            !assumptions.proves_resource_separate(&left, &outside)
+                && !assumptions.proves_resource_separate(&left, &left)
+        });
+        assert!(
+            refused,
+            "unowned or overlapping fields must not be separated"
+        );
+        samples.push((size, work));
+    }
+    assert!(
+        samples.iter().all(|(_, work)| *work == samples[0].1),
+        "{samples:?}"
+    );
+}
+
 #[test]
 fn normalizing_external_ranges_compares_only_related_bases() {
     let mut samples = Vec::new();

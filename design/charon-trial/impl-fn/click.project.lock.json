@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "units": {
+    "impl_fn": {
+      "language": "rust",
+      "lock": {
+        "artifact": "03911674751de3e34fdd95b9a327b2101b08f5b96d9f2b27c6d06c4a4c241402",
+        "config": "7f6a167bf0230d179735b2d0e19cbf5f9754300b5eb05981663261f39b9f2d10",
+        "frontend": {
+          "click_version": "0.1.0",
+          "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+          "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+          "extractor_version": "0.1.279",
+          "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+        },
+        "identity": "a9fed4b9ca484e02a34aaadcb3ab3e9f6089caeb979a9f4a485b3ef454528e7d",
+        "schema": 9,
+        "source": "7af1b8435c1ca894df2cccd2391002f563967d2aec833bfddb8731b000447c43",
+        "source_files": {
+          "closure.rs": "9e65aba92162d5f2dd77b14ba6bcbbeb1af088dc844750b2865b30b226e8eb88"
+        }
+      }
+    }
+  }
+}

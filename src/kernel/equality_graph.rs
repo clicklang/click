@@ -730,6 +730,18 @@ impl EqualityGraph {
                                 ))
                             {
                                 pending.push(definition.clone());
+                            } else if matches!(atom.as_ref(), Bitvector32Term::MemoryLoad(..)) {
+                                // Some typed producers retain the raw read rather
+                                // than a minted variable. Import only its exact
+                                // registered pointer value, never an arbitrary
+                                // scaled scalar with a similar expression.
+                                let dependency = Pointer {
+                                    block: value.block.clone(),
+                                    offset: offset.clone(),
+                                };
+                                if reads.definitions.contains_key(&dependency) {
+                                    pending.push(dependency);
+                                }
                             }
                         }
                         _ => {}
@@ -1352,6 +1364,17 @@ impl EqualityGraph {
         equal
     }
 
+    pub(in crate::kernel) fn known_algebraic_constructor(
+        &self,
+        model: &AlgebraicTerm,
+    ) -> Option<AlgebraicTerm> {
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_expression_operands(&mut state, [], [model]);
+        let constructor = state.terms.known_algebraic_constructor(model);
+        state.close(Vec::new());
+        constructor
+    }
+
     pub(in crate::kernel) fn add_algebraic_equality(
         &mut self,
         left: &AlgebraicTerm,
@@ -1440,7 +1463,9 @@ impl EqualityGraph {
                     | Bitvector32Term::UnsignedDivide(..)
                     | Bitvector32Term::UnsignedRemainder(..)
                     | Bitvector32Term::BitwiseXor(..)
-            )
+            ) || matches!(term, Bitvector32Term::Variable(variable)
+                if crate::kernel::registered_load_kind_for_variable(variable) == Some(crate::kernel::LoadKind::Bits32)
+                    && crate::kernel::registered_load_bytes_for_variable(variable) == Some(4))
         };
         if contains_arguments(left) || contains_arguments(right) {
             self.register_machine_operands(state, left, right);
@@ -1521,7 +1546,9 @@ impl EqualityGraph {
                         pending.extend([Work::Machine(a), Work::Machine(b)]);
                     } else if let Some((_, a, b)) = terms::uint64_binary(term) {
                         pending.extend([Work::Machine(a), Work::Machine(b)]);
-                    } else if let Some((_, pointer)) = terms::uint64_read(term) {
+                    } else if let Some((_, pointer)) =
+                        terms::uint64_read(term).or_else(|| terms::int32_read(term))
+                    {
                         pointers.push(pointer);
                     } else if let Bitvector32Term::PointerAddress(pointer) = term {
                         pointers.push(pointer.as_ref().clone());
@@ -1809,7 +1836,7 @@ impl EqualityGraph {
         let mut blocks = Vec::new();
         let mut push = |member: &PointerBlock, delta: &AffineOffset| {
             if member != &pointer.block
-                && member.starts_with("local:")
+                && member.is_local_block()
                 && own
                     .checked_sub(delta)
                     .and_then(|delta| offset.checked_add(&delta))
@@ -1827,7 +1854,7 @@ impl EqualityGraph {
                 .map(|value| (&first, value))
                 .or_else(|| members.get_greater_than(&first));
             while let Some((member, delta)) = next {
-                if !member.starts_with("local:") {
+                if !member.is_local_block() {
                     break;
                 }
                 push(member, delta);
@@ -3207,6 +3234,104 @@ mod tests {
                 high,
             ))
         );
+    }
+
+    #[test]
+    fn shifted_raw_pointer_reads_import_only_exact_retained_dependencies() {
+        let base = Pointer::symbolic(Variable(51_401));
+        let address = base.offset_by_bytes(8);
+        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let CValue::Pointer(raw) =
+            memory
+                .memory()
+                .symbolic_pointer_load(&address, 4, CType::Int32Pointer)
+        else {
+            panic!("typed pointer read");
+        };
+        let named = Pointer::loaded_value(&memory, &address);
+        let model = Pointer::symbolic(Variable(51_402));
+        let mut graph = EqualityGraph::default();
+        let sibling = graph.clone();
+        graph.add_equality(&named, &model);
+        // Do not query the undisplaced raw pointer first: that would import
+        // its definition and mask a missed dependency of the field address.
+        assert!(graph.are_equal(
+            &raw.pointer().offset_by_bytes(24),
+            &model.offset_by_bytes(24)
+        ));
+        assert!(!sibling.are_equal(
+            &raw.pointer().offset_by_bytes(24),
+            &model.offset_by_bytes(24)
+        ));
+        let forged = Pointer::loaded(
+            base.block.clone(),
+            Bitvector32Term::MemoryLoad(
+                memory.clone(),
+                Box::new(address.clone()),
+                crate::kernel::LoadKind::Bits32,
+            ),
+            8,
+        );
+        assert!(!graph.are_equal(&forged.offset_by_bytes(24), &model.offset_by_bytes(24)));
+        let later = crate::kernel::intern_c_memory(memory.memory().clone().store(
+            address.clone(),
+            CValue::UInt64(Bitvector32Term::Int64Constant(9)),
+        ));
+        let CValue::Pointer(changed) =
+            later
+                .memory()
+                .symbolic_pointer_load(&address, 4, CType::Int32Pointer)
+        else {
+            panic!("typed pointer read");
+        };
+        assert!(!graph.are_equal(
+            &changed.pointer().offset_by_bytes(24),
+            &model.offset_by_bytes(24)
+        ));
+    }
+
+    #[test]
+    fn scalar_read_congruence_imports_shifted_raw_pointer_dependencies() {
+        let address = Pointer::symbolic(Variable(51_411)).offset_by_bytes(8);
+        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let CValue::Pointer(raw) =
+            memory
+                .memory()
+                .symbolic_pointer_load(&address, 4, CType::Int32Pointer)
+        else {
+            panic!("typed pointer read");
+        };
+        let named = Pointer::loaded_value(&memory, &address);
+        let model = Pointer::symbolic(Variable(51_412));
+        let read = |pointer: &Pointer| {
+            crate::kernel::eval::declare_load_access_width(pointer, 4);
+            crate::kernel::canonical_term(&Bitvector32Term::MemoryLoad(
+                memory.clone(),
+                Box::new(pointer.clone()),
+                crate::kernel::LoadKind::Bits32,
+            ))
+        };
+        let source = read(&raw.pointer().offset_by_bytes(24));
+        let target = read(&model.offset_by_bytes(24));
+        let expected = Bitvector32Term::Constant(7);
+        for read in [&source, &target] {
+            let Bitvector32Term::Variable(variable) = read else {
+                panic!("named scalar read");
+            };
+            assert_eq!(
+                crate::kernel::registered_load_bytes_for_variable(variable),
+                Some(4)
+            );
+        }
+        let mut graph = EqualityGraph::default();
+        graph.add_equality(&named, &model);
+        let sibling = graph.clone();
+        // Neither a pointer comparison nor a redundant field-address fact
+        // may be needed before the scalar producer and consumer connect.
+        graph.add_int32_equality(&source, &expected);
+        let equal = graph.are_int32_equal(&target, &expected);
+        assert!(equal, "source={source:?}; target={target:?}");
+        assert!(!sibling.are_int32_equal(&target, &expected));
     }
 
     #[cfg(test)]

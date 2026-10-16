@@ -84,7 +84,7 @@ fn rust_release_archive_installs_and_verifies() {
     ));
 
     let basic = t.path().join("basic");
-    examples::project(&basic);
+    examples::committed_project(&basic, "examples/basic-rust");
     success(cli(&binary, &relocated, &basic, &["import", "lock"]));
     success(cli(
         &binary,
@@ -93,13 +93,17 @@ fn rust_release_archive_installs_and_verifies() {
         &["verify", "borrow.click"],
     ));
     let lock = fs::read(basic.join("click.project.lock.json")).unwrap();
+    assert_eq!(
+        lock,
+        include_bytes!("../examples/basic-rust/click.project.lock.json")
+    );
     success(cli(&binary, &relocated, &basic, &["import", "lock"]));
     assert_eq!(
         fs::read(basic.join("click.project.lock.json")).unwrap(),
         lock
     );
     let adler = t.path().join("adler-proof");
-    examples::adler_project(&adler);
+    examples::committed_project(&adler, "design/charon-trial/adler2");
     success(cli(&binary, &relocated, &adler, &["import", "lock"]));
     success(cli(
         &binary,
@@ -108,16 +112,33 @@ fn rust_release_archive_installs_and_verifies() {
         &["verify", "restoration.click"],
     ));
     assert_eq!(
+        fs::read(adler.join("click.project.lock.json")).unwrap(),
+        include_bytes!("../design/charon-trial/adler2/click.project.lock.json")
+    );
+    assert_eq!(
         fs::read(basic.join("borrow.rs")).unwrap(),
         include_bytes!("../examples/basic-rust/borrow.rs")
     );
     let trial = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/adler2");
     for file in ["src/lib.rs", "src/algo.rs"] {
         assert_eq!(
-            fs::read(t.path().join("vendor/adler2").join(file)).unwrap(),
+            fs::read(adler.join(file)).unwrap(),
             fs::read(trial.join(file)).unwrap()
         );
     }
+    // Prepare unchanged fragments on the build host, then move the entire demo.
+    // Verification below uses the relocated inputs, with an empty PATH and
+    // the installed frontend removed.
+    let staged_demo = t.path().join("staged-demo");
+    success(
+        Command::new("python3")
+            .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/prepare-adler32-demo.py"))
+            .arg(&staged_demo)
+            .output()
+            .unwrap(),
+    );
+    let demo = t.path().join("relocated-demo");
+    fs::rename(staged_demo, &demo).unwrap();
     fs::remove_dir_all(installed.join("frontends/rust")).unwrap();
     success(cli(
         &binary,
@@ -131,4 +152,31 @@ fn rust_release_archive_installs_and_verifies() {
         &adler,
         &["verify", "restoration.click"],
     ));
+    let trial = demo.join("design/charon-trial");
+    for sidecar in [
+        "zlib/canonical-demo.click",
+        "zlib/incremental-demo.click",
+        "zlib/reset-demo.click",
+        "adler2/public-demo.click",
+        "adler2/incremental-demo.click",
+        "adler2/resumed-demo.click",
+        "adler2/correspondence.click",
+    ] {
+        let proof = trial.join(sidecar);
+        let output = cli(
+            &binary,
+            &relocated,
+            &demo,
+            &["verify", proof.to_str().unwrap()],
+        );
+        assert!(
+            output.status.success(),
+            "{sidecar}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        eprintln!(
+            "{sidecar}: {}",
+            String::from_utf8_lossy(&output.stdout).trim()
+        );
+    }
 }

@@ -1,0 +1,22 @@
+{
+  "units": {
+    "closures": {
+      "language": "rust",
+      "sources": {
+        "closure.rs": {}
+      },
+      "crate": {
+        "name": "closures",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "closures::caller",
+          "closures::choose"
+        ],
+        "files": [
+          "closure.rs"
+        ]
+      }
+    }
+  }
+}

@@ -145,9 +145,69 @@ pub(super) fn dep_files(bytes: &[u8], root: &Path) -> Result<BTreeSet<String>, S
 
 pub(super) type SourceFiles = BTreeMap<String, Vec<u8>>;
 
+pub(super) fn check_closure(
+    configured: &[String],
+    observed: &BTreeSet<String>,
+) -> Result<(), String> {
+    let configured: BTreeSet<_> = configured.iter().cloned().collect();
+    if &configured == observed {
+        return Ok(());
+    }
+    fn names<'a>(paths: impl Iterator<Item = &'a String>) -> String {
+        let paths: Vec<_> = paths.collect();
+        if paths.is_empty() {
+            return "none".into();
+        }
+        let mut shown: Vec<_> = paths
+            .iter()
+            .take(12)
+            .map(|name| {
+                let mut escaped = name.chars().flat_map(char::escape_default);
+                let snippet: String = escaped.by_ref().take(160).collect();
+                format!(
+                    "\"{snippet}{}\"",
+                    if escaped.next().is_some() { "..." } else { "" }
+                )
+            })
+            .collect();
+        if paths.len() > 12 {
+            shown.push(format!("and {} more", paths.len() - 12));
+        }
+        shown.join(", ")
+    }
+    Err(format!(
+        "Rust compiler source closure differs from configured crate files; missing from `crate.files`: {}; extra in `crate.files`: {}. Update `crate.files` and run `click import lock`",
+        names(observed.difference(&configured)),
+        names(configured.difference(observed))
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn crate_closure_diagnostic_names_missing_and_extra_inputs_and_bounds_lists() {
+        let configured = vec!["lib.rs".into(), "unused.rs".into()];
+        let observed = BTreeSet::from(["lib.rs".into(), "module.rs".into()]);
+        let error = check_closure(&configured, &observed).unwrap_err();
+        assert!(
+            error.contains("missing from `crate.files`: \"module.rs\""),
+            "{error}"
+        );
+        assert!(
+            error.contains("extra in `crate.files`: \"unused.rs\""),
+            "{error}"
+        );
+        assert!(check_closure(&configured, &configured.iter().cloned().collect()).is_ok());
+        let many = (0..64)
+            .map(|i| format!("{i:02}-{}", "\n".repeat(1000)))
+            .collect();
+        let error = check_closure(&[], &many).unwrap_err();
+        assert!(error.len() < 4096);
+        assert!(error.contains("and 52 more"));
+        assert!(!error.contains('\n'));
+    }
 
     #[test]
     fn dep_info_checks_escaped_paths_and_rejects_environment_inputs() {

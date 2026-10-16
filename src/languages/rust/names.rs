@@ -75,6 +75,20 @@ pub(crate) fn trait_method_name(type_name: &str, trait_name: &str, method: &str)
     encoded
 }
 
+/// Whether `name` is a Rust importer name.
+pub(crate) fn is_rust_name(name: &str) -> bool {
+    name.starts_with(PREFIX)
+}
+
+/// Whether `name` is a function the importer places where a crate struct
+/// reference becomes a crate trait's object, or back:
+/// `<S as Trait>::__pack` or `<S as Trait>::__unpack`.
+pub(crate) fn is_object_coercion(name: &str) -> bool {
+    name.starts_with(PREFIX)
+        && name.contains("_R")
+        && (name.ends_with("_I6___pack") || name.ends_with("_I8___unpack"))
+}
+
 /// The importer name of the item at a path, `quad::walk` or
 /// `adler2::algo::U32X4`: the prefix and each segment
 /// (`__rust_q_I4_quad_I4_walk`).

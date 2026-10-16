@@ -699,3 +699,53 @@ fn relabelling_work_is_n_log_n_across_sizes() {
         assert!(work as u64 >= n / 2, "n = {n}: only {work} units charged");
     }
 }
+
+#[test]
+fn shifted_raw_read_dependency_lookup_ignores_unrelated_definitions() {
+    let mut samples = Vec::new();
+    for size in [16_u64, 64, 256, 1024] {
+        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let mut graph = EqualityGraph::default();
+        for item in 0..size {
+            let address = Pointer::symbolic(Variable(1_200_000 + item));
+            let _ = memory
+                .memory()
+                .symbolic_pointer_load(&address, 4, CType::Int32Pointer);
+            graph.add_equality(
+                &Pointer::symbolic(Variable(1_300_000 + item)),
+                &Pointer::symbolic(Variable(1_400_000 + item)),
+            );
+        }
+        let address = Pointer::symbolic(Variable(1_500_000));
+        let model = Pointer::symbolic(Variable(1_500_001));
+        let CValue::Pointer(raw) =
+            memory
+                .memory()
+                .symbolic_pointer_load(&address, 4, CType::Int32Pointer)
+        else {
+            panic!("typed pointer read");
+        };
+        graph.add_equality(&Pointer::loaded_value(&memory, &address), &model);
+        let read = |pointer: &Pointer| {
+            Bitvector32Term::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+                &memory,
+                pointer,
+                crate::kernel::LoadKind::Bits32,
+                4,
+            ))
+        };
+        let source = read(&raw.pointer().offset_by_bytes(24));
+        let target = read(&model.offset_by_bytes(24));
+        let expected = Bitvector32Term::Constant(7);
+        let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
+            graph.add_int32_equality(&source, &expected);
+            graph.are_int32_equal(&target, &expected)
+        });
+        assert!(equal);
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
+}

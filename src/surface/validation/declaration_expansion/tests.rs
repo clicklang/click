@@ -7,11 +7,13 @@ fn authority_test_scope(
 ) -> DeclaredResourceScope {
     DeclaredResourceScope {
         family_rules: false,
+        premise_free_theorems: Default::default(),
         definitions: BTreeMap::from([(
             "reference".to_string(),
             DeclaredResourceInfo {
                 fields: Default::default(),
                 field_schema: None,
+                parameter_names: vec!["value".to_string()],
                 parameter_types: vec![parameter_type],
                 resource_parameter_families: Vec::new(),
                 kind,

@@ -1190,3 +1190,64 @@ fn naming_walks_share_one_context_until_the_read_table_is_replaced() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/resource_tracker/tests.rs");
 }
+
+#[test]
+fn transport_diagnostic_retains_the_actual_cell_walk_and_scope() {
+    use crate::kernel::{
+        take_transport_cell_walk_diagnostics, with_transport_cell_walk_diagnostics,
+    };
+    let entry = intern_c_memory(entry_memory());
+    let pointer = at(block("global:g"), 0);
+    let changed = intern_c_memory(entry.memory().clone().store(pointer.clone(), one()));
+    let after = intern_c_memory(
+        changed
+            .memory()
+            .clone()
+            .store(at(block("local:f:i"), 0), one()),
+    );
+    let assumptions = PureFactContext::default();
+    with_transport_cell_walk_diagnostics(|| {
+        for _ in 0..2 {
+            super::cell_source::memory_dag_cell_source_with_stop(
+                &after,
+                &pointer,
+                4,
+                &assumptions,
+                true,
+            )
+            .unwrap();
+        }
+        // An inner check owns its observations, including after an unwind.
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            with_transport_cell_walk_diagnostics(|| {
+                super::cell_source::memory_dag_cell_source_with_stop(
+                    &entry,
+                    &pointer,
+                    4,
+                    &assumptions,
+                    true,
+                )
+                .unwrap();
+                let inner = take_transport_cell_walk_diagnostics();
+                assert_eq!(inner.len(), 1);
+                assert_eq!(inner[0].stopped_at, entry);
+                assert_eq!(inner[0].reason, "oldest recorded snapshot reached");
+                panic!("restore outer collector");
+            });
+        }));
+        let observations = take_transport_cell_walk_diagnostics();
+        assert_eq!(
+            observations.len(),
+            1,
+            "identical observations share one record"
+        );
+        let walk = &observations[0];
+        assert_eq!(walk.start, after);
+        assert_eq!(walk.stopped_at, changed);
+        assert_eq!(walk.pointer, pointer);
+        assert_eq!(walk.bytes, 4);
+        assert_eq!(walk.crossed, 1);
+        assert_eq!(walk.reason, "step affects the queried bytes");
+    });
+    assert!(take_transport_cell_walk_diagnostics().is_empty());
+}

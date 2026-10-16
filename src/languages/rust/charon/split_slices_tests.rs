@@ -1,7 +1,8 @@
 use super::*;
 use crate::surface::C0VerificationSession;
 
-const ARTIFACT: &[u8] = include_bytes!("../../../../design/charon-trial/split-slices/split.ullbc");
+const ARTIFACT: &[u8] =
+    include_bytes!("../../../../design/charon-trial/split-slices/.click/split/split.rs.ullbc");
 const SOURCE: &[u8] = include_bytes!("../../../../design/charon-trial/split-slices/split.rs");
 const CLAIM: &str = include_str!("../../../../design/charon-trial/split-slices/split.click");
 
@@ -58,7 +59,7 @@ fn charon_split_at_preserves_both_shared_slices_and_original_proofs() {
 #[test]
 fn charon_split_at_rejects_forged_declarations_and_tuple_projections() {
     for mutation in 0..13 {
-        let mut artifact: TrialArtifact = serde_json::from_slice(ARTIFACT).unwrap();
+        let mut artifact: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
         let krate = &mut artifact.data.translated;
         let id = krate.fun_decls.iter_indexed().find(|(_, f)| matches!(f.item_meta.name.name.last(), Some(a::PathElem::Ident(name, _)) if name == "split_at")).unwrap().0;
         match mutation {

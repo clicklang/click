@@ -115,14 +115,16 @@ mod tests {
     fn source_scalar_lease_native_fixtures_use_explicit_end_operations() {
         let fixtures: &[(&[u8], &[u8], &str, usize)] = &[
             (
-                include_bytes!("../../../../design/charon-trial/gate-fixtures/basic/borrow.ullbc"),
+                include_bytes!(
+                    "../../../../design/charon-trial/gate-fixtures/basic/.click/borrow/borrow.rs.ullbc"
+                ),
                 include_bytes!("../../../../design/charon-trial/gate-fixtures/basic/borrow.rs"),
                 "set_seven",
                 1,
             ),
             (
                 include_bytes!(
-                    "../../../../design/charon-trial/gate-fixtures/scalar-aliases/borrow.ullbc"
+                    "../../../../design/charon-trial/gate-fixtures/scalar-aliases/.click/borrow/borrow.rs.ullbc"
                 ),
                 include_bytes!(
                     "../../../../design/charon-trial/gate-fixtures/scalar-aliases/borrow.rs"
@@ -132,7 +134,7 @@ mod tests {
             ),
             (
                 include_bytes!(
-                    "../../../../design/charon-trial/gate-fixtures/scalar-read-end/borrow.ullbc"
+                    "../../../../design/charon-trial/gate-fixtures/scalar-read-end/.click/borrow/borrow.rs.ullbc"
                 ),
                 include_bytes!(
                     "../../../../design/charon-trial/gate-fixtures/scalar-read-end/borrow.rs"
@@ -142,7 +144,7 @@ mod tests {
             ),
             (
                 include_bytes!(
-                    "../../../../design/charon-trial/gate-fixtures/scalar-nested-ends/borrow.ullbc"
+                    "../../../../design/charon-trial/gate-fixtures/scalar-nested-ends/.click/borrow/borrow.rs.ullbc"
                 ),
                 include_bytes!(
                     "../../../../design/charon-trial/gate-fixtures/scalar-nested-ends/borrow.rs"
@@ -152,7 +154,7 @@ mod tests {
             ),
             (
                 include_bytes!(
-                    "../../../../design/charon-trial/gate-fixtures/scalar-nested-ends/borrow.ullbc"
+                    "../../../../design/charon-trial/gate-fixtures/scalar-nested-ends/.click/borrow/borrow.rs.ullbc"
                 ),
                 include_bytes!(
                     "../../../../design/charon-trial/gate-fixtures/scalar-nested-ends/borrow.rs"
@@ -162,7 +164,7 @@ mod tests {
             ),
             (
                 include_bytes!(
-                    "../../../../design/charon-trial/gate-fixtures/scalar-branches/borrow.ullbc"
+                    "../../../../design/charon-trial/gate-fixtures/scalar-branches/.click/borrow/borrow.rs.ullbc"
                 ),
                 include_bytes!(
                     "../../../../design/charon-trial/gate-fixtures/scalar-branches/borrow.rs"
@@ -172,7 +174,7 @@ mod tests {
             ),
             (
                 include_bytes!(
-                    "../../../../design/charon-trial/gate-fixtures/scalar-branches/borrow.ullbc"
+                    "../../../../design/charon-trial/gate-fixtures/scalar-branches/.click/borrow/borrow.rs.ullbc"
                 ),
                 include_bytes!(
                     "../../../../design/charon-trial/gate-fixtures/scalar-branches/borrow.rs"
@@ -182,7 +184,7 @@ mod tests {
             ),
             (
                 include_bytes!(
-                    "../../../../design/charon-trial/gate-fixtures/scalar-arm-scopes/borrow.ullbc"
+                    "../../../../design/charon-trial/gate-fixtures/scalar-arm-scopes/.click/borrow/borrow.rs.ullbc"
                 ),
                 include_bytes!(
                     "../../../../design/charon-trial/gate-fixtures/scalar-arm-scopes/borrow.rs"
@@ -192,7 +194,7 @@ mod tests {
             ),
             (
                 include_bytes!(
-                    "../../../../design/charon-trial/gate-fixtures/scalar-arm-scopes/borrow.ullbc"
+                    "../../../../design/charon-trial/gate-fixtures/scalar-arm-scopes/.click/borrow/borrow.rs.ullbc"
                 ),
                 include_bytes!(
                     "../../../../design/charon-trial/gate-fixtures/scalar-arm-scopes/borrow.rs"

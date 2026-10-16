@@ -1,0 +1,10 @@
+{
+  "units": {
+    "arithmetic": {
+      "language": "rust",
+      "sources": {
+        "arithmetic.rs": {}
+      }
+    }
+  }
+}

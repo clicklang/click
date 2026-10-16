@@ -1,20 +1,23 @@
-# An unfinished `preserve` reports the frontier it reached
+# An unfinished `preserve` whose rest does not run reports its frontier
 
-A preservation script is written a few tactics at a time, and until its last
-path reaches one of the body's ends it is unfinished. Refusing it with only
-"must execute exactly one complete loop-body iteration" says nothing about how
-far the body actually got, so the author gets no signal at all until the whole
-body verifies end to end. That refusal is kept for a body that *is* complete
-and wrong — one that runs off the loop through a `return`, say — and an
-unfinished body reports its frontier instead: the statement the path stands
-before, the tactic that left it there, the ends still ahead of it on this path,
-and the paths the script has already closed.
+A preservation script may stop before the body does: the rest of the body
+then runs as an omitted `preserve` runs a whole one, and each path it reaches
+closes its back edge
+([`preserve_runs_the_rest_of_the_body.md`](preserve_runs_the_rest_of_the_body.md)).
+When the rest does not run, refusing the script with only "must execute
+exactly one complete loop-body iteration" says nothing about how far the body
+actually got. That refusal is kept for a body that *is* complete and wrong —
+one that runs off the loop through a `return`, say — and an unfinished body
+reports its frontier instead: the statement the path stands before, the
+tactic that left it there, the ends still ahead of it on this path, the paths
+the script has already closed, and why the rest did not run.
 
 `walk` is the smallest shape with something ahead: its body breaks on one
 value and otherwise runs two statements. The proof steps into the `else` arm
 and stops one statement short, so the report names `i = (i - 1)` as the
 frontier, `step` as the tactic that got there, the body's end as what is still
-ahead, and the `break` path the proof already closed.
+ahead, and the `break` path the proof already closed. The rest does not run
+because `12 / i` may divide by zero once `i` reaches `0`.
 
 A tactic that fails inside the body reports its own failure, not this one
 ([`loop_preserve_tactic_failure_reported.md`](loop_preserve_tactic_failure_reported.md)),
@@ -30,7 +33,7 @@ int32 walk(int32 n) {
             break;
         }
         i = i - 1;
-        i = i + 0;
+        i = 12 / i;
     }
     return i;
 }

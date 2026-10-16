@@ -730,6 +730,21 @@ impl DifferenceGraph {
         }
     }
 
+    /// A stated edge is a keyed lookup even when its source has more
+    /// neighbours than the bounded path search may visit.
+    fn direct_difference_bound(&self, from: Affine, to: Affine) -> Option<i128> {
+        charge();
+        let (Some(from_node), Some(to_node)) = (from.0, to.0) else {
+            return None;
+        };
+        let weight = if from_node == to_node {
+            0
+        } else {
+            *self.out_edges.get(&from_node)?.get(&to_node)?
+        };
+        Some(weight + to.1 - from.1)
+    }
+
     /// The least known upper bound on `to - from`, from intervals and from
     /// the shortest path inside `from`'s component.
     fn difference_bound(&self, from: Affine, to: Affine) -> i128 {
@@ -766,6 +781,17 @@ impl DifferenceGraph {
             && let Some(answer) = self.pointers.decide_offsets(a, b)
         {
             return Some(answer);
+        }
+        // The same field of two bases is one cell exactly when the bases
+        // are, which a pointer equality (`this == &other`) may say rather
+        // than an integer one: the bases' own offset question is asked.
+        if let C::PointerOffsetEqual(a, b) = condition
+            && let Some((a, b)) = same_field_bases(a, b)
+        {
+            return self.decide(&C::PointerOffsetEqual(
+                Box::new(a.clone()),
+                Box::new(b.clone()),
+            ));
         }
         if let Some(equality) = offset_equality(condition) {
             return self.decide(&equality);
@@ -914,10 +940,28 @@ impl DifferenceGraph {
         // lower < upper (or <=) holds when lower - upper <= -strict, and
         // fails when upper - lower <= -(not strict).
         let (holds, fails) = match (self.resolve(domain, lower), self.resolve(domain, upper)) {
-            (Some(lower), Some(upper)) => (
-                self.difference_bound(upper, lower),
-                self.difference_bound(lower, upper),
-            ),
+            (Some(lower), Some(upper)) => {
+                // Constants have no edge endpoints. Keep their existing
+                // interval route without two fruitless direct-edge queries.
+                if lower.0.is_some() && upper.0.is_some() {
+                    if self
+                        .direct_difference_bound(upper, lower)
+                        .is_some_and(|bound| bound <= -i128::from(strict))
+                    {
+                        return Some(true);
+                    }
+                    if self
+                        .direct_difference_bound(lower, upper)
+                        .is_some_and(|bound| bound <= -i128::from(!strict))
+                    {
+                        return Some(false);
+                    }
+                }
+                (
+                    self.difference_bound(upper, lower),
+                    self.difference_bound(lower, upper),
+                )
+            }
             // A side the graph has no node for is compared by interval.
             _ => {
                 let (lower_low, lower_high) = self.term_interval(domain, lower);
@@ -1539,14 +1583,10 @@ fn offset_equality(condition: &ConditionTerm) -> Option<ConditionTerm> {
     };
     // Field offsets from equal bases (`p->size`, `q->size`) are equal
     // exactly when the bases are.
-    use crate::kernel::PointerOffsetTerm as O;
-    if let (O::Add(a_base, a_field), O::Add(b_base, b_field)) = (a.as_ref(), b.as_ref())
-        && let (O::Constant(a_field), O::Constant(b_field)) = (a_field.as_ref(), b_field.as_ref())
-        && a_field == b_field
-    {
+    if let Some((a, b)) = same_field_bases(a, b) {
         return offset_equality(&ConditionTerm::PointerOffsetEqual(
-            a_base.clone(),
-            b_base.clone(),
+            Box::new(a.clone()),
+            Box::new(b.clone()),
         ));
     }
     let (a, b) = match (scaled_offset(a)?, scaled_offset(b)?) {
@@ -1563,6 +1603,27 @@ fn offset_equality(condition: &ConditionTerm) -> Option<ConditionTerm> {
         _ => return None,
     };
     Some(ConditionTerm::Bitvector32Equal(Box::new(a), Box::new(b)))
+}
+
+/// The bases of two offsets that add one constant field offset to each
+/// (`p->size` and `q->size`): the offsets are equal exactly when the bases
+/// are, since adding one constant is injective.
+fn same_field_bases<'a>(
+    a: &'a PointerOffsetTerm,
+    b: &'a PointerOffsetTerm,
+) -> Option<(&'a PointerOffsetTerm, &'a PointerOffsetTerm)> {
+    use crate::kernel::PointerOffsetTerm as O;
+    match (a, b) {
+        (O::Add(a_base, a_field), O::Add(b_base, b_field))
+            if matches!(
+                (a_field.as_ref(), b_field.as_ref()),
+                (O::Constant(a_field), O::Constant(b_field)) if a_field == b_field
+            ) =>
+        {
+            Some((a_base.as_ref(), b_base.as_ref()))
+        }
+        _ => None,
+    }
 }
 
 /// Two pointer offsets that cannot be equal whatever their values: a

@@ -1,0 +1,67 @@
+{
+  "units": {
+    "adler2": {
+      "language": "rust",
+      "sources": {
+        "src/lib.rs": {}
+      },
+      "crate": {
+        "name": "adler2",
+        "edition": "2021",
+        "features": [
+          "std"
+        ],
+        "roots": [
+          "adler2::adler32_slice",
+          "adler2::Adler32::from_checksum"
+        ],
+        "files": [
+          "src/lib.rs",
+          "src/algo.rs"
+        ]
+      }
+    },
+    "adler_incremental": {
+      "language": "rust",
+      "sources": {
+        "incremental.rs": {}
+      },
+      "crate": {
+        "name": "adler_incremental",
+        "edition": "2021",
+        "features": [
+          "std"
+        ],
+        "roots": [
+          "adler_incremental::incremental"
+        ],
+        "files": [
+          "incremental.rs",
+          "src/lib.rs",
+          "src/algo.rs"
+        ]
+      }
+    },
+    "adler_resumed": {
+      "language": "rust",
+      "sources": {
+        "resumed.rs": {}
+      },
+      "crate": {
+        "name": "adler_resumed",
+        "edition": "2021",
+        "features": [
+          "std"
+        ],
+        "roots": [
+          "adler_resumed::resumed"
+        ],
+        "files": [
+          "resumed.rs",
+          "src/lib.rs",
+          "src/algo.rs"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "units": {
+    "trait_objects": {
+      "language": "rust",
+      "lock": {
+        "artifact": "346dd5f302c9bde8cd8f3d86225db78e06386be6727525be92a7fd0ea7dc36f9",
+        "charon_driver": "645ab4b0456083642cafa05da8b1d58aca0c6d3349c2b7921b0820cbb465fb72",
+        "config": "58cde5846660223054ef3aee04525ee3dc1a2bc205d6a3dfa5aa8bd5f01d0a30",
+        "exporter": "c6cc5acf5bb7e4d4bb6bef5265639d1b05b0138e3072767825cc2aa62a5040e4",
+        "identity": "feee11d43a028b72d80cf15fd33fbeda203df5eb698d1b95bd04125fad0faf3c",
+        "schema": 8,
+        "source": "ede355dfe756e59fb935a6c4451f91ad5d2bcd29ca63c6d0aa67e5e032f43d8b",
+        "source_files": {
+          "shapes.rs": "9ba7077307424ec3abb0dd995ac5b2ea536e923db32bac53ca02dc038de98797"
+        }
+      }
+    }
+  }
+}

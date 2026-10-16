@@ -2570,17 +2570,8 @@ fn verify_c0_sources_in_context(
                     .filter(|name| !declared_diverging.contains(name))
                     .collect::<BTreeSet<_>>();
                 assumed_terminating.extend(closure_instance_names(&parsed_sources));
-                assumed_terminating.extend([
-                    "pthread_create".to_string(),
-                    "pthread_join".to_string(),
-                    "pthread_mutex_init".to_string(),
-                    "pthread_mutex_lock".to_string(),
-                    "pthread_mutex_unlock".to_string(),
-                    "pthread_mutex_destroy".to_string(),
-                    "atomic_init".to_string(),
-                    "atomic_store_explicit".to_string(),
-                    "atomic_load_explicit".to_string(),
-                ]);
+                assumed_terminating.extend(object_coercion_names(&parsed_sources));
+                assumed_terminating.extend(modeled_thread_runtime_names());
                 let preliminary = c_verified_function_termination_rules(
                     &partial_rules,
                     &termination_plans,
@@ -2619,7 +2610,13 @@ fn verify_c0_sources_in_context(
                         function_block.signature.name()
                     ))
                 })?;
-        check_signature(&function_block.signature, parsed_function, source_path)?;
+        check_signature(
+            &function_block.signature,
+            function_block.witness_count(),
+            parsed_function,
+            source_path,
+        )?;
+        let parsed_function = &*witnessed_function(parsed_function, &function_block);
         validate_region_proof_clauses(&function_block, parsed_function)?;
         // Dev-only `sorry`: a contract proved entirely by `sorry` is
         // admitted without checking, like an `extern` declaration. Callers
@@ -3033,17 +3030,13 @@ fn verify_c0_sources_in_context(
                 execution.paths().iter().any(|path| {
                     crate::kernel::memory_effect_write_pointers(path.effect_facts())
                         .iter()
-                        .any(|pointer| {
-                            pointer.block.starts_with("global:")
-                                || pointer.block.starts_with("static:")
-                        })
+                        .any(|pointer| pointer.block.is_static_storage_block())
                         || path.effect_facts().iter().any(|fact| {
                             matches!(
                                 fact.proposition(),
                                 Proposition::CMemoryEffectSummary { mutable_ranges, .. }
                                     if mutable_ranges.iter().any(|range| {
-                                        range.base().block.starts_with("global:")
-                                            || range.base().block.starts_with("static:")
+                                        range.base().block.is_static_storage_block()
                                     })
                             )
                         })
@@ -3520,20 +3513,11 @@ fn verify_c0_sources_in_context(
         .filter(|name| !declared_diverging.contains(name))
         .collect::<BTreeSet<_>>();
     assumed_terminating.extend(closure_instance_names(&parsed_sources));
+    assumed_terminating.extend(object_coercion_names(&parsed_sources));
     if selected_thread_runtime
         == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread
     {
-        assumed_terminating.extend([
-            "pthread_create".to_string(),
-            "pthread_join".to_string(),
-            "pthread_mutex_init".to_string(),
-            "pthread_mutex_lock".to_string(),
-            "pthread_mutex_unlock".to_string(),
-            "pthread_mutex_destroy".to_string(),
-            "atomic_init".to_string(),
-            "atomic_store_explicit".to_string(),
-            "atomic_load_explicit".to_string(),
-        ]);
+        assumed_terminating.extend(modeled_thread_runtime_names());
     }
     // A selected function may recurse only through a function this run
     // assumes, so its declared measure ranks no edge here. That measure is
@@ -3917,15 +3901,8 @@ fn verification_required_functions_with_blocks(
             continue;
         }
         if runtime == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread
-            && (matches!(
-                name.as_str(),
-                "pthread_create"
-                    | "pthread_join"
-                    | "pthread_mutex_init"
-                    | "pthread_mutex_lock"
-                    | "pthread_mutex_unlock"
-                    | "pthread_mutex_destroy"
-            ) || crate::languages::c::thread_runtime::is_publication_operation(&name))
+            && (crate::languages::c::thread_runtime::is_modeled_pthread_function(&name)
+                || crate::languages::c::thread_runtime::is_publication_operation(&name))
         {
             continue;
         }
@@ -3936,10 +3913,7 @@ fn verification_required_functions_with_blocks(
             {
                 continue;
             }
-            if matches!(
-                name.as_str(),
-                "atomic_init" | "atomic_store_explicit" | "atomic_load_explicit"
-            ) {
+            if crate::languages::c::thread_runtime::is_publication_operation(&name) {
                 return Err(ClickError::new(format!(
                     "`{name}` is declared by Click's `<stdatomic.h>` projection, but only the modeled-pthread thread runtime models C11 atomic operations"
                 )));
@@ -4153,6 +4127,16 @@ fn c0_external_dependencies_parsed(
 
 fn is_c0_builtin_function(name: &str) -> bool {
     matches!(name, "malloc" | "calloc" | "realloc" | "free")
+}
+
+/// The functions the modeled-pthread runtime specifies instead of executing:
+/// assumed to terminate, since the trusted specification stands in for them.
+fn modeled_thread_runtime_names() -> impl Iterator<Item = String> {
+    use crate::languages::c::thread_runtime::{MODELED_PTHREAD_FUNCTIONS, PUBLICATION_OPERATIONS};
+    MODELED_PTHREAD_FUNCTIONS
+        .into_iter()
+        .chain(PUBLICATION_OPERATIONS)
+        .map(str::to_string)
 }
 
 fn modeled_pthread_create_workers(function: &syntax::C0Function) -> BTreeSet<String> {
@@ -5248,6 +5232,11 @@ impl parser::ProgramLayouts {
             struct_layouts: execution.layouts.clone(),
             ..Default::default()
         };
+        let source_names = execution
+            .functions
+            .iter()
+            .map(|function| (function.name(), function.source_name()))
+            .collect::<BTreeMap<_, _>>();
         for function in &execution.functions {
             let captures = function.closure_captures();
             if !captures.is_empty() {
@@ -5271,6 +5260,13 @@ impl parser::ProgramLayouts {
                 function.source_name().to_string(),
                 function.local_struct_values().clone(),
             );
+            if let Some(interface) = function.trait_interface()
+                && let Some(interface) = source_names.get(interface)
+            {
+                tables
+                    .virtual_overrides
+                    .push((function.source_name().to_string(), interface.to_string()));
+            }
             tables.local_struct_pointers.insert(
                 function.source_name().to_string(),
                 parser::FunctionLocals {
@@ -5667,7 +5663,13 @@ pub(in crate::surface) fn build_function_environment(
         }
         let function = match function_block {
             Some(function_block) => {
-                check_signature(function_block.signature(), function, source_path)?;
+                check_signature(
+                    function_block.signature(),
+                    function_block.witness_count(),
+                    function,
+                    source_path,
+                )?;
+                let function = &*witnessed_function(function, function_block);
                 let (resource_requires, resource_ensures) = function_resource_summary(
                     function_block,
                     function,
@@ -5734,6 +5736,14 @@ pub(in crate::surface) fn build_function_environment(
                 }
                 function = function.with_recursion_binder(recursion_binder);
                 function = function.with_recursion_measure(recursion_measure);
+                function = function
+                    .with_trailing_value_parameters(function_block.witness_count())
+                    .ok_or_else(|| {
+                        ClickError::new(format!(
+                            "`{}` has more contract value parameters than parameters",
+                            function_block.signature().name()
+                        ))
+                    })?;
                 if function_block.signature().exceptional_type().is_some() {
                     function = function
                         .with_int32_exceptional_outcome()
@@ -5747,8 +5757,31 @@ pub(in crate::surface) fn build_function_environment(
             }
             None => function.to_kernel_function(),
         };
+        let unwritten_coercion = function_block.is_none() && is_object_coercion(function.name());
         if closure_captures > 0 {
             environment = with_closure_instance(environment, &function, closure_captures)?;
+        }
+        // A trait's or class's object carries no state when its sidecar
+        // declares no functions: making one from a reference to the struct
+        // or derived class, or the reference back, moves nothing.
+        if unwritten_coercion {
+            let no_op = function.clone().with_contract(
+                vec![],
+                vec![],
+                vec![],
+                vec![CFunctionContractClaim::body_safety()],
+                true,
+            );
+            let rule = crate::kernel::c_external_function_rule(no_op.clone()).ok_or_else(|| {
+                ClickError::new(format!(
+                    "object coercion `{}` cannot be applied opaquely",
+                    function.name()
+                ))
+            })?;
+            environment = environment
+                .with_function(no_op)
+                .with_external_function_rule(rule);
+            continue;
         }
         environment = environment.with_function(function);
     }
@@ -5851,8 +5884,37 @@ fn check_trait_method_implementations(
         let Some(interface) = function.trait_interface() else {
             continue;
         };
-        if environment.get_function_contract(interface).is_none() {
+        let rust = crate::languages::rust::names::is_rust_name(function.name());
+        // A C++ virtual method with a body is verified against its own
+        // contract, which is its interface.
+        let verified_interface = if rust || environment.get_function_contract(interface).is_some() {
+            None
+        } else {
+            environment.get_function(interface)
+        };
+        if environment.get_function_contract(interface).is_none() && verified_interface.is_none() {
             continue;
+        }
+        let interface_name = parsed_sources
+            .get(interface)
+            .map_or(interface, |(_, function)| function.source_name());
+        // A trait or class whose object carries state states each
+        // implementation's interface on that implementation's own memory. A
+        // C++ override of a method that is itself stated so also refines that
+        // method's own contract: a call through it may reach the override.
+        let iface = crate::surface::parser::implementation_interface_contract(function.name());
+        let on_memory = environment.get_function_contract(&iface).is_some();
+        let overridden_on_memory = environment
+            .get_function_contract(&crate::surface::parser::implementation_interface_contract(
+                interface,
+            ))
+            .is_some();
+        let mut contracts = Vec::new();
+        if on_memory {
+            contracts.push(Some(iface.as_str()));
+        }
+        if !on_memory || (!rust && overridden_on_memory) {
+            contracts.push(verified_interface.is_none().then_some(interface));
         }
         // An implementation without its own contract is never verified, so
         // no interface may stand for it.
@@ -5860,30 +5922,80 @@ fn check_trait_method_implementations(
             .iter()
             .any(|block| !block.is_external() && block.signature().name() == function.source_name())
         {
-            return Err(ClickError::new(format!(
-                "`{}` implements the trait method interface `{interface}` but has no contract; \
-                 write it in the `impl` block, with its proof",
-                function.name()
-            ))
+            return Err(ClickError::new(if rust {
+                format!(
+                    "`{}` implements the trait method interface `{interface}` but has no \
+                     contract; write it in the `impl` block, with its proof",
+                    function.name()
+                )
+            } else {
+                format!(
+                    "`{}` overrides the virtual method `{interface_name}` but has no contract; \
+                     write it in the sidecar, with its proof",
+                    function.source_name()
+                )
+            })
             .at_declaration(function.name()));
         }
         let Some(implementation) = environment.get_function(function.name()) else {
             continue;
         };
-        if !crate::kernel::c_function_refines_named_contract(environment, interface, implementation)
-            .map_err(ClickError::new)?
-        {
+        let mut refines = true;
+        for contract in contracts {
+            refines &= match (contract, verified_interface) {
+                (None, Some(interface)) => {
+                    crate::kernel::c_function_refines_function_contract(interface, implementation)
+                }
+                (contract, _) => crate::kernel::c_function_refines_named_contract(
+                    environment,
+                    contract.unwrap_or(interface),
+                    implementation,
+                ),
+            }
+            .map_err(ClickError::new)?;
+        }
+        if !refines {
+            let (name, interface) = if rust {
+                (
+                    function.name(),
+                    format!("the trait method interface `{interface}`"),
+                )
+            } else {
+                (
+                    function.source_name(),
+                    format!("the virtual method `{interface_name}` it overrides"),
+                )
+            };
             return Err(ClickError::new(format!(
-                "`{}` does not refine the trait method interface `{interface}`: its contract \
-                 must accept every call the interface allows; it inherits the interface's \
-                 guarantees, and its `requires` must follow from the interface's, each clause \
-                 read exactly or decided as a bare comparison",
-                function.name()
+                "`{name}` does not refine {interface}: its contract must accept every call the \
+                 interface allows; it inherits the interface's guarantees, and its `requires` \
+                 must follow from the interface's, each clause read exactly or decided as a \
+                 bare comparison"
             ))
             .at_declaration(function.name()));
         }
     }
     Ok(())
+}
+
+/// The functions that turn a crate struct reference into a crate trait's
+/// object, or a C++ class reference into its base's, and back. Each returns
+/// at once: it only moves resources.
+fn object_coercion_names(
+    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+) -> impl Iterator<Item = String> + '_ {
+    parsed_sources
+        .values()
+        .map(|(_, function)| function.name())
+        .filter(|name| is_object_coercion(name))
+        .map(str::to_string)
+}
+
+/// Whether `name` is a function an importer places where a reference
+/// becomes a Rust trait's or a C++ base class's object, or back.
+fn is_object_coercion(name: &str) -> bool {
+    crate::languages::rust::names::is_object_coercion(name)
+        || crate::languages::cpp::names::is_object_coercion(name)
 }
 
 /// The functions that make instances of the program's capturing closures.
@@ -6431,6 +6543,9 @@ pub(in crate::surface) fn composite_resource_definitions(
             )
             .with_facts_read_counts(facts_read_counts)
             .with_authorized(definition.is_authorized())
+            // A field-bearing abstract resource's body is empty, and no proof
+            // folds or unfolds it: only trusted contracts move its instances.
+            .with_sealed(definition.is_sealed())
             .with_resource_parameters(
                 definition
                     .resource_parameters()
@@ -7210,11 +7325,41 @@ pub(in crate::surface) fn assumptions_from_propositions(
     propositions.pure_context()
 }
 
+/// `parsed_function` with the block's contract value parameters after its C
+/// parameters, as the block's signature has them. Lowering the contract
+/// reads them as it reads the C parameters; the lowered function moves them
+/// back out ([`crate::kernel::CFunction::with_trailing_value_parameters`]).
+pub(in crate::surface) fn witnessed_function<'a>(
+    parsed_function: &'a syntax::C0Function,
+    function_block: &FunctionBlock,
+) -> std::borrow::Cow<'a, syntax::C0Function> {
+    if function_block.witness_count() == 0
+        || parsed_function.parameters().len() == function_block.signature().parameters().len()
+    {
+        return std::borrow::Cow::Borrowed(parsed_function);
+    }
+    std::borrow::Cow::Owned(
+        parsed_function.with_trailing_value_parameters(
+            function_block.signature().parameters()
+                [function_block.signature().parameters().len() - function_block.witness_count()..]
+                .iter()
+                .map(|parameter| {
+                    syntax::C0Parameter::new(parameter.c_type(), parameter.name().to_string(), None)
+                }),
+        ),
+    )
+}
+
+/// Checks a block's signature against its C declaration. The block's last
+/// `witness_count` signature parameters are contract value parameters, which
+/// C does not declare.
 pub(in crate::surface) fn check_signature(
     signature: &FunctionSignature,
+    witness_count: usize,
     parsed_function: &syntax::C0Function,
     source_path: &str,
 ) -> Result<(), ClickError> {
+    let c_parameters = &signature.parameters()[..signature.parameters().len() - witness_count];
     // A head restates the C declaration, so its types are the declaration's
     // exact C types: `long` and `long long` are distinct, as in C.
     if signature.return_type() != parsed_function.return_type() {
@@ -7244,18 +7389,17 @@ pub(in crate::surface) fn check_signature(
         .with_kind(ClickErrorKind::Type));
     }
 
-    if signature.parameters().len() != parsed_function.parameters().len() {
+    if c_parameters.len() != parsed_function.parameters().len() {
         return Err(ClickError::new(format!(
             "signature mismatch for `{}` in `{source_path}`: .click has {} parameters, C has {}",
             signature.name(),
-            signature.parameters().len(),
+            c_parameters.len(),
             parsed_function.parameters().len()
         ))
         .with_kind(ClickErrorKind::Type));
     }
 
-    for (index, (expected, actual)) in signature
-        .parameters()
+    for (index, (expected, actual)) in c_parameters
         .iter()
         .zip(parsed_function.parameters())
         .enumerate()

@@ -1528,7 +1528,7 @@ fn abstract_c_state_for_join_across_with_policy(
                 crate::kernel::primitives::SnapshotMapChange::Removed(_) => None,
                 crate::kernel::primitives::SnapshotMapChange::Added(block)
                 | crate::kernel::primitives::SnapshotMapChange::Changed(block) => {
-                    block.starts_with("havoc:").then(|| block.clone())
+                    block.is_havoc_block().then(|| block.clone())
                 }
             })
             .collect::<Vec<_>>();
@@ -3254,6 +3254,27 @@ pub(crate) fn c_mutex_use_resource(state: &CState, mutex: &Pointer) -> CResource
     crate::kernel::mutexes::use_resource(state, mutex)
 }
 
+/// Binds a contract's value parameters in an entry state, as a call binds
+/// them beside its arguments.
+pub(crate) fn bind_contract_value_parameters(
+    entry: &mut CState,
+    parameters: &[CParameter],
+    values: &[CValue],
+) {
+    for (parameter, value) in parameters.iter().zip(values) {
+        entry.locals.set_typed_qualified_with_all_qualifiers(
+            parameter.name().to_string(),
+            value.clone(),
+            parameter.c_type(),
+            CMemory::value_parameter_pointer(parameter.name()),
+            false,
+            false,
+            false,
+            false,
+        );
+    }
+}
+
 pub fn c_function_entry_state(
     caller_state: &CState,
     function: &CFunction,
@@ -3544,7 +3565,7 @@ fn install_borrowed_contract_inputs(
         if matches!(
             input.fact.resource(),
             CResource::Memory(range)
-                if range.base().block.starts_with("local:")
+                if range.base().block.is_local_block()
                     || state.memory().is_read_only_block(&range.base().block)
         ) {
             continue;
@@ -3578,7 +3599,7 @@ fn install_borrowed_contract_inputs(
         if matches!(
             viewed.resource(),
             CResource::Memory(range)
-                if range.base().block.starts_with("local:")
+                if range.base().block.is_local_block()
                     || state.memory().is_read_only_block(&range.base().block)
         ) {
             continue;
@@ -3765,6 +3786,25 @@ pub fn c_function_contract_entry_state(
     }
 }
 
+/// Whether `state` holds `required` by its definition alone, the law
+/// contract certification applies to a returned resource: held directly, or
+/// assembled from pieces only where every assembled composite's body facts
+/// hold under `assumptions`.
+pub(crate) fn c_resource_definitionally_established(
+    state: &CState,
+    required: &CResourceFact,
+    definitions: &[CCompositeResourceDefinition],
+    assumptions: &PureFactContext,
+) -> bool {
+    super::functions::resource_context_satisfies_definitional_fact(
+        state.resources(),
+        required,
+        definitions,
+        state.memory(),
+        assumptions,
+    )
+}
+
 /// Whether a body outcome establishes every resource the contract returns,
 /// by the rule contract certification applies to a `produces` claim. A proof
 /// consults this before reading the outcome through the contract's resource
@@ -3832,6 +3872,24 @@ pub(crate) fn checked_c_function_contract_resource_transition(
     outcome: CFunctionOutcome,
     assumptions: &PureFactContext,
 ) -> Result<CFunctionOutcome, String> {
+    // The transition replaces the body's resources with the ones the
+    // contract returns, so it publishes them, a produced composite included.
+    // Publish only what the body establishes by the rule certification
+    // applies, which assembles a composite from pieces only when its body
+    // facts hold on this path.
+    if matches!(outcome, CFunctionOutcome::Return { .. })
+        && !function_return_resources_definitionally_established(
+            caller_state,
+            function,
+            arguments,
+            &outcome,
+            assumptions,
+        )
+    {
+        return Err(
+            "the body outcome does not establish the contract's returned resources".to_string(),
+        );
+    }
     let (outcome, obligations) = apply_c_function_contract_resource_transition(
         caller_state,
         function,
@@ -4096,6 +4154,7 @@ pub(crate) fn proposition_variables(proposition: &Proposition) -> BTreeSet<Varia
     variables
 }
 
+#[cfg(test)]
 pub fn c_max_body() -> CStatement {
     c_if(
         c_less_than(c_variable("a"), c_variable("b")),
@@ -4104,6 +4163,7 @@ pub fn c_max_body() -> CStatement {
     )
 }
 
+#[cfg(test)]
 pub fn c_max_function() -> CFunction {
     c_function(
         CType::Int32,
@@ -4116,10 +4176,12 @@ pub fn c_max_function() -> CFunction {
     )
 }
 
+#[cfg(test)]
 pub fn c_max_state(a: CValue, b: CValue) -> CState {
     CState::new().with_local("a", a).with_local("b", b)
 }
 
+#[cfg(test)]
 pub fn c_max_lt_condition(a: Bitvector32Term, b: Bitvector32Term) -> ConditionTerm {
     ConditionTerm::signed_less_than(a, b)
 }
@@ -4652,9 +4714,15 @@ fn symbolic_c_statement_execution_with_loop_rule(
                 statement: Box::new(statement.clone()),
                 outcome: path.outcome,
             };
+            // The theorem carries the path's own facts and obligations. The
+            // context it executed under travels beside it as `assumptions`
+            // and is recorded with it; copying every context fact into the
+            // theorem as a premise cost a clone of the whole context per
+            // step, and the premises were then only looked up again in the
+            // same context (`issues/scaling.md` cause 4).
             let theorem = Theorem::new(wrap_proof_facts(
                 proposition,
-                &assumptions,
+                &PureFactContext::new(),
                 &facts,
                 &path.obligations,
             ));
@@ -5043,84 +5111,6 @@ pub(in crate::kernel) fn proof_evidence_assumptions(
     }
     crate::kernel::reasoning::path_facts::count_context_rebuild_entries(premises);
     assumptions
-}
-
-/// The first premise of a retained transition theorem that is not retained,
-/// if any. A premise is retained when it is an
-/// exact fact of the entry context, of the context the theorem was proved
-/// under (`CheckedExecutionEvent::Context`), of the candidate path, an
-/// obligation, or a resource-certified loadability. A loadability premise
-/// may also be covered by a loadability fact of the retained context over a
-/// wider range of the same block (a callee's requirement inside the caller's
-/// `loadable(p[0..n])`), which is the one range rule the executor
-/// discharged it with. Nothing else is derived.
-pub(in crate::kernel) fn proof_evidence_unretained_premise(
-    theorem: &Theorem,
-    assumptions: &PureFactContext,
-    executed_under: Option<&PureFactContext>,
-    execution_facts: &(impl ExecutionFactSource + ?Sized),
-    obligations: &[ProofObligation],
-    state: &CState,
-    function_entry_resource_facts: Option<&PureFactContext>,
-) -> Option<Proposition> {
-    // The path's retained facts (with their conjuncts) and obligations, as
-    // one set built the first time a premise misses both contexts: a
-    // theorem lists a premise per context fact, and scanning the path's
-    // facts once per premise was quadratic in the path. A retained fact
-    // contributes its conjuncts: conjunction elimination is the one
-    // structural rule the proof object applies to retained facts (a kernel
-    // theorem lists the context it executed under as atomic condition facts,
-    // while a loop step retains the lowered invariant it assumed as one
-    // conjunction, so `And(a, b)` retained is `a` retained).
-    let mut retained: Option<BTreeSet<&Proposition>> = None;
-    let mut retained_contains = |premise: &Proposition| {
-        retained
-            .get_or_insert_with(|| {
-                let mut set = BTreeSet::new();
-                let mut pending = execution_facts
-                    .fact_iter()
-                    .map(ExecutionPureFact::proposition)
-                    .collect::<Vec<_>>();
-                // Uncharged, as the scan it replaces was. The set is still
-                // linear in the path's facts at each checked step, a
-                // per-step cost the contract does not allow: charging it
-                // makes `expanded_roundtrip_extra_copy_is_logarithmic_beside_unrelated_allocations`
-                // grow a unit per unrelated allocation (see
-                // docs/internals/verification-efficiency.md).
-                while let Some(fact) = pending.pop() {
-                    if set.insert(fact)
-                        && let Proposition::And(left, right) = fact
-                    {
-                        pending.push(left);
-                        pending.push(right);
-                    }
-                }
-                set.extend(obligations.iter().map(ProofObligation::proposition));
-                crate::kernel::reasoning::path_facts::count_uncharged_context_entries(set.len());
-                set
-            })
-            .contains(premise)
-    };
-    let mut proposition = theorem.proposition();
-    while let Proposition::Implies(premise, body) = proposition {
-        if !(assumptions.proves_exact(premise)
-            || executed_under.is_some_and(|context| context.proves_exact(premise))
-            || retained_contains(premise)
-            || resources_certify_loadability(state, state.resources(), premise, assumptions)
-            || (matches!(premise.as_ref(), Proposition::CMemoryLoadable { .. })
-                && executed_under
-                    .is_some_and(|context| loadable_covered_by_fact(context, premise)))
-            || (matches!(
-                premise.as_ref(),
-                Proposition::CResourceContains { .. } | Proposition::CResourceSeparate { .. }
-            ) && function_entry_resource_facts
-                .is_some_and(|facts| facts.proves_exact(premise))))
-        {
-            return Some(premise.as_ref().clone());
-        }
-        proposition = body;
-    }
-    None
 }
 
 pub(crate) fn execution_evidence_states_match(
@@ -6817,6 +6807,7 @@ pub fn prove_c_function_satisfies_specification_with_environment(
     )))
 }
 
+#[cfg(test)]
 pub fn prove_c_max_lt_returns_right(a: Variable, b: Variable) -> Option<Theorem> {
     let a_bits = Bitvector32Term::Variable(a);
     let b_bits = Bitvector32Term::Variable(b);
@@ -6852,6 +6843,7 @@ pub fn prove_c_max_lt_returns_right(a: Variable, b: Variable) -> Option<Theorem>
     )))
 }
 
+#[cfg(test)]
 pub fn prove_c_max_not_lt_returns_left(a: Variable, b: Variable) -> Option<Theorem> {
     let a_bits = Bitvector32Term::Variable(a);
     let b_bits = Bitvector32Term::Variable(b);
@@ -7803,6 +7795,24 @@ pub fn c_function_refines_named_contract(
     };
     super::functions::function_refines_named_contract(
         contract,
+        function,
+        &mut ExecutionBudget::for_new_execution(),
+    )
+    .map_err(ExecutionLimit::describe)
+}
+
+/// Whether `function`'s contract refines the contract `interface` is
+/// verified against, as an override's must refine the virtual method's it
+/// overrides: the same judgment as a named contract's.
+pub fn c_function_refines_function_contract(
+    interface: &CFunction,
+    function: &CFunction,
+) -> Result<bool, String> {
+    let Some(contract) = CFunctionContract::new(interface.name(), interface.clone()) else {
+        return Ok(false);
+    };
+    super::functions::function_refines_named_contract(
+        &contract,
         function,
         &mut ExecutionBudget::for_new_execution(),
     )

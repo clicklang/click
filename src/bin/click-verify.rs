@@ -2067,15 +2067,15 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
         let (_, trace) = report
             .split_once("proof trace (checked tactics and branch facts):")
             .unwrap_or_else(|| panic!("missing proof trace: {report}"));
-        for line in [48, 49, 59] {
+        for line in [51, 52, 62] {
             assert!(trace.contains(&format!("tactic@{line}: step\n")), "{trace}");
         }
-        assert!(!trace.contains("tactic@57:"), "{trace}");
+        assert!(!trace.contains("tactic@60:"), "{trace}");
     }
 
     #[test]
     fn loop_frontier_trace_to_selects_checked_tactics() {
-        for target in [48, 57, 59] {
+        for target in [51, 60, 62] {
             let report = loop_frontier_trace_report(Some(target));
             let (_, trace) = report
                 .split_once("proof trace (checked tactics and branch facts):")
@@ -2084,24 +2084,24 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
                 trace.contains(&format!("tactic@{target}: step\n")),
                 "{trace}"
             );
-            if target == 48 {
-                assert!(!trace.contains("tactic@49:"), "{trace}");
-            } else if target == 57 {
-                assert!(!trace.contains("tactic@59:"), "{trace}");
+            if target == 51 {
+                assert!(!trace.contains("tactic@52:"), "{trace}");
+            } else if target == 60 {
+                assert!(!trace.contains("tactic@62:"), "{trace}");
             } else {
-                assert!(!trace.contains("tactic@57:"), "{trace}");
+                assert!(!trace.contains("tactic@60:"), "{trace}");
             }
         }
     }
 
     #[test]
     fn loop_frontier_trace_to_an_unreached_tactic_explains_the_missing_step() {
-        let report = loop_frontier_trace_report(Some(63));
+        let report = loop_frontier_trace_report(Some(66));
         assert!(
             report.contains("target tactic has no recorded checked step on a retained path"),
             "{report}"
         );
-        assert!(!report.contains("tactic@63: step\n"), "{report}");
+        assert!(!report.contains("tactic@66: step\n"), "{report}");
     }
 
     #[test]
@@ -2122,7 +2122,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
             &loaded.click_source,
             line_offset,
             &TraceTo {
-                line: 59,
+                line: 62,
                 column: None,
             },
         )
@@ -2147,7 +2147,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
                 Some(&target),
             )
         });
-        assert!(report.contains("tactic@59: step\n"), "{report}");
+        assert!(report.contains("tactic@62: step\n"), "{report}");
         assert!(
             !report.contains("target tactic has no recorded checked step"),
             "{report}"
@@ -2641,6 +2641,44 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
             .filter(|event| matches!(event, VerificationEvent::PhaseStarted("source resolution")))
             .count();
         assert_eq!(resolutions, 1);
+    }
+
+    #[test]
+    fn a_c_parsing_work_stop_is_a_limit_error() {
+        let c_source = "int identity(int x) { return x; }";
+        let click_source = "verifying \"program.c\";\n\
+            int identity(int x) { ensures result == x; } by { execute(); simp(); }\n";
+        let (root, click_path) = temporary_project("parsing-work-limit", c_source, click_source);
+        let error = entry_with([
+            "--work-limit".to_string(),
+            "1".to_string(),
+            click_path.display().to_string(),
+        ])
+        .expect_err("one work unit stops while parsing valid C");
+        fs::remove_dir_all(&root).unwrap();
+        assert!(error.starts_with("limit error:"), "{error}");
+        assert!(!error.contains("syntax error"), "{error}");
+        assert!(error.contains("C parsing stopped"), "{error}");
+        assert!(
+            error.contains("deterministic whole-run work budget"),
+            "{error}"
+        );
+        assert!(
+            error.contains("external dependency summary > source resolution phase"),
+            "{error}"
+        );
+
+        let error = click::instrumentation::with_run_work_limit(1, || {
+            verify_c0_sources(click_source, &[("program.c", c_source)])
+        })
+        .expect_err("the API preserves the parser's stop kind too");
+        assert_eq!(error.kind(), ClickErrorKind::Limit);
+        assert!(error.report().contains("error kind: limit error"));
+
+        let syntax_error = verify_c0_sources(click_source, &[("program.c", "int identity( {")])
+            .expect_err("malformed C still reports a syntax error");
+        assert_eq!(syntax_error.kind(), ClickErrorKind::Syntax);
+        assert!(syntax_error.concise_report().starts_with("syntax error:"));
     }
 
     /// The crash-containment bound is installed before the run loads its

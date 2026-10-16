@@ -35,9 +35,19 @@ The two files in `src/` are byte-for-byte copies of adler2 2.0.1, revision
 [source manifest](../../rust-checksum-sources.json). The original 0BSD license
 is included. Neither modules, derives, methods, operators, nor loops were edited.
 
+## Installed demonstration
+
+The [C/Rust checksum demonstration](../checksum-correspondence.md#reproduce)
+copies the locked fixtures and assembles these canonical proof fragments into
+ordinary CLI sidecars. Its installed workflow checks the complete computation,
+public API, two-update client, saved-state client, C producers and correspondence
+outside the checkout, without a compiler. The fragment files below are shared
+proof inputs; files such as `public-general.click` need their helper declarations
+and are not standalone CLI entries.
+
 ## Current checked boundary
 
-Schema 4 locks the Rust-2021 crate root, `std` feature, selected entry point,
+The `adler2` crate unit locks the Rust-2021 crate root, `std` feature, selected entry point,
 and complete rustc dep-info closure. Both module files enter the prepared
 identity. Missing, extra, changed, escaping, or symlinked inputs are rejected.
 Qualified declaration identities distinguish module functions, inherent
@@ -49,8 +59,8 @@ including `Adler32::compute`. Constructor regressions prove that the actual
 initializer contracts prove `MOD = 65521` and `CHUNK_SIZE = 22208` by executing
 their imported CFGs.
 
-The [helper sidecar](helpers.click) uses the [locked configuration](helpers.click.import.json)
-and native Charon artifact to prove every lane of these original helpers:
+The [helper sidecar](helpers.click) uses the `adler2` unit of the
+[project file](click.project.json) and its native Charon artifact to prove every lane of these original helpers:
 
 | Body | Contract |
 | --- | --- |
@@ -379,6 +389,16 @@ byte-preservation claims, missing length/view and empty-input rejections, and
 verify/profile/audit/expansion rechecks are nightly tests. The original-body
 checks exceed the ordinary per-test budget.
 
+The four-byte B-lane normalization selects the checked modular-call equation
+and divisor equality together. A rewrite of the current read can also replace
+a historical read of the same value, introducing a second remainder that the
+divisor equality alone cannot remove. The
+[reduced snapshot fixture](../../../mdtests/remainder_normalization_with_aliased_snapshot_reads.md)
+keeps this case small. The later subtraction bound uses explicit unsigned
+transitivity before converting the subtraction to Integer arithmetic. These
+proof repairs retain the Rust source, contracts, and work budgets; nightly
+controls also reject a wrong modulus and an off-by-one remainder equality.
+
 ## Original two- and three-byte serial tails
 
 [two-byte-compute.click](two-byte-compute.click) and
@@ -607,14 +627,13 @@ cargo nextest run --test rust_import --run-ignored all \
   -E 'test(charon_adler2_short_tail_compute) | test(charon_adler2_two_byte_compute) | test(charon_adler2_three_byte_compute)'
 ```
 
-Refresh the entire selected crate through the production adapter:
+Refresh every unit of the project through the production adapter:
 
 ```sh
 target/debug/click import lock design/charon-trial/adler2/helpers.click
 ```
 
-The configured exporter path is relative to this directory. Run the focused
-live regression to refresh a private copy and reprove the original helper bodies:
+`CLICK_CHARON` selects a source-built Charon. Run the focused live regression to refresh a private copy and reprove the original helper bodies:
 
 ```sh
 export CLICK_CHARON="$PWD/target/charon/debug/charon"
@@ -629,7 +648,8 @@ the same signed length limit and canonical seed range. The
 [correspondence demonstration](../checksum-correspondence.md) derives native
 result equality under matched entry bytes and state, and records the checked
 incremental and reset cases. Experimental Rust architecture work remains in
-the [rust-support roadmap](../../../issues/rust-support.md).
+the [production borrow assessment](../../rust-borrow-authority-assessment.md) and
+[retained post-launch context](../../rust-charon-assessment.md#existing-post-launch-context).
 
 Full original-computation smart audits exhaust the standard ten-minute run bound
 before completing a site, although ordinary verification succeeds. This is an

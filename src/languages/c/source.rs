@@ -618,11 +618,15 @@ fn expand_source<'a>(
                             defined_macros,
                         )?;
                     }
-                    (super::target::CTarget::X86_64LinuxUserspace, "string.h" | "stdlib.h") => {
-                        let (name, text) = if header == "string.h" {
-                            ("<string.h>", include_str!("modeled_string.h"))
-                        } else {
-                            ("<stdlib.h>", include_str!("modeled_stdlib.h"))
+                    (
+                        super::target::CTarget::X86_64LinuxUserspace,
+                        "string.h" | "stdlib.h" | "stdarg.h" | "sys/types.h",
+                    ) => {
+                        let (name, text) = match header.as_str() {
+                            "string.h" => ("<string.h>", include_str!("modeled_string.h")),
+                            "stdlib.h" => ("<stdlib.h>", include_str!("modeled_stdlib.h")),
+                            "stdarg.h" => ("<stdarg.h>", include_str!("modeled_stdarg.h")),
+                            _ => ("<sys/types.h>", include_str!("modeled_sys_types.h")),
                         };
                         expand_source(
                             name,
@@ -861,8 +865,10 @@ fn collect_local_include_paths(
                             defined_macros.insert("NULL".into());
                         }
                     }
-                    (super::target::CTarget::X86_64LinuxUserspace, "pthread.h" | "stdatomic.h") => {
-                    }
+                    (
+                        super::target::CTarget::X86_64LinuxUserspace,
+                        "pthread.h" | "stdatomic.h" | "stdarg.h" | "sys/types.h",
+                    ) => {}
                     _ => {
                         return Err(unsupported_system_header(
                             source_path,

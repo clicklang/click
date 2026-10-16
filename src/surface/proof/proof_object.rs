@@ -1057,6 +1057,7 @@ struct ProofDiagnosticProofState(
     // The value the goal's `result` denotes, when the goal is about a
     // function outcome.
     Option<CValue>,
+    Vec<crate::kernel::ReadResolutionDiagnostic>,
 );
 
 fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
@@ -1226,6 +1227,10 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         &self,
     ) -> Option<&crate::surface::proof_diagnostics::MemoryHistoryDiagnostic> {
         self.6.as_ref()
+    }
+
+    fn read_resolutions(&self) -> &[crate::kernel::ReadResolutionDiagnostic] {
+        &self.10
     }
 
     fn kernel_goal(&self) -> Option<&Proposition> {
@@ -1706,6 +1711,7 @@ impl Proof<'_> {
             None,
             source_types,
             result.cloned(),
+            Vec::new(),
         )
     }
 }
@@ -2701,7 +2707,7 @@ impl<'a> Proof<'a> {
         &self,
         error: crate::kernel::proof::ResourceRewriteCheckError,
     ) -> ClickError {
-        self.step_error_with_details(error.message, None, None, error.rejected_fact)
+        self.step_error_with_details(error.message, None, None, error.rejected_fact, Vec::new())
     }
 
     fn step_error_with_requirement(
@@ -2710,7 +2716,7 @@ impl<'a> Proof<'a> {
         comparison: Option<crate::surface::proof_trace::ChildArgumentTrace>,
         requirement: Option<(&'static str, Box<Proposition>, Option<String>)>,
     ) -> ClickError {
-        self.step_error_with_details(message, comparison, requirement, None)
+        self.step_error_with_details(message, comparison, requirement, None, Vec::new())
     }
 
     fn step_error_with_details(
@@ -2719,12 +2725,14 @@ impl<'a> Proof<'a> {
         comparison: Option<crate::surface::proof_trace::ChildArgumentTrace>,
         requirement: Option<(&'static str, Box<Proposition>, Option<String>)>,
         rejected: Option<Arc<crate::kernel::proof::RejectedResourceRewriteFact>>,
+        read_resolutions: Vec<crate::kernel::ReadResolutionDiagnostic>,
     ) -> ClickError {
         let reason = message.into();
         let mut diagnostic_state = self.diagnostic_state();
         diagnostic_state.4 = comparison;
         diagnostic_state.5 = requirement;
         diagnostic_state.7 = rejected;
+        diagnostic_state.10 = read_resolutions;
         let location = self
             .site
             .path()

@@ -33,17 +33,24 @@ Click version, pinned Charon version/revision, compiler commit and host before
 compiling. The Charon wrapper's paired-driver layout is validated against the
 explicit driver entry. The bundle supplies its own target libraries and loader
 paths; installed extraction does not search for rustup or use ambient compiler
-flags. A missing or mismatched bundle gives an installation/version diagnostic.
-Only the Linux x86-64 GNU host is packaged initially.
+flags. A missing bundle names `click install VERSION --rust`. A mismatched or
+incomplete installed bundle names its exact frontend path to remove before
+reinstalling: ordinary installation retains an existing bundle. Version errors
+show the expected identity and the bounded identity actually reported. A
+`CLICK_CHARON` override instead points to correcting/unsetting that override
+and the source-build setup command. Hosts without a packaged bundle are
+reported as unavailable rather than being given an install command that
+cannot supply their platform.
+Linux x86-64 GNU is the agreed launch host scope. The P1 frontend delivery
+milestone is complete for that scope; additional host bundles and broader Rust
+coverage are optional future work.
 
 Rust project units use this frontend automatically. `CLICK_CHARON` is a
 contributor override: a bundle directory selects that bundle, while an
 executable selects the existing source-build path and its rustup-managed pinned
-toolchain. Legacy per-sidecar `exporter` paths remain supported; omitting that
-field selects the same override/installed resolution as project units. The
-shared project schema and lock format are described in
-[project configuration](../concepts/own-project.md). The existing lock identity
-formula remains unchanged.
+toolchain. The project schema and lock format are described
+in [`click import`](cli/import.md#project-units) and
+[project configuration](../concepts/own-project.md).
 
 The release workflow builds Charon with `scripts/build-charon.sh --release`
 and assembles the bundle with `scripts/package-rust-frontend.py`, including its
@@ -59,7 +66,11 @@ Click launcher, invokes the real `click install VERSION --rust` command using
 local release assets through its ordinary curl subprocess, relocates the
 installed home, and verifies both examples with an empty PATH and no user
 Rust toolchain. It checks repeated installation and locking, then offline
-verification after removing the frontend. The release workflow runs this check
+verification after removing the frontend. It also runs the
+[C/Rust checksum demonstration](https://github.com/clicklang/click/blob/master/design/charon-trial/checksum-correspondence.md#reproduce)
+from a relocated prepared directory, checking the complete C/Rust producer and
+helper bodies, real incremental/saved-state clients and correspondence theorem
+through locked imports after removing the frontend. The release workflow runs this check
 before attaching assets to a release and on pull requests touching packaging.
 The dedicated integration target stays outside the normal ten-minute gate;
 there is no development-binary fallback for its release archive.
@@ -90,30 +101,56 @@ selects a written tactic within that proof. Only the named proof is checked;
 other function contracts remain interfaces. Tracing validates the ordinary
 import lock and does not rerun the compiler.
 
-The legacy import configuration selects one `.rs` file, an optional development exporter,
-and an artifact output. Refresh runs the compiler with a bounded process and
-writes the artifact and input lock. Ordinary verification loads those files
-without executing the compiler. Source, configuration, artifact, or profile
-changes require refresh. The saved lock includes the compiler/exporter identity. After updating the
-extractor or adapter semantics, refresh existing imports. Configurations use
-schema 3 and native `.ullbc` artifacts. Omitting `backend` selects Charon;
-`"charon"` and the historical `"charon-trial"` spelling are also accepted.
-Schema 2 is rejected with a migration diagnostic. The normal example gate
-checks locked native inputs offline, while the nightly gate's live Charon
-tests refresh and verify all 16 original Rust fixtures.
+Every Rust example is a project: its `click.project.json` declares one Rust
+unit per source, and a sidecar selects a unit with its ordinary `verifying`
+path. A unit without a `crate` object is one `.rs` file compiled as a Rust 2024
+library, with no other inputs:
+
+```json
+{"units": {"borrow": {"language": "rust", "sources": {"borrow.rs": {}}}}}
+```
+
+`click import lock` runs the compiler with a bounded process and writes
+`.click/<unit>/<source>.ullbc` and `click.project.lock.json`. Ordinary
+verification loads those files without executing the compiler. Source, unit
+description, artifact, or profile changes require refresh, and a changed
+source is named. The lock includes the compiler/extractor identity; after
+updating the extractor or adapter semantics, refresh existing imports. The
+normal example gate checks locked native inputs offline, while the nightly
+gate's live Charon tests refresh and verify all 16 original Rust fixtures.
+
+New lock identities use the `click-rust-v1` profile name. Existing
+`click-charon-trial-v1` lock identities remain accepted with the same exact
+input, artifact and semantic-profile checks; loading preserves their original
+identities. Legacy configurations still accept `"charon-trial"` as a backend
+compatibility alias. Historical single-file crate/output labels inside serialized
+artifacts remain stable, so
+this naming cleanup requires no artifact rewrite or forced lock refresh.
+
+Rust lock schema 9 records `frontend`: the Click release version, pinned Charon
+version/revision, rustc commit and a SHA-256 identity of the complete extraction
+and semantic profile. The import identity binds that contribution to the unit,
+source closure and artifact. Local executable bytes, runtime paths and host
+installation directories are absent. Source-built overrides use the same pins
+and runtime handshakes, so equal inputs and extraction output give the same lock
+as the packaged release. Extraction still detects executable changes during a
+run. Single-file artifact source paths are normalized to their source filename;
+crate paths remain relative to the unit root.
+
+The shared project-lock envelope is unchanged. Legacy Rust schema-8 locks remain
+readable offline with their original identities and checks. `click import lock`
+explicitly refreshes them into schema 9; a Click release or semantic-profile
+change also requires refresh. Normal verification never rewrites a lock.
 
 ## Locked crates and qualified declarations
 
-Schema 3 retains the existing one-file Rust 2024 interface. Schema 4 adds an
-explicit crate root and compiler configuration:
+A unit with a `crate` object gives an explicit crate root and compiler
+configuration:
 
 ```json
-{
-  "schema": 4,
+"adler2": {
   "language": "rust",
-  "target": "x86_64-unknown-linux-gnu",
-  "source": "src/lib.rs",
-  "artifact": "crate.ullbc",
+  "sources": {"src/lib.rs": {}},
   "crate": {
     "name": "adler2",
     "edition": "2021",
@@ -128,15 +165,20 @@ This invokes rustc directly; it does not execute Cargo manifests or build
 scripts, resolve third-party dependencies, or enable features implicitly.
 Editions 2021 and 2024 are supported. Roots are explicit qualified paths.
 All compiler-read inputs, including unused modules and included data, must
-appear exactly once in `files`. rustc dep-info checks that closure. Files must
-be regular, use normalized relative paths, and stay inside the configuration
-directory without symlinks. Environment-dependent source macros are rejected.
+appear exactly once in `files`. rustc dep-info checks that closure. A mismatch lists missing entries in
+`crate.files` and extra configured entries, with bounded lists. If a module or
+include is omitted, rustc may fail before emitting dep-info because only the
+configured files are copied into the private compiler snapshot. That error
+retains rustc's filename/module diagnostic and explains how to check
+`crate.files`; it never expands the compiler snapshot implicitly. Files must
+be regular, use normalized relative paths, and stay inside the unit root without symlinks. Environment-dependent source macros are rejected.
+
 
 Extraction compiles a private snapshot of those bytes. The aggregate source
 hash covers every input, and configuration hashes bind the root, edition,
 features, and entry points. Ordinary loading rechecks the full closure
-without executing a compiler. Schema-4 artifacts use the versioned
-`click-charon-crate-v4` envelope; existing schema-3 locks keep their identity.
+without executing a compiler. Crate artifacts use the versioned
+`click-charon-crate-v4` envelope; single-file units keep the earlier identity.
 
 Module definitions and inherent methods retain compiler-resolved identities.
 Proof identifiers encode tagged, length-prefixed path components, so `a::read`,
@@ -146,7 +188,7 @@ Charon's declaration IDs and execute imported bodies; names never grant a
 library summary. Concrete assignment operators retain their trait,
 implementation, signature, and associated-item checks across module paths.
 
-Schema 4 supports by-value returns of supported flat records, including owned
+Crate units support by-value returns of supported flat records, including owned
 array fields and records with `Drop`. The concrete return layout enters the
 kernel's aggregate-return interface: field values copy into fresh caller
 storage, and Rust live flags transfer ownership once. Reference, array, and
@@ -163,7 +205,7 @@ Its private bytes have internal ownership and cannot be declared as contract
 input resources. Passing a pointer field still requires the pointee's own
 resource clauses; copying a record grants no ownership over its pointees.
 
-Schema 4 imports local named scalar constants (`bool`, `i32`, `u8`, `u16`,
+Crate units import local named scalar constants (`bool`, `i32`, `u8`, `u16`,
 `u32`, and target-width `usize`) with straight-line arithmetic initializers.
 Each initializer retains its qualified identity and executes its imported CFG;
 constant reads call that body through the ordinary checked function interface.
@@ -182,7 +224,7 @@ contracts use `struct <qualified-record> <function>(...)` and can state
 `ensures result.field == value;`; those contracts must verify before callers
 can use them.
 
-The unchanged adler2 trial proves `Adler32::default` and `Adler32::new` return
+The unchanged adler2 example proves `Adler32::default` and `Adler32::new` return
 `a = 1`, `b = 0`. Concrete assignment operators also accept supported
 by-value record operands through the checked call interface. Selecting the
 complete checksum loop now produces a locked, prepared import, and its
@@ -533,7 +575,7 @@ a call through the trait has no contract.
 
 The interface's receiver is a reference to a value of a type it does not
 know: the interface reads nothing through `self` and holds none of its
-resources, so an implementation whose contract needs the receiver's
+resources, except its trait's object state (below), so an implementation whose contract needs the receiver's
 fields does not refine it. Every implementation a call can reach is in the
 import, since a generic call names its instance's implementation and a
 `dyn` coercion its vtable, and each one is checked. The importer refuses a
@@ -542,6 +584,37 @@ methods, a method that is generic or takes no `&self` or `&mut self`,
 non-scalar parameters or results, an implementation for anything but a
 crate struct, and a generic implementation
 ([`design/charon-trial/trait-methods`](https://github.com/clicklang/click/blob/master/design/charon-trial/trait-methods/shapes.click)).
+
+### Trait object state
+
+A trait block may declare model functions of its object, `function
+size(self) -> i32;`, which are the object's state: the trait's object is a
+sealed abstract resource, `trait_objects::Shape::object`, with a field for
+each function. A `&self` method of the trait, a parameter `x: &T` with a
+`T: Trait` bound, and `x: &dyn Trait` each hold the object `x` refers to,
+with no clause written for it, and read its state as `size(x)`. A shared
+reference keeps it, so the caller still knows `size(x)` after the call, and
+an `ensures` reads it as it was at entry. No proof folds or unfolds the
+object: it has no body.
+
+Each `impl` of such a trait defines every function from its type's
+fields, `function size(self) -> i32 { self.side }`; an `impl` that omits
+one is refused. Its methods are stated on the struct's own memory, `owns
+*self` for `&self`, with `size(self)` read as the definition in its own
+clauses and in the interface's it inherits, and its proof is an ordinary
+method proof. Its refinement is checked against the interface read on that
+memory, an implementation's `contract fn` `..._iface`.
+
+Where a struct reference becomes the object, at a call that instantiates a
+bound type parameter with the struct or coerces it to `&dyn Trait`, the
+importer brackets the call with the struct's pack and unpack: pack
+consumes the struct's memory and produces its object, whose fields are the
+definitions read on it, and unpack returns the memory with the definitions
+equal to the fields. A caller passing `&Square { side: 3 }` therefore knows
+`size` is `3` and gets the interface's guarantee read with that value.
+`&mut self` receivers, generic traits, and default methods are not yet
+supported
+([`design/charon-trial/trait-objects`](https://github.com/clicklang/click/blob/master/design/charon-trial/trait-objects/shapes.click)).
 
 ### `extern` block functions
 
@@ -571,7 +644,7 @@ interpretation. Record
 size, alignment, and field offsets come from rustc for the selected target;
 Rust's default field order is not assumed.
 
-Single-file imports (schema 3) use Rust 2024; crate imports (schema 4) select
+Single-file units use Rust 2024; crate units select
 2021 or 2024. The rest of the fixed profile is compiler commit
 `923c95cdf5ba65cea505aa2ea829f578e1506ed8`, target
 `x86_64-unknown-linux-gnu`, overflow checks enabled, panic abort, and MIR optimization level zero. Click must
@@ -731,12 +804,12 @@ the callee's `views`/`owns` requirements. See the synthetic
 
 By-value array parameters or returns, nested arrays, and non-byte slices
 remain unsupported. Supported flat records can contain owned array fields,
-including in schema-4 record returns described above. Indexed compound
+including in crate-unit record returns described above. Indexed compound
 assignment remains outside the supported subset. The builtin length
 operation also supports non-byte fixed arrays by recovering their fixed
 length; this does not enable non-byte slices or general library methods.
 
-Schema-3 single-file imports exclude modules and imports; schema 4 supports
+Single-file units exclude modules and imports; crate units support
 the locked module closure described above. Macros, semantic attributes,
 dependencies, unsafe code, general traits, type/const generics, heap
 allocation, nested aggregate parameters, reference returns, and other integer widths
@@ -826,7 +899,7 @@ and attempts to write through yielded shared references are rejected.
 Shared iteration over fixed `i32`, `u8`, and `u32` arrays is also supported,
 including borrowed arrays, local arrays, explicit `.iter()` calls, stored
 `Iter` locals, and moves of the remaining iterator. See the locked
-[array iteration trial](https://github.com/clicklang/click/tree/master/design/charon-trial/array-iteration).
+[array iteration example](https://github.com/clicklang/click/tree/master/design/charon-trial/array-iteration).
 Moving an iterator retires its source; repeated exhaustion yields no element.
 `.iter_mut()`, by-value array iteration, custom iterators, labels, `break`, and
 `continue` remain outside this subset.

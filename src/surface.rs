@@ -858,6 +858,10 @@ pub struct ResourceDefinition {
     /// Declared `authorized resource`: the family takes part in population
     /// accounting, so `authority(...)` and `count(...)` may name it.
     authorized: bool,
+    /// An `abstract resource` that declares fields: its instances carry
+    /// fields, but it has no body, so no proof folds, unfolds, or observes
+    /// one. Only a trusted contract produces or consumes an instance.
+    sealed: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1072,7 +1076,21 @@ pub struct CallBinderTransport {
     produced: Vec<CallBinderBinding>,
     /// Runtime binders that name a resource type, with the type written.
     type_arguments: Vec<(String, Variable, ResourceClause)>,
+    /// Value binders the map selects an instance for, `s: cstr_at(src, n)`
+    /// or `s: str`, in written order.
+    value_arguments: Vec<(String, ValueBinderArgument)>,
     result: Option<String>,
+}
+
+/// What a call map entry for a callee's value binder names.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ValueBinderArgument {
+    /// A resource term, `cstr_at(src, n)`: the binder's `_` arguments take
+    /// the term's arguments at those positions.
+    Term(ResourceClause),
+    /// One of the caller's own value binders: the callee's binder takes the
+    /// instance the caller's selects.
+    Binder(String),
 }
 
 impl CallBinderTransport {
@@ -1099,7 +1117,26 @@ impl CallBinderTransport {
             .into_iter()
             .map(|(name, identity, resource)| Ok((name, identity, map(resource)?)))
             .collect::<Result<_, ClickError>>()?;
+        self.value_arguments = self
+            .value_arguments
+            .into_iter()
+            .map(|(name, argument)| {
+                Ok((
+                    name,
+                    match argument {
+                        ValueBinderArgument::Term(resource) => {
+                            ValueBinderArgument::Term(map(resource)?)
+                        }
+                        binder @ ValueBinderArgument::Binder(_) => binder,
+                    },
+                ))
+            })
+            .collect::<Result<_, ClickError>>()?;
         Ok(self)
+    }
+
+    pub fn value_arguments(&self) -> &[(String, ValueBinderArgument)] {
+        &self.value_arguments
     }
 
     /// `binder: instance` and `binder: Type(args)` entries in written order
@@ -1111,6 +1148,16 @@ impl CallBinderTransport {
             .chain(self.type_arguments.iter().map(|(name, _, resource)| {
                 format!("{name}: {}", printing::format_resource_call(resource))
             }))
+            .chain(
+                self.value_arguments
+                    .iter()
+                    .map(|(name, argument)| match argument {
+                        ValueBinderArgument::Term(resource) => {
+                            format!("{name}: {}", printing::format_resource_call(resource))
+                        }
+                        ValueBinderArgument::Binder(binder) => format!("{name}: {binder}"),
+                    }),
+            )
             .collect()
     }
 
@@ -1298,6 +1345,36 @@ pub struct FunctionBlock {
     /// The scalar fields of each struct those places point to, by struct
     /// name, transitively. Printing only, as above.
     pointee_field_places: BTreeMap<String, Vec<FieldPlace>>,
+    /// The contract's value binders, `views s: cstr_at(bytes, _);`, in
+    /// declaration order.
+    value_binders: Vec<ValueBinder>,
+    /// How many of the signature's parameters, at its end, are the value
+    /// parameters its binders' `_` arguments introduce, such as `s.len`.
+    /// They are not C parameters: a call supplies them from the instance
+    /// the binder selects, and the body is proved for every value.
+    witness_count: usize,
+}
+
+/// A contract binder that names the instance one resource clause selects:
+/// `views s: cstr_at(bytes, _);`. Each `_` argument is a value parameter of
+/// the contract named `s.<parameter>`, and `s.<parameter>` of a written
+/// argument is that argument.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValueBinder {
+    pub(in crate::surface) name: String,
+    pub(in crate::surface) resource: String,
+    /// The written arguments, `None` at each `_`.
+    pub(in crate::surface) arguments: Vec<Option<ContractExpression>>,
+    /// The position of the binder's clause among the block's `requires`.
+    pub(in crate::surface) requirement_index: usize,
+}
+
+impl ValueBinder {
+    /// The placeholder the parser writes for the `_` at `index`, before the
+    /// resource's parameter names are known.
+    pub(in crate::surface) fn placeholder(binder: &str, index: usize) -> String {
+        format!("{binder}.#{index}")
+    }
 }
 
 /// Turns the source clause of each flattened clause into its position among
@@ -1430,7 +1507,7 @@ pub(in crate::surface) struct FieldPlace {
 /// elements a read names by index. A union is not one place and is left out.
 pub(in crate::surface) fn scalar_field_places(
     layout: &syntax::C0StructLayout,
-    layouts: &BTreeMap<String, syntax::C0StructLayout>,
+    layouts: &impl syntax::StructLayouts,
 ) -> Vec<FieldPlace> {
     // Each nested struct is entered once per field that holds it, so the
     // places are as many as the scalar members the layout has. A struct
@@ -1438,7 +1515,7 @@ pub(in crate::surface) fn scalar_field_places(
     // layout map and never for a real one.
     fn collect(
         layout: &syntax::C0StructLayout,
-        layouts: &BTreeMap<String, syntax::C0StructLayout>,
+        layouts: &impl syntax::StructLayouts,
         prefix: &str,
         base: u32,
         depth: usize,
@@ -1475,7 +1552,7 @@ pub(in crate::surface) fn scalar_field_places(
             // scalar place like any other pointer field.
             match field.struct_name() {
                 Some(nested) if !field.c_type().is_pointer() => {
-                    if let Some(nested) = layouts.get(nested)
+                    if let Some(nested) = layouts.struct_layout(nested)
                         && depth < 8
                     {
                         collect(
@@ -1512,7 +1589,7 @@ pub(in crate::surface) fn scalar_field_places(
 /// `p->next->second`, can name. Each struct is laid out once.
 pub(in crate::surface) fn pointee_field_places<'a>(
     places: impl IntoIterator<Item = &'a Vec<FieldPlace>>,
-    layouts: &BTreeMap<String, syntax::C0StructLayout>,
+    layouts: &impl syntax::StructLayouts,
 ) -> BTreeMap<String, Vec<FieldPlace>> {
     let mut reached = BTreeMap::new();
     let mut pending = places
@@ -1524,7 +1601,7 @@ pub(in crate::surface) fn pointee_field_places<'a>(
         if reached.contains_key(&name) {
             continue;
         }
-        let Some(layout) = layouts.get(&name) else {
+        let Some(layout) = layouts.struct_layout(&name) else {
             continue;
         };
         let fields = scalar_field_places(layout, layouts);
@@ -7255,11 +7332,12 @@ pub struct ClickError {
     timing_tactic: Option<Box<TimingTacticContext>>,
 }
 
-/// The phase that rejected input or a checked proof operation. `Proof` means
+/// The cause of a refused input or checked proof operation. `Proof` means
 /// evidence was unavailable to this check; it is not a claim that C is unsafe.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ClickErrorKind {
     Syntax,
+    Limit,
     Type,
     Proof,
     Internal,
@@ -7269,6 +7347,7 @@ impl ClickErrorKind {
     fn label(self) -> &'static str {
         match self {
             Self::Syntax => "syntax error",
+            Self::Limit => "limit error",
             Self::Type => "type error",
             Self::Proof => "proof error",
             Self::Internal => "internal error",
@@ -7528,6 +7607,12 @@ impl ClickFunctionDefinition {
 }
 
 impl ResourceDefinition {
+    /// Whether this is a field-bearing `abstract resource`, which no proof
+    /// may fold, unfold, or observe.
+    pub fn is_sealed(&self) -> bool {
+        self.sealed
+    }
+
     pub fn fields(&self) -> &[ResourceFieldDefinition] {
         self.composite_body
             .as_ref()
@@ -7716,6 +7801,16 @@ impl FunctionBlock {
         &self.signature
     }
 
+    pub(in crate::surface) fn value_binders(&self) -> &[ValueBinder] {
+        &self.value_binders
+    }
+
+    /// The number of trailing signature parameters that are contract value
+    /// parameters rather than C parameters.
+    pub(in crate::surface) fn witness_count(&self) -> usize {
+        self.witness_count
+    }
+
     /// Adds a crate trait method's interface to this implementation's
     /// contract: its `ensures`, which the implementation's proof establishes
     /// with its own, each named `interface_ensures_<i>`, and its `requires`
@@ -7725,6 +7820,7 @@ impl FunctionBlock {
     pub(in crate::surface) fn inherit_interface(
         &mut self,
         interface: &FunctionBlock,
+        source: &str,
     ) -> Result<(), String> {
         let names = |block: &FunctionBlock| {
             block
@@ -7736,7 +7832,7 @@ impl FunctionBlock {
         };
         if names(self) != names(interface) {
             return Err(format!(
-                "an implementation names its parameters as the trait's interface does, ({}), \
+                "an implementation names its parameters as {source} does, ({}), \
                  so the interface's clauses read the same in it",
                 names(interface).join(", ")
             ));

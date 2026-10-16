@@ -11,11 +11,13 @@ The C is written as a C programmer would write it and is not adapted to Click.
 | `label.h` | Public prototypes, beside the sources |
 | `label_fit.c` | `label_fit`, which uses the configured capacity |
 | `label_copy.c` | `label_measure` and `label_copy`, which call `strlen`, `memcpy`, and `label_fit` |
-| `label.click`, `label.click.import.json` | One sidecar and one compiler import for both files, with the build's flags |
+| `label.click` | One sidecar for both files |
+| `click.project.json` | The project: one C unit for both files, with the build's flags |
+| `click.project.lock.json`, `.click/label/` | The lock and preprocessed sources `click import lock` wrote |
 
 `label.click` proves that `label_fit`'s result is below the build's capacity
 of 32 and never exceeds the input length, and that `label_measure` returns
-less than 32 for any readable C string. The import passes the `Makefile`'s
+less than 32 for any readable C string. The unit passes the `Makefile`'s
 `-Iinclude -DLABEL_CAPACITY=32` for both files; `<string.h>` in
 `label_copy.c` resolves to Click's modeled header, so the `strlen` call is
 checked against Click's library contract. The call to `label_fit` applies
@@ -29,10 +31,10 @@ and returns an index below 32. The standard library model accepts its
 From this directory:
 
 ```sh
-click import lock label.click
+click import lock
 click verify label.click
 ```
 
 `make` builds `liblabel.a` with a host compiler; Click does not use the
-`Makefile`. The lock and the `.i` files are local outputs, refreshed by the
-examples gate.
+`Makefile`. The lock and the preprocessed sources are committed, so
+verification needs no compiler; `click import lock` refreshes them.

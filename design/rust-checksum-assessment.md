@@ -2,7 +2,7 @@
 
 This assessment pins the unchanged Adler-32 implementations, build configuration,
 and common mathematical specification selected by
-[the Rust roadmap](../issues/rust-support.md). Native Charon imports the Rust
+[the completed Linux Rust frontend milestone](rust-charon-assessment.md#completed-linux-frontend-delivery). Native Charon imports the Rust
 selection, and the [Adler trial](charon-trial/adler2/README.md) records its current
 checked computation correctness over the explicit signed observation range.
 The unchanged public entry point composes the checked constructor, general
@@ -182,8 +182,10 @@ both residues at each actual byte position. Checked iterator exhaustion, byte
 extensionality, native reductions and 16-bit stores prove both final fields
 equal the specification on the entry input snapshot for all supported lengths.
 
-Follow the [current roadmap](../issues/rust-support.md) for experimental Rust
-architecture requirements and the completed checksum proof evidence.
+The [frontend assessment](rust-charon-assessment.md#completed-linux-frontend-delivery)
+records Linux delivery and retained post-launch context; the
+[production borrow assessment](rust-borrow-authority-assessment.md) records the
+current Rust authority boundary.
 Deliver coherent green proof and engine increments through pull
 requests. Repair checker and expansion defects before extending the examples;
 retain explicit bounds on intermediate evidence and meaningful negative tests.

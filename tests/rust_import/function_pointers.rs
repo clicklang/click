@@ -3,41 +3,15 @@ use super::*;
 const SIDECAR: &str = include_str!("../../design/charon-trial/function-pointers/callback.click");
 
 fn function_pointer_project() -> Project {
-    let p = Project::isolated("");
-    for (name, bytes) in [
-        (
-            "callback.rs",
-            include_bytes!("../../design/charon-trial/function-pointers/callback.rs").as_slice(),
-        ),
-        ("borrow.click", SIDECAR.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!(
-                "../../design/charon-trial/function-pointers/callback.click.import.json"
-            )
-            .as_slice(),
-        ),
-        (
-            "callback.ullbc",
-            include_bytes!("../../design/charon-trial/function-pointers/callback.ullbc").as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!(
-                "../../design/charon-trial/function-pointers/callback.click.import.json.lock"
-            )
-            .as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/function-pointers");
+    fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
     p
 }
 
 #[test]
 fn callable_signature_mismatch_displays_both_signatures() {
     let p = function_pointer_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     let mismatched = SIDECAR
         .replacen("f: fn(i32) -> i32", "f: fn(u32) -> u32", 1)
         .replacen("    requires Doubling(f);\n", "", 1);
@@ -65,7 +39,7 @@ fn callable_signature_mismatch_displays_both_signatures() {
 #[ignore = "nightly: 1.3s in the parallel gate"]
 fn charon_calls_through_a_function_pointer_meet_its_named_contract() {
     let p = function_pointer_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     let twice = "fn function_pointers::twice(x: i32) -> i32 {\n    requires 0 <= x and x <= 1000;\n    ensures result == x + x;";

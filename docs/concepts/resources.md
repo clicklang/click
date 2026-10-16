@@ -340,6 +340,13 @@ are checked against the types declared in the resource definition. They have no
 local `fold` or construction rule: a contract may assume, transfer, return, or
 consume an abstract unit, but verified code cannot establish its first unit.
 
+An abstract resource may also declare fields, `abstract resource obj(p:
+int32*) { field size: int32; }`. Each instance is then named, as a declared
+resource with fields is, and carries its fields, but the family still has no
+body: no proof folds, unfolds, or observes an instance, so its fields are
+exactly what the contracts that produce, pass, and consume it state
+(`mdtests/abstract_resource_fields_pass_through_calls.md`).
+
 Equal declared resources accumulate as an exact quantity. Duplicate clauses
 such as two `consumes open_fd(fd);` entries require two units, and a call cannot
 satisfy that requirement with one unit.
@@ -1042,6 +1049,18 @@ These steps are bounded by design. A proof that needs facts inside a nested
 composite resource should name the path with repeated `observe(...)` steps
 instead of relying on `auto` to search through every possible nested body.
 
+A function that returns a composite (`produces` it, or keeps it under `owns`)
+may reach its exit holding the body's pieces instead of the folded head, and
+a loop that keeps one may reach its back edge that way. Reading the pieces as
+the composite there is a fold: the kernel accepts it only where every body
+fact holds over those pieces, by the same exact check `fold` makes, and
+otherwise reports the composite missing. A C store that falsifies a body fact
+therefore needs the proof to restore the fact and fold, or the contract to
+return something weaker
+(`mdtests/an_ordinary_exit_does_not_produce_a_composite_whose_body_fact_a_store_falsified.md`,
+`mdtests/a_loop_back_edge_does_not_return_a_composite_whose_body_fact_a_store_falsified.md`,
+`mdtests/an_ordinary_exit_produces_a_composite_whose_body_facts_hold.md`).
+
 ### Borrowing a composite
 
 `views` of a composite covers its checked one-level frontier. Lending one puts
@@ -1172,7 +1191,14 @@ they name the state the execution has reached. After `root = root->left` a
 and a body fact such as `fact parent->left == child` instantiates to the link
 the body just walked. The fold's field values are read the same way, so one
 tactic never straddles two states
-(`mdtests/fold_argument_reads_current_cursor.md`).
+(`mdtests/fold_argument_reads_current_cursor.md`). An explicit `old(...)`
+argument selects function entry even in a fold with explicit fields: after
+`p = q`, `fold(saved_at(old(p)), { model: old(saved.model) })` keeps the
+entry-indexed instance, while `fold(saved_at(p), ...)` selects the current
+pointer. The argument and field initializer retain their own snapshot selectors
+(`mdtests/fielded_resource_fold_keeps_entry_arguments.md`); a current-pointer
+model cannot establish the old instance's body
+(`mdtests/fielded_resource_fold_rejects_current_model_for_entry_argument.md`).
 A resource argument may also read an owned field through a proved model-pointer
 alias. Named folds retain the facts already checked at that point when
 evaluating those arguments; a model pointer without read authority is refused

@@ -4616,17 +4616,17 @@ impl PureFactContext {
     ) -> Option<AlgebraicTerm> {
         match &value.node {
             AlgebraicTermNode::Constructor { .. } => value.is_well_formed().then(|| value.clone()),
-            AlgebraicTermNode::Variable(variable) => {
-                let (premise, constructor) = self
-                    .algebraic_variable_constructors
-                    .get(variable)?
-                    .iter()
-                    .inspect(|_| crate::instrumentation::record_deterministic_work(1))
-                    .find(|(_, constructor)| constructor.algebraic_type == value.algebraic_type)?;
-                record_reasoning_provenance(self, premise);
-                Some(constructor.clone())
+            _ => {
+                let constructor = self.equality_graph.known_algebraic_constructor(value)?;
+                record_reasoning_provenance(
+                    self,
+                    &Proposition::Equal(
+                        Term::Algebraic(value.clone()),
+                        Term::Algebraic(constructor.clone()),
+                    ),
+                );
+                Some(constructor)
             }
-            _ => None,
         }
     }
 
@@ -4888,14 +4888,19 @@ impl PureFactContext {
     /// same-block pair has such members. Each composition asks its members
     /// of that block, so the query costs the members it reads and never
     /// their pairs, and nothing is stated into this context beforehand.
+    ///
+    /// `left_at` and `right_at` are addresses the two sides are spelled at;
+    /// they choose which members are asked first and never change the
+    /// answer (`ResourceContext::separated_owned_members_in_block`).
     pub(in crate::kernel) fn composition_separated_members<'a>(
         &'a self,
-        left_block: &PointerBlock,
-        right_block: &PointerBlock,
+        left_at: &Pointer,
+        right_at: &Pointer,
         left: impl Fn(&CMemoryRange) -> bool,
         right: impl Fn(&CMemoryRange) -> bool,
         admit: impl Fn(&CMemoryRange, &CMemoryRange) -> bool,
     ) -> Option<(&'a ResourceContext, &'a CMemoryRange, &'a CMemoryRange)> {
+        let (left_block, right_block) = (&left_at.block, &right_at.block);
         if left_block != right_block {
             return None;
         }
@@ -4906,7 +4911,9 @@ impl PureFactContext {
             .into_iter()
             .find_map(|resources| {
                 resources
-                    .separated_owned_members_in_block(left_block, &left, &right, &admit)
+                    .separated_owned_members_in_block(
+                        left_block, left_at, right_at, self, &left, &right, &admit,
+                    )
                     .map(|(left, right)| (resources, left, right))
             })
     }
@@ -5508,6 +5515,19 @@ impl PureFactContext {
                 bound,
                 strict,
             );
+        }
+        // An Integer comparison of exact machine observations,
+        // `to_integer(x) <= 5` or `to_integer(x) == to_integer(y)` for one
+        // machine type, holds exactly when the native comparison of the
+        // carriers does, since `to_integer` is injective and preserves
+        // order. The native comparison is filed beside it, so built-in
+        // checks that read machine facts (resource quantities, overflow
+        // and definedness) see what an Integer premise established. One
+        // constant check per filed comparison; nothing else is visited.
+        if let Some((native, truth)) = native_comparison_of_integer_observation(&condition, value)
+            && native != condition
+        {
+            self = self.assume_condition_uncharged(native, truth);
         }
         let old = self.condition_facts.get(&condition).copied();
         self.condition_facts = self.condition_facts.with_inserted(condition.clone(), value);
@@ -8532,4 +8552,218 @@ fn aliased_operands(
         _ => unreachable!("matched above"),
     };
     graph.decide(&itself)
+}
+
+/// The native machine comparison equivalent to the Integer comparison
+/// `condition` with truth `value`, when both sides observe one machine type
+/// exactly: `to_integer(x)` against `to_integer(y)` of the same type, or
+/// against a constant that type represents. `to_integer` is injective and
+/// order-preserving on each supported type, so the two comparisons have
+/// the same truth. A constant outside the type's range makes the Integer
+/// comparison decided by the range alone; nothing is returned for it.
+fn native_comparison_of_integer_observation(
+    condition: &ConditionTerm,
+    value: bool,
+) -> Option<(ConditionTerm, bool)> {
+    use crate::kernel::primitives::{IntegerTerm, MachineIntegerConstant};
+    #[derive(Clone, Copy)]
+    enum Relation {
+        Less,
+        LessEqual,
+        Equal,
+        NotEqual,
+    }
+    // Each comparison as `left REL right`, with `>`/`>=` swapped, then
+    // negated when the comparison is filed false.
+    let (relation, left, right) = match condition {
+        ConditionTerm::IntegerLessThan(left, right) => (Relation::Less, left, right),
+        ConditionTerm::IntegerLessEqual(left, right) => (Relation::LessEqual, left, right),
+        ConditionTerm::IntegerGreaterThan(left, right) => (Relation::Less, right, left),
+        ConditionTerm::IntegerGreaterEqual(left, right) => (Relation::LessEqual, right, left),
+        ConditionTerm::IntegerEqual(left, right) => (Relation::Equal, left, right),
+        ConditionTerm::IntegerNotEqual(left, right) => (Relation::NotEqual, left, right),
+        _ => return None,
+    };
+    let (relation, left, right) = match (relation, value) {
+        (relation, true) => (relation, left, right),
+        // not (l < r) is r <= l; not (l <= r) is r < l.
+        (Relation::Less, false) => (Relation::LessEqual, right, left),
+        (Relation::LessEqual, false) => (Relation::Less, right, left),
+        (Relation::Equal, false) => (Relation::NotEqual, left, right),
+        (Relation::NotEqual, false) => (Relation::Equal, left, right),
+    };
+    let ty = match (&**left, &**right) {
+        (IntegerTerm::Machine(left), IntegerTerm::Machine(right)) if left.ty() == right.ty() => {
+            left.ty()
+        }
+        (IntegerTerm::Machine(machine), IntegerTerm::Constant(_))
+        | (IntegerTerm::Constant(_), IntegerTerm::Machine(machine)) => machine.ty(),
+        _ => return None,
+    };
+    if !matches!(
+        ty,
+        MachineIntegerType::Int32
+            | MachineIntegerType::UInt32
+            | MachineIntegerType::Int64
+            | MachineIntegerType::UInt64
+    ) {
+        return None;
+    }
+    let carrier = |side: &IntegerTerm| -> Option<Bitvector32Term> {
+        match side {
+            IntegerTerm::Machine(machine) => Some(machine.value().clone()),
+            IntegerTerm::Constant(constant) => {
+                ty.constant_term(MachineIntegerConstant::from_integer(ty.format(), constant)?)
+            }
+            _ => None,
+        }
+    };
+    let left = carrier(left)?;
+    let right = carrier(right)?;
+    Some((
+        match (relation, ty) {
+            (Relation::Less, MachineIntegerType::Int32) => {
+                ConditionTerm::signed_less_than(left, right)
+            }
+            (Relation::Less, MachineIntegerType::UInt32) => {
+                ConditionTerm::unsigned_less_than(left, right)
+            }
+            (Relation::Less, MachineIntegerType::Int64) => {
+                ConditionTerm::int64_signed_less_than(left, right)
+            }
+            (Relation::Less, MachineIntegerType::UInt64) => {
+                ConditionTerm::uint64_less_than(left, right)
+            }
+            (Relation::LessEqual, MachineIntegerType::Int32) => {
+                ConditionTerm::signed_less_equal(left, right)
+            }
+            (Relation::LessEqual, MachineIntegerType::UInt32) => {
+                ConditionTerm::unsigned_less_equal(left, right)
+            }
+            (Relation::LessEqual, MachineIntegerType::Int64) => {
+                ConditionTerm::int64_signed_less_equal(left, right)
+            }
+            (Relation::LessEqual, MachineIntegerType::UInt64) => {
+                ConditionTerm::uint64_less_equal(left, right)
+            }
+            (
+                Relation::Equal | Relation::NotEqual,
+                MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+            ) => ConditionTerm::equal(left, right),
+            (Relation::Equal | Relation::NotEqual, MachineIntegerType::Int64) => {
+                ConditionTerm::int64_equal(left, right)
+            }
+            (Relation::Equal | Relation::NotEqual, MachineIntegerType::UInt64) => {
+                ConditionTerm::uint64_equal(left, right)
+            }
+            _ => return None,
+        },
+        !matches!(relation, Relation::NotEqual),
+    ))
+}
+
+#[cfg(test)]
+mod integer_observation_tests {
+    use super::*;
+    use crate::kernel::primitives::IntegerTerm;
+    use num_bigint::BigInt;
+
+    fn observe(ty: MachineIntegerType, variable: u64) -> SharedIntegerTerm {
+        IntegerTerm::from_machine(ty, Bitvector32Term::Variable(Variable(variable)))
+            .expect("a machine variable has an exact observation")
+            .into()
+    }
+
+    fn constant(value: i64) -> SharedIntegerTerm {
+        IntegerTerm::Constant(BigInt::from(value)).into()
+    }
+
+    fn word(variable: u64) -> Bitvector32Term {
+        Bitvector32Term::Variable(Variable(variable))
+    }
+
+    #[test]
+    fn an_integer_bound_files_its_native_comparison() {
+        let context = PureFactContext::new().assume_condition(
+            ConditionTerm::IntegerLessEqual(constant(0), observe(MachineIntegerType::Int32, 1)),
+            true,
+        );
+        assert_eq!(
+            context.decide(&ConditionTerm::signed_less_equal(
+                Bitvector32Term::Constant(0),
+                word(1)
+            )),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn an_unsigned_bound_files_the_unsigned_comparison() {
+        let context = PureFactContext::new().assume_condition(
+            ConditionTerm::IntegerLessThan(observe(MachineIntegerType::UInt32, 1), constant(10)),
+            true,
+        );
+        assert_eq!(
+            context.decide(&ConditionTerm::unsigned_less_than(
+                word(1),
+                Bitvector32Term::Constant(10)
+            )),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn a_false_comparison_files_its_negation() {
+        // not (to_integer(x) < 5) is 5 <= x.
+        let context = PureFactContext::new().assume_condition(
+            ConditionTerm::IntegerLessThan(observe(MachineIntegerType::Int32, 1), constant(5)),
+            false,
+        );
+        assert_eq!(
+            context.decide(&ConditionTerm::signed_less_equal(
+                Bitvector32Term::Constant(5),
+                word(1)
+            )),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn an_integer_disequality_files_a_false_native_equality() {
+        let context = PureFactContext::new().assume_condition(
+            ConditionTerm::IntegerNotEqual(
+                observe(MachineIntegerType::Int32, 1),
+                observe(MachineIntegerType::Int32, 2),
+            ),
+            true,
+        );
+        assert_eq!(
+            context.decide(&ConditionTerm::equal(word(1), word(2))),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn an_out_of_range_constant_files_nothing() {
+        let condition = ConditionTerm::IntegerLessThan(
+            observe(MachineIntegerType::Int32, 1),
+            constant(i64::from(i32::MAX) + 1),
+        );
+        assert_eq!(
+            native_comparison_of_integer_observation(&condition, true),
+            None
+        );
+    }
+
+    #[test]
+    fn observations_of_different_types_file_nothing() {
+        let condition = ConditionTerm::IntegerLessEqual(
+            observe(MachineIntegerType::Int32, 1),
+            observe(MachineIntegerType::UInt32, 2),
+        );
+        assert_eq!(
+            native_comparison_of_integer_observation(&condition, true),
+            None
+        );
+    }
 }

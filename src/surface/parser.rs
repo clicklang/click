@@ -1,7 +1,10 @@
+mod cpp_class_objects;
 mod cpp_model;
 mod cpp_syntax;
 mod library_paths;
 mod rust_syntax;
+mod rust_trait_objects;
+pub(crate) use rust_trait_objects::implementation_interface_contract;
 mod tokenizer;
 use cpp_model::rewrite_model_accessors;
 use rust_syntax::rust_signature_hint;
@@ -168,6 +171,9 @@ pub(in crate::surface) struct ProgramLayouts {
     /// A sidecar head names only the closure's own parameters; the captures
     /// lead its signature, so its contract reads them by name.
     pub(in crate::surface) closure_captures: BTreeMap<String, Vec<FunctionParameter>>,
+    /// Each C++ override with the virtual method it overrides, by their
+    /// sidecar names: the override inherits that method's interface.
+    pub(in crate::surface) virtual_overrides: Vec<(String, String)>,
 }
 
 /// Whether the library declaration `name` of module `identity` is known by
@@ -639,6 +645,10 @@ struct Parser {
     child_slot_identities: BTreeSet<Variable>,
     current_resource_fields: BTreeMap<String, ResourceFieldAccess>,
     current_resource_targets: BTreeMap<String, ResourceClause>,
+    /// The current function block's value binders, `views s: R(a, _);`.
+    current_value_binders: BTreeMap<String, ValueBinder>,
+    /// Their declaration order, for the function block.
+    current_value_binder_order: Vec<String>,
     in_resource_definition: bool,
     /// The fields of each resource declared so far, hidden ones included.
     declared_resource_fields: BTreeMap<String, Vec<ResourceFieldDefinition>>,
@@ -688,6 +698,12 @@ struct Parser {
     /// Each crate trait method implementation read, by name, with the
     /// interface it inherits.
     rust_trait_implementations: Vec<(String, String)>,
+    /// The crate traits whose objects carry state, by importer name: the
+    /// token rewrite already gave their implementations their interfaces.
+    rust_object_traits: BTreeSet<String>,
+    /// The importer names of the methods of C++ classes whose objects carry
+    /// state: an override of one is stated on its own memory.
+    cpp_object_methods: cpp_class_objects::ObjectMethods,
     match_nesting: usize,
     proposition_nesting: usize,
     proof_nesting: usize,
@@ -753,11 +769,28 @@ struct Parser {
     current_arm_binding_types: BTreeMap<String, AlgebraicFieldType>,
     current_integer_params: BTreeSet<String>,
     current_integer_lets: BTreeSet<String>,
+    /// Every parameter of the theorem being parsed, of any type, so a
+    /// `have name: P` cannot take a parameter's name.
+    current_theorem_param_names: BTreeSet<String>,
     /// Names introduced by `obtain (...)` in this proof block only.
     /// Nested `have` and branch blocks start a new lexical binder scope;
     /// semantic freshness is checked again by the proof object.
     current_proof_let_names: BTreeSet<String>,
     proof_let_restores: Vec<ProofLetParserRestore>,
+    /// The facts `have name: P` named, visible from the `have` to the end
+    /// of its block, nested blocks included. A citation by name is read as
+    /// the proposition, exactly as if it were restated there.
+    fact_names: BTreeMap<String, ClickProposition>,
+    /// The bindings each name shadowed, undone when its block ends.
+    fact_name_restores: Vec<(String, Option<ClickProposition>)>,
+    /// Names whose `have` proof is being parsed, and names whose block has
+    /// ended inside the current proof, so citing one is refused by name
+    /// rather than read as an unbound variable.
+    fact_names_being_proved: BTreeSet<String>,
+    ended_fact_names: BTreeSet<String>,
+    /// Quantifier variables open at the cursor, innermost last. Each hides
+    /// a fact of the same name inside its body.
+    quantifier_binders: Vec<String>,
     integer_literal_context: bool,
     /// Instance binders declared by each C function block already parsed,
     /// keyed by function name. A call step reads exactly the entry for its
@@ -814,6 +847,10 @@ enum CalleeResourceBinderKind {
     /// A runtime binder that names a resource type, not an instance:
     /// `atomic_init`'s `payload`.
     Type,
+    /// A value binder, `views s: R(a, _);`: the caller may name the instance
+    /// it selects with a resource term or one of its own value binders, or
+    /// leave it to the call.
+    Value,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -976,6 +1013,15 @@ enum ContractLetBindingKind {
 }
 
 impl ContractLetBinding {
+    /// `let name = value;`, as a value binder's parameter names its argument.
+    pub(in crate::surface) fn value_binding(name: String, value: ContractExpression) -> Self {
+        Self {
+            name,
+            click_type: None,
+            kind: ContractLetBindingKind::Value(value),
+        }
+    }
+
     pub(super) fn value(&self) -> Option<&ContractExpression> {
         match &self.kind {
             ContractLetBindingKind::Value(value) => Some(value),
@@ -1039,7 +1085,21 @@ impl Parser {
         parser.plain_char = layouts.plain_char;
         parser.int64_t_rank = layouts.int64_t_rank.unwrap_or(LongRank::Long);
         if layouts.language == Some(SourceLanguage::Cpp) {
+            // A sidecar verifying a C++ header is C++ by its import, which
+            // its `verifying` path does not say: its class object state is
+            // rewritten here.
+            if parser.language != SourceLanguage::Cpp {
+                let (tokens, positions, methods) = cpp_class_objects::rewrite_class_objects(
+                    std::mem::take(&mut parser.tokens),
+                    std::mem::take(&mut parser.positions),
+                )?;
+                parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
+                parser.tokens = tokens;
+                parser.positions = positions;
+                parser.cpp_object_methods = methods;
+            }
             parser.language = SourceLanguage::Cpp;
+            parser.rust_trait_implementations = layouts.virtual_overrides;
         }
         Ok(parser)
     }
@@ -1079,8 +1139,27 @@ impl Parser {
                 }
                 _ => None,
             }));
+        // A Rust sidecar's trait object state is rewritten into contracts
+        // over abstract resources before anything is parsed.
+        let (tokens, positions, rust_object_traits) = if language == SourceLanguage::Rust {
+            rust_trait_objects::rewrite_trait_objects(tokens, positions)?
+        } else {
+            (tokens, positions, BTreeSet::new())
+        };
+        // So is a C++ sidecar's class object state.
+        let (tokens, positions, cpp_object_methods) = if language == SourceLanguage::Cpp {
+            cpp_class_objects::rewrite_class_objects(tokens, positions)?
+        } else {
+            (
+                tokens,
+                positions,
+                cpp_class_objects::ObjectMethods::default(),
+            )
+        };
         let matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
         Ok(Self {
+            rust_object_traits,
+            cpp_object_methods,
             source_aliases: BTreeMap::new(),
             qualified_objects: None,
             pending_tactic_signature: false,
@@ -1091,6 +1170,8 @@ impl Parser {
             child_slot_identities: BTreeSet::new(),
             current_resource_fields: BTreeMap::new(),
             current_resource_targets: BTreeMap::new(),
+            current_value_binders: BTreeMap::new(),
+            current_value_binder_order: Vec::new(),
             in_resource_definition: false,
             declared_resource_fields: BTreeMap::new(),
             declared_resource_child_slots: BTreeMap::new(),
@@ -1146,8 +1227,14 @@ impl Parser {
             current_arm_binding_types: BTreeMap::new(),
             current_integer_params: BTreeSet::new(),
             current_integer_lets: BTreeSet::new(),
+            current_theorem_param_names: BTreeSet::new(),
             current_proof_let_names: BTreeSet::new(),
             proof_let_restores: Vec::new(),
+            fact_names: BTreeMap::new(),
+            fact_name_restores: Vec::new(),
+            fact_names_being_proved: BTreeSet::new(),
+            ended_fact_names: BTreeSet::new(),
+            quantifier_binders: Vec::new(),
             callee_resource_binders: BTreeMap::new(),
             contract_resource_binders: BTreeMap::new(),
             in_contract_definition: false,
@@ -1364,12 +1451,38 @@ impl Parser {
                 )));
             }
         }
-        // A crate trait method's implementation inherits its interface,
-        // which the sidecar may declare before or after it.
+        // A crate trait method's implementation, or a C++ override, inherits
+        // its interface, which the sidecar may declare before or after it: a
+        // trait's `extern` method, or the virtual method overridden, whose
+        // contract a call through it assumes.
+        let cpp = self.language == SourceLanguage::Cpp;
         for (implementation, interface) in std::mem::take(&mut self.rust_trait_implementations) {
+            // A defining class's method is stated on that class's memory, which
+            // an override's class lays out differently.
+            if cpp && self.cpp_object_methods.on_memory.contains(&interface) {
+                return Err(ClickError::new(format!(
+                    "`{implementation}` overrides `{interface}`, which is stated on its class's \
+                     memory by that class's definitions of its object's state; overriding it \
+                     remains unsupported"
+                ))
+                .at_declaration(&implementation));
+            }
+            // An override of a method of a class whose object carries state is
+            // stated on its own memory, by its class's definitions.
+            if cpp && self.cpp_object_methods.interfaces.contains(&interface) {
+                if !self.cpp_object_methods.on_memory.contains(&implementation) {
+                    return Err(ClickError::new(format!(
+                        "`{implementation}` overrides `{interface}`, whose class's object \
+                         carries state: its class defines that state on its own memory, \
+                         `class Derived : Base {{ function f(this) -> T {{ ... }} }}`"
+                    ))
+                    .at_declaration(&implementation));
+                }
+                continue;
+            }
             let Some(interface) = function_blocks
                 .iter()
-                .find(|block| block.is_external() && block.signature().name() == interface)
+                .find(|block| (cpp || block.is_external()) && block.signature().name() == interface)
                 .cloned()
             else {
                 continue;
@@ -1378,13 +1491,25 @@ impl Parser {
                 .iter_mut()
                 .find(|block| !block.is_external() && block.signature().name() == implementation)
             {
-                block.inherit_interface(&interface).map_err(|message| {
-                    ClickError::new(format!(
-                        "`{}` cannot inherit its trait's interface: {message}",
-                        crate::languages::rust::names::display_rust_names(&implementation)
-                    ))
-                    .at_declaration(&implementation)
-                })?;
+                let source = if cpp {
+                    "the method it overrides"
+                } else {
+                    "the trait's interface"
+                };
+                block
+                    .inherit_interface(&interface, source)
+                    .map_err(|message| {
+                        let what = if cpp {
+                            "the interface of the virtual method it overrides"
+                        } else {
+                            "its trait's interface"
+                        };
+                        ClickError::new(format!(
+                            "`{}` cannot inherit {what}: {message}",
+                            crate::languages::rust::names::display_rust_names(&implementation)
+                        ))
+                        .at_declaration(&implementation)
+                    })?;
             }
         }
         let end = self.position;
@@ -2120,8 +2245,23 @@ impl Parser {
                     .error("a resource without a body must be declared with `abstract resource`"));
             }
             Some(Token::LBrace) if !is_abstract => Some(self.parse_composite_resource_body(&name)?),
+            // An abstract resource may declare fields, and nothing else: its
+            // instances carry them, but it has no body to fold or unfold.
             Some(Token::LBrace) => {
-                return Err(self.error("an `abstract resource` cannot have a body"));
+                let body = self.parse_composite_resource_body(&name)?;
+                if body.fields.is_empty()
+                    || !body.children.is_empty()
+                    || body.matched.is_some()
+                    || body.condition.is_some()
+                    || !body.contains.is_empty()
+                    || !body.facts.is_empty()
+                    || !body.witnesses.is_empty()
+                {
+                    return Err(self.error(
+                        "an `abstract resource` body declares only fields: it has no clauses of its own",
+                    ));
+                }
+                Some(body)
             }
             Some(token) => {
                 return Err(self.error(format!("expected resource body, got {token}")));
@@ -2149,6 +2289,7 @@ impl Parser {
             name,
             parameters: parsed_parameters.parameters,
             resource_parameters,
+            sealed: is_abstract && composite_body.is_some(),
             composite_body,
             field_schema: None,
             authorized: false,
@@ -2858,6 +2999,10 @@ impl Parser {
             .iter()
             .map(|parameter| parameter.name().to_string())
             .collect::<BTreeSet<_>>();
+        let previous_theorem_param_names = std::mem::replace(
+            &mut self.current_theorem_param_names,
+            parameter_names.clone(),
+        );
         let previous_struct_params = std::mem::replace(
             &mut self.current_struct_params,
             parsed_parameters.struct_params,
@@ -3054,6 +3199,7 @@ impl Parser {
         self.current_reference_params = previous_reference_params;
         self.current_algebraic_params = previous_algebraic_params;
         self.current_click_type_parameters = previous_type_parameters;
+        self.current_theorem_param_names = previous_theorem_param_names;
         self.current_integer_params = previous_integer_params;
         self.current_integer_lets = previous_integer_lets;
         self.integer_literal_context = previous_integer_literal_context;
@@ -3092,6 +3238,8 @@ impl Parser {
         let previous_function_block = std::mem::replace(&mut self.in_function_block, true);
         let previous_resource_targets = std::mem::take(&mut self.current_resource_targets);
         let previous_resource_bindings = std::mem::take(&mut self.current_resource_bindings);
+        let previous_value_binders = std::mem::take(&mut self.current_value_binders);
+        let previous_value_binder_order = std::mem::take(&mut self.current_value_binder_order);
         // A crate trait's method is declared without `extern`, as Rust
         // writes it in the `trait` block.
         if external && self.rust_trait_interface.is_none() {
@@ -3407,7 +3555,16 @@ impl Parser {
                 }
                 Some("owns") => {
                     self.position += 1;
-                    let resource = self.parse_owned_resource_binding()?;
+                    let resource = if self.value_binder_follows(false) {
+                        self.parse_value_binder(
+                            ResourceAccessMode::Own,
+                            signature.name(),
+                            &parameter_names,
+                            requires.len(),
+                        )?
+                    } else {
+                        self.parse_owned_resource_binding()?
+                    };
                     let proof = self.parse_proof_clause_or_default()?;
                     let binder_resource =
                         apply_contract_lets_to_resource_clause(resource.clone(), &contract_lets)
@@ -3443,7 +3600,16 @@ impl Parser {
                 }
                 Some("views") => {
                     self.position += 1;
-                    let resource = self.parse_resource_target(ResourceAccessMode::View)?;
+                    let resource = if self.value_binder_follows(true) {
+                        self.parse_value_binder(
+                            ResourceAccessMode::View,
+                            signature.name(),
+                            &parameter_names,
+                            requires.len(),
+                        )?
+                    } else {
+                        self.parse_resource_target(ResourceAccessMode::View)?
+                    };
                     self.expect(Token::Semicolon)?;
                     requires.push(
                         apply_contract_lets_to_requirement(
@@ -3455,7 +3621,16 @@ impl Parser {
                 }
                 Some("consumes") => {
                     self.position += 1;
-                    let resource = self.parse_owned_resource_binding()?;
+                    let resource = if self.value_binder_follows(false) {
+                        self.parse_value_binder(
+                            ResourceAccessMode::Own,
+                            signature.name(),
+                            &parameter_names,
+                            requires.len(),
+                        )?
+                    } else {
+                        self.parse_owned_resource_binding()?
+                    };
                     self.expect(Token::Semicolon)?;
                     let binder_resource =
                         apply_contract_lets_to_resource_clause(resource.clone(), &contract_lets)
@@ -3664,6 +3839,15 @@ impl Parser {
         self.in_function_block = previous_function_block;
         self.current_resource_bindings = previous_resource_bindings;
         self.current_resource_targets = previous_resource_targets;
+        let mut value_binders_by_name =
+            std::mem::replace(&mut self.current_value_binders, previous_value_binders);
+        let value_binders = std::mem::replace(
+            &mut self.current_value_binder_order,
+            previous_value_binder_order,
+        )
+        .into_iter()
+        .filter_map(|name| value_binders_by_name.remove(&name))
+        .collect::<Vec<_>>();
         self.current_aggregate_objects = previous_aggregate_objects;
         self.current_global_array_shapes = previous_global_array_shapes;
         self.current_struct_array_params = previous_struct_array_params;
@@ -3788,6 +3972,8 @@ impl Parser {
             parameter_struct_casts,
             parameter_field_places,
             pointee_field_places,
+            value_binders,
+            witness_count: 0,
         })
     }
 
@@ -4993,9 +5179,53 @@ impl Parser {
         let mut bound = BTreeSet::new();
         let mut instances = BTreeSet::new();
         let mut type_arguments = Vec::new();
+        let mut value_arguments = Vec::new();
         while has_map && self.peek() != Some(&Token::RBrace) {
             let binder = self.expect_ident("callee resource binder")?;
             self.expect(Token::Colon)?;
+            if let Some(declaration) = declared.get(&binder)
+                && declaration.kind == CalleeResourceBinderKind::Value
+            {
+                if !bound.insert(binder.clone()) {
+                    return Err(self.error(format!("duplicate binder `{binder}` in the call map")));
+                }
+                let argument = if matches!(self.peek(), Some(Token::Ident(_)))
+                    && self.peek_next() == Some(&Token::LParen)
+                {
+                    let term = self.parse_declared_resource_call()?;
+                    if let (ResourceClause::Declared { name, .. }, Some(expected)) =
+                        (&term, &declaration.family)
+                        && name != expected
+                    {
+                        return Err(self.error(format!(
+                            "binder `{binder}` selects a `{expected}`, not a `{name}`"
+                        )));
+                    }
+                    ValueBinderArgument::Term(term)
+                } else {
+                    let caller = self.expect_ident("resource term or value binder")?;
+                    let Some(caller_binder) = self.current_value_binders.get(&caller) else {
+                        return Err(self.error(format!(
+                            "`{caller}` is not a value binder of this function; name the instance with a resource term such as `{binder}: {}(...)`",
+                            declaration.family.as_deref().unwrap_or("resource")
+                        )));
+                    };
+                    if Some(&caller_binder.resource) != declaration.family.as_ref() {
+                        return Err(self.error(format!(
+                            "binder `{binder}` selects a `{}`, but `{caller}` names a `{}`",
+                            declaration.family.as_deref().unwrap_or("resource"),
+                            caller_binder.resource
+                        )));
+                    }
+                    ValueBinderArgument::Binder(caller)
+                };
+                value_arguments.push((binder, argument));
+                if self.peek() != Some(&Token::Comma) {
+                    break;
+                }
+                self.position += 1;
+                continue;
+            }
             if let Some(declaration) = declared.get(&binder)
                 && declaration.kind == CalleeResourceBinderKind::Type
             {
@@ -5221,6 +5451,7 @@ impl Parser {
             binders,
             produced,
             type_arguments,
+            value_arguments,
             result,
         })
     }
@@ -5392,6 +5623,123 @@ impl Parser {
 
     /// Records an instance binder in the selected function/interface registry.
     /// Call maps name those declarations, including produced identities.
+    /// Whether a value binder follows: `name: R(...)` where the clause is a
+    /// `views` clause, or one of `R`'s arguments is `_`. An `owns` or
+    /// `consumes` binder without `_` keeps naming an instance.
+    fn value_binder_follows(&self, view: bool) -> bool {
+        let open = self.position + 3;
+        if !matches!(self.peek(), Some(Token::Ident(_)))
+            || self.peek_next() != Some(&Token::Colon)
+            || !matches!(self.tokens.get(self.position + 2), Some(Token::Ident(_)))
+            || self.tokens.get(open) != Some(&Token::LParen)
+        {
+            return false;
+        }
+        if view {
+            return true;
+        }
+        let Some(close) = self.matching_parentheses.get(open).cloned().flatten() else {
+            return false;
+        };
+        self.tokens[open + 1..close]
+            .iter()
+            .any(|token| matches!(token, Token::Ident(name) if name == "_"))
+    }
+
+    /// `name: R(a, _)`: the clause `R(a, s.#1)` with a placeholder at each
+    /// `_`, which declaration expansion names after `R`'s parameter. The
+    /// binder is recorded for `s.<parameter>` and for callers' call maps.
+    fn parse_value_binder(
+        &mut self,
+        access: ResourceAccessMode,
+        function: &str,
+        parameter_names: &BTreeSet<String>,
+        requirement_index: usize,
+    ) -> Result<ResourceClause, ClickError> {
+        if self.in_contract_definition {
+            return Err(self.error(
+                "a value binder `name: resource(..., _)` is supported only in a C function contract",
+            ));
+        }
+        let name = self.expect_ident("binder name")?;
+        self.expect(Token::Colon)?;
+        if self.current_value_binders.contains_key(&name)
+            || self.current_resource_bindings.contains_key(&name)
+            || self.current_contract_bindings.contains(&name)
+            || parameter_names.contains(&name)
+        {
+            return Err(self.error(format!("duplicate binder `{name}`")));
+        }
+        let resource = self.expect_ident("resource name")?;
+        if matches!(
+            resource.as_str(),
+            "authority" | "mutex_live" | "mutex_guard" | "mutex_use" | "publisher" | "subscriber"
+        ) {
+            return Err(self.error(format!("`{resource}` cannot be named by a value binder")));
+        }
+        self.expect(Token::LParen)?;
+        let mut written = Vec::new();
+        if self.peek() != Some(&Token::RParen) {
+            loop {
+                if self.peek_ident() == Some("_") {
+                    self.position += 1;
+                    written.push(None);
+                } else {
+                    written.push(Some(self.parse_contract_expression()?));
+                }
+                match self.peek() {
+                    Some(Token::Comma) => self.position += 1,
+                    Some(Token::RParen) => break,
+                    _ => return Err(self.error("expected `,` or `)` after resource argument")),
+                }
+            }
+        }
+        self.expect(Token::RParen)?;
+        let arguments = written
+            .iter()
+            .enumerate()
+            .map(|(index, argument)| {
+                argument.clone().unwrap_or_else(|| {
+                    ContractExpression::CFragment(CExpression::Variable(ValueBinder::placeholder(
+                        &name, index,
+                    )))
+                })
+            })
+            .collect();
+        let binder = ValueBinder {
+            name: name.clone(),
+            resource: resource.clone(),
+            arguments: written,
+            requirement_index,
+        };
+        self.current_value_binders.insert(name.clone(), binder);
+        self.current_value_binder_order.push(name.clone());
+        crate::instrumentation::record_deterministic_work(1);
+        self.callee_resource_binders
+            .entry(function.to_string())
+            .or_default()
+            .insert(
+                name,
+                CalleeResourceBinder {
+                    identity: Variable(0),
+                    family: Some(resource.clone()),
+                    resource: None,
+                    parameter_names: Vec::new(),
+                    kind: CalleeResourceBinderKind::Value,
+                },
+            );
+        Ok(ResourceClause::Declared {
+            type_schema: None,
+            resource_type_arguments: Vec::new(),
+            resource_arguments: Vec::new(),
+            access,
+            kind: ResourceKind::Token,
+            name: resource,
+            arguments,
+            parameter_types: Vec::new(),
+        })
+    }
+
     fn record_callee_resource_binder(
         &mut self,
         function: &str,
@@ -5900,7 +6248,44 @@ impl Parser {
         Ok(proposition)
     }
 
+    /// The name at the cursor when it stands alone as a proposition, as a
+    /// cited fact name does.
+    fn standalone_proposition_name(&self) -> Option<&str> {
+        let Some(Token::Ident(name)) = self.peek() else {
+            return None;
+        };
+        let standalone = matches!(
+            self.peek_next(),
+            None | Some(Token::Semicolon | Token::RParen | Token::RBrace | Token::Comma)
+        ) || matches!(
+            self.tokens.get(self.position + 1),
+            Some(Token::Ident(next)) if matches!(next.as_str(), "and" | "or" | "implies" | "by")
+        );
+        standalone.then_some(name.as_str())
+    }
+
     fn parse_proposition_atom(&mut self) -> Result<ClickProposition, ClickError> {
+        if let Some(name) = self.standalone_proposition_name()
+            && !self.quantifier_binders.iter().any(|binder| binder == name)
+        {
+            if let Some(proposition) = self.fact_names.get(name) {
+                let proposition = proposition.clone();
+                self.position += 1;
+                return Ok(proposition);
+            }
+            if !self.name_bound_in_scope(name) {
+                if self.fact_names_being_proved.contains(name) {
+                    return Err(self.error(format!(
+                        "`{name}` names the fact this `have` is proving, so it cannot be cited inside its own proof; restate the proposition"
+                    )));
+                }
+                if self.ended_fact_names.contains(name) {
+                    return Err(self.error(format!(
+                        "the fact name `{name}` is out of scope here: `have {name}: ...` names its fact only to the end of the block that holds it"
+                    )));
+                }
+            }
+        }
         if self.peek_ident() == Some("let") {
             let start = self.position;
             let binding = self.parse_contract_let_binding()?;
@@ -6284,6 +6669,7 @@ impl Parser {
                                 ));
                             }
                         }
+                        self.quantifier_binders.push(name.clone());
                         scopes.push(Scope {
                             forall,
                             click_type,
@@ -6355,6 +6741,7 @@ impl Parser {
                         reduce(operator, &mut operands);
                     }
                     let scope = scopes.pop().expect("quantifier scope marker has a scope");
+                    self.quantifier_binders.pop();
                     self.integer_literal_context = scope.previous_integer_context;
                     if scope.integer_was_bound {
                         self.current_integer_params.insert(scope.name.clone());
@@ -6551,9 +6938,11 @@ impl Parser {
     fn parse_by_clause(&mut self) -> Result<SourceProof, ClickError> {
         self.expect_ident_spelling("by")?;
         let let_checkpoint = self.proof_let_restores.len();
+        let fact_checkpoint = self.fact_name_restores.len();
         let previous_proof_let_names = std::mem::take(&mut self.current_proof_let_names);
         let result = self.parse_by_clause_body();
         self.restore_proof_let_bindings(let_checkpoint);
+        self.restore_fact_names(fact_checkpoint);
         self.current_proof_let_names = previous_proof_let_names;
         // A `;` after a closing brace ends nothing; accept it after a block
         // proof as everywhere else, though it is never required.
@@ -6564,6 +6953,24 @@ impl Parser {
             self.skip_redundant_semicolon();
         }
         result
+    }
+
+    fn restore_fact_names(&mut self, checkpoint: usize) {
+        while self.fact_name_restores.len() > checkpoint {
+            let (name, previous) = self
+                .fact_name_restores
+                .pop()
+                .expect("restore above checkpoint");
+            match previous {
+                Some(proposition) => {
+                    self.fact_names.insert(name, proposition);
+                }
+                None => {
+                    self.fact_names.remove(&name);
+                    self.ended_fact_names.insert(name);
+                }
+            }
+        }
     }
 
     fn restore_proof_let_bindings(&mut self, checkpoint: usize) {
@@ -6700,7 +7107,8 @@ impl Parser {
                 result.push((slot, name, identity));
                 continue;
             }
-            let identity = if let Some((identity, _)) = self.current_resource_bindings.get(&name) {
+            let existing = self.current_resource_bindings.get(&name).cloned();
+            let identity = if let Some((identity, _)) = &existing {
                 // A child slot's resource comes from the parent's matched
                 // arm, which the parser cannot resolve; declaration
                 // expansion checks the supplied instance against it.
@@ -6714,8 +7122,15 @@ impl Parser {
             };
             if introduce {
                 self.child_slot_identities.insert(identity);
+                // A name already bound, such as the contract's `produces
+                // whole: ...` that the unfold's child becomes, keeps the
+                // resource it was declared with: its fields are that
+                // resource's, not the parent's, when a later `have` reads
+                // `whole.model`. Only a new binder records the parent, which
+                // declaration expansion replaces with the slot's resource.
+                let recorded = existing.map_or_else(|| family.clone(), |(_, family)| family);
                 self.current_resource_bindings
-                    .insert(name.clone(), (identity, family.clone()));
+                    .insert(name.clone(), (identity, recorded));
                 self.current_resource_targets.insert(
                     name.clone(),
                     ResourceClause::Named {
@@ -7238,15 +7653,71 @@ impl Parser {
     /// recursive proof-parsing path and keeps none of this in its frame.
     #[inline(never)]
     fn parse_have_tactic(&mut self) -> Result<ProofTactic, ClickError> {
-        // A `have` fact has no name: a later step cites it by restating
-        // its proposition. `name:` is never the start of a proposition,
-        // so refuse a label with the spelling to write instead.
-        if let (Some(Token::Ident(label)), Some(Token::Colon)) = (self.peek(), self.peek_next()) {
+        // `have name: P` names the fact for the rest of the block: a later
+        // step may cite it as `name` where it would restate `P`. `name:` is
+        // never the start of a proposition.
+        let name = if let (Some(Token::Ident(name)), Some(Token::Colon)) =
+            (self.peek(), self.peek_next())
+        {
+            let name = name.clone();
+            self.refuse_fact_name_in_scope(&name)?;
+            self.position += 2;
+            Some(name)
+        } else {
+            None
+        };
+        if let Some(name) = &name {
+            self.fact_names_being_proved.insert(name.clone());
+        }
+        let have = self.parse_have_after_name();
+        if let Some(name) = &name {
+            self.fact_names_being_proved.remove(name);
+        }
+        let have = have?;
+        if let (Some(name), ProofTactic::Have(have)) = (name, &have) {
+            self.ended_fact_names.remove(&name);
+            let previous = self
+                .fact_names
+                .insert(name.clone(), have.proposition.clone());
+            self.fact_name_restores.push((name, previous));
+        }
+        Ok(have)
+    }
+
+    /// A fact name is read only where a proposition stands, but a value
+    /// spelled the same would read as a proposition there too (a `bool`), so
+    /// a name that already binds anything visible is refused.
+    fn refuse_fact_name_in_scope(&self, name: &str) -> Result<(), ClickError> {
+        self.refuse_bool_literal_binder(name)?;
+        if self.fact_names.contains_key(name)
+            || self.fact_names_being_proved.contains(name)
+            || self.name_bound_in_scope(name)
+        {
             return Err(self.error(format!(
-                "`have` takes no label: write `have P by {{ ... }};` without `{label}:`; \
-                 cite the fact later by restating `P`, for example `simp() using {{ P; }}`"
+                "`have {name}: ...` names a fact `{name}`, but `{name}` already names something in scope; choose another name"
             )));
         }
+        Ok(())
+    }
+
+    /// Whether `name` binds a parameter, binding or C object visible here.
+    fn name_bound_in_scope(&self, name: &str) -> bool {
+        self.current_proof_let_names.contains(name)
+            || self.current_contract_bindings.contains(name)
+            || self.current_integer_params.contains(name)
+            || self.current_theorem_param_names.contains(name)
+            || self.current_integer_lets.contains(name)
+            || self.current_resource_bindings.contains_key(name)
+            || self.current_arm_binding_types.contains_key(name)
+            || self.current_c_parameter_types.contains_key(name)
+            || self
+                .current_c_object_names
+                .as_ref()
+                .is_some_and(|names| names.contains(name))
+    }
+
+    /// `have P ...` after any `name:`.
+    fn parse_have_after_name(&mut self) -> Result<ProofTactic, ClickError> {
         let proposition = self.parse_proposition()?;
         // A `have` states a fact at the current point, so an omitted
         // proof is `simp` here; it never executes C to reach the fact.
@@ -7954,7 +8425,14 @@ impl Parser {
                 self.expect_empty_tactic_args(&name)?;
                 if self.peek_ident() == Some("as") {
                     self.position += 1;
-                    ProofTactic::IntroAs(self.expect_ident("name for the introduced variable")?)
+                    let name = self.expect_ident("name for the introduced variable")?;
+                    if self.fact_names.contains_key(&name) {
+                        return Err(self.error(format!(
+                            "`intro() as {name}` would hide the fact named `{name}` by `have {name}: ...`; choose another name"
+                        )));
+                    }
+                    self.ended_fact_names.remove(&name);
+                    ProofTactic::IntroAs(name)
                 } else {
                     ProofTactic::Intro
                 }
@@ -8183,6 +8661,7 @@ impl Parser {
                 self.expect(Token::LBrace)?;
                 scopes.push((
                     self.proof_let_restores.len(),
+                    self.fact_name_restores.len(),
                     std::mem::take(&mut self.current_proof_let_names),
                 ));
                 let mut else_tactics = Vec::new();
@@ -8205,8 +8684,10 @@ impl Parser {
                     else_tactics.push(self.parse_proof_tactic()?);
                 }
                 self.expect(Token::RBrace)?;
-                let (checkpoint, names) = scopes.pop().expect("an else block owns a scope");
+                let (checkpoint, fact_checkpoint, names) =
+                    scopes.pop().expect("an else block owns a scope");
                 self.restore_proof_let_bindings(checkpoint);
+                self.restore_fact_names(fact_checkpoint);
                 self.current_proof_let_names = names;
                 self.skip_redundant_semicolon();
                 nested = Some(ProofTactic::If(ProofIf {
@@ -8219,8 +8700,9 @@ impl Parser {
             Ok(nested.expect("an if spine has a root"))
         })();
         // Error exits restore exactly the same bindings as a recursive block.
-        while let Some((checkpoint, names)) = scopes.pop() {
+        while let Some((checkpoint, fact_checkpoint, names)) = scopes.pop() {
             self.restore_proof_let_bindings(checkpoint);
+            self.restore_fact_names(fact_checkpoint);
             self.current_proof_let_names = names;
         }
         result
@@ -8337,6 +8819,13 @@ impl Parser {
             self.position += 2;
             return Ok(vec![ProofTactic::Simp]);
         }
+        // `auto` has no script spelling, and the bare closer is already the
+        // smart one; say so rather than suggest the `by auto;` just written.
+        if self.peek_ident() == Some("auto") {
+            return Err(self.error(
+                "`close_invariants by auto` is not a form: write `close_invariants();`, whose closer is already smart, or end the `preserve` script and let the back edge close implicitly",
+            ));
+        }
         match self.peek() {
             Some(Token::Ident(_)) => Ok(vec![self.parse_proof_tactic()?]),
             Some(token) => Err(self.error(format!(
@@ -8357,6 +8846,7 @@ impl Parser {
 
     fn parse_tactics_until_rbrace(&mut self) -> Result<Vec<ProofTactic>, ClickError> {
         let let_checkpoint = self.proof_let_restores.len();
+        let fact_checkpoint = self.fact_name_restores.len();
         let previous_proof_let_names = std::mem::take(&mut self.current_proof_let_names);
         let result = (|| {
             let mut tactics = Vec::new();
@@ -8366,6 +8856,7 @@ impl Parser {
             Ok(tactics)
         })();
         self.restore_proof_let_bindings(let_checkpoint);
+        self.restore_fact_names(fact_checkpoint);
         self.current_proof_let_names = previous_proof_let_names;
         result
     }
@@ -11522,6 +12013,20 @@ impl Parser {
                             .children
                             .push(std::mem::replace(&mut access.field, next));
                         access.click_type = None;
+                        continue;
+                    }
+                    if let ContractExpression::CFragment(CExpression::Variable(owner)) = &expression
+                        && self.current_value_binders.contains_key(owner)
+                    {
+                        if self.peek() != Some(&Token::Dot) {
+                            return Err(self.error("binder parameters use `.`, not `->`"));
+                        }
+                        let owner = owner.clone();
+                        self.position += 1;
+                        let parameter = self.expect_ident("resource parameter name")?;
+                        expression = ContractExpression::CFragment(CExpression::Variable(format!(
+                            "{owner}.{parameter}"
+                        )));
                         continue;
                     }
                     if let ContractExpression::CFragment(CExpression::Variable(owner)) = &expression

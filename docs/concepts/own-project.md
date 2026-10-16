@@ -147,69 +147,56 @@ needs nothing more. `label_fit.c` needs both, so it needs a compiler import.
 > code with the header's default, `16`, not the build's `32`.
 
 A compiler import runs GCC's preprocessor with flags you list, once, and
-records the result. Its configuration is a JSON file named after the sidecar.
-Copy the preprocessor flags from the compile command: `-I`, `-iquote`,
-`-isystem`, `-D`, `-U`, and `-include`. Other flags are refused, so copying the
-whole command line fails:
+records the result. It is configured in `click.project.json` at the project's
+root, the nearest directory above the sidecar that has one; the file declares
+*units*, here one C unit for the library's sources. Copy the preprocessor flags
+from the compile command: `-I`, `-iquote`, `-isystem`, `-D`, `-U`, and
+`-include`. Other flags are refused, so copying the whole command line fails:
 
-```json filename=label.click.import.json
+```json filename=click.project.json
 {
-  "schema": 1,
-  "target": "x86_64-linux-userspace",
-  "compiler": "/usr/bin/gcc",
-  "working_directory": ".",
-  "environment": {
-    "allow": {
-      "PATH": "/usr/bin:/bin",
-      "LC_ALL": "C"
-    }
-  },
-  "sources": [
-    {
-      "logical_source": "label_fit.c",
-      "path": "label_fit.c",
+  "units": {
+    "label": {
+      "language": "c",
+      "compiler": "/usr/bin/gcc",
+      "environment": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
       "args": ["-std=c11", "-O2", "-Iinclude", "-DLABEL_CAPACITY=32"],
-      "artifact": "label_fit.i"
+      "sources": {
+        "label_fit.c": {}
+      }
     }
-  ]
+  }
 }
 ```
 
 ```console
 $ click import lock label.click
-click: source `label_fit.c`: unsupported compiler argument 2 `-O2`; only -D/-U/-I/-iquote/-isystem/-include are supported
+click: unit `label`: source `label_fit.c`: unsupported compiler argument 2 `-O2`; only -D/-U/-I/-iquote/-isystem/-include are supported
 ```
 
 The language standard and the ABI come from the target's fixed profile, so
 `-std=c11` is accepted only because it matches it. Keep only the
 preprocessor flags:
 
-```json filename=label.click.import.json
+```json filename=click.project.json
 {
-  "schema": 1,
-  "target": "x86_64-linux-userspace",
-  "compiler": "/usr/bin/gcc",
-  "working_directory": ".",
-  "environment": {
-    "allow": {
-      "PATH": "/usr/bin:/bin",
-      "LC_ALL": "C"
-    }
-  },
-  "sources": [
-    {
-      "logical_source": "label_fit.c",
-      "path": "label_fit.c",
+  "units": {
+    "label": {
+      "language": "c",
+      "compiler": "/usr/bin/gcc",
+      "environment": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
       "args": ["-Iinclude", "-DLABEL_CAPACITY=32"],
-      "artifact": "label_fit.i"
+      "sources": {
+        "label_fit.c": {}
+      }
     }
-  ]
+  }
 }
 ```
 
-Then lock the import and verify. `click import lock` prints nothing on
-success; it writes the preprocessed `label_fit.i` and
-`label.click.import.lock.json`:
+Then lock the project and verify. `click import lock` prints nothing on
+success; it writes the preprocessed `.click/label/label_fit.c.i` and
+`click.project.lock.json`. Given a sidecar, it locks the sidecar's project:
 
 ```console
 $ click import lock label.click
@@ -220,22 +207,22 @@ $ click verify label.click
 1 selected proof verified
 ```
 
-Verification now reads the locked snapshot without running GCC. If you edit
-`label_fit.c` or `include/label_config.h`, verification refuses the stale lock
-until you run `click import lock` again. See
-[`click import`](../reference/cli/import.md#configure-and-lock-an-import) for
-every field.
+Verification now reads the locked snapshot without running GCC, so commit the
+lock and `.click/` with the project. If you edit `label_fit.c` or
+`include/label_config.h`, verification refuses the stale lock until you run
+`click import lock` again. See
+[`click import`](../reference/cli/import.md#project-units) for every field.
 
 Some details of the configuration:
 
-- Paths in `args` are relative to `working_directory`, which is relative to
-  the configuration file.
-- `target` must agree with the sidecar's target. Without a `target`
-  directive the sidecar uses `x86_64-linux-userspace`. Linux kernel code uses
-  `x86_64-linux-kernel`, selected by a `target "x86_64-linux-kernel";`
-  directive or by a `click.project.json` such as
-  `{"target":"x86_64-linux-kernel"}` beside the sidecars. The same file
-  selects the modeled pthread runtime; see
+- The sidecar's `verifying "label_fit.c";` selects the unit source of that
+  name. Paths in `args` and `sources` are relative to the unit's `root`, by
+  default the project directory; a unit may instead read an external tree,
+  such as a git submodule, in place.
+- The target is the project's: without a `"target"` the project uses
+  `x86_64-linux-userspace`. Linux kernel code uses `x86_64-linux-kernel`,
+  selected by `"target": "x86_64-linux-kernel"` in `click.project.json`,
+  which also selects the modeled pthread runtime; see
   [Selecting a target](../reference/language/c.md#selecting-a-target).
 - Click does not read a `Makefile` or a C `compile_commands.json`. Copy the
   flags by hand from `make -n` output or from the entry's `arguments` or
@@ -353,34 +340,22 @@ try smaller explicit steps such as `have`, and run the suggested
 
 `label_measure` in `label_copy.c` calls `strlen` from libc and `label_fit` from
 the other file. The `Makefile` compiles `label_copy.c` with the same flags, so
-add it to the import as a second `sources` entry with the same `args`:
+add it to the unit as a second source; the unit's `args` apply to both:
 
-```json filename=label.click.import.json
+```json filename=click.project.json
 {
-  "schema": 1,
-  "target": "x86_64-linux-userspace",
-  "compiler": "/usr/bin/gcc",
-  "working_directory": ".",
-  "environment": {
-    "allow": {
-      "PATH": "/usr/bin:/bin",
-      "LC_ALL": "C"
-    }
-  },
-  "sources": [
-    {
-      "logical_source": "label_fit.c",
-      "path": "label_fit.c",
+  "units": {
+    "label": {
+      "language": "c",
+      "compiler": "/usr/bin/gcc",
+      "environment": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
       "args": ["-Iinclude", "-DLABEL_CAPACITY=32"],
-      "artifact": "label_fit.i"
-    },
-    {
-      "logical_source": "label_copy.c",
-      "path": "label_copy.c",
-      "args": ["-Iinclude", "-DLABEL_CAPACITY=32"],
-      "artifact": "label_copy.i"
+      "sources": {
+        "label_fit.c": {},
+        "label_copy.c": {}
+      }
     }
-  ]
+  }
 }
 ```
 
@@ -425,14 +400,15 @@ declaration-only system headers and checks each call against its own contract
 for the function; GCC finds them in place of the platform's. The modeled
 headers are `<stdint.h>`, `<inttypes.h>`, `<stdbool.h>`, `<limits.h>`,
 `<stddef.h>`, `<string.h>` (`memcpy`, `memcmp`, `memset`, `strlen`), and
-`<stdlib.h>` (`malloc`, `calloc`, `realloc`, `free`); the
+`<stdlib.h>` (`malloc`, `calloc`, `realloc`, `free`), plus the type-only
+`<stdarg.h>` (`va_list`) and `<sys/types.h>` (`ssize_t`, `off_t`); the
 [system headers](../reference/language/c.md#system-headers) table has the
 details. Any other system include, such as `<ctype.h>` or `<stdio.h>`, stops
 `click import lock` with a message that names it. Had `label_copy.c` begun
 with `#include <stdio.h>`, the lock would fail with:
 
 ```text
-click: preprocess label_copy.c: compiler exited with exit status: 1: In file included from label_copy.c:1:
+click: unit `label`: preprocess label_copy.c: compiler exited with exit status: 1: In file included from label_copy.c:1:
 <click>/stdio.h:2:2: error: #error "<stdio.h> is not one of Click's modeled system headers for x86_64-linux-userspace; see docs/reference/language/c.md#system-headers"
     2 | #error "<stdio.h> is not one of Click's modeled system headers for x86_64-linux-userspace; see docs/reference/language/c.md#system-headers"
       |  ^~~~~
@@ -450,7 +426,7 @@ A call to another project function applies that function's contract, so
 `label_measure`'s proof uses `label_fit`'s verified `ensures result < 32`
 rather than re-executing its body. That is why both files are in one sidecar:
 Click must see a function to verify a call to it. With only `label_copy.c`
-in the sidecar and its import, the same proof stops with
+in the sidecar, the same proof stops with
 ``no C source defines `label_fit` ``.
 
 A function whose body is outside the program you verify, such as one from
@@ -619,7 +595,7 @@ names common gaps. Then:
   file and leave the C as it is.
 - Use direct mode when quoted includes resolve beside their includers and no
   `-D` matters; otherwise copy `-I`, `-iquote`, `-isystem`, `-D`, `-U`, and
-  `-include` into `NAME.click.import.json`, one `sources` entry per file, and
+  `-include` into a C unit of `click.project.json` that lists the files, and
   run `click import lock`. Either way `<string.h>` and the other modeled
   system headers are Click's.
 - Libc calls use Click's modeled headers and contracts; calls between project

@@ -85,10 +85,26 @@ deterministic work at N = 8, 16 and 24 puts that growth in two places:
   1,732, 2,262, 3,320 and 4,376 units at N = 4, 8, 16 and 24, about 132 per
   earlier loop.
 
-What remains is the fact-context rebuild above. A loop step also still
-re-annotates the whole function with its bound clauses
-(`annotated_function_with_assumptions`, `to_kernel_function`). That work is
-charged nothing, so it does not show in the units but does show in time.
+The fact-context rebuilds are now mostly gone. A loop step's `have`
+lowering, the back-edge join (`check_loop_state_join` and the preservation
+join) and the exit-condition lowering now read the context their fact list
+or proof already keeps (`PureFactList::context`, `ProofFacts`), extended by
+the step's own facts. The loop step also builds the path list's context and
+transport context once, before its executions copy the list. The largest
+clause now charges 1,388, 1,566, 1,920 and 2,272 units at N = 4, 8, 16 and
+24, about 44 per earlier loop.
+
+What remains is the context built at each `loop` tactic from the proof's
+facts (`PureFactList::from_source` in `apply_frontier_local_loop`). Its
+transport context, and the initialization proof's `ProofFacts`
+(`for_fixed_state`), are built from every path fact. They cannot be carried
+as a prefix, because an execution proof's statement steps put their
+transported facts ahead of the ambient ones (`ProofFacts` prioritized
+batches), so the list arrives at each loop in a new order. The loop step
+also re-annotates the whole function (`annotated_function_with_assumptions`,
+`to_kernel_function`). That work is charged nothing, so it shows only in
+time. Building `ProofFacts` fact by fact from a kept prefix was tried and
+cost more than the full build.
 
 The gate records the drift: `known_drift_sequential_loop_clauses` in
 `src/scaling_tests/surface/tests/step_shape_scaling_tests.rs` fails once the

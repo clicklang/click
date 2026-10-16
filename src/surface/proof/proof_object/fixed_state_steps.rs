@@ -2945,8 +2945,10 @@ impl<'a> Proof<'a> {
         match (positive_holds, negative_holds) {
             (true, false) => Ok(true),
             (false, true) => Ok(false),
-            (false, false) => Err(self
-                .step_error("focused outcome does not decide the post-execution `if` condition")),
+            (false, false) => Err(self.step_error(format!(
+                "focused outcome does not decide the post-execution `if` condition: `{}`",
+                crate::surface::diagnostics::describe_click_proposition(condition)
+            ))),
             (true, true) => Err(self.step_error(
                 "focused outcome proves both sides of the post-execution `if` condition",
             )),
@@ -3384,10 +3386,11 @@ impl<'a> Proof<'a> {
             let premise =
                 self.lower_cited_surface_proposition(surface_premise, "`transport using` premise")?;
             if !self.facts().listed_premise_available(&premise, &[], false) {
-                return Err(self.step_error(format!(
-                    "`transport using` requires an exact premise: {}",
-                    describe_click_proposition(surface_premise)
-                )));
+                return Err(self.step_error_with_requirement(
+                    "`transport using` requires an exact premise",
+                    None,
+                    Some(("required transport premise", Box::new(premise), None)),
+                ));
             }
             if !explicit_premises.contains(&premise) {
                 explicit_premises.push(premise);
@@ -3441,6 +3444,22 @@ impl<'a> Proof<'a> {
         ))
     }
 
+    fn attach_transport_check_error(&self, error: ClickError) -> ClickError {
+        if let Some(required) = error.unresolved_requirement() {
+            self.step_error_with_requirement(
+                "`transport using` requires an exact premise",
+                None,
+                Some((
+                    "required transport premise",
+                    Box::new(required.proposition.clone()),
+                    None,
+                )),
+            )
+        } else {
+            self.attach_step_diagnostic(error)
+        }
+    }
+
     pub(super) fn apply_fixed_state_transport_using(
         &self,
         source: &ClickProposition,
@@ -3472,7 +3491,8 @@ impl<'a> Proof<'a> {
             view.fixed_state,
             view.surface_propositions,
             view.spec_definitions,
-        )?;
+        )
+        .map_err(|error| self.attach_transport_check_error(error))?;
         let mut facts = self.facts().clone();
         let added_facts = if facts.contains(&checked.target) {
             Vec::new()
@@ -3568,7 +3588,8 @@ impl<'a> Proof<'a> {
             ),
             &execution.presentation.surface_propositions,
             context.spec_definitions,
-        )?;
+        )
+        .map_err(|error| self.attach_transport_check_error(error))?;
         execution
             .presentation
             .surface_propositions

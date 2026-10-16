@@ -85,7 +85,9 @@ fn signed_atom_matches(
     left: &crate::kernel::Bitvector32Term,
     right: &crate::kernel::Bitvector32Term,
 ) -> bool {
-    let mut pending = vec![(left, right)];
+    let left = crate::kernel::canonical_term(left);
+    let right = crate::kernel::canonical_term(right);
+    let mut pending = vec![(&left, &right)];
     let mut visited = 0usize;
     while let Some((left, right)) = pending.pop() {
         visited += 1;
@@ -1318,29 +1320,33 @@ impl<'a> Proof<'a> {
                 self.lower_cited_surface_proposition(premise, "`normalize using` premise")
             })
             .collect::<Result<Vec<_>, _>>()?;
-        self.state
-            .apply_normalize_using(&premises)
-            .map_err(|error| match error {
-                PropositionCloseError::NotProposition => {
-                    self.step_error("`normalize` requires a proposition goal")
-                }
-                PropositionCloseError::ConditionalNormalization(
-                    ConditionalNormalizationError::UnavailablePremise(index),
-                ) => self.step_error(format!(
-                    "`normalize using` premise {index} is not exactly available"
-                )),
-                PropositionCloseError::ConditionalNormalization(
-                    ConditionalNormalizationError::UnsupportedPremise(index),
-                ) => self.step_error(format!(
-                    "`normalize using` premise {index} must be a consistent single condition"
-                )),
-                PropositionCloseError::ConditionalNormalization(
-                    ConditionalNormalizationError::DoesNotNormalize,
-                ) => self.step_error(
-                    "`normalize using` goal did not normalize to true using the listed conditions",
-                ),
-                _ => unreachable!("kernel returned an unrelated normalize-using error"),
-            })
+        let (result, read_resolutions) =
+            crate::kernel::capture_read_resolutions(|| self.state.apply_normalize_using(&premises));
+        result.map_err(|error| match error {
+            PropositionCloseError::NotProposition => {
+                self.step_error("`normalize` requires a proposition goal")
+            }
+            PropositionCloseError::ConditionalNormalization(
+                ConditionalNormalizationError::UnavailablePremise(index),
+            ) => self.step_error(format!(
+                "`normalize using` premise {index} is not exactly available"
+            )),
+            PropositionCloseError::ConditionalNormalization(
+                ConditionalNormalizationError::UnsupportedPremise(index),
+            ) => self.step_error(format!(
+                "`normalize using` premise {index} must be a consistent single condition"
+            )),
+            PropositionCloseError::ConditionalNormalization(
+                ConditionalNormalizationError::DoesNotNormalize,
+            ) => self.step_error_with_details(
+                "`normalize using` goal did not normalize to true using the listed conditions",
+                None,
+                None,
+                None,
+                read_resolutions,
+            ),
+            _ => unreachable!("kernel returned an unrelated normalize-using error"),
+        })
     }
 
     #[inline(never)]
@@ -1972,6 +1978,7 @@ impl<'a> Proof<'a> {
                         .step_error("signed_int32 certificate term must be an int32 expression"));
                 }
             };
+            let term = crate::kernel::canonical_term(&term);
             if SignedArithmeticAtom::from_term(&term).is_none() {
                 return Err(proof.step_error(
                     "signed_int32 certificate term is unsupported or exceeds the verification budget",

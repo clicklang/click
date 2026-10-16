@@ -160,7 +160,7 @@ mod tests {
     const ARTIFACT: &[u8] =
         include_bytes!("../../../../design/charon-trial/constructors/constructors.ullbc");
     const SOURCE: &[u8] = include_bytes!("../../../../design/charon-trial/constructors/lib.rs");
-    fn decode_fixture(artifact: &TrialArtifact) -> Result<out::RustExport, String> {
+    fn decode_fixture(artifact: &ExtractionArtifact) -> Result<out::RustExport, String> {
         let sources = [("lib.rs".into(), SOURCE.to_vec())].into_iter().collect();
         decode_crate(
             &serde_json::to_vec(artifact).unwrap(),
@@ -172,7 +172,7 @@ mod tests {
     }
     #[test]
     fn charon_default_executes_body_and_checks_resolved_identity() {
-        let artifact: TrialArtifact = serde_json::from_slice(ARTIFACT).unwrap();
+        let artifact: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
         let export = decode_fixture(&artifact).unwrap();
         let prepared = super::super::super::import::prepared_for_test(export).unwrap();
         let proof = "verifying \"lib.rs\"; impl Default for demo::Value { fn default() -> demo::Value { ensures result.a == 1u32; ensures result.b == 0u32; } by { execute(); simp(); } } impl demo::Value { fn new() -> demo::Value { ensures result.a == 1u32; ensures result.b == 0u32; } by { execute(); simp(); } } fn demo::entry() -> u32 { ensures result == 1u32; } by { execute(); simp(); }";
@@ -185,7 +185,7 @@ mod tests {
             .is_err()
         );
         for mutation in 0..2 {
-            let artifact: TrialArtifact = serde_json::from_slice(ARTIFACT).unwrap();
+            let artifact: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
             let mut export = decode_fixture(&artifact).unwrap();
             if mutation == 0 {
                 let f = export
@@ -227,7 +227,7 @@ mod tests {
             );
         }
         for mutation in 0..14 {
-            let mut artifact: TrialArtifact = serde_json::from_slice(ARTIFACT).unwrap();
+            let mut artifact: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
             let k = &mut artifact.data.translated;
             let trait_id = k
                 .trait_decls

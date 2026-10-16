@@ -91,36 +91,41 @@ instead of from what the step changed.
    (was 695,291). Still per call: residual instances and composites whose
    bodies read memory, a condition or a witness are opened at every call, so
    a function holding many of those still pays for each.
-4. **Uncharged per-step work in evidence checking.** A statement theorem
-   lists every fact of the context it executed under as a premise, so
-   `proof_evidence_unretained_premise` checks about one premise per path
-   fact at every step, and a premise missing from the contexts builds a set
-   of the whole retained history (a known uncharged build in
-   `docs/internals/verification-efficiency.md`). Neither is charged, so
-   step work stays flat while step time grows. Each of those lookups also
-   compared memory snapshots and resource contexts by walking the entries
-   two snapshots of one path share; that part is fixed: `CMemory`,
-   `SharedCMemory` and `ResourceContext` order by a cached content hash
-   first and walk only on a tie
-   (`ordering_snapshots_of_one_path_does_not_walk_their_shared_entries`).
-   On `heap_objects` at N = 64 that took the run from 6.28 to 3.92 billion
-   instructions, and the mean step at N = 256 from 18.7 to 8.7 ms. Still
-   open: a theorem that names its context instead of listing it, so a
-   step's premise check costs its own facts.
+4. **Evidence checking re-validated each step.** A statement theorem listed
+   every fact of the context it executed under as a premise, and recording
+   it looked each one up again in that same context, and built a set of the
+   whole retained history for any premise it missed, uncharged. Fixed in
+   part: a statement theorem lists only its own path facts and obligations
+   (`statement_theorems_do_not_list_the_context_they_executed_under`), and
+   recording a step checks the frontier and running state but walks no
+   premises. Memory snapshots and resource contexts also order by a cached
+   content hash first, so the lookups that remain no longer walk shared
+   entries (`ordering_snapshots_of_one_path_does_not_walk_their_shared_entries`).
+   Together, on `heap_objects`: 6.28 to 3.75 billion instructions at
+   N = 64, and a mean step of 18.7 to 6.4 ms at N = 256. Still open, under
+   the rule in `AGENTS.md` (construct valid proofs; never produce-then-check):
+   a step still runs its executor up to three times (a probe before
+   obligations, and a call before its `return`), instance, observation and
+   population rewrites still re-check their producer's result, joins re-walk
+   their arms, and condition and function-level theorems still list their
+   contexts. A plain composite `fold` or `unfold` is recorded from its
+   producer's result without re-expanding or comparing (2.84 billion
+   instructions at N = 64; fold work at N = 256 137,981 to 22,782).
 5. **Fixed: satisfying a composite checked every held one of its shape.**
    `ResourceContext::satisfies_fact` tried entailment against every held
    `boxed(..)` when the required pointer was spelled differently, so each
    `heap_objects` fold cost 3 units per live object. It now reads the held
    composites whose pointer is related to the required one
    (`direct_match_candidates_for`), and folds are flat.
-6. **A load through an unresolved pointer keeps every cell it may alias.**
-   `canonical_memory_for_pointer_load` is assumption-free, and a `Symbolic`
-   block's alias candidates narrow nothing, so the canonical memory of a
-   load through one heap object keeps every earlier object's cell and every
-   local's slot: each `heap_objects` unfold still grows 3 units per earlier
-   object. The slots are unreachable by any pointer value, as cause 1 used
-   for stores; the other objects' cells need ownership, which
-   canonicalization does not consult.
+6. **Fixed: a load through an unresolved pointer rebuilt every cell it may
+   alias.** `canonical_memory_for_pointer_load` is assumption-free, and a
+   `Symbolic` block's alias candidates narrow nothing, so the canonical memory
+   of a load through one heap object was rebuilt from every earlier object's
+   cell and every local's slot, at every unfold. The cell store now keeps the
+   pointer-reachable cells with their values, caught up by its own changes,
+   and the projection starts from that map and filters only the `local:`
+   cells and the load's own block; each `heap_objects` unfold is flat
+   (141 units at every position at N = 24).
 
 Related scaling bugs stay in `bugs/` until fixed:
 [sequential-loop-clause-grows-with-earlier-loops.md](../bugs/sequential-loop-clause-grows-with-earlier-loops.md).

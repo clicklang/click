@@ -1,5 +1,4 @@
 use super::*;
-use sha2::{Digest, Sha256};
 
 const HELPERS: &str = include_str!("../../design/charon-trial/adler2/helpers.click");
 const SINGLE_BYTE_COMPUTE: &str =
@@ -122,7 +121,7 @@ fn compute_project(contract: &str) -> Project {
 
 fn reject_compute(contract: &str, before: &str, after: &str) {
     let p = adler2_helpers_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     let changed = contract.replacen(before, after, 1);
     assert!(changed != contract, "missing mutation: {before}");
     let invalid = compute_proof(&changed);
@@ -153,53 +152,8 @@ fn reject_single_byte_compute(before: &str, after: &str) {
 }
 
 fn adler2_helpers_project() -> Project {
-    let p = Project::new("");
-    fs::create_dir(p.root.join("src")).unwrap();
-    let manifest: serde_json::Value =
-        serde_json::from_str(include_str!("../../design/rust-checksum-sources.json")).unwrap();
-    let pin = manifest["sources"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|entry| entry["name"] == "adler2")
-        .unwrap();
-    for (name, bytes) in [
-        (
-            "src/lib.rs",
-            include_bytes!("../../design/charon-trial/adler2/src/lib.rs").as_slice(),
-        ),
-        (
-            "src/algo.rs",
-            include_bytes!("../../design/charon-trial/adler2/src/algo.rs").as_slice(),
-        ),
-    ] {
-        let file = pin["files"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|file| file["path"] == name)
-            .unwrap();
-        assert_eq!(format!("{:x}", Sha256::digest(bytes)), file["sha256"]);
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
-    for (name, bytes) in [
-        ("borrow.click", HELPERS.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!("../../design/charon-trial/adler2/helpers.click.import.json").as_slice(),
-        ),
-        (
-            "helpers.ullbc",
-            include_bytes!("../../design/charon-trial/adler2/helpers.ullbc").as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!("../../design/charon-trial/adler2/helpers.click.import.json.lock")
-                .as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/adler2");
+    fs::write(p.root.join("borrow.click"), HELPERS).unwrap();
     p
 }
 
@@ -227,7 +181,7 @@ fn helper_proof(index: usize) -> String {
 
 fn reject_helper_contracts(index: usize, mutations: &[(&str, &str)]) {
     let p = adler2_helpers_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     let proof = helper_proof(index);
     C0VerificationSession::new_program_prepared(&proof, &prepared).unwrap();
     for (before, after) in mutations {
@@ -254,7 +208,7 @@ fn reject_helper_contracts(index: usize, mutations: &[(&str, &str)]) {
 #[ignore = "nightly: 4s in the parallel gate"]
 fn charon_adler2_helpers_prove_all_lanes_and_lock_original_modules() {
     let p = adler2_helpers_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     assert!(
         prepared
             .export()
@@ -265,11 +219,7 @@ fn charon_adler2_helpers_prove_all_lanes_and_lock_original_modules() {
     C0VerificationSession::new_program_prepared(helper_library(), &prepared).unwrap();
     // Module identity is checked even when all the proved helpers are unchanged.
     fs::write(p.root.join("src/lib.rs"), "// changed crate root\n").unwrap();
-    assert!(
-        load_import(&p.config())
-            .unwrap_err()
-            .contains("lock differs")
-    );
+    assert!(p.prepared().unwrap_err().contains("lock differs"));
 }
 
 #[test]
@@ -294,7 +244,7 @@ fn charon_adler2_helpers_from_rejects_false_lanes_and_short_reads() {
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn charon_adler2_helper_expansion_uses_retained_native_certificate() {
     let p = adler2_helpers_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     let proof = helper_proof(0);
     let (_session, verified) =
         C0VerificationSession::new_program_prepared(&proof, &prepared).unwrap();
@@ -639,7 +589,13 @@ fn audit_mul_site(tactic: &str) {
     let cursor = format!("{}:{line}:{column}", p.root.join("borrow.click").display());
     // Each site still expands, rechecks retained/cold proofs, and checks its
     // fixed point. Bound the audit to one site so timings name that site.
-    let result = p.cli(&["audit", "--start-at", &cursor, "--max-sites", "1"]);
+    // These named nightly tests must run the audit when selected with
+    // `--ignored`, without the generic CLI helper's nightly-only shortcut.
+    let result = Command::new(env!("CARGO_BIN_EXE_click"))
+        .args(["audit", "--start-at", &cursor, "--max-sites", "1"])
+        .arg(p.root.join("borrow.click"))
+        .output()
+        .unwrap();
     let stdout = String::from_utf8_lossy(&result.stdout);
     assert!(
         result.status.success(),
@@ -674,16 +630,8 @@ fn charon_adler2_helpers_mul_tools_recheck_expanded_certificate() {
 #[ignore = "requires the pinned live Charon extractor"]
 fn charon_adler2_helpers_live_refresh_proves_original_bodies() {
     let p = adler2_helpers_project();
-    let mut config: serde_json::Value =
-        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
-    config["exporter"] = std::env::var("CLICK_CHARON").unwrap().into();
-    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-    refresh_import(&p.config()).unwrap();
-    C0VerificationSession::new_program_prepared(
-        helper_library(),
-        load_import(&p.config()).unwrap(),
-    )
-    .unwrap();
+    p.refresh().unwrap();
+    C0VerificationSession::new_program_prepared(helper_library(), p.prepared().unwrap()).unwrap();
 }
 
 const BOUNDS: &str = include_str!("../../design/charon-trial/adler2/bounds.click");
@@ -693,7 +641,7 @@ const RECOMBINATION: &str = include_str!("../../design/charon-trial/adler2/recom
 #[ignore = "nightly: 4s in the parallel gate"]
 fn charon_adler2_recombination_bounds_verify_with_original_helpers() {
     let p = adler2_helpers_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(
         &format!("{}\n{RECOMBINATION}", helper_library()),
         &prepared,
@@ -822,7 +770,7 @@ fn charon_adler2_lane_bounds_prove_batch_limits_and_step_safety() {
 #[ignore = "nightly: 4s in the parallel gate"]
 fn charon_adler2_lane_bounds_verify_with_original_helper_contracts() {
     let p = adler2_helpers_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(
         &format!("{}\n{BOUNDS}", helper_library()),
         &prepared,
@@ -995,7 +943,7 @@ fn iterator_bounds_project() -> Project {
 #[ignore = "nightly: 4s in the parallel gate"]
 fn charon_adler2_iterator_bounds_verify_with_locked_original_helpers() {
     let p = iterator_bounds_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     let source = format!("{}\nimport \"iterator-bounds.click\";\n", helper_library());
     let project = click::cli::read_click_project(&p.root.join("borrow.click"), &source).unwrap();
     C0VerificationSession::new_program_prepared_project(&project, &prepared).unwrap();
@@ -1087,7 +1035,7 @@ fn charon_adler2_iterator_bounds_tools_expand_native_certificates() {
 
 fn reject_empty_compute(before: &str, after: &str) {
     let p = adler2_helpers_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     let (library, computation) = HELPERS.split_once("// Empty-input boundary").unwrap();
     let changed = computation.replacen(before, after, 1);
     assert_ne!(computation, changed, "missing mutation: {before}");
@@ -1133,8 +1081,7 @@ fn charon_adler2_empty_compute_rejects_missing_ownership() {
 #[ignore = "nightly: complete original computation boundary proof"]
 fn charon_adler2_empty_compute_proves_original_body_and_rejects_false_outputs() {
     let p = adler2_helpers_project();
-    C0VerificationSession::new_program_prepared(HELPERS, load_import(&p.config()).unwrap())
-        .unwrap();
+    C0VerificationSession::new_program_prepared(HELPERS, p.prepared().unwrap()).unwrap();
     reject_empty_compute("ensures self.a == 1;", "ensures self.a == 2;");
     reject_empty_compute("ensures self.b == 0;", "ensures self.b == 1;");
     reject_empty_compute("requires self.a == 1;", "requires self.a == 2;");
@@ -1195,7 +1142,7 @@ fn charon_adler2_single_byte_compute_proves_original_body_and_rejects_false_outp
     let p = compute_project(SINGLE_BYTE_COMPUTE);
     C0VerificationSession::new_program_prepared(
         &compute_proof(SINGLE_BYTE_COMPUTE),
-        load_import(&p.config()).unwrap(),
+        p.prepared().unwrap(),
     )
     .unwrap();
     for field in ["a", "b"] {
@@ -1291,11 +1238,8 @@ fn charon_adler2_short_tail_compute_rejects_wrong_extent_and_constructor() {
 
 fn check_short_tail_compute(contract: &str, bytes: usize) {
     let p = compute_project(contract);
-    C0VerificationSession::new_program_prepared(
-        &compute_proof(contract),
-        load_import(&p.config()).unwrap(),
-    )
-    .unwrap();
+    C0VerificationSession::new_program_prepared(&compute_proof(contract), p.prepared().unwrap())
+        .unwrap();
     for field in ["a", "b"] {
         reject_compute(
             contract,
@@ -1388,7 +1332,7 @@ fn charon_adler2_four_byte_compute_proves_original_body_and_rejects_false_output
     let p = compute_project(FOUR_BYTE_COMPUTE);
     C0VerificationSession::new_program_prepared(
         &compute_proof(FOUR_BYTE_COMPUTE),
-        load_import(&p.config()).unwrap(),
+        p.prepared().unwrap(),
     )
     .unwrap();
     for field in ["a", "b"] {
@@ -1427,6 +1371,51 @@ fn charon_adler2_four_byte_compute_proves_original_body_and_rejects_false_output
         "have av == old((bytes[3] as u32))",
         "have av == old((bytes[2] as u32))",
     );
+}
+
+#[test]
+#[ignore = "nightly: wrong modulus and false remainder in the original four-byte computation"]
+fn charon_adler2_four_byte_compute_rejects_false_remainder_normalization() {
+    let goal = "have b_vec.0[0] == at(reduction_b, b_vec.0[0]) % 65521u32 by";
+    for false_goal in [
+        "have b_vec.0[0] == at(reduction_b, b_vec.0[0]) % 251u32 by",
+        "have b_vec.0[0] == at(reduction_b, b_vec.0[0]) % 65521u32 + 1u32 by",
+    ] {
+        reject_compute(FOUR_BYTE_COMPUTE, goal, false_goal);
+    }
+}
+
+#[test]
+#[ignore = "nightly: checks the original Adler cursor have and its deterministic work"]
+fn charon_adler2_four_byte_cursor_have_keeps_its_pre_regression_work_bound() {
+    let p = compute_project(FOUR_BYTE_COMPUTE);
+    let prepared = p.prepared().unwrap();
+    let source = compute_proof(FOUR_BYTE_COMPUTE);
+    let offset = source.find("execute_until(assignment(b, 0))").unwrap();
+    let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
+    let (_, samples) = click::instrumentation::collect_tactic_work(|| {
+        click::surface::verify_sources_at(
+            &source,
+            &click::surface::ProgramInputs::program(&prepared),
+            line,
+            2,
+        )
+    });
+    // The unchanged imported body and proof identify this have at MIR
+    // statement 904, source tactic 58. Later independent proof refusals
+    // cannot substitute for a successfully checked event at this site;
+    // the existing full-body/tool tests still require the entire proof.
+    let target = samples
+        .iter()
+        .find(|sample| {
+            sample.tactic.claim.ends_with("_compute.contract")
+                && sample.tactic.statement_index == 904
+                && sample.tactic.source_index == 58
+                && sample.tactic.tactic_name == "have"
+        })
+        .expect("the original cursor equality must be reached");
+    assert!(!target.failed, "{target:?}");
+    assert!(target.work > 0 && target.work <= 192_075, "{target:?}");
 }
 
 #[test]
@@ -1532,7 +1521,7 @@ fn charon_adler2_small_batch_compute_proves_original_body() {
     let p = compute_project(SMALL_BATCH_COMPUTE);
     C0VerificationSession::new_program_prepared(
         &compute_proof(SMALL_BATCH_COMPUTE),
-        load_import(&p.config()).unwrap(),
+        p.prepared().unwrap(),
     )
     .unwrap();
 }
@@ -2190,7 +2179,7 @@ fn charon_adler2_general_compute_proves_original_body() {
     let p = compute_project(GENERAL_COMPUTE);
     C0VerificationSession::new_program_prepared(
         &compute_proof(GENERAL_COMPUTE),
-        load_import(&p.config()).unwrap(),
+        p.prepared().unwrap(),
     )
     .unwrap();
 }
@@ -2380,25 +2369,7 @@ const CHECKSUM: &str = include_str!("../../design/charon-trial/adler2/checksum.c
 const RESTORATION: &str = include_str!("../../design/charon-trial/adler2/restoration.click");
 
 fn restoration_project() -> Project {
-    let p = adler2_helpers_project();
-    for (name, bytes) in [
-        (
-            "borrow.click.import.json",
-            include_bytes!("../../design/charon-trial/adler2/restoration.click.import.json")
-                .as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!("../../design/charon-trial/adler2/restoration.click.import.json.lock")
-                .as_slice(),
-        ),
-        (
-            "restoration.ullbc",
-            include_bytes!("../../design/charon-trial/adler2/restoration.ullbc").as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/adler2");
     fs::write(p.root.join("borrow.click"), RESTORATION).unwrap();
     p
 }
@@ -2406,15 +2377,14 @@ fn restoration_project() -> Project {
 #[test]
 fn charon_adler2_restoration_extracts_original_checksum_words() {
     let p = restoration_project();
-    C0VerificationSession::new_program_prepared(RESTORATION, load_import(&p.config()).unwrap())
-        .unwrap();
+    C0VerificationSession::new_program_prepared(RESTORATION, p.prepared().unwrap()).unwrap();
 }
 
 #[test]
 #[ignore = "nightly: saved checksum word mutations and constructor expansion"]
 fn charon_adler2_restoration_rejects_false_words_and_expands() {
     let p = restoration_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     for (before, after) in [
         ("old(sum & 65535u32)", "old(sum)"),
         ("old(sum & 65535u32)", "old((sum >> 16) & 65535u32)"),
@@ -2450,24 +2420,21 @@ fn charon_adler2_restoration_rejects_false_words_and_expands() {
 #[ignore = "nightly: live Charon extraction of the unchanged restoration constructor"]
 fn charon_adler2_restoration_live_refresh_checks_original_body() {
     let p = restoration_project();
-    let mut config: serde_json::Value =
-        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
+    let project: serde_json::Value =
+        serde_json::from_slice(&fs::read(p.project_file()).unwrap()).unwrap();
     assert_eq!(
-        config["crate"]["roots"],
-        serde_json::json!(["adler2::Adler32::from_checksum"])
+        project["units"]["adler2"]["crate"]["roots"],
+        serde_json::json!(["adler2::adler32_slice", "adler2::Adler32::from_checksum"])
     );
-    config["exporter"] = std::env::var("CLICK_CHARON").unwrap().into();
-    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-    refresh_import(&p.config()).unwrap();
-    C0VerificationSession::new_program_prepared(RESTORATION, load_import(&p.config()).unwrap())
-        .unwrap();
+    p.refresh().unwrap();
+    C0VerificationSession::new_program_prepared(RESTORATION, p.prepared().unwrap()).unwrap();
 }
 
 #[test]
 #[ignore = "nightly: 2.8s in the parallel gate"]
 fn charon_adler2_checksum_packs_original_shared_fields() {
     let p = adler2_helpers_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     let source = format!("verifying \"src/lib.rs\";\n{COMMON_ADLER_SPEC}\n{PACKING}\n{CHECKSUM}");
     C0VerificationSession::new_program_prepared(&source, &prepared).unwrap();
 }
@@ -2476,7 +2443,7 @@ fn charon_adler2_checksum_packs_original_shared_fields() {
 #[ignore = "nightly: original checksum false-result and authority mutations"]
 fn charon_adler2_checksum_rejects_false_packing_and_missing_shared_authority() {
     let p = adler2_helpers_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     for (before, after) in [
         (
             "65536 * old(to_integer(self.b))",
@@ -2596,7 +2563,7 @@ fn verify_public_checksum_unit(
 #[ignore = "nightly: 2.3s in the parallel gate"]
 fn charon_adler2_public_checksum_matches_one_byte_spec() {
     let p = adler2_helpers_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     let source = public_one_byte_proof();
     for name in [
         "__rust_q_I6_adler2_I7_Adler32_default",
@@ -2612,7 +2579,7 @@ fn charon_adler2_public_checksum_matches_one_byte_spec() {
 #[ignore = "nightly: public checksum false-result and authority mutations"]
 fn charon_adler2_public_checksum_rejects_false_result_length_and_authority() {
     let p = adler2_helpers_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     for (before, after) in [
         (
             "ensures to_integer(result) == old(adler_spec_checksum(data, 1, 1, 0));",
@@ -2652,11 +2619,8 @@ fn charon_adler2_public_checksum_rejects_false_result_length_and_authority() {
 #[ignore = "nightly: original public checksum and all helper bodies"]
 fn charon_adler2_public_checksum_checks_all_original_callee_bodies() {
     let p = adler2_helpers_project();
-    C0VerificationSession::new_program_prepared(
-        &public_one_byte_proof(),
-        load_import(&p.config()).unwrap(),
-    )
-    .unwrap();
+    C0VerificationSession::new_program_prepared(&public_one_byte_proof(), p.prepared().unwrap())
+        .unwrap();
 }
 
 #[test]
@@ -2717,28 +2681,6 @@ fn incremental_proof() -> String {
 
 fn incremental_project() -> Project {
     let p = adler2_helpers_project();
-    for (name, bytes) in [
-        (
-            "incremental.rs",
-            include_bytes!("../../design/charon-trial/adler2/incremental.rs").as_slice(),
-        ),
-        (
-            "borrow.click.import.json",
-            include_bytes!("../../design/charon-trial/adler2/incremental.click.import.json")
-                .as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!("../../design/charon-trial/adler2/incremental.click.import.json.lock")
-                .as_slice(),
-        ),
-        (
-            "incremental.ullbc",
-            include_bytes!("../../design/charon-trial/adler2/incremental.ullbc").as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
     fs::write(p.root.join("borrow.click"), incremental_proof()).unwrap();
     p
 }
@@ -2756,27 +2698,6 @@ fn resumed_proof() -> String {
 
 fn resumed_project() -> Project {
     let p = adler2_helpers_project();
-    for (name, bytes) in [
-        (
-            "resumed.rs",
-            include_bytes!("../../design/charon-trial/adler2/resumed.rs").as_slice(),
-        ),
-        (
-            "borrow.click.import.json",
-            include_bytes!("../../design/charon-trial/adler2/resumed.click.import.json").as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!("../../design/charon-trial/adler2/resumed.click.import.json.lock")
-                .as_slice(),
-        ),
-        (
-            "resumed.ullbc",
-            include_bytes!("../../design/charon-trial/adler2/resumed.ullbc").as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
     fs::write(p.root.join("borrow.click"), resumed_proof()).unwrap();
     p
 }
@@ -2785,7 +2706,7 @@ fn resumed_project() -> Project {
 #[ignore = "nightly: restored Rust state and suffix updates at every supported split"]
 fn charon_adler2_resumed_client_matches_concatenated_input_and_rejects_false_claims() {
     let p = resumed_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     verify_public_checksum_unit(&resumed_proof(), &prepared, "adler_resumed::resumed").unwrap();
     for (before, after) in [
         (
@@ -2828,35 +2749,29 @@ fn charon_adler2_resumed_client_tools_check_all_original_bodies() {
         ],
     );
     let expanded = fs::read_to_string(p.root.join("borrow.click")).unwrap();
-    verify_public_checksum_unit(
-        &expanded,
-        &load_import(&p.config()).unwrap(),
-        "adler_resumed::resumed",
-    )
-    .unwrap();
+    verify_public_checksum_unit(&expanded, &p.prepared().unwrap(), "adler_resumed::resumed")
+        .unwrap();
 }
 
 #[test]
 #[ignore = "nightly: live Charon extraction and resumed client input closure"]
 fn charon_adler2_resumed_client_live_refresh_checks_the_input_closure() {
     let p = resumed_project();
-    let mut config: serde_json::Value =
-        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
+    let project: serde_json::Value =
+        serde_json::from_slice(&fs::read(p.project_file()).unwrap()).unwrap();
     assert_eq!(
-        config["crate"]["files"],
+        project["units"]["adler_resumed"]["crate"]["files"],
         serde_json::json!(["resumed.rs", "src/lib.rs", "src/algo.rs"])
     );
-    config["exporter"] = std::env::var("CLICK_CHARON").unwrap().into();
-    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-    refresh_import(&p.config()).unwrap();
+    p.refresh().unwrap();
     verify_public_checksum_unit(
         &resumed_proof(),
-        &load_import(&p.config()).unwrap(),
+        &p.prepared().unwrap(),
         "adler_resumed::resumed",
     )
     .unwrap();
     fs::write(p.root.join("resumed.rs"), "pub fn different() {}\n").unwrap();
-    let error = load_import(&p.config()).unwrap_err();
+    let error = p.prepared().unwrap_err();
     assert!(error.contains("lock differs from its inputs"), "{error}");
 }
 
@@ -2866,7 +2781,7 @@ fn charon_adler2_incremental_client_matches_concatenated_input() {
     let p = incremental_project();
     verify_public_checksum_unit(
         &incremental_proof(),
-        &load_import(&p.config()).unwrap(),
+        &p.prepared().unwrap(),
         "adler_incremental::incremental",
     )
     .unwrap();
@@ -2876,7 +2791,7 @@ fn charon_adler2_incremental_client_matches_concatenated_input() {
 #[ignore = "nightly: incremental client false results and missing input preconditions"]
 fn charon_adler2_incremental_client_rejects_false_claims() {
     let p = incremental_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     for (before, after) in [
         (
             "ensures to_integer(result) == old(adler_spec_checksum(bytes, ((bytes.len() as u32) as i32), 1, 0));",
@@ -2921,7 +2836,7 @@ fn charon_adler2_incremental_client_tools_check_all_original_bodies() {
     let expanded = fs::read_to_string(p.root.join("borrow.click")).unwrap();
     verify_public_checksum_unit(
         &expanded,
-        &load_import(&p.config()).unwrap(),
+        &p.prepared().unwrap(),
         "adler_incremental::incremental",
     )
     .unwrap();
@@ -2931,23 +2846,21 @@ fn charon_adler2_incremental_client_tools_check_all_original_bodies() {
 #[ignore = "nightly: live Charon extraction of the real incremental client"]
 fn charon_adler2_incremental_client_live_refresh_checks_the_input_closure() {
     let p = incremental_project();
-    let mut config: serde_json::Value =
-        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
+    let project: serde_json::Value =
+        serde_json::from_slice(&fs::read(p.project_file()).unwrap()).unwrap();
     assert_eq!(
-        config["crate"]["files"],
+        project["units"]["adler_incremental"]["crate"]["files"],
         serde_json::json!(["incremental.rs", "src/lib.rs", "src/algo.rs"])
     );
-    config["exporter"] = std::env::var("CLICK_CHARON").unwrap().into();
-    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-    refresh_import(&p.config()).unwrap();
+    p.refresh().unwrap();
     verify_public_checksum_unit(
         &incremental_proof(),
-        &load_import(&p.config()).unwrap(),
+        &p.prepared().unwrap(),
         "adler_incremental::incremental",
     )
     .unwrap();
     fs::write(p.root.join("incremental.rs"), "pub fn different() {}\n").unwrap();
-    let error = load_import(&p.config()).unwrap_err();
+    let error = p.prepared().unwrap_err();
     assert!(error.contains("lock differs from its inputs"), "{error}");
 }
 
@@ -3003,8 +2916,35 @@ fn public_general_proof() -> String {
 #[test]
 #[ignore = "nightly: general public API composition with the full computation specification"]
 fn charon_adler2_general_public_checksum_matches_common_spec() {
+    let t = tempfile::tempdir().unwrap();
+    let demo = t.path().join("demo");
+    let output = std::process::Command::new("python3")
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/prepare-adler32-demo.py"))
+        .arg(&demo)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for (name, canonical) in [
+        ("public", public_general_proof()),
+        ("incremental", incremental_proof()),
+        ("resumed", resumed_proof()),
+    ] {
+        let generated =
+            fs::read_to_string(demo.join(format!("design/charon-trial/adler2/{name}-demo.click")))
+                .unwrap();
+        assert!(
+            generated
+                .split_whitespace()
+                .eq(canonical.split_whitespace()),
+            "{name}: installed demo must retain the canonical proof tokens"
+        );
+    }
     let p = adler2_helpers_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     let source = public_general_proof();
     for name in ["adler2::Adler32::write_slice", "adler2::adler32_slice"] {
         verify_public_checksum_unit(&source, &prepared, name).unwrap();
@@ -3015,7 +2955,7 @@ fn charon_adler2_general_public_checksum_matches_common_spec() {
 #[ignore = "nightly: general public API false checksums, seeds, authority and preservation"]
 fn charon_adler2_general_public_checksum_rejects_false_claims() {
     let p = adler2_helpers_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     for (name, before, after) in [
         (
             "adler2::adler32_slice",
@@ -3080,7 +3020,7 @@ fn charon_adler2_general_public_checksum_tools_check_all_original_bodies() {
             ],
         );
         let expanded = fs::read_to_string(p.root.join("borrow.click")).unwrap();
-        verify_public_checksum_unit(&expanded, &load_import(&p.config()).unwrap(), name).unwrap();
+        verify_public_checksum_unit(&expanded, &p.prepared().unwrap(), name).unwrap();
     }
 }
 
@@ -3143,7 +3083,7 @@ fn public_boundary_proof(length: usize) -> String {
 #[ignore = "nightly: eight public entry-point proofs for empty and four-byte inputs"]
 fn charon_adler2_public_boundaries_match_empty_and_four_byte_spec() {
     let p = adler2_helpers_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     for length in [0, 4] {
         let source = public_boundary_proof(length);
         for name in [
@@ -3161,7 +3101,7 @@ fn charon_adler2_public_boundaries_match_empty_and_four_byte_spec() {
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn charon_adler2_public_empty_needs_no_input_byte_authority() {
     let p = adler2_helpers_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     let source = public_boundary_proof(0).replacen("views data[0..0];", "", 1);
     verify_public_checksum_unit(&source, &prepared, "adler2::adler32_slice").unwrap();
 }
@@ -3170,7 +3110,7 @@ fn charon_adler2_public_empty_needs_no_input_byte_authority() {
 #[ignore = "nightly: empty/serial/vector public checksum false claims and authority"]
 fn charon_adler2_public_boundaries_reject_false_result_extent_and_preservation() {
     let p = adler2_helpers_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     for length in [0, 2, 3, 4] {
         let original = public_boundary_proof(length);
         let result = format!(
@@ -3278,7 +3218,7 @@ fn adler_serial_tail_native_results_match_the_common_spec() {
 #[ignore = "nightly: 3.8s in the parallel gate"]
 fn charon_adler2_public_serial_tails_match_two_and_three_byte_spec() {
     let p = adler2_helpers_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     for length in [2, 3] {
         let source = public_boundary_proof(length);
         for name in ["adler2::Adler32::write_slice", "adler2::adler32_slice"] {

@@ -8,7 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use click::languages::c::compiler_import::{create_lock, load_imports};
+use click::languages::c::compiler_import::{PreparedCImport, create_lock, load_imports};
 use click::surface::{
     expand_c0_prepared_tactic_source_at, verify_c0_prepared_sources, verify_sources_at,
 };
@@ -570,24 +570,45 @@ fn compiler_import_dependency_closure_projection_is_an_explicit_checked_option()
     );
 }
 
+/// A copy of the pinned zlib project: its project file, lock, prepared
+/// sources, original zlib files and sidecars.
+fn zlib_project() -> tempfile::TempDir {
+    fn copy_tree(from: &Path, to: &Path) {
+        fs::create_dir_all(to).unwrap();
+        for entry in fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let destination = to.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy_tree(&entry.path(), &destination);
+            } else {
+                fs::copy(entry.path(), destination).unwrap();
+            }
+        }
+    }
+    let root = tempfile::tempdir().expect("isolated offline zlib project");
+    copy_tree(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/zlib"),
+        root.path(),
+    );
+    root
+}
+
+/// The prepared zlib `source` from the project's `zlib` unit, without the
+/// compiler.
+fn zlib_imports(root: &Path, source: &str) -> Result<Vec<PreparedCImport>, String> {
+    let project = click::project::Project::load(&root.join(click::project::FILE_NAME))?;
+    let path = fs::canonicalize(root.join(source)).ok();
+    match project.prepared_sources(&[(source.to_string(), path)])? {
+        Some(click::project::UnitSelection::C(imports)) => Ok(imports),
+        _ => Err(format!("the zlib project does not list `{source}`")),
+    }
+}
+
 #[test]
 fn pinned_zlib_empty_contract_verifies_offline_and_relocates() {
-    let root = tempfile::tempdir().expect("isolated offline zlib fixture");
-    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/zlib");
-    for name in [
-        "adler32.c",
-        "zutil.h",
-        "zlib.h",
-        "zconf.h",
-        "adler32.i",
-        "empty.click",
-        "empty.click.import.json",
-        "empty.click.import.lock.json",
-    ] {
-        fs::copy(fixture.join(name), root.path().join(name)).expect(name);
-    }
-    let config = root.path().join("empty.click.import.json");
-    let imports = load_imports(&config).expect("offline locked zlib source closure");
+    let root = zlib_project();
+    let imports =
+        zlib_imports(root.path(), "adler32.c").expect("offline locked zlib source closure");
     let proof = fs::read_to_string(root.path().join("empty.click")).unwrap();
     let verified =
         verify_c0_prepared_sources(&proof, &imports).expect("unchanged zlib empty input");
@@ -617,27 +638,15 @@ fn pinned_zlib_empty_contract_verifies_offline_and_relocates() {
         ),
     )
     .unwrap();
-    assert!(load_imports(&config).is_err());
+    assert!(zlib_imports(root.path(), "adler32.c").is_err());
 }
 
 #[test]
 #[ignore = "nightly: 5s shared specification, expansion, and negative contracts"]
 fn pinned_zlib_one_byte_matches_checked_shared_specification_offline() {
-    let root = tempfile::tempdir().expect("isolated offline zlib one-byte fixture");
-    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/zlib");
-    for name in [
-        "adler32.c",
-        "zutil.h",
-        "zlib.h",
-        "zconf.h",
-        "adler32.i",
-        "one-byte.click.import.json",
-        "one-byte.click.import.lock.json",
-    ] {
-        fs::copy(fixture.join(name), root.path().join(name)).expect(name);
-    }
-    let config = root.path().join("one-byte.click.import.json");
-    let imports = load_imports(&config).expect("offline locked unchanged C source");
+    let root = zlib_project();
+    let imports =
+        zlib_imports(root.path(), "adler32.c").expect("offline locked unchanged C source");
     // Imported pure theorem interfaces are backed by their checked bodies in
     // this verification unit; no library result summary supplies the checksum.
     let proof = include_str!("../design/charon-trial/zlib/one-byte.click")
@@ -686,21 +695,9 @@ fn pinned_zlib_one_byte_matches_checked_shared_specification_offline() {
 #[test]
 #[ignore = "nightly: original short loop, expansion, and authority mutations"]
 fn pinned_zlib_short_loop_matches_checked_shared_specification_offline() {
-    let root = tempfile::tempdir().expect("isolated offline zlib short-loop fixture");
-    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/zlib");
-    for name in [
-        "adler32.c",
-        "zutil.h",
-        "zlib.h",
-        "zconf.h",
-        "adler32.i",
-        "short-memory.click.import.json",
-        "short-memory.click.import.lock.json",
-    ] {
-        fs::copy(fixture.join(name), root.path().join(name)).expect(name);
-    }
-    let imports = load_imports(&root.path().join("short-memory.click.import.json"))
-        .expect("offline locked unchanged zlib source");
+    let root = zlib_project();
+    let imports =
+        zlib_imports(root.path(), "adler32.c").expect("offline locked unchanged zlib source");
     let proof = include_str!("../design/charon-trial/zlib/short-memory.click")
         .replace(
             "import \"byte.click\";",
@@ -780,20 +777,8 @@ fn pinned_zlib_short_loop_matches_checked_shared_specification_offline() {
 
 #[test]
 fn pinned_zlib_null_reset_is_independent_of_seed_and_nonunit_length() {
-    let root = tempfile::tempdir().expect("isolated offline zlib reset fixture");
-    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/zlib");
-    for name in [
-        "adler32.c",
-        "zutil.h",
-        "zlib.h",
-        "zconf.h",
-        "adler32.i",
-        "reset.click.import.json",
-        "reset.click.import.lock.json",
-    ] {
-        fs::copy(fixture.join(name), root.path().join(name)).expect(name);
-    }
-    let imports = load_imports(&root.path().join("reset.click.import.json")).unwrap();
+    let root = zlib_project();
+    let imports = zlib_imports(root.path(), "adler32.c").unwrap();
     let proof = include_str!("../design/charon-trial/zlib/reset.click");
     verify_c0_prepared_sources(proof, &imports).expect("unchanged C null reset path");
     assert!(
@@ -884,21 +869,9 @@ fn adler_c_rust_correspondence_expands_with_checked_dependencies() {
 #[test]
 #[ignore = "nightly: unchanged DO16 checksum proof, checked helpers, and mutations"]
 fn pinned_zlib_sixteen_block_matches_checked_shared_specification_offline() {
-    let root = tempfile::tempdir().expect("isolated offline zlib DO16 fixture");
-    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/zlib");
-    for name in [
-        "adler32.c",
-        "zutil.h",
-        "zlib.h",
-        "zconf.h",
-        "adler32.i",
-        "sixteen.click.import.json",
-        "sixteen.click.import.lock.json",
-    ] {
-        fs::copy(fixture.join(name), root.path().join(name)).expect(name);
-    }
-    let imports = load_imports(&root.path().join("sixteen.click.import.json"))
-        .expect("offline locked unchanged zlib source");
+    let root = zlib_project();
+    let imports =
+        zlib_imports(root.path(), "adler32.c").expect("offline locked unchanged zlib source");
     let proof = include_str!("../design/charon-trial/zlib/sixteen.click")
         .replace(
             "import \"block.click\";",
@@ -969,21 +942,9 @@ fn pinned_zlib_sixteen_block_matches_checked_shared_specification_offline() {
 #[test]
 #[ignore = "nightly: repeated DO16 checksum, checked helpers, expansion, and mutations"]
 fn pinned_zlib_repeated_blocks_match_checked_shared_specification_offline() {
-    let root = tempfile::tempdir().expect("isolated offline zlib repeated-block fixture");
-    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/zlib");
-    for name in [
-        "adler32.c",
-        "zutil.h",
-        "zlib.h",
-        "zconf.h",
-        "adler32.i",
-        "repeated.click.import.json",
-        "repeated.click.import.lock.json",
-    ] {
-        fs::copy(fixture.join(name), root.path().join(name)).expect(name);
-    }
-    let imports = load_imports(&root.path().join("repeated.click.import.json"))
-        .expect("offline locked unchanged zlib source");
+    let root = zlib_project();
+    let imports =
+        zlib_imports(root.path(), "adler32.c").expect("offline locked unchanged zlib source");
     let proof = include_str!("../design/charon-trial/zlib/repeated.click")
         .replace(
             "import \"window.click\";",
@@ -1056,21 +1017,9 @@ fn pinned_zlib_repeated_blocks_match_checked_shared_specification_offline() {
 #[test]
 #[ignore = "nightly: NMAX batch checksum, checked helpers, expansion, and mutations"]
 fn pinned_zlib_nmax_batch_matches_checked_shared_specification_offline() {
-    let root = tempfile::tempdir().expect("isolated offline zlib NMAX batch fixture");
-    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/zlib");
-    for name in [
-        "adler32.c",
-        "zutil.h",
-        "zlib.h",
-        "zconf.h",
-        "adler32.i",
-        "batch.click.import.json",
-        "batch.click.import.lock.json",
-    ] {
-        fs::copy(fixture.join(name), root.path().join(name)).expect(name);
-    }
-    let imports = load_imports(&root.path().join("batch.click.import.json"))
-        .expect("offline locked unchanged zlib source");
+    let root = zlib_project();
+    let imports =
+        zlib_imports(root.path(), "adler32.c").expect("offline locked unchanged zlib source");
     let proof = include_str!("../design/charon-trial/zlib/batch.click")
         .replace(
             "import \"batch-helpers.click\";",
@@ -1569,21 +1518,9 @@ fn compiler_import_lock_binds_clicks_header_text_and_catalog() {
 #[test]
 #[ignore = "nightly: unchanged zlib multiple NMAX batches, DO16 and scalar tails, and expansion"]
 fn pinned_zlib_stream_matches_checked_shared_specification_offline() {
-    let root = tempfile::tempdir().expect("isolated offline zlib multi-batch and tail fixture");
-    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/zlib");
-    for name in [
-        "adler32.c",
-        "zutil.h",
-        "zlib.h",
-        "zconf.h",
-        "adler32.i",
-        "stream.click.import.json",
-        "stream.click.import.lock.json",
-    ] {
-        fs::copy(fixture.join(name), root.path().join(name)).expect(name);
-    }
-    let imports = load_imports(&root.path().join("stream.click.import.json"))
-        .expect("offline locked unchanged zlib source");
+    let root = zlib_project();
+    let imports =
+        zlib_imports(root.path(), "adler32.c").expect("offline locked unchanged zlib source");
     let proof = include_str!("../design/charon-trial/zlib/stream.click")
         .replace(
             "import \"seeded-batch.click\";",
@@ -1670,21 +1607,9 @@ fn pinned_zlib_stream_matches_checked_shared_specification_offline() {
 #[test]
 #[ignore = "nightly: full-range original zlib checksum, all paths, dependency bodies and complete expansion"]
 fn pinned_zlib_full_stream_matches_checked_shared_specification_offline() {
-    let root = tempfile::tempdir().expect("isolated offline zlib full signed-range fixture");
-    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/zlib");
-    for name in [
-        "adler32.c",
-        "zutil.h",
-        "zlib.h",
-        "zconf.h",
-        "adler32.i",
-        "full-stream.click.import.json",
-        "full-stream.click.import.lock.json",
-    ] {
-        fs::copy(fixture.join(name), root.path().join(name)).expect(name);
-    }
-    let imports = load_imports(&root.path().join("full-stream.click.import.json"))
-        .expect("offline locked unchanged zlib source");
+    let root = zlib_project();
+    let imports =
+        zlib_imports(root.path(), "adler32.c").expect("offline locked unchanged zlib source");
     let proof = include_str!("../design/charon-trial/zlib/full-stream.click")
         .replace(
             "import \"full-stream-helpers.click\";",
@@ -1879,22 +1804,9 @@ fn pinned_zlib_full_stream_lemmas_have_checked_bodies() {
 #[test]
 #[ignore = "nightly: full-range original zlib checksum, all seeds and paths, dependency bodies and complete expansion"]
 fn pinned_zlib_canonical_seed_matches_checked_shared_specification_offline() {
-    let root =
-        tempfile::tempdir().expect("isolated offline zlib canonical-seed signed-range fixture");
-    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/zlib");
-    for name in [
-        "adler32.c",
-        "zutil.h",
-        "zlib.h",
-        "zconf.h",
-        "adler32.i",
-        "canonical.click.import.json",
-        "canonical.click.import.lock.json",
-    ] {
-        fs::copy(fixture.join(name), root.path().join(name)).expect(name);
-    }
-    let imports = load_imports(&root.path().join("canonical.click.import.json"))
-        .expect("offline locked unchanged zlib source");
+    let root = zlib_project();
+    let imports =
+        zlib_imports(root.path(), "adler32.c").expect("offline locked unchanged zlib source");
     let proof = include_str!("../design/charon-trial/zlib/canonical.click")
         .replace(
             "import \"canonical-helpers.click\";",
@@ -2084,23 +1996,9 @@ fn pinned_zlib_canonical_seed_lemmas_have_checked_bodies() {
 #[test]
 #[ignore = "nightly: two actual zlib C updates, all callee and helper bodies, complete expansion"]
 fn pinned_zlib_incremental_c_matches_checked_shared_specification_offline() {
-    let root =
-        tempfile::tempdir().expect("isolated offline zlib canonical-seed signed-range fixture");
-    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/zlib");
-    for name in [
-        "adler32.c",
-        "zutil.h",
-        "zlib.h",
-        "zconf.h",
-        "incremental.c",
-        "incremental.i",
-        "incremental.click.import.json",
-        "incremental.click.import.lock.json",
-    ] {
-        fs::copy(fixture.join(name), root.path().join(name)).expect(name);
-    }
-    let imports = load_imports(&root.path().join("incremental.click.import.json"))
-        .expect("offline locked unchanged zlib source");
+    let root = zlib_project();
+    let imports =
+        zlib_imports(root.path(), "incremental.c").expect("offline locked unchanged zlib source");
     let proof = include_str!("../design/charon-trial/zlib/incremental.click")
         .replace(
             "import \"canonical.click\";",

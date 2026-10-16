@@ -1,5 +1,5 @@
 //! Refresh runs the pinned exporter; ordinary loading only checks locked inputs.
-use super::schema::{RustExport, SCHEMA, TARGET};
+use super::schema::{RustExport, TARGET};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -124,9 +124,12 @@ struct Lock {
     schema: u32,
     config: String,
     source: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     exporter: String,
     artifact: String,
     identity: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    frontend: Option<super::profile::FrontendIdentity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     charon_driver: Option<String>,
     /// A project unit's crate files with their digests, so a changed file
@@ -137,7 +140,26 @@ struct Lock {
 fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
+#[cfg(test)]
 fn import_identity(
+    config: &str,
+    source: &str,
+    exporter: &str,
+    artifact: &str,
+    driver: &str,
+) -> String {
+    import_identity_for(
+        &super::profile::get().identity,
+        config,
+        source,
+        exporter,
+        artifact,
+        driver,
+    )
+}
+
+fn import_identity_for(
+    profile_identity: &str,
     config: &str,
     source: &str,
     exporter: &str,
@@ -148,11 +170,62 @@ fn import_identity(
     digest(
         format!(
             "{}\n{config}\n{source}\n{exporter}\n{artifact}\n{driver}\n{}",
-            profile.identity,
+            profile_identity,
             profile.semantic_identity()
         )
         .as_bytes(),
     )
+}
+
+// The artifact schema is independent of the Rust lock's identity format.
+const LEGACY_LOCK_SCHEMA: u32 = 8;
+const RELEASE_LOCK_SCHEMA: u32 = 9;
+fn release_identity(
+    config: &str,
+    source: &str,
+    artifact: &str,
+    frontend: &super::profile::FrontendIdentity,
+) -> String {
+    digest(
+        format!(
+            "click-rust-lock-v9\n{config}\n{source}\n{artifact}\n{}",
+            serde_json::to_string(frontend).unwrap()
+        )
+        .as_bytes(),
+    )
+}
+
+impl Lock {
+    fn identity_matches(&self) -> bool {
+        match (self.schema, &self.frontend) {
+            (RELEASE_LOCK_SCHEMA, Some(frontend)) => {
+                self.exporter.is_empty()
+                    && self.charon_driver.is_none()
+                    && frontend == &super::profile::FrontendIdentity::current()
+                    && self.identity
+                        == release_identity(&self.config, &self.source, &self.artifact, frontend)
+            }
+            (LEGACY_LOCK_SCHEMA, None) => self.charon_driver.as_deref().is_some_and(|driver| {
+                [
+                    super::profile::get().identity.as_str(),
+                    super::profile::LEGACY_IDENTITY,
+                ]
+                .iter()
+                .any(|prefix| {
+                    self.identity
+                        == import_identity_for(
+                            prefix,
+                            &self.config,
+                            &self.source,
+                            &self.exporter,
+                            &self.artifact,
+                            driver,
+                        )
+                })
+            }),
+            _ => false,
+        }
+    }
 }
 
 fn read(path: &Path, limit: usize) -> Result<Vec<u8>, String> {
@@ -380,7 +453,6 @@ fn extract(
         return Err("Charon driver must differ from artifact/lock outputs".into());
     }
     let driver_bytes = read(driver, 128 << 20)?;
-    let driver_hash = digest(&driver_bytes);
     let output_bytes = super::charon::extract_crate(
         runtime,
         inputs.source,
@@ -400,21 +472,16 @@ fn extract(
     }
     let config_hash = inputs.config_digest.clone();
     let source_hash = source_digest(c, &source_files);
-    let exporter_hash = digest(&exporter_bytes);
     let artifact_hash = digest(&output_bytes);
+    let frontend = super::profile::FrontendIdentity::current();
     let lock = Lock {
-        schema: SCHEMA,
-        identity: import_identity(
-            &config_hash,
-            &source_hash,
-            &exporter_hash,
-            &artifact_hash,
-            &driver_hash,
-        ),
-        charon_driver: Some(driver_hash),
+        schema: RELEASE_LOCK_SCHEMA,
+        identity: release_identity(&config_hash, &source_hash, &artifact_hash, &frontend),
+        frontend: Some(frontend),
+        charon_driver: None,
         config: config_hash,
         source: source_hash,
-        exporter: exporter_hash,
+        exporter: String::new(),
         artifact: artifact_hash,
         source_files: Default::default(),
     };
@@ -450,23 +517,14 @@ fn load_locked(
         })
     {
         return Err(format!(
-            "Rust crate file `{}` differs from its import lock; run `click import lock`",
+            "Rust source `{}` differs from its import lock; run `click import lock`",
             root.join(name).display()
         ));
     }
-    if lock.schema != SCHEMA
+    if !lock.identity_matches()
         || lock.config != config_digest
         || lock.source != source_digest(c, &source_files)
         || lock.artifact != digest(&artifact)
-        || lock.charon_driver.is_none()
-        || lock.identity
-            != import_identity(
-                &lock.config,
-                &lock.source,
-                &lock.exporter,
-                &lock.artifact,
-                lock.charon_driver.as_deref().unwrap_or_default(),
-            )
     {
         return Err("Rust import lock differs from its inputs; refresh it".into());
     }
@@ -494,23 +552,50 @@ pub(crate) struct UnitConfig {
     pub root: PathBuf,
     /// The crate root, relative to the unit root.
     pub source: String,
-    pub crate_config: super::crate_inputs::CrateConfig,
+    /// The crate description; without one, `source` is a single-file
+    /// program.
+    pub crate_config: Option<super::crate_inputs::CrateConfig>,
     /// The artifact's absolute path.
     pub artifact: PathBuf,
     pub lock_path: PathBuf,
 }
 
 impl UnitConfig {
-    fn config(&self) -> Result<(Config, PathBuf), String> {
+    /// The import configuration, the directory its files are relative to,
+    /// and the crate root's path.
+    fn config(&self) -> Result<(Config, PathBuf, PathBuf), String> {
         if !self.source.ends_with(".rs") {
             return Err("a Rust unit source must be a `.rs` crate root".into());
         }
-        self.crate_config.validate(&self.source)?;
-        let root = fs::canonicalize(&self.root)
+        let unit_root = fs::canonicalize(&self.root)
             .map_err(|error| format!("resolve the root of unit `{}`: {error}", self.unit_name))?;
-        for name in &self.crate_config.files {
-            super::crate_inputs::file(&root, name)?;
+        let Some(crate_config) = &self.crate_config else {
+            // A single-file program is read from its own directory.
+            let relative = Path::new(&self.source);
+            let root = unit_root.join(relative.parent().unwrap_or(Path::new("")));
+            let name = relative
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or("a Rust unit source must name a file")?
+                .to_string();
+            let source = local_file(&root, &name)?;
+            let config = Config {
+                schema: 3,
+                language: "rust".into(),
+                target: TARGET.into(),
+                source: name,
+                exporter: String::new(),
+                artifact: String::new(),
+                backend: None,
+                crate_config: None,
+            };
+            return Ok((config, root, source));
+        };
+        crate_config.validate(&self.source)?;
+        for name in &crate_config.files {
+            super::crate_inputs::file(&unit_root, name)?;
         }
+        let source = super::crate_inputs::file(&unit_root, &self.source)?;
         let config = Config {
             schema: 4,
             language: "rust".into(),
@@ -519,9 +604,9 @@ impl UnitConfig {
             exporter: String::new(),
             artifact: String::new(),
             backend: None,
-            crate_config: Some(self.crate_config.clone()),
+            crate_config: Some(crate_config.clone()),
         };
-        Ok((config, root))
+        Ok((config, unit_root, source))
     }
 }
 
@@ -530,8 +615,7 @@ impl UnitConfig {
 pub(crate) fn prepare_unit(
     unit: &UnitConfig,
 ) -> Result<(serde_json::Value, Vec<(PathBuf, Vec<u8>)>), String> {
-    let (config, root) = unit.config()?;
-    let source = super::crate_inputs::file(&root, &unit.source)?;
+    let (config, root, source) = unit.config()?;
     let runtime = super::runtime::resolve(None)?;
     let exporter = &runtime.executable;
     if exporter == &source || exporter == &unit.artifact || exporter == &unit.lock_path {
@@ -562,7 +646,7 @@ pub(crate) fn load_unit(
     unit: &UnitConfig,
     lock: &serde_json::Value,
 ) -> Result<PreparedRustImport, String> {
-    let (config, root) = unit.config()?;
+    let (config, root, _) = unit.config()?;
     let lock = Lock::deserialize(lock).map_err(|e| format!("parse Rust import lock: {e}"))?;
     if lock.config != unit.unit_digest {
         return Err(format!(
@@ -577,6 +661,95 @@ pub(crate) fn load_unit(
 mod unit_tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn rust_profile_product_name_preserves_legacy_locks_without_weakening_identity() {
+        assert_eq!(super::super::profile::get().identity, "click-rust-v1");
+        let root = tempfile::tempdir().unwrap();
+        let example =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/gate-fixtures/basic");
+        for name in ["borrow.rs", "click.project.json"] {
+            fs::copy(example.join(name), root.path().join(name)).unwrap();
+        }
+        let artifact = ".click/borrow/borrow.rs.ullbc";
+        fs::create_dir_all(root.path().join(".click/borrow")).unwrap();
+        fs::copy(example.join(artifact), root.path().join(artifact)).unwrap();
+        let project =
+            crate::project::Project::load(&root.path().join("click.project.json")).unwrap();
+        let unit = project.rust_unit("borrow").unwrap();
+        let saved: serde_json::Value =
+            serde_json::from_slice(&fs::read(example.join("click.project.lock.json")).unwrap())
+                .unwrap();
+        let mut lock: Lock =
+            serde_json::from_value(saved["units"]["borrow"]["lock"].clone()).unwrap();
+        let old = lock.identity.clone();
+        assert_eq!(
+            load_unit(&unit, &serde_json::to_value(&lock).unwrap())
+                .unwrap()
+                .identity(),
+            old
+        );
+        lock.identity = import_identity(
+            &lock.config,
+            &lock.source,
+            &lock.exporter,
+            &lock.artifact,
+            lock.charon_driver.as_deref().unwrap(),
+        );
+        assert_ne!(lock.identity, old);
+        assert_eq!(
+            load_unit(&unit, &serde_json::to_value(&lock).unwrap())
+                .unwrap()
+                .identity(),
+            lock.identity
+        );
+        // The alias changes only the profile name: the input binding remains exact.
+        lock.identity = old;
+        lock.exporter = digest(b"different exporter");
+        assert!(
+            load_unit(&unit, &serde_json::to_value(&lock).unwrap())
+                .unwrap_err()
+                .contains("lock differs")
+        );
+        // Explicitly refreshing a legacy lock switches only its identity format.
+        lock.exporter.clear();
+        lock.charon_driver = None;
+        lock.schema = RELEASE_LOCK_SCHEMA;
+        let frontend = super::super::profile::FrontendIdentity::current();
+        lock.identity = release_identity(&lock.config, &lock.source, &lock.artifact, &frontend);
+        lock.frontend = Some(frontend.clone());
+        assert!(load_unit(&unit, &serde_json::to_value(&lock).unwrap()).is_ok());
+        let saved = serde_json::to_value(&lock).unwrap();
+        assert!(saved.get("exporter").is_none() && saved.get("charon_driver").is_none());
+        // Even a self-consistent digest cannot select different release pins.
+        for field in [
+            "click_version",
+            "extractor_revision",
+            "extractor_version",
+            "compiler_commit",
+            "profile",
+        ] {
+            let mut changed = serde_json::to_value(&frontend).unwrap();
+            changed[field] = "different".into();
+            let changed = serde_json::from_value(changed).unwrap();
+            lock.identity = release_identity(&lock.config, &lock.source, &lock.artifact, &changed);
+            lock.frontend = Some(changed);
+            assert!(
+                load_unit(&unit, &serde_json::to_value(&lock).unwrap()).is_err(),
+                "{field}"
+            );
+        }
+        for (field, value) in [
+            ("frontend", serde_json::Value::Null),
+            ("exporter", "binary hash".into()),
+            ("charon_driver", "binary hash".into()),
+            ("schema", 8.into()),
+        ] {
+            let mut mixed = saved.clone();
+            mixed[field] = value;
+            assert!(load_unit(&unit, &mixed).is_err(), "{field}");
+        }
+    }
 
     /// A project unit for an external crate, locked by hand from the
     /// committed adler2 artifact: the sidecar names the crate root by its own
@@ -599,7 +772,7 @@ mod unit_tests {
         for file in ["src/lib.rs", "src/algo.rs"] {
             fs::copy(trial.join(file), crate_root.join(file)).unwrap();
         }
-        let artifact = fs::read(trial.join("restoration.ullbc")).unwrap();
+        let artifact = fs::read(trial.join(".click/adler2/src/lib.rs.ullbc")).unwrap();
         fs::write(proofs.join(".click/adler2/src/lib.rs.ullbc"), &artifact).unwrap();
         let proof = fs::read_to_string(trial.join("restoration.click"))
             .unwrap()
@@ -616,7 +789,7 @@ mod unit_tests {
                 "language": "rust",
                 "root": "../vendor/adler2-2.0.1",
                 "crate": {"name": "adler2", "edition": "2021", "features": ["std"],
-                    "roots": ["adler2::Adler32::from_checksum"],
+                    "roots": ["adler2::adler32_slice", "adler2::Adler32::from_checksum"],
                     "files": ["src/lib.rs", "src/algo.rs"]},
                 "sources": {"src/lib.rs": {}}
             }}})
@@ -625,13 +798,14 @@ mod unit_tests {
         .unwrap();
         let project = crate::project::Project::load(&project_file).unwrap();
         let unit = project.rust_unit("adler2").unwrap();
-        let (config, unit_root) = unit.config().unwrap();
+        let (config, unit_root, _) = unit.config().unwrap();
         let files = sources(&config, &unit_root).unwrap();
         let source = source_digest(&config, &files);
         let (exporter, driver, artifact_hash) =
             (digest(b"charon"), digest(b"driver"), digest(&artifact));
         let lock = Lock {
-            schema: SCHEMA,
+            schema: LEGACY_LOCK_SCHEMA,
+            frontend: None,
             identity: import_identity(
                 &unit.unit_digest,
                 &source,

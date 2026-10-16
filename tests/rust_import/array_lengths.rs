@@ -4,49 +4,13 @@ const ARRAYS_SIDECAR: &str = include_str!("../../design/charon-trial/array-lengt
 const BOUNDS_SOURCE: &str = include_str!("../../design/charon-trial/array-lengths/bounds.rs");
 const BOUNDS_SIDECAR: &str = include_str!("../../design/charon-trial/array-lengths/bounds.click");
 fn project(bounds: bool) -> Project {
-    let p = Project::new("");
-    let files: &[(&str, &[u8])] = if bounds {
-        &[
-            ("bounds.rs", BOUNDS_SOURCE.as_bytes()),
-            ("borrow.click", BOUNDS_SIDECAR.as_bytes()),
-            (
-                "borrow.click.import.json",
-                include_bytes!("../../design/charon-trial/array-lengths/bounds.click.import.json"),
-            ),
-            (
-                "bounds.ullbc",
-                include_bytes!("../../design/charon-trial/array-lengths/bounds.ullbc"),
-            ),
-            (
-                "borrow.click.import.json.lock",
-                include_bytes!(
-                    "../../design/charon-trial/array-lengths/bounds.click.import.json.lock"
-                ),
-            ),
-        ]
+    let p = Project::from_fixture("design/charon-trial/array-lengths");
+    let sidecar = if bounds {
+        BOUNDS_SIDECAR
     } else {
-        &[
-            ("arrays.rs", ARRAYS_SOURCE.as_bytes()),
-            ("borrow.click", ARRAYS_SIDECAR.as_bytes()),
-            (
-                "borrow.click.import.json",
-                include_bytes!("../../design/charon-trial/array-lengths/arrays.click.import.json"),
-            ),
-            (
-                "arrays.ullbc",
-                include_bytes!("../../design/charon-trial/array-lengths/arrays.ullbc"),
-            ),
-            (
-                "borrow.click.import.json.lock",
-                include_bytes!(
-                    "../../design/charon-trial/array-lengths/arrays.click.import.json.lock"
-                ),
-            ),
-        ]
+        ARRAYS_SIDECAR
     };
-    for (name, bytes) in files {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
     p
 }
 #[test]
@@ -62,7 +26,7 @@ fn charon_array_lengths_preserve_unchanged_sources_and_reject_false_claims() {
     );
     for bounds in [false, true] {
         let p = project(bounds);
-        let prepared = load_import(&p.config()).unwrap();
+        let prepared = p.prepared().unwrap();
         let sidecar = if bounds {
             BOUNDS_SIDECAR
         } else {
@@ -101,30 +65,18 @@ fn charon_array_lengths_proof_tools_recheck_metadata_and_array_certificates() {
 fn charon_array_lengths_live_refresh_and_compiler_rejections() {
     for bounds in [false, true] {
         let p = project(bounds);
-        let mut config: serde_json::Value =
-            serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
-        config["exporter"] = serde_json::json!(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
-        );
-        fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-        refresh_import(&p.config()).unwrap();
+        p.refresh().unwrap();
         C0VerificationSession::new_program_prepared(
             if bounds {
                 BOUNDS_SIDECAR
             } else {
                 ARRAYS_SIDECAR
             },
-            load_import(&p.config()).unwrap(),
+            p.prepared().unwrap(),
         )
         .unwrap();
     }
     let p = project(true);
-    let mut config: serde_json::Value =
-        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
-    config["exporter"] = serde_json::json!(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
-    );
-    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
     for (source, diagnostic) in [
         (
             "pub fn bad(x:&mut [u32;3])->usize { let y=&mut *x; let n=x.len(); y[0]=7; n }",
@@ -132,12 +84,12 @@ fn charon_array_lengths_live_refresh_and_compiler_rejections() {
         ),
         ("pub fn bad(x:&[u16;3])->usize { x.len() }", "scalar"),
     ] {
-        fs::remove_file(p.root.join("bounds.ullbc")).unwrap();
+        fs::remove_file(p.artifact("bounds.rs")).unwrap();
         fs::write(p.root.join("bounds.rs"), source).unwrap();
-        let error = refresh_import(&p.config()).unwrap_err();
+        let error = p.refresh().unwrap_err();
         assert!(error.contains(diagnostic), "{error}");
-        assert!(!p.root.join("bounds.ullbc").exists());
+        assert!(!p.artifact("bounds.rs").exists());
         fs::write(p.root.join("bounds.rs"), BOUNDS_SOURCE).unwrap();
-        refresh_import(&p.config()).unwrap();
+        p.refresh().unwrap();
     }
 }

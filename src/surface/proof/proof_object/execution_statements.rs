@@ -225,10 +225,11 @@ impl<'a> Proof<'a> {
     ///
     /// The candidate list is exactly what the loop head, the contract, and
     /// this path's own C branches name. A candidate is kept only when it
-    /// lowers here, is exactly available, and is a premise the arithmetic
-    /// checker supports, so the work is one indexed lookup and one
-    /// classification per named clause and does not grow with unrelated
-    /// ambient facts.
+    /// lowers here and is exactly available, so the work is one indexed
+    /// lookup per named clause and does not grow with unrelated ambient
+    /// facts. The signed arithmetic planner cites the subset its checker
+    /// supports; a `normalize() using` member closer cites all of them, so
+    /// an unsigned or 64-bit guard is not lost.
     fn named_arithmetic_premises(
         &self,
         bundle: &InvariantBodyContext,
@@ -290,12 +291,6 @@ impl<'a> Proof<'a> {
                 continue;
             };
             if !proof.facts().exact_available_across_effects(&lowered, &[]) {
-                continue;
-            }
-            // The premise classification is the checker's own: a clause it
-            // would reject as unsupported must not be cited, or one unusable
-            // premise would lose the whole candidate.
-            if !crate::surface::checking::signed_arithmetic_premise_supported(&lowered) {
                 continue;
             }
             // Two written spellings of one clause can lower to the same fact
@@ -663,7 +658,6 @@ impl<'a> Proof<'a> {
                 proof = extracted;
             }
             if !proof.facts().exact_available_across_effects(&lowered, &[])
-                || !crate::surface::checking::signed_arithmetic_premise_supported(&lowered)
                 || premises.iter().any(|(kernel, _)| kernel == &lowered)
             {
                 continue;
@@ -682,10 +676,19 @@ impl<'a> Proof<'a> {
         premises: &[NamedArithmeticPremise],
         loop_head_surfaces: &[ClickProposition],
     ) -> Result<Option<Self>, ClickError> {
-        if !premises.is_empty()
+        // The signed planner cites only the premises its checker classifies
+        // as supported: one unusable premise would lose the whole candidate.
+        let signed = premises
+            .iter()
+            .filter(|(kernel, _)| {
+                crate::surface::checking::signed_arithmetic_premise_supported(kernel)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        if !signed.is_empty()
             && let Some(goal) = self.goal()
         {
-            let kernels = premises
+            let kernels = signed
                 .iter()
                 .map(|(kernel, _)| kernel.clone())
                 .collect::<Vec<_>>();
@@ -719,7 +722,7 @@ impl<'a> Proof<'a> {
                 crate::surface::checking::plan_signed_arithmetic_certificate(goal, &kernels)
                 && let Some(surface_goal) = self.surface_goal()
                 && let Some(certificate) =
-                    { self.signed_plan_to_surface_certificate(&plan, premises, surface_goal) }
+                    { self.signed_plan_to_surface_certificate(&plan, &signed, surface_goal) }
                 && let Some(closed) = {
                     let attempt =
                         self.apply_step(ProofStep::ArithmeticCertificate(ArithmeticCertificate {
@@ -745,6 +748,41 @@ impl<'a> Proof<'a> {
             }
         }
         if let Some(closed) = self.try_named_forall_goal_from_surfaces(&forall_surfaces) {
+            return Ok(Some(closed));
+        }
+        // The named premises together, as one `normalize() using`: a member
+        // such as `i + 1 <= n` after `i += 1` normalizes to true under the
+        // guard `i < n` at any width, which the signed arithmetic planner
+        // above does not reach for an unsigned or 64-bit counter.
+        if !premises.is_empty() {
+            let normalize = |using: &[ClickProposition]| -> Result<Option<Self>, ClickError> {
+                Ok(attempt::candidate_outcome(
+                    self.apply_step(ProofStep::NormalizeUsing(using.to_vec())),
+                )?
+                .filter(|closed| closed.focused_discharged() || closed.is_complete()))
+            };
+            let mut using = premises
+                .iter()
+                .map(|(_, surface)| surface.clone())
+                .collect::<Vec<_>>();
+            let Some(mut closed) = normalize(&using)? else {
+                return Ok(None);
+            };
+            // Keep only the premises the step needs, so the expansion cites
+            // the guard and not every precondition: one pass, one check per
+            // named premise.
+            let mut index = 0;
+            while index < using.len() {
+                let mut fewer = using.clone();
+                fewer.remove(index);
+                match normalize(&fewer)? {
+                    Some(smaller) => {
+                        using = fewer;
+                        closed = smaller;
+                    }
+                    None => index += 1,
+                }
+            }
             return Ok(Some(closed));
         }
         Ok(None)
@@ -1157,7 +1195,54 @@ impl<'a> Proof<'a> {
                     ),
                 );
             }
+            // A value binder's entry names the instance that gives the
+            // callee's `_` arguments their values, as a resource term at the
+            // call's state; the kernel takes the values from it and still
+            // requires the clause.
+            let mut value_instances = Vec::new();
+            for (binder, argument) in transport.value_arguments() {
+                crate::instrumentation::record_deterministic_work(1);
+                let clause = match argument {
+                    crate::surface::ValueBinderArgument::Term(resource) => resource.clone(),
+                    crate::surface::ValueBinderArgument::Binder(caller) => {
+                        let Some(own) = context
+                            .function_block
+                            .value_binders()
+                            .iter()
+                            .find(|own| own.name == *caller)
+                        else {
+                            return Err(self.step_error(format!(
+                                "`{caller}` is not a value binder of this function"
+                            )));
+                        };
+                        match context.function_block.requires().get(own.requirement_index) {
+                            Some(Requirement::Resource(clause)) => clause.clone(),
+                            _ => {
+                                return Err(self.step_error(format!(
+                                    "value binder `{caller}` has no resource clause"
+                                )));
+                            }
+                        }
+                    }
+                };
+                let state = &*self
+                    .execution()
+                    .ok_or_else(|| {
+                        self.step_error(format!("binder `{binder}` needs an execution state"))
+                    })?
+                    .core
+                    .state;
+                value_instances.push(crate::surface::lowering::lower_resource_clause_at_state(
+                    &clause,
+                    context.parameter_binding(),
+                    state,
+                )?);
+            }
             let mut environment = context.function_environment.clone();
+            if !value_instances.is_empty() {
+                environment =
+                    environment.with_selected_call_value_instances(callee, value_instances);
+            }
             let arity = if transport.is_named_contract() {
                 let definition = context
                     .spec_definitions
@@ -1637,24 +1722,48 @@ impl<'a> Proof<'a> {
         let recorded = recorded.recorded;
         let open = distinct_requirements(recorded.clone());
         let open = open.iter().collect::<Vec<_>>();
-        let (proved, mut entries) =
-            match self.prove_obligations_by_auto_or_name_the_first_missed(&step, &open)? {
-                Ok(proved) => proved,
-                // Refuse at the obligation the implicit `auto` missed, with
-                // the fast path's own diagnostic for it; another open
-                // obligation it did prove is not what is wrong.
-                Err(missed) => {
-                    return match recorded.iter().position(|requirement| {
-                        crate::kernel::proof::propositions_are_alpha_equal(
-                            &requirement.proposition,
-                            &open[missed].proposition,
-                        )
-                    }) {
-                        Some(position) if position > 0 => Err(refusals[position].clone()),
-                        _ => refused(),
+        let (proved, mut entries) = match self
+            .prove_obligations_by_auto_or_name_the_first_missed(&step, &open)?
+        {
+            Ok(proved) => proved,
+            // Refuse at the obligation the implicit `auto` missed, with
+            // the fast path's own diagnostic for it; another open
+            // obligation it did prove is not what is wrong.
+            Err(missed) => {
+                let refused = match recorded.iter().position(|requirement| {
+                    crate::kernel::proof::propositions_are_alpha_equal(
+                        &requirement.proposition,
+                        &open[missed].proposition,
+                    )
+                }) {
+                    Some(position) if position > 0 => Err(refusals[position].clone()),
+                    _ => refused(),
+                };
+                return refused.map_err(|error| {
+                    // The numeric count carrier can also be a C field
+                    // read. Name the authoritative source requirement.
+                    let Ok(Some(spelling)) = self.requirement_surface(open[missed], &step) else {
+                        return error;
                     };
-                }
-            };
+                    if matches!(
+                        &spelling.surface,
+                        ClickProposition::Comparison {
+                            left: ContractExpression::ResourceCount(_),
+                            ..
+                        } | ClickProposition::Comparison {
+                            right: ContractExpression::ResourceCount(_),
+                            ..
+                        }
+                    ) {
+                        error.with_missing_tactic_requirement(
+                            crate::surface::printing::source_click_proposition(&spelling.surface),
+                        )
+                    } else {
+                        error
+                    }
+                });
+            }
+        };
         let stepped = proved.apply_fast_simple_step(&step)?;
         let proof = if entries.len() == 1 {
             StepProofCertificate::By(Box::new(entries.pop().expect("one entry").proof))
@@ -2206,6 +2315,27 @@ impl<'a> Proof<'a> {
         }
     }
 
+    /// The proof's facts with the body's memory effects and their store
+    /// equations, as the loop's back edge reads them: the proof's own
+    /// context extended by the effects, not a fold of every path fact.
+    pub(in crate::surface::proof) fn back_edge_assumptions(
+        &self,
+        execution: &ExecutionProofState,
+    ) -> PureFactContext {
+        execution
+            .core
+            .effect_facts
+            .iter()
+            .map(|fact| fact.proposition().clone())
+            .chain(crate::kernel::certified_store_equations(
+                &execution.core.effect_facts,
+            ))
+            .fold(
+                self.facts().pure_context(),
+                PureFactContext::assume_proposition,
+            )
+    }
+
     /// Checks the heap, resource, and counted-population components at this
     /// loop-state join using the Proof-owned state and facts.
     pub(in crate::surface::proof) fn check_loop_state_join(
@@ -2228,18 +2358,7 @@ impl<'a> Proof<'a> {
         if execution.core.frontier.region != ExecutionRegionKind::LoopBody {
             return Err(self.step_error("loop state join requires a loop-region proof"));
         }
-        let mut closer_facts = self.facts().to_vec();
-        closer_facts.extend(
-            execution
-                .core
-                .effect_facts
-                .iter()
-                .map(|fact| fact.proposition().clone()),
-        );
-        closer_facts.extend(crate::kernel::certified_store_equations(
-            &execution.core.effect_facts,
-        ));
-        let assumptions = assumptions_from_propositions(&closer_facts);
+        let assumptions = self.back_edge_assumptions(execution);
         // The back edge binds the loop's names again before anything reads
         // them: whatever the body called the instance it ends holding, the
         // binder names it, and a body that ends with no instance at those
@@ -2273,12 +2392,10 @@ impl<'a> Proof<'a> {
             &assumptions,
         )
         .map_err(|message| self.step_error(format!("loop invariant classification: {message}")))?;
-        closer_facts.extend(
-            invariant_obligations
-                .into_iter()
-                .map(|obligation| obligation.proposition().clone()),
-        );
-        let assumptions = assumptions_from_propositions(&closer_facts);
+        let assumptions = invariant_obligations
+            .into_iter()
+            .map(|obligation| obligation.proposition().clone())
+            .fold(assumptions, PureFactContext::assume_proposition);
         if !crate::kernel::c_loop_condition_may_continue(&back_edge_state, condition, &assumptions)
             .map_err(|message| {
                 self.step_error(format!("loop condition classification: {message}"))
@@ -2343,21 +2460,10 @@ impl<'a> Proof<'a> {
         }
 
         if do_while {
-            let mut closer_facts = self.facts().to_vec();
-            closer_facts.extend(
-                execution
-                    .core
-                    .effect_facts
-                    .iter()
-                    .map(|fact| fact.proposition().clone()),
-            );
-            closer_facts.extend(crate::kernel::certified_store_equations(
-                &execution.core.effect_facts,
-            ));
             let condition_may_continue = crate::kernel::c_loop_condition_may_continue(
                 &execution.core.state,
                 condition,
-                &assumptions_from_propositions(&closer_facts),
+                &self.back_edge_assumptions(execution),
             )
             .map_err(|message| {
                 self.step_error(format!("loop condition classification: {message}"))

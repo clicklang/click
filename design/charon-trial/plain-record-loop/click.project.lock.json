@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "units": {
+    "loop": {
+      "language": "rust",
+      "lock": {
+        "artifact": "218620289ebab5a55116b1afff99ec786d8b5612f57ecdbef265372581dfb564",
+        "config": "66e3de1b0af552e56929e0e0fb514772c8efc3ff147b757ae60ca761509b2380",
+        "frontend": {
+          "click_version": "0.1.0",
+          "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+          "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+          "extractor_version": "0.1.279",
+          "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+        },
+        "identity": "0a604705f0ecf22ea77b892f84693627b710c03986fe3443a81d461dced03489",
+        "schema": 9,
+        "source": "7703f5f6e7010564f2595e1414d54fb12670c00f454d4606039ebd1872fe060a",
+        "source_files": {
+          "loop.rs": "7703f5f6e7010564f2595e1414d54fb12670c00f454d4606039ebd1872fe060a"
+        }
+      }
+    }
+  }
+}

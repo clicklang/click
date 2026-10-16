@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "units": {
+    "capturing_closures": {
+      "language": "rust",
+      "lock": {
+        "artifact": "709b885c819e1be43316bb48ca4ac7a4bdee1e70b3b193f77972b28d9431ac8f",
+        "config": "19c37cb770976a9e4f8b1e54a962e6a7a546da4a03df47e6fa38ab4ce652cacd",
+        "frontend": {
+          "click_version": "0.1.0",
+          "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+          "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+          "extractor_version": "0.1.279",
+          "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+        },
+        "identity": "af50cf2bf0db5c798e737ff8535c3f8ac38f67d135726bca2accd78e93dd94bd",
+        "schema": 9,
+        "source": "2075aa01fceb87f685d065fbeb3d7d098194c44fb4d3f617588da5416ab2e290",
+        "source_files": {
+          "closure.rs": "c0f3cb99cd1aad149468676528f99f89be2625acb25a8bd401de6ddebfd5142d"
+        }
+      }
+    }
+  }
+}

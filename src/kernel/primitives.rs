@@ -1335,7 +1335,63 @@ impl std::hash::Hash for PointerBlock {
     }
 }
 
+/// The storage class a concrete block's name records, as its prefix: an
+/// automatic object of the current frames, a file-scope object with external
+/// or internal linkage, or storage a havoc introduced. Test a block with the
+/// `is_*_block` methods below, never by spelling a prefix at the use site.
+pub(crate) const LOCAL_BLOCK_PREFIX: &str = "local:";
+pub(crate) const GLOBAL_BLOCK_PREFIX: &str = "global:";
+pub(crate) const STATIC_BLOCK_PREFIX: &str = "static:";
+pub(crate) const HAVOC_BLOCK_PREFIX: &str = "havoc:";
+pub(crate) const CALL_HAVOC_BLOCK_PREFIX: &str = "call-havoc:";
+
 impl PointerBlock {
+    /// Whether a concrete block name records automatic storage.
+    pub(crate) fn is_local_name(name: &str) -> bool {
+        name.starts_with(LOCAL_BLOCK_PREFIX)
+    }
+
+    /// Whether a concrete block name records a file-scope object with
+    /// external linkage.
+    pub(crate) fn is_global_name(name: &str) -> bool {
+        name.starts_with(GLOBAL_BLOCK_PREFIX)
+    }
+
+    /// Whether a concrete block name records a `static` object.
+    pub(crate) fn is_static_name(name: &str) -> bool {
+        name.starts_with(STATIC_BLOCK_PREFIX)
+    }
+
+    /// Automatic storage: a local, parameter, frame or lifetime object.
+    pub(crate) fn is_local_block(&self) -> bool {
+        self.starts_with(LOCAL_BLOCK_PREFIX)
+    }
+
+    /// A file-scope object with external linkage.
+    pub(crate) fn is_global_block(&self) -> bool {
+        self.starts_with(GLOBAL_BLOCK_PREFIX)
+    }
+
+    /// A file-scope or function-scope `static` object.
+    pub(crate) fn is_static_block(&self) -> bool {
+        self.starts_with(STATIC_BLOCK_PREFIX)
+    }
+
+    /// Static storage of either linkage.
+    pub(crate) fn is_static_storage_block(&self) -> bool {
+        self.is_global_block() || self.is_static_block()
+    }
+
+    /// Storage a loop or statement havoc introduced.
+    pub(crate) fn is_havoc_block(&self) -> bool {
+        self.starts_with(HAVOC_BLOCK_PREFIX)
+    }
+
+    /// Storage a havoc at a call introduced.
+    pub(crate) fn is_call_havoc_block(&self) -> bool {
+        self.starts_with(CALL_HAVOC_BLOCK_PREFIX)
+    }
+
     pub(crate) fn is_function(&self) -> bool {
         matches!(self, Self::Function(_) | Self::FunctionSymbolic(_))
     }
@@ -1429,7 +1485,7 @@ impl PointerBlock {
         // (`ExternalArgument`) existed before the call and cannot be one of
         // them.
         let local_versus_argument = |left: &Self, right: &Self| {
-            left.starts_with("local:")
+            left.is_local_block()
                 && matches!(right, Self::ExternalArgument | Self::ExternalObject(_))
         };
         self != other
@@ -3966,6 +4022,10 @@ pub struct CCompositeResourceDefinition {
     pub(super) fact_source_indices: Vec<usize>,
     /// Source spellings are diagnostic metadata. They never justify a fact.
     pub(super) fact_source_spellings: Vec<String>,
+    /// A field-bearing abstract family: its instances carry fields, but its
+    /// body is empty and no proof step folds, unfolds, or observes one. Only
+    /// a trusted contract produces or consumes an instance.
+    pub(super) sealed: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -4108,6 +4168,11 @@ pub struct CExecutionEnvironment {
     /// the step, and one caller instance per instance binder the callee
     /// declares. Binding is a lookup per entry; nothing is searched for.
     pub(crate) selected_call_binders: Option<std::sync::Arc<CCallBinderTransport>>,
+    /// A proof-local choice of the instances that give one ordinary C call's
+    /// contract value parameters their values: the callee, and the resource
+    /// terms the proof's call map names. A parameter whose clause no named
+    /// term matches is taken from the one held instance its clause selects.
+    pub(crate) selected_call_value_arguments: Option<std::sync::Arc<(String, Vec<CResourceFact>)>>,
     pub(super) functions: std::sync::Arc<BTreeMap<String, CFunction>>,
     pub(super) function_contracts: std::sync::Arc<BTreeMap<String, CFunctionContract>>,
     pub(super) external_function_rules: std::sync::Arc<BTreeMap<String, CExternalFunctionRule>>,
@@ -4156,6 +4221,10 @@ impl std::fmt::Debug for CExecutionEnvironment {
                 &self.selected_call_resource_arguments,
             )
             .field("selected_call_binders", &self.selected_call_binders)
+            .field(
+                "selected_call_value_arguments",
+                &self.selected_call_value_arguments,
+            )
             .field("functions", &self.functions)
             .field("function_contracts", &self.function_contracts)
             .field("external_function_rules", &self.external_function_rules)
@@ -4182,6 +4251,7 @@ impl PartialEq for CExecutionEnvironment {
         self.selected_call_contract == other.selected_call_contract
             && self.selected_call_resource_arguments == other.selected_call_resource_arguments
             && self.selected_call_binders == other.selected_call_binders
+            && self.selected_call_value_arguments == other.selected_call_value_arguments
             && self.functions == other.functions
             && self.function_contracts == other.function_contracts
             && self.external_function_rules == other.external_function_rules
@@ -4254,6 +4324,7 @@ impl<'a> CExecutionContext<'a> {
     }
 
     /// Runs callee bodies and verifies loops.
+    #[cfg(test)]
     pub(crate) fn execute_bodies(environment: &'a CExecutionEnvironment) -> Self {
         Self::new(environment, CExecutionSemantics::EXECUTE_BODIES)
     }
@@ -4869,6 +4940,12 @@ pub enum CRuntimeError {
     UnsupportedOpaqueFunctionContract(String),
     AbstractFunctionPointerCall(String),
     FunctionContract(String),
+    /// A resource clause's value could not be evaluated for want of a value
+    /// it reads: a cell, field or argument the state does not yet hold.
+    /// Another clause's authority may supply it, so a contract's resource
+    /// evaluator retries the clause after the others. Otherwise it is a
+    /// [`Self::FunctionContract`] refusal and is reported as one.
+    UnsuppliedResourceValue(String),
     /// Candidate loan recovery refused while these exact checked path
     /// obligations remain. Retained for diagnostics, never admitted as facts.
     PendingCallObligations(Arc<[ProofObligation]>),
@@ -5092,6 +5169,17 @@ impl CRuntimeError {
     /// parameter names are at hand, so it names no pointer: the kernel's
     /// spelling of an address is lowering state, not anything the reader
     /// wrote. The surface describers spell pointers through the parameters.
+    /// The message of a function-contract refusal, including one whose
+    /// resource value another clause may still supply.
+    pub fn function_contract_message(&self) -> Option<&str> {
+        match self {
+            Self::FunctionContract(message) | Self::UnsuppliedResourceValue(message) => {
+                Some(message)
+            }
+            _ => None,
+        }
+    }
+
     pub fn kernel_summary(&self) -> String {
         match self {
             CRuntimeError::LoadTypeMismatch {
@@ -7454,6 +7542,13 @@ pub(super) struct ResourceContextIndex {
     /// compares a range only with the ranges these keys select
     /// (`owned_validity_candidates`).
     pub(super) owned_memory_by_root: PersistentMap<MemoryBaseRoot, ResourceEntryIds>,
+    /// Fixed footprints at one unregistered scalar base, indexed by that
+    /// variable independently of its scale. Other footprints remain in the
+    /// open bucket: they may resolve through memory or symbolic endpoints.
+    pub(super) owned_memory_by_base_variable:
+        PersistentMap<(PointerBlock, Variable), ResourceEntryIds>,
+    pub(super) owned_memory_open_bases: PersistentMap<PointerBlock, ResourceEntryIds>,
+    pub(super) owned_non_memory_entries: ResourceEntryIds,
     /// Owned memory ranges with a first element, keyed by that element's
     /// offset (the range's anchor). Two distinct owned members of one block
     /// have different anchors, which a pointer comparison asks by key
@@ -9480,6 +9575,7 @@ impl Proposition {
     }
 
     /// The parent and the child range of a containment of a memory resource.
+    #[cfg(test)]
     pub(crate) fn memory_containment(&self) -> Option<(&CResource, &CMemoryRange)> {
         match self {
             Self::CResourceContains { parent, child } => match &**child {

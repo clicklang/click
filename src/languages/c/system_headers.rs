@@ -46,12 +46,14 @@ pub(crate) fn modeled_header_names(target: CTarget) -> &'static [&'static str] {
             "inttypes.h",
             "limits.h",
             "pthread.h",
+            "stdarg.h",
             "stdatomic.h",
             "stdbool.h",
             "stddef.h",
             "stdint.h",
             "stdlib.h",
             "string.h",
+            "sys/types.h",
         ],
     }
 }
@@ -107,7 +109,6 @@ const HOSTED_UNMODELED: &[&str] = &[
     "signal.h",
     "spawn.h",
     "stdalign.h",
-    "stdarg.h",
     "stdio.h",
     "stdnoreturn.h",
     "strings.h",
@@ -124,7 +125,6 @@ const HOSTED_UNMODELED: &[&str] = &[
     "sys/statvfs.h",
     "sys/time.h",
     "sys/times.h",
-    "sys/types.h",
     "sys/uio.h",
     "sys/un.h",
     "sys/utsname.h",
@@ -246,6 +246,8 @@ fn modeled_text(name: &str, target: CTarget) -> String {
         }
         "string.h" => include_str!("modeled_string.h").to_string(),
         "stdlib.h" => include_str!("modeled_stdlib.h").to_string(),
+        "stdarg.h" => include_str!("modeled_stdarg.h").to_string(),
+        "sys/types.h" => include_str!("modeled_sys_types.h").to_string(),
         _ => unreachable!("modeled header `{name}` has no compiler-import text"),
     }
 }

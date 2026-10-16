@@ -9,7 +9,7 @@ independent checker), M2 (no written semantics) and M3 (`memcpy` reading under
 
 Items P1–P4, W4 and W5 waited on the SMT-backed `auto`
 ([design/smt-auto-stage1.md](../design/smt-auto-stage1.md)), which landed;
-P3 is done and the others are ruled below. Also depends on [simplify-step.md](simplify-step.md), which now holds the
+P3 and P4 are done and the others are ruled below. Also depends on [simplify-step.md](simplify-step.md), which now holds the
 critique that "simple" `step()` is not simple (formerly W3).
 
 On 2026-10-12 Click was reviewed the way an expert launch audience would
@@ -75,13 +75,15 @@ lines; `examples/modeled-binary-tree` proves the 12-line `tree_contains` in
 about 100. `examples/arena/arena_cells.click` is 5,537 lines for 279 lines
 of C.
 
-Proposed fix: items P2–P4 and P6, plus a published proof-to-code budget per
+Proposed fix: items P2 and P6, plus a published proof-to-code budget per
 example that the gate reports.
 
 Done when: the examples meet a stated budget, or the budget and the reason
 for exceeding it are published.
 
-Decision: open.
+Decision: fix (maintainer, 2026-10-15). The gate reports each example's
+proof-to-code ratio against the 20x budget, report-only at first; P2 and P6
+are the main levers for meeting it.
 
 ### P2. Spec arithmetic is machine arithmetic
 
@@ -98,24 +100,36 @@ semantics are written explicitly where a spec means them.
 
 Done when: decided, and if fixed, the examples shrink accordingly.
 
-Decision: open.
+Decision: fix (maintainer, 2026-10-15). Specification arithmetic is over
+`Integer` by default, with these rules:
 
-### P4. Facts cannot be named
+- In a specification, `+`, `-`, `*`, unary minus and the comparisons on
+  machine integers are Integer operations. A machine operand widens
+  implicitly, since that loses nothing; narrowing stays explicit
+  (`to_int32(z)` with its bound obligations).
+- Unsigned wraparound is written explicitly, with a wrapping operation or
+  `% 2^N`. The migration rewrites each unsigned specification operation into
+  that form, and a proof that no wrap occurs removes it.
+- Integer `/` and `%` truncate toward zero, as C and ACSL do.
+- Bitwise operators and shifts stay machine-typed; their results widen when
+  combined with Integer arithmetic.
+- `defined(e)` remains the way a specification states C evaluation.
+- One switch-over by scripted migration, not a per-file mode. A prototype
+  on `examples/bounded-pool` and one unsigned-heavy example comes first, to
+  measure the proof that disappears and check timing against the
+  [verification efficiency contract](../docs/internals/verification-efficiency.md).
 
-Today: "`have` takes no label, and a later step cites it by restating `P`"
-(`docs/reference/tactics/index.md`). Long propositions are restated in every
-`using { ... }` (`examples/rust-byte-sum/sum.click`), and `rewrite(` appears
-about 6,900 times across rbtree-erase and arena.
+Progress: a prototype on `examples/bounded-pool` written in Integer form
+shrinks the sidecar from 437 to 284 lines, and showed that built-in checks
+read only machine facts. Step 1 is done: an Integer comparison of exact
+machine observations also files its native comparison, so resource
+quantities and count definedness accept Integer premises. Next: the
+switch-over itself, then Integer-valued population counts.
 
-Proposed fix: `have h: P` and `using { h; }`. `auto` and a bare `apply` now
-select their premises themselves, but on 2026-10-15 the examples still cite
-facts by restating them: 3,066 `rewrite(` and 1,042 `using {`, many in
-committed expansions, which a name would also shorten.
-
-Done when: decided; if fixed, documented with an mdtest, and
-`mdtests/have_takes_no_label.md` updated.
-
-Decision: fix (maintainer, 2026-10-15): `have name: P`, cited by name.
+Afterwards, delete the `machine_integer` and `integer` lemmas Integer
+arithmetic makes unnecessary, complete the families that remain, and give
+those modules qualified names
+([standard-library.md](standard-library.md)).
 
 ### P5. Copy-paste across case files and sidecars
 

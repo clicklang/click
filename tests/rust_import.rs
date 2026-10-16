@@ -1,7 +1,7 @@
 use click::languages::rust::{load_import, refresh_import};
 use click::surface::C0VerificationSession;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -24,7 +24,20 @@ impl Project {
         fs::write(root.join("borrow.click"), SIDECAR).unwrap();
         Self { root }
     }
+    /// A single-file Rust project: `borrow.rs` as the one source of unit
+    /// `borrow`.
     fn new(source: &str) -> Self {
+        let p = Self::isolated(source);
+        fs::write(
+            p.project_file(),
+            r#"{"units": {"borrow": {"language": "rust", "sources": {"borrow.rs": {}}}}}"#,
+        )
+        .unwrap();
+        p
+    }
+    /// A sidecar with its own legacy import config, which the library-level
+    /// loaders still read.
+    fn legacy(source: &str) -> Self {
         let p = Self::isolated(source);
         let root = &p.root;
         let exporter =
@@ -34,6 +47,139 @@ impl Project {
     }
     fn config(&self) -> PathBuf {
         self.root.join("borrow.click.import.json")
+    }
+    /// Replaces the legacy import config with the equivalent project unit:
+    /// the config's source, and its crate description when it has one.
+    fn adopt_config(&self) {
+        let config: serde_json::Value =
+            serde_json::from_slice(&fs::read(self.config()).unwrap()).unwrap();
+        let source = config["source"].as_str().unwrap();
+        let mut unit = serde_json::json!({"language": "rust", "sources": {source: {}}});
+        let mut name = "borrow".to_string();
+        if let Some(crate_config) = config.get("crate") {
+            name = crate_config["name"].as_str().unwrap().to_string();
+            unit["crate"] = serde_json::json!({
+                "name": crate_config["name"],
+                "edition": crate_config["edition"],
+                "features": crate_config["features"],
+                "roots": crate_config["roots"],
+                "files": crate_config["files"],
+            });
+        }
+        fs::write(
+            self.project_file(),
+            serde_json::to_vec_pretty(&serde_json::json!({"units": {name: unit}})).unwrap(),
+        )
+        .unwrap();
+        fs::remove_file(self.config()).unwrap();
+        let _ = fs::remove_file(self.root.join("borrow.click.import.json.lock"));
+    }
+    /// The project file as JSON, and its one unit's name.
+    fn project_json(&self) -> (serde_json::Value, String) {
+        let project: serde_json::Value =
+            serde_json::from_slice(&fs::read(self.project_file()).unwrap()).unwrap();
+        let name = project["units"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .next()
+            .unwrap()
+            .clone();
+        (project, name)
+    }
+    /// A copy of a committed fixture directory: its project file, project
+    /// lock and prepared artifacts, sources and sidecars.
+    fn from_fixture(directory: &str) -> Self {
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "click-rust-fixture-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        copy_tree(
+            &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(directory),
+            &root,
+        );
+        Self { root }
+    }
+    fn project_file(&self) -> PathBuf {
+        self.root.join("click.project.json")
+    }
+    /// The prepared import `borrow.click` selects: through the project's
+    /// units when the project has a project file, otherwise through the
+    /// per-sidecar import config.
+    fn prepared(&self) -> Result<click::languages::rust::PreparedRustImport, String> {
+        if !self.project_file().exists() {
+            return load_import(&self.config());
+        }
+        let sidecar = self.root.join("borrow.click");
+        let source = fs::read_to_string(&sidecar).unwrap();
+        if source
+            .lines()
+            .filter_map(|line| line.strip_prefix("verifying \""))
+            .filter_map(|rest| rest.split('"').next())
+            .any(|path| self.lists(path))
+        {
+            return prepared_sidecar(&sidecar);
+        }
+        // A sidecar that names no unit source selects the project's one unit.
+        let (project, unit) = self.project_json();
+        let source = project["units"][&unit]["sources"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .next()
+            .unwrap()
+            .clone();
+        let path = fs::canonicalize(self.root.join(&source)).ok();
+        match click::project::Project::load(&self.project_file())?
+            .prepared_sources(&[(source, path)])?
+        {
+            Some(click::project::UnitSelection::Program(
+                click::languages::PreparedProgram::Rust(import),
+            )) => Ok(import),
+            _ => Err("expected a prepared Rust unit".into()),
+        }
+    }
+    /// Whether a unit of the project lists `source`.
+    fn lists(&self, source: &str) -> bool {
+        let (project, _) = self.project_json();
+        project["units"]
+            .as_object()
+            .unwrap()
+            .values()
+            .any(|unit| unit["sources"].get(source).is_some())
+    }
+    fn refresh(&self) -> Result<(), String> {
+        if !self.project_file().exists() {
+            return refresh_import(&self.config());
+        }
+        click::project::Project::load(&self.project_file())?.lock()
+    }
+    fn lock_file(&self) -> PathBuf {
+        if self.project_file().exists() {
+            self.root.join("click.project.lock.json")
+        } else {
+            self.root.join("borrow.click.import.json.lock")
+        }
+    }
+    /// The prepared artifact of the Rust source `source`.
+    fn artifact(&self, source: &str) -> PathBuf {
+        if !self.project_file().exists() {
+            return self.root.join(source.replace(".rs", ".ullbc"));
+        }
+        let project: serde_json::Value =
+            serde_json::from_slice(&fs::read(self.project_file()).unwrap()).unwrap();
+        let (unit, _) = project["units"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .find(|(_, unit)| unit["sources"].get(source).is_some())
+            .expect("a unit lists the source");
+        self.root
+            .join(".click")
+            .join(unit)
+            .join(format!("{source}.ullbc"))
     }
     fn cli(&self, args: &[&str]) -> std::process::Output {
         // `click audit` re-expands and re-verifies every site of a claim,
@@ -50,6 +196,29 @@ impl Project {
             .unwrap()
     }
 }
+/// The prepared Rust unit a sidecar selects through its project's units.
+fn prepared_sidecar(sidecar: &Path) -> Result<click::languages::rust::PreparedRustImport, String> {
+    let source = fs::read_to_string(sidecar).unwrap();
+    match click::cli::read_c_inputs(sidecar, &source)? {
+        click::cli::CInput::PreparedProgram(click::languages::PreparedProgram::Rust(import)) => {
+            Ok(import)
+        }
+        _ => Err("expected a prepared Rust unit".into()),
+    }
+}
+
+fn copy_tree(from: &std::path::Path, to: &std::path::Path) {
+    fs::create_dir_all(to).unwrap();
+    for entry in fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_tree(&entry.path(), &target);
+        } else {
+            fs::copy(entry.path(), target).unwrap();
+        }
+    }
+}
 impl Drop for Project {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.root);
@@ -59,61 +228,22 @@ impl Drop for Project {
 const CHARON_SOURCE: &str = include_str!("../design/charon-trial/trial.rs");
 const CHARON_SIDECAR: &str = include_str!("../design/charon-trial/trial.click");
 fn charon_project() -> Project {
-    let p = Project::new(CHARON_SOURCE);
-    fs::write(p.root.join("trial.rs"), CHARON_SOURCE).unwrap();
+    let p = Project::from_fixture("design/charon-trial");
     fs::write(p.root.join("borrow.click"), CHARON_SIDECAR).unwrap();
-    fs::write(
-        p.config(),
-        include_bytes!("../design/charon-trial/trial.click.import.json"),
-    )
-    .unwrap();
-    fs::write(
-        p.root.join("trial.ullbc"),
-        include_bytes!("../design/charon-trial/trial.ullbc"),
-    )
-    .unwrap();
-    fs::write(
-        p.config().with_file_name("borrow.click.import.json.lock"),
-        include_bytes!("../design/charon-trial/trial.click.import.json.lock"),
-    )
-    .unwrap();
     p
 }
-const CHARON_OWNED_ARRAY_SOURCE: &str =
-    include_str!("../design/charon-trial/owned-array-fields/owned.rs");
 const CHARON_OWNED_ARRAY_SIDECAR: &str =
     include_str!("../design/charon-trial/owned-array-fields/owned.click");
 fn charon_owned_array_project() -> Project {
-    let p = Project::new(CHARON_OWNED_ARRAY_SOURCE);
-    for (name, bytes) in [
-        ("owned.rs", CHARON_OWNED_ARRAY_SOURCE.as_bytes()),
-        ("borrow.click", CHARON_OWNED_ARRAY_SIDECAR.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!("../design/charon-trial/owned-array-fields/owned.click.import.json")
-                .as_slice(),
-        ),
-        (
-            "owned.ullbc",
-            include_bytes!("../design/charon-trial/owned-array-fields/owned.ullbc").as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!(
-                "../design/charon-trial/owned-array-fields/owned.click.import.json.lock"
-            )
-            .as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/owned-array-fields");
+    fs::write(p.root.join("borrow.click"), CHARON_OWNED_ARRAY_SIDECAR).unwrap();
     p
 }
 #[test]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn charon_owned_array_fields_check_moves_snapshots_boundaries_and_frames() {
     let p = charon_owned_array_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHARON_OWNED_ARRAY_SIDECAR, &prepared).unwrap();
     for invalid in [
         CHARON_OWNED_ARRAY_SIDECAR
@@ -148,63 +278,31 @@ fn charon_owned_array_fields_cli_tools_recheck_expanded_certificates() {
 #[ignore = "requires the separately built pinned Charon/compiler"]
 fn charon_owned_array_fields_live_refresh_and_compiler_rejections() {
     let p = charon_owned_array_project();
-    let mut config: serde_json::Value =
-        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
-    config["exporter"] = serde_json::json!(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
-    );
-    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-    refresh_import(&p.config()).unwrap();
-    C0VerificationSession::new_program_prepared(
-        CHARON_OWNED_ARRAY_SIDECAR,
-        load_import(&p.config()).unwrap(),
-    )
-    .unwrap();
+    p.refresh().unwrap();
+    C0VerificationSession::new_program_prepared(CHARON_OWNED_ARRAY_SIDECAR, p.prepared().unwrap())
+        .unwrap();
     fs::write(p.root.join("owned.rs"), "pub struct Packet { pub words: [u32;4] } pub fn nonuniform()->u32 { let packet=Packet { words:[1,2,3,4] }; let next=packet; next.words[0] }").unwrap();
-    refresh_import(&p.config()).unwrap();
-    C0VerificationSession::new_program_prepared("verifying \"owned.rs\"; fn nonuniform() -> u32 { ensures result == 1u32; } by { execute(); simp(); }", load_import(&p.config()).unwrap()).unwrap();
+    p.refresh().unwrap();
+    C0VerificationSession::new_program_prepared("verifying \"owned.rs\"; fn nonuniform() -> u32 { ensures result == 1u32; } by { execute(); simp(); }", p.prepared().unwrap()).unwrap();
     fs::write(p.root.join("owned.rs"), "pub struct Packet { pub words: [u32;4] } pub fn invalid()->u32 { let packet=Packet { words:[1;4] }; let next=packet; packet.words[0] + next.words[0] }").unwrap();
-    fs::remove_file(p.root.join("owned.ullbc")).unwrap();
-    let error = refresh_import(&p.config()).unwrap_err();
+    fs::remove_file(p.artifact("owned.rs")).unwrap();
+    let error = p.refresh().unwrap_err();
     assert!(!error.contains("panicked"), "{error}");
-    assert!(!p.root.join("owned.ullbc").exists());
+    assert!(!p.artifact("owned.rs").exists());
 }
 
-const CHARON_SNAPSHOT_SOURCE: &str =
-    include_str!("../design/charon-trial/array-snapshots/snapshots.rs");
 const CHARON_SNAPSHOT_SIDECAR: &str =
     include_str!("../design/charon-trial/array-snapshots/snapshots.click");
 fn charon_snapshot_project() -> Project {
-    let p = Project::new(CHARON_SNAPSHOT_SOURCE);
-    for (name, bytes) in [
-        ("snapshots.rs", CHARON_SNAPSHOT_SOURCE.as_bytes()),
-        ("borrow.click", CHARON_SNAPSHOT_SIDECAR.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!("../design/charon-trial/array-snapshots/snapshots.click.import.json")
-                .as_slice(),
-        ),
-        (
-            "snapshots.ullbc",
-            include_bytes!("../design/charon-trial/array-snapshots/snapshots.ullbc").as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!(
-                "../design/charon-trial/array-snapshots/snapshots.click.import.json.lock"
-            )
-            .as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/array-snapshots");
+    fs::write(p.root.join("borrow.click"), CHARON_SNAPSHOT_SIDECAR).unwrap();
     p
 }
 #[test]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn charon_array_snapshots_check_computed_lanes_and_copy_independence() {
     let p = charon_snapshot_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHARON_SNAPSHOT_SIDECAR, &prepared).unwrap();
     for (before, after) in [
         ("ensures result == a;", "ensures result == 99u32;"),
@@ -238,58 +336,23 @@ fn charon_array_snapshots_cli_tools_recheck_expanded_certificates() {
 #[ignore = "requires the separately built pinned Charon/compiler"]
 fn charon_array_snapshots_live_refresh() {
     let p = charon_snapshot_project();
-    let mut config: serde_json::Value =
-        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
-    config["exporter"] = serde_json::json!(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
-    );
-    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-    refresh_import(&p.config()).unwrap();
-    C0VerificationSession::new_program_prepared(
-        CHARON_SNAPSHOT_SIDECAR,
-        load_import(&p.config()).unwrap(),
-    )
-    .unwrap();
+    p.refresh().unwrap();
+    C0VerificationSession::new_program_prepared(CHARON_SNAPSHOT_SIDECAR, p.prepared().unwrap())
+        .unwrap();
 }
 
-const CHARON_OPERATOR_SOURCE: &str =
-    include_str!("../design/charon-trial/assignment-operators/operators.rs");
 const CHARON_OPERATOR_SIDECAR: &str =
     include_str!("../design/charon-trial/assignment-operators/operators.click");
 fn charon_operator_project() -> Project {
-    let p = Project::new(CHARON_OPERATOR_SOURCE);
-    for (name, bytes) in [
-        ("operators.rs", CHARON_OPERATOR_SOURCE.as_bytes()),
-        ("borrow.click", CHARON_OPERATOR_SIDECAR.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!(
-                "../design/charon-trial/assignment-operators/operators.click.import.json"
-            )
-            .as_slice(),
-        ),
-        (
-            "operators.ullbc",
-            include_bytes!("../design/charon-trial/assignment-operators/operators.ullbc")
-                .as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!(
-                "../design/charon-trial/assignment-operators/operators.click.import.json.lock"
-            )
-            .as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/assignment-operators");
+    fs::write(p.root.join("borrow.click"), CHARON_OPERATOR_SIDECAR).unwrap();
     p
 }
 #[test]
 #[ignore = "nightly: 39 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_assignment_operators_check_lanes_panic_obligations_and_authority() {
     let p = charon_operator_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHARON_OPERATOR_SIDECAR, &prepared).unwrap();
     for (before, after) in [
         ("old(self.0[0]) * rhs", "old(self.0[0]) + rhs"),
@@ -317,32 +380,11 @@ fn charon_assignment_operators_check_lanes_panic_obligations_and_authority() {
     }
 }
 
-const CHARON_MULTIPLY_SOURCE: &str =
-    include_str!("../design/charon-trial/symbolic-multiply/probe.rs");
 const CHARON_MULTIPLY_SIDECAR: &str =
     include_str!("../design/charon-trial/symbolic-multiply/probe.click");
 fn charon_multiply_project() -> Project {
-    let p = Project::new(CHARON_MULTIPLY_SOURCE);
-    for (name, bytes) in [
-        ("probe.rs", CHARON_MULTIPLY_SOURCE.as_bytes()),
-        ("borrow.click", CHARON_MULTIPLY_SIDECAR.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!("../design/charon-trial/symbolic-multiply/probe.click.import.json")
-                .as_slice(),
-        ),
-        (
-            "probe.ullbc",
-            include_bytes!("../design/charon-trial/symbolic-multiply/probe.ullbc").as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!("../design/charon-trial/symbolic-multiply/probe.click.import.json.lock")
-                .as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/symbolic-multiply");
+    fs::write(p.root.join("borrow.click"), CHARON_MULTIPLY_SIDECAR).unwrap();
     p
 }
 
@@ -350,7 +392,7 @@ fn charon_multiply_project() -> Project {
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn charon_symbolic_multiply_checks_general_safety_and_full_width_boundaries() {
     let p = charon_multiply_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHARON_MULTIPLY_SIDECAR, &prepared).unwrap();
     let premise = "requires rhs == 0u32 or x <= 4294967295u32 / rhs;";
     for requirements in [
@@ -412,18 +454,9 @@ fn charon_assignment_operators_cli_tools_recheck_expanded_certificates() {
 #[ignore = "requires the separately built pinned Charon/compiler"]
 fn charon_assignment_operators_live_refresh_and_source_semantics() {
     let p = charon_operator_project();
-    let mut config: serde_json::Value =
-        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
-    config["exporter"] = serde_json::json!(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
-    );
-    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-    refresh_import(&p.config()).unwrap();
-    C0VerificationSession::new_program_prepared(
-        CHARON_OPERATOR_SIDECAR,
-        load_import(&p.config()).unwrap(),
-    )
-    .unwrap();
+    p.refresh().unwrap();
+    C0VerificationSession::new_program_prepared(CHARON_OPERATOR_SIDECAR, p.prepared().unwrap())
+        .unwrap();
     for source in [
         "pub struct S(pub u32); impl core::ops::AddAssign<S> for S { fn add_assign(&mut self, rhs:S) { self.0 += rhs.0; } }",
         "pub struct S<T>(pub T); impl<T> core::ops::AddAssign<T> for S<T> { fn add_assign(&mut self, rhs:T) { self.0 = rhs; } }",
@@ -432,23 +465,17 @@ fn charon_assignment_operators_live_refresh_and_source_semantics() {
         "pub struct S(pub u32); impl core::ops::AddAssign<u32> for S { fn add_assign(&mut self, rhs:u32) { self.0 = rhs; } } pub fn S_add_assign_u32(x:&mut S, rhs:u32) { x.0 = rhs; }",
     ] {
         fs::write(p.root.join("operators.rs"), source).unwrap();
-        let old_artifact = fs::read(p.root.join("operators.ullbc")).unwrap();
-        let old_lock = fs::read(p.root.join("borrow.click.import.json.lock")).unwrap();
-        let error = refresh_import(&p.config()).unwrap_err();
+        let old_artifact = fs::read(p.artifact("operators.rs")).unwrap();
+        let old_lock = fs::read(p.lock_file()).unwrap();
+        let error = p.refresh().unwrap_err();
         assert!(!error.contains("panicked"), "{error}");
-        assert_eq!(
-            fs::read(p.root.join("operators.ullbc")).unwrap(),
-            old_artifact
-        );
-        assert_eq!(
-            fs::read(p.root.join("borrow.click.import.json.lock")).unwrap(),
-            old_lock
-        );
+        assert_eq!(fs::read(p.artifact("operators.rs")).unwrap(), old_artifact);
+        assert_eq!(fs::read(p.lock_file()).unwrap(), old_lock);
     }
     // Same trait and owner, different RHS identities. Neither body performs addition.
     fs::write(p.root.join("operators.rs"), "pub struct S(pub u32); impl core::ops::AddAssign<u32> for S { fn add_assign(&mut self, rhs:u32) { self.0 = rhs; } } impl core::ops::AddAssign<&S> for S { fn add_assign(&mut self, rhs:&S) { self.0 = rhs.0; } } pub fn scalar(x:&mut S, rhs:u32) { *x += rhs; } pub fn borrowed(x:&mut S, rhs:&S) { *x += rhs; }").unwrap();
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     let sidecar = r#"verifying "operators.rs";
 impl AddAssign<u32> for S { fn add_assign(&mut self, rhs: u32) { owns self.0; ensures self.0 == rhs; } by { execute(); simp(); } }
 impl AddAssign<&S> for S { fn add_assign(&mut self, rhs: &S) { requires separate(memory(self.0), memory(rhs.0)); views rhs.0; owns self.0; ensures self.0 == old(rhs.0); ensures rhs.0 == old(rhs.0); } by { execute(); simp(); } }
@@ -463,41 +490,18 @@ fn borrowed(x: &mut S, rhs: &S) { requires separate(memory(x.0), memory(rhs.0));
     assert!(C0VerificationSession::new_program_prepared(&false_math, &prepared).is_err());
 }
 
-const CHARON_ITERATION_SOURCE: &str =
-    include_str!("../design/charon-trial/array-iteration/iteration.rs");
 const CHARON_ITERATION_SIDECAR: &str =
     include_str!("../design/charon-trial/array-iteration/iteration.click");
 fn charon_iteration_project() -> Project {
-    let p = Project::new(CHARON_ITERATION_SOURCE);
-    for (name, bytes) in [
-        ("iteration.rs", CHARON_ITERATION_SOURCE.as_bytes()),
-        ("borrow.click", CHARON_ITERATION_SIDECAR.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!("../design/charon-trial/array-iteration/iteration.click.import.json")
-                .as_slice(),
-        ),
-        (
-            "iteration.ullbc",
-            include_bytes!("../design/charon-trial/array-iteration/iteration.ullbc").as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!(
-                "../design/charon-trial/array-iteration/iteration.click.import.json.lock"
-            )
-            .as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/array-iteration");
+    fs::write(p.root.join("borrow.click"), CHARON_ITERATION_SIDECAR).unwrap();
     p
 }
 #[test]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn charon_shared_iteration_checks_order_moves_empty_arrays_and_read_authority() {
     let p = charon_iteration_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHARON_ITERATION_SIDECAR, &prepared).unwrap();
     for (before, after) in [
         ("ensures result == 4u32;", "ensures result == 3u32;"),
@@ -539,18 +543,9 @@ fn charon_shared_iteration_cli_tools_recheck_expanded_certificates() {
 #[ignore = "requires the separately built pinned Charon/compiler"]
 fn charon_shared_iteration_live_refresh_and_rejected_protocols() {
     let p = charon_iteration_project();
-    let mut config: serde_json::Value =
-        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
-    config["exporter"] = serde_json::json!(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
-    );
-    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-    refresh_import(&p.config()).unwrap();
-    C0VerificationSession::new_program_prepared(
-        CHARON_ITERATION_SIDECAR,
-        load_import(&p.config()).unwrap(),
-    )
-    .unwrap();
+    p.refresh().unwrap();
+    C0VerificationSession::new_program_prepared(CHARON_ITERATION_SIDECAR, p.prepared().unwrap())
+        .unwrap();
     for source in [
         "pub fn bad(words: &mut [u32;4]) { for word in words.iter_mut() { *word = 0; } }",
         "pub fn bad(words: [u32;4])->u32 { let mut x=0; for word in words { x ^= word; } x }",
@@ -558,18 +553,12 @@ fn charon_shared_iteration_live_refresh_and_rejected_protocols() {
         "pub fn bad(words: &[u32;4]) { for word in words { *word = 0; } }",
     ] {
         fs::write(p.root.join("iteration.rs"), source).unwrap();
-        let old_artifact = fs::read(p.root.join("iteration.ullbc")).unwrap();
-        let old_lock = fs::read(p.root.join("borrow.click.import.json.lock")).unwrap();
-        let error = refresh_import(&p.config()).unwrap_err();
+        let old_artifact = fs::read(p.artifact("iteration.rs")).unwrap();
+        let old_lock = fs::read(p.lock_file()).unwrap();
+        let error = p.refresh().unwrap_err();
         assert!(!error.contains("panicked"), "{error}");
-        assert_eq!(
-            fs::read(p.root.join("iteration.ullbc")).unwrap(),
-            old_artifact
-        );
-        assert_eq!(
-            fs::read(p.root.join("borrow.click.import.json.lock")).unwrap(),
-            old_lock
-        );
+        assert_eq!(fs::read(p.artifact("iteration.rs")).unwrap(), old_artifact);
+        assert_eq!(fs::read(p.lock_file()).unwrap(), old_lock);
     }
 }
 
@@ -577,33 +566,14 @@ const CHARON_FIELDS_SOURCE: &str = include_str!("../design/charon-trial/array-fi
 const CHARON_FIELDS_SIDECAR: &str =
     include_str!("../design/charon-trial/array-fields/fields.click");
 fn charon_fields_project() -> Project {
-    let p = Project::new(CHARON_FIELDS_SOURCE);
-    for (name, bytes) in [
-        ("fields.rs", CHARON_FIELDS_SOURCE.as_bytes()),
-        ("borrow.click", CHARON_FIELDS_SIDECAR.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!("../design/charon-trial/array-fields/fields.click.import.json")
-                .as_slice(),
-        ),
-        (
-            "fields.ullbc",
-            include_bytes!("../design/charon-trial/array-fields/fields.ullbc").as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!("../design/charon-trial/array-fields/fields.click.import.json.lock")
-                .as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/array-fields");
+    fs::write(p.root.join("borrow.click"), CHARON_FIELDS_SIDECAR).unwrap();
     p
 }
 #[test]
 fn charon_shared_reference_signature_mismatch_displays_constness() {
     let p = charon_fields_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     let missing_const = CHARON_FIELDS_SIDECAR.replacen("state: &Lanes", "state: &mut Lanes", 1);
     let error = match C0VerificationSession::new_program_prepared(&missing_const, &prepared) {
         Ok(_) => panic!("a Rust shared reference requires a const pointer"),
@@ -622,7 +592,7 @@ fn charon_shared_reference_signature_mismatch_displays_constness() {
 #[ignore = "nightly: 2.1s in the parallel gate"]
 fn charon_array_fields_check_bounds_authority_and_frames() {
     let p = charon_fields_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHARON_FIELDS_SIDECAR, &prepared).unwrap();
     for invalid in [
         CHARON_FIELDS_SIDECAR.replace("requires index < 4u64;", "requires index == 4u64;"),
@@ -663,30 +633,21 @@ fn charon_array_fields_cli_tools_recheck_borrowed_field_certificates() {
 #[ignore = "requires the separately built pinned Charon/compiler"]
 fn charon_array_fields_live_refresh_and_compiler_rejections() {
     let p = charon_fields_project();
-    let mut config: serde_json::Value =
-        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
-    config["exporter"] = serde_json::json!(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
-    );
-    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-    refresh_import(&p.config()).unwrap();
-    C0VerificationSession::new_program_prepared(
-        CHARON_FIELDS_SIDECAR,
-        load_import(&p.config()).unwrap(),
-    )
-    .unwrap();
+    p.refresh().unwrap();
+    C0VerificationSession::new_program_prepared(CHARON_FIELDS_SIDECAR, p.prepared().unwrap())
+        .unwrap();
     for source in [
         "pub struct A { pub values:[u16;4] } pub fn bad(x:&A)->u16 { x.values[0] }",
         "#[repr(C,packed)] pub struct A { pub values:[u32;4] } pub fn bad(x:&A)->u32 { x.values[0] }",
         "pub struct A { pub values:[u32;4] } pub fn bad(x:&A) { x.values[0]=1; }",
     ] {
-        fs::remove_file(p.root.join("fields.ullbc")).unwrap();
+        fs::remove_file(p.artifact("fields.rs")).unwrap();
         fs::write(p.root.join("fields.rs"), source).unwrap();
-        let error = refresh_import(&p.config()).unwrap_err();
+        let error = p.refresh().unwrap_err();
         assert!(!error.contains("panicked"), "{error}");
-        assert!(!p.root.join("fields.ullbc").exists());
+        assert!(!p.artifact("fields.rs").exists());
         fs::write(p.root.join("fields.rs"), CHARON_FIELDS_SOURCE).unwrap();
-        refresh_import(&p.config()).unwrap();
+        p.refresh().unwrap();
     }
 }
 
@@ -695,34 +656,15 @@ const CHARON_ARITHMETIC_SOURCE: &str =
 const CHARON_ARITHMETIC_SIDECAR: &str =
     include_str!("../design/charon-trial/arithmetic/arithmetic.click");
 fn charon_arithmetic_project() -> Project {
-    let p = Project::new(CHARON_ARITHMETIC_SOURCE);
-    for (name, bytes) in [
-        ("arithmetic.rs", CHARON_ARITHMETIC_SOURCE.as_bytes()),
-        ("borrow.click", CHARON_ARITHMETIC_SIDECAR.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!("../design/charon-trial/arithmetic/arithmetic.click.import.json")
-                .as_slice(),
-        ),
-        (
-            "arithmetic.ullbc",
-            include_bytes!("../design/charon-trial/arithmetic/arithmetic.ullbc").as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!("../design/charon-trial/arithmetic/arithmetic.click.import.json.lock")
-                .as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/arithmetic");
+    fs::write(p.root.join("borrow.click"), CHARON_ARITHMETIC_SIDECAR).unwrap();
     p
 }
 #[test]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn charon_checksum_arithmetic_checks_panic_bounds_and_full_width_values() {
     let p = charon_arithmetic_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHARON_ARITHMETIC_SIDECAR, &prepared).unwrap();
     for claim in [
         "fn reduce(value: u32) -> u32 { requires value == 4294967295u32; ensures result == 224u32; }",
@@ -788,73 +730,46 @@ fn charon_checksum_arithmetic_cli_tools_recheck_certificates() {
 #[ignore = "nightly: 4s in the parallel gate"]
 fn rust_and_charon_unsigned_shifts_preserve_full_width_counts() {
     let p = Project::new(CHARON_ARITHMETIC_SOURCE);
-    refresh_import(&p.config()).unwrap();
+    p.refresh().unwrap();
     let sidecar = CHARON_ARITHMETIC_SIDECAR.replace("arithmetic.rs", "borrow.rs");
-    C0VerificationSession::new_program_prepared(&sidecar, load_import(&p.config()).unwrap())
-        .unwrap();
+    C0VerificationSession::new_program_prepared(&sidecar, p.prepared().unwrap()).unwrap();
 }
 #[test]
 #[ignore = "requires the separately built pinned Charon/compiler"]
 fn charon_checksum_arithmetic_live_refresh_and_rejected_modes() {
     let p = charon_arithmetic_project();
-    let mut config: serde_json::Value =
-        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
-    config["exporter"] = serde_json::json!(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
-    );
-    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-    refresh_import(&p.config()).unwrap();
-    C0VerificationSession::new_program_prepared(
-        CHARON_ARITHMETIC_SIDECAR,
-        load_import(&p.config()).unwrap(),
-    )
-    .unwrap();
+    p.refresh().unwrap();
+    C0VerificationSession::new_program_prepared(CHARON_ARITHMETIC_SIDECAR, p.prepared().unwrap())
+        .unwrap();
     for source in [
         "pub fn bad(x:u32, count:u32)->u32 { x.wrapping_shl(count) }",
         "pub fn bad(x:u32, count:u32)->u32 { x.wrapping_shr(count) }",
         "pub fn bad(x:i32, count:u32)->i32 { x << count }",
         "pub fn bad(x:i32, divisor:i32)->i32 { x / divisor }",
     ] {
-        fs::remove_file(p.root.join("arithmetic.ullbc")).unwrap();
+        fs::remove_file(p.artifact("arithmetic.rs")).unwrap();
         fs::write(p.root.join("arithmetic.rs"), source).unwrap();
-        let error = refresh_import(&p.config()).unwrap_err();
-        assert!(error.contains("Charon trial does not support"), "{error}");
-        assert!(!p.root.join("arithmetic.ullbc").exists());
+        let error = p.refresh().unwrap_err();
+        assert!(error.contains("Rust frontend does not support"), "{error}");
+        assert!(!p.artifact("arithmetic.rs").exists());
+
         fs::write(p.root.join("arithmetic.rs"), CHARON_ARITHMETIC_SOURCE).unwrap();
-        refresh_import(&p.config()).unwrap();
+        p.refresh().unwrap();
     }
 }
 
 const CHARON_NESTED_SOURCE: &str = include_str!("../design/charon-trial/nested/nested.rs");
 const CHARON_NESTED_SIDECAR: &str = include_str!("../design/charon-trial/nested/nested.click");
 fn charon_nested_project() -> Project {
-    let p = Project::new(CHARON_NESTED_SOURCE);
-    for (name, bytes) in [
-        ("nested.rs", CHARON_NESTED_SOURCE.as_bytes()),
-        ("borrow.click", CHARON_NESTED_SIDECAR.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!("../design/charon-trial/nested/nested.click.import.json").as_slice(),
-        ),
-        (
-            "nested.ullbc",
-            include_bytes!("../design/charon-trial/nested/nested.ullbc").as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!("../design/charon-trial/nested/nested.click.import.json.lock")
-                .as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/nested");
+    fs::write(p.root.join("borrow.click"), CHARON_NESTED_SIDECAR).unwrap();
     p
 }
 #[test]
 #[ignore = "nightly: 14 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_nested_chunks_and_array_slices_check_bytes_bounds_and_claims() {
     let p = charon_nested_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHARON_NESTED_SIDECAR, &prepared).unwrap();
     for invalid in [
         CHARON_NESTED_SIDECAR.replace("ensures result == 8u64;", "ensures result == 7u64;"),
@@ -890,18 +805,9 @@ fn charon_nested_cli_tools_recheck_expanded_certificates() {
 #[ignore = "requires the separately built pinned Charon/compiler"]
 fn charon_nested_live_refresh_and_rejected_array_borrows() {
     let p = charon_nested_project();
-    let mut config: serde_json::Value =
-        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
-    config["exporter"] = serde_json::json!(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
-    );
-    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-    refresh_import(&p.config()).unwrap();
-    C0VerificationSession::new_program_prepared(
-        CHARON_NESTED_SIDECAR,
-        load_import(&p.config()).unwrap(),
-    )
-    .unwrap();
+    p.refresh().unwrap();
+    C0VerificationSession::new_program_prepared(CHARON_NESTED_SIDECAR, p.prepared().unwrap())
+        .unwrap();
     for (source, diagnostic) in [
         (
             "pub fn bad()->u8 { let mut bytes=[7u8;8]; let slice:&[u8]=&bytes; bytes[0]=9; slice[0] }",
@@ -913,53 +819,35 @@ fn charon_nested_live_refresh_and_rejected_array_borrows() {
         ),
         (
             "pub fn bad()->usize { let bytes=[7u16;8]; let slice:&[u16]=&bytes; slice.len() }",
-            "Charon trial does not support",
+            "Rust frontend does not support",
         ),
         (
             "pub fn bad(n:i32) { let mut i=0; while i<n { let mut j=0; while j<n { if j==2 { break; } j+=1; } i+=1; } }",
             "extra exit",
         ),
     ] {
-        fs::remove_file(p.root.join("nested.ullbc")).unwrap();
+        fs::remove_file(p.artifact("nested.rs")).unwrap();
         fs::write(p.root.join("nested.rs"), source).unwrap();
-        let error = refresh_import(&p.config()).unwrap_err();
+        let error = p.refresh().unwrap_err();
         assert!(error.contains(diagnostic), "{error}");
-        assert!(!p.root.join("nested.ullbc").exists());
+        assert!(!p.artifact("nested.rs").exists());
         fs::write(p.root.join("nested.rs"), CHARON_NESTED_SOURCE).unwrap();
-        refresh_import(&p.config()).unwrap();
+        p.refresh().unwrap();
     }
 }
 
 const CHARON_CHUNK_SOURCE: &str = include_str!("../design/charon-trial/chunks/chunks.rs");
 const CHARON_CHUNK_SIDECAR: &str = include_str!("../design/charon-trial/chunks/chunks.click");
 fn charon_chunk_project() -> Project {
-    let p = Project::new(CHARON_CHUNK_SOURCE);
-    for (name, bytes) in [
-        ("chunks.rs", CHARON_CHUNK_SOURCE.as_bytes()),
-        ("borrow.click", CHARON_CHUNK_SIDECAR.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!("../design/charon-trial/chunks/chunks.click.import.json").as_slice(),
-        ),
-        (
-            "chunks.ullbc",
-            include_bytes!("../design/charon-trial/chunks/chunks.ullbc").as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!("../design/charon-trial/chunks/chunks.click.import.json.lock")
-                .as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/chunks");
+    fs::write(p.root.join("borrow.click"), CHARON_CHUNK_SIDECAR).unwrap();
     p
 }
 #[test]
 #[ignore = "nightly: 12 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_chunks_check_boundaries_authority_and_false_claims() {
     let p = charon_chunk_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHARON_CHUNK_SIDECAR, &prepared).unwrap();
     for (length, size) in [
         (0u64, 4u64),
@@ -1031,18 +919,9 @@ fn charon_chunk_cli_tools_recheck_expanded_certificates() {
 #[ignore = "requires the separately built pinned Charon/compiler"]
 fn charon_chunks_live_refresh_and_rejected_protocols() {
     let p = charon_chunk_project();
-    let mut config: serde_json::Value =
-        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
-    config["exporter"] = serde_json::json!(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
-    );
-    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-    refresh_import(&p.config()).unwrap();
-    C0VerificationSession::new_program_prepared(
-        CHARON_CHUNK_SIDECAR,
-        load_import(&p.config()).unwrap(),
-    )
-    .unwrap();
+    p.refresh().unwrap();
+    C0VerificationSession::new_program_prepared(CHARON_CHUNK_SIDECAR, p.prepared().unwrap())
+        .unwrap();
     for (source, diagnostic) in [
         (
             "pub fn bad(x:&[u8]) { let chunks=x.chunks_exact(4); for chunk in chunks { chunk[0]=7; } }",
@@ -1054,53 +933,35 @@ fn charon_chunks_live_refresh_and_rejected_protocols() {
         ),
         (
             "pub fn bad(x:&[u16])->usize { x.chunks_exact(4).remainder().len() }",
-            "Charon trial does not support",
+            "Rust frontend does not support",
         ),
         (
             "pub fn bad(x:&[u8]) { for chunk in x.chunks_exact(4).rev() { let a=chunk[0]; } }",
-            "Charon trial does not support",
+            "Rust frontend does not support",
         ),
     ] {
-        fs::remove_file(p.root.join("chunks.ullbc")).unwrap();
+        fs::remove_file(p.artifact("chunks.rs")).unwrap();
         fs::write(p.root.join("chunks.rs"), source).unwrap();
-        let error = refresh_import(&p.config()).unwrap_err();
+        let error = p.refresh().unwrap_err();
         assert!(error.contains(diagnostic), "{error}");
-        assert!(!p.root.join("chunks.ullbc").exists());
+        assert!(!p.artifact("chunks.rs").exists());
         fs::write(p.root.join("chunks.rs"), CHARON_CHUNK_SOURCE).unwrap();
-        refresh_import(&p.config()).unwrap();
+        p.refresh().unwrap();
     }
 }
 
 const CHARON_SLICE_SOURCE: &str = include_str!("../design/charon-trial/slices/slices.rs");
 const CHARON_SLICE_SIDECAR: &str = include_str!("../design/charon-trial/slices/slices.click");
 fn charon_slice_project() -> Project {
-    let p = Project::new(CHARON_SLICE_SOURCE);
-    for (name, bytes) in [
-        ("slices.rs", CHARON_SLICE_SOURCE.as_bytes()),
-        ("borrow.click", CHARON_SLICE_SIDECAR.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!("../design/charon-trial/slices/slices.click.import.json").as_slice(),
-        ),
-        (
-            "slices.ullbc",
-            include_bytes!("../design/charon-trial/slices/slices.ullbc").as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!("../design/charon-trial/slices/slices.click.import.json.lock")
-                .as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/slices");
+    fs::write(p.root.join("borrow.click"), CHARON_SLICE_SIDECAR).unwrap();
     p
 }
 #[test]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn charon_slices_preserve_metadata_permissions_and_cleanup() {
     let p = charon_slice_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHARON_SLICE_SIDECAR, &prepared).unwrap();
     for invalid in [
         CHARON_SLICE_SIDECAR.replace("ensures result == bytes.len();", "ensures result == 0;"),
@@ -1195,18 +1056,9 @@ fn charon_slice_cli_tools_recheck_expanded_certificates() {
 #[ignore = "requires the separately built pinned Charon/compiler"]
 fn charon_slices_live_refresh_and_borrow_checking() {
     let p = charon_slice_project();
-    let mut config: serde_json::Value =
-        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
-    config["exporter"] = serde_json::json!(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
-    );
-    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-    refresh_import(&p.config()).unwrap();
-    C0VerificationSession::new_program_prepared(
-        CHARON_SLICE_SIDECAR,
-        load_import(&p.config()).unwrap(),
-    )
-    .unwrap();
+    p.refresh().unwrap();
+    C0VerificationSession::new_program_prepared(CHARON_SLICE_SIDECAR, p.prepared().unwrap())
+        .unwrap();
     for (source, diagnostic) in [
         ("pub fn bad(x:&[u8]) { x[0]=7; }", "E0594"),
         (
@@ -1218,13 +1070,13 @@ fn charon_slices_live_refresh_and_borrow_checking() {
             "slice elements outside shared scalar array iteration",
         ),
     ] {
-        fs::remove_file(p.root.join("slices.ullbc")).unwrap();
+        fs::remove_file(p.artifact("slices.rs")).unwrap();
         fs::write(p.root.join("slices.rs"), source).unwrap();
-        let error = refresh_import(&p.config()).unwrap_err();
+        let error = p.refresh().unwrap_err();
         assert!(error.contains(diagnostic), "{error}");
-        assert!(!p.root.join("slices.ullbc").exists());
+        assert!(!p.artifact("slices.rs").exists());
         fs::write(p.root.join("slices.rs"), CHARON_SLICE_SOURCE).unwrap();
-        refresh_import(&p.config()).unwrap();
+        p.refresh().unwrap();
     }
 }
 
@@ -1233,36 +1085,15 @@ const CHARON_ARRAY_SOURCE: &str =
 const CHARON_ARRAY_SIDECAR: &str =
     include_str!("../design/charon-trial/conversions-arrays/arrays.click");
 fn charon_array_project() -> Project {
-    let p = Project::new(CHARON_ARRAY_SOURCE);
-    for (name, bytes) in [
-        ("arrays.rs", CHARON_ARRAY_SOURCE.as_bytes()),
-        ("borrow.click", CHARON_ARRAY_SIDECAR.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!("../design/charon-trial/conversions-arrays/arrays.click.import.json")
-                .as_slice(),
-        ),
-        (
-            "arrays.ullbc",
-            include_bytes!("../design/charon-trial/conversions-arrays/arrays.ullbc").as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!(
-                "../design/charon-trial/conversions-arrays/arrays.click.import.json.lock"
-            )
-            .as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/conversions-arrays");
+    fs::write(p.root.join("borrow.click"), CHARON_ARRAY_SIDECAR).unwrap();
     p
 }
 #[test]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn charon_arrays_compose_with_resolved_conversion_and_drop() {
     let p = charon_array_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHARON_ARRAY_SIDECAR, &prepared).unwrap();
     for invalid in [
         CHARON_ARRAY_SIDECAR.replace("ensures result == x;", "ensures result == x + 1;"),
@@ -1303,18 +1134,9 @@ fn charon_array_cli_tools_recheck_expanded_certificates() {
 #[ignore = "requires the separately built pinned Charon/compiler"]
 fn charon_arrays_live_refresh_and_rejected_source_shapes() {
     let p = charon_array_project();
-    let mut config: serde_json::Value =
-        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
-    config["exporter"] = serde_json::json!(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
-    );
-    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-    refresh_import(&p.config()).unwrap();
-    C0VerificationSession::new_program_prepared(
-        CHARON_ARRAY_SIDECAR,
-        load_import(&p.config()).unwrap(),
-    )
-    .unwrap();
+    p.refresh().unwrap();
+    C0VerificationSession::new_program_prepared(CHARON_ARRAY_SIDECAR, p.prepared().unwrap())
+        .unwrap();
     for (source, diagnostic) in [
         ("pub fn bad(x:u32)->u8 { u8::from(x) }", "E0277"),
         (
@@ -1327,44 +1149,23 @@ fn charon_arrays_live_refresh_and_rejected_source_shapes() {
             "signed-word storage",
         ),
     ] {
-        fs::remove_file(p.root.join("arrays.ullbc")).unwrap();
+        fs::remove_file(p.artifact("arrays.rs")).unwrap();
         fs::write(p.root.join("arrays.rs"), source).unwrap();
-        let error = refresh_import(&p.config()).unwrap_err();
+        let error = p.refresh().unwrap_err();
         assert!(error.contains(diagnostic), "{error}");
-        assert!(!p.root.join("arrays.ullbc").exists());
+        assert!(!p.artifact("arrays.rs").exists());
         fs::write(p.root.join("arrays.rs"), CHARON_ARRAY_SOURCE).unwrap();
-        refresh_import(&p.config()).unwrap();
+        p.refresh().unwrap();
     }
 }
 
 const CHARON_LOOP_SOURCE: &str = include_str!("../design/charon-trial/borrowed-loop/loop.rs");
-const PLAIN_RECORD_LOOP_SOURCE: &str =
-    include_str!("../design/charon-trial/plain-record-loop/loop.rs");
 const PLAIN_RECORD_LOOP_PROOF: &str =
     include_str!("../design/charon-trial/plain-record-loop/loop.click");
 
 fn plain_record_loop_project() -> Project {
-    let p = Project::new(PLAIN_RECORD_LOOP_SOURCE);
-    for (name, bytes) in [
-        ("loop.rs", PLAIN_RECORD_LOOP_SOURCE.as_bytes()),
-        ("borrow.click", PLAIN_RECORD_LOOP_PROOF.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!("../design/charon-trial/plain-record-loop/loop.click.import.json")
-                .as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!("../design/charon-trial/plain-record-loop/loop.click.import.json.lock")
-                .as_slice(),
-        ),
-        (
-            "loop.ullbc",
-            include_bytes!("../design/charon-trial/plain-record-loop/loop.ullbc").as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/plain-record-loop");
+    fs::write(p.root.join("borrow.click"), PLAIN_RECORD_LOOP_PROOF).unwrap();
     p
 }
 
@@ -1372,7 +1173,7 @@ fn plain_record_loop_project() -> Project {
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn charon_plain_record_loop_proves_symbolic_iterations_and_rejects_false_claims() {
     let p = plain_record_loop_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(PLAIN_RECORD_LOOP_PROOF, &prepared).unwrap();
     for (before, after) in [
         ("ensures result == n;", "ensures result == n + 1;"),
@@ -1409,32 +1210,12 @@ fn charon_plain_record_loop_tools_recheck_expanded_certificate() {
     }
 }
 
-const CHUNK_VIEW_LOOP_SOURCE: &str = include_str!("../design/charon-trial/chunk-view-loop/loop.rs");
 const CHUNK_VIEW_LOOP_PROOF: &str =
     include_str!("../design/charon-trial/chunk-view-loop/loop.click");
 
 fn chunk_view_loop_project() -> Project {
-    let p = Project::isolated(CHUNK_VIEW_LOOP_SOURCE);
-    for (name, bytes) in [
-        ("loop.rs", CHUNK_VIEW_LOOP_SOURCE.as_bytes()),
-        ("borrow.click", CHUNK_VIEW_LOOP_PROOF.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!("../design/charon-trial/chunk-view-loop/loop.click.import.json")
-                .as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!("../design/charon-trial/chunk-view-loop/loop.click.import.json.lock")
-                .as_slice(),
-        ),
-        (
-            "loop.ullbc",
-            include_bytes!("../design/charon-trial/chunk-view-loop/loop.ullbc").as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/chunk-view-loop");
+    fs::write(p.root.join("borrow.click"), CHUNK_VIEW_LOOP_PROOF).unwrap();
     p
 }
 
@@ -1442,7 +1223,7 @@ fn chunk_view_loop_project() -> Project {
 #[ignore = "nightly: 4s in the parallel gate"]
 fn charon_chunk_view_loop_reborrows_shared_subslices_at_symbolic_heads() {
     let p = chunk_view_loop_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHUNK_VIEW_LOOP_PROOF, &prepared).unwrap();
     for (before, after) in [
         ("views bytes[0..16];", ""),
@@ -1481,31 +1262,11 @@ fn charon_chunk_view_loop_tools_recheck_expanded_certificate() {
     }
 }
 
-const CHUNK_LANE_SOURCE: &str = include_str!("../design/charon-trial/chunk-lane-results/quad.rs");
 const CHUNK_LANE_PROOF: &str = include_str!("../design/charon-trial/chunk-lane-results/quad.click");
 
 fn chunk_lane_project() -> Project {
-    let p = Project::isolated(CHUNK_LANE_SOURCE);
-    for (name, bytes) in [
-        ("quad.rs", CHUNK_LANE_SOURCE.as_bytes()),
-        ("borrow.click", CHUNK_LANE_PROOF.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!("../design/charon-trial/chunk-lane-results/quad.click.import.json")
-                .as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!("../design/charon-trial/chunk-lane-results/quad.click.import.json.lock")
-                .as_slice(),
-        ),
-        (
-            "quad.ullbc",
-            include_bytes!("../design/charon-trial/chunk-lane-results/quad.ullbc").as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/chunk-lane-results");
+    fs::write(p.root.join("borrow.click"), CHUNK_LANE_PROOF).unwrap();
     p
 }
 
@@ -1513,7 +1274,7 @@ fn chunk_lane_project() -> Project {
 #[ignore = "nightly: 6s in the parallel gate"]
 fn charon_chunk_lane_results_survive_local_stores_at_symbolic_heads() {
     let p = chunk_lane_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHUNK_LANE_PROOF, &prepared).unwrap();
     for (before, after) in [
         (
@@ -1566,32 +1327,12 @@ fn charon_chunk_lane_results_tools_recheck_expanded_certificate() {
     }
 }
 
-const LOOP_ARRAY_COPY_SOURCE: &str = include_str!("../design/charon-trial/loop-array-copy/quad.rs");
 const LOOP_ARRAY_COPY_PROOF: &str =
     include_str!("../design/charon-trial/loop-array-copy/quad.click");
 
 fn loop_array_copy_project() -> Project {
-    let p = Project::isolated(LOOP_ARRAY_COPY_SOURCE);
-    for (name, bytes) in [
-        ("quad.rs", LOOP_ARRAY_COPY_SOURCE.as_bytes()),
-        ("borrow.click", LOOP_ARRAY_COPY_PROOF.as_bytes()),
-        (
-            "borrow.click.import.json",
-            include_bytes!("../design/charon-trial/loop-array-copy/quad.click.import.json")
-                .as_slice(),
-        ),
-        (
-            "borrow.click.import.json.lock",
-            include_bytes!("../design/charon-trial/loop-array-copy/quad.click.import.json.lock")
-                .as_slice(),
-        ),
-        (
-            "quad.ullbc",
-            include_bytes!("../design/charon-trial/loop-array-copy/quad.ullbc").as_slice(),
-        ),
-    ] {
-        fs::write(p.root.join(name), bytes).unwrap();
-    }
+    let p = Project::from_fixture("design/charon-trial/loop-array-copy");
+    fs::write(p.root.join("borrow.click"), LOOP_ARRAY_COPY_PROOF).unwrap();
     p
 }
 
@@ -1599,7 +1340,7 @@ fn loop_array_copy_project() -> Project {
 #[ignore = "nightly: 8s in the parallel gate"]
 fn charon_loop_array_copy_survives_symbolic_heads() {
     let p = loop_array_copy_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(LOOP_ARRAY_COPY_PROOF, &prepared).unwrap();
     for (before, after) in [
         ("have array[1] == chunk[1]", "have array[1] == chunk[0]"),
@@ -1623,7 +1364,7 @@ fn charon_loop_array_copy_survives_symbolic_heads() {
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn charon_loop_array_copy_empty_input_never_reads_uninitialized_storage() {
     let p = loop_array_copy_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     let helper = LOOP_ARRAY_COPY_PROOF
         .split_once("fn quad::walk")
         .expect("the sidecar states `walk` after its helper")
@@ -1660,31 +1401,15 @@ fn charon_loop_array_copy_results_tools_recheck_expanded_certificate() {
 
 const CHARON_LOOP_SIDECAR: &str = include_str!("../design/charon-trial/borrowed-loop/loop.click");
 fn charon_loop_project() -> Project {
-    let p = Project::new(CHARON_LOOP_SOURCE);
-    fs::write(p.root.join("loop.rs"), CHARON_LOOP_SOURCE).unwrap();
+    let p = Project::from_fixture("design/charon-trial/borrowed-loop");
     fs::write(p.root.join("borrow.click"), CHARON_LOOP_SIDECAR).unwrap();
-    fs::write(
-        p.config(),
-        include_bytes!("../design/charon-trial/borrowed-loop/loop.click.import.json"),
-    )
-    .unwrap();
-    fs::write(
-        p.root.join("loop.ullbc"),
-        include_bytes!("../design/charon-trial/borrowed-loop/loop.ullbc"),
-    )
-    .unwrap();
-    fs::write(
-        p.config().with_file_name("borrow.click.import.json.lock"),
-        include_bytes!("../design/charon-trial/borrowed-loop/loop.click.import.json.lock"),
-    )
-    .unwrap();
     p
 }
 #[test]
 #[ignore = "nightly: 9s in the parallel gate"]
 fn charon_borrowed_loop_checks_restoration_bounds_and_ranking() {
     let p = charon_loop_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHARON_LOOP_SIDECAR, &prepared).unwrap();
     for n in [0, 1, 2147483647] {
         let concrete =
@@ -1734,14 +1459,8 @@ fn charon_borrowed_loop_cli_expands_checked_loop_certificate() {
 #[ignore = "requires the separately built pinned Charon/compiler"]
 fn charon_borrowed_loop_live_refresh_and_rejected_control_flow() {
     let p = charon_loop_project();
-    let mut config: serde_json::Value =
-        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
-    config["exporter"] = serde_json::json!(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
-    );
-    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHARON_LOOP_SIDECAR, &prepared).unwrap();
     for (source, diagnostic) in [
         (
@@ -1760,13 +1479,13 @@ fn charon_borrowed_loop_live_refresh_and_rejected_control_flow() {
             "pure scalar",
         ),
     ] {
-        fs::remove_file(p.root.join("loop.ullbc")).unwrap();
+        fs::remove_file(p.artifact("loop.rs")).unwrap();
         fs::write(p.root.join("loop.rs"), source).unwrap();
-        let error = refresh_import(&p.config()).unwrap_err();
+        let error = p.refresh().unwrap_err();
         assert!(error.contains(diagnostic), "{error}");
-        assert!(!p.root.join("loop.ullbc").exists());
+        assert!(!p.artifact("loop.rs").exists());
         fs::write(p.root.join("loop.rs"), CHARON_LOOP_SOURCE).unwrap();
-        refresh_import(&p.config()).unwrap();
+        p.refresh().unwrap();
     }
 }
 
@@ -1774,7 +1493,7 @@ fn charon_borrowed_loop_live_refresh_and_rejected_control_flow() {
 #[ignore = "nightly: 3s in the parallel gate"]
 fn charon_trial_checks_arithmetic_and_owned_cleanup_through_shared_engine() {
     let p = charon_project();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     assert!(
         prepared
             .export()
@@ -1823,33 +1542,30 @@ fn charon_trial_lock_rejects_source_and_profile_changes() {
     )
     .unwrap();
     assert!(
-        load_import(&p.config())
+        p.prepared()
             .unwrap_err()
-            .contains("lock differs")
+            .contains("differs from its import lock")
     );
     fs::write(p.root.join("trial.rs"), CHARON_SOURCE).unwrap();
-    let c = fs::read(p.config()).unwrap();
+    // Restating the default root changes the unit's description.
+    let project = fs::read_to_string(p.project_file()).unwrap();
     fs::write(
-        p.config(),
-        String::from_utf8(c)
-            .unwrap()
-            .replace("charon-trial", "other"),
+        p.project_file(),
+        project.replacen("\"language\"", "\"root\": \".\", \"language\"", 1),
     )
     .unwrap();
-    assert!(load_import(&p.config()).is_err());
+    assert!(
+        p.prepared()
+            .unwrap_err()
+            .contains("does not match its description")
+    );
 }
 #[test]
 #[ignore = "requires the separately built pinned Charon/compiler; run explicitly after scripts/build-charon.sh"]
 fn charon_trial_live_refresh_and_compiler_rejections() {
     let p = charon_project();
-    let mut config: serde_json::Value =
-        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
-    config["exporter"] = serde_json::json!(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
-    );
-    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHARON_SIDECAR, &prepared).unwrap();
     for (source, expected) in [
         (
@@ -1862,20 +1578,20 @@ fn charon_trial_live_refresh_and_compiler_rejections() {
         ),
         ("pub fn unsupported(x: u64) -> u64 { x }", "integer width"),
     ] {
-        fs::remove_file(p.root.join("trial.ullbc")).unwrap();
+        fs::remove_file(p.artifact("trial.rs")).unwrap();
         fs::write(p.root.join("trial.rs"), source).unwrap();
-        let error = refresh_import(&p.config()).unwrap_err();
+        let error = p.refresh().unwrap_err();
         assert!(error.contains(expected), "{error}");
-        assert!(!p.root.join("trial.ullbc").exists());
+        assert!(!p.artifact("trial.rs").exists());
         fs::write(p.root.join("trial.rs"), CHARON_SOURCE).unwrap();
-        refresh_import(&p.config()).unwrap();
+        p.refresh().unwrap();
     }
 }
 #[test]
 #[ignore = "nightly: 1.3s in the parallel gate; other gate tests reach the same code"]
 fn rust_typed_import_verifies_borrow_parent_reuse_and_field_frame() {
     let p = gate_fixtures::project("basic", SOURCE);
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     let (_, verified) = C0VerificationSession::new_program_prepared(SIDECAR, &prepared).unwrap();
     assert_eq!(verified.len(), 12);
     let false_claim = SIDECAR.replace("ensures result == 8;", "ensures result == 9;");
@@ -1886,22 +1602,18 @@ fn rust_lock_rejects_changed_source_and_artifact() {
     let p = gate_fixtures::project("basic", SOURCE);
     fs::write(p.root.join("borrow.rs"), format!("{SOURCE}\n// changed")).unwrap();
     assert!(
-        load_import(&p.config())
+        p.prepared()
             .unwrap_err()
-            .contains("lock differs")
+            .contains("differs from its import lock")
     );
     fs::write(p.root.join("borrow.rs"), SOURCE).unwrap();
-    fs::write(p.root.join("borrow.ullbc"), b"{}").unwrap();
-    assert!(
-        load_import(&p.config())
-            .unwrap_err()
-            .contains("lock differs")
-    );
+    fs::write(p.artifact("borrow.rs"), b"{}").unwrap();
+    assert!(p.prepared().unwrap_err().contains("lock differs"));
 }
 fn assert_native_boundary_proof(source: &str, sidecar: &str) {
     let p = Project::new(source);
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(sidecar, &prepared)
         .unwrap_or_else(|error| panic!("{source}: {}", error.message()));
     let false_claim = sidecar.replacen("ensures ", "ensures 0 == 1; ensures ", 1);
@@ -1949,9 +1661,9 @@ fn rust_compiler_and_subset_rejections_are_distinct() {
         ),
     ] {
         let p = Project::new(source);
-        let error = refresh_import(&p.config()).unwrap_err();
+        let error = p.refresh().unwrap_err();
         assert!(error.contains(diagnostic), "expected {diagnostic}: {error}");
-        assert!(!p.root.join("borrow.ullbc").exists());
+        assert!(!p.artifact("borrow.rs").exists());
     }
 }
 fn assert_cli(p: &Project, args: &[&str]) {
@@ -1974,7 +1686,7 @@ fn rust_ordinary_cli_locks_and_verifies() {
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn rust_cli_profile_and_audit_use_the_shared_engine() {
     let p = Project::new(SOURCE);
-    refresh_import(&p.config()).unwrap();
+    p.refresh().unwrap();
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
 }
@@ -1982,7 +1694,7 @@ fn rust_cli_profile_and_audit_use_the_shared_engine() {
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn rust_cli_expansion_reverifies_through_ordinary_entry() {
     let p = Project::new(SOURCE);
-    refresh_import(&p.config()).unwrap();
+    p.refresh().unwrap();
     assert_cli(&p, &["expand", "--claim", "update.contract", "--in-place"]);
     assert_cli(&p, &["verify"]);
 }
@@ -1991,8 +1703,8 @@ fn rust_cli_expansion_reverifies_through_ordinary_entry() {
 #[ignore = "nightly: 3s in the parallel gate"]
 fn rust_checked_arithmetic_requires_a_panic_freedom_bound() {
     let p = Project::new("pub fn increment(x:i32)->i32 { x + 1 }");
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     let claim = "verifying \"borrow.rs\"; fn increment(x: i32) -> i32 { ensures result == x + 1; } by { execute(); simp(); }";
     assert!(C0VerificationSession::new_program_prepared(claim, &prepared).is_err());
     let bounded = claim.replace("ensures result", "requires x < 2147483647; ensures result");
@@ -2003,8 +1715,8 @@ fn rust_checked_arithmetic_requires_a_panic_freedom_bound() {
 #[ignore = "nightly: 3s in the parallel gate"]
 fn rust_boolean_return_and_local_initialization_verify() {
     let p = Project::new("pub fn invert(x:bool)->bool { let answer = !x; answer }");
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     let claim = "verifying \"borrow.rs\"; fn invert(x: bool) -> bool { ensures result == (if x != 0 { 0 } else { 1 }); } by { if x == 0 { execute(); simp(); } else { execute(); simp(); } }";
     C0VerificationSession::new_program_prepared(claim, &prepared).unwrap();
 }
@@ -2021,8 +1733,8 @@ fn moves_project(source: &str) -> (Project, String) {
 #[ignore = "nightly: 5s in the parallel gate"]
 fn rust_moves_drop_effect_and_return_capture_verify() {
     let (p, sidecar) = moves_project(MOVE_SOURCE);
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     for wrong in [
         sidecar.replace("ensures *value == old(*value);", "ensures *value == 7;"),
@@ -2068,7 +1780,7 @@ fn rust_move_borrow_conflicts_and_partial_moves_fail_closed() {
         ),
     ] {
         let p = Project::new(source);
-        let error = refresh_import(&p.config()).unwrap_err();
+        let error = p.refresh().unwrap_err();
         assert!(error.contains(diagnostic), "{error}");
     }
 }
@@ -2076,7 +1788,7 @@ fn rust_move_borrow_conflicts_and_partial_moves_fail_closed() {
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn rust_move_drop_cli_proofs_expand_and_reverify() {
     let (p, _) = moves_project(MOVE_SOURCE);
-    refresh_import(&p.config()).unwrap();
+    p.refresh().unwrap();
     assert_cli(&p, &["expand", "--claim", "restore.contract", "--in-place"]);
     assert_cli(&p, &["verify"]);
 }
@@ -2089,8 +1801,8 @@ fn rust_conditional_move_and_explicit_drop_verify() {
         MOVE_SOURCE.split("    let moved = guard;").next().unwrap()
     );
     let (p, sidecar) = moves_project(&source);
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
 }
 
@@ -2105,8 +1817,8 @@ fn rust_owned_field_loan_recovery_verifies() {
     );
     let (p, _) = moves_project(&source);
     let sidecar = format!("{}fn cleanup(value: &mut i32) {{ owns *value; ensures *value == 42; }} by {{ execute(); simp(); }}", MOVE_SIDECAR.split("fn restore").next().unwrap()).replace("guard.rs", "borrow.rs");
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     assert!(
         C0VerificationSession::new_program_prepared(
@@ -2130,7 +1842,7 @@ fn rust_owned_field_loan_cli_expands_and_reverifies() {
         include_str!("../examples/rust-field-borrow/guard.click").replace("guard.rs", "borrow.rs"),
     )
     .unwrap();
-    refresh_import(&p.config()).unwrap();
+    p.refresh().unwrap();
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
     assert_cli(&p, &["expand", "--claim", "cleanup.contract", "--in-place"]);
@@ -2146,8 +1858,8 @@ fn rust_owned_field_parent_can_write_after_explicit_child_drop() {
     );
     let (p, _) = moves_project(&source);
     let sidecar = format!("{}fn cleanup(value: &mut i32) {{ owns *value; ensures *value == 43; }} by {{ execute(); simp(); }}", MOVE_SIDECAR.split("fn restore").next().unwrap()).replace("guard.rs", "borrow.rs");
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
 }
 
@@ -2166,8 +1878,8 @@ fn rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop(
     let p = Project::new(&source);
     let proof = "verifying \"borrow.rs\";\nfn set_seven(value: &mut i32) { owns *value; ensures *value == 8; } by { execute(); simp(); }\nfn update(value: &mut i32) { owns *value; ensures *value == 8; } by { execute(); simp(); }\nfn nested(value: &mut i32, neighbor: &mut i32) { owns *value; owns *neighbor; ensures *value == 8; ensures *neighbor == 9; } by { execute(); simp(); }\n";
     fs::write(p.root.join("borrow.click"), proof).unwrap();
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     // Source loan ending evidence is independent of the existing call receipts.
     // Locate the actual imported child borrow and its last store, not StorageDead.
     let helper = prepared
@@ -2280,8 +1992,8 @@ fn rust_owned_disjoint_mutable_fields_verify() {
     let source = "pub struct Pair {pub x:i32,pub y:i32} pub fn set(left:&mut i32,right:&mut i32) {*left=7;*right=9;} pub fn fields()->i32 {let mut pair=Pair{x:1,y:2}; let left=&mut pair.x; let right=&mut pair.y; set(left,right); if pair.y == 9 {pair.x} else {0}}";
     let p = Project::new(source);
     let sidecar = "verifying \"borrow.rs\"; fn set(left: &mut i32, right: &mut i32) {owns *left;owns *right;ensures *left==7;ensures *right==9;} by {execute();simp();} fn fields() -> i32 {ensures result==7;} by {execute();simp();}";
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     assert!(
         C0VerificationSession::new_program_prepared(
@@ -2311,7 +2023,7 @@ fn rust_owned_field_conflicting_parent_access_is_rejected_by_compiler() {
             "{prefix}pub fn bad(value:&mut i32) {{ let mut first=Guard{{slot:value,saved:1}}; let second=Guard{{slot:&mut first.saved,saved:42}}; {suffix} }}"
         );
         let p = Project::new(&source);
-        let error = refresh_import(&p.config()).unwrap_err();
+        let error = p.refresh().unwrap_err();
         assert!(error.contains(diagnostic), "{error}");
         assert_eq!(
             fs::read_to_string(p.root.join("borrow.rs")).unwrap(),
@@ -2325,8 +2037,8 @@ fn rust_owned_field_conflicting_parent_access_is_rejected_by_compiler() {
 fn rust_moves_plain_struct_and_reads_destination() {
     let p =
         Project::new("pub struct S {pub x:i32} pub fn plain()->i32 {let a=S{x:17}; let b=a; b.x}");
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(
         "verifying \"borrow.rs\"; fn plain() -> i32 {ensures result == 17;} by {execute(); simp();}",
         &prepared,
@@ -2344,8 +2056,8 @@ fn rust_two_guards_clean_up_in_reverse_construction_order() {
     );
     let (p, _) = moves_project(&source);
     let sidecar = format!("{}fn cleanup(left: &mut i32, right: &mut i32) {{ owns *left; owns *right; ensures *left == 17; ensures *right == 42; }} by {{ execute(); simp(); }}", MOVE_SIDECAR.split("fn restore").next().unwrap()).replace("guard.rs", "borrow.rs");
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     let mir = prepared
         .export()
@@ -2390,8 +2102,8 @@ fn rust_unsigned_arithmetic_and_expansion_verify() {
     let p = Project::new(UNSIGNED_SOURCE);
     let sidecar = UNSIGNED_SIDECAR.replace("arithmetic.rs", "borrow.rs");
     fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     let (_, verified) = C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     assert_eq!(verified.len(), 9);
     assert!(
@@ -2422,8 +2134,8 @@ fn rust_sidecar_impl_blocks_verify() {
     let p = Project::new(FIELD_BORROW_GUARD_SOURCE);
     let sidecar = include_str!("fixtures/rust-verification/impl_blocks.click");
     fs::write(p.root.join("borrow.click"), sidecar).unwrap();
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     assert!(
         C0VerificationSession::new_program_prepared(
@@ -2455,8 +2167,8 @@ fn rust_sidecar_slices_in_rust_syntax_verify() {
     let p = Project::new(SLICES_SOURCE);
     let sidecar = include_str!("fixtures/rust-verification/slices.click");
     fs::write(p.root.join("borrow.click"), sidecar).unwrap();
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     // A read past the stated length is still refused.
     assert!(
@@ -2485,8 +2197,8 @@ fn rust_sidecar_references_in_rust_syntax_verify() {
     let p = Project::new(SOURCE);
     let sidecar = include_str!("fixtures/rust-verification/references.click");
     fs::write(p.root.join("borrow.click"), sidecar).unwrap();
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     let (_, verified) = C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     assert_eq!(verified.len(), 12);
     assert!(
@@ -2515,8 +2227,8 @@ fn rust_sidecar_signatures_in_rust_syntax_verify() {
     let p = Project::new(UNSIGNED_SOURCE);
     let sidecar = include_str!("fixtures/rust-verification/fn_signatures.click");
     fs::write(p.root.join("borrow.click"), sidecar).unwrap();
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     let (_, verified) = C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     assert_eq!(verified.len(), 3);
     // The signature is still checked against the imported function.
@@ -2553,8 +2265,8 @@ fn rust_unsigned_panic_paths_are_rejected() {
         ("u8", "1 >> x", "x == 8"),
     ] {
         let p = Project::new(&format!("pub fn bad(x:{ty})->{ty} {{ {expression} }}"));
-        refresh_import(&p.config()).unwrap();
-        let prepared = load_import(&p.config()).unwrap();
+        p.refresh().unwrap();
+        let prepared = p.prepared().unwrap();
         let sidecar = format!(
             "verifying \"borrow.rs\"; fn bad(x: {ty}) -> {ty} {{ requires {precondition}; ensures result == result; }} by {{ execute(); simp(); }}"
         );
@@ -2578,8 +2290,8 @@ fn rust_unsigned_nested_checks_and_short_circuit_preserve_panics() {
         let p = Project::new(&format!(
             "pub fn check(x:u32)->{rust_type} {{ {expression} }}"
         ));
-        refresh_import(&p.config()).unwrap();
-        let prepared = load_import(&p.config()).unwrap();
+        p.refresh().unwrap();
+        let prepared = p.prepared().unwrap();
         let sidecar = format!(
             "verifying \"borrow.rs\"; fn check(x: u32) -> {rust_type} {{ requires x == 4294967295u32; ensures result == result; }} by {{ execute(); simp(); }}"
         );
@@ -2594,8 +2306,8 @@ fn rust_unsigned_casts_bitwise_and_assignments_verify() {
     let p = Project::new(
         "pub fn bits(mut x:u8)->u8 { x ^= 255; x &= 254; x |= 1; !x } pub fn narrow(x:i32)->u8 { x as u8 } pub fn signed(x:u32)->i32 { x as i32 } pub fn shift(x:u32, n:i32)->u32 { x >> n } pub fn byte_count(x:u32, n:u8)->u32 { x << n }",
     );
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     let sidecar = "verifying \"borrow.rs\";
 fn bits(x: u8) -> u8 { requires x == 128; ensures result == 128; } by { execute(); simp(); }
 fn narrow(x: i32) -> u8 { requires x == -1; ensures result == 255; } by { execute(); simp(); }
@@ -2618,8 +2330,8 @@ fn rust_unsigned_references_and_byte_field_layout_verify() {
     let p = Project::new(
         "pub struct Pair { pub byte:u8, pub word:u32 } pub fn write(p:&mut u8, q:&mut u32) { *p = 255; *q = 4294967295; } pub fn field(p:&mut Pair) { p.byte = 7; }",
     );
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     let sidecar = "verifying \"borrow.rs\";
 fn write(p: &mut u8, q: &mut u32) { owns *p; owns *q; ensures *p == 255; ensures *q == 4294967295u32; } by { execute(); simp(); }
 fn field(p: &mut Pair) { owns p.byte; owns p.word; ensures p.byte == 7; ensures p.word == old(p.word); } by { execute(); simp(); }";
@@ -2636,7 +2348,7 @@ fn rust_split_at_metadata_and_reads_verify() {
     let sidecar =
         include_str!("../examples/rust-split-at/split.click").replace("split.rs", "borrow.rs");
     fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     assert!(prepared.export().functions.iter().flat_map(|f| f.mir.as_ref().unwrap().blocks.iter()).flat_map(|b| &b.statements).any(|s|
         matches!(s, click::languages::rust::schema::MirStatement::SliceSplit { left, right, .. } if left != right)));
@@ -2662,8 +2374,8 @@ fn rust_split_at_endpoints_and_full_width_lengths_verify() {
     let p = Project::new(
         "pub fn length(bytes: &[u8], mid: usize) -> usize { let (left, right) = bytes.split_at(mid); right.len() }",
     );
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     for (length, midpoint) in [
         (0u64, 0u64),
         (4, 0),
@@ -2686,8 +2398,8 @@ fn rust_split_at_checks_its_bound_at_full_width() {
     let p = Project::new(
         "pub fn length(bytes: &[u8], mid: usize) -> usize { let (left, right) = bytes.split_at(mid); right.len() }",
     );
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     let sidecar = |length: u64, midpoint: u64| {
         format!(
             "verifying \"borrow.rs\"; fn length(bytes: &[u8], mid: usize) -> usize {{ requires bytes.len() == {length}u64; requires mid == {midpoint}u64; ensures result == result; }} by {{ execute(); simp(); }}"
@@ -2748,9 +2460,9 @@ fn rust_split_at_rejects_unsupported_results_and_mutation() {
         ),
     ] {
         let p = Project::new(source);
-        let error = refresh_import(&p.config()).unwrap_err();
+        let error = p.refresh().unwrap_err();
         assert!(error.contains(message), "expected {message}: {error}");
-        assert!(!p.root.join("borrow.ullbc").exists());
+        assert!(!p.artifact("borrow.rs").exists());
     }
 }
 
@@ -2766,8 +2478,8 @@ fn rust_split_at_empty_results_reject_indexing() {
         let p = Project::new(&format!(
             "pub fn read(bytes: &[u8], mid: usize) -> u8 {{ let (left, right) = bytes.split_at(mid); {result_slice}[0] }}"
         ));
-        refresh_import(&p.config()).unwrap();
-        let prepared = load_import(&p.config()).unwrap();
+        p.refresh().unwrap();
+        let prepared = p.prepared().unwrap();
         let sidecar = format!(
             "verifying \"borrow.rs\"; fn read(bytes: &[u8], mid: usize) -> u8 {{ requires bytes.len() == {length}u64; requires mid == {midpoint}u64; views bytes[0..{length}]; ensures result == result; }} by {{ execute(); simp(); }}"
         );
@@ -2815,8 +2527,8 @@ pub fn once(bytes: &[u8], counter: &mut u32) -> usize {
 }
 "#,
     );
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     let sidecar = r#"verifying "borrow.rs";
 fn first(bytes: &[u8]) -> u8 {
     requires bytes.len() == 2u64;
@@ -2871,8 +2583,8 @@ fn rust_byte_slices_indexing_calls_and_expansion_verify() {
     let p = Project::new(SLICES_SOURCE);
     let sidecar = SLICES_SIDECAR.replace("bytes.rs", "borrow.rs");
     fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     assert_cli(&p, &["audit"]);
     for claim in ["read.contract", "write.contract", "length.contract"] {
@@ -2885,8 +2597,8 @@ fn rust_byte_slices_indexing_calls_and_expansion_verify() {
 #[ignore = "nightly: 4s in the parallel gate"]
 fn rust_byte_slices_variable_length_indexing_verify() {
     let p = Project::new("pub fn read(bytes:&[u8], index:usize)->u8 { bytes[index] }");
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     let sidecar = "verifying \"borrow.rs\";
 fn read(bytes: &[u8], index: usize) -> u8 {
     requires index < bytes.len();
@@ -2930,8 +2642,8 @@ fn rust_byte_slices_reject_panics_and_missing_write_authority() {
         ),
     ] {
         let p = Project::new(source);
-        refresh_import(&p.config()).unwrap();
-        let prepared = load_import(&p.config()).unwrap();
+        p.refresh().unwrap();
+        let prepared = p.prepared().unwrap();
         let length = if index == 0 { 0 } else { 4 };
         let sidecar = format!(
             "verifying \"borrow.rs\"; {signature} {{ requires bytes.len() == {length}u64; requires index == {index}u64; {resource} bytes[0..{length}]; }} by {{ execute(); simp(); }}"
@@ -2958,8 +2670,8 @@ fn rust_byte_slices_length_preserves_target_width_and_index_borrows_verify() {
     let p = Project::new(
         "pub fn length(bytes:&[u8])->usize { bytes.len() } pub fn replace(bytes:&mut [u8], index:usize) { let child = &mut bytes[index]; *child = 9; } pub fn shift(x:u32, n:usize)->u32 { x << n }",
     );
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     let sidecar = "verifying \"borrow.rs\";
 fn length(bytes: &[u8]) -> usize { requires bytes.len() == 4294967296u64; ensures result == 4294967296u64; } by { execute(); simp(); }
 fn replace(bytes: &mut [u8], index: usize) { requires bytes.len() == 4u64; requires index < 4u64; owns bytes[0..4]; ensures bytes[index] == 9; } by { execute(); simp(); }
@@ -3009,7 +2721,7 @@ fn rust_byte_slice_unsupported_shapes_and_borrow_errors_are_refused() {
         ),
     ] {
         let p = Project::new(source);
-        let result = refresh_import(&p.config());
+        let result = p.refresh();
         assert!(result.unwrap_err().contains(message), "{source}");
     }
 }
@@ -3021,7 +2733,7 @@ fn rust_fixed_array_references_indexing_and_reborrows_verify() {
     let sidecar =
         include_str!("../examples/rust-arrays/arrays.click").replace("arrays.rs", "borrow.rs");
     fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
 
     assert!(
@@ -3040,8 +2752,8 @@ fn rust_fixed_array_indices_reject_panics_before_narrowing() {
         let p = Project::new(&format!(
             "pub fn read(bytes: &[u8; {length}], index: usize) -> u8 {{ bytes[index] }}"
         ));
-        refresh_import(&p.config()).unwrap();
-        let prepared = load_import(&p.config()).unwrap();
+        p.refresh().unwrap();
+        let prepared = p.prepared().unwrap();
         let sidecar = format!(
             "verifying \"borrow.rs\"; fn read(bytes: &[u8; {length}], index: usize) -> u8 {{ requires index == {index}u64; views bytes[0..{length}]; }} by {{ execute(); simp(); }}"
         );
@@ -3077,7 +2789,7 @@ fn rust_fixed_array_access_requires_memory_authority() {
             "array-write"
         };
         let p = gate_fixtures::project(fixture, source);
-        let prepared = load_import(&p.config()).unwrap();
+        let prepared = p.prepared().unwrap();
         let sidecar = format!(
             "verifying \"borrow.rs\"; {signature} {{ {resources} ensures 1 == 1; }} by {{ execute(); simp(); }}"
         );
@@ -3133,9 +2845,9 @@ fn rust_fixed_array_unsupported_shapes_and_conflicting_borrows_are_refused() {
         ),
     ] {
         let p = Project::new(source);
-        let error = refresh_import(&p.config()).unwrap_err();
+        let error = p.refresh().unwrap_err();
         assert!(error.contains(message), "expected {message}: {error}");
-        assert!(!p.root.join("borrow.ullbc").exists());
+        assert!(!p.artifact("borrow.rs").exists());
     }
 }
 
@@ -3146,8 +2858,8 @@ fn rust_local_array_construction_and_whole_value_copies_verify() {
     let sidecar = include_str!("../examples/rust-array-values/arrays.click")
         .replace("arrays.rs", "borrow.rs");
     fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
@@ -3179,8 +2891,8 @@ fn rust_whole_array_copies_require_authority_for_every_element() {
     let p = Project::new(include_str!("../examples/rust-array-values/arrays.rs"));
     let sidecar = include_str!("../examples/rust-array-values/arrays.click")
         .replace("arrays.rs", "borrow.rs");
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     for unsupported in [
         sidecar.replace("views source[0..2];", "views source[0..1];"),
         sidecar.replace("owns target[0..2];", "views target[0..2];"),
@@ -3200,8 +2912,8 @@ fn rust_arrays_coerce_to_byte_slices_with_lengths_and_authority() {
     let sidecar = include_str!("../examples/rust-array-slices/arrays.click")
         .replace("arrays.rs", "borrow.rs");
     fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
@@ -3227,7 +2939,7 @@ fn rust_arrays_coerce_to_byte_slices_with_lengths_and_authority() {
     ] {
         assert!(C0VerificationSession::new_program_prepared(&incorrect, &prepared).is_err());
     }
-    let overflow = Project::new(
+    let overflow = Project::legacy(
         &include_str!("../examples/rust-array-slices/arrays.rs")
             .replace("[3u8, 5, 9]", "[255u8, 5, 9]"),
     );
@@ -3262,14 +2974,14 @@ fn rust_array_to_slice_coercions_preserve_bounds_and_borrow_checks() {
         ),
     ] {
         let p = Project::new(source);
-        let error = refresh_import(&p.config()).unwrap_err();
+        let error = p.refresh().unwrap_err();
         assert!(error.contains(diagnostic), "expected {diagnostic}: {error}");
     }
     let p = Project::new(
         "pub fn read(bytes: &[u8; 2], index: usize) -> u8 { let s: &[u8] = bytes; s[index] }",
     );
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     for index in ["2u64", "4294967296u64", "18446744073709551615u64"] {
         let sidecar = format!(
             "verifying \"borrow.rs\"; fn read(bytes: &[u8; 2], index: usize) -> u8 {{ requires index == {index}; views bytes[0..2]; ensures result == 0; }} by {{ execute(); simp(); }}"
@@ -3287,7 +2999,7 @@ fn rust_local_array_authority_and_copies_scale_with_array_length() {
             "pub fn first(bytes: &[u8]) -> u8 {{ bytes[0] }} pub fn run() -> u8 {{ let bytes = [7u8; {length}]; let copied = bytes; first(&copied) }}"
         );
         let p = gate_fixtures::project(&format!("array-scale-{length}"), &source);
-        let prepared = load_import(&p.config()).unwrap();
+        let prepared = p.prepared().unwrap();
         let sidecar = "verifying \"borrow.rs\"; fn first(bytes: &[u8]) -> u8 { requires bytes.len() > 0u64; requires bytes.len() <= 2147483647u64; views bytes[0..1]; ensures result == bytes[0]; } by { execute(); simp(); } fn run() -> u8 { ensures result == 7; } by { execute(); simp(); }";
         let (result, work) = click::instrumentation::measure_deterministic_work(|| {
             C0VerificationSession::new_program_prepared(sidecar, &prepared)
@@ -3310,8 +3022,8 @@ fn rust_array_to_slice_calls_preserve_untouched_local_elements() {
     let p = Project::new(
         "pub fn first(bytes: &[u8]) -> u8 { bytes[0] } pub fn set(bytes: &mut [u8]) { bytes[1] = 7; } pub fn untouched() -> u8 { let mut bytes = [3u8, 5, 9]; set(&mut bytes); bytes[0] } pub fn initial() -> u8 { let bytes = [3u8, 5, 9]; first(&bytes) }",
     );
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     let sidecar = "verifying \"borrow.rs\"; fn first(bytes: &[u8]) -> u8 { requires bytes.len() > 0u64; requires bytes.len() <= 2147483647u64; views bytes[0..1]; ensures result == bytes[0]; } by { execute(); simp(); } fn set(bytes: &mut [u8]) { requires bytes.len() > 1u64; requires bytes.len() <= 2147483647u64; owns bytes[1..2]; ensures bytes[1] == 7; } by { execute(); simp(); } fn untouched() -> u8 { ensures result == 3; } by { execute(); simp(); } fn initial() -> u8 { ensures result == 3; } by { execute(); simp(); }";
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
 }
@@ -3325,7 +3037,7 @@ fn rust_usize_arithmetic_casts_and_expansion_verify() {
     let p = gate_fixtures::project("usize", USIZE_SOURCE);
     let sidecar = USIZE_SIDECAR.replace("arithmetic.rs", "borrow.rs");
     fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     let general_mul = sidecar.replace(
         "requires x == 4294967296u64;\n    requires y == 2147483648u64;\n    ensures result == 9223372036854775808u64;",
@@ -3372,8 +3084,8 @@ fn rust_usize_panic_paths_are_rejected() {
         ("1 << x", "x == 18446744073709551615u64"),
     ] {
         let p = Project::new(&format!("pub fn bad(x:usize)->usize {{ {expression} }}"));
-        refresh_import(&p.config()).unwrap();
-        let prepared = load_import(&p.config()).unwrap();
+        p.refresh().unwrap();
+        let prepared = p.prepared().unwrap();
         let sidecar = format!(
             "verifying \"borrow.rs\"; fn bad(x: usize) -> usize {{ requires {precondition}; ensures result == result; }} by {{ execute(); simp(); }}"
         );
@@ -3469,8 +3181,8 @@ fn rust_usize_boundaries_and_nested_checks() {
         let p = Project::new(&format!(
             "pub fn check(x:usize)->{return_type} {{ {source} }}"
         ));
-        refresh_import(&p.config()).unwrap();
-        let prepared = load_import(&p.config()).unwrap();
+        p.refresh().unwrap();
+        let prepared = p.prepared().unwrap();
         let sidecar = format!(
             "verifying \"borrow.rs\"; fn check(x: usize) -> {return_type} {{ requires {precondition}; ensures result == {expected}; }} by {{ execute(); simp(); }}"
         );
@@ -3478,8 +3190,8 @@ fn rust_usize_boundaries_and_nested_checks() {
         assert_eq!(result.is_ok(), valid, "{source}: {:?}", result.err());
     }
     let p = Project::new("pub fn right(x:usize, n:i32)->usize { x >> n }");
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     let sidecar = "verifying \"borrow.rs\"; fn right(x: usize, n: i32) -> usize { requires n == -1; ensures result == result; } by { execute(); simp(); }";
     assert!(C0VerificationSession::new_program_prepared(sidecar, &prepared).is_err());
 }
@@ -3488,7 +3200,7 @@ fn rust_usize_boundaries_and_nested_checks() {
 #[ignore = "nightly: 3s in the parallel gate"]
 fn rust_while_loop_invariants_verify_and_expand() {
     let p = gate_fixtures::project("loops", include_str!("../examples/rust-loops/loops.rs"));
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     let sidecar =
         include_str!("../examples/rust-loops/loops.click").replace("loops.rs", "borrow.rs");
     let (_, verified) = C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
@@ -3509,8 +3221,8 @@ fn rust_while_loop_invariants_verify_and_expand() {
 fn rust_while_loop_rejects_unsupported_control_flow_and_guards() {
     {
         let p = Project::new("pub fn bad() { while true { continue; } }");
-        refresh_import(&p.config()).unwrap();
-        let prepared = load_import(&p.config()).unwrap();
+        p.refresh().unwrap();
+        let prepared = p.prepared().unwrap();
         assert!(
             C0VerificationSession::new_program_prepared(
                 "verifying \"borrow.rs\"; fn bad() { ensures 1 == 1; } by { execute(); simp(); }",
@@ -3522,8 +3234,8 @@ fn rust_while_loop_rejects_unsupported_control_flow_and_guards() {
 
     {
         let p = Project::new("pub fn bad() { 'outer: while true {} }");
-        refresh_import(&p.config()).unwrap();
-        let prepared = load_import(&p.config()).unwrap();
+        p.refresh().unwrap();
+        let prepared = p.prepared().unwrap();
         assert!(
             C0VerificationSession::new_program_prepared(
                 "verifying \"borrow.rs\"; fn bad() { ensures 1 == 1; } by { execute(); simp(); }",
@@ -3557,7 +3269,7 @@ fn rust_while_loop_rejects_unsupported_control_flow_and_guards() {
         ),
     ] {
         let p = Project::new(source);
-        let error = refresh_import(&p.config()).unwrap_err();
+        let error = p.refresh().unwrap_err();
         assert!(error.contains(diagnostic), "expected {diagnostic}: {error}");
     }
 }
@@ -3583,11 +3295,11 @@ fn rust_while_loop_panic_paths_are_rejected() {
         ),
     ] {
         let p = Project::new(source);
-        if let Err(error) = refresh_import(&p.config()) {
+        if let Err(error) = p.refresh() {
             assert!(error.contains("MIR while header"), "{error}");
             continue;
         }
-        let prepared = load_import(&p.config()).unwrap();
+        let prepared = p.prepared().unwrap();
         let prefix = "execute_until(loop(0));";
         let requirements = if signature.contains("bytes") {
             "requires bytes.len() <= 2147483647u64; views *bytes;"
@@ -3614,8 +3326,8 @@ fn rust_nested_while_loop_invariants_keep_preorder_indices() {
     let p = Project::new(
         "pub fn nested()->i32 { let mut i=0; while i < 1 { let mut j=0; while j < 1 { j += 1; } i += 1; } i }",
     );
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     let sidecar = "verifying \"borrow.rs\"; fn nested() -> i32 { ensures result == 1; } by { execute_until(loop(0)); loop { decreases 1-i; invariant 0<=i and i<=1; preserve by { execute_until(loop(1)); loop { decreases 1-j; invariant 0<=j and j<=1; } execute_until(back_edge()); close_invariants(); } } execute(); simp(); }";
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     fs::write(p.root.join("borrow.click"), sidecar).unwrap();
@@ -3629,8 +3341,8 @@ fn rust_readable_local_names_preserve_shadowed_binding_identities() {
     let p = Project::new(
         "pub fn run(n:i32)->i32 { let n=2; let n=n+1; let __rust_checked_0=n+1; __rust_checked_0 }",
     );
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     let sidecar = "verifying \"borrow.rs\"; fn run(n: i32) -> i32 { ensures result == 4; } by { execute(); simp(); }";
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     assert!(
@@ -3646,8 +3358,8 @@ fn rust_readable_local_names_preserve_shadowed_binding_identities() {
 #[ignore = "nightly: 14 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_byte_sum_proves_exact_prefix_sum_and_expands() {
     let p = Project::new(include_str!("../examples/rust-byte-sum/sum.rs"));
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     let sidecar =
         include_str!("../examples/rust-byte-sum/sum.click").replace("sum.rs", "borrow.rs");
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
@@ -3675,7 +3387,7 @@ fn rust_byte_sum_proves_exact_prefix_sum_and_expands() {
 }
 
 fn assert_slice_iterator_artifact(p: &Project) {
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     let function = prepared
         .export()
         .functions
@@ -3719,7 +3431,7 @@ fn rust_empty_slice_iterator_needs_no_read_authority() {
             "empty-iter"
         };
         let p = gate_fixtures::project(fixture, &source);
-        let prepared = load_import(&p.config()).unwrap();
+        let prepared = p.prepared().unwrap();
         let sidecar = "verifying \"borrow.rs\"; fn empty(bytes: &[u8]) -> i32 { requires bytes.len() == 0u64; ensures result == 0; } by { execute(); simp(); }";
         C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
         assert!(
@@ -3736,13 +3448,13 @@ fn rust_empty_slice_iterator_needs_no_read_authority() {
 #[ignore = "nightly: 36 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_slice_for_sum_verifies_and_expands() {
     let p = Project::new(include_str!("../examples/rust-iterators/sum.rs"));
-    refresh_import(&p.config()).unwrap();
+    p.refresh().unwrap();
     assert_slice_iterator_artifact(&p);
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     let sidecar =
         include_str!("../examples/rust-iterators/sum.click").replace("sum.rs", "borrow.rs");
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
-    let copied_iter = Project::new(
+    let copied_iter = Project::legacy(
         &include_str!("../examples/rust-iterators/sum.rs")
             .replace("in bytes {", "in bytes.iter() {"),
     );
@@ -3827,7 +3539,7 @@ fn rust_slice_for_rejects_unsupported_iteration() {
         "pub fn bad(bytes: &mut [u8]) { for byte in bytes {} }",
     ] {
         let p = Project::new(source);
-        let error = refresh_import(&p.config()).unwrap_err();
+        let error = p.refresh().unwrap_err();
         assert!(error.contains("does not support type"), "{error}");
         assert!(!error.contains("panicked"), "{error}");
     }
@@ -3843,9 +3555,9 @@ fn rust_slice_iter_reference_sum_verifies_and_expands() {
     // have the same checked address and dereference semantics.
     for source in [source.to_string(), source.replace("bytes.iter()", "bytes")] {
         let p = Project::new(&source);
-        refresh_import(&p.config()).unwrap();
+        p.refresh().unwrap();
         assert_slice_iterator_artifact(&p);
-        let prepared = load_import(&p.config()).unwrap();
+        let prepared = p.prepared().unwrap();
         C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
         for invalid in [
             sidecar.replace(
@@ -3871,7 +3583,7 @@ fn rust_slice_iter_reference_sum_verifies_and_expands() {
         }
     }
     let p = Project::new("pub fn bad(bytes: &[u8]) { for byte in bytes.iter() { *byte = 0; } }");
-    let error = refresh_import(&p.config()).unwrap_err();
+    let error = p.refresh().unwrap_err();
     assert!(error.contains("cannot assign"), "{error}");
 }
 
@@ -3881,8 +3593,8 @@ fn rust_chunks_exact_remainder_metadata_and_bytes() {
     let source = "pub fn tail_len(bytes: &[u8], size: usize) -> usize { let chunks = bytes.chunks_exact(size); let tail = chunks.remainder(); tail.len() }
     pub fn tail_byte(bytes: &[u8]) -> u8 { let chunks = bytes.chunks_exact(2); let tail = chunks.remainder(); tail[0] }";
     let p = Project::new(source);
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     let sidecar = "verifying \"borrow.rs\";
     fn tail_len(bytes: &[u8], size: usize) -> usize {
         requires size != 0u64;
@@ -3915,7 +3627,7 @@ fn chunks_loop_project(by_reference: bool) -> (Project, String) {
     let sidecar = include_str!("../examples/rust-chunks-exact/chunks.click")
         .replace("chunks.rs", "borrow.rs");
     let p = Project::new(&source);
-    refresh_import(&p.config()).unwrap();
+    p.refresh().unwrap();
     let sidecar = if by_reference {
         sidecar.replace("iter_", "chunks_")
     } else {
@@ -3927,7 +3639,7 @@ fn chunks_loop_project(by_reference: bool) -> (Project, String) {
 fn check_chunks_loop_claims(by_reference: bool) {
     let (p, sidecar) = chunks_loop_project(by_reference);
     let iterator = if by_reference { "chunks" } else { "iter" };
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     for invalid in [
         sidecar.replace(
@@ -3985,8 +3697,8 @@ fn rust_chunks_exact_boundaries_and_full_width_sizes() {
     let p = Project::new(
         "pub fn length(bytes: &[u8], size: usize) -> usize { let chunks = bytes.chunks_exact(size); chunks.remainder().len() }",
     );
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     for (length, size) in [
         (0u64, 4u64),
         (8, 4),
@@ -4026,8 +3738,8 @@ fn rust_chunks_exact_evaluates_size_once_and_keeps_shadowed_iterators_distinct()
     let p = Project::new("pub fn size(p: &mut i32) -> usize { *p = *p + 1; 4 }
     pub fn length(bytes: &[u8], p: &mut i32) -> usize { let chunks = bytes.chunks_exact(size(p)); chunks.remainder().len() }
     pub fn shadow(bytes: &[u8]) -> usize { let chunks = bytes.chunks_exact(4); let tail = chunks.remainder(); let chunks = tail.chunks_exact(1); chunks.remainder().len() }");
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     let sidecar = "verifying \"borrow.rs\";
     fn size(p: &mut i32) -> usize { requires *p == 0; owns *p; ensures *p == 1; ensures result == 4u64; } by { execute(); simp(); }
     fn length(bytes: &[u8], p: &mut i32) -> usize { requires bytes.len() == 5u64; requires *p == 0; owns *p; ensures *p == 1; ensures result == 1u64; } by { execute(); simp(); }
@@ -4077,7 +3789,7 @@ fn rust_chunks_exact_rejects_writes_and_unsupported_iterator_protocols() {
         ),
     ] {
         let p = Project::new(source);
-        let error = refresh_import(&p.config()).unwrap_err();
+        let error = p.refresh().unwrap_err();
         assert!(error.contains(diagnostic), "{error}");
         assert!(!error.contains("panicked"), "{error}");
     }
@@ -4093,8 +3805,8 @@ fn rust_chunks_exact_direct_nested_loops_keep_independent_state() {
     0
 }";
     let p = Project::new(source);
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     let sidecar = "verifying \"borrow.rs\"; fn nested(bytes: &[u8]) -> usize { requires bytes.len() == 8u64; ensures result == 0u64; } by { execute(); simp(); }";
     C0VerificationSession::new_program_prepared(sidecar, &prepared)
         .unwrap_or_else(|error| panic!("{}", error.message()));
@@ -4113,8 +3825,8 @@ fn rust_integer_from_preserves_native_unsigned_values() {
         pub fn size(x: u16) -> usize { usize::from(x) }
         pub fn identity(x: u16) -> u16 { u16::from(x) }",
     );
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     let sidecar = "verifying \"borrow.rs\";
         fn byte(x: u8) -> u32 { ensures result == x as u32; } by { execute(); simp(); }
         fn half(x: u8) -> u16 { ensures result as u32 == x as u32; } by { execute(); simp(); }
@@ -4142,8 +3854,8 @@ fn rust_integer_from_evaluates_nested_calls_once_in_order() {
         "pub fn next(p: &mut i32) -> u8 { *p += 1; *p as u8 }
         pub fn pair(p: &mut i32) -> u32 { u32::from(next(p)) * 256 + u32::from(next(p)) }",
     );
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     let sidecar = "verifying \"borrow.rs\";
         fn next(p: &mut i32) -> u8 { requires 0 <= *p and *p <= 1; owns *p;
             ensures *p == old(*p) + 1; ensures result as u32 == (*p as u32 & 255u32);
@@ -4164,8 +3876,8 @@ fn rust_u16_casts_truncate_and_shifts_keep_sixteen_bits() {
         pub fn invert(x: u16) -> u16 { !x }
         pub fn shift(x: u16, count: usize) -> u16 { x << count }",
     );
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     let sidecar = "verifying \"borrow.rs\";
         fn low(x: usize) -> u16 { ensures result as u32 == (x as u32 & 65535u32); } by { execute(); simp(); }
         fn signed(x: i32) -> u16 { ensures result as u32 == (x as u32 & 65535u32); } by { execute(); simp(); }
@@ -4201,8 +3913,8 @@ fn rust_u16_arithmetic_checks_its_own_width() {
         pub fn div(x: u16, d: u16) -> u16 { x / d }
         pub fn rem(x: u16, d: u16) -> u16 { x % d }",
     );
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     let sidecar = "verifying \"borrow.rs\";
         fn add(x: u16) -> u16 { requires x <= 65534; ensures result as u32 == x as u32 + 1u32; } by { execute(); simp(); }
         fn sub(x: u16) -> u16 { requires 1 <= x; ensures result as u32 == x as u32 - 1u32; } by { execute(); simp(); }
@@ -4220,8 +3932,8 @@ fn rust_u16_arithmetic_checks_its_own_width() {
         let p = Project::new(&format!(
             "pub fn bad(x: u16, d: u16) -> u16 {{ x {operator} d }}"
         ));
-        refresh_import(&p.config()).unwrap();
-        let prepared = load_import(&p.config()).unwrap();
+        p.refresh().unwrap();
+        let prepared = p.prepared().unwrap();
         let sidecar = format!(
             "verifying \"borrow.rs\"; fn bad(x: u16, d: u16) -> u16 {{ requires x == {input}; requires d == {divisor}; ensures result == 0; }} by {{ execute(); }}"
         );
@@ -4242,9 +3954,11 @@ fn rust_integer_from_rejects_other_conversions_and_shadowed_methods() {
         ),
         ("pub fn bad(x: u32) -> u16 { u16::from(x) }", "From<u32>"),
         ("pub fn bad(x: u8) -> u64 { u64::from(x) }", "integer width"),
+        // `into` is the std `Into` trait's generic method; its trait bound is
+        // refused before the call itself.
         (
             "pub fn bad(x: u8) -> u32 { x.into() }",
-            "unsafe or generic call",
+            "trait bound other than Fn or a crate trait",
         ),
         (
             "pub struct Word { x: u32 } impl Word { pub fn from(x: u8) -> u32 { 99 } } pub fn bad(x: u8) -> u32 { Word::from(x) }",
@@ -4252,7 +3966,7 @@ fn rust_integer_from_rejects_other_conversions_and_shadowed_methods() {
         ),
     ] {
         let p = Project::new(source);
-        let error = refresh_import(&p.config()).unwrap_err();
+        let error = p.refresh().unwrap_err();
         assert!(error.contains(diagnostic), "{error}");
         assert!(!error.contains("panicked"), "{error}");
     }
@@ -4264,8 +3978,8 @@ fn rust_u16_accumulator_fields_and_references_preserve_authority() {
     let p = Project::new(include_str!(
         "../examples/rust-integer-conversions/accumulator.rs"
     ));
-    refresh_import(&p.config()).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
     let sidecar = include_str!("../examples/rust-integer-conversions/accumulator.click")
         .replace("accumulator.rs", "borrow.rs");
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
@@ -4309,6 +4023,8 @@ mod impl_fn;
 mod parameterized_contracts;
 #[path = "rust_import/trait_methods.rs"]
 mod trait_methods;
+#[path = "rust_import/trait_objects.rs"]
+mod trait_objects;
 
 #[path = "rust_import/loop_headers.rs"]
 mod loop_headers;
@@ -4438,7 +4154,7 @@ fn rust_scalar_lease_aliases_preserve_updates_and_parent_reuse() {
     let p = gate_fixtures::project("scalar-aliases", source);
     let proof = "verifying \"borrow.rs\";\nfn alias_update(parent: &mut i32) { owns *parent; ensures *parent == 8; } by { execute(); simp(); }\nfn alias_caller(value: &mut i32) { owns *value; ensures *value == 8; } by { execute(); simp(); }\n";
     fs::write(p.root.join("borrow.click"), proof).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(proof, &prepared).unwrap();
     for invalid in [
         proof.replacen("ensures *parent == 8;", "ensures *parent == 7;", 1),
@@ -4469,7 +4185,7 @@ fn rust_scalar_lease_read_ending_preserves_read_value_and_parent_reuse() {
     let p = gate_fixtures::project("scalar-read-end", source);
     let proof = "verifying \"borrow.rs\";\nfn read_before_reuse(parent: &mut i32) -> i32 { owns *parent; requires *parent == 4; ensures result == 4; ensures *parent == 8; } by { execute(); simp(); }\nfn read_caller(parent: &mut i32) -> i32 { owns *parent; requires *parent == 4; ensures result == 4; ensures *parent == 8; } by { execute(); simp(); }\n";
     fs::write(p.root.join("borrow.click"), proof).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(proof, &prepared).unwrap();
     for invalid in [
         proof.replacen("ensures result == 4;", "ensures result == 8;", 1),
@@ -4505,7 +4221,7 @@ fn rust_nested_scalar_borrows_end_explicitly_at_shared_and_separate_frontiers() 
     let p = gate_fixtures::project("scalar-nested-ends", source);
     let proof = "verifying \"borrow.rs\";\nfn shared_frontier(parent: &mut i32) { owns *parent; ensures *parent == 8; } by { execute(); simp(); }\nfn separate_frontiers(parent: &mut i32) { owns *parent; ensures *parent == 9; } by { execute(); simp(); }\nfn nested_caller(parent: &mut i32) { owns *parent; ensures *parent == 8; } by { execute(); simp(); }\n";
     fs::write(p.root.join("borrow.click"), proof).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(proof, &prepared).unwrap();
     for invalid in [
         proof.replacen("ensures *parent == 8;", "ensures *parent == 7;", 1),
@@ -4535,7 +4251,7 @@ fn rust_scalar_borrow_stays_live_through_both_branch_arms_and_ends_at_join() {
     let p = gate_fixtures::project("scalar-branches", source);
     let proof = "verifying \"borrow.rs\";\nfn branch_update(parent: &mut i32, choose: bool) { owns *parent; ensures *parent == (if choose { 8 } else { 10 }); } by { execute(); simp(); }\nfn nested_branch_update(parent: &mut i32, choose: bool) { owns *parent; ensures *parent == (if choose { 9 } else { 11 }); } by { execute(); simp(); }\nfn branch_caller(parent: &mut i32, choose: bool) { owns *parent; ensures *parent == (if choose { 8 } else { 10 }); } by { execute(); simp(); }\n";
     fs::write(p.root.join("borrow.click"), proof).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(proof, &prepared).unwrap();
     for invalid in [
         proof.replacen(
@@ -4569,7 +4285,7 @@ fn rust_arm_local_borrows_close_without_escaping_before_the_join() {
     let p = gate_fixtures::project("scalar-arm-scopes", source);
     let proof = "verifying \"borrow.rs\";\nfn scoped_update(parent: &mut i32, choose: bool) { owns *parent; ensures *parent == (if choose { 8 } else { 10 }); } by { execute(); simp(); }\nfn nested_scopes(parent: &mut i32, choose: bool, inner: bool) { owns *parent; ensures *parent == (if choose { if inner { 9 } else { 11 } } else { 12 }); } by { execute(); simp(); }\nfn scoped_caller(parent: &mut i32, choose: bool) { owns *parent; ensures *parent == (if choose { 8 } else { 10 }); } by { execute(); simp(); }\n";
     fs::write(p.root.join("borrow.click"), proof).unwrap();
-    let prepared = load_import(&p.config()).unwrap();
+    let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(proof, &prepared).unwrap();
     for invalid in [
         proof.replacen(

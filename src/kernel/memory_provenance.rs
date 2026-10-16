@@ -4,6 +4,129 @@ use super::resource_tracker::cell_source::*;
 use crate::kernel::ExecutionFactSource;
 use std::collections::BTreeSet;
 
+/// Results retained from the actual selected read query, never reconstructed
+/// by the terminal renderer under a different arena or assumption context.
+#[derive(Clone)]
+pub(crate) struct ReadResolutionDiagnostic {
+    pub read: Bitvector32Term,
+    pub producer: SharedCMemory,
+    pub stopped_at: Option<SharedCMemory>,
+    pub reason: &'static str,
+    pub recovered: Option<CValue>,
+    pub expected: Bitvector32Term,
+    pub equal: bool,
+}
+
+thread_local! {
+    static READ_RESOLUTION_DIAGNOSTICS: std::cell::RefCell<Option<Vec<ReadResolutionDiagnostic>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Capture only a written check's queries. Nesting and unwinding restore the
+/// caller's collector; ordinary graph queries retain no diagnostic history.
+pub(crate) fn capture_read_resolutions<T>(
+    run: impl FnOnce() -> T,
+) -> (T, Vec<ReadResolutionDiagnostic>) {
+    struct Restore(Option<Vec<ReadResolutionDiagnostic>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            READ_RESOLUTION_DIAGNOSTICS.with(|slot| *slot.borrow_mut() = self.0.take());
+        }
+    }
+    let _restore = Restore(READ_RESOLUTION_DIAGNOSTICS.with(|slot| slot.replace(Some(Vec::new()))));
+    let result = run();
+    let diagnostics =
+        READ_RESOLUTION_DIAGNOSTICS.with(|slot| slot.borrow_mut().take().unwrap_or_default());
+    (result, diagnostics)
+}
+
+/// A walk actually performed during an explicit transport check. These records
+/// describe queries, not additional premises or a guess at a missing fact.
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub(crate) struct TransportCellWalkDiagnostic {
+    pub start: SharedCMemory,
+    pub pointer: Pointer,
+    pub bytes: u32,
+    pub stopped_at: SharedCMemory,
+    pub reason: &'static str,
+    pub crossed: usize,
+    pub extended: bool,
+    pub explicit: bool,
+}
+
+#[derive(Default)]
+struct TransportCellWalkDiagnostics {
+    seen: std::collections::HashSet<TransportCellWalkDiagnostic>,
+    walks: Vec<TransportCellWalkDiagnostic>,
+}
+
+thread_local! {
+    static TRANSPORT_CELL_WALKS: std::cell::RefCell<Option<TransportCellWalkDiagnostics>> = const { std::cell::RefCell::new(None) };
+}
+
+pub(crate) fn with_transport_cell_walk_diagnostics<T>(run: impl FnOnce() -> T) -> T {
+    struct Restore(Option<TransportCellWalkDiagnostics>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            TRANSPORT_CELL_WALKS.with(|slot| *slot.borrow_mut() = self.0.take());
+        }
+    }
+    let _restore =
+        Restore(TRANSPORT_CELL_WALKS.with(|slot| slot.replace(Some(Default::default()))));
+    run()
+}
+
+pub(crate) fn take_transport_cell_walk_diagnostics() -> Vec<TransportCellWalkDiagnostic> {
+    TRANSPORT_CELL_WALKS.with(|slot| {
+        slot.borrow_mut()
+            .take()
+            .map(|capture| capture.walks)
+            .unwrap_or_default()
+    })
+}
+
+pub(in crate::kernel) fn record_transport_cell_walk(
+    memory: &SharedCMemory,
+    pointer: &Pointer,
+    bytes: u32,
+    cell: &MemoryDagCell,
+    stop: CellWalkStop,
+    max_hops: Option<usize>,
+) {
+    TRANSPORT_CELL_WALKS.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let Some(capture) = slot.as_mut() else {
+            return;
+        };
+        let crossed = match cell {
+            MemoryDagCell::Stored { path, .. } | MemoryDagCell::Unwritten { path, .. } => {
+                path.len()
+            }
+        };
+        let reason = if max_hops.is_some_and(|limit| crossed >= limit) {
+            "hop limit reached"
+        } else {
+            match stop {
+                CellWalkStop::OldestRecorded => "oldest recorded snapshot reached",
+                CellWalkStop::Affected => "step affects the queried bytes",
+                CellWalkStop::NotShownSeparate => "step not proved separate from the queried bytes",
+            }
+        };
+        let diagnostic = TransportCellWalkDiagnostic {
+            start: memory.clone(),
+            pointer: pointer.clone(),
+            bytes,
+            stopped_at: cell.node().clone(),
+            reason,
+            crossed,
+            extended: extended_dag_bridging_active(),
+            explicit: explicit_dag_check_active(),
+        };
+        if capture.seen.insert(diagnostic.clone()) {
+            capture.walks.push(diagnostic);
+        }
+    });
+}
+
 /// Resource indices are logical values. ADT indices can only be exchanged
 /// using equality evidence of the same algebraic type; they are never cast
 /// to C scalars or interpreted as memory authority.
@@ -2248,8 +2371,8 @@ pub(in crate::kernel) fn typed_store_separated_ranges_evidence(
     // The composition law asked on demand: an owned member holding the
     // written address and a different one holding the read.
     let (resources, left, right) = assumptions.composition_separated_members(
-        &write.block,
-        &pointer.block,
+        write,
+        pointer,
         |range| AccessInRangeEvidence::for_access(write, write_bytes, range, assumptions).is_some(),
         |range| {
             AccessInRangeEvidence::for_access(pointer, load_bytes, range, assumptions).is_some()
@@ -2586,6 +2709,38 @@ pub(in crate::kernel) fn checked_pointer_read_endpoint(
     })
 }
 
+/// Resolve a selected recorded read from its producer's exact source, not
+/// the cell cache its canonical projection happens to retain. Bookkeeping
+/// edges write no program bytes; every actual write still uses the existing
+/// typed access classifier. The hop bound applies to the selected source path.
+fn bounded_recorded_cell_source(
+    memory: &SharedCMemory,
+    address: &Pointer,
+    bytes: u32,
+    assumptions: &PureFactContext,
+    limit: usize,
+) -> Option<MemoryDagCell> {
+    bounded_recorded_cell_resolution(memory, address, bytes, assumptions, limit)
+        .1
+        .map(|(cell, _)| cell)
+}
+
+fn bounded_recorded_cell_resolution(
+    memory: &SharedCMemory,
+    address: &Pointer,
+    bytes: u32,
+    assumptions: &PureFactContext,
+    limit: usize,
+) -> (SharedCMemory, Option<(MemoryDagCell, CellWalkStop)>) {
+    crate::instrumentation::record_deterministic_work(1);
+    let source =
+        canonical_load_projection_source(memory, address).unwrap_or_else(|| memory.clone());
+    let result = with_extended_dag_bridging(|| {
+        memory_dag_cell_source_with_hop_limit_and_stop(&source, address, bytes, assumptions, limit)
+    });
+    (source, result)
+}
+
 fn pointer_read_stored_value(
     read: &Pointer,
     assumptions: &PureFactContext,
@@ -2601,21 +2756,7 @@ fn pointer_read_stored_value(
         return None;
     }
     let cell = match max_hops {
-        Some(limit) => {
-            // A logical read may name its canonical projection rather than
-            // the execution snapshot. Follow only its exact producer-retained
-            // source edge; never reconstruct or search for a matching memory.
-            crate::instrumentation::record_deterministic_work(1);
-            let source = canonical_load_projection_source(&memory, &address)
-                .unwrap_or_else(|| memory.clone());
-            // A retained read's reasoning walk may cross cache-forgetting
-            // edges: they discard knowledge but write no program bytes.
-            // Keep the ambient naming walk conservative and the explicit
-            // read query bounded by its existing hop limit.
-            with_extended_dag_bridging(|| {
-                memory_dag_cell_source_with_hop_limit(&source, &address, bytes, assumptions, limit)
-            })
-        }
+        Some(limit) => bounded_recorded_cell_source(&memory, &address, bytes, assumptions, limit),
         None => memory_dag_cell_source(&memory, &address, bytes, assumptions, true),
     }?;
     if let Some(value) = cell.resolved_value(&address, kind) {
@@ -3529,7 +3670,7 @@ pub(in crate::kernel) fn memories_directly_match_for_pointer_load(
     // assumptions) to miss the cell. This is how a fact carried unchanged
     // through earlier steps, and so still named at its mint epoch, meets an
     // effect summary whose `before` is the later live snapshot.
-    if !pointer.block.starts_with("local:")
+    if !pointer.block.is_local_block()
         && let (Some(left_epoch), Some(right_epoch)) = (
             cell_version_point(
                 &crate::kernel::intern_c_memory(left.clone()),
@@ -3552,14 +3693,15 @@ pub(in crate::kernel) fn memories_directly_match_for_pointer_load(
     {
         return true;
     }
-    if pointer.block.starts_with("local:")
+    if pointer.block.is_local_block()
         || !left
             .blocks
             .iter()
-            .filter(|(block, _)| block.starts_with("havoc:") || block.starts_with("call-havoc:"))
-            .eq(right.blocks.iter().filter(|(block, _)| {
-                block.starts_with("havoc:") || block.starts_with("call-havoc:")
-            }))
+            .filter(|(block, _)| block.is_havoc_block() || block.is_call_havoc_block())
+            .eq(right
+                .blocks
+                .iter()
+                .filter(|(block, _)| block.is_havoc_block() || block.is_call_havoc_block()))
         || left.blocks.get(&pointer.block) != right.blocks.get(&pointer.block)
     {
         return false;
@@ -4301,8 +4443,8 @@ fn wide_read_observations_have_value(
             return true;
         }
         if let (Some(left_cell), Some(right_cell)) = (
-            memory_dag_cell_source_with_hop_limit(left_memory, left_pointer, 8, assumptions, 64),
-            memory_dag_cell_source_with_hop_limit(right_memory, left_pointer, 8, assumptions, 64),
+            bounded_recorded_cell_source(left_memory, left_pointer, 8, assumptions, 64),
+            bounded_recorded_cell_source(right_memory, left_pointer, 8, assumptions, 64),
         ) && left_cell.node() == right_cell.node()
         {
             return true;
@@ -4314,36 +4456,74 @@ fn wide_read_observations_have_value(
         };
         // A simple read-value normalization must not scan the whole path.
         // Longer frames need an explicit intervening proof step.
-        let Some(cell) = memory_dag_cell_source_with_hop_limit(memory, pointer, 8, assumptions, 64)
-        else {
-            return false;
-        };
-        let value = cell.resolved_value(pointer, LoadKind::Bits64).or_else(|| {
-            // The cheap history classifier may stop at a store whose address
-            // uses a recorded pointer-load identity. Check that one endpoint
-            // with the full pointer matcher; never search earlier writes or
-            // accept an overlapping store of a different width.
-            let step = cell.node().derivation()?;
-            let CMemoryDerivation::Store {
-                pointer: write,
-                value,
-                ..
-            } = step.as_ref()
-            else {
-                return None;
-            };
-            (LoadKind::Bits64.reads_value(value)
-                && crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
-                    write,
-                    pointer,
-                    assumptions,
-                ))
-            .then(|| value.clone())
+        let (producer, resolution) =
+            bounded_recorded_cell_resolution(memory, pointer, 8, assumptions, 64);
+        let value = resolution.as_ref().and_then(|(cell, _)| {
+            cell.resolved_value(pointer, LoadKind::Bits64).or_else(|| {
+                // The cheap history classifier may stop at a store whose address
+                // uses a recorded pointer-load identity. Check that one endpoint
+                // with the full pointer matcher; never search earlier writes or
+                // accept an overlapping store of a different width.
+                let step = cell.node().derivation()?;
+                let CMemoryDerivation::Store {
+                    pointer: write,
+                    value,
+                    ..
+                } = step.as_ref()
+                else {
+                    return None;
+                };
+                (LoadKind::Bits64.reads_value(value)
+                    && crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+                        write,
+                        pointer,
+                        assumptions,
+                    ))
+                .then(|| value.clone())
+            })
         });
-        let Some(CValue::Int64(value) | CValue::UInt64(value)) = value else {
-            return false;
+        // Compare only a complete typed word in the current native-width graph.
+        let equal = match &value {
+            Some(CValue::Int64(word) | CValue::UInt64(word)) => {
+                assumptions.uint64_values_known_equal(word, other)
+            }
+            _ => false,
         };
-        &value == other
+        READ_RESOLUTION_DIAGNOSTICS.with(|slot| {
+            if let Some(diagnostics) = slot.borrow_mut().as_mut() {
+                let (stopped_at, reason) = match &resolution {
+                    None => (None, "recursive read query already active"),
+                    Some((cell, stop)) => {
+                        let path = match cell {
+                            MemoryDagCell::Stored { path, .. }
+                            | MemoryDagCell::Unwritten { path, .. } => path,
+                        };
+                        let reason = if path.len() >= 64 {
+                            "64-hop query limit reached"
+                        } else {
+                            match stop {
+                                CellWalkStop::OldestRecorded => "oldest recorded snapshot reached",
+                                CellWalkStop::Affected => "step affects the read's bytes",
+                                CellWalkStop::NotShownSeparate => {
+                                    "step not proved separate from the read"
+                                }
+                            }
+                        };
+                        (Some(cell.node().clone()), reason)
+                    }
+                };
+                diagnostics.push(ReadResolutionDiagnostic {
+                    read: read.unwrap().clone(),
+                    producer,
+                    stopped_at,
+                    reason,
+                    recovered: value,
+                    expected: other.clone(),
+                    equal,
+                });
+            }
+        });
+        equal
     };
     stored_value_matches(left_origin, right) || stored_value_matches(right_origin, left)
 }
@@ -6312,6 +6492,171 @@ mod opaque_pointer_frame_tests {
             .clone()
             .store(field, CValue::pointer(argument));
         assert!(prove_c_condition_fact_transport(&source, &changed, &assumptions).is_none());
+    }
+
+    #[test]
+    fn wide_value_uses_retained_projection_source_and_rejects_overwrites() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let address = Pointer::loaded(
+            PointerBlock::ExternalArgument,
+            Bitvector32Term::Variable(Variable(9_880_401)),
+            4,
+        );
+        let write = Pointer::loaded(
+            PointerBlock::ExternalArgument,
+            Bitvector32Term::Variable(Variable(9_880_402)),
+            4,
+        );
+        let alias = Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(write.clone(), address.clone()),
+            true,
+        );
+        let context = PureFactContext::new().assume_proposition(alias.clone());
+        let value = Bitvector32Term::UInt64Constant(42);
+        let source = intern_c_memory(
+            CMemory::new()
+                .with_block("local:wide-unrelated", 4)
+                .store(
+                    Pointer {
+                        block: PointerBlock::Concrete("local:wide-unrelated".into()),
+                        offset: PointerOffsetTerm::Constant(0),
+                    },
+                    CValue::Int32(Bitvector32Term::Constant(1)),
+                )
+                .store(write.clone(), CValue::UInt64(value.clone())),
+        );
+        let projected = canonical_projected_load_memory(&source, &address);
+        assert_ne!(projected, source);
+        let direct = Bitvector32Term::MemoryLoad(
+            source.clone(),
+            Box::new(address.clone()),
+            LoadKind::Bits64,
+        );
+        let read =
+            Bitvector32Term::MemoryLoad(projected, Box::new(address.clone()), LoadKind::Bits64);
+        assert!(wide_read_has_recorded_value(&direct, &value, &context));
+        assert!(wide_read_has_recorded_value(&read, &value, &context));
+        assert!(!wide_read_has_recorded_value(
+            &read,
+            &value,
+            &context.without_exact_fact(&alias)
+        ));
+        let projected_read = |memory| {
+            let source = intern_c_memory(memory);
+            Bitvector32Term::MemoryLoad(
+                canonical_projected_load_memory(&source, &address),
+                Box::new(address.clone()),
+                LoadKind::Bits64,
+            )
+        };
+        let replacement = Bitvector32Term::UInt64Constant(7);
+        let changed = projected_read(
+            source
+                .memory()
+                .clone()
+                .store(write.clone(), CValue::UInt64(replacement.clone())),
+        );
+        assert!(!wide_read_has_recorded_value(&changed, &value, &context));
+        assert!(wide_read_has_recorded_value(
+            &changed,
+            &replacement,
+            &context
+        ));
+        for at in [write.clone(), write.offset_by_bytes(4)] {
+            let changed = projected_read(
+                source
+                    .memory()
+                    .clone()
+                    .store(at, CValue::Int32(Bitvector32Term::Constant(7))),
+            );
+            assert!(!wide_read_has_recorded_value(&changed, &value, &context));
+        }
+        let unknown = Pointer::loaded(
+            PointerBlock::ExternalArgument,
+            Bitvector32Term::Variable(Variable(9_880_403)),
+            4,
+        );
+        let forgotten = projected_read(source.memory().without_possible_aliasing_cells(
+            &unknown,
+            4,
+            &PureFactContext::new(),
+        ));
+        assert!(wide_read_has_recorded_value(&forgotten, &value, &context));
+        let changed = projected_read(
+            source
+                .memory()
+                .clone()
+                .store(unknown, CValue::Int32(Bitvector32Term::Constant(7))),
+        );
+        let (proved, diagnostics) =
+            capture_read_resolutions(|| wide_read_has_recorded_value(&changed, &value, &context));
+        assert!(!proved);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].reason,
+            "step not proved separate from the read"
+        );
+        assert!(diagnostics[0].recovered.is_none());
+        // Nested capture consumes only its own query; the outer written check
+        // is restored and never inherits a speculative inner query.
+        let (_, outer) = capture_read_resolutions(|| {
+            let (_, inner) = capture_read_resolutions(|| {
+                wide_read_has_recorded_value(&changed, &value, &context)
+            });
+            assert_eq!(inner.len(), 1);
+        });
+        assert!(outer.is_empty());
+    }
+
+    #[test]
+    fn recovered_wide_word_uses_current_equality_closure() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Constant(128),
+        };
+        let parent = Pointer::symbolic(Variable(9_880_501));
+        let alias = Pointer::symbolic(Variable(9_880_502));
+        let equality = Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(parent.clone(), alias.clone()),
+            true,
+        );
+        let context = PureFactContext::new().assume_proposition(equality.clone());
+        let stored = Bitvector32Term::PointerAddress(Box::new(parent));
+        let wanted = Bitvector32Term::PointerAddress(Box::new(alias));
+        assert_ne!(stored, wanted);
+        assert!(context.uint64_values_known_equal(&stored, &wanted));
+        let memory = intern_c_memory(CMemory::new().store(field.clone(), CValue::UInt64(stored)));
+        let read = Bitvector32Term::MemoryLoad(memory, Box::new(field), LoadKind::Bits64);
+        assert!(wide_read_has_recorded_value(&read, &wanted, &context));
+        assert!(wide_read_has_recorded_value(&wanted, &read, &context));
+        let (proved, diagnostics) = capture_read_resolutions(|| {
+            wide_read_has_recorded_value(&read, &wanted, &context.without_exact_fact(&equality))
+        });
+        assert!(!proved);
+        assert_eq!(diagnostics.len(), 1);
+        let diagnostic = &diagnostics[0];
+        assert_eq!(diagnostic.reason, "step affects the read's bytes");
+        assert!(diagnostic.recovered.is_some());
+        assert!(!diagnostic.equal);
+        assert_eq!(diagnostic.expected, wanted);
+        assert_eq!(diagnostic.stopped_at.as_ref(), Some(&diagnostic.producer));
+        let mut labels = crate::surface::proof_diagnostics::render::SnapshotLabels::ambient();
+        let rendered = crate::surface::proof_diagnostics::render::render_read_resolution(
+            diagnostic,
+            &mut labels,
+        );
+        assert!(rendered.contains("recovered word equality:"), "{rendered}");
+        assert!(
+            rendered.contains("equality check: not proved"),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains("producer source: snapshot#"),
+            "{rendered}"
+        );
+        assert!(!rendered.contains("…"), "{rendered}");
+        assert!(wide_read_has_recorded_value(&read, &wanted, &context));
     }
 
     #[cfg(test)]

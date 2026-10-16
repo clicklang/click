@@ -152,22 +152,14 @@ fi
 # and mdtests must expand to a proof that verifies. It takes about twenty
 # minutes on a release build, so it is a job of the nightly workflow and not
 # part of the budgeted gate.
-#
-# examples/basic-cpp is left out for a different reason: its import lock and
-# compilation database are generated per machine by the test harness and are
-# not checked in, so a fresh checkout cannot load it. `tests/cpp_import.rs`
-# audits the C++ path.
 if [[ "${1:-}" == "--audit" ]]; then
     export RUST_MIN_STACK="${RUST_MIN_STACK:-8388608}"
     # The C++ mdtests are audited through the pinned exporter.
     export CLICK_CPP_EXPORTER
     CLICK_CPP_EXPORTER="$(scripts/build-cpp-exporter.sh)"
     cargo build --release --bin click
-    # Unlike the examples gate, this job starts with no generated native C
-    # lock or preprocessed sources. Rust examples use checked-in offline locks.
-    target/release/click import lock examples/label-build-flags/label.click
+    # C, C++ and Rust examples use checked-in offline locks.
     exec target/release/click audit --keep-going --time-limit 180m \
-        --exclude examples/basic-cpp \
         .
 fi
 
