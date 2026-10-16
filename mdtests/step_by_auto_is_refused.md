@@ -13,7 +13,7 @@ int32 compare_self(uint8 bytes[]) {
 verifying "step_by_auto_is_refused.c";
 
 int32 compare_self(uint8 bytes[]) {
-    requires viewable(bytes[0..2]);
+    views bytes[0..2];
     ensures 1 == 1 by {
         step() by auto;
         step();

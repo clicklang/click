@@ -85,3 +85,9 @@ only by the tests that read them.
 - The repository root keeps `design/`, `issues/` and `bugs/` beside the
   product. Closed 2026-10-14: the maintainer judged the mix not a real
   problem.
+- Read permission stays `views` (a call-scoped shared loan) and `owns`;
+  fractional or counted read permissions are deferred until a program needs
+  a reader-writer pattern (design review M3, split 2026-10-14). Closed
+  2026-10-16: the library `memcpy` and `memcmp` contracts read under
+  `views`, as every external load needs a covering viewed or owned
+  resource. `viewable` stays a bounds fact with no read authority.
