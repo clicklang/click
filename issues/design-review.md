@@ -75,15 +75,16 @@ lines; `examples/modeled-binary-tree` proves the 12-line `tree_contains` in
 about 100. `examples/arena/arena_cells.click` is 5,537 lines for 279 lines
 of C.
 
-Proposed fix: items P2 and P6, plus a published proof-to-code budget per
-example that the gate reports.
+Proposed fix: item P2 and the landed P6 (loop facts carry across steps
+and the back edge closes implicitly), plus a published proof-to-code budget
+per example that the gate reports.
 
 Done when: the examples meet a stated budget, or the budget and the reason
 for exceeding it are published.
 
 Decision: fix (maintainer, 2026-10-15). The gate reports each example's
-proof-to-code ratio against the 20x budget, report-only at first; P2 and P6
-are the main levers for meeting it.
+proof-to-code ratio against the 20x budget, report-only at first; P2 is the
+main remaining lever for meeting it.
 
 ### P2. Spec arithmetic is machine arithmetic
 
@@ -153,20 +154,6 @@ R2 is done (2026-10-14): general `__rb_erase_augmented` and `rb_erase`
 contracts replace 16 per-case sidecars of `examples/rbtree-erase`; see
 [design/proof-reuse.md](../design/proof-reuse.md#r2-one-general-contract-per-function).
 R3, R4 and R5 remain.
-
-### P6. Loop proofs restate facts
-
-Today: invariants restate immutable facts and held views
-(`examples/rust-byte-sum/sum.click`), iterations end with explicit
-`step(); step(); step(); close_invariants();`, and identical facts are
-re-`have`d after steps (the deeper-successor arms of
-`examples/rbtree-erase/rbtree_erase_augmented.click`).
-
-Proposed fix: facts about values a step cannot change carry across steps
-automatically; the back edge closes implicitly.
-
-Decision: fix (maintainer, 2026-10-14), after the SMT-backed `auto`, which has
-landed.
 
 ## W. Proof workflow and tooling
 
