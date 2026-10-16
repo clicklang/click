@@ -131,6 +131,31 @@ pub enum CAccessClass {
     Member(Arc<(CStructClass, Option<CAccessClass>)>),
 }
 
+impl std::fmt::Display for CAccessClass {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Scalar(class) => write!(f, "scalar({class:?})"),
+            Self::Struct(class) => write!(f, "struct {}", class.tag()),
+            Self::Pointer { base, depth } => {
+                write!(f, "pointer(base=")?;
+                match base {
+                    CPointeeBase::Struct(class) => write!(f, "struct {}", class.tag())?,
+                    other => write!(f, "{other:?}")?,
+                }
+                write!(f, ", depth={depth})")
+            }
+            Self::Member(member) => {
+                write!(f, "member(container=struct {}, class=", member.0.tag())?;
+                match &member.1 {
+                    Some(class) => write!(f, "{class}")?,
+                    None => write!(f, "unknown")?,
+                }
+                write!(f, ")")
+            }
+        }
+    }
+}
+
 impl CStructClass {
     /// A struct whose layout is unknown here, such as the pointee of a
     /// pointer member: its identity is known, its contents are not.
