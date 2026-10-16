@@ -16,6 +16,8 @@ pub(super) enum ArgumentTag {
     PointerExtentRead((u32, u32)),
     PointerRootExtent,
     PointerSubobjectExtent,
+    PointerCallDesignation,
+    PointerCallExtent,
     Integer,
 }
 
@@ -104,7 +106,14 @@ impl TermClasses {
     }
 
     pub(super) fn intern_pointer_call(&mut self, application: &SharedPureApplication) -> u64 {
-        self.intern_expression(None, None, None, None, Some(application))
+        self.intern_expression(None, None, None, None, Some((application, false)))
+    }
+
+    pub(super) fn intern_pointer_call_identity(
+        &mut self,
+        application: &SharedPureApplication,
+    ) -> u64 {
+        self.intern_expression(None, None, None, None, Some((application, true)))
     }
 
     fn intern_expression(
@@ -113,7 +122,7 @@ impl TermClasses {
         algebraic: Option<&crate::kernel::AlgebraicTerm>,
         integer: Option<&crate::kernel::IntegerTerm>,
         value: Option<&CValue>,
-        pointer_call: Option<&SharedPureApplication>,
+        pointer_call: Option<(&SharedPureApplication, bool)>,
     ) -> u64 {
         enum Binary {
             Int32Add,
@@ -121,7 +130,7 @@ impl TermClasses {
             UInt64(UInt64Binary),
         }
         enum Work<'a> {
-            PointerCall(&'a SharedPureApplication),
+            PointerCall(&'a SharedPureApplication, bool),
             Algebraic(&'a crate::kernel::AlgebraicTerm),
             Integer(&'a crate::kernel::IntegerTerm),
             RememberInteger(crate::kernel::SharedIntegerTerm),
@@ -141,8 +150,8 @@ impl TermClasses {
             vec![Work::Machine(term, width)]
         } else if let Some(term) = integer {
             vec![Work::Integer(term)]
-        } else if let Some(call) = pointer_call {
-            vec![Work::PointerCall(call)]
+        } else if let Some((call, identity)) = pointer_call {
+            vec![Work::PointerCall(call, identity)]
         } else {
             vec![Work::Algebraic(algebraic.expect("expression"))]
         };
@@ -168,11 +177,14 @@ impl TermClasses {
                 _ => None,
             };
             let node = match work {
-                Work::PointerCall(application) => {
+                Work::PointerCall(application, identity) => {
                     let symbol =
                         SharedPureApplication::intern(application.name().to_owned(), vec![]);
-                    let head = self
-                        .intern_node(Node::PointerFunction(symbol, application.arguments().len()));
+                    let head = self.intern_node(if identity {
+                        Node::PointerFunctionValue(symbol, application.arguments().len())
+                    } else {
+                        Node::PointerFunction(symbol, application.arguments().len())
+                    });
                     pending.push(Work::Call(head, application.arguments().len()));
                     pending.extend(application.arguments().iter().rev().map(Work::Argument));
                     continue;
@@ -880,6 +892,12 @@ impl TermClasses {
     }
 
     fn opaque_extent_node(&mut self, origin: &crate::kernel::Pointer) -> u64 {
+        let node = self.opaque_extent_node_without_calls(origin);
+        self.retain_pointer_call_component(origin, node, ArgumentTag::PointerCallExtent);
+        node
+    }
+
+    fn opaque_extent_node_without_calls(&mut self, origin: &crate::kernel::Pointer) -> u64 {
         let origin = self.read_domains.representative(origin);
         if let Some(node) = self.read_extent_nodes.get(&origin) {
             return *node;
@@ -920,6 +938,39 @@ impl TermClasses {
     }
 
     fn designation_node(&mut self, origin: &crate::kernel::Pointer) -> u64 {
+        let node = self.designation_node_without_calls(origin);
+        self.retain_pointer_call_component(origin, node, ArgumentTag::PointerCallDesignation);
+        node
+    }
+
+    /// Complete result domains depend on complete arguments. Their parallel
+    /// function head never joins raw output-address equations. Queue the one
+    /// selected identity definition so nested calls stay iterative.
+    fn retain_pointer_call_component(
+        &mut self,
+        origin: &crate::kernel::Pointer,
+        component: u64,
+        tag: ArgumentTag,
+    ) {
+        let PointerBlock::PureFunctionApplication(application) = &origin.block else {
+            return;
+        };
+        if origin.offset != PointerOffsetTerm::Constant(0) {
+            return;
+        }
+        let key = Node::PointerFunctionIdentity(application.clone());
+        let new = !self.nodes.contains_key(&key);
+        let identity = self.intern_node(key);
+        if new {
+            self.pending_pointer_identities
+                .push((identity, application.clone()));
+        }
+        let head = self.intern_node(Node::ArgumentTag(tag));
+        let projected = self.intern_node(Node::Apply(head, identity));
+        self.close_with_affine_definition(vec![(component, projected)], true);
+    }
+
+    fn designation_node_without_calls(&mut self, origin: &crate::kernel::Pointer) -> u64 {
         // Congruence here uses the cell a complete pointer was read from.
         // Equality of the loaded pointer's numeric address never merges this
         // node with a different value origin.

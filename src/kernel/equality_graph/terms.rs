@@ -168,6 +168,8 @@ enum Node {
     IntegerOperation(IntegerOperation),
     IntegerFunction(crate::kernel::SharedPureApplication, usize),
     PointerFunction(crate::kernel::SharedPureApplication, usize),
+    PointerFunctionValue(crate::kernel::SharedPureApplication, usize),
+    PointerFunctionIdentity(crate::kernel::SharedPureApplication),
     AlgebraicVariable(crate::kernel::SharedPureApplication, Variable),
     AlgebraicConstructor(crate::kernel::SharedPureApplication, String, usize),
     AlgebraicFunction(crate::kernel::SharedPureApplication, String, usize),
@@ -415,6 +417,7 @@ pub(super) struct TermClasses {
     // this worklist iterative handles loads used as indices of further loads.
     pending_loads: Vec<(u64, crate::kernel::SharedCMemory, crate::kernel::Pointer)>,
     pending_pointer_calls: Vec<(u64, crate::kernel::SharedPureApplication)>,
+    pending_pointer_identities: Vec<(u64, crate::kernel::SharedPureApplication)>,
     registering_dependencies: bool,
     // Weight counts class members plus registered parent uses. Moving the
     // lighter side bounds both root depth and reindexing, including a class
@@ -1400,6 +1403,12 @@ impl TermClasses {
                     self.root(value),
                     PointerBlock::PureFunctionApplication(application),
                 );
+                continue;
+            }
+            if let Some((identity, application)) = self.pending_pointer_identities.pop() {
+                crate::instrumentation::record_deterministic_work(1);
+                let value = self.intern_pointer_call_identity(&application);
+                self.close_with_affine_definition(vec![(identity, value)], true);
                 continue;
             }
             let Some((id, memory, pointer)) = self.pending_loads.pop() else {
