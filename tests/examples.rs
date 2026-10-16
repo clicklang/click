@@ -2498,6 +2498,42 @@ fn expanded_value_parameter_refinement_resolves_and_audits() {
     );
 }
 
+#[test]
+#[ignore = "nightly: pointer guards and comparison results across complete expansion audits"]
+fn pointer_comparison_certificates_expand_and_audit_without_origin_authority() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for fixture in [
+        "address_equality_keeps_its_value_meaning.md",
+        "model_identity_pointer_payload.md",
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_click"))
+            .arg("audit")
+            .arg(root.join("mdtests").join(fixture))
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{fixture}: {}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let output = Command::new(env!("CARGO_BIN_EXE_click"))
+        .arg("verify")
+        .arg(root.join("mdtests/address_equality_does_not_grant_access_to_a_one_past_pointer.md"))
+        .output()
+        .unwrap();
+    assert!(
+        !output.status.success(),
+        "address equality must not grant access"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("missing resource fact"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// Keep both reported library-path failures on the real expansion/audit path.
 #[test]
 #[ignore = "nightly: CLI expansion and audit of library-name regressions"]

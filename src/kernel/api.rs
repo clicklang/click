@@ -1868,6 +1868,13 @@ fn validate_branch_memory_delta_against_loans(
     Ok(())
 }
 
+/// Read only the expression's existing C type metadata; no load or access
+/// check is performed. Surface branch spelling uses this to keep native
+/// address comparisons separate from contract pointer-value equalities.
+pub(crate) fn c_expression_has_pointer_type(state: &CState, expression: &CExpression) -> bool {
+    super::eval::c_expression_pointee_type(state, expression).is_some()
+}
+
 pub fn c_variable(name: impl Into<String>) -> CExpression {
     CExpression::Variable(name.into())
 }
@@ -2215,13 +2222,14 @@ pub(crate) fn c_typed_load_with_source(
     value_type: CType,
     source: Option<crate::kernel::LoadSourceId>,
 ) -> CExpression {
-    c_qualified_typed_load_with_source(pointer, value_type, false, source)
+    c_qualified_typed_load_with_source(pointer, value_type, false, None, source)
 }
 
 pub(crate) fn c_qualified_typed_load_with_source(
     pointer: CExpression,
     value_type: CType,
     pointee_constant: bool,
+    access_class: Option<crate::kernel::effective_type::CAccessClass>,
     source: Option<crate::kernel::LoadSourceId>,
 ) -> CExpression {
     CExpression::TypedLoad {
@@ -2229,7 +2237,7 @@ pub(crate) fn c_qualified_typed_load_with_source(
         value_type,
         volatile: false,
         pointee_constant,
-        access_class: None,
+        access_class,
         source: source
             .map(crate::kernel::CExpressionLoadSource::new)
             .unwrap_or_default(),
@@ -2415,6 +2423,21 @@ pub fn c_declare_aggregate(name: impl Into<String>, layout: CAggregateLayout) ->
         name: name.into(),
         layout,
         kind: CAggregateDeclarationKind::Local,
+        declared_class: None,
+    }
+}
+
+/// [`c_declare_aggregate`] of an object whose class is `declared_class`.
+pub(crate) fn c_declare_classed_aggregate(
+    name: impl Into<String>,
+    layout: CAggregateLayout,
+    declared_class: Option<crate::kernel::effective_type::CAccessClass>,
+) -> CStatement {
+    CStatement::DeclareAggregate {
+        name: name.into(),
+        layout,
+        kind: CAggregateDeclarationKind::Local,
+        declared_class,
     }
 }
 
@@ -2426,6 +2449,7 @@ pub fn c_begin_aggregate_construction(
         name: name.into(),
         layout,
         kind: CAggregateDeclarationKind::Constructor,
+        declared_class: None,
     }
 }
 
@@ -2439,6 +2463,7 @@ pub fn c_allocate_aggregate_destination(
         name: name.into(),
         layout,
         kind: CAggregateDeclarationKind::ConstructionDestination,
+        declared_class: None,
     }
 }
 

@@ -5173,7 +5173,7 @@ mod tests {
                 start: target,
                 width: 4,
             }))
-            .with_object_class(Some(class));
+            .with_object_class(Some(class.clone()));
         let context = PureFactContext::new();
         let memory = CMemory::new()
             .store(field.clone(), CValue::Pointer(stored.clone()))

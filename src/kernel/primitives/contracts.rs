@@ -73,7 +73,7 @@ impl CParameter {
     }
 
     pub fn pointee_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
-        self.pointee_class
+        self.pointee_class.clone()
     }
 
     pub fn with_aggregate_layout(mut self, layout: CAggregateLayout) -> Self {

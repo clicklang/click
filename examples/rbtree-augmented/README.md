@@ -364,3 +364,10 @@ Its input bundles the tree and path around their shared cached size. Either
 parent orientation returns the root link and ownership of the whole root tree,
 whose exact model is the original context filled with the original subtree.
 Both augmented insertion wrappers preserve that result.
+
+
+`rbtree_size_insert_flips_model.click` defines a chain of pending insertion
+color flips in all four ancestor orientations, ending at the root or an owned
+black-parent boundary. It defines the resulting recolored tree and proves the
+chain-depth bound and the context-parent relation. This is the model foundation
+for repeated propagation; the corresponding C loop proof remains unfinished.

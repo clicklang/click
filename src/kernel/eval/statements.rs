@@ -3410,7 +3410,7 @@ fn execute_c_statement_leaf_paths(
                     *pointee_volatile,
                     *constant,
                     *pointee_constant,
-                    *declared_class,
+                    declared_class.clone(),
                 )
                 .and_then(|state| match zero_fill {
                     Some(zero_fill) => zero_fill_declared_array(state, name, zero_fill),
@@ -3529,11 +3529,16 @@ fn execute_c_statement_leaf_paths(
                 )]
             }
         }
-        CStatement::DeclareAggregate { name, layout, kind } => {
+        CStatement::DeclareAggregate {
+            name,
+            layout,
+            kind,
+            declared_class,
+        } => {
             let declared = match kind {
                 CAggregateDeclarationKind::Local
                 | CAggregateDeclarationKind::ConstructionDestination => {
-                    declare_aggregate_local(state, name, layout)
+                    declare_aggregate_local(state, name, layout, declared_class.clone())
                 }
                 CAggregateDeclarationKind::Constructor => {
                     begin_aggregate_construction(state, name, layout, budget)?
@@ -3780,7 +3785,7 @@ fn execute_c_statement_leaf_paths(
                 value_type: *value_type,
                 volatile: *volatile,
                 pointee_constant: *pointee_constant,
-                access_class: *access_class,
+                access_class: access_class.clone(),
                 source: Default::default(),
             },
             value,
@@ -4974,16 +4979,16 @@ pub(in crate::kernel) fn declare_aggregate_local(
     state: &CState,
     name: &str,
     layout: &CAggregateLayout,
+    declared_class: Option<crate::kernel::effective_type::CAccessClass>,
 ) -> Result<CState, CRuntimeError> {
     let mut state = state.clone();
     let pointer = local_declaration_pointer(&mut state, name)?;
     register_block_alignment(&pointer.block, layout.alignment_bytes());
-    state.set_memory(
-        state
-            .memory
-            .clone()
-            .with_block(pointer.block.clone(), layout.size_bytes()),
-    );
+    state.set_memory(state.memory.clone().with_classed_block(
+        pointer.block.clone(),
+        declared_class,
+        layout.size_bytes(),
+    ));
     state
         .locals
         .set_aggregate_object_at(name.to_string(), layout.clone(), pointer.clone());
@@ -5011,7 +5016,7 @@ fn begin_aggregate_construction(
     layout: &CAggregateLayout,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<CState, CRuntimeError>> {
-    let mut state = match declare_aggregate_local(state, name, layout) {
+    let mut state = match declare_aggregate_local(state, name, layout, None) {
         Ok(state) => state,
         Err(refusal) => return Ok(Err(refusal)),
     };
