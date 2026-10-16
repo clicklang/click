@@ -140,8 +140,12 @@ switch removed when the default flips, and the kernel decides Integer
 comparisons of machine observations through their native comparisons.
 Under the directive, `bounded-pool`'s `pool_init` verifies with its bridge
 lemmas removed; the next blocker is population counts, which are still
-`int32` machine sums. Next: Integer-valued population counts, then the
-migration file by file and the flip.
+`int32` machine sums. Step 3 has started: `auto` proves that an in-range
+machine `+` or `-` is the Integer operation (`integer_operation_identity`),
+using native comparisons as Integer facts and machine type ranges, so
+`ensures result == x - 1;` verifies from `requires 1 <= x;` with no bridge
+lemma. Next: the population counts of `bounded-pool` through the same
+route, then the migration file by file and the flip.
 
 Afterwards, delete the `machine_integer` and `integer` lemmas Integer
 arithmetic makes unnecessary, complete the families that remain, and give

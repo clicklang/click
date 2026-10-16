@@ -19,7 +19,7 @@ pub(in crate::surface) use fixed_state_proofs::{
 mod cursor_execution;
 mod execution_planning;
 pub(in crate::surface) mod fact_reasoning;
-mod fixed_state_proofs;
+pub(in crate::surface) mod fixed_state_proofs;
 mod language_context;
 mod proof_object;
 

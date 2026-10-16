@@ -569,6 +569,10 @@ pub(crate) enum SpecialArithmeticNode {
         bounds: Vec<usize>,
         result: Proposition,
     },
+    IntegerOperationIdentity {
+        bounds: Vec<usize>,
+        result: Proposition,
+    },
     UnsignedSumBound {
         bounds: Vec<usize>,
         result: Proposition,
@@ -637,6 +641,7 @@ pub(crate) enum SpecialArithmeticCheckError {
     IntegerPolynomialLimitExceeded,
     InvalidIntegerQuotientShift(usize),
     InvalidIntegerCastIdentity(usize),
+    InvalidIntegerOperationIdentity(usize),
     InvalidPremise(usize),
     InvalidNodeReference(usize),
     InvalidOperator(usize),
@@ -716,6 +721,9 @@ impl SpecialArithmeticCertificate {
             }
             SpecialArithmeticNode::IntegerCastIdentity { bounds, result } => {
                 super::integer_cast_identity::check(index, bounds, premises, result)
+            }
+            SpecialArithmeticNode::IntegerOperationIdentity { bounds, result } => {
+                super::integer_operation_identity::check(index, bounds, premises, result)
             }
             SpecialArithmeticNode::PointerTranslation {
                 relation,
@@ -1201,6 +1209,7 @@ impl SpecialArithmeticNode {
             | Self::IntegerPolynomialIdentity { result, .. }
             | Self::IntegerQuotientShift { result, .. }
             | Self::IntegerCastIdentity { result, .. }
+            | Self::IntegerOperationIdentity { result, .. }
             | Self::PointerTranslation { result, .. }
             | Self::PointerAlignment { result, .. }
             | Self::PointerWordEquality { result, .. }

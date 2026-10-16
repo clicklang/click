@@ -15,7 +15,7 @@ use crate::kernel::proof::{
     PropositionIdentityKey, proposition_identity_key, propositions_are_alpha_equal,
 };
 use crate::surface::checking::plan_signed_arithmetic_certificate;
-use crate::surface::checking::{IntegerRefutation, plan_integer_refutation};
+use crate::surface::checking::{IntegerRefutation, plan_integer_refutation_with_ranges};
 use crate::surface::planning::proposition_search::PropositionSearch;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
@@ -291,6 +291,18 @@ pub(in crate::surface::proof) fn integer_plan_to_surface_certificate(
     premise_pairs: &[(Proposition, ClickProposition)],
     surface_goal: &ClickProposition,
 ) -> Option<IntegerCertificate> {
+    integer_plan_to_surface_certificate_with_ranges(plan, premise_pairs, surface_goal, &[])
+}
+
+/// As [`integer_plan_to_surface_certificate`], spelling each type-range
+/// node by the matching entry of `ranges`: the machine observation, whether
+/// the bound is the upper one, and its written bound.
+pub(in crate::surface::proof) fn integer_plan_to_surface_certificate_with_ranges(
+    plan: &IntegerArithmeticCertificate,
+    premise_pairs: &[(Proposition, ClickProposition)],
+    surface_goal: &ClickProposition,
+    ranges: &[(crate::kernel::IntegerTerm, bool, ClickProposition)],
+) -> Option<IntegerCertificate> {
     let mut source_indices = BTreeMap::new();
     let mut node_surfaces = Vec::with_capacity(plan.nodes.len());
     let mut nodes = Vec::with_capacity(plan.nodes.len());
@@ -385,6 +397,20 @@ pub(in crate::surface::proof) fn integer_plan_to_surface_certificate(
                     result: surface.clone(),
                 };
                 (surface, certificate)
+            }
+            IntegerArithmeticNode::TypeRange { value, upper, .. } => {
+                let surface = ranges
+                    .iter()
+                    .find(|(observed, bound, _)| observed == value && bound == upper)?
+                    .2
+                    .clone();
+                let certificate = IntegerCertificateNode::TypeRange {
+                    result: surface.clone(),
+                };
+                (
+                    surface_comparison_with_anchored_operands(&surface),
+                    certificate,
+                )
             }
             // A divided bound has no general source spelling derived from
             // its source's spelling; planners that divide spell the result
@@ -716,6 +742,105 @@ fn integer_surface_strict_from_disequal(bound: &ClickProposition) -> Option<Clic
         operator: ComparisonOperator::LessThan,
         right,
     })
+}
+
+/// The distinct `to_integer(...)` expressions written in `surfaces`.
+fn written_integer_observations<'s>(
+    surfaces: impl Iterator<Item = &'s ClickProposition>,
+) -> Vec<ContractExpression> {
+    let mut written: Vec<ContractExpression> = Vec::new();
+    for surface in surfaces {
+        crate::surface::proof::fixed_state_proofs::conversion_conditions::walk_written_expressions_in_proposition(
+            surface,
+            &mut |expression| {
+                if matches!(
+                    expression,
+                    ContractExpression::Call { name, arguments }
+                        if name == "to_integer" && arguments.len() == 1
+                ) && !written.contains(expression)
+                {
+                    written.push(expression.clone());
+                }
+            },
+        );
+    }
+    written
+}
+
+/// Whether `proposition` reads `result` inside a snapshot that precedes the
+/// return, which the parser refuses.
+fn reads_result_before_return(proposition: &ClickProposition) -> bool {
+    let too_early =
+        |selector: Option<&SnapshotSelector>| !crate::surface::snapshot_can_name_result(selector);
+    let proposition_reads = match proposition {
+        ClickProposition::At {
+            selector,
+            proposition,
+        } => {
+            (too_early(Some(selector)) && crate::surface::proposition_names_result(proposition))
+                || reads_result_before_return(proposition)
+        }
+        ClickProposition::Not(inner) => reads_result_before_return(inner),
+        ClickProposition::And(left, right)
+        | ClickProposition::Or(left, right)
+        | ClickProposition::Implies(left, right) => {
+            reads_result_before_return(left) || reads_result_before_return(right)
+        }
+        _ => false,
+    };
+    if proposition_reads {
+        return true;
+    }
+    let mut found = false;
+    crate::surface::proof::fixed_state_proofs::conversion_conditions::walk_written_expressions_in_proposition(
+        proposition,
+        &mut |expression| {
+            let (selector, inner) = match expression {
+                ContractExpression::At {
+                    selector,
+                    expression,
+                } => (Some(selector), expression),
+                ContractExpression::Old(inner) => (None, inner),
+                _ => return,
+            };
+            if too_early(selector) {
+                let mut names = BTreeSet::new();
+                crate::surface::collect_current_contract_expression_variables(inner, &mut names);
+                found |= names.contains("result");
+            }
+        },
+    );
+    found
+}
+
+/// `premises` followed by the Integer reading of each native comparison
+/// among them (`1u32 <= x` read as `1 <= to_integer(x)`), each once.
+fn with_native_comparisons_as_integer(premises: &[Proposition]) -> Vec<Proposition> {
+    let mut extended = premises.to_vec();
+    for premise in premises {
+        for lifted in crate::kernel::assumptions::integer_observations_of_native_comparison(premise)
+        {
+            if !extended.contains(&lifted) {
+                extended.push(lifted);
+            }
+        }
+    }
+    extended
+}
+
+/// The machine observations in `goal` and `premises` whose type ranges a
+/// refutation may use, each once.
+fn machine_observations(
+    goal: &Proposition,
+    premises: &[Proposition],
+) -> Vec<crate::kernel::IntegerTerm> {
+    let mut seen = std::collections::HashSet::new();
+    std::iter::once(goal)
+        .chain(premises)
+        .flat_map(crate::kernel::proof::integer_arithmetic::integer_affine_machine_values)
+        .filter(|value| seen.insert(value.id()))
+        .map(crate::kernel::IntegerTerm::Machine)
+        .collect()
 }
 
 fn integer_surface_trivial(claim: &IntegerAffineClaim) -> Option<ClickProposition> {
@@ -1909,6 +2034,20 @@ impl<'a> Proof<'a> {
     }
 
     pub(in crate::surface::proof) fn try_solver_closure(&self) -> Result<Option<Self>, ClickError> {
+        self.solver_closure(true, &[])
+    }
+
+    /// Refute the goal's negation from the connected facts, then from them
+    /// and the type ranges of their machine observations, then, when
+    /// `identities`, also from in-range machine `+` and `-` identities.
+    ///
+    /// `spelled` gives the source spelling of facts the caller just
+    /// established, which a cited premise uses before its resolved one.
+    pub(in crate::surface::proof) fn solver_closure(
+        &self,
+        identities: bool,
+        spelled: &[(Proposition, ClickProposition)],
+    ) -> Result<Option<Self>, ClickError> {
         let (Some(goal), Some(surface_goal)) = (self.goal(), self.surface_goal()) else {
             return Ok(None);
         };
@@ -1924,38 +2063,361 @@ impl<'a> Proof<'a> {
             return Ok(None);
         };
         check_verification_deadline()?;
-        let IntegerRefutation::Proved {
-            certificate,
-            premises,
-        } = crate::instrumentation::measure_operation(
-            "surface",
-            "auto solver",
-            "auto solver: integer refutation",
-            || plan_integer_refutation(goal, &candidates),
-        )
-        else {
-            return Ok(None);
+        let plan = |premises: &[Proposition], ranges: &[crate::kernel::IntegerTerm]| {
+            crate::instrumentation::measure_operation(
+                "surface",
+                "auto solver",
+                "auto solver: integer refutation",
+                || plan_integer_refutation_with_ranges(goal, premises, ranges),
+            )
+        };
+        // Native comparisons read as Integer comparisons, and machine type
+        // ranges, are added only when the Integer facts alone leave a
+        // counterexample, so a proof that needs neither keeps its
+        // certificate.
+        let (certificate, premises) = match plan(&candidates, &[]) {
+            IntegerRefutation::Proved {
+                certificate,
+                premises,
+            } => (certificate, premises),
+            IntegerRefutation::Counterexample(_) => {
+                let extended = with_native_comparisons_as_integer(&candidates);
+                let ranges = machine_observations(goal, &extended);
+                match plan(&extended, &ranges) {
+                    IntegerRefutation::Proved {
+                        certificate,
+                        premises,
+                    } if !ranges.is_empty() || extended.len() > candidates.len() => {
+                        (certificate, premises)
+                    }
+                    IntegerRefutation::Counterexample(_) if identities => {
+                        return self.try_operation_identity_closure(goal, surface_goal, &extended);
+                    }
+                    _ => return Ok(None),
+                }
+            }
+            _ => return Ok(None),
         };
         // A certificate cites its premises by their source spelling; one
         // that needs a fact with none (a conjunct of a written invariant,
-        // for one) is not closed by the solver.
-        let Some(pairs) = premises
+        // for one) is not closed by the solver. A native comparison read as
+        // an Integer one is spelled from the goal's and other premises'
+        // written observations.
+        let mut pairs: Vec<Option<(Proposition, ClickProposition)>> = premises
             .iter()
             .map(|premise| {
+                if !candidates.contains(premise) {
+                    return None;
+                }
+                if let Some(pair) = spelled.iter().find(|(fact, _)| fact == premise) {
+                    return Some(pair.clone());
+                }
                 self.resolve_simp_premises(std::slice::from_ref(premise), &[])
                     .and_then(|mut spelled| spelled.pop())
             })
-            .collect::<Option<Vec<_>>>()
-        else {
+            .collect();
+        if premises
+            .iter()
+            .zip(&pairs)
+            .any(|(premise, pair)| pair.is_none() && candidates.contains(premise))
+        {
+            return Ok(None);
+        }
+        if pairs.iter().any(Option::is_none) {
+            let written = written_integer_observations(
+                std::iter::once(surface_goal)
+                    .chain(pairs.iter().flatten().map(|(_, surface)| surface)),
+            );
+            for (premise, pair) in premises.iter().zip(pairs.iter_mut()) {
+                if pair.is_none() {
+                    let Some(surface) = self.spell_integer_comparison(premise, &written) else {
+                        return Ok(None);
+                    };
+                    *pair = Some((premise.clone(), surface));
+                }
+            }
+        }
+        let pairs: Vec<(Proposition, ClickProposition)> = pairs.into_iter().flatten().collect();
+        let Some(ranges) = self.spell_type_ranges(&certificate, &pairs, surface_goal) else {
             return Ok(None);
         };
-        let Some(surface) = integer_plan_to_surface_certificate(&certificate, &pairs, surface_goal)
-        else {
+        let Some(surface) = integer_plan_to_surface_certificate_with_ranges(
+            &certificate,
+            &pairs,
+            surface_goal,
+            &ranges,
+        ) else {
             return Ok(None);
         };
         attempt::candidate_outcome(self.apply_step(ProofStep::ArithmeticCertificate(
             ArithmeticCertificate::integer(surface),
         )))
+    }
+
+    /// Close the goal with in-range machine `+` and `-` identities. A
+    /// refutation that may assume `to_integer(a op b) == to_integer(a) op
+    /// to_integer(b)` for the operations among the facts' and goal's
+    /// machine observations selects the identities it needs. Each is then
+    /// proved: its two type-range bounds by the solver, the identity by
+    /// `integer_operation_identity`, and the goal by the solver from the
+    /// facts and identities. Identities are not nested: a bound that needs
+    /// one is not proved here.
+    fn try_operation_identity_closure(
+        &self,
+        goal: &Proposition,
+        surface_goal: &ClickProposition,
+        candidates: &[Proposition],
+    ) -> Result<Option<Self>, ClickError> {
+        use crate::kernel::IntegerTerm;
+        use crate::kernel::proof::integer_operation_identity::mathematical;
+        let mut identities: Vec<(IntegerTerm, IntegerTerm, Proposition)> = Vec::new();
+        for observed in machine_observations(goal, candidates) {
+            let Some((_, value)) = mathematical(&observed) else {
+                continue;
+            };
+            if !matches!(value, IntegerTerm::Add(..) | IntegerTerm::Subtract(..)) {
+                continue;
+            }
+            let identity = Proposition::ConditionIs(
+                ConditionTerm::integer_equal(observed.clone(), value.clone()),
+                true,
+            );
+            identities.push((observed, value, identity));
+        }
+        if identities.is_empty() {
+            return Ok(None);
+        }
+        check_verification_deadline()?;
+        let mut assumed = candidates.to_vec();
+        assumed.extend(identities.iter().map(|(_, _, identity)| identity.clone()));
+        let ranges = machine_observations(goal, &assumed);
+        let IntegerRefutation::Proved { premises, .. } = crate::instrumentation::measure_operation(
+            "surface",
+            "auto solver",
+            "auto solver: integer refutation with operation identities",
+            || plan_integer_refutation_with_ranges(goal, &assumed, &ranges),
+        ) else {
+            return Ok(None);
+        };
+        let used: Vec<_> = identities
+            .iter()
+            .filter(|(_, _, identity)| premises.contains(identity))
+            .collect();
+        if used.is_empty() {
+            return Ok(None);
+        }
+        // Spell each identity from the goal and the facts the refutation
+        // cited.
+        let mut surfaces = vec![surface_goal.clone()];
+        for premise in &premises {
+            if identities
+                .iter()
+                .any(|(_, _, identity)| identity == premise)
+            {
+                continue;
+            }
+            // A native comparison read as an Integer one has no spelling of
+            // its own; the goal and the other facts spell the identities.
+            if let Some((_, surface)) = self
+                .resolve_simp_premises(std::slice::from_ref(premise), &[])
+                .and_then(|mut spelled| spelled.pop())
+            {
+                surfaces.push(surface);
+            }
+        }
+        let written = written_integer_observations(surfaces.iter());
+        let mut proof = self.clone();
+        let mut established: Vec<(Proposition, ClickProposition)> = Vec::new();
+        for (observed, value, _) in used {
+            let (
+                IntegerTerm::Machine(machine),
+                IntegerTerm::Add(left, right) | IntegerTerm::Subtract(left, right),
+            ) = (observed, value)
+            else {
+                return Ok(None);
+            };
+            let (Some(spelled_observed), Some(spelled_left), Some(spelled_right)) = (
+                self.spell_integer_observation(observed, &written),
+                self.spell_integer_observation(left, &written),
+                self.spell_integer_observation(right, &written),
+            ) else {
+                return Ok(None);
+            };
+            let (left, right) = (Box::new(spelled_left), Box::new(spelled_right));
+            let spelled_value = if matches!(value, IntegerTerm::Subtract(..)) {
+                ContractExpression::Subtract(left, right)
+            } else {
+                ContractExpression::Add(left, right)
+            };
+            let (min, max) = machine.ty().format().bounds();
+            let lower = ClickProposition::Comparison {
+                left: surface_signed_integer_literal(&min),
+                operator: ComparisonOperator::LessEqual,
+                right: spelled_value.clone(),
+            };
+            let upper = ClickProposition::Comparison {
+                left: spelled_value.clone(),
+                operator: ComparisonOperator::LessEqual,
+                right: surface_signed_integer_literal(&max),
+            };
+            for bound in [&lower, &upper] {
+                let scope = proof.begin_have(bound.clone())?;
+                let Some(closed) = scope.try_solver_closure_without_identities()? else {
+                    return Ok(None);
+                };
+                proof = closed.join()?;
+                established.extend(
+                    proof
+                        .added_facts()
+                        .iter()
+                        .map(|fact| (fact.clone(), bound.clone())),
+                );
+            }
+            let identity = ClickProposition::Comparison {
+                left: spelled_observed,
+                operator: ComparisonOperator::Equal,
+                right: spelled_value,
+            };
+            let identity_surface = identity.clone();
+            let scope = proof.begin_have(identity.clone())?;
+            let step = ProofStep::ArithmeticCertificate(ArithmeticCertificate::special(
+                SpecialArithmeticCertificate {
+                    premises: vec![lower, upper],
+                    nodes: vec![SpecialArithmeticNode::IntegerOperationIdentity {
+                        bounds: vec![0, 1],
+                        result: identity,
+                    }],
+                    conclusion: 0,
+                },
+            ));
+            let Ok(closed) = scope.apply_step(step) else {
+                return Ok(None);
+            };
+            proof = closed.join()?;
+            established.extend(
+                proof
+                    .added_facts()
+                    .iter()
+                    .map(|fact| (fact.clone(), identity_surface.clone())),
+            );
+        }
+        proof.solver_closure(false, &established)
+    }
+
+    /// Spell an Integer comparison of two observations from `written`.
+    fn spell_integer_comparison(
+        &self,
+        proposition: &Proposition,
+        written: &[ContractExpression],
+    ) -> Option<ClickProposition> {
+        let Proposition::ConditionIs(condition, truth) = proposition else {
+            return None;
+        };
+        let (left, operator, right) = match (condition, truth) {
+            (ConditionTerm::IntegerLessEqual(left, right), true) => {
+                (left, ComparisonOperator::LessEqual, right)
+            }
+            (ConditionTerm::IntegerLessThan(left, right), true) => {
+                (left, ComparisonOperator::LessThan, right)
+            }
+            (ConditionTerm::IntegerEqual(left, right), true) => {
+                (left, ComparisonOperator::Equal, right)
+            }
+            (ConditionTerm::IntegerEqual(left, right), false) => {
+                (left, ComparisonOperator::NotEqual, right)
+            }
+            _ => return None,
+        };
+        Some(ClickProposition::Comparison {
+            left: self.spell_integer_observation(left.as_ref(), written)?,
+            operator,
+            right: self.spell_integer_observation(right.as_ref(), written)?,
+        })
+    }
+
+    /// The written expression of `term` among `written`, or its literal
+    /// when it is a constant.
+    fn spell_integer_observation(
+        &self,
+        term: &crate::kernel::IntegerTerm,
+        written: &[ContractExpression],
+    ) -> Option<ContractExpression> {
+        if let Some(value) = term.as_const() {
+            return Some(surface_signed_integer_literal(value));
+        }
+        written
+            .iter()
+            .find(|expression| {
+                let probe = ClickProposition::Comparison {
+                    left: ContractExpression::IntegerLiteral("0".into()),
+                    operator: ComparisonOperator::LessEqual,
+                    right: (*expression).clone(),
+                };
+                matches!(
+                    self.lower_integer_surface_proposition(&probe, "integer observation"),
+                    Ok(Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(_, observed), true))
+                        if observed.as_ref() == term
+                )
+            })
+            .cloned()
+    }
+
+    /// Spell the type range of each machine observation a `TypeRange` node
+    /// of `certificate` cites, as `MIN <= to_integer(v)` or
+    /// `to_integer(v) <= MAX`. The observation is spelled by a written
+    /// `to_integer(...)` in the goal or a cited premise that lowers to it;
+    /// `None` when one has no such spelling.
+    fn spell_type_ranges(
+        &self,
+        certificate: &IntegerArithmeticCertificate,
+        pairs: &[(Proposition, ClickProposition)],
+        surface_goal: &ClickProposition,
+    ) -> Option<Vec<(crate::kernel::IntegerTerm, bool, ClickProposition)>> {
+        let wanted: Vec<(&crate::kernel::IntegerTerm, bool)> = certificate
+            .nodes
+            .iter()
+            .filter_map(|node| match node {
+                IntegerArithmeticNode::TypeRange { value, upper, .. } => Some((value, *upper)),
+                _ => None,
+            })
+            .collect();
+        if wanted.is_empty() {
+            return Some(Vec::new());
+        }
+        let written = written_integer_observations(
+            std::iter::once(surface_goal).chain(pairs.iter().map(|(_, surface)| surface)),
+        );
+        let mut spelled: Vec<(crate::kernel::IntegerTerm, ContractExpression)> = Vec::new();
+        let mut ranges = Vec::with_capacity(wanted.len());
+        for (value, upper) in wanted {
+            let crate::kernel::IntegerTerm::Machine(machine) = value else {
+                return None;
+            };
+            let spelling = match spelled.iter().find(|(observed, _)| observed == value) {
+                Some((_, spelling)) => spelling.clone(),
+                None => {
+                    let spelling = self.spell_integer_observation(value, &written)?;
+                    spelled.push((value.clone(), spelling.clone()));
+                    spelling
+                }
+            };
+            let (min, max) = machine.ty().format().bounds();
+            let bound = if upper {
+                ClickProposition::Comparison {
+                    left: spelling,
+                    operator: ComparisonOperator::LessEqual,
+                    right: surface_signed_integer_literal(&max),
+                }
+            } else {
+                ClickProposition::Comparison {
+                    left: surface_signed_integer_literal(&min),
+                    operator: ComparisonOperator::LessEqual,
+                    right: spelling,
+                }
+            };
+            ranges.push((value.clone(), upper, bound));
+        }
+        Some(ranges)
     }
 
     fn try_flat_simp_conjunction(
@@ -4442,6 +4904,11 @@ impl<'a> Proof<'a> {
         );
         let matches_kernel = |candidate: &ClickProposition| {
             if crate::instrumentation::deadline_exceeded() {
+                return None;
+            }
+            // `result` exists only once the function returns: a snapshot
+            // before the return that reads it lowers, but does not parse.
+            if reads_result_before_return(candidate) {
                 return None;
             }
             // Synthesized kernel literals can lower back to this fact yet

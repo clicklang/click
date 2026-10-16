@@ -71,6 +71,14 @@ pub(crate) enum IntegerArithmeticNode {
         divisor: BigInt,
         result: IntegerAffineClaim,
     },
+    /// A machine value lies in its type's range: `MIN <= to_integer(v)`,
+    /// or with `upper`, `to_integer(v) <= MAX`. `value` is the machine
+    /// observation `to_integer(v)`; any other term is refused.
+    TypeRange {
+        value: IntegerTerm,
+        upper: bool,
+        result: IntegerAffineClaim,
+    },
 }
 
 /// A flat, locally checkable linear arithmetic certificate.
@@ -276,6 +284,21 @@ impl IntegerArithmeticCertificate {
                     }
                     negated
                 }
+                IntegerArithmeticNode::TypeRange {
+                    value,
+                    upper,
+                    result,
+                } => {
+                    let IntegerTerm::Machine(value) = value else {
+                        return Err(IntegerArithmeticCheckError::NodeResultMismatch(node_index));
+                    };
+                    let expected = machine_type_range_claim(value, *upper)
+                        .ok_or(IntegerArithmeticCheckError::WorkLimitExceeded)?;
+                    if &expected != result {
+                        return Err(IntegerArithmeticCheckError::NodeResultMismatch(node_index));
+                    }
+                    expected
+                }
                 IntegerArithmeticNode::Divide {
                     source,
                     divisor,
@@ -446,6 +469,77 @@ fn claims_are_opposites(lower: &IntegerAffineClaim, upper: &IntegerAffineClaim) 
             .zip(&upper.terms)
             .all(|((left, a), (right, b))| left == right && -a == *b)
         && -&lower.constant == upper.constant
+}
+
+/// The bound a machine value's type puts on its Integer value:
+/// `MIN <= to_integer(value)`, or with `upper`, `to_integer(value) <= MAX`.
+pub(crate) fn machine_type_range(
+    value: &crate::kernel::SharedMachineIntegerTerm,
+    upper: bool,
+) -> Proposition {
+    let (min, max) = value.ty().format().bounds();
+    let observed = IntegerTerm::Machine(value.clone());
+    let condition = if upper {
+        ConditionTerm::integer_less_equal(observed, IntegerTerm::constant(max))
+    } else {
+        ConditionTerm::integer_less_equal(IntegerTerm::constant(min), observed)
+    };
+    Proposition::ConditionIs(condition, true)
+}
+
+pub(crate) fn machine_type_range_claim(
+    value: &crate::kernel::SharedMachineIntegerTerm,
+    upper: bool,
+) -> Option<IntegerAffineClaim> {
+    integer_affine_claim(&machine_type_range(value, upper))
+}
+
+/// The machine values that are atoms of `proposition`'s affine claim, each
+/// once, in first-occurrence order.
+pub(crate) fn integer_affine_machine_values(
+    proposition: &Proposition,
+) -> Vec<crate::kernel::SharedMachineIntegerTerm> {
+    let condition = match proposition {
+        Proposition::ConditionIs(condition, _) => condition,
+        Proposition::Not(body) => match body.as_ref() {
+            Proposition::ConditionIs(condition, _) => condition,
+            _ => return Vec::new(),
+        },
+        _ => return Vec::new(),
+    };
+    let (left, right) = match condition {
+        ConditionTerm::IntegerLessThan(left, right)
+        | ConditionTerm::IntegerLessEqual(left, right)
+        | ConditionTerm::IntegerGreaterThan(left, right)
+        | ConditionTerm::IntegerGreaterEqual(left, right)
+        | ConditionTerm::IntegerEqual(left, right) => (left, right),
+        _ => return Vec::new(),
+    };
+    let mut seen = HashSet::new();
+    let mut values = Vec::new();
+    let mut stack = vec![right.clone(), left.clone()];
+    while let Some(node) = stack.pop() {
+        if !seen.insert(node.id()) {
+            continue;
+        }
+        match node.as_ref() {
+            IntegerTerm::Machine(value) => values.push(value.clone()),
+            IntegerTerm::Negate(child) => stack.push(child.clone()),
+            IntegerTerm::Add(left, right) | IntegerTerm::Subtract(left, right) => {
+                stack.push(right.clone());
+                stack.push(left.clone());
+            }
+            IntegerTerm::Multiply(left, right) => {
+                if left.as_const().is_some() {
+                    stack.push(right.clone());
+                } else if right.as_const().is_some() {
+                    stack.push(left.clone());
+                }
+            }
+            _ => {}
+        }
+    }
+    values
 }
 
 fn claim_is_trivial(claim: &IntegerAffineClaim) -> bool {
@@ -1392,6 +1486,71 @@ mod tests {
         let mut negated = negate_claim(&claim(goal), IntegerAffineRelation::LessEqual);
         negated.constant += BigInt::one();
         negated
+    }
+
+    #[test]
+    fn type_range_nodes_state_exactly_the_machine_type_bounds() {
+        use crate::kernel::{Bitvector32Term, MachineIntegerType, SharedMachineIntegerTerm};
+        let word = SharedMachineIntegerTerm::intern(
+            MachineIntegerType::UInt32,
+            Bitvector32Term::Variable(Variable(97101)),
+        );
+        let observed = IntegerTerm::Machine(word.clone());
+        // `x <= 4294967295` and `0 <= x` give `x - 4294967295 <= 0` from the
+        // negated goal `x >= 4294967296`.
+        let goal = less_equal(observed.clone(), IntegerTerm::constant_i64(4_294_967_295));
+        let upper = machine_type_range_claim(&word, true).unwrap();
+        let certificate = |value: IntegerTerm, upper_bound: bool, result: IntegerAffineClaim| {
+            IntegerArithmeticCertificate {
+                nodes: vec![IntegerArithmeticNode::TypeRange {
+                    value,
+                    upper: upper_bound,
+                    result,
+                }],
+                conclusion: 0,
+            }
+        };
+        assert_eq!(
+            certificate(observed.clone(), true, upper.clone()).check(&goal, &[]),
+            Ok(())
+        );
+        // A tighter bound than the type gives is not a type range.
+        let tighter = less_equal(observed.clone(), IntegerTerm::constant_i64(4_294_967_294));
+        assert!(
+            certificate(observed.clone(), true, claim(&tighter))
+                .check(&tighter, &[])
+                .is_err()
+        );
+        // The lower bound does not stand for the upper one, and a term that
+        // is not a machine observation has no type range.
+        assert!(
+            certificate(observed.clone(), false, upper.clone())
+                .check(&goal, &[])
+                .is_err()
+        );
+        assert!(
+            certificate(variable(97102), true, upper)
+                .check(&goal, &[])
+                .is_err()
+        );
+        // A signed observation of the same carrier has its own range.
+        let signed = SharedMachineIntegerTerm::intern(
+            MachineIntegerType::Int32,
+            Bitvector32Term::Variable(Variable(97101)),
+        );
+        let signed_goal = less_equal(
+            IntegerTerm::constant_i64(-2_147_483_648),
+            IntegerTerm::Machine(signed.clone()),
+        );
+        assert_eq!(
+            certificate(
+                IntegerTerm::Machine(signed.clone()),
+                false,
+                machine_type_range_claim(&signed, false).unwrap(),
+            )
+            .check(&signed_goal, &[]),
+            Ok(())
+        );
     }
 
     #[test]

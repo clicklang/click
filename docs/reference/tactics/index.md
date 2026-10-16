@@ -1181,6 +1181,15 @@ to_integer(source_value);` checks two named bounds against the typed cast
 destination's range; see [the cast identity
 rule](../../internals/mathematical-integers.md#range-checked-modulo-cast-identities).
 
+`integer_operation_identity bounds [i, j] => to_integer(a + b) ==
+to_integer(a) + to_integer(b);` (or `-`) checks two named constant bounds on
+the Integer result against the range of the `int`, `unsigned int`, `int64` or
+`uint64` operation. In the unsuffixed family, `type_range => MIN <=
+to_integer(v);` (or `to_integer(v) <= MAX`) states a machine type's range, and
+a premise comparing exact observations of one machine type is also available
+from its native comparison. See [in-range sums and
+differences](../../internals/mathematical-integers.md#in-range-machine-sums-and-differences).
+
 `int64_defined bounds [i, ...] => defined(a + b);` (or `a - b`) proves `int64`
 definedness: each operand's range is the width range of its root constructor (a
 constant, or a value widened from `int` or `unsigned int`; any other `int64`
@@ -1210,7 +1219,7 @@ provenance or `extract(...)` steps. Expansion emits the same certificate that
 `verify`, `profile`, and `audit` inspect, so all four tools agree on the checked
 proof.
 
-**Checked examples:** [`arithmetic_certificate_surface.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_certificate_surface.md), [`signed_int32_arithmetic_certificate_surface.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_int32_arithmetic_certificate_surface.md), [`signed_int32_certificate_composition.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_int32_certificate_composition.md), [`aligned_explicit_arithmetic.md`](https://github.com/clicklang/click/blob/master/mdtests/aligned_explicit_arithmetic.md), [`tagged_pointer_explicit_arithmetic.md`](https://github.com/clicklang/click/blob/master/mdtests/tagged_pointer_explicit_arithmetic.md), [`int64_defined_from_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/int64_defined_from_bounds.md), [`int32_defined_from_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/int32_defined_from_bounds.md), [`integer_product_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_product_bounds.md), [`integer_division_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_division_bounds.md), [`integer_cast_identity_unsigned_subword_promotion.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_cast_identity_unsigned_subword_promotion.md)
+**Checked examples:** [`arithmetic_certificate_surface.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_certificate_surface.md), [`signed_int32_arithmetic_certificate_surface.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_int32_arithmetic_certificate_surface.md), [`signed_int32_certificate_composition.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_int32_certificate_composition.md), [`aligned_explicit_arithmetic.md`](https://github.com/clicklang/click/blob/master/mdtests/aligned_explicit_arithmetic.md), [`tagged_pointer_explicit_arithmetic.md`](https://github.com/clicklang/click/blob/master/mdtests/tagged_pointer_explicit_arithmetic.md), [`int64_defined_from_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/int64_defined_from_bounds.md), [`int32_defined_from_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/int32_defined_from_bounds.md), [`integer_product_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_product_bounds.md), [`integer_division_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_division_bounds.md), [`integer_cast_identity_unsigned_subword_promotion.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_cast_identity_unsigned_subword_promotion.md), [`an_in_range_machine_difference_is_its_integer_difference.md`](https://github.com/clicklang/click/blob/master/mdtests/an_in_range_machine_difference_is_its_integer_difference.md)
 
 ### Rewriting
 
