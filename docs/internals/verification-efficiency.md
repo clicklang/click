@@ -1238,6 +1238,18 @@ retains evidence: the selected restricted query must still succeed. The
 former all-condition candidate trials and full-context retained leaves are
 gone. Traversal is charged to `atomic dependency selection`; interruption returns no partial proof.
 
+Before spelling a supported typed equality, simp retains only the sources
+already named by its evidence: exact equality edges, constant-pinning facts,
+paired order facts, or the index equalities inside load-address congruence.
+The kernel rebuilds the selected context from those sources and assigns its
+identity without another solver query. Connected aliases that the evidence
+did not use therefore add no certificate premises. Offset rules that still
+consult unrecorded constant sources keep their original selection, as do
+other evidence families. Legacy evidence retains the bounded subset search.
+The two `simp_retains_recorded_*` scaling regressions grow connected facts
+from 8 through 128 while retaining two equality links or one load-index fact;
+each also checks that withdrawing a required fact invalidates the proof.
+
 `atomic_memory_evidence_cites_only_connected_conditions` keeps one-source
 evidence at one premise, equality-assisted evidence at two, and refuses a
 range at an index not known equal. Beside 16, 32, 64 and 128 unrelated

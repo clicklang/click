@@ -717,7 +717,70 @@ impl PropositionDerivation {
     }
 }
 
+impl AtomicPropositionDerivationEvidence {
+    /// Exact sources already retained by these equality producers. Other
+    /// evidence families keep their selected context until they expose a
+    /// complete dependency list too; partial provenance is never sufficient.
+    pub(in crate::kernel) fn equality_premises(&self) -> Option<BTreeSet<Proposition>> {
+        let mut premises = BTreeSet::new();
+        match self {
+            Self::BitvectorEqualityPath(path) => {
+                for step in path {
+                    crate::instrumentation::record_deterministic_work(1);
+                    premises.insert(step.premise.clone());
+                }
+            }
+            Self::LoadAddressCongruence(evidence) => {
+                evidence.offset.collect_equality_premises(&mut premises)?;
+            }
+            Self::Int32PinnedConstantEquality(evidence) => {
+                evidence.collect_context_premises(&mut premises);
+            }
+            Self::Int32LeAndNotLtImpliesEquality(evidence) => {
+                premises.insert(evidence.less_equal.clone());
+                premises.insert(evidence.not_less_than.clone());
+            }
+            Self::Int32GeAndNotGtImpliesEquality(evidence) => {
+                premises.insert(evidence.greater_equal.clone());
+                premises.insert(evidence.not_greater_than.clone());
+            }
+            _ => return None,
+        }
+        Some(premises)
+    }
+}
+
 impl PointerOffsetCongruenceEvidence {
+    fn collect_equality_premises(&self, premises: &mut BTreeSet<Proposition>) -> Option<()> {
+        crate::instrumentation::record_deterministic_work(1);
+        match self {
+            Self::Exact => {}
+            // This rule currently asks the context for constants without
+            // retaining their sources. Keep its original selected context.
+            Self::WideScaledConstant { .. } => return None,
+            Self::ExactPremise(premise) => {
+                premises.insert(premise.as_ref().clone());
+            }
+            Self::Add { first, second, .. } => {
+                first.collect_equality_premises(premises)?;
+                second.collect_equality_premises(premises)?;
+            }
+            Self::Int32Scaled { path, .. }
+            | Self::Int64Scaled { path, .. }
+            | Self::ElementIndex { path, .. } => {
+                for step in path {
+                    crate::instrumentation::record_deterministic_work(1);
+                    premises.insert(step.premise.clone());
+                }
+            }
+            Self::Int32ScaledDerived { equality, .. }
+            | Self::ElementIndexDerived { equality, .. } => {
+                equality.collect_context_premises(premises);
+            }
+        }
+        Some(())
+    }
+
     fn equality_paths(&self) -> Vec<&[BitvectorEqualityDerivationStep]> {
         match self {
             Self::Exact | Self::ExactPremise(_) | Self::WideScaledConstant { .. } => Vec::new(),

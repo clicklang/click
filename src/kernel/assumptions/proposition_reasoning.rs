@@ -241,6 +241,35 @@ pub(crate) fn finite_forall_goal_instances(
 }
 
 impl PureFactContext {
+    /// Narrow a produced equality's selection to its recorded sources,
+    /// without proving it again. The evidence remains valid by construction:
+    /// the supported rule families name every context fact their check uses.
+    pub(crate) fn retained_atomic_equality_context(
+        &self,
+        evidence: &AtomicPropositionDerivationEvidence,
+    ) -> Option<(Self, u64)> {
+        let premises = evidence.equality_premises()?;
+        if premises.len() >= self.condition_facts.len() + self.prop_facts.len() {
+            return None;
+        }
+        let _timing = crate::instrumentation::OperationTiming::new(
+            "kernel",
+            "atomic evidence",
+            "retained equality premises",
+        );
+        let mut conditions = Vec::new();
+        let mut propositions = Vec::new();
+        for premise in premises {
+            match premise {
+                Proposition::ConditionIs(condition, value) => conditions.push((condition, value)),
+                other => propositions.push(other),
+            }
+        }
+        let restricted = self.restricted_to_facts(&conditions, &propositions);
+        let id = PureFactContextIdScope::enter(&restricted).id;
+        Some((restricted, id))
+    }
+
     #[cfg(test)]
     pub(crate) fn reset_context_inconsistency_full_scans() {
         CONTEXT_INCONSISTENCY_FULL_SCANS.with(|scans| scans.set(0));
