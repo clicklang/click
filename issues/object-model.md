@@ -700,3 +700,34 @@ capacity unchanged does not discharge that fact automatically. Preserve the
 distinction between selecting ownership and transferring separation premises
 when investigating the remaining failure. No new object-model design choice
 has been identified.
+
+
+Recovery commits `03abdc37d` and `b5e26dcf6` advance the remaining arena
+investigation without changing C or contracts. Explicit descriptor identities
+and separation transfers complete the selected allocation proof's fresh,
+expanded and rewritten checks. Whole-project verification then exposes eager
+carrier preparation: it evaluates an unrelated nested backing range while
+preparing a record promise whose carrier is already readable. The recovery
+repair uses the already-readable carrier first and projects the immediate body
+only when a carrier actually needs its authority. All eight native-record
+controls and the small `held_record_input_preserves_opaque_body` fixture pass
+on recovery; the fixture also passes the identified pre-repair upstream
+baseline. This PR publishes the compatibility control, not activation of that
+archived native-record implementation.
+
+Whole arena checking now reaches `arena_free.contract` tactic 29: `give` cannot
+find the owned element. Replacing its legacy consumption API with indexed
+consumption does not fix that obligation, so the candidate was reverted. The
+latest complete audit remains **51/52**. Retained session construction still
+requires the whole project to pass; no retained-mode success or disagreement
+for the selected allocation proof is claimed. No new design decision is needed.
+
+
+The remaining `give` failure now has a
+[self-contained complete loop reproduction](../bugs/archive-iterated-give-loses-loop-descriptor-ownership.md).
+Its complete proof passes baseline `64f0f0d46` (with that revision's standard
+library import) and fails recovery at `give`; a single-store control without
+the loop passes recovery. This isolates the loop boundary without changing
+the original program or expanding the accepted model. The native carrier
+compatibility fixture passes current upstream `ea081fe39`. Both commits pushed
+to merged PR #1160 are verified as upstream ancestors.

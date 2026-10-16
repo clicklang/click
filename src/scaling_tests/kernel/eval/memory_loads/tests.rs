@@ -715,8 +715,12 @@ fn pointer_read_premises_register_definitions_before_transitive_queries() {
             "a query must not depend on first comparing the two read spellings"
         );
         samples.push((insertion_work, query_work));
+        // Measured: 4646, 4721, 4795 and 4869 at 8, 32, 128 and 512 ambient
+        // facts; 3441 to 3664 before the read took its numeric address and
+        // the displaced address its numeric sum. The extra nodes are a
+        // constant ~1200, with the same logarithmic growth.
         assert!(
-            map_work < 1024 * (size.ilog2() as usize + 1),
+            map_work < 1024 * (size.ilog2() as usize + 2),
             "size={size}, map work={map_work}"
         );
         assert!(!ambient.pointers_known_equal(&read, &successor));
