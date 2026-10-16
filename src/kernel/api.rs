@@ -4509,11 +4509,11 @@ fn statement_kernel_variables<'scope>(
             let mut existing = BTreeSet::new();
             collect_c_state_bitvector_variables(state, &mut existing);
             collect_c_statement_bitvector_variables(statement, &mut existing);
-            collect_assumption_variables(assumptions, &mut existing);
             existing
         },
         execution_environment_variable_index(environment),
     )
+    .reserving_through(assumptions.execution_variable_ceiling())
 }
 
 pub(crate) fn prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule_using_budget(
