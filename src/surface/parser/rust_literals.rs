@@ -63,9 +63,9 @@ impl IntegerSuffix {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct IntegerLiteral {
-    pub digits: String,
-    pub suffix: Option<IntegerSuffix>,
+pub(in crate::surface) struct IntegerLiteral {
+    pub(super) digits: String,
+    pub(super) suffix: Option<IntegerSuffix>,
 }
 
 impl IntegerLiteral {

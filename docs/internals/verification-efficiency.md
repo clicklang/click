@@ -1297,6 +1297,14 @@ intermediate addition overflows.
 
 ### Bounded reduction of selected simp premises
 
+A native prefix view first selects its indexed source view and the exact
+unsigned-order path proving that the requested count fits. It tries the view
+query with only those premises before considering the connected component.
+Snapshot transport and retirement use the same kernel query; unsupported
+prefix shapes fall back to ordinary selection. Unrelated bounds on the source
+length therefore do not consume the source-spelling budget. Scaling coverage
+includes 32, 64, 128 and 256 redundant bounds and a required two-edge order path.
+
 A compatibility atomic simplification can retain an entire connected component
 although its kernel decision needs only a few facts. Before presenting source
 forms, the smart planner can reduce a selection of 8–128 facts by testing

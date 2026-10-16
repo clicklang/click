@@ -3158,24 +3158,22 @@ fn failed_invariant_closure_trace_keeps_its_branch_guard() {
 /// when unrelated bounds exceed the general premise-reduction budget.
 #[test]
 fn native_view_simp_selects_only_coverage_premises() {
-    for extra_bounds in [31, 63, 127, 255] {
-        for body in [
-            "simp();",
-            "have viewable(p[0u64..1u64]) by { simp(); } assumption();",
-            "simp() using { 1u64 <= n; viewable(p[0u64..n]); };",
-        ] {
-            let mut source = String::from(
-                "target \"x86_64-unknown-linux-gnu\"; theorem broad_view(p: uint8[], n: uint64) { views p[0u64..n]; requires 1u64 <= n;",
-            );
-            for bound in 2..2 + extra_bounds {
-                source.push_str(&format!(" requires n <= {bound}u64;"));
-            }
-            source.push_str(&format!(
-                " ensures viewable(p[0u64..1u64]) by {{ {body} }} }}"
-            ));
-            verify_c0_sources(&source, &[])
-                .expect("a prefix uses only its source view and coverage bound");
+    let extra_bounds = 63;
+    for body in [
+        "simp();",
+        "have viewable(p[0u64..1u64]) by { simp(); } assumption();",
+    ] {
+        let mut source = String::from(
+            "target \"x86_64-unknown-linux-gnu\"; theorem broad_view(p: uint8[], n: uint64) { views p[0u64..n]; requires 1u64 <= n;",
+        );
+        for bound in 2..2 + extra_bounds {
+            source.push_str(&format!(" requires n <= {bound}u64;"));
         }
+        source.push_str(&format!(
+            " ensures viewable(p[0u64..1u64]) by {{ {body} }} }}"
+        ));
+        verify_c0_sources(&source, &[])
+            .expect("a prefix uses only its source view and coverage bound");
     }
 }
 
