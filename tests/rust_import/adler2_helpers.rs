@@ -1174,9 +1174,9 @@ fn charon_adler2_single_byte_compute_tools_recheck_original_contract() {
 
 fn recheck_compute_tools(contract: &str, bytes: usize) {
     let p = compute_project(contract);
-    for command in ["verify", "profile"] {
-        assert_cli(&p, &[command]);
-    }
+    // Profile verifies the complete original input; the final CLI verify below
+    // checks the expanded proofs. Avoid a duplicate original verification.
+    assert_cli(&p, &["profile"]);
     let source = fs::read_to_string(p.root.join("borrow.click")).unwrap();
     let site = if bytes == 4 {
         "have ((__rust_mir_115_remaining as u32) as i32) == 3".to_owned()
@@ -2592,9 +2592,9 @@ fn charon_adler2_checksum_tools_recheck_original_contract() {
     let p = adler2_helpers_project();
     let source = format!("verifying \"src/lib.rs\";\n{COMMON_ADLER_SPEC}\n{PACKING}\n{CHECKSUM}");
     fs::write(p.root.join("borrow.click"), &source).unwrap();
-    for command in ["verify", "profile"] {
-        assert_cli(&p, &[command]);
-    }
+    // Profile verifies the complete original input; the final CLI verify below
+    // checks the expanded proofs. Avoid a duplicate original verification.
+    assert_cli(&p, &["profile"]);
     let offset = source.find("have result == old(((self.b as u32)").unwrap();
     let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let cursor = format!("{}:{line}:2", p.root.join("borrow.click").display());
@@ -2744,9 +2744,9 @@ fn charon_adler2_public_checksum_tools_recheck_original_contracts() {
     let p = adler2_helpers_project();
     let source = public_one_byte_proof();
     fs::write(p.root.join("borrow.click"), &source).unwrap();
-    for command in ["verify", "profile"] {
-        assert_cli(&p, &[command]);
-    }
+    // Profile verifies the complete original input; the final CLI verify below
+    // checks the expanded proofs. Avoid a duplicate original verification.
+    assert_cli(&p, &["profile"]);
     let offset = source
         .find("have to_integer(__rust_mir_0) == old(adler_spec_checksum(data")
         .unwrap();
@@ -3529,9 +3529,9 @@ fn adler_deferred_batch_b_tools_expand_and_reverify() {
     let p = Project::isolated("");
     let source = batch_prefix_proof(BATCH_PREFIX);
     fs::write(p.root.join("borrow.click"), &source).unwrap();
-    for command in ["verify", "profile"] {
-        assert_cli(&p, &[command]);
-    }
+    // Profile verifies the complete original input; the final CLI verify below
+    // checks the expanded proofs. Avoid a duplicate original verification.
+    assert_cli(&p, &["profile"]);
     let offset = source.find("have defined(pos + 4)").unwrap();
     let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let cursor = format!("{}:{line}:2", p.root.join("borrow.click").display());
@@ -3667,9 +3667,9 @@ fn adler_native_vector_prefix_tools_expand_and_reverify() {
     let p = Project::isolated("");
     let source = vector_prefix_proof();
     fs::write(p.root.join("borrow.click"), &source).unwrap();
-    for command in ["verify", "profile"] {
-        assert_cli(&p, &[command]);
-    }
+    // Profile verifies the complete original input; the final CLI verify below
+    // checks the expanded proofs. Avoid a duplicate original verification.
+    assert_cli(&p, &["profile"]);
     let offset = source.find("have total - remaining <= 2147483643").unwrap();
     let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let cursor = format!("{}:{line}:2", p.root.join("borrow.click").display());
