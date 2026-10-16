@@ -12,7 +12,10 @@
         "roots": [
           "trait_methods::through_bound",
           "trait_methods::through_dyn",
-          "trait_methods::direct"
+          "trait_methods::direct",
+          "trait_methods::through_default",
+          "trait_methods::direct_default",
+          "trait_methods::circle_default"
         ],
         "files": [
           "shapes.rs"

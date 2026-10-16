@@ -5971,9 +5971,18 @@ fn check_trait_method_implementations(
             continue;
         };
         let rust = crate::languages::rust::names::is_rust_name(function.name());
-        // A C++ virtual method with a body is verified against its own
-        // contract, which is its interface.
-        let verified_interface = if rust || environment.get_function_contract(interface).is_some() {
+        // A C++ virtual method with a body, or a Rust trait's default method,
+        // is verified against its own contract, which is its interface. A
+        // Rust interface is a verified function only where the sidecar
+        // states its default body.
+        let interface_source = parsed_sources
+            .get(interface)
+            .map_or(interface, |(_, function)| function.source_name());
+        let verified_interface = if environment.get_function_contract(interface).is_some()
+            || (rust
+                && !function_blocks.iter().any(|block| {
+                    !block.is_external() && block.signature().name() == interface_source
+                })) {
             None
         } else {
             environment.get_function(interface)
@@ -5981,9 +5990,7 @@ fn check_trait_method_implementations(
         if environment.get_function_contract(interface).is_none() && verified_interface.is_none() {
             continue;
         }
-        let interface_name = parsed_sources
-            .get(interface)
-            .map_or(interface, |(_, function)| function.source_name());
+        let interface_name = interface_source;
         // A trait or class whose object carries state states each
         // implementation's interface on that implementation's own memory. A
         // C++ override of a method that is itself stated so also refines that
