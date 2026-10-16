@@ -35,9 +35,10 @@ satisfy a callee's `requires q == p` with `&pair->first + 1` and
 The kernel now also requires equal extents whenever both pointers carry one
 (`mdtests/a_one_past_member_pointer_does_not_satisfy_a_pointer_equality.md`,
 with `a_member_pointer_satisfies_a_pointer_equality_with_its_copy.md` as its
-control). Still accepted: a contract member address such as `&pair->second`
-has no extent, so `ensures result == &pair->second` is proven for a function
-returning `&pair->first + 1`, and its callers read through the result.
+control). A member address written in a contract, such as `&pair->second`,
+designates the member as the C frontend's does, so a function returning
+`&pair->first + 1` cannot promise `result == &pair->second`
+(`mdtests/a_contract_member_address_is_not_a_one_past_pointer.md`).
 
 ## Reproduction
 

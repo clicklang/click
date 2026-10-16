@@ -3429,7 +3429,8 @@ and it carries no permission from one pointer to the other. A contract
 `p == q` also compares the subobjects that pointers formed by C member
 access designate: a call cannot satisfy `requires q == p` with the arguments
 `&pair->first + 1` and `&pair->second`, though their addresses are equal.
-Member addresses written in a contract carry no subobject yet.
+A scalar member address written in a contract, `&p->f`, designates the
+member as the C expression does.
 `address(p) == 0` is decided as `p == 0`, and a comparison with an integer
 that has no pointer origin stays undecided. Rewriting the pointer to null reduces
 its address to `uint64` zero, also inside arithmetic with symbolic operands.
